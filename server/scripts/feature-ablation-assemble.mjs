@@ -818,8 +818,20 @@ function sourceAuthority(sourceSha) {
   git('merge-base', '--is-ancestor', sourceSha, 'origin/main');
   return server;
 }
-async function lockedContract(target, sourceSha) {
-  if (!['plo6_v24', 'v53_pressure'].includes(target)) throw new Error('unknown_target');
+async function lockedContract(target, sourceSha, cell, assembling = false) {
+  if (
+    ![
+      'plo6_v24',
+      'v53_pressure',
+      'combo_draw_pressure',
+      'targeted_river_bluff',
+      'river_position_defense',
+      'river_bluff_checkraise',
+      'barrel_continuation_outlook',
+      'pressure_package',
+    ].includes(target)
+  )
+    throw new Error('unknown_target');
   const server = sourceAuthority(sourceSha),
     contract = await import(
       pathToFileURL(path.join(server, 'src/benchmark/FeatureAblationQualification.ts')).href
@@ -842,7 +854,14 @@ async function lockedContract(target, sourceSha) {
     Number(process.env.GITHUB_RUN_ATTEMPT) > plan.maxAttempts
   )
     throw new Error('contract_attempt_bound');
-  return { contract, plan, planDigest };
+  let familyCustody;
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const incremental = await import(
+      pathToFileURL(path.join(server, 'src/benchmark/IncrementalPressureQualification.ts')).href
+    );
+    familyCustody = await incremental.authenticateIncrementalPlan(plan, cell, assembling);
+  }
+  return { contract, plan, planDigest, familyCustody };
 }
 async function main(argv) {
   const args = argumentsFor(argv),
@@ -859,11 +878,19 @@ async function main(argv) {
     return;
   }
   const sourceSha = args['source-sha'],
-    { contract, plan, planDigest } = await lockedContract(args.target, sourceSha);
+    { contract, plan, planDigest, familyCustody } = await lockedContract(
+      args.target,
+      sourceSha,
+      args.cell,
+      args.assemble === true
+    );
   const provider = await providerState(),
     authorizedOperations = providerOperations(provider.jobs, provider.run, plan.matrix);
   mkdirSync(out, { recursive: true });
-  writeJson(path.join(out, 'jobs.json'), provider);
+  writeJson(path.join(out, 'jobs.json'), {
+    ...provider,
+    ...(familyCustody ? { familyCustody } : {}),
+  });
   if (args.prepare) {
     const cell = plan.matrix.find((c) => c.key === args.cell);
     if (!cell) throw new Error('unknown_contract_cell');
@@ -895,6 +922,11 @@ async function main(argv) {
   if (!args.runs) throw new Error('runs_required');
   const runs = path.resolve(String(args.runs)),
     attempts = [];
+  if (plan.schema === 'horse-incremental-ablation-plan-v2') {
+    const { authenticateFeatureArtifacts } =
+      await import('./feature-ablation-artifact-custody.mjs');
+    await authenticateFeatureArtifacts(runs, plan.target, provider.run.id);
+  }
   // Read metadata first, then incomplete prefixes, then complete runs. Each
   // raw file is streamed once; prior valid-row counts become hash checkpoints.
   const records = readdirSync(runs)
@@ -961,6 +993,7 @@ async function main(argv) {
       attemptsThrough: provider.currentAttempt,
       inventorySha256: sha256(canonical(provider)),
       rawArtifactsRetained: true,
+      ...(familyCustody ? { familyCustody } : {}),
     },
   });
   if (assembly.reasons.length) process.exitCode = 2;

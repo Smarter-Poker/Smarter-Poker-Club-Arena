@@ -102,7 +102,11 @@ describe('P13.3 Phase 13 policy digest', () => {
     // 52: river-call category and confidence evidence is its own hashed owner.
     // 53: private river board contact is an independently hashed pure source.
     // 54: conditional river position evidence is learned by HorseMind.
-    expect(closure).toHaveLength(54);
+    // 55: exact-context river reads add their public parser; joint pot arithmetic was already present.
+    expect(closure).toHaveLength(55);
+    expect(closure).toContain('src/engine/HorseMultiwayRiverRead.ts');
+    expect(closure).toContain('src/engine/multiway/JointPotDistribution.ts');
+    expect(HORSE_PHASE13_POLICY_SOURCE_FILES).toContain('src/engine/HorseMultiwayRiverRead.ts');
     expect(closure).toContain('src/engine/HorseRiverPositionRead.ts');
     expect(HORSE_PHASE13_POLICY_SOURCE_FILES).toContain('src/engine/HorseRiverPositionRead.ts');
     expect(closure).toContain('src/engine/HorseBoardContact.ts');

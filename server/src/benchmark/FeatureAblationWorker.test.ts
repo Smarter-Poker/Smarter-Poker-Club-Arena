@@ -230,3 +230,130 @@ it('retains loaded public history after accepted plans on the exact failed PLO6 
   expect(applied).toBeGreaterThan(0);
   expect(Date.now).toBe(wallClock);
 }, 60000);
+
+it('counts each component only after its exact signed final controller action', async () => {
+  const { acceptedIncrementalComponents } = await import('./FeatureAblationWorker.js');
+  const { HORSE_POLICY_ORDER } = await import('../engine/HorsePolicyGraph.js');
+  const components = [
+    ['comboDrawPressure', 'combo_draw_pressure_raise', 'combo_draw_pressure_accepted', 'raise'],
+    ['v54RiverBluff', 'v54_river_bluff', 'targeted_river_bluff_accepted', 'bet'],
+    [
+      'riverPositionDefense',
+      'river_position_defense_call',
+      'river_position_defense_accepted',
+      'call',
+    ],
+    [
+      'riverBluffCheckRaise',
+      'river_bluff_checkraise_selected',
+      'river_bluff_checkraise_accepted',
+      'raise',
+    ],
+  ];
+  for (const [flag, tag, counter, action] of components) {
+    const selected = { action, amount: 8 };
+    const issued: any = {
+      ...selected,
+      thinkTime: 0,
+      policyGraph: {
+        version: 'horse-policy-order-v3',
+        finalAction: selected,
+        transitions: HORSE_POLICY_ORDER.map((node, i) => ({
+          node,
+          before: i ? selected : null,
+          after: selected,
+          changed: false,
+          elapsedMs: 0,
+        })),
+      },
+    };
+    const request: any = {
+      opts: { [flag]: true },
+      decisionKey: 'original-private-key',
+      player: { seat: 2, user_id: 'hero', bet: 0, stack: 20 },
+      gameState: { stage: 'river' },
+    };
+    const record: any = { seat: 2, userId: 'hero', stage: 'river', action, amount: 8 };
+    const count = (d = issued, records = [record], submitted = d, tags = { [tag]: 1 }) =>
+      acceptedIncrementalComponents(request, d, tags, submitted, records);
+    expect(count()).toEqual([counter]);
+    expect(count(issued, [])).toEqual([]);
+    expect(count(issued, [{ ...record, amount: 9 }])).toEqual([]);
+    expect(count(issued, [{ ...record, seat: 3 }])).toEqual([]);
+    expect(count(issued, [{ ...record, stage: 'turn' }])).toEqual([]);
+    expect(count(issued, [record, record])).toEqual([]);
+    expect(count(issued, [record], { ...issued, action: 'fold' })).toEqual([]);
+    expect(count(issued, [record], issued, {})).toEqual([]);
+    const overwritten = structuredClone(issued);
+    overwritten.action = 'fold';
+    delete overwritten.amount;
+    overwritten.policyGraph.finalAction = { action: 'fold', amount: null };
+    for (const t of overwritten.policyGraph.transitions.slice(8))
+      t.after = overwritten.policyGraph.finalAction;
+    overwritten.policyGraph.transitions[9].before = overwritten.policyGraph.finalAction;
+    expect(count(overwritten, [{ ...record, action: 'fold', amount: 0 }])).toEqual([]);
+    const repriced = structuredClone(issued);
+    repriced.policyGraph.transitions[0].after.amount = 7;
+    expect(count(repriced)).toEqual([]);
+    expect(count({ ...issued, policyGraph: undefined })).toEqual([]);
+    const awayAndBack = structuredClone(issued);
+    awayAndBack.policyGraph.transitions[8].after = { action: 'check', amount: null };
+    awayAndBack.policyGraph.transitions[9].before = { action: 'check', amount: null };
+    expect(count(awayAndBack)).toEqual([]);
+    if (flag !== 'riverBluffCheckRaise') {
+      const allIn = structuredClone(issued);
+      allIn.action = 'all_in';
+      delete allIn.amount;
+      allIn.policyGraph.finalAction = { action: 'all_in', amount: null };
+      for (const [i, t] of allIn.policyGraph.transitions.entries()) {
+        t.after = allIn.policyGraph.finalAction;
+        t.before = i ? allIn.policyGraph.finalAction : null;
+      }
+      expect(count(allIn, [{ ...record, action: 'all_in', amount: 20 }])).toEqual([counter]);
+      expect(count(allIn, [{ ...record, action: 'all_in', amount: 19 }])).toEqual([]);
+    }
+  }
+});
+
+it('actual controller callback emits accepted coverage once, separately from selected telemetry', async () => {
+  const { HorsePolicyGraph, HORSE_POLICY_ORDER } = await import('../engine/HorsePolicyGraph.js');
+  const { noteFire, enableBrainTelemetry } = await import('../engine/BrainTelemetry.js');
+  enableBrainTelemetry();
+  const decide = vi
+    .spyOn(defaultHorseDecisionWorkerDependencies, 'decide')
+    .mockImplementation((p, gs) => {
+      const graph = new HorsePolicyGraph();
+      const value: any =
+        gs.stage === 'river' && gs.legalActions?.includes('bet')
+          ? { action: 'bet', amount: gs.minRaiseTo ?? 2, thinkTime: 0 }
+          : {
+              action: gs.legalActions?.includes('check') ? 'check' : 'call',
+              amount: Math.min(p.stack, Math.max(0, gs.currentBet - p.bet)),
+              thinkTime: 0,
+            };
+      if (value.action === 'bet') noteFire('v54_river_bluff');
+      let last: any = null;
+      for (const node of HORSE_POLICY_ORDER)
+        last = graph.run(node, last, () => ({ decision: value })).decision;
+      return graph.finish(last);
+    });
+  try {
+    const brain = createFeatureAblationWorker(
+      () => {},
+      () => {},
+      true,
+      emptyHistory
+    );
+    const profile = workerProfile(brain, false);
+    profile.ablation!.heroOpts = { v54RiverBluff: true };
+    const hand = await playPlo4PolicyHand(profile, 393923, 2, 1, 'off', () => true, true);
+    expect(hand.complete).toBe(true);
+    expect(hand.illegalActions).toBe(0);
+    expect(hand.ablationEvaluationFires?.hero.v54_river_bluff).toBe(1);
+    expect(hand.ablationEvaluationFires?.hero.targeted_river_bluff_accepted).toBe(1);
+    await brain.accepted?.({ action: 'bet', amount: 2, thinkTime: 0 }, []);
+    expect(brain.takeEvaluationFires?.()).toEqual({});
+  } finally {
+    decide.mockRestore();
+  }
+}, 60000);

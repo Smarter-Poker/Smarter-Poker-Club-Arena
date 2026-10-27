@@ -1,6 +1,7 @@
 /** Isolated paired adapter through the unmodified actual worker and its
  * original independent observer view, issue owner and accepted-effect path.
  * No authority injection, database loader, persistence, journal or timer. */
+import { HORSE_POLICY_ORDER } from '../engine/HorsePolicyGraph.js';
 import type { ActionRecord, HorseDecision } from '../types.js';
 import { drainFires, restoreFires } from '../engine/BrainTelemetry.js';
 import {
@@ -92,6 +93,116 @@ export function validateFeatureAblationPlanAck(
     throw Error(`Offline plan refused: ${response.planDisposition ?? 'missing'}`);
   return response.planDisposition;
 }
+/** The only existing turn-outlook producer without a new plan is the
+ * continuation repair. Count only its exact accepted, applied original effect. */
+export function acceptedContinuationOutlook(
+  request: Pick<FastHorseDecisionRequest, 'opts' | 'player' | 'gameState'>,
+  effects: FastHorseDecisionResult['effects'],
+  operation: string,
+  disposition: string
+): boolean {
+  const own = effects.filter((e) => 'userId' in e && e.userId === request.player.user_id);
+  return (
+    request.opts?.barrelContinuationOutlook === true &&
+    request.gameState.stage === 'turn' &&
+    operation === 'COMMIT_DECISION_EFFECTS' &&
+    disposition === 'applied_volatile' &&
+    own.some((e) => e.type === 'outlook' && e.street === 'turn') &&
+    !own.some((e) => e.type === 'plan')
+  );
+}
+/** Selection telemetry is not acceptance. Reuse the original signed graph to
+ * prove this component's exact action survived every later owner. */
+export function acceptedIncrementalComponents(
+  request: Pick<FastHorseDecisionRequest, 'opts' | 'player' | 'gameState' | 'decisionKey'>,
+  issued: HorseDecision,
+  selected: Readonly<Record<string, number>>,
+  submitted: HorseDecision,
+  records: readonly Readonly<ActionRecord>[]
+): string[] {
+  const graph = issued.policyGraph;
+  const same = (
+    a: { action: string; amount?: number | null },
+    b: { action: string; amount?: number | null }
+  ) => a.action === b.action && (a.amount ?? null) === (b.amount ?? null);
+  if (
+    !request.decisionKey ||
+    !graph ||
+    graph.version !== 'horse-policy-order-v3' ||
+    graph.transitions.length !== HORSE_POLICY_ORDER.length ||
+    !graph.transitions.every(
+      (t, i) =>
+        t.node === HORSE_POLICY_ORDER[i] &&
+        (i === 0 ? t.before === null : !!t.before && same(t.before, graph.transitions[i - 1].after))
+    ) ||
+    !same(graph.finalAction, issued) ||
+    !same(graph.transitions.at(-1)!.after, issued) ||
+    !same(submitted, issued) ||
+    records.length !== 1
+  )
+    return [];
+  const record = records[0];
+  const expectedAmount =
+    issued.action === 'all_in'
+      ? Math.round((request.player.bet + request.player.stack) * 100) / 100
+      : issued.amount;
+  if (
+    record.seat !== request.player.seat ||
+    record.userId !== request.player.user_id ||
+    record.stage !== request.gameState.stage ||
+    record.action !== issued.action ||
+    typeof expectedAmount !== 'number' ||
+    !Number.isFinite(expectedAmount) ||
+    record.amount !== expectedAmount
+  )
+    return [];
+  const cases = [
+    [
+      'comboDrawPressure',
+      'combo_draw_pressure_raise',
+      'combo_draw_pressure_accepted',
+      'reference',
+      ['raise', 'all_in'],
+    ],
+    [
+      'v54RiverBluff',
+      'v54_river_bluff',
+      'targeted_river_bluff_accepted',
+      'reference',
+      ['bet', 'all_in'],
+    ],
+    [
+      'riverPositionDefense',
+      'river_position_defense_call',
+      'river_position_defense_accepted',
+      'reference',
+      ['call', 'all_in'],
+    ],
+    [
+      'riverBluffCheckRaise',
+      'river_bluff_checkraise_selected',
+      'river_bluff_checkraise_accepted',
+      'wager_rules',
+      ['raise'],
+    ],
+  ] as const;
+  return cases.flatMap(([flag, tag, counter, node, actions]) => {
+    if (
+      request.opts?.[flag] !== true ||
+      selected[tag] !== 1 ||
+      !(actions as readonly string[]).includes(issued.action)
+    )
+      return [];
+    const start = graph.transitions.findIndex((t) => t.node === node);
+    return start >= 0 && graph.transitions.slice(start).every((t) => same(t.after, issued))
+      ? [counter]
+      : [];
+  });
+}
+const actualFeatureWorkers = new WeakSet<object>();
+export function isActualFeatureAblationWorker(value: object): boolean {
+  return actualFeatureWorkers.has(value);
+}
 export function createFeatureAblationWorker(
   onReceipt: (r: FeatureAblationWorkerReceipt) => void = () => {},
   onPlanResolved: (disposition: string, effects: number) => void = () => {},
@@ -113,6 +224,13 @@ export function createFeatureAblationWorker(
   let observedReads: HorseObserverReadReceipt | null = null;
   let planDispositions: Record<string, number> = {};
   const loadedHistories = new Set<string>();
+  let pendingCoverage:
+    | {
+        request: FastHorseDecisionRequest;
+        decision: HorseDecision;
+        selected: Record<string, number>;
+      }
+    | undefined;
   let pending: { request: FastHorseDecisionRequest; result: FastHorseDecisionResult } | undefined;
   const terminal = async (
     commit: boolean,
@@ -176,13 +294,20 @@ export function createFeatureAblationWorker(
         fence: request.fence,
         operation,
       });
+      if (
+        collectEvaluationFires &&
+        acceptedContinuationOutlook(request, result.effects, operation, disposition)
+      ) {
+        evaluationFires.barrel_continuation_outlook_accepted =
+          (evaluationFires.barrel_continuation_outlook_accepted ?? 0) + 1;
+      }
       planDispositions[disposition] = (planDispositions[disposition] ?? 0) + result.effects.length;
       onPlanResolved(disposition, result.effects.length);
     } finally {
       pending = undefined;
     }
   };
-  return {
+  const brain: Plo4AblationBrain = {
     id: 'current-worker-original-observer-controlled-crn-v1',
     takePlanDispositions() {
       const out = planDispositions;
@@ -195,7 +320,8 @@ export function createFeatureAblationWorker(
       return out;
     },
     async beginHand() {
-      if (runtime || active || pending) throw Error('Offline worker physical hands must be serial');
+      if (runtime || active || pending || pendingCoverage)
+        throw Error('Offline worker physical hands must be serial');
       loadedHistories.clear();
       planDispositions = {};
       const readiness = defaultHorseDecisionWorkerDependencies.workerReadiness();
@@ -249,7 +375,7 @@ export function createFeatureAblationWorker(
       await runtime.start();
     },
     async decide(player, gameState, style, opts, _sandbox, coordinate) {
-      if (!runtime || active || pending)
+      if (!runtime || active || pending || pendingCoverage)
         throw Error('Offline decision requires its serial original hand worker');
       active = true;
       canonical = saveFastRandom();
@@ -388,12 +514,23 @@ export function createFeatureAblationWorker(
           phase13Authority: result.phase13Authority,
           phase14Authority: result.phase14Authority,
         });
+        if (collectEvaluationFires)
+          pendingCoverage = {
+            request: {
+              ...request,
+              player: { ...request.player },
+              gameState: { ...request.gameState },
+            },
+            decision: result.decision,
+            selected: {},
+          };
         if (result.effects.length) pending = { request, result };
         return result.decision;
       } finally {
         armed = false;
         if (collectEvaluationFires) {
           evaluationFires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+          if (pendingCoverage) pendingCoverage.selected = { ...evaluationFires };
           restoreFires(parked);
         }
         restoreFastRandom(canonical);
@@ -401,7 +538,18 @@ export function createFeatureAblationWorker(
       }
     },
     async accepted(decision, records) {
+      const coverage = pendingCoverage;
+      pendingCoverage = undefined; // Consume once, including a refused/throwing terminal.
       await terminal(true, decision, records);
+      if (coverage)
+        for (const counter of acceptedIncrementalComponents(
+          coverage.request,
+          coverage.decision,
+          coverage.selected,
+          decision,
+          records
+        ))
+          evaluationFires[counter] = (evaluationFires[counter] ?? 0) + 1;
     },
     async endHand() {
       if (active) throw Error('Cannot end a computing offline physical hand');
@@ -415,8 +563,11 @@ export function createFeatureAblationWorker(
         lastFast = undefined;
         runtime = undefined;
         pending = undefined;
+        pendingCoverage = undefined;
         messages = [];
       }
     },
   };
+  actualFeatureWorkers.add(brain);
+  return brain;
 }

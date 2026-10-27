@@ -1,3 +1,4 @@
+import { isHorseOwnerForcedAuthority } from '../../engine/HorseOwnerForcedActivation.js';
 import type { HorseDecision } from '../../types.js';
 import type { HorseExecutionWitness } from '../../engine/HorseExecutionWitness.js';
 import type {
@@ -87,7 +88,7 @@ export interface HorsePhaseProof {
   status: HorsePhaseStatus;
   capability: 'captured' | 'unobserved';
   eligibility: 'eligible' | 'outside-domain' | 'unknown';
-  qualification: 'verified' | 'unknown' | 'refused';
+  qualification: 'verified' | 'owner-forced' | 'unknown' | 'refused';
   application: 'accepted' | 'not-selected' | 'shadow' | 'refused' | 'not-applicable' | 'unknown';
   /** Closed local vocabulary only: never an exception, path, actor or payload. */
   reason: string;
@@ -550,6 +551,7 @@ export class HorseFleetPhaseInterpreter {
           admission,
           receiptAuthority.continuationVersion
         );
+        let forcedBaseline = false;
         // Corrective composition also binds every selected baseline owner,
         // including an admitted baseline whose proposal did not apply here.
         if (owner === 'phase14')
@@ -562,6 +564,7 @@ export class HorseFleetPhaseInterpreter {
               authority.epoch
             );
             if (!h.current() || h.currentState() !== 'usable') throw Error();
+            if (isHorseOwnerForcedAuthority(h.current())) forcedBaseline = true;
           }
         if (
           !holder.current() ||
@@ -585,10 +588,18 @@ export class HorseFleetPhaseInterpreter {
           out[owner] = refused('candidate_not_controller_accepted');
           continue;
         }
-        out[owner] = active(
-          'protected_owner_independently_admitted',
-          selected ? 'accepted' : 'not-selected'
-        );
+        const forced =
+          (admission.status === 'admitted' && isHorseOwnerForcedAuthority(admission.authority)) ||
+          forcedBaseline;
+        out[owner] = {
+          ...active(
+            forced
+              ? 'owner_forced_not_independently_qualified'
+              : 'protected_owner_independently_qualified',
+            selected ? 'accepted' : 'not-selected'
+          ),
+          qualification: forced ? 'owner-forced' : 'verified',
+        };
       } catch {
         this.checkBudget();
         out[owner] = {

@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
+    "scripts/ci/classify-ci-changes.mjs": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1404,5 +1404,14 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "previousSha256": "384cd917bfa8bdec821527d4bdf5d5a39fb75aa42155298690b4f6e2c2be6b1e",
     "currentSha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
+  },
+  "cashHalfInputBinding20261026": {
+    "reason": "Add only exact top-half cash native runner routing to existing required accounting. Current classifier binding changes; preserve financial source, historical receipts and verdicts. No financial recertification.",
+    "changes": {
+      "repository_files": {
+        "previous": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5",
+        "current": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+      }
+    }
   }
 }

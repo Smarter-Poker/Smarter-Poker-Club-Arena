@@ -1406,6 +1406,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Active weekly accounting outage: the former Deep Stack Society standalone original strict foreign-certificate Round3 timed out285s while its required original club/week rawcash heap scan estimated1328676 rows. The exact native-qualified nonpartial seven-column club/earned covering index was installed through the maintained one-shot CCI route. Full-file history and VALID/READY/LIVE metadata, both default key opclasses/collations/options, original154b8 helper wholemetadata, both original effective/payable views including owner/ACL/definition, all source columns and all earlier indexes were read back against the actual preinstall baseline. Original Scope72ab, countscc867 and65-source authority remain unchanged. Native37/12boundaries/9catalog faults/RR/MVCC and normal809prepush checks passed. No function, earning row, rate, paid certificate, source pin, cache, generation, ACL or budget was changed by this index source. This readback queries no wallet or source data and makes no payment, closure, actual helper timing or4AMcapacity claim; these remain separate live verification."
+    },
+    {
+      "version": "20261027201555",
+      "name": "foreign_certificates_match_their_original_allocations_once",
+      "file": "supabase/migrations/20261027201555_foreign_certificates_match_their_original_allocations_once.sql",
+      "md5": "f50deec65a0d7caf5b424cfe41f6c8eb",
+      "appliedToProductionAt": "2026-10-27T20:22:42.253Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained qualified active-outage install and READ ONLY full-file history/helper wholemetadata/source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly standalone payout outage: the original strict foreign certificate helper timed out90s after its cash cover. The exact all-allocation materialization query qualified416 original periods in62675.592ms with exact cohort identity; its maintained helper-only migration passed52 isolated native original financial/boundary/installer cases and normal local checks. Actual exact full-file history, helper9f8457664adb8bc0b171ca75d831126b, unchanged complete original metadata including ACL, both original payable/effective views, Scope/count owners and65-source authority were read back against the actual preinstall baseline. No source, rate, wallet, paid receipt, pin, cache, generation, permission or budget was changed. This installation readback is not proof of payment or standalone book closure."
     }
   ]
 }

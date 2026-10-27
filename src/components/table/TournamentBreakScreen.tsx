@@ -340,7 +340,9 @@ export function TournamentBreakScreen({
   };
   const waitingForResume = countingDown && displayTime === 0;
 
-  if (!isVisible) return null;
+  // Expiry retires this presentation only. The engine still owns all play
+  // and pause authority, including a delayed resume.
+  if (!isVisible || (countingDown && displayTime <= 0)) return null;
 
   // A real button keeps the clock reachable by keyboard as well as touch.
   if (minimized) {

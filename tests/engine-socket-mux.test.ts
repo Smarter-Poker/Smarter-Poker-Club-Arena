@@ -692,3 +692,85 @@ it('a table rebuild can satisfy the warm state probe with its new lower sequence
   expect(warm.readyState).toBe(1);
   expect(ws.readyState).toBe(1);
 });
+
+describe('cash entry waits for an acknowledged authoritative table', () => {
+  it('does not enter on SUBSCRIBE or ACK alone, then adopts the prepared state', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    const entered = vi.fn();
+    const ready = engineSocketMux.waitForTableEntry(T1).then(entered);
+    await Promise.resolve();
+    expect(entered).not.toHaveBeenCalled();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    ws._frame({ type: 'PING', ts: 1 });
+    ws._frame({ type: 'SNAPSHOT', tableId: T2, seq: 1, state: {} });
+    await Promise.resolve();
+    expect(entered).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4000);
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 1, state: { handNumber: 42 } });
+    await ready;
+    expect(entered).toHaveBeenCalledOnce();
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const received = vi.fn();
+    live.onmessage = received;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.readyState).toBe(1);
+    expect(received).toHaveBeenCalledWith({ data: expect.stringContaining('42') });
+  });
+
+  it('refuses entry when the engine refuses the table', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    const ready = engineSocketMux.waitForTableEntry(T1);
+    const refused = expect(ready).rejects.toThrow('Closed');
+    ws._frame({ type: 'ERROR', tableId: T1, code: 'OBSERVERS_RESTRICTED' });
+    await refused;
+  });
+
+  it('times out an ACK without state instead of treating it as prepared', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const ready = engineSocketMux.waitForTableEntry(T1);
+    const refused = expect(ready).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(15000);
+    await refused;
+  });
+});
+
+it('visible-row speculation cannot evict a table whose entry is waiting for state', async () => {
+  const selected = engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt')!;
+  const ws = lastSocket();
+  ws._open();
+  const ready = engineSocketMux.waitForTableEntry(T1);
+  for (const id of ['warm-2', 'warm-3', 'warm-4', 'warm-5']) {
+    engineSocketMux.acquireWarm('https://engine.example', id, 'jwt');
+  }
+  expect(selected.readyState).toBe(0);
+  expect(engineSocketMux.isSubscribed(T1)).toBe(true);
+  ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+  ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 1, state: { handNumber: 42 } });
+  await ready;
+});
+
+it('keeps prepared state pinned while the selected table roster finishes', async () => {
+  engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt');
+  const ws = lastSocket();
+  ws._open();
+  const ready = engineSocketMux.waitForTableEntry(T1);
+  ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+  ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 1, state: { handNumber: 42 } });
+  await ready;
+  for (const id of ['warm-2', 'warm-3', 'warm-4', 'warm-5']) {
+    engineSocketMux.acquireWarm('https://engine.example', id, 'jwt');
+  }
+  const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+  const received = vi.fn();
+  live.onmessage = received;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(live.readyState).toBe(1);
+  expect(received).toHaveBeenCalledWith({ data: expect.stringContaining('42') });
+});

@@ -88,6 +88,8 @@ export interface TournamentTableBreakState {
   lifecycle: string;
   state: 'park_requested' | 'begun' | 'close_confirmed' | 'acknowledged';
   revision: string;
+  /** Immutable original park creation time; absent on older database contracts. */
+  park_created_at?: string;
   custody_id: string | null;
   custody_generation: string | null;
   members: TableBreakMember[];
@@ -141,6 +143,33 @@ function reason(value: unknown): string | null {
   if (value === undefined) return null;
   if (value !== null && typeof value !== 'string') throw new Error('F06 invalid reason');
   return value;
+}
+/** PostgreSQL timestamptz JSON, with an explicit zone and a real calendar date. */
+function parkCreationTime(value: unknown): string {
+  const parts =
+    typeof value === 'string'
+      ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(
+          value
+        )
+      : null;
+  if (!parts) throw new Error('F06 invalid park creation time');
+  const calendar = new Date(`${parts[1]}-${parts[2]}-01T00:00:00Z`);
+  calendar.setUTCMonth(calendar.getUTCMonth() + 1);
+  calendar.setUTCDate(0);
+  if (
+    Number(parts[2]) < 1 ||
+    Number(parts[2]) > 12 ||
+    Number(parts[3]) < 1 ||
+    Number(parts[3]) > calendar.getUTCDate() ||
+    Number(parts[4]) > 23 ||
+    Number(parts[5]) > 59 ||
+    Number(parts[6]) > 59 ||
+    Number(parts[7] ?? 0) > 23 ||
+    Number(parts[8] ?? 0) > 59 ||
+    !Number.isFinite(Date.parse(value as string))
+  )
+    throw new Error('F06 invalid park creation time');
+  return value as string;
 }
 function memberInput(value: unknown): TableBreakMemberInput {
   const row = record(value);
@@ -266,6 +295,9 @@ export function verifyTournamentTableBreakState(
     lifecycle: decimal(row.lifecycle),
     state: row.state as (typeof states)[number],
     revision: decimal(row.revision),
+    ...(Object.hasOwn(row, 'park_created_at')
+      ? { park_created_at: parkCreationTime(row.park_created_at) }
+      : {}),
     custody_id: custody,
     custody_generation: generation,
     members,

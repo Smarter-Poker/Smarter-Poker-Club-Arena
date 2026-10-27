@@ -42,6 +42,33 @@ describe('F06 typed durable operation transport', () => {
     expect(verified.lifecycle).toBe('9007199254740993');
     expect(verified.revision).toBe('9007199254740995');
   });
+  it.each(['2026-10-27T14:08:47.406522+00:00', '2026-10-27T09:08:47.406-05:00'])(
+    'preserves immutable park creation time %s',
+    (park_created_at) => {
+      expect(
+        verifyTournamentTableBreakState({ ...state(), park_created_at }, id(1), id(2))
+          .park_created_at
+      ).toBe(park_created_at);
+    }
+  );
+  it('keeps compatibility when the older database omits park creation time', () => {
+    expect(verifyTournamentTableBreakState(state(), id(1), id(2))).not.toHaveProperty(
+      'park_created_at'
+    );
+  });
+  it.each([
+    'not-a-time',
+    '2026-02-30T00:00:00Z',
+    '2026-10-27',
+    '2026-10-27T25:00:00Z',
+    'infinity',
+    null,
+    0,
+  ])('rejects invalid supplied park creation time %j', (park_created_at) => {
+    expect(() =>
+      verifyTournamentTableBreakState({ ...state(), park_created_at }, id(1), id(2))
+    ).toThrow('F06 invalid park creation time');
+  });
   it.each([
     { tournament_id: id(99) },
     { break_id: id(99) },

@@ -5,6 +5,7 @@ hands only; the captured preimage/types contain no player data.
 """
 import concurrent.futures
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -68,6 +69,8 @@ def main():
         def run(sql, ok=True):
             r = command([PG/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',sock,
                          '-p','55497','-U','postgres','-d','postgres'],sql)
+            if ok is None:
+                return r
             if (r.returncode == 0) != ok:
                 raise AssertionError(r.stderr or r.stdout)
             return r.stdout.strip() if ok else r.stderr
@@ -170,6 +173,10 @@ def main():
             for arm in ['nets','play']:forged['horse_rollups'][arm][0]['format']='lightning_2bb'
             accept('forged-lightning',forged)
             check('ordinary hand cannot claim a Lightning bucket','paired_fact_scope' in project('forged-lightning',False))
+            spec=importlib.util.spec_from_file_location('booking_cap',ROOT/'scripts/ci/horse-booking-cap-native.py')
+            booking_cap=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(booking_cap)
+            booking_cap.verify(ROOT,run,check,uid,ROOT/'supabase/migrations/20261026230116_late_tournament_registration_obeys_the_four_game_cap.sql')
         finally:
             command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
 

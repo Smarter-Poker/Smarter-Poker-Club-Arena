@@ -474,6 +474,8 @@ describe('the nightly runner sends the human cards and records their field', () 
           'hands',
           'bb100',
           'stderr',
+          'status',
+          'refusal_reason',
           'config_a',
           'config_b',
           'duration_ms',

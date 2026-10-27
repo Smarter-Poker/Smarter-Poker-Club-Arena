@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "51c3117b1ae62c79d741b5065a56105baac7a4e6125716a99b28ee5ff835c6f4",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -419,5 +419,13 @@
     "qualifiedIncomingHead": "9266fbef38a7e8fb7b0bcf584f56089bf51ee108",
     "qualifiedMigrationSHA256": "175e3ac2756500e92c43fa92b5c1100b017011f143714231f3c39c36ee204a20",
     "qualification": "Released nativePG17 56cases with actual entry/allhelpers/fullsixdefinition+metadata/11tablecatalog/58existingindex context; local evidence is not installation, closed books or future4AM capacity."
+  },
+  "rakebackScalarOutcomeJoinCoverWorkflowAudit20261027": {
+    "reason": "Only three matching path triggers and one independently qualified scalar-cover native command added. Every parent workflow line and command retained in original order. No financial source, fixture, function, generation, source65, assertion, budget, ACL or production verdict changed.",
+    "previousSHA256": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
+    "currentSHA256": "51c3117b1ae62c79d741b5065a56105baac7a4e6125716a99b28ee5ff835c6f4",
+    "qualifiedIncomingHead": "63c1e91a59e5c49f1cea21158dac59e3c97e97e8",
+    "migrationSHA256": "b228abb85c4449d6542ef00150b1bd09c567c7a7a3b666816043c39b4e411c3b",
+    "qualification": "24 real PG17 cases with five complete core owners/metadata plus original generation and source65; all84-window/wholeweek reducer parity. Local evidence is not installation or full production book closure."
   }
 }

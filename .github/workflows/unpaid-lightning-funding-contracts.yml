@@ -10,6 +10,9 @@ on:
       - scripts/ci/test-zero-standalone-foreign-postgres.py
       - scripts/ci/fixtures/zero-standalone-foreign/**
       - tests/foreign-certificates-read-original-cash-cover.law.test.ts
+      - scripts/ci/fixtures/outcome-recognition-join-cover/**
+      - scripts/ci/test-outcome-recognition-join-cover-postgres.py
+      - tests/recognition-window-index-covers-only-hand-join-keys.law.test.ts
       - scripts/ci/fixtures/linked-outcome-window-index/**
       - scripts/ci/test-linked-outcome-window-index-postgres.py
       - tests/linked-outcome-windows-retain-original-proof.law.test.ts
@@ -144,3 +147,7 @@ jobs:
         run: python3 -B scripts/ci/test-linked-outcome-window-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/linked-outcome-window-index.json"
       - name: Standalone entry retains its original historical first week
         run: python3 -B scripts/ci/test-standalone-entry-cover-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/standalone-entry-cover"
+      - name: Original outcome recognition windows cover scalar hand join keys
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-outcome-recognition-join-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/outcome-recognition-join-cover.json"

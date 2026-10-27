@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """One manual read-only host diagnostic; raw log bytes never leave this process."""
 import datetime
+import base64
+import hashlib
 import json
 import re
 import selectors
@@ -13,6 +15,196 @@ from pathlib import Path
 
 CONTAINER = 'club-arena-engine'
 MAX_BYTES = 4 * 1024 * 1024
+REFERENCE_CASE_BYTES = 8192
+
+
+def reference_cases(raw, expected):
+    """Exact original metadata only; never an operator command or journal path."""
+    if len(raw) > REFERENCE_CASE_BYTES:
+        raise ValueError('reference_cases_refused')
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError('reference_cases_refused')
+            value[key] = item
+        return value
+    value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
+    uuid = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    if (not isinstance(value, dict) or set(value) != {'version', 'sourceRelease', 'cases'}
+            or type(value['version']) is not int or value['version'] != 1
+            or value['sourceRelease'] != expected
+            or not re.fullmatch(r'[0-9a-f]{40}', expected)
+            or not isinstance(value['cases'], list) or not 1 <= len(value['cases']) <= 6):
+        raise ValueError('reference_cases_refused')
+    seen = set()
+    for case in value['cases']:
+        if (not isinstance(case, dict) or set(case) != {
+                'handKey', 'tableId', 'errorAt', 'handId', 'handNumber', 'leaseGeneration'}
+                or not all(isinstance(case[k], str) and re.fullmatch(uuid, case[k])
+                           for k in ('tableId', 'handId', 'leaseGeneration'))
+                or type(case['handNumber']) is not int or not 1 <= case['handNumber'] <= 9007199254740991
+                or not isinstance(case['errorAt'], str)
+                or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', case['errorAt'])
+                or not isinstance(case['handKey'], str)
+                or not re.fullmatch(r'[0-9a-f]{64}', case['handKey'])):
+            raise ValueError('reference_cases_refused')
+        datetime.datetime.fromisoformat(case['errorAt'].replace('Z', '+00:00'))
+        coordinate = case['tableId'] + ':' + str(case['handNumber']) + ':' + case['leaseGeneration']
+        if hashlib.sha256(coordinate.encode('utf-8')).hexdigest() != case['handKey'] or case['handKey'] in seen:
+            raise ValueError('reference_cases_refused')
+        seen.add(case['handKey'])
+    return value
+
+
+# Runs in the EXISTING container, imports its actual compiled validator and
+# canonical read-only export API. No private record crosses the process output.
+REFERENCE_DIAGNOSTIC_JS = r'''
+import { createHash } from 'node:crypto';
+const hash = x => createHash('sha256').update(x).digest('hex');
+const routes = new Set(['legacy_preflop','chart_open_jam','chart_bb_defend','variant_price','intent_engine']);
+const actions = new Set(['fold','check','call','bet','raise','all_in']);
+export function inspectReferenceRecords(input, batch, api) {
+  const unknown = (c, reason) => ({handKey:c.handKey,status:'unknown',reason});
+  if (!batch || batch.sourceRelease !== input.sourceRelease || batch.status !== 'canonical_journal_export'
+      || !Array.isArray(batch.recordsByHand) || batch.recordsByHand.length !== input.cases.length)
+    return {status:'unknown',reason:'journal_source_or_shape_mismatch',sourceRelease:input.sourceRelease};
+  const cases = input.cases.map((c, index) => {
+    try {
+      const entry = batch.recordsByHand[index];
+      if (!entry || entry.handKey !== c.handKey || !Array.isArray(entry.records)
+          || !entry.records.length || entry.records.length > 256) return unknown(c,'journal_missing_or_bounds');
+      const coordinate = `${c.tableId}:${c.handNumber}:${c.leaseGeneration}`;
+      const accepted = [], decisions = [], seen = new Set();
+      for (const r of entry.records) {
+        api.validateHorseJournalRecord(r);
+        if (r.handKey !== c.handKey || r.sourceRelease !== input.sourceRelease || seen.has(r.eventId))
+          return unknown(c,'record_binding_or_duplicate');
+        seen.add(r.eventId);
+        const body = JSON.parse(r.body);
+        if (r.kind === 'accepted_hand') {
+          if (body.committedHandId !== c.handId || api.horseCompletedHandKey(body) !== coordinate)
+            return unknown(c,'accepted_hand_binding_mismatch');
+          accepted.push(r);
+        }
+        if (r.kind !== 'decision') continue;
+        const s = body.snapshot, anchor = api.anchorHorseDecisionHand(s);
+        if (anchor.status !== 'anchored' || api.horseHandAnchorKey(anchor) !== coordinate)
+          return unknown(c,'original_snapshot_binding_mismatch');
+        const mismatch = api.horsePhase6AttributionMismatch(body.decision,s);
+        if (mismatch === 'reference_shape' && Math.abs(r.atMs-Date.parse(c.errorAt)) <= 2000)
+          decisions.push({r,body});
+      }
+      if (accepted.length !== 1) return unknown(c,'accepted_hand_missing_or_ambiguous');
+      if (decisions.length !== 1) return unknown(c,decisions.length ? 'matching_decision_ambiguous' : 'matching_decision_missing');
+      const {r,body} = decisions[0], s = body.snapshot, g = s.gameState, p = s.player;
+      const ref = body.decision.tournamentPreflopAttribution;
+      if (!routes.has(ref.route) || !actions.has(ref.referenceProposal.action)
+          || !actions.has(body.decision.action)) return unknown(c,'decision_shape_unknown');
+      const history = (g.actionHistory || []).filter(a=>a.stage==='preflop');
+      const raises = history.filter(a=>a.action==='raise'||a.action==='bet'||(a.action==='all_in'&&a.isFullRaise!==undefined));
+      const last = raises.at(-1)?.seat, raiser = g.players.find(x=>x.seat===last);
+      const call = Math.min(Math.max(0,g.currentBet-p.bet),p.stack);
+      const tournamentMode = g.gameMode ? g.gameMode==='tournament' : g.tournament!=null || (g.bigBlind??0)>=10;
+      const nlhPreflop = g.gameVariant==='nlh' && g.stage==='preflop';
+      const otherResponder = g.players.some(x=>!x.is_folded&&!x.is_sitting_out&&!x.is_all_in&&x.stack>0&&x.seat!==p.seat&&x.seat!==last);
+      const shortStackDepth = Number.isFinite(api.shortStackNoFlatBb) && api.shortStackNoFlatBb>0
+        && g.bigBlind>0 && (p.stack+(p.bet||0))/g.bigBlind<=api.shortStackNoFlatBb;
+      const publicShortJam = tournamentMode && nlhPreflop && !!raiser && raiser.is_all_in!==true && call<p.stack && shortStackDepth;
+      return {handKey:c.handKey,status:'observed',sourceRelease:r.sourceRelease,recordSha256:r.sha256,
+        acceptedRecordSha256:accepted[0].sha256,decisionKeySha256:typeof s.decisionKey==='string'?hash(s.decisionKey):null,
+        mismatch:'reference_shape',route:ref.route,referenceAction:ref.referenceProposal.action,returnedAction:body.decision.action,
+        diagnosis:ref.route==='variant_price'&&ref.referenceProposal.action==='all_in'&&publicShortJam
+          ? 'short_stack_variant_jam_public_shape' : 'unclassified_reference_shape',
+        guards:{recordHashVerified:true,originalHandBound:true,timestampNearError:true,tournamentMode,nlhPreflop,
+          shortStackDepth,raiserPresent:!!raiser,raiserAllIn:raiser?.is_all_in===true,callBelowStack:call<p.stack,
+          oldJamStackRatio:p.stack>call*1.5,oldJamOtherResponder:otherResponder,exactlyTwoRaises:raises.length===2,
+          pressureEnabled:(s.opts?.v53Pressure??true)!==false,mindEnabled:s.opts?.mind!==false}};
+    } catch { return unknown(c,'record_or_validator_unavailable'); }
+  });
+  return {status:cases.every(c=>c.status==='observed')?'observed':'unknown',sourceRelease:input.sourceRelease,cases,
+    rawRecordsExported:false,replayVerified:false,activationAllowed:false};
+}
+if (process.argv[1] === '--reference-shape-diagnostic') {
+  try {
+    let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
+    const input=JSON.parse(raw);
+    const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+    const records=await import('/app/dist/services/horseDecisionJournal/record.js');
+    const binding=await import('/app/dist/engine/HorseDecisionHandBinding.js');
+    const phase6=await import('/app/dist/engine/HorsePhase6Attribution.js');
+    const logic=await import('/app/dist/engine/HorseLogic.js');
+    // Match the existing private export CLI: this finite child owns no lobby timer.
+    const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
+    const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
+    console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
+  } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
+  process.exit(0);
+}
+'''
+
+
+def sanitize_reference_result(result, value):
+    unknown_reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
+                       'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
+                       'original_snapshot_binding_mismatch', 'accepted_hand_missing_or_ambiguous',
+                       'matching_decision_ambiguous', 'matching_decision_missing',
+                       'decision_shape_unknown', 'record_or_validator_unavailable',
+                       'journal_or_runtime_unavailable'}
+    if not isinstance(result, dict) or result.get('status') not in ('unknown', 'observed'):
+        raise ValueError()
+    if 'cases' not in result:
+        if (not set(result) <= {'status', 'reason', 'sourceRelease'}
+                or result['status'] != 'unknown' or result.get('reason') not in unknown_reasons
+                or ('sourceRelease' in result and result['sourceRelease'] != value['sourceRelease'])):
+            raise ValueError()
+        return result
+    if (set(result) != {'status', 'sourceRelease', 'cases', 'rawRecordsExported', 'replayVerified', 'activationAllowed'}
+            or result['sourceRelease'] != value['sourceRelease']
+            or any(result[k] is not False for k in ('rawRecordsExported', 'replayVerified', 'activationAllowed'))
+            or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError()
+    observed_keys = {'handKey', 'status', 'sourceRelease', 'recordSha256', 'acceptedRecordSha256',
+                     'decisionKeySha256', 'mismatch', 'route', 'referenceAction', 'returnedAction', 'diagnosis', 'guards'}
+    guard_keys = {'recordHashVerified', 'originalHandBound', 'timestampNearError', 'tournamentMode', 'nlhPreflop',
+                  'shortStackDepth', 'raiserPresent', 'raiserAllIn', 'callBelowStack', 'oldJamStackRatio',
+                  'oldJamOtherResponder', 'exactlyTwoRaises', 'pressureEnabled', 'mindEnabled'}
+    for case, original in zip(result['cases'], value['cases']):
+        if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
+            raise ValueError()
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in unknown_reasons:
+                raise ValueError()
+            continue
+        if (set(case) != observed_keys or case['status'] != 'observed'
+                or case['sourceRelease'] != value['sourceRelease'] or case['mismatch'] != 'reference_shape'
+                or case['route'] not in ('legacy_preflop', 'chart_open_jam', 'chart_bb_defend', 'variant_price', 'intent_engine')
+                or any(case[k] not in ('fold', 'check', 'call', 'bet', 'raise', 'all_in')
+                       for k in ('referenceAction', 'returnedAction'))
+                or case['diagnosis'] not in ('short_stack_variant_jam_public_shape', 'unclassified_reference_shape')
+                or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k])
+                       for k in ('recordSha256', 'acceptedRecordSha256'))
+                or (case['decisionKeySha256'] is not None and
+                    (not isinstance(case['decisionKeySha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', case['decisionKeySha256'])))
+                or not isinstance(case['guards'], dict) or set(case['guards']) != guard_keys
+                or any(type(v) is not bool for v in case['guards'].values())
+                or any(case['guards'][k] is not True for k in ('recordHashVerified', 'originalHandBound', 'timestampNearError'))):
+            raise ValueError()
+    if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
+        raise ValueError()
+    return result
+
+
+def reference_diagnostic(value):
+    try:
+        raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
+                               '-e', REFERENCE_DIAGNOSTIC_JS, '--', '--reference-shape-diagnostic'],
+                              input_bytes=json.dumps(value).encode('utf-8'))
+        # Parse without printing untrusted child output, including import errors.
+        result = json.loads(raw)
+        return sanitize_reference_result(result, value)
+    except Exception:
+        return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
 EVENTS = (
     'sng_atomic_creation_failed', 'spin_atomic_creation_failed',
     'sng_atomic_identity_mismatch', 'spin_atomic_identity_mismatch',
@@ -182,13 +374,17 @@ def merge_worker_receipt_errors(target, addition):
     target['events'] = combined[-128:]
 
 
-def bounded_command(args):
-    process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def bounded_command(args, input_bytes=None):
+    process = subprocess.Popen(args, stdin=subprocess.PIPE if input_bytes is not None else None,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     payload = bytearray()
     deadline = time.monotonic() + 25
     try:
+        if input_bytes is not None:
+            process.stdin.write(input_bytes)
+            process.stdin.close()
         while True:
             if time.monotonic() >= deadline:
                 raise RuntimeError('read_deadline')
@@ -569,10 +765,11 @@ def sanitize_restart_evidence(state, restarts, raw_events):
     return result
 
 
-def main(expected):
+def main(expected, selected_cases=None):
     if not re.fullmatch(r'[0-9a-f]{40}', expected):
         raise RuntimeError('expected_sha_refused')
     before = identity(expected)
+    original_cases = reference_diagnostic(selected_cases) if selected_cases is not None else None
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
     restarts = restart_evidence()
@@ -593,14 +790,23 @@ def main(expected):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):
     try:
-        if len(argv) != 2:
+        if len(argv) == 3 and argv[1] == '--encode-reference-cases':
+            value = reference_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
+            print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
+            return 0
+        if len(argv) not in (2, 3):
             raise RuntimeError('argument_refused')
-        main(argv[1])
+        selected = None
+        if len(argv) == 3 and argv[2]:
+            if len(argv[2]) > 11000:
+                raise ValueError('reference_cases_refused')
+            selected = reference_cases(base64.b64decode(argv[2], validate=True), argv[1])
+        main(argv[1], selected)
         return 0
     except Exception:
         # Never emit subprocess output, exception messages, URLs or log bodies.

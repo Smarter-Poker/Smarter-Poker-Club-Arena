@@ -147,7 +147,14 @@ describe('the hand prune resumes where it left off', () => {
         const rewritesBody =
           /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?:public\.)?sp_prune_hand_history/i.test(code);
         if (!rewritesBody) return false;
-        return !code.includes(LOWER_BOUND_IN_DEFINITION) && !code.includes(LOWER_BOUND);
+        const tupleCursor =
+          code.includes('WITH scanned AS MATERIALIZED') &&
+          code.includes("hh.created_at>=COALESCE(v_resume_after,'-infinity'::timestamptz)") &&
+          code.includes('(hh.created_at,hh.id)>(v_resume_after,v_resume_id)') &&
+          code.includes('resume_id=v_resume_id');
+        return (
+          !tupleCursor && !code.includes(LOWER_BOUND_IN_DEFINITION) && !code.includes(LOWER_BOUND)
+        );
       })
       .map((m) => m.name);
     expect(

@@ -1,0 +1,19 @@
+# Diamond Arena balance continues through rebuys and boundary retries
+
+The bust sweep returned before completing its cursor stage when every candidate in its batch either rebought or still had an open decision. On a rebuy field this repeatedly prevented the later table-balance stage from running. Both paths now leave only the bust batch and advance the cursor normally, preserving the work budget, future-decision deadlines, pending-bust ages and unprocessed batch continuation. A malformed open-decision deadline retains its original stall age; it never authorizes an elimination.
+
+The hand-boundary balance path also consumes an already-parked source's successful fence result, clears a rejected fence so it can be requested again, and preserves the existing bounded scheduler wake when the fresh plan has no immediately safe moves. It rechecks freeze, break, lifecycle and unresolved-move authority after awaited reads and probes. All moves still pass through the existing atomic seat-move door; no new timer, repair loop, financial write or publication route is introduced.
+
+Verification: four rebuy/cursor cases and four boundary retry cases fail before their respective fixes and pass after; a ninth regression proves a board read cannot authorize a move after manager authority is lost. All 275 tournament test files / 3,923 tests pass, including the existing pending-rebuy stall-clock and atomic move tests. Runtime publication and natural live-table balancing are separate remaining proof and are not claimed by this source change.
+
+Live readback before this follow-up at approximately 14:21 UTC still showed Diamond Arena Sunrise Bounty tables ranging from two to seven positive-stack players. The serving engine contained the earlier boundary fix #8161; this follow-up was not yet installed. No production seats or money were changed for testing.
+
+Hosted CI caught the new fence promise chain using a two-argument then rather than a final catch. The final catch now handles both park rejection and an exception in its fulfilled continuation; the existing repository-wide unhandled-rejection guard and a direct continuation-failure regression cover it.
+
+Owner update October 26: publish this work immediately after required checks and protected merge, not at the routine 04:00 window. Activation uses the existing reviewed bounded owner-window route and retains all drain, freeze, rollback and thaw safeguards.
+
+A regression using the real ServerTableEngineBase park producer exposed a further contract mismatch: a true park result already claims this manager's pause owner, so awaitsTournamentMoveClaim returns false. The manager now retains the exact engine associated with its successful claim and consumes that result alongside ordinary unclaimed park edges. Fresh ownership, hand-completion, freeze and unknown-move checks still gate the atomic move; release, failure and completed-move paths clear the retained result. The real-producer regression fails before this correction and passes after it.
+
+A claimed park result must also be released when the move door returns early or throws before entering its per-source cleanup. Boundary cleanup now releases only its captured source engines, preserving a hold when the exact source has a retained unknown move outcome or belongs to a durable break. Regressions pin both early-return/throw releases and the unknown-outcome hold; replacement generations never inherit an earlier engine's ready marker.
+
+Integrated the prior agent’s now-protected #8203 while preserving its needed-source re-fencing, pending-recovery hold and sweep wake, durable-break edge routing, and all four regressions. This follow-up completes the bust cursor stage and retains unknown-deadline clocks; post-read authority checks preserve the newly merged recovery-hold semantics. The earlier unsafe-source regression now follows that explicit retained-park behavior, while an empty plan still releases unused sources.

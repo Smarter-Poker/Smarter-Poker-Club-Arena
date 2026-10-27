@@ -94,19 +94,13 @@ export function buildRejoinConstraints(
   return { barred, rejoinFloor };
 }
 
-/**
- * The buy-in a player with a rejoin floor actually pays, as
- * fn_cash_effective_buyin computes it for the modal: GREATEST(min, floor),
- * then LEAST(that, max). The floor can only ever RAISE a buy-in, and never
- * past the table's max - the database clamps the same way, so a floor above
- * max is "buy in for the max", not a refusal.
- */
+/** The full return stack is a floor even above the ordinary buy-in cap. */
 export function applyRejoinFloor(
   buyIn: number,
   floor: number | undefined,
   maxBuyIn: number
 ): number {
   if (floor === undefined || !Number.isFinite(floor) || floor <= buyIn) return buyIn;
-  const eff = maxBuyIn > 0 ? Math.min(floor, maxBuyIn) : floor;
+  const eff = floor; // A return stack may exceed the ordinary table maximum.
   return Math.max(buyIn, Math.round(eff * 100) / 100);
 }

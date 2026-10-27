@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { createHash } from 'node:crypto';
+import ts from 'typescript';
 
 const script = resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py');
 const source = readFileSync(script, 'utf8');
@@ -10,6 +12,186 @@ const workflowText = readFileSync(
   resolve(__dirname, '../../.github/workflows/inspect-tournament-refill.yml'),
   'utf8'
 );
+const tableId = '12345678-abcd-4321-abcd-123456789abc';
+const originalLease = '22345678-abcd-4321-abcd-123456789abc';
+const originalCoordinate = `${tableId}:123:${originalLease}`;
+const originalCase = {
+  handKey: createHash('sha256').update(originalCoordinate).digest('hex'),
+  tableId,
+  handId: '32345678-abcd-4321-abcd-123456789abc',
+  handNumber: 123,
+  leaseGeneration: originalLease,
+  errorAt: '2026-10-26T15:24:41.823Z',
+};
+const caseInput = { version: 1, sourceRelease: 'a'.repeat(40), cases: [originalCase] };
+function encodeCases(input: Buffer | string) {
+  return spawnSync('python3', [script, '--encode-reference-cases', 'a'.repeat(40)], {
+    input,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+}
+it('admits only bounded unique original metadata before any SSH or runtime read', () => {
+  const valid = encodeCases(JSON.stringify(caseInput));
+  expect(valid.status, valid.stderr).toBe(0);
+  expect(JSON.parse(Buffer.from(valid.stdout.trim(), 'base64').toString())).toEqual(caseInput);
+  const invalid = [
+    { ...caseInput, version: true },
+    { ...caseInput, sourceRelease: 'b'.repeat(40) },
+    { ...caseInput, command: 'private-secret' },
+    { ...caseInput, cases: [] },
+    { ...caseInput, cases: Array(7).fill(originalCase) },
+    { ...caseInput, cases: [originalCase, originalCase] },
+    { ...caseInput, cases: [{ ...originalCase, handKey: '0'.repeat(64) }] },
+    { ...caseInput, cases: [{ ...originalCase, errorAt: '2026-99-99T15:24:41Z' }] },
+    { ...caseInput, cases: [{ ...originalCase, handNumber: 1.5 }] },
+    { ...caseInput, cases: [{ ...originalCase, leaseGeneration: 'current-lease-guessed' }] },
+    { ...caseInput, cases: [{ ...originalCase, cards: ['As', 'Kd'] }] },
+  ];
+  for (const bad of [
+    ...invalid.map((value) => JSON.stringify(value)),
+    Buffer.from([0xff]),
+    'x'.repeat(8193),
+    JSON.stringify(caseInput).replace('"version":1', '"version":1,"version":1'),
+  ]) {
+    const result = encodeCases(bad);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).not.toMatch(/private-secret|cards|current-lease|Traceback/);
+  }
+});
+
+function referenceFixture(mode: string) {
+  const extract = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; print(json.dumps(runpy.run_path(sys.argv[1])["REFERENCE_DIAGNOSTIC_JS"]))',
+      script,
+    ],
+    { encoding: 'utf8', timeout: 5000 }
+  );
+  expect(extract.status, extract.stderr).toBe(0);
+  const program = JSON.parse(extract.stdout);
+  const recordJs = ts.transpileModule(
+    readFileSync(
+      resolve(__dirname, '../../server/src/services/horseDecisionJournal/record.ts'),
+      'utf8'
+    ),
+    { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }
+  ).outputText;
+  const fixture = `
+const {inspectReferenceRecords}=await import('data:text/javascript;base64,${Buffer.from(program).toString('base64')}');
+const records=await import('data:text/javascript;base64,${Buffer.from(recordJs).toString('base64')}');
+const input=${JSON.stringify(caseInput)}, c=input.cases[0], mode=${JSON.stringify(mode)};
+const coordinate=${JSON.stringify(originalCoordinate)};
+const snapshot={coordinate,decisionKey:'private-decision-id',requestId:9,
+  opts:{},player:{seat:1,stack:100,bet:20,user_id:'private-player'},
+  gameState:{gameMode:'tournament',gameVariant:'nlh',stage:'preflop',bigBlind:20,currentBet:40,
+    players:[{seat:1,stack:100},{seat:2,stack:100,is_all_in:false}],
+    actionHistory:[{stage:'preflop',action:'raise',seat:2}]}};
+const decision={action:'all_in',tournamentPreflopAttribution:{route:'variant_price',referenceProposal:{action:'all_in',amount:null}}};
+let sequence=0;
+const record=(kind,body)=>records.makeHorseJournalRecord({producerId:'42345678-abcd-4321-abcd-123456789abc',sequence:++sequence,
+ atMs:Date.parse(c.errorAt),sourceRelease:input.sourceRelease,kind,handKey:c.handKey,turnKey:'b'.repeat(64)},body);
+const body={snapshot,decision,readFrame:{private:'private-secret'},cards:['As','Kd']};
+const accepted={committedHandId:mode==='wrong-hand'?'wrong-id':c.handId,coordinate};
+let rows=[record('decision',body),record('accepted_hand',accepted)];
+if(mode==='tampered-record') rows[0]={...rows[0],body:rows[0].body+' '};
+if(mode==='missing') rows=[];
+if(mode==='ambiguous') rows.push(record('decision',body));
+if(mode==='stale') rows=[records.makeHorseJournalRecord({...rows[0],atMs:Date.parse(c.errorAt)-3000},body),rows[1]];
+const batch={status:'canonical_journal_export',sourceRelease:mode==='wrong-source'?'c'.repeat(40):input.sourceRelease,
+ recordsByHand:[{handKey:c.handKey,records:rows}]};
+const api={...records,shortStackNoFlatBb:12,
+ anchorHorseDecisionHand:s=>({status:'anchored',coordinate:mode==='wrong-anchor'?'wrong':s.coordinate}),
+ horseHandAnchorKey:a=>a.coordinate,horseCompletedHandKey:h=>h.coordinate,
+ horsePhase6AttributionMismatch:()=> 'reference_shape'};
+console.log(JSON.stringify(inspectReferenceRecords(input,batch,api)));
+`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', fixture], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stdout + result.stderr).not.toMatch(
+    /private-secret|private-player|private-decision|cards|As|Kd/
+  );
+  return JSON.parse(result.stdout);
+}
+it('classifies original-bound records with actual record hash validation and no private output', () => {
+  const result = referenceFixture('ok');
+  expect(result.status).toBe('observed');
+  expect(result.cases[0]).toMatchObject({
+    mismatch: 'reference_shape',
+    route: 'variant_price',
+    referenceAction: 'all_in',
+    diagnosis: 'short_stack_variant_jam_public_shape',
+    guards: {
+      recordHashVerified: true,
+      originalHandBound: true,
+      oldJamOtherResponder: false,
+      oldJamStackRatio: true,
+      shortStackDepth: true,
+    },
+  });
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read()); print(json.dumps(m["sanitize_reference_result"](d["result"],d["input"])))',
+      script,
+    ],
+    { input: JSON.stringify({ result, input: caseInput }), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+  expect(JSON.parse(checked.stdout)).toEqual(result);
+});
+it.each([
+  'tampered-record',
+  'missing',
+  'ambiguous',
+  'wrong-source',
+  'wrong-hand',
+  'wrong-anchor',
+  'stale',
+])('keeps %s original cases explicitly unknown', (mode) =>
+  expect(referenceFixture(mode).status).toBe('unknown')
+);
+it('rejects extra or mistyped private output from the Node child rather than printing it', () => {
+  const result = referenceFixture('ok');
+  const fixture = `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); d=json.loads(sys.stdin.read()); g=m['reference_diagnostic'].__globals__
+g['bounded_command']=lambda *a,**k: json.dumps(d['result'])
+print(json.dumps(m['reference_diagnostic'](d['input'])))`;
+  for (const tamper of [
+    { ...result, rawBody: 'private-secret' },
+    { ...result, cases: [{ ...result.cases[0], cards: ['As', 'Kd'] }] },
+    {
+      ...result,
+      cases: [
+        {
+          ...result.cases[0],
+          guards: { ...result.cases[0].guards, shortStackDepth: 'private-secret' },
+        },
+      ],
+    },
+  ]) {
+    const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+      input: JSON.stringify({ input: caseInput, result: tamper }),
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    expect(ran.status, ran.stderr).toBe(0);
+    expect(JSON.parse(ran.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+    });
+    expect(ran.stdout + ran.stderr).not.toMatch(/private-secret|cards|As|Kd/);
+  }
+});
 function sanitize(lines: string[]) {
   const result = spawnSync(
     'python3',
@@ -206,8 +388,11 @@ it('uses manual trusted-default authority and maintained pinned SSH without runt
   expect(source).toContain("before[key] != after[key] for key in ('containerId', 'imageId')");
   expect(source).toContain('runtime_stable = before == after');
   expect(source).not.toMatch(
-    /os\.environ|\.env|docker.*restart|systemctl|print\(raw|print\(error|print\(line/
+    /os\.environ|read(?:File|_text).*\.env|docker.*restart|systemctl|print\(raw|print\(error|print\(line/
   );
+  expect(source).toContain("'docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module'");
+  expect(source).toContain("await import('/app/dist/engine/HorsePhase6Attribution.js')");
+  expect(source).toContain('sanitize_reference_result(result, value)');
 });
 
 it('binds atomic creator event names to the actual producer contexts', () => {

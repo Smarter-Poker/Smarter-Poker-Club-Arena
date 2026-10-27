@@ -986,3 +986,6 @@ test.describe('notification reflow above Messenger and navigation', () => {
 async function documentFontsReady(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
+
+import { registerMobileActionStripCases } from './css/mobileActionStripCases';
+registerMobileActionStripCases();

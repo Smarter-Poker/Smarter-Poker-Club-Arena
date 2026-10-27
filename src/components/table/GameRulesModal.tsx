@@ -706,13 +706,10 @@ export function GameRulesModal({
                     <ul className="rules-modal__bullet-list">
                       <li>Chips On The Table Stay On The Table Until You Leave.</li>
                       <li>
-                        If You Are Ahead Of The Money You Put In, You Remain Seated For 10 Minutes
-                        Before You Can Leave.
-                      </li>
-                      <li>
                         If You Return To The Same Game In This Club Within 2 Hours, You Buy In For
                         At Least The Stack You Left With.
                       </li>
+                      <li>A Different Game Or Stake Uses Its Normal Buy In Limits.</li>
                     </ul>
                   </div>
                 )}

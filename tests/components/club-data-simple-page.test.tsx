@@ -56,6 +56,7 @@ import ClubDataSimplePage, {
 const today = chicagoToday();
 
 const live = {
+  scope: 'club',
   range: { start: today, end: today, days: 1 },
   summary: {
     games: 3,
@@ -129,6 +130,47 @@ describe('helpers', () => {
 });
 
 describe('ClubDataSimplePage', () => {
+  it('retires owner figures immediately when an agent account is still hydrating', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    const view = render(<ClubDataSimplePage />);
+    await screen.findByText('Shark Tank');
+    authState.current = { user: { id: 'agent-1' }, isHydrating: true };
+    view.rerender(<ClubDataSimplePage />);
+    expect(screen.queryByText('Shark Tank')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Report/i })).not.toBeInTheDocument();
+  });
+
+  it('ignores a previous owner response after switching to an agent', async () => {
+    let finishOwner!: (value: unknown) => void;
+    rpcMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOwner = resolve;
+        })
+    );
+    const view = render(<ClubDataSimplePage />);
+    await waitFor(() => expect(rpcMock).toHaveBeenCalled());
+    authState.current = { user: { id: 'agent-1' }, isHydrating: false };
+    rpcMock.mockResolvedValue({ data: { ...live, scope: 'downline', rows: [] }, error: null });
+    view.rerender(<ClubDataSimplePage />);
+    await screen.findByText('You And Your Downline');
+    await act(async () => finishOwner({ data: live, error: null }));
+    expect(screen.queryByText('Shark Tank')).not.toBeInTheDocument();
+    expect(screen.getByText('You And Your Downline')).toBeInTheDocument();
+  });
+
+  it('removes previously visible figures when authorization is revoked', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    render(<ClubDataSimplePage />);
+    await screen.findByText('Shark Tank');
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'not authorized for this club' },
+    });
+    fireEvent(document, new Event('visibilitychange'));
+    await waitFor(() => expect(screen.queryByText('Shark Tank')).not.toBeInTheDocument());
+  });
+
   it('follows Chicago midnight even when the 15 second refresh renders first', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T04:59:50Z'));

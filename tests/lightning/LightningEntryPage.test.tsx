@@ -50,10 +50,13 @@ vi.mock('../../src/services/SoundService', () => ({
   haptic: vi.fn(),
   soundService: { playBuyInConfirm: vi.fn(), playButtonClick: vi.fn() },
 }));
+const rejoinSeat =
+  vi.fn<(...args: unknown[]) => Promise<{ tableId: string; poolSessionId: string } | null>>();
 const buyInContext = vi.fn();
 const buyIntoLightning = vi.fn();
 vi.mock('../../src/lightning/lightningJoinBuyIn', () => ({
   currentLightningUserId: async () => USER,
+  rejoinLightningSeat: (...a: unknown[]) => rejoinSeat(...a),
   readLightningBuyInContext: (...a: unknown[]) => buyInContext(...a),
   buyIntoLightning: (...a: unknown[]) => buyIntoLightning(...a),
   rememberLightningBuyIn: vi.fn(),
@@ -99,6 +102,8 @@ beforeEach(() => {
   tablesRead.mockReset();
   metadataRead.mockReset();
   metadataRead.mockResolvedValue({ data: gameRow, error: null });
+  rejoinSeat.mockReset();
+  rejoinSeat.mockResolvedValue(null);
   buyInContext.mockReset();
   buyInContext.mockResolvedValue({
     tableId: ANCHOR,
@@ -112,6 +117,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the Lightning route', () => {
+  it('reopens a funded expired seat before asking an empty wallet for another buy-in', async () => {
+    rpc.mockResolvedValue({
+      data: { pool_session_id: POOL, state: 'closed', cluster_mode: 'lightning' },
+      error: null,
+    });
+    rejoinSeat.mockResolvedValue({ tableId: ANCHOR, poolSessionId: NEXT_ANCHOR });
+    buyInContext.mockResolvedValue({
+      tableId: ANCHOR,
+      minBuyIn: 200,
+      maxBuyIn: 400,
+      bigBlind: 2,
+      balance: 0,
+    });
+    renderAt(`/lightning/${CLUSTER}`);
+    fireEvent.click(await screen.findByRole('button', { name: /join lightning/i }));
+    expect((await screen.findByTestId('table-route')).textContent).toContain(NEXT_ANCHOR);
+    expect(buyInContext).not.toHaveBeenCalled();
+    expect(buyIntoLightning).not.toHaveBeenCalled();
+  });
+
   it('opens the pool session room when the caller holds one, and never reads a tables row', async () => {
     rpc.mockImplementation(async (name: string) =>
       name === 'fn_lightning_my_session'

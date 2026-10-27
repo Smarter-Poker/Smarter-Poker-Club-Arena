@@ -316,6 +316,49 @@ try:
     run("classic-ledger-tie-order-is-deterministic", as_role(OWNER, f"SELECT string_agg(id::text,',' ORDER BY row_number) FROM (SELECT id,row_number() OVER () AS row_number FROM public.fn_club_trade_ledger('{CLUB}',999,0) WHERE notes='Pagination Contract' LIMIT 2) ordered;"), "20000000-0000-0000-0000-000000000252,20000000-0000-0000-0000-000000000251")
     run("classic-ledger-pages-do-not-overlap", as_role(OWNER, f"WITH first_page AS (SELECT id FROM public.fn_club_trade_ledger('{CLUB}',250,0)), second_page AS (SELECT id FROM public.fn_club_trade_ledger('{CLUB}',250,250)) SELECT count(*) FROM first_page JOIN second_page USING(id);"), "0")
 
+    # Reproduce the global legacy-key scan before adding the exact maintained
+    # index. Keep unrelated clubs/types and duplicate historical keys visible.
+    lookup_key = "10000000-0000-0000-0000-0000000000f0"
+    run("global-op-pressure-fixture", f"""
+      INSERT INTO chip_transactions(club_id,transaction_type,metadata)
+      SELECT md5(i::text)::uuid,'unrelated',CASE WHEN i%1000=0
+       THEN jsonb_build_object('op_id',md5(i::text)) ELSE '{{}}'::jsonb END
+      FROM generate_series(1,100000)i;
+      INSERT INTO chip_transactions(club_id,transaction_type,metadata)
+      VALUES (gen_random_uuid(),'legacy_unknown',jsonb_build_object('op_id','{lookup_key}')),
+       (gen_random_uuid(),'another_legacy_type',jsonb_build_object('op_id','{lookup_key}'));
+      ANALYZE chip_transactions;
+    """)
+    lookup = "SELECT 1 FROM chip_transactions WHERE metadata->>'op_id'=$1"
+    def lookup_plan(label, key):
+        raw = run(label, "SET plan_cache_mode='force_generic_plan'; PREPARE lookup(text) AS "
+                  + lookup + "; EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) EXECUTE lookup('" + key + "');")
+        return json.loads(raw)[0]
+    def lookup_nodes(node):
+        yield node
+        for child in node.get('Plans', []):
+            yield from lookup_nodes(child)
+    baseline = lookup_plan("global-op-before-plan", lookup_key)
+    require(any(n.get('Node Type')=='Seq Scan' for n in lookup_nodes(baseline['Plan'])),
+            'baseline must reproduce the unindexed global legacy lookup')
+    op_index_sql = (ROOT / "supabase/migrations/20261026224428_cashier_global_retry_lookup_index.sql").read_text()
+    run("global-op-index-install", op_index_sql)
+    run("global-op-index-analyze", "ANALYZE chip_transactions;")
+    for label,key,rows in [('present',lookup_key,2),('absent','not-a-recorded-key',0)]:
+        plan = lookup_plan('global-op-after-'+label, key)
+        nodes = list(lookup_nodes(plan['Plan']))
+        require(not any(n.get('Node Type')=='Seq Scan' for n in nodes)
+                and any(n.get('Index Name')=='chip_transactions_global_op_lookup_idx' for n in nodes)
+                and plan['Plan']['Actual Rows']==rows,
+                'generic global lookup must use index without dropping foreign/duplicate evidence')
+        (out/('global-op-'+label+'.json')).write_text(json.dumps(plan,indent=2))
+    run("global-op-legacy-foreign-duplicate-refused", as_role(OWNER,
+        f"SELECT public.fn_agent_wallet_send('{CLUB}','{PLAYER}',25,'player_wallet','Legacy Key','{lookup_key}')->>'error';"), "That Legacy Retry Key Cannot Be Verified; Reconcile It Before Retrying")
+    run("global-op-wrong-index-fixture", "DROP INDEX chip_transactions_global_op_lookup_idx; CREATE INDEX chip_transactions_global_op_lookup_idx ON chip_transactions(created_at);")
+    refused("global-op-wrong-shape-refused", op_index_sql, "P0001")
+    run("global-op-remove-wrong-index", "DROP INDEX chip_transactions_global_op_lookup_idx;")
+    run("global-op-restore-qualified-index", op_index_sql)
+
     op1 = "10000000-0000-0000-0000-000000000001"
     call = f"SELECT public.fn_club_bank_send('{CLUB}','{PLAYER}',10,'player_wallet','Exact Send','{op1}')->>'success';"
     run("active-agent-send", as_role(AGENT_A, call), "true")

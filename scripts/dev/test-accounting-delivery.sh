@@ -379,3 +379,17 @@ run_game_probe diamond-crash-clicked-multiplier 'NOTICE:  PASS Crash clicked mul
 
 # Exact qualified postimages for installation readback, from this private cluster.
 "${diamond_psql[@]}" -At -c "SELECT jsonb_build_object('qualified_postimages',jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'security_definer',p.prosecdef,'config',p.proconfig,'acl',p.proacl))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ('fn_choice_start','fn_choice_state','fn_choice_act','fn_choice_result','fn_diamond_bonus_replay','fn_choice_prizes_v6','fn_choice_road_prizes_v6','fn_choice_road_coin_v6','fn_choice_road_coins_v6','fn_choice_road_end_v6','fn_choice_prizes','fn_choice_prizes_v5','fn_choice_road_probability_v5','fn_choice_loss_floor_v5','fn_wheel_bonus_state','fn_diamond_game_lifetime','fn_wheel_spin_v2','fn_wheel_bonus_start','fn_wheel_bonus_public_award','fn_wheel_card_public','fn_wheel_diamond_cards_pick','fn_wheel_batch_immutable','fn_wheel_batch_active','fn_wheel_batch_prepare','fn_wheel_batch_begin','fn_wheel_batch_read','fn_wheel_prize_order','fn_wheel_next_unplayed','fn_wheel_state_v2','fn_wheel_v4_model','fn_crash_point_cents_v5','fn_crash_start','fn_crash_decide','fn_crash_cashout','fn_crash_round_result','fn_crash_config_limits','fn_diamond_game_state','fn_crash_return_ppm_v5','fn_crash_flight_ms','fn_crash_settle_decided');"
+
+# Explicit statement units use funded journal legs; existing historical probes
+# above still pin the previous notification contract before this installation.
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261026220723_diamond_spin_statements_label_collected_diamonds_and_actual_.sql"
+"${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
+run_game_probe diamond-spin-statement-units 'NOTICE:  PASS Diamond statement units: actual funded five-game payouts, club and union, split funding counted once, Chicago midnight, welcome-only day, owner isolation, exact labels, unchanged 11840 credit and 2960 burn, replay quiet and money unchanged'
+"${diamond_psql[@]}" -At -c "SELECT jsonb_build_object('statement_postimages',jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid))))) FROM pg_proc p WHERE p.oid IN ('public.fn_diamond_spin_settle_day(uuid,date)'::regprocedure,'public.fn_diamond_spin_chip_payouts(uuid,date)'::regprocedure,'public.fn_diamond_spin_statement_message(date,bigint,numeric,bigint,bigint,bigint,integer,bigint,bigint)'::regprocedure);"
+
+"${legacy_psql[@]}" -v candidate="$root/supabase/migrations/20261026220723_diamond_spin_statements_label_collected_diamonds_and_actual_.sql" -f "$root/tests/sql/diamond-spin-statement-history.sql" > "$fixture/statement-history.stdout" 2> "$fixture/statement-history.stderr"
+cat "$fixture/statement-history.stdout" "$fixture/statement-history.stderr"
+if [ "$(grep -Fc 'NOTICE:  PASS Diamond statement history:' "$fixture/statement-history.stderr")" -ne 1 ] || grep -Eq 'ERROR:|WARNING:|FATAL:|PANIC:' "$fixture/statement-history.stderr"; then
+  echo 'Historical statement display correction did not reach its success witness' >&2
+  exit 1
+fi

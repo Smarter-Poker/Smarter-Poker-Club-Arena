@@ -54,3 +54,17 @@ export function tableRowSaysClosed(row: HeartbeatRowCheck | null | undefined): b
   const status = String(row.status ?? '').toLowerCase();
   return status === 'closed' || status === 'cancelled' || status === 'completed';
 }
+
+/** Recovery invalidates every HTTP/row verdict started before that event. */
+export function createHeartbeatRecoveryGuard() {
+  let generation = 0;
+  return {
+    capture() {
+      const started = generation;
+      return () => started === generation;
+    },
+    invalidate() {
+      generation += 1;
+    },
+  };
+}

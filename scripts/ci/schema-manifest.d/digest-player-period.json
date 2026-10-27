@@ -1,0 +1,6 @@
+{
+  "_owner": "feat/digest-player-period-totals / recovery01a178a6",
+  "_comment": "Pending installation, not observed live: migration20261026140704. Install from protected main through Apply Merged Migration; verify catalog/history before claiming live.",
+  "tables": ["sp_digest_player_days", "sp_digest_player_day_runs"],
+  "functions": ["fn_sp_digest_keep_player_day", "fn_sp_digest_player_period"]
+}

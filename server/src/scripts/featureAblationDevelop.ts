@@ -138,11 +138,17 @@ try {
           seed: V53_PRESSURE_WARM_SEED,
         })
       : isIncrementalTarget(experiment) && args.get('inspect') !== 'true'
-        ? buildIncrementalWarmRecords(args.get('variant')! as 'plo6', physicalProfile.seats)
+        ? buildIncrementalWarmRecords(
+            args.get('variant')! as 'plo6',
+            physicalProfile.seats,
+            experiment
+          )
         : [];
   const history = {
     kind: isIncrementalTarget(experiment)
-      ? 'incremental_public_overstab_warm_v1'
+      ? experiment === 'river_bluff_checkraise'
+        ? 'incremental_public_triple_checkraise_warm_v1'
+        : 'incremental_public_overstab_warm_v1'
       : experiment === 'v53'
         ? 'fixed_public_warm_v1'
         : 'fresh_empty_public_v1',

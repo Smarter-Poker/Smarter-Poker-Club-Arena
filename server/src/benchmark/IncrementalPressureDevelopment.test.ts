@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   INCREMENTAL_FLAGS,
+  INCREMENTAL_CHECKRAISE_POPULATION,
   INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
   incrementalDevelopmentProfiles,
   incrementalDevelopmentSpec,
@@ -18,6 +19,7 @@ import {
 } from './FeatureAblationWorker.js';
 import {
   makeFeatureAblationOwnHistory,
+  buildFeatureWarmRecords,
   featureAblationPlayerId,
   FEATURE_ABLATION_HISTORY_AVAILABLE_AT_MS as AVAILABLE,
 } from './FeatureAblationHistory.js';
@@ -82,10 +84,66 @@ describe('incremental development boundaries', () => {
       }
     }
   );
-  it('the actual worker receives all three treatments and preserves default V53; paired controller accepts legal complete hands', async () => {
+  it.each(['nlh', 'plo4', 'plo5', 'plo6'] as const)(
+    '%s exact check-raise response workload is learned from real legal hands',
+    (variant) => {
+      const records = buildIncrementalWarmRecords(variant, 2, 'river_bluff_checkraise');
+      const coverage = incrementalWarmCoverage(records);
+      expect(Object.keys(coverage.checkRaiseResponsesByPlayer)).toHaveLength(2);
+      for (let seat = 1; seat <= 2; seat++) {
+        const id = featureAblationPlayerId(seat);
+        const context = {
+          version: 1 as const,
+          observerId: id,
+          variant,
+          format: 'cash' as const,
+          dealtCount: 2,
+        };
+        expect(
+          ownPublicHistoryIsValid(
+            makeFeatureAblationOwnHistory(context, seat, records),
+            context,
+            AVAILABLE
+          )
+        ).toBe(true);
+        const row = coverage.checkRaiseResponsesByPlayer[id];
+        expect(row.opportunities).toBeGreaterThanOrEqual(8);
+        expect(row.folds).toBeLessThanOrEqual(row.opportunities);
+        expect(coverage.byPlayer[id].lower99).toBeGreaterThanOrEqual(0.65);
+      }
+      // The fixed stochastic workload can yield all folds; that is recorded, never reseeded.
+    }
+  );
+  it('actual physical calls stay in the check-raise denominator', () => {
+    const records = buildFeatureWarmRecords({
+      variant: 'nlh',
+      seats: 2,
+      seed: 27307777,
+      hands: 12,
+      historyVersion: 'call-response-negative-control-v1',
+      population: {
+        id: 'call-response-negative-control-v1',
+        decide(player, gs, rng) {
+          const river = (gs.actionHistory ?? []).filter((a) => a.stage === 'river');
+          if (
+            gs.stage === 'river' &&
+            river.length === 3 &&
+            river[2].action === 'raise' &&
+            gs.legalActions?.includes('call')
+          )
+            return { action: 'call', thinkTime: 0 };
+          return INCREMENTAL_CHECKRAISE_POPULATION.decide(player, gs, rng);
+        },
+      },
+    });
+    const response = incrementalWarmCoverage(records).checkRaiseResponsesByPlayer;
+    expect(Object.values(response).reduce((n, r) => n + r.opportunities, 0)).toBeGreaterThan(0);
+    expect(Object.values(response).every((r) => r.folds === 0)).toBe(true);
+  });
+  it('the actual worker receives all four treatments and preserves default V53; paired controller accepts legal complete hands', async () => {
     for (const target of Object.keys(INCREMENTAL_FLAGS) as (keyof typeof INCREMENTAL_FLAGS)[]) {
       const receipts: FeatureAblationWorkerReceipt[] = [];
-      const records = buildIncrementalWarmRecords('nlh', 2);
+      const records = buildIncrementalWarmRecords('nlh', 2, target);
       const brain = createFeatureAblationWorker(
         (r) => receipts.push(r),
         () => {},

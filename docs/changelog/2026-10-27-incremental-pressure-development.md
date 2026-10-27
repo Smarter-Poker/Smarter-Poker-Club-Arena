@@ -1,8 +1,8 @@
-# Current-brain development for three pressure candidates
+# Current-brain development for four pressure candidates
 
-The finite feature-ablation development runner now admits three explicit,
+The finite feature-ablation development runner now admits four explicit,
 independent contrasts: combo-draw pressure, targeted river bluffing, and
-conditional river-position defense. Each arm uses the same current worker and
+conditional river-position defense, and river bluff check-raises. Each arm uses the same current worker and
 public-history boundary, changing exactly one flag. V53 remains at its current
 default in both arms. The worker receipt records the actual new flag it received.
 
@@ -20,9 +20,11 @@ opportunities, bets and one-sided 99 percent lower bounds are reported per playe
 Missing opportunity coverage remains missing; no counters are injected.
 
 Focused checks cover four variants and 2/4/6 dealt seats, original packet limits,
-private-card exclusion, all three actual worker treatments, accepted legal paired
+private-card exclusion, all four actual worker treatments, accepted legal paired
 hands, conservation and development refusal of reserved seeds. New targets are
 explicitly refused by the held-out contract route until separately preregistered
 plans exist. No strategy default, locked matrix, production state or activation
 changes. Finite pilot sizing, independent held-out qualification, final combined
 configuration qualification and live fleet verification remain separate work.
+
+The check-raise target has its own versioned physical workload: an actual river check, bet, legal non-all-in three-times raise, and observed fold/call response. Both responses count. Its measured per-player response opportunities are reported separately; multiway profiles with insufficient same-line history remain uncovered.

@@ -107,7 +107,12 @@ export interface Plo4AblationPopulation {
 export type Plo4AblationFlags = Readonly<
   Pick<
     HorseDecideOpts,
-    'v24PloDefense' | 'v53Pressure' | 'comboDrawPressure' | 'v54RiverBluff' | 'riverPositionDefense'
+    | 'v24PloDefense'
+    | 'v53Pressure'
+    | 'comboDrawPressure'
+    | 'v54RiverBluff'
+    | 'riverPositionDefense'
+    | 'riverBluffCheckRaise'
   >
 >;
 /** A maintained current-brain adapter owns admission. The physical league must

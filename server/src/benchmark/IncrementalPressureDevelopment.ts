@@ -6,13 +6,17 @@ import type { Plo4AblationBrain, Plo4AblationPopulation } from './Plo4PolicyLeag
 import type { FeatureAblationSpec } from './FeatureAblationLeague.js';
 import { pressureDevelopmentProfiles } from './PressureQualificationContract.js';
 import { buildFeatureWarmRecords, type FeatureAblationWarmHand } from './FeatureAblationHistory.js';
-import { riverPositionIncrements } from '../engine/HorseRiverPositionRead.js';
+import {
+  riverPositionIncrements,
+  riverTripleCheckRaiseIncrements,
+} from '../engine/HorseRiverPositionRead.js';
 import { omahaQuickCategory, scoreHoldem } from '../engine/HorseEval.js';
 
 export const INCREMENTAL_FLAGS = Object.freeze({
   combo_draw_pressure: 'comboDrawPressure',
   targeted_river_bluff: 'v54RiverBluff',
   river_position_defense: 'riverPositionDefense',
+  river_bluff_checkraise: 'riverBluffCheckRaise',
 } as const);
 export type IncrementalTarget = keyof typeof INCREMENTAL_FLAGS;
 export const INCREMENTAL_DEVELOPMENT_SEEDS = Object.freeze([27301101, 27302203, 27303307]);
@@ -92,6 +96,51 @@ export const INCREMENTAL_PRESSURE_POPULATION: Plo4AblationPopulation = Object.fr
   id: 'incremental_public_overstab_stress_v1',
   decide: incrementalPressureDecision,
 });
+/** Separately identified check-raise/response workload. Actual controller
+ * actions, never preloaded counters; every non-fold response remains observed. */
+export const INCREMENTAL_CHECKRAISE_POPULATION: Plo4AblationPopulation = Object.freeze({
+  id: 'incremental_public_triple_checkraise_stress_v1',
+  decide(player: SeatPlayer, gs: HorseGameStateV2, rng: () => number): HorseDecision {
+    if (gs.stage === 'river') {
+      const river = (gs.actionHistory ?? []).filter(
+        (a) =>
+          a.stage === 'river' &&
+          ['check', 'bet', 'raise', 'call', 'fold', 'all_in'].includes(a.action)
+      );
+      if (
+        river.length === 2 &&
+        river[0].action === 'check' &&
+        river[0].userId === player.user_id &&
+        river[1].action === 'bet' &&
+        gs.legalActions?.includes('raise')
+      ) {
+        const target = 3 * (river[1].amount ?? 0);
+        if (
+          target > 0 &&
+          gs.minRaiseTo != null &&
+          gs.maxRaiseTo != null &&
+          target >= gs.minRaiseTo &&
+          target <= gs.maxRaiseTo &&
+          target < player.bet + player.stack - 0.005
+        )
+          return { action: 'raise', amount: Math.round(target * 100) / 100, thinkTime: 0 };
+      }
+      if (
+        river.length === 3 &&
+        river[0].action === 'check' &&
+        river[1].action === 'bet' &&
+        river[1].userId === player.user_id &&
+        river[2].action === 'raise' &&
+        Math.abs((river[2].amount ?? 0) - 3 * (river[1].amount ?? 0)) < 0.000001
+      )
+        return {
+          action: rng() < 0.9 || !gs.legalActions?.includes('call') ? 'fold' : 'call',
+          thinkTime: 0,
+        };
+    }
+    return incrementalPressureDecision(player, gs, rng);
+  },
+});
 export const INCREMENTAL_DEVELOPMENT_DESIGN = Object.freeze({
   version: 'incremental-pressure-development-v1',
   state: 'development_only',
@@ -101,6 +150,7 @@ export const INCREMENTAL_DEVELOPMENT_DESIGN = Object.freeze({
   reservedHoldoutSeeds: INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
   warmSeed: INCREMENTAL_WARM_SEED,
   population: INCREMENTAL_PRESSURE_POPULATION.id,
+  checkRaisePopulation: INCREMENTAL_CHECKRAISE_POPULATION.id,
   warmPublicHands: 48,
   pilotPairsPerProfile: 576,
   rotationBlock: 576,
@@ -141,23 +191,40 @@ export function incrementalDevelopmentSpec(
     brain,
     candidate: { [flag]: true },
     reference: { [flag]: false },
-    population: INCREMENTAL_PRESSURE_POPULATION,
+    population:
+      target === 'river_bluff_checkraise'
+        ? INCREMENTAL_CHECKRAISE_POPULATION
+        : INCREMENTAL_PRESSURE_POPULATION,
   };
 }
 export function buildIncrementalWarmRecords(
   variant: 'nlh' | 'plo4' | 'plo5' | 'plo6',
-  seats: number
+  seats: number,
+  target?: IncrementalTarget
 ) {
   return buildFeatureWarmRecords({
     variant,
     seats,
     seed: INCREMENTAL_WARM_SEED,
     hands: 48,
-    historyVersion: INCREMENTAL_HISTORY_VERSION,
-    population: INCREMENTAL_PRESSURE_POPULATION,
+    historyVersion:
+      target === 'river_bluff_checkraise'
+        ? 'incremental-public-triple-checkraise-warm-v1'
+        : INCREMENTAL_HISTORY_VERSION,
+    population:
+      target === 'river_bluff_checkraise'
+        ? INCREMENTAL_CHECKRAISE_POPULATION
+        : INCREMENTAL_PRESSURE_POPULATION,
   });
 }
 export function incrementalWarmCoverage(records: readonly FeatureAblationWarmHand[]) {
+  const checkRaiseResponsesByPlayer: Record<string, { opportunities: number; folds: number }> = {};
+  for (const hand of records)
+    for (const [id, delta] of riverTripleCheckRaiseIncrements(hand.actions, hand.playersDealt)) {
+      const row = (checkRaiseResponsesByPlayer[id] ??= { opportunities: 0, folds: 0 });
+      row.opportunities += delta.opportunities;
+      row.folds += delta.folds;
+    }
   const byPlayer: Record<string, { opportunities: number; bets: number; lower99: number }> = {};
   for (const hand of records)
     for (const [id, delta] of riverPositionIncrements(hand.actions, hand.playersDealt)) {
@@ -174,6 +241,7 @@ export function incrementalWarmCoverage(records: readonly FeatureAblationWarmHan
   }
   return {
     publicHands: records.length,
+    checkRaiseResponsesByPlayer,
     byPlayer,
     opportunityDenominator: 'actual_original_last_to_act_river_actions',
     promotionEligible: false,

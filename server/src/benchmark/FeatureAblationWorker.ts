@@ -45,6 +45,7 @@ export interface FeatureAblationWorkerReceipt {
     comboDrawPressure?: boolean;
     v54RiverBluff?: boolean;
     riverPositionDefense?: boolean;
+    riverBluffCheckRaise?: boolean;
   };
   naturalSamplingKey: string;
   naturalRngBefore: number;
@@ -356,6 +357,9 @@ export function createFeatureAblationWorker(
             ...(request.opts?.v54RiverBluff === undefined
               ? {}
               : { v54RiverBluff: request.opts.v54RiverBluff }),
+            ...(request.opts?.riverBluffCheckRaise === undefined
+              ? {}
+              : { riverBluffCheckRaise: request.opts.riverBluffCheckRaise }),
             ...(request.opts?.riverPositionDefense === undefined
               ? {}
               : { riverPositionDefense: request.opts.riverPositionDefense }),

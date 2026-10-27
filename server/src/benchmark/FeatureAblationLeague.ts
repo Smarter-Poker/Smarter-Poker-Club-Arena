@@ -131,6 +131,7 @@ export function assertAblationArms(spec: FeatureAblationSpec): void {
       'comboDrawPressure',
       'v54RiverBluff',
       'riverPositionDefense',
+      'riverBluffCheckRaise',
     ].includes(keys[0]) ||
     Object.values(spec.candidate).some((v) => typeof v !== 'boolean') ||
     Object.values(spec.reference).some((v) => typeof v !== 'boolean') ||

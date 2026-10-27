@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { paintedAvatarTop } from '../components/table/avatarCrownBounds';
 import { placeProtectedCardRow, type CardBox } from '../lib/protectedCardPlacement';
 import {
   assignProtectedWagers,
@@ -194,7 +195,7 @@ export function useProtectedCardLayout(
           );
         };
         // Six-max puts the crown at the bar. A full PLO row uses the
-        // available lane above its own plate with one pixel of clear space,
+        // available lane at its own plate without covering protected content,
         // before considering a more distant spot beside another chair.
         const sixMaxTop =
           page.getAttribute('data-seats') === '6' &&
@@ -202,7 +203,7 @@ export function useProtectedCardLayout(
           row.closest('.seat-wrapper--cap, .seat-wrapper--top');
         const place = (candidate: CardBox) =>
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
-          (sixMaxTop ? placeProtectedCardRow(candidate, others, bounds, 1, ownsIt) : null) ??
+          (sixMaxTop ? placeProtectedCardRow(candidate, others, bounds, 0, ownsIt) : null) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
@@ -322,6 +323,18 @@ export function useProtectedCardLayout(
           delete cluster.dataset.baseCardW;
         });
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
+      const pageBox = page.getBoundingClientRect();
+      // Production uses the desktop-width viewport on phones. Preserve the
+      // legacy <=480px fallback for browsers that ignore that viewport.
+      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 480;
+      for (const pod of scaler.querySelectorAll('.seat-wrapper--cap, .seat-wrapper--top')) {
+        const seat = pod.querySelector<HTMLElement>('.seat');
+        // Keep the character connected to its plate with the existing 3px
+        // minimum overlap. Reclaim only the extra overlap for the full PLO
+        // row, whose bottom reads this same shared token.
+        if (sixMax) seat?.style.setProperty('--sp-wrap-overlap', '3px');
+        else seat?.style.removeProperty('--sp-wrap-overlap');
+      }
       topPods().forEach((pod) => {
         const shift = settled.current.pods.get(pod);
         if (shift === undefined) {
@@ -332,7 +345,6 @@ export function useProtectedCardLayout(
           pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
         }
       });
-      const pageBox = page.getBoundingClientRect();
       const chrome = Array.from(page.querySelectorAll('.bbj-widget, .bbj-mini-plate'))
         .map((element) => element.getBoundingClientRect())
         .filter((box) => box.width > 0 && box.height > 0);
@@ -344,14 +356,11 @@ export function useProtectedCardLayout(
       const chromeBottom = chrome.length
         ? Math.max(...chrome.map((box) => box.bottom))
         : pageBox.top + plateHeight;
-      // Production uses the desktop-width viewport on phones. Preserve the
-      // legacy <=480px fallback for browsers that ignore that viewport:
-      // a full PLO hand and wager cannot share its cropped top-seat lane.
-      const sixMax = page.getAttribute('data-seats') === '6' && pageBox.width > 480;
       if (sixMax || pageBox.width <= 768) {
         for (const pod of topPods()) {
           if (settled.current.pods.has(pod)) continue;
-          const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
+          const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
+          const image = avatar?.getBoundingClientRect();
           if (image && image.height > 0) {
             // Dan 2026-10-22: "pull the table down so the top player isn't
             // scrunched up." The pod's highest painted part (the art, or the
@@ -382,7 +391,8 @@ export function useProtectedCardLayout(
             // plates do not reserve a band across this centred seat. Anchor
             // the actual art, not its transparent slot or position badge.
             const target = sixMax ? pageBox.top - 2 * scale : chromeBottom + clearance * scale;
-            const shift = (target - (sixMax ? image.top : highest)) / scale;
+            const shift =
+              (target - (sixMax && avatar ? paintedAvatarTop(avatar) : highest)) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.
@@ -812,6 +822,9 @@ export function useProtectedCardLayout(
       scaler.querySelector<HTMLElement>('.dealer-button')?.style.removeProperty('translate');
       scaler.removeEventListener('load', schedule, true);
       if (frame !== null) cancelAnimationFrame(frame);
+      scaler
+        .querySelectorAll<HTMLElement>('.seat-wrapper--cap .seat, .seat-wrapper--top .seat')
+        .forEach((seat) => seat.style.removeProperty('--sp-wrap-overlap'));
       topPods().forEach((pod) => {
         pod.style.removeProperty('translate');
         pod.style.removeProperty('--sp-top-seat-shift');

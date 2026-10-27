@@ -1,3 +1,4 @@
+import { AVATAR_CROWN_TOP } from '../../src/components/table/avatarCrownBounds';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  EVERYTHING ON THE FELT IS THE SAME FRACTION OF IT, ON EVERY DEVICE
@@ -1130,15 +1131,24 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           });
         }
         if (count === 6 && width > 480) {
-          const crown = await page.evaluate(() => {
+          const crown = await page.evaluate((crowns) => {
             const table = document.querySelector('.table-page')!;
             const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
-            const head = table.querySelector('.seat-wrapper--top .seat__avatar-img')!;
+            const head = table.querySelector<HTMLImageElement>(
+              '.seat-wrapper--top .seat__avatar-img'
+            )!;
+            const source = head.currentSrc || head.src;
+            const file = /\/avatars\/table\/((?:free|vip)_[\w-]+(?:@2x)?\.webp)(?:[?#]|$)/.exec(
+              source
+            )?.[1];
             return {
-              gap: head.getBoundingClientRect().top - table.getBoundingClientRect().top,
+              gap:
+                head.getBoundingClientRect().top +
+                head.getBoundingClientRect().height * ((file && crowns[file]) || 0) -
+                table.getBoundingClientRect().top,
               scale: scaler.getBoundingClientRect().width / scaler.offsetWidth,
             };
-          });
+          }, AVATAR_CROWN_TOP);
           // Preserve breathing, tense and celebration poses around the
           // two-pixel resting crop; only the crown may cross the bar.
           expect(crown.gap).toBeGreaterThan(-12 * crown.scale);

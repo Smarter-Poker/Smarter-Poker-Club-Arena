@@ -1,3 +1,4 @@
+import { paintedAvatarTop } from '../../src/components/table/avatarCrownBounds';
 import { useRef } from 'react';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ function Fixture({
   count = 6,
   seats = 9,
   width = 393,
+  avatarSource = '',
 }: {
   revealed: boolean;
   revision?: string;
@@ -19,6 +21,7 @@ function Fixture({
   count?: number;
   seats?: number;
   width?: number;
+  avatarSource?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useProtectedCardLayout(ref, revision);
@@ -30,7 +33,12 @@ function Fixture({
         <div className="pot-display" data-box={`160,${potTop},80,30`} />
         <div className="seat__info" data-box="10,410,100,40" />
         <div className="seat-wrapper--top">
-          <img className="seat__avatar-img" data-box="180,100,50,50" alt="" />
+          <img
+            className="seat__avatar-img"
+            src={avatarSource || undefined}
+            data-box="180,100,50,50"
+            alt=""
+          />
         </div>
         {revealed && (
           <div className="seat__cards--revealed">
@@ -197,13 +205,35 @@ it.each([481, 606, 1024])(
   async (width) => {
     stubGeometry();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
-    const h = render(<Fixture revealed={false} seats={6} width={width} />);
-    const head = h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect();
-    expect(head.top).toBe(-2);
+    const h = render(
+      <Fixture
+        revealed={false}
+        seats={6}
+        width={width}
+        avatarSource="/avatars/table/vip_wolf@2x.webp"
+      />
+    );
+    const head = h.container.querySelector<HTMLImageElement>('.seat__avatar-img')!;
+    expect(paintedAvatarTop(head)).toBeCloseTo(-2);
+    expect(head.getBoundingClientRect().top).toBeLessThan(-2);
     const pod = h.container.querySelector<HTMLElement>('.seat-wrapper--top')!;
-    expect(pod.style.getPropertyValue('--sp-top-seat-shift')).toBe('-102px');
-    await act(async () => h.rerender(<Fixture revealed seats={6} width={width} revision="flop" />));
-    expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(-2);
+    expect(pod.style.getPropertyValue('--sp-top-seat-shift')).toBe(
+      pod.style.translate.split(' ')[1]
+    );
+    await act(async () =>
+      h.rerender(
+        <Fixture
+          revealed
+          seats={6}
+          width={width}
+          avatarSource="/avatars/table/vip_wolf@2x.webp"
+          revision="flop"
+        />
+      )
+    );
+    expect(
+      paintedAvatarTop(h.container.querySelector<HTMLImageElement>('.seat__avatar-img')!)
+    ).toBeCloseTo(-2);
   }
 );
 
@@ -211,7 +241,14 @@ it.each([320, 375, 393, 430, 480])(
   'retains the safe legacy phone lane at %i CSS pixels',
   (width) => {
     stubGeometry();
-    const h = render(<Fixture revealed={false} seats={6} width={width} />);
+    const h = render(
+      <Fixture
+        revealed={false}
+        seats={6}
+        width={width}
+        avatarSource="/avatars/table/vip_wolf@2x.webp"
+      />
+    );
     expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(42);
   }
 );

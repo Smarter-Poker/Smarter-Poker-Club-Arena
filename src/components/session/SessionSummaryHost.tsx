@@ -252,7 +252,8 @@ export function SessionSummaryHost() {
     const totalBuyIn = payload?.totalBuyIn ?? 0;
     /* 2 min of slack: the engine stamps the row from its own clock, which can
        run ahead of the client's `sinceMs`. The tableId + category filters do
-       the real disambiguation; the time bound only fences off past sessions. */
+       the legacy disambiguation when an older payload has no occupancy.
+       New payloads read only their exact seat generation below. */
     const sinceIso = new Date(pc.sinceMs - 120_000).toISOString();
     let stopped = false;
 
@@ -278,6 +279,34 @@ export function SessionSummaryHost() {
           )
             return;
           settlePendingSummary(data.amount - totalBuyIn, pc);
+          return;
+        }
+        if (pc.occupancyId) {
+          // Cashout exits this exact occupancy and credits its final stack in
+          // one transaction. An older same-table ledger row proves nothing
+          // about this departure, including a zero-stack departure.
+          const { data, error } = await supabase
+            .from('table_seats')
+            .select('table_id, user_id, occupancy_id, left_at, stack')
+            .eq('table_id', pc.tableId)
+            .eq('user_id', pc.userId)
+            .eq('occupancy_id', pc.occupancyId)
+            .maybeSingle();
+          if (
+            stopped ||
+            error ||
+            !data ||
+            data.table_id !== pc.tableId ||
+            data.user_id !== pc.userId ||
+            data.occupancy_id !== pc.occupancyId ||
+            typeof data.left_at !== 'string' ||
+            !Number.isFinite(Date.parse(data.left_at)) ||
+            typeof data.stack !== 'number' ||
+            !Number.isFinite(data.stack) ||
+            data.stack < 0
+          )
+            return;
+          settlePendingSummary(data.stack - totalBuyIn, pc);
           return;
         }
         const { data } = await supabase

@@ -10,3 +10,5 @@
 This is a client release using existing engine APIs. No engine replacement, migration, permission change, production wager or manual wallet write is required. Focused regression evidence, protected checks, publication identities and live observations are retained in the existing hand-review task checkpoint.
 
 The exact-cent formatter is explicitly reviewed in this branch's entry-chunk fragment because SessionSummaryHost mounts at the app root. The helper has no dependencies and formats the result synchronously; it introduces no account, route or service import. The measured entry bundle remains within its existing size budget.
+
+Pending chip recaps with a known occupancy now read only the caller's exact closed seat and its retained final stack. An earlier same-table wallet credit cannot settle a new departure. Missing, active, mismatched or unreadable seats remain pending; a genuine zero-stack exit settles correctly without requiring a wallet transaction. Existing legacy and Diamond readers remain unchanged. Live read-only function and policy metadata confirmed this existing contract; no database or engine change was made.

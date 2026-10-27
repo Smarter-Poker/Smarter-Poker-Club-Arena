@@ -39,16 +39,24 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
    ask for — `fromCalls` counts the asks. */
 const ledgerRows: Array<{ amount: number; created_at: string } | null> = [];
 let fromCalls = 0;
+const fromTables: string[] = [];
+const seatRows: Array<{ data: Record<string, unknown> | null; error: unknown }> = [];
 const diamondRows: Array<Record<string, unknown> | null> = [];
 const diamondCalls: Array<{ name: string; args: unknown }> = [];
 vi.mock('../../src/lib/supabase', () => {
-  const builder: any = {
-    select: () => builder,
-    eq: () => builder,
-    gte: () => builder,
-    order: () => builder,
-    limit: () => builder,
-    maybeSingle: async () => ({ data: ledgerRows.shift() ?? null, error: null }),
+  const builderFor = (table: string) => {
+    const builder: any = {
+      select: () => builder,
+      eq: () => builder,
+      gte: () => builder,
+      order: () => builder,
+      limit: () => builder,
+      maybeSingle: async () =>
+        table === 'table_seats'
+          ? (seatRows.shift() ?? { data: null, error: null })
+          : { data: ledgerRows.shift() ?? null, error: null },
+    };
+    return builder;
   };
   return {
     supabase: {
@@ -57,9 +65,10 @@ vi.mock('../../src/lib/supabase', () => {
         diamondCalls.push({ name, args });
         return { data: diamondRows.shift() ?? null, error: null };
       },
-      from: () => {
+      from: (table: string) => {
         fromCalls += 1;
-        return builder;
+        fromTables.push(table);
+        return builderFor(table);
       },
     },
   };
@@ -69,6 +78,7 @@ import SessionSummaryHost from '../../src/components/session/SessionSummaryHost'
 import {
   publishSessionSummary,
   clearSessionSummary,
+  peekSessionSummary,
   type SessionSummaryPayload,
 } from '../../src/services/pendingSessionSummary';
 
@@ -93,6 +103,8 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     clearSessionSummary();
     ledgerRows.length = 0;
     fromCalls = 0;
+    fromTables.length = 0;
+    seatRows.length = 0;
     diamondRows.length = 0;
     diamondCalls.length = 0;
   });
@@ -253,4 +265,151 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     expect(fromCalls).toBe(0);
     expect(diamondCalls).toHaveLength(0);
   });
+  it('does not mistake an earlier same-table cashout for the still-open new occupancy', async () => {
+    ledgerRows.push({ amount: 1400, created_at: new Date().toISOString() });
+    seatRows.push({
+      data: {
+        table_id: 't-1',
+        user_id: 'u-hero',
+        occupancy_id: 'occ-new',
+        left_at: null,
+        stack: 1157,
+      },
+      error: null,
+    });
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
+    await act(async () => {
+      publishSessionSummary(
+        cashPayload({
+          plPending: true,
+          pendingCashout: {
+            tableId: 't-1',
+            userId: 'u-hero',
+            sinceMs: Date.now(),
+            occupancyId: 'occ-new',
+          },
+        })
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Pending Settlement')).toBeTruthy();
+    expect(fromTables).toEqual(['table_seats']);
+  });
+
+  it.each([
+    [
+      'closed',
+      {
+        table_id: 't-1',
+        user_id: 'u-hero',
+        occupancy_id: 'occ-new',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: 1400,
+      },
+      null,
+      400,
+    ],
+    [
+      'zero stack',
+      {
+        table_id: 't-1',
+        user_id: 'u-hero',
+        occupancy_id: 'occ-new',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: 0,
+      },
+      null,
+      -1000,
+    ],
+    [
+      'other occupancy',
+      {
+        table_id: 't-1',
+        user_id: 'u-hero',
+        occupancy_id: 'old',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: 1400,
+      },
+      null,
+      null,
+    ],
+    [
+      'other user',
+      {
+        table_id: 't-1',
+        user_id: 'other',
+        occupancy_id: 'occ-new',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: 1400,
+      },
+      null,
+      null,
+    ],
+    [
+      'other table',
+      {
+        table_id: 'other',
+        user_id: 'u-hero',
+        occupancy_id: 'occ-new',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: 1400,
+      },
+      null,
+      null,
+    ],
+    ['missing', null, null, null],
+    ['read error', null, { message: 'unavailable' }, null],
+    [
+      'invalid stack',
+      {
+        table_id: 't-1',
+        user_id: 'u-hero',
+        occupancy_id: 'occ-new',
+        left_at: '2026-10-27T17:00:00Z',
+        stack: -1,
+      },
+      null,
+      null,
+    ],
+  ])(
+    'follows only its own exact closed cash occupancy: %s',
+    async (_name, data, error, expectedProfit) => {
+      if (_name !== 'zero stack')
+        ledgerRows.push({ amount: 9999, created_at: new Date().toISOString() });
+      seatRows.push({ data, error });
+      render(
+        <MemoryRouter>
+          <SessionSummaryHost />
+        </MemoryRouter>
+      );
+      await act(async () => {
+        publishSessionSummary(
+          cashPayload({
+            plPending: true,
+            pendingCashout: {
+              tableId: 't-1',
+              userId: 'u-hero',
+              sinceMs: Date.now(),
+              occupancyId: 'occ-new',
+            },
+          })
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(fromTables).toEqual(['table_seats']);
+      if (expectedProfit === null) {
+        expect(screen.getByText('Pending Settlement')).toBeTruthy();
+        expect(peekSessionSummary()?.profitLoss).toBe(157);
+      } else {
+        expect(screen.queryByText('Pending Settlement')).toBeNull();
+        expect(peekSessionSummary()?.profitLoss).toBe(expectedProfit);
+      }
+    }
+  );
 });

@@ -77,22 +77,19 @@ it('embeds only the fixed protected helper source and preserves reference code b
       'utf8'
     )
   );
-  const original = spawnSync(
-    'git',
-    ['show', '3269d89eb93604ace0ab3c1f35049b59918c8d5c:scripts/ci/inspect-tournament-refill.py'],
-    { encoding: 'utf8' }
-  ).stdout;
+  // Independent source pins from reviewed 3269; CI requires no Git history.
+  const pins = {
+    reference_cases: '31259cb18806e1e6c430efc46a9f9bdd1ca71bb18f88e52a81b516554cc5e544',
+    sanitize_positive_calloff_result:
+      '2c382f048797f6e692bffaebc2e17b3a3ea0075aca8b4793cc42943b050ad369',
+    sanitize_reference_result: '5b78b3c9dc042dff103861c75050e97912bdcd020abcefb3fb9ead3e37d96e66',
+    reference_diagnostic: '808e49bea3a0f1f411191bc9bbd5efe8d831fe308765bdcf5ea6ff91bb45e592',
+    tournament_yields: '87d7b1c052ca72140bb659d31f3078f08c1ea7b4a867160b26ed440b8af511d4',
+    booking_cap_refusals: '87a4f0a5a46c70db39f4449934b707fdf93198e14ca452db45e3959002335359',
+    merge_bounded_events: '74acd6b31531f390fc05377eca361801aab44f301ee4d9ab8ef1055583e1ba81',
+    process_history: '137038b589f6d614e3183dda9ccdb9b7dbc645c8d56939f5bfc2b1a88b38a24c',
+  };
   const current = readFileSync(inspector, 'utf8');
-  const blocks = [
-    'reference_cases',
-    'sanitize_positive_calloff_result',
-    'sanitize_reference_result',
-    'reference_diagnostic',
-    'tournament_yields',
-    'booking_cap_refusals',
-    'merge_bounded_events',
-    'process_history',
-  ];
   const functions = (text: string) =>
     JSON.parse(
       spawnSync(
@@ -105,11 +102,11 @@ it('embeds only the fixed protected helper source and preserves reference code b
         { input: text, encoding: 'utf8' }
       ).stdout
     );
-  const a = functions(original),
-    b = functions(current);
-  for (const key of blocks) expect(b[key], key).toBe(a[key]);
-  expect(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0]).toBe(
-    original.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0]
+  const currentFunctions = functions(current);
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+  for (const [key, pin] of Object.entries(pins)) expect(sha(currentFunctions[key]), key).toBe(pin);
+  expect(sha(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0])).toBe(
+    'c7d13d3cdc88d534587d93ad1ea7d4260af88f8abcc1e9ab3eb283646ea72c53'
   );
 });
 it('keeps unavailable runtime and untrusted child output sanitized unknown', () => {

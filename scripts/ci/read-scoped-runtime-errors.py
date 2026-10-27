@@ -90,6 +90,11 @@ LEASE_METRIC_LABELS = {
     'outcome': {'completed', 'threw', 'abandoned'},
     'half': {'cash', 'tournament'},
 }
+# Prometheus attaches these maintained static labels to every engine scrape.
+# Accept only their configured values and never include them in evidence.
+LEASE_METRIC_TARGET_LABELS = {
+    'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine',
+}
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
@@ -143,8 +148,10 @@ def extract_lease_metrics(value, window):
             raise ValueError('Metrics series refused')
         metric = row['metric']
         name = metric.get('__name__')
-        if not isinstance(name, str) or name not in LEASE_METRIC_NAMES or set(metric)-{'__name__', 'job', 'instance'}-set(LEASE_METRIC_LABELS):
+        if not isinstance(name, str) or name not in LEASE_METRIC_NAMES or set(metric)-{'__name__', 'job', 'instance'}-set(LEASE_METRIC_LABELS)-set(LEASE_METRIC_TARGET_LABELS):
             raise ValueError('Metrics identity refused')
+        if any(metric[key] != expected for key, expected in LEASE_METRIC_TARGET_LABELS.items() if key in metric):
+            raise ValueError('Metrics target refused')
         labels = {k: v for k, v in metric.items() if k in LEASE_METRIC_LABELS}
         if any(not isinstance(v, str) or v not in LEASE_METRIC_LABELS[k] for k, v in labels.items()):
             raise ValueError('Metrics labels refused')

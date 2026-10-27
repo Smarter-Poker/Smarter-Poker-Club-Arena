@@ -3,6 +3,7 @@ import importlib.util
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -21,6 +22,31 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
+        config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
+        job = config.split('  - job_name: engine_game_server\n', 1)[1].split('    scrape_interval:', 1)[0]
+        target_labels = dict(re.findall(r'^          (host|role|app): ([a-z0-9-]+)$', job, re.MULTILINE))
+        self.assertEqual(target_labels, {'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine'})
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00')).timestamp()
+        metric = {'__name__': 'poker_lease_heartbeat_outcomes_total', 'scope': 'tournament',
+                  'state': 'kept', 'job': 'engine_game_server', 'instance': 'PRIVATE_HOST', **target_labels}
+        source = {'status': 'success', 'data': {'resultType': 'matrix', 'result': [
+            {'metric': metric, 'values': [[start, '12']]}]}}
+        result = reader.extract_lease_metrics(source, window)
+        self.assertEqual(result['series'][0]['labels'], {'scope': 'tournament', 'state': 'kept'})
+        self.assertNotIn('PRIVATE_HOST', json.dumps(result))
+        for key in target_labels:
+            self.assertNotIn(key, result['series'][0]['labels'])
+            original = metric[key]
+            metric[key] = 'unexpected-target'
+            with self.assertRaises(ValueError):
+                reader.extract_lease_metrics(source, window)
+            metric[key] = original
+        metric['arbitrary_label'] = 'unexpected'
+        with self.assertRaises(ValueError):
+            reader.extract_lease_metrics(source, window)
+
     def test_lease_metrics_requires_explicit_original_window(self):
         self.assertFalse(reader.lease_metrics_requested(None, None))
         window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}

@@ -117,7 +117,16 @@ describe('there is exactly one route to a tournament lobby', () => {
       return src.slice(start, src.indexOf('}),', start));
     })();
     expect(viewBody).toContain("e.kind === 'cash'");
-    expect(viewBody).toContain('navigate(`/table/${e.id}`)');
+    expect(viewBody).toContain('handleViewCashTable(e.id)');
+    const cashEntry = src.slice(
+      src.indexOf('const handleViewCashTable ='),
+      src.indexOf('const handleJoinTable =')
+    );
+    expect(cashEntry).toContain('await prepareTableForEntry(tableId)');
+    expect(cashEntry).toContain('navigate(`/table/${tableId}`)');
+    expect(cashEntry.indexOf('await prepareTableForEntry(tableId)')).toBeLessThan(
+      cashEntry.indexOf('navigate(`/table/${tableId}`)')
+    );
     expect(viewBody).toContain(
       "e.kind === 'spin' || (e.kind === 'sng' && e.capacity > 0 && e.capacity <= 2)"
     );

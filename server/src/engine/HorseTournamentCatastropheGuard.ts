@@ -14,6 +14,7 @@ export interface HorseTournamentCatastropheGuardLedger extends Omit<
   version: typeof CATASTROPHE_GUARD_VERSION;
   policyFamily: 'catastrophe_guard_v1';
   workKind: 'phase7_candidate_guard';
+  selectionRefusal?: 'downstream_owner' | 'illegal_candidate';
   guardPolicy: {
     version: typeof CATASTROPHE_GUARD_VERSION;
     maxCandidates: 16;

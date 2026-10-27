@@ -1,7 +1,6 @@
 /** Paired whole tournaments through the real controller, inside the league process. */
 import {
   CATASTROPHE_GUARD_VERSION,
-  evaluateTournamentCatastropheGuard,
   type HorseTournamentCatastropheGuardLedger,
 } from '../engine/HorseTournamentCatastropheGuard.js';
 import { HandController } from '../engine/HandController.js';
@@ -688,12 +687,8 @@ async function playTournament(
                 'balanced',
                 {},
                 {
-                  phase8Postflop:
-                    family === 'catastrophe_guard_v1'
-                      ? 'off'
-                      : hero.user_id === heroId
-                        ? mode
-                        : 'off',
+                  phase8Postflop: hero.user_id === heroId ? mode : 'off',
+                  phase8PolicyFamily: family,
                   mind: false,
                   telemetry: false,
                   decisionTimeMs: 0,
@@ -701,15 +696,7 @@ async function playTournament(
               )
             );
       receipt.decisions++;
-      const guard =
-        family === 'catastrophe_guard_v1' &&
-        hero.user_id === heroId &&
-        mode !== 'off' &&
-        gs.stage !== 'preflop'
-          ? evaluateTournamentCatastropheGuard(hero, gs, decision, mode, () => performance.now())
-          : null;
-      if (guard) decision = guard.decision;
-      const layer = guard?.ledger ?? decision.tournamentPostflop;
+      const layer = decision.tournamentCatastropheGuard ?? decision.tournamentPostflop;
       recordTournamentOpportunity(receipt, hero.user_id === heroId, gs, layer);
       if (layer) {
         recordTournamentCompletion(receipt, layer, gs);

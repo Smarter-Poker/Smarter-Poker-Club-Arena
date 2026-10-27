@@ -95,6 +95,7 @@ const authority = await import('../src/engine/HorseQualifiedAuthority.ts');
 const { horseLeagueComputeResponseIsValid } =
   await import('../src/benchmark/HorseLeagueComputeWorkerClient.ts');
 const phase8Digest = await import('../src/engine/HorsePhase8PolicyDigest.ts');
+const guardRuntimeDigest = await import('../src/engine/HorseCatastropheGuardPolicyDigest.ts');
 
 export const STRENGTH_SCHEMA = 'horse-phase8-strength-v1';
 export const QUALIFICATION_SCHEMA = 'horse-phase8-qualification-v1';
@@ -111,8 +112,14 @@ const POLICY_SOURCE_FILES = [
   'server/src/engine/HorseTournamentFutureHand.ts',
   'server/src/engine/HorseQualifiedAuthority.ts',
 ];
-export const GUARD_POLICY_SOURCE_FILES = [
+// The runtime closure is Docker-computable from src/. Qualification additionally
+// binds its evaluator/transport/assembler/workflow; plain protected selection
+// metadata belongs to neither functional closure.
+export const GUARD_RUNTIME_POLICY_SOURCE_FILES =
+  guardRuntimeDigest.HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES.map((file) => 'server/' + file);
+export const GUARD_QUALIFICATION_SOURCE_FILES = [
   ...new Set([
+    ...GUARD_RUNTIME_POLICY_SOURCE_FILES,
     ...phase8Digest.HORSE_PHASE8_POLICY_SOURCE_FILES.map((file) => 'server/' + file),
     ...POLICY_SOURCE_FILES,
     'server/src/engine/HorseTournamentCatastropheGuard.ts',
@@ -128,6 +135,8 @@ export const GUARD_POLICY_SOURCE_FILES = [
     '.github/workflows/horse-phase8-strength-league.yml',
   ]),
 ];
+// Retain the prior exported name as the full qualification compatibility list.
+export const GUARD_POLICY_SOURCE_FILES = GUARD_QUALIFICATION_SOURCE_FILES;
 export function phase8FamilyIdentity(manifest, result) {
   const family = league.tournamentPolicyFamily(manifest.phase8PolicyFamily);
   if (league.tournamentPolicyFamily(result.phase8PolicyFamily) !== family)
@@ -151,10 +160,15 @@ export function phase8FamilyIdentity(manifest, result) {
   return family;
 }
 export function guardPolicyDigest(read = (file) => readFileSync(path.join(sourceRepo, file))) {
+  return guardRuntimeDigest.horseCatastropheGuardPolicyDigest((file) => read('server/' + file));
+}
+export function guardQualificationSourceDigest(
+  read = (file) => readFileSync(path.join(sourceRepo, file))
+) {
   const hash = createHash('sha256');
-  hash.update('catastrophe_guard_v1\0');
-  hash.update(authority.horsePhase8PolicyDigest() + '\0');
-  for (const file of GUARD_POLICY_SOURCE_FILES) {
+  hash.update('horse-catastrophe-guard-qualification-source-v1\0');
+  hash.update(guardPolicyDigest(read) + '\0');
+  for (const file of GUARD_QUALIFICATION_SOURCE_FILES) {
     hash.update(file + '\0');
     hash.update(read(file));
     hash.update('\0');
@@ -451,6 +465,20 @@ function runRecord(r, hosts, copies) {
   const x = r.result;
   return {
     run: r.key,
+    ...(x.phase8PolicyFamily === 'catastrophe_guard_v1'
+      ? {
+          phase8PolicyFamily: x.phase8PolicyFamily,
+          policyVersion: x.version,
+          workKind: x.workKind,
+          evidenceMode: x.evidenceMode,
+          candidateMode: x.candidateMode,
+          completionSchemaVersion: x.completionSchemaVersion,
+          completionDiagnostics: x.completionDiagnostics,
+          entrants: x.entrants,
+          candidateFinish: x.candidateFinish,
+          baselineFinish: x.baselineFinish,
+        }
+      : {}),
     objective: r.objective,
     seed: r.seed,
     host: r.host,
@@ -521,6 +549,7 @@ export async function assemble(options) {
   const guard = family === 'catastrophe_guard_v1';
   const verdict = league.summarizeTournamentPromotion(runs.map((r) => r.result));
   const policyDigest = guard ? guardPolicyDigest() : authority.horsePhase8PolicyDigest();
+  const qualificationSourceDigest = guard ? guardQualificationSourceDigest() : null;
   const first = runs[0].manifest;
   const runsOut = path.join(out, 'runs');
   const copies = new Map();
@@ -611,7 +640,10 @@ export async function assemble(options) {
       policyDigest,
       ...(guard
         ? {
-            policySourceFiles: GUARD_POLICY_SOURCE_FILES,
+            runtimePolicyDigest: policyDigest,
+            policySourceFiles: GUARD_RUNTIME_POLICY_SOURCE_FILES,
+            qualificationSourceDigest,
+            qualificationSourceFiles: GUARD_QUALIFICATION_SOURCE_FILES,
             phase8PolicyFamily: family,
             workKind: 'phase7_candidate_guard',
           }
@@ -619,7 +651,7 @@ export async function assemble(options) {
       policyDigestCheck:
         guard && fixture
           ? 'fixture source digest only; no source certification or qualification'
-          : `computed by ${guard ? 'guardPolicyDigest()' : 'horsePhase8PolicyDigest()'}; ${(guard ? GUARD_POLICY_SOURCE_FILES : POLICY_SOURCE_FILES).join(', ')} are identical at ${head} and the assembling checkout`,
+          : `computed by ${guard ? 'guardPolicyDigest() (runtime) and guardQualificationSourceDigest() (full qualification)' : 'horsePhase8PolicyDigest()'}; ${(guard ? GUARD_POLICY_SOURCE_FILES : POLICY_SOURCE_FILES).join(', ')} are identical at ${head} and the assembling checkout`,
     },
     hosts: hosts.hosts,
     hostAssignment: hosts.assignment ?? null,
@@ -662,6 +694,8 @@ export async function assemble(options) {
           activationAllowed: false,
           selection: 'not_selected',
           workKind: 'phase7_candidate_guard',
+          qualificationSourceDigest,
+          qualificationSourceFiles: GUARD_QUALIFICATION_SOURCE_FILES,
         }
       : {}),
     qualified,

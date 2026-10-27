@@ -1,5 +1,5 @@
 import { HorseObserverReads } from '../../engine/horseDecision/observerReads.js';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,6 +70,9 @@ import {
 } from '../../testing/horseRegression/plan/fixture.js';
 import { runtimeHorseJournalArchiveOptions } from './config.js';
 import { doorRosterTransport } from '../horseAcceptedRoster/fixture.test-support.js';
+import { guardLiveJournalFixture } from '../../engine/horseDecision/phase8GuardLive.test-support.js';
+import { HorseFleetPhaseInterpreter } from './phaseProof.js';
+import { qualifiedReplayAdmissions } from '../../engine/horseDecision/replay/qualifiedAuthority.js';
 
 const table = '10000000-0000-4000-8000-000000000001',
   hand = '30000000-0000-4000-8000-000000000001',
@@ -352,6 +355,63 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('reconciles the distinct guard worker capture and refuses cross-family or changed acceptance evidence', async () => {
+    // The worker/capture are real components; the retained controller hand and
+    // qualification are explicit controls, not natural production evidence.
+    const f = await guardLiveJournalFixture();
+    expect(f.synthetic).toBe(true);
+    expect(f.witness.phase8Authority).toBeUndefined();
+    expect(f.witness.phase8GuardAuthority?.selection).toBe('controller_accepted');
+    expect(reconcileHorseJournalHand(f.records, f.handKey)).toMatchObject({
+      status: 'reconciled',
+      matchedActions: 1,
+      gaps: [],
+      activationAllowed: false,
+      completePopulation: false,
+    });
+    const admission = f.h.deps.admitPhase8GuardAuthority!();
+    expect(admission.status).toBe('admitted');
+    const restored = vi
+      .spyOn(qualifiedReplayAdmissions, 'admitPhase8GuardAuthority')
+      .mockReturnValue(admission);
+    try {
+      const interpret = (witness: typeof f.witness) =>
+        new HorseFleetPhaseInterpreter(() => {}).interpret(
+          f.capture,
+          witness,
+          reviewHorsePlanEffects(f.records, f.handKey)
+        ).phase8;
+      expect(interpret(f.witness)).toMatchObject({
+        status: 'applicable-active',
+        qualification: 'verified',
+        application: 'accepted',
+      });
+      const changed = structuredClone(f.witness);
+      changed.phase8GuardAuthority!.verdict = 'expired';
+      expect(interpret(changed)).toMatchObject({ status: 'refused', application: 'refused' });
+    } finally {
+      restored.mockRestore();
+    }
+    for (const mutation of ['epoch', 'verdict', 'legacy_family'] as const) {
+      const records = structuredClone(f.records);
+      const index = records.findIndex((r) => r.kind === 'execution');
+      const record = records[index]!;
+      const witness = JSON.parse(record.body) as typeof f.witness;
+      if (mutation === 'epoch')
+        (witness.phase8GuardAuthority!.authority as { epoch: string }).epoch = 'foreign-worker';
+      else if (mutation === 'verdict') witness.phase8GuardAuthority!.verdict = 'expired';
+      else {
+        (witness as { phase8Authority?: unknown }).phase8Authority = witness.phase8GuardAuthority;
+        delete (witness as { phase8GuardAuthority?: unknown }).phase8GuardAuthority;
+      }
+      records[index] = makeHorseJournalRecord(record, witness);
+      expect(reconcileHorseJournalHand(records, f.handKey), mutation).toMatchObject({
+        status: 'incomplete',
+        matchedActions: 0,
+      });
+    }
+  });
+
   it('certifies individual read provenance only for exact bound accepted actions', () => {
     const f = fixture('nlh', [], false, false, false, false, false, true);
     expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({

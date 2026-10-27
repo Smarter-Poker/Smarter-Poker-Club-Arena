@@ -242,7 +242,7 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
         for (const [phase, receipt] of Object.entries({
           phase6: witness.phase6Attribution,
           phase7: witness.phase7Evidence,
-          phase8: witness.phase8Authority,
+          phase8: witness.phase8GuardAuthority ?? witness.phase8Authority,
           phase10: witness.phase10Authority,
           phase11: witness.phase11Authority,
           phase12: witness.phase12Authority,

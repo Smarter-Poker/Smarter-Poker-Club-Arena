@@ -209,7 +209,7 @@ const hostFile = (file: string) =>
 
 describe('phase8-strength-assemble', () => {
   it(
-    'binds the full baseline closure and new module in the guard digest',
+    'separately binds every runtime and qualification source, excluding plain selection metadata',
     async () => {
       const { stdout } = await exec(
         process.execPath,
@@ -219,22 +219,57 @@ describe('phase8-strength-assemble', () => {
           '--input-type=module',
           '-e',
           `
-      import {guardPolicyDigest,GUARD_POLICY_SOURCE_FILES} from './scripts/phase8-strength-assemble.mjs';
+      import {guardPolicyDigest,guardQualificationSourceDigest,GUARD_RUNTIME_POLICY_SOURCE_FILES,GUARD_QUALIFICATION_SOURCE_FILES} from './scripts/phase8-strength-assemble.mjs';
+      import {horseCatastropheGuardPolicyDigest,HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES} from './src/engine/HorseCatastropheGuardPolicyDigest.ts';
+      import {HORSE_CATASTROPHE_GUARD_QUALIFICATION_SOURCE_FILES} from './src/engine/HorseTournamentCatastropheGuardAuthority.ts';
       import {readFileSync} from 'node:fs';
       import path from 'node:path';
       const read=p=>readFileSync(path.resolve('..',p));
-      const original=guardPolicyDigest(read);
-      console.log(JSON.stringify({files:GUARD_POLICY_SOURCE_FILES, original, baselineChanged:guardPolicyDigest(p=>p==='server/src/engine/HorseEval.ts'?Buffer.concat([read(p),Buffer.from('changed')]):read(p)), guardChanged:guardPolicyDigest(p=>p==='server/src/engine/HorseTournamentCatastropheGuard.ts'?Buffer.concat([read(p),Buffer.from('changed')]):read(p))}));
+      const runtime=guardPolicyDigest(read), qualification=guardQualificationSourceDigest(read);
+      const changed=file=>p=>p===file?Buffer.concat([read(p),Buffer.from('changed')]):read(p);
+      const selector='server/src/engine/HorseTournamentCatastropheGuardSelection.ts';
+      console.log(JSON.stringify({runtimeFiles:GUARD_RUNTIME_POLICY_SOURCE_FILES, qualificationFiles:GUARD_QUALIFICATION_SOURCE_FILES,
+        runtime, qualification, consumerRuntimeFiles:HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES.map(p=>'server/'+p), consumerQualificationFiles:HORSE_CATASTROPHE_GUARD_QUALIFICATION_SOURCE_FILES, sharedRuntime:horseCatastropheGuardPolicyDigest(p=>read('server/'+p)),
+        runtimeFailures:GUARD_RUNTIME_POLICY_SOURCE_FILES.filter(p=>guardPolicyDigest(changed(p))===runtime||guardQualificationSourceDigest(changed(p))===qualification),
+        qualificationFailures:GUARD_QUALIFICATION_SOURCE_FILES.filter(p=>guardQualificationSourceDigest(changed(p))===qualification),
+        workflowRuntime:guardPolicyDigest(changed('.github/workflows/horse-phase8-strength-league.yml')),
+        workflowQualification:guardQualificationSourceDigest(changed('.github/workflows/horse-phase8-strength-league.yml')),
+        selectorRuntime:guardPolicyDigest(changed(selector)), selectorQualification:guardQualificationSourceDigest(changed(selector))}));
       process.exit(0);
     `,
         ],
         { cwd: process.cwd(), timeout: RUN_TIMEOUT_MS }
       );
       const digest = JSON.parse(stdout);
-      expect(digest.files).toContain('server/src/engine/HorseEval.ts');
-      expect(digest.files.length).toBeGreaterThanOrEqual(70);
-      expect(digest.original).not.toBe(digest.baselineChanged);
-      expect(digest.original).not.toBe(digest.guardChanged);
+      expect(digest.runtimeFiles).toContain('server/src/engine/HorseEval.ts');
+      expect(digest.runtimeFiles).toContain(
+        'server/src/engine/HorseCatastropheGuardPolicyDigest.ts'
+      );
+      expect(digest.runtimeFiles).toContain('server/src/engine/HorseTournamentCatastropheGuard.ts');
+      expect(digest.runtimeFiles.length).toBeGreaterThanOrEqual(70);
+      expect(digest.runtimeFiles.every((p: string) => p.startsWith('server/src/'))).toBe(true);
+      expect(digest.qualificationFiles).toEqual(expect.arrayContaining(digest.runtimeFiles));
+      expect(digest.qualificationFiles).toContain('server/scripts/phase8-strength-assemble.mjs');
+      expect(digest.qualificationFiles).toContain(
+        '.github/workflows/horse-phase8-strength-league.yml'
+      );
+      expect(digest.runtimeFiles).not.toContain(
+        'server/src/engine/HorseTournamentCatastropheGuardSelection.ts'
+      );
+      expect(digest.qualificationFiles).not.toContain(
+        'server/src/engine/HorseTournamentCatastropheGuardSelection.ts'
+      );
+      expect(digest.runtimeFiles).toEqual(digest.consumerRuntimeFiles);
+      expect([...digest.qualificationFiles].sort()).toEqual(
+        [...digest.consumerQualificationFiles].sort()
+      );
+      expect(digest.runtime).toBe(digest.sharedRuntime);
+      expect(digest.runtimeFailures).toEqual([]);
+      expect(digest.qualificationFailures).toEqual([]);
+      expect(digest.workflowRuntime).toBe(digest.runtime);
+      expect(digest.workflowQualification).not.toBe(digest.qualification);
+      expect(digest.selectorRuntime).toBe(digest.runtime);
+      expect(digest.selectorQualification).toBe(digest.qualification);
     },
     RUN_TIMEOUT_MS
   );
@@ -325,6 +360,18 @@ describe('phase8-strength-assemble', () => {
       expect(strength.phase8PolicyFamily).toBe('catastrophe_guard_v1');
       expect(strength.schema).toBe('horse-phase8-guard-strength-v1');
       expect(strength.activationAllowed).toBe(false);
+      expect(strength.runs).toHaveLength(18);
+      for (const run of strength.runs)
+        expect(run).toMatchObject({
+          phase8PolicyFamily: 'catastrophe_guard_v1',
+          policyVersion: tournamentPolicyVersion('catastrophe_guard_v1'),
+          workKind: 'phase7_candidate_guard',
+        });
+      expect(strength.source.runtimePolicyDigest).toBe(strength.source.policyDigest);
+      expect(strength.source.qualificationSourceDigest).toMatch(/^[0-9a-f]{64}$/);
+      expect(strength.source.qualificationSourceFiles).toContain(
+        'server/scripts/phase8-strength-assemble.mjs'
+      );
       expect(strength.source.policySourceFiles).toContain(
         'server/src/engine/HorseTournamentCatastropheGuard.ts'
       );
@@ -337,6 +384,9 @@ describe('phase8-strength-assemble', () => {
         isolatedCandidate: true,
         activationAllowed: false,
         selection: 'not_selected',
+        policyDigest: strength.source.runtimePolicyDigest,
+        qualificationSourceDigest: strength.source.qualificationSourceDigest,
+        qualificationSourceFiles: strength.source.qualificationSourceFiles,
       });
     },
     RUN_TIMEOUT_MS
@@ -402,6 +452,11 @@ describe('phase8-strength-assemble', () => {
       const strengthBytes = readFileSync(path.join(outDir(), 'strength.json'));
       const strength = JSON.parse(strengthBytes.toString('utf8'));
       expect(strength.mode).toBe('fixture');
+      for (const run of strength.runs) {
+        expect(run).not.toHaveProperty('phase8PolicyFamily');
+        expect(run).not.toHaveProperty('policyVersion');
+        expect(run).not.toHaveProperty('workKind');
+      }
       expect(strength.superseded).toEqual({
         path: 'docs/evidence/phase8/earlier/',
         reason: 'fixture',

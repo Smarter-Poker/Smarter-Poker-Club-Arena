@@ -6291,11 +6291,7 @@ function CashierTradeWorkspace() {
                       disabled={
                         mgmtClaiming || claimWalletBalance === null || claimWalletBalance <= 0
                       }
-                      onClick={() =>
-                        setMgmtClaimAmount(
-                          String(Math.floor((claimWalletBalance ?? 0) * 100) / 100)
-                        )
-                      }
+                      onClick={() => setMgmtClaimAmount(String(claimWalletBalance ?? 0))}
                     >
                       Claim All{' '}
                       {claimWalletBalance === null

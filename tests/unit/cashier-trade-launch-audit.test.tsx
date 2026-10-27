@@ -2199,11 +2199,11 @@ describe('management claims from the selected member wallet', () => {
   }
 
   it.each([
-    ['player_wallet', 'Player Wallet', '12.25'],
+    ['player_wallet', 'Player Wallet', '1.13'],
     ['agent_wallet', 'Agent Wallet', '340.00'],
     ['promo_wallet', 'Promo Wallet', '80.00'],
   ])('binds %s balance, Claim All and durable claim source', async (source, label, balance) => {
-    state.roster = [{ ...player(0, 12.25), role: 'agent' }];
+    state.roster = [{ ...player(0, 1.13), role: 'agent' }];
     const original = vi.mocked(supabase.rpc).getMockImplementation()!;
     vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
       if (name !== 'fn_club_bank_claim_back') return original(name, args);

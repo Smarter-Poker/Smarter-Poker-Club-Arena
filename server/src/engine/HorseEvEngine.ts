@@ -316,16 +316,18 @@ export function riverCallVerdict(args: {
   const exact = Number.isFinite(args.callDeductionFraction);
   const rake = exact ? clamp(args.callDeductionFraction!, 0, 1) : clamp(args.rakeMarg ?? 0, 0, 0.5);
   const risk = clamp(args.riskPremium ?? 0, 0, 0.15);
+  const riskShare = risk * Math.sqrt(clamp(c / Math.max(1, args.stack), 0, 1));
   const award = (args.pot + c) * (1 - rake);
-  const evCall = (args.equity - risk) * award - c;
+  // Report the same stack-share risk used by the unchanged action threshold.
+  // Charging the full premium here could report a negative EV for a call
+  // whose policy-adjusted equity is clearly above its price.
+  const evCall = (args.equity - riskShare) * award - c;
   if (exact && c === 0) return { call: true, required: 0, evCall };
   // A call cannot recover its cost when even winning pays less than the
   // call. Do not turn that price into a 99% threshold or mix into it.
   if (exact && c > 0 && award < c)
     return { call: false, required: award > 0 ? c / award : 1, evCall };
-  const rawRequired =
-      c / ((args.pot + c) * (1 - rake)) +
-      risk * Math.sqrt(clamp(c / Math.max(1, args.stack), 0, 1)),
+  const rawRequired = c / ((args.pot + c) * (1 - rake)) + riskShare,
     required = exact ? Math.max(0, rawRequired) : clamp(rawRequired, 0, 0.99);
   // Indifference band: within 1.5 equity points of the required number the
   // solver mixes; so does this.

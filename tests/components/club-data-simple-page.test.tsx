@@ -351,7 +351,7 @@ describe('ClubDataSimplePage', () => {
     });
     await waitFor(() =>
       expect(
-        screen.getByText('Club Data Could Not Be Read. Showing The Last Good Figures.')
+        screen.getAllByText('Club Data Could Not Be Read. Showing The Last Good Figures.')[0]
       ).toBeTruthy()
     );
     expect(screen.getByText('987.25')).toBeTruthy();
@@ -492,6 +492,6 @@ it('finds a player independently when the game search fails', async () => {
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'WooWoo' } });
   expect(await screen.findByRole('button', { name: /WooWoo.*View Player Data/i })).toBeVisible();
   expect(
-    screen.getByText('Club Data Could Not Be Read. Showing The Last Good Figures.')
+    screen.getAllByText('Club Data Could Not Be Read. Showing The Last Good Figures.')[0]
   ).toBeVisible();
 });

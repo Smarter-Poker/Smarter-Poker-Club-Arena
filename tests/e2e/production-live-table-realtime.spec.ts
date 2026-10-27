@@ -51,7 +51,7 @@ import {
   classifyAddOnBreakHold,
   classifySynchronizedBreakHold,
 } from './support/tournamentBoardEnding';
-import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
+import { waitForInitialTableReadiness } from './support/initialTableReadiness';
 import {
   classifyMissingTournamentSubject,
   scopedStalledTables,
@@ -1285,30 +1285,24 @@ async function observeTournamentBoard(
       page,
       (async () => {
         await Promise.all([
-          page.goto(`table/${candidate.id}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 60_000,
-          }),
           protocolReady,
+          (async () => {
+            await page.goto(`table/${candidate.id}`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 60_000,
+            });
+            if (/\/auth(?:\/|\?|$)/.test(page.url())) {
+              throw new Error(
+                'Production redirected to auth despite the required authenticated state'
+              );
+            }
+            expect(tableIdFromUrl(page)).toBe(candidate.id);
+            // Observe the mounted table, felt and cleared Connecting status
+            // together while the wire waits run. Serial assertions after the
+            // snapshot charged their own transport time to an already-ready UI.
+            await waitForInitialTableReadiness(page, navigationStartedAt, CONNECT_DEADLINE_MS);
+          })(),
         ]);
-        if (/\/auth(?:\/|\?|$)/.test(page.url())) {
-          throw new Error('Production redirected to auth despite the required authenticated state');
-        }
-        expect(tableIdFromUrl(page)).toBe(candidate.id);
-        await expect(
-          page.locator('.table-page'),
-          `${candidate.name} table route never mounted`
-        ).toBeVisible({ timeout: 20_000 });
-        await expect(
-          page.locator('.table-surface'),
-          `${candidate.name} live felt never rendered`
-        ).toBeVisible({ timeout: 20_000 });
-        // Cold entry may honestly say Connecting before its first state. The
-        // actual subscription, snapshot, mounted felt and cleared status must
-        // still finish inside the same original navigation deadline.
-        await expect(banner).toBeHidden({
-          timeout: remainingInitialTableReadinessMs(navigationStartedAt, CONNECT_DEADLINE_MS),
-        });
       })(),
       `${candidate.name} initial live-table connection`
     );

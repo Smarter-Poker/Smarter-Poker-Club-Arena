@@ -19,6 +19,14 @@ SPEC.loader.exec_module(seal)
 
 class DatabaseReservation(unittest.TestCase):
     def setUp(self):
+        # Git hooks export GIT_DIR/INDEX/WORK_TREE. A native fixture must never
+        # inherit them or address its caller's checkout/index.
+        self.original_git_environment = os.environ.copy()
+        self.addCleanup(self.restore_environment)
+        for key in list(os.environ):
+            if key.startswith('GIT_'):
+                del os.environ[key]
+        os.environ.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT='0')
         self.temp = tempfile.TemporaryDirectory(prefix='database-reservation-')
         self.root = Path(self.temp.name)
         self.repo = self.root / 'repo'; self.repo.mkdir()
@@ -49,8 +57,12 @@ class DatabaseReservation(unittest.TestCase):
         # Docker is a transport boundary; Git, locks, journal and admission run for real.
         seal.database_container_identity = lambda: {'running': True, **self.state['desired']}
 
+    def restore_environment(self):
+        os.environ.clear(); os.environ.update(self.original_git_environment)
+
     def tearDown(self):
         self.temp.cleanup()
+        self.restore_environment()
 
     def git(self, *args):
         return subprocess.check_output(['git', '-C', str(self.repo), *args], stderr=subprocess.PIPE).decode()

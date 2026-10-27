@@ -2,7 +2,8 @@
 -- Group only the original source counts. Existing locks, freshness, partials,
 -- tournament checks, check/write pages, source authorities and payers remain.
 -- The entire84-window query is atomic: it MUST fit the remaining original
--- 240-second statement, admitted before the unchanged90-second soft stop.
+-- 240-second statement. The original90-second soft admission and its
+-- existing first-part exception remain unchanged.
 -- Local parity/timing is NOT a production budget/capacity certificate.
 -- No installation until current human payments and a bounded actual-query
 -- timing proof have been completed by the incident owner.

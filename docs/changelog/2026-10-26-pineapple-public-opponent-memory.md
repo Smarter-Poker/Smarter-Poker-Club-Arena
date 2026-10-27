@@ -1,0 +1,9 @@
+# Pineapple public opponent memory
+
+The owner's October 26 herd-note request covers all supported variants. Crazy Pineapple was absent from the durable opponent-profile allowlist, so its accepted hands did not update saved public notes and its profile reader refused the variant.
+
+The reserved migration extends only the exact variant literal in the existing accepted-hand trigger, recording marker and bounded profile reader, together with the profile constraint. Current production definitions were read before preparation: all three exact preimages match the preceding eight-variant migration. The migration asserts those preimages, derives and verifies each postimage, and preserves function ownership, security-definer status, volatility, search path and ACL. It changes no financial record, sampling threshold, legacy-read horizon or schedule.
+
+The hot profile constraint still requires the existing certified maintenance installer with one transaction, one short lock attempt and five-second statements. The owner's date-limited same-day delivery instruction does not remove safe installation requirements. Engine-side Pineapple consumption and boot hydration are delivered separately; neither a source merge nor this migration file proves installation.
+
+The existing directly triggered PostgreSQL qualification now installs this exact extension after its predecessor and checks accepted-hand recording, one update despite duplicate hand insertion, profile retrieval, variant/mode/size isolation, service-only permissions, unsupported-variant refusal and replay refusal. Source contracts retain the certified installer declaration. Production completion requires protected merge, exact-byte installation and catalog/history readback.

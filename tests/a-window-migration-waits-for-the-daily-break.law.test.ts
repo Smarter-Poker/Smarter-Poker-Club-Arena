@@ -413,3 +413,27 @@ describe('database-only windows cannot displace engine admission', () => {
     expect(read('server/scripts/engine-release-transaction.sh')).not.toContain('databaseWindows');
   });
 });
+
+describe('one explicit database-only certified maintenance operation', () => {
+  it('runs real Git and seal-journal refusal/replay qualification', () => {
+    const r = spawnSync(
+      'python3',
+      ['-B', 'tests/operations/database-maintenance-reservation.test.py'],
+      { encoding: 'utf8', timeout: 60000 }
+    );
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+  }, 65000);
+  it('retains the original lock, loopback request and thaw instead of replacing the engine', () => {
+    const code = read('scripts/ci/database-maintenance-window.py');
+    expect(code).toContain('/var/lock/club-arena-engine-up.lock');
+    expect(code).toContain('fcntl.LOCK_EX | fcntl.LOCK_NB');
+    expect(code).toContain('*.awaiting-certificate');
+    expect(code).toContain("body:JSON.stringify({announcedAt,cause:'urgent'})");
+    expect(code).toContain('>= 285000');
+    expect(code).toContain("m.get('durableConfirmed') is True");
+    expect(code).toContain("waves.get('finishedAt', 0) >= end");
+    expect(code).not.toMatch(
+      /docker.*(?:restart|stop|start|run)|systemctl|fn_thaw_platform|force-desired/
+    );
+  });
+});

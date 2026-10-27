@@ -17,6 +17,11 @@ on:
         description: 'Reviewed database-only owner window; never requests an engine release or a break'
         required: true
         type: string
+      request_database_break:
+        description: 'Explicit reviewed DB-only maintenance reservation; never replaces the engine'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
   schedule:
@@ -313,11 +318,28 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           OWNER_WINDOW_ID: ${{ inputs.owner_window_id || needs.detect.outputs.owner_window_id }}
+          REQUEST_DATABASE_BREAK: ${{ inputs.request_database_break }}
+          HETZNER_HOST: ${{ inputs.request_database_break && secrets.HETZNER_HOST || '' }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ inputs.request_database_break && secrets.HETZNER_SSH_PRIVATE_KEY || '' }}
+          HETZNER_HOST_KEY: ${{ inputs.request_database_break && secrets.HETZNER_HOST_KEY || '' }}
         run: |
+          if [ "$REQUEST_DATABASE_BREAK" = true ]; then
+            python3 -B scripts/ci/database-maintenance-window.py
+            exit $?
+          fi
           owner_args=()
           if [ -n "$OWNER_WINDOW_ID" ]; then owner_args=(--owner-window "$OWNER_WINDOW_ID"); fi
           node scripts/ci/install-window-migrations.mjs "${owner_args[@]}" \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
+
+      - name: Retain the database-only terminal receipt
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.request_database_break
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-maintenance-${{ github.run_id }}
+          path: artifacts/database-maintenance/receipt.json
+          if-no-files-found: error
+          retention-days: 7
 
   signal:
     name: Dispatch The Exact Main SHA

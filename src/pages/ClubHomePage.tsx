@@ -4337,7 +4337,8 @@ function ClubHomePageContent({
       gameEntryScope.busy = true;
       setActionBusy(true);
       try {
-        await prepareTableForEntry(tableId);
+        // Signed-out visitors still reach the table route's existing AuthGuard.
+        if (currentUserId) await prepareTableForEntry(tableId);
         if (gameEntryScope.active) navigate(`/table/${tableId}`);
       } catch (error) {
         if (gameEntryScope.active) {
@@ -4349,7 +4350,7 @@ function ClubHomePageContent({
         if (gameEntryScope.active) setActionBusy(false);
       }
     },
-    [gameEntryScope, navigate, toast]
+    [currentUserId, gameEntryScope, navigate, toast]
   );
 
   const handleJoinTable = useCallback(

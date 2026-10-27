@@ -1,0 +1,9 @@
+# Cover the original commission-window projection
+
+The actual R2 source lookup has the matching (source_id,source_type,club_id) partial index, but must fetch heap rows for user_id,amount,commission_rate,settled_at. The new index retains those keys and predicate and includes the four projected fields. No query, function, source authority pin, proof, cache or monetary row changes.
+
+The native PG17 qualification executes the unchanged original complete commission-window owner (c99fd8bcf27dee2047db451d8c65111e) and its exact `_rw_ac` insertion. It compares all JSON flags/nodes/edges, cash/fee IDs/MD5 arrays and both ordered and bag projection fingerprints. Thirty actual fault cases run in both generic/custom modes before and after the index; additional cases cover MVCC fallback, source/authority immutability, exact installer shape, wrong catalogue shapes, replay and an actual failed concurrent build with an INVALID leftover.
+
+On the bounded 300,000-background/12,000-target-source fixture, the original unchanged lookup takes 23.326 ms versus 21.501 ms locally; buffer accesses 48,426 versus36,182. PostgreSQL naturally chooses Index Only Scan, with 3 heap fetches among about 24,003 matched rows. This is a modest local RAM measurement and causal heap-avoidance proof, not production wall-clock or build-time qualification. The source relation is controlled; complete earning-producer qualification is outside this test.
+
+The existing maintained CCI installer remains the only build route, with its runway/time limits and catalogue readback. Any uncertain or invalid outcome must be inspected by its original operation before recovery. No production DDL/probe/query is part of this source qualification. Human payments take priority and installation stays held until they are verified. This R2-only access fix does not address the separately observed split-write payer-registration delay and cannot alone certify the Monday 04:00 workload.

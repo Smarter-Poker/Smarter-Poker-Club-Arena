@@ -1,0 +1,7 @@
+# tests/commission-windows-cover-original-source-lookup.law.test.ts
+
+The original R2 `_rw_ac` path selects source_type,source_id,club_id,user_id,amount,commission_rate,settled_at by its source_id/source_type key. Its existing partial lookup index holds the first three columns. A covering index may retain those exact keys and `source_id IS NOT NULL` predicate while including the four remaining columns. Do not narrow cross-club extras or change the query, bag, ordering, full result, source IDs/hashes, function authority or financial owners.
+
+Use the maintained concurrent-preamble installer and exact catalogue guards. A same-name INVALID, wrong predicate/key/include/opclass/order or missing index does not qualify. Read the owning outcome before any continuation. Native tests create an actual failed concurrent build, verify refusal and preserve valid-index OID/filenode on replay. Never supply an automatic production drop/retry loop.
+
+An index-only scan may still fetch heap tuples on pages that are not all-visible; that MVCC fallback must preserve the original complete result. Local timing and index-only proof do not establish production build duration, size or whole-week throughput. This index helps the R2 source lookup; split-write payer registration never reads agent_commissions, so this cannot fix that separate write-phase delay or alone certify 04:00 delivery. Incident installation remains held until human payments are verified.

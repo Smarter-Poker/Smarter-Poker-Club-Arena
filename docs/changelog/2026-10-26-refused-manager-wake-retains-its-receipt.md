@@ -11,12 +11,24 @@ real first admission.
 Retain the validated identity, reason and newest generation before asking the
 scheduler to wake. Keep the existing acceptance result, lifecycle gates and
 exact-generation acknowledgement rules. An ordinary wake invents no receipt;
-a stopped manager never acknowledges it. No new timer, scan, migration,
+a stopped manager never acknowledges it. No new timer, migration,
 financial path or deployment mechanism is added.
 
 Live observations found seated capacity tables with pending receipts on a
 running, non-paused event while its manager continued processing busts. The
 masked runtime log does not identify which Realtime/admission edge lost the
-specific historical wake. This change fixes the reproduced source gap; it does
-not claim to repair a frame never delivered by a healthy transport. Protected
-checks, publication and affected live proof remain separate requirements.
+specific historical wake. The existing sweep admission now also reads its own indexed pending database
+receipts before capturing work. This closes the separate handoff gap when a
+healthy transport never supplies a frame: the original business owner consumes
+the original committed request without another timer or background repair loop.
+A bounded read validates identity, reason and generation before folding any row;
+newer Realtime generations win. Read failure remains UNKNOWN, retains known work
+and requests the existing causal retry without obstructing terminal authority.
+Stop, abort, maintenance freeze and database entry authority still precede a
+new dealer. Existing exact-generation acknowledgements remain unchanged.
+
+The runtime witness showed an active manager with a seated capacity table still
+unadmitted after 43 minutes; another recovered after manager readoption drained
+durable requests. This proves an unresolved handoff class, but does not identify
+the precise historical frame loss. Protected checks, publication and affected
+live proof remain separate requirements.

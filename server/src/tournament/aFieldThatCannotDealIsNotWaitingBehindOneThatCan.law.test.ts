@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  A FIELD THAT CANNOT DEAL IS NOT WAITING BEHIND ONE THAT CAN (2026-09-29)
@@ -25,7 +26,8 @@ vi.mock('../services/errorReporter.js', () => ({ reportError: fixture.reportErro
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
-    from: () => {
+    from: (table: string) => {
+      if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
       throw new Error('no database in this fixture');
     },
     rpc: () => {

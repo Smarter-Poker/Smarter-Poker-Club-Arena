@@ -103,6 +103,8 @@ try:
  # Restore real registry guard and journal functions used by the maintained fixture.
  q("CREATE OR REPLACE FUNCTION fn_ca_post_leg(text,text,uuid,text,uuid,numeric,uuid,text,text) RETURNS boolean LANGUAGE plpgsql AS $$ BEGIN INSERT INTO journal(category,from_type,from_id,to_type,to_id,amount,club_id,op) VALUES($1,$2,$3,$4,$5,$6,$7,$8); RETURN true; END $$;")
  q(sql)
+ for proof in re.findall(r'^-- @live-proof: (.+)$',sql,re.M):
+  assert q('SELECT '+proof+';').strip()=='t',proof
  # Readbacks prove that older clients cannot convert promo back to cash either.
  q(f"select set_config('request.jwt.claim.sub','{O}',false); select set_config('app.ledger_autoskip_agents','1',false); update agents set promo_wallet_balance=1000;")
  bank_before=q(f"select chip_treasury from clubs where id='{C}';")
@@ -116,6 +118,7 @@ try:
  legacy=json.loads(q(f"select set_config('request.jwt.claim.sub','{A}',false); select fn_agent_wallet_claim_back_phase2_core_20260831('{C}','{legacy_tx}',10,NULL,gen_random_uuid());").splitlines()[-1]); assert legacy['success'],legacy
  assert q(f"select agent_wallet_balance from agents where user_id='{A}';")==cash_before
  assert float(q(f"select promo_wallet_balance from agents where user_id='{A}';"))==promo_before+10
+ assert float(q(f"select balance_after from chip_transactions where id='{legacy['transaction_id']}';"))==promo_before+10
  # Seed own/downline/unrelated and game rows, then query real server scopes and totals.
  q('TRUNCATE chip_transactions;')
  q(f"INSERT INTO chip_transactions(club_id,from_user_id,to_user_id,amount,transaction_type,created_at) VALUES ('{C}','{A}','{P}',10,'agent_wallet_send',now()),('{C}','{P}',NULL,999,'buyin',now()),('{C}','{O}',NULL,888,'tournament_buyin',now()),('{C}','{O}','{O}',7,'peer_transfer',now());")

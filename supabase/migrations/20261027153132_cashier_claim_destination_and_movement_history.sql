@@ -447,9 +447,13 @@ DO $patch$ DECLARE d text; BEGIN
  d:=replace(d,'if v_drawn > 0 then','if v_drawn > 0 and v_dest <> ''promo_wallet'' then');
  d:=replace(d,'set agent_wallet_balance = coalesce(agent_wallet_balance, 0) + (v_take - v_repay),','set agent_wallet_balance = coalesce(agent_wallet_balance, 0) + CASE WHEN v_dest=''promo_wallet'' THEN 0 ELSE (v_take-v_repay) END, promo_wallet_balance = coalesce(promo_wallet_balance,0) + CASE WHEN v_dest=''promo_wallet'' THEN v_take ELSE 0 END,');
  d:=replace(d,'''source'', v_dest,','''source'', v_dest, ''destination'', CASE WHEN v_dest=''promo_wallet'' THEN ''promo_wallet'' ELSE ''agent_wallet'' END,');
+ d:=replace(d,'v_credit_after     numeric;','v_credit_after     numeric; v_destination_after numeric;');
+ d:=replace(d,'returning agent_wallet_balance, credit_used into v_float_after, v_credit_after;','returning agent_wallet_balance, credit_used, CASE WHEN v_dest=''promo_wallet'' THEN promo_wallet_balance ELSE agent_wallet_balance END into v_float_after, v_credit_after, v_destination_after;');
+ d:=replace(d,'''agent_wallet_after'', v_float_after,','''agent_wallet_after'', v_float_after, ''destination_balance_after'', v_destination_after,');
+ d:=replace(d,E'     v_float_after)\n  returning id',E'     v_destination_after)\n  returning id');
  EXECUTE d;
 END $patch$;
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_claim_back_phase2_core_20260831(uuid,uuid,numeric,text,uuid)'::regprocedure)) = 'c5ae86bc20569cb05ec93c87e31e0435')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_claim_back_phase2_core_20260831(uuid,uuid,numeric,text,uuid)'::regprocedure)) = 'c8c794a086fd87c9193abd134bcf838a')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_history_feed(uuid,text,text,timestamptz,timestamptz,uuid,text,timestamptz,uuid,integer)'::regprocedure)) = 'dad4d92ef739f520d0c512c9950d5c62')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_history_summary(uuid,text,text,timestamptz,timestamptz,uuid)'::regprocedure)) = 'cf02a67ac0d71d5e0db7c84a5b224f23')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_club_bank_claim_core_20261004(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = 'cd3ad7a833947bea54cd2b9c7087ce85')

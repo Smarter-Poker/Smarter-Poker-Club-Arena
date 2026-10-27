@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE BATCH THE SWEEP PREPARED IS THE BATCH IT RECORDS (2026-09-27)
@@ -84,6 +85,7 @@ function transport(answer: (request: Request) => Answer): void {
     return new Promise((resolve) => setTimeout(() => resolve(response), TRIP_MS));
   };
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [] };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);

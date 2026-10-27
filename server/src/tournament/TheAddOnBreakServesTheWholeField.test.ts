@@ -9,6 +9,7 @@
  */
 import { afterEach, expect, it, vi } from 'vitest';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
+import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 import type { GameServer } from '../GameServer.js';
 import { supabase } from '../services/supabase.js';
 import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -61,13 +62,14 @@ afterEach(() => {
   setMaintenanceFrozen(false);
 });
 
-function field(count: number, rpcMs = 300, readMs = 0) {
+function field(count: number, rpcMs = 300, readMs = 0, serialized = false) {
   const ids = Array.from(
     { length: count },
     (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
   );
   const receipts = new Set<string>();
-  const load = { inFlight: 0, max: 0, calls: 0 };
+  const load = { inFlight: 0, max: 0, calls: 0, reads: 0 };
+  let databaseTail = Promise.resolve();
   vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
     let batch = ids;
     const c: any = {
@@ -80,6 +82,7 @@ function field(count: number, rpcMs = 300, readMs = 0) {
         return c;
       },
       then: async (resolve: any) => {
+        load.reads++;
         if (readMs) await new Promise((done) => setTimeout(done, readMs));
         return Promise.resolve({
           error: null,
@@ -100,7 +103,11 @@ function field(count: number, rpcMs = 300, readMs = 0) {
     load.calls++;
     load.inFlight++;
     load.max = Math.max(load.max, load.inFlight);
-    await new Promise((resolve) => setTimeout(resolve, rpcMs));
+    const purchase = () => new Promise<void>((resolve) => setTimeout(resolve, rpcMs));
+    if (serialized) {
+      databaseTail = databaseTail.then(purchase);
+      await databaseTail;
+    } else await purchase();
     load.inFlight--;
     expect(receipts.has(args.p_user_id)).toBe(false);
     receipts.add(args.p_user_id);
@@ -153,26 +160,26 @@ it('stops at the persisted deadline and keeps the rest pending', async () => {
   expect(result.more).toBe(true);
 });
 
-it('hands a very large field to the next admission after one bounded pass', async () => {
+it('caps a captured large-field operation at the existing sweep lifetime', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-26T13:48:55Z'));
-  const f = field(1000, 400);
+  const f = field(2400, 400);
   const m = new Harness(600_000, 'addon_break');
   const began = Date.now();
   const first = m.offer();
   await vi.runAllTimersAsync();
   const result = await first;
-  expect(Date.now() - began).toBeLessThan(TournamentManagerBase.ADD_ON_BREAK_PASS_MS + 1_000);
+  expect(Date.now() - began).toBeLessThan(ELIMINATION_SWEEP_STUCK_MS + 1_000);
   expect(result.more).toBe(true);
-  // 20 s at eight in flight and 400 ms each is 400 purchases a pass.
-  expect(f.receipts.size).toBe(400);
-  for (let i = 0; i < 2; i++) {
+  // 60 s at eight in flight and 400 ms each is 1,200 purchases.
+  expect(f.receipts.size).toBe(1200);
+  for (let i = 0; i < 1; i++) {
     const next = m.offer();
     await vi.runAllTimersAsync();
     await next;
   }
-  expect(f.receipts.size).toBe(1000);
-  expect(f.load.calls).toBe(1000);
+  expect(f.receipts.size).toBe(2400);
+  expect(f.load.calls).toBe(2400);
 });
 
 it('keeps the ordinary bounded batch while play is running', async () => {
@@ -251,4 +258,69 @@ it('still yields slow eligibility reads while the field is playing', async () =>
   await vi.runAllTimersAsync();
   await pass;
   expect(f.load.calls).toBe(0);
+});
+
+it('keeps 124 serialized canonical purchases on the captured owner until complete', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-27T02:30:42.886Z'));
+  const f = field(124, 250, 800, true);
+  const m = new Harness(60_000, 'addon_break');
+  const began = Date.now();
+  const pass = m.offer();
+  await vi.runAllTimersAsync();
+  const result = await pass;
+  expect(f.receipts.size).toBe(124);
+  expect(f.load.calls).toBe(124);
+  expect(f.load.reads).toBe(4);
+  expect(f.load.max).toBe(8);
+  expect(result).toEqual({ offered: 124, more: false });
+  expect(Date.now() - began).toBeLessThan(60_000);
+});
+
+it.each(['stop', 'abort', 'freeze'] as const)(
+  '%s still ends a captured purchase pool after the preparation budget',
+  async (reason) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-27T02:30:42.886Z'));
+    const f = field(124, 250, 800, true);
+    const m = new Harness(60_000, 'addon_break');
+    setTimeout(() => {
+      if (reason === 'stop') m.stopForTest();
+      if (reason === 'abort') m.abortForTest();
+      if (reason === 'freeze') setMaintenanceFrozen(true);
+    }, 22_000);
+    const pass = m.offer();
+    await vi.runAllTimersAsync();
+    await pass;
+    expect(f.load.calls).toBeGreaterThan(0);
+    expect(f.load.calls).toBeLessThan(124);
+    expect(f.load.reads).toBe(4);
+  }
+);
+
+it('reuses an ambiguous purchase identity without duplicating its committed receipt', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-27T02:30:42.886Z'));
+  const f = field(1);
+  const m = new Harness(60_000, 'addon_break');
+  const rpc = vi.mocked(supabase.rpc);
+  let committed = false;
+  const keys: string[] = [];
+  rpc.mockImplementation((async (_name: string, args: any) => {
+    keys.push(`${args.p_tournament_id}:${args.p_rebuy_type}:${args.p_user_id}`);
+    if (!committed) {
+      committed = true;
+      throw new Error('reply lost after commit');
+    }
+    return { data: { success: true, idempotent: true }, error: null } as any;
+  }) as any);
+  const first = m.offer();
+  await vi.runAllTimersAsync();
+  expect(await first).toEqual({ offered: 0, more: true });
+  const second = m.offer();
+  await vi.runAllTimersAsync();
+  expect(await second).toEqual({ offered: 1, more: false });
+  expect(keys).toHaveLength(2);
+  expect(new Set(keys).size).toBe(1);
+  expect(f.load.reads).toBe(8);
 });

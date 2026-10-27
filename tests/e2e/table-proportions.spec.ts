@@ -755,7 +755,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
         };
       });
       expect(measured.width).toBe(width <= 480 ? 52 : 100);
-      expect(measured.height).toBe(width <= 480 ? 44 : 36);
+      expect(measured.height).toBe(52);
       expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);
@@ -1470,7 +1470,8 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
         for (const tool of result.tools) {
           // The owner's mobile enlargement is confined to the action strip.
           // Felt tools retain their existing footprint.
-          const expected = width <= 480 ? (tool.selector === '.mtp-lobby-btn' ? 44 : 34) : 40;
+          const expected =
+            tool.selector === '.mtp-lobby-btn' ? (width === 320 ? 44 : 52) : width <= 480 ? 34 : 40;
           expect(tool.width, tool.selector).toBeCloseTo(expected, 1);
           expect(tool.height, tool.selector).toBeCloseTo(expected, 1);
         }

@@ -22,9 +22,14 @@ import {
   lease,
 } from '../../testing/horseRegression/plan/fixture.js';
 
-it.each([false, true])(
-  'restores only own public history before real HorseLogic, preserves live tails and deduplicates overlap=%s',
-  async (overlap) => {
+it.each([
+  { overlap: false, failed: false },
+  { overlap: true, failed: false },
+  { overlap: false, failed: true },
+  { overlap: true, failed: true },
+])(
+  'restores only own public history before real HorseLogic, preserves live tails and deduplicates case=%j',
+  async ({ overlap, failed }) => {
     const reads: Array<{ hands: number; folds: number; wins: number; recentFolds: number }> = [];
     class LocalWorker extends EventEmitter implements WorkerLike {
       readonly sent: HorseDecisionWorkerRequest[] = [];
@@ -57,9 +62,11 @@ it.each([false, true])(
     const pending = new Promise<unknown>((r) => {
       resolve = r;
     });
+    let loads = 0;
     const client = new LiveHorseDecisionWorkerClient({
       workerFactory: () => worker,
-      ownPublicHistory: () => pending,
+      ownPublicHistory: () =>
+        ++loads === 1 && failed ? Promise.reject(Error('temporary read failure')) : pending,
       jobTimeoutMs: 5000,
     });
     const first = requestAt(1, tableId, 1000100);
@@ -152,6 +159,16 @@ it.each([false, true])(
       await client.ready();
       await client.decideFast(first);
       expect(reads[0]).toMatchObject({ hands: 1, folds: 0, wins: 0 });
+      if (failed) {
+        await new Promise<void>((r) => setImmediate(r));
+        const unavailable = { ...first, requestId: 10, decisionTimeMs: first.decisionTimeMs + 1 };
+        unavailable.decisionKey = buildHorseDecisionKey(unavailable);
+        await client.decideFast(unavailable);
+        const retry = { ...first, requestId: 11, decisionTimeMs: first.decisionTimeMs + 60_001 };
+        retry.decisionKey = buildHorseDecisionKey(retry);
+        await client.decideFast(retry);
+        expect(loads).toBe(2);
+      }
       await client.observeCompletedHand(completed);
       resolve({
         version: 1,
@@ -182,12 +199,15 @@ it.each([false, true])(
         a.timestamp = t + 100 + i;
       });
       next.handJournalContext = captureHorseHandJournalContext(next.gameState.actionHistory!);
-      next.decisionTimeMs = Math.max(first.decisionTimeMs + 1, Date.now() + 100);
+      next.decisionTimeMs = Math.max(
+        first.decisionTimeMs + (failed ? 60_002 : 1),
+        Date.now() + 100
+      );
       next.decisionKey = buildHorseDecisionKey(next);
       const result = await client.decideFast(next);
-      expect(reads[1]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
-      expect(reads[1].wins).toBeGreaterThan(32);
-      expect(reads[1].wins).toBeLessThanOrEqual(33);
+      expect(reads[failed ? 3 : 1]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
+      expect(reads[failed ? 3 : 1].wins).toBeGreaterThan(32);
+      expect(reads[failed ? 3 : 1].wins).toBeLessThanOrEqual(33);
       const capture = worker.h.captures.at(-1)!;
       expect(capture.observerReads).toMatchObject({
         version: 2,
@@ -199,12 +219,12 @@ it.each([false, true])(
       expect(result.observerHistoryAckDigest).toMatch(/^[a-f0-9]{64}$/);
       next.requestId++;
       await client.decideFast(next);
-      expect(reads[2]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
+      expect(reads[failed ? 4 : 2]).toMatchObject({ hands: 34, folds: 17, recentFolds: 9 });
       expect(
         worker.sent
           .filter((m) => m.type === 'DECIDE_FAST')
           .map((m) => (m as any).ownPublicHistory !== undefined)
-      ).toEqual([false, true, false]);
+      ).toEqual(failed ? [false, false, false, true, false] : [false, true, false]);
       expect(HorseMind.getStats(opponentId)).toBeUndefined();
     } finally {
       await client.stop();

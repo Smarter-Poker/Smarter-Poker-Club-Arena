@@ -1,0 +1,9 @@
+# Reporting reads an attribution group once per cash hand
+
+The reporting producer joined the same rake attribution group once per contribution. A read-only sample of 100 production cash hands produced 262 contributor rows and performed 262 attribution index lookups. Reading those attribution groups before matching contributors used 100 lookups and preserved all 262 output rows. This is evidence of repeated lookup work, not proof that the lookup alone caused the whole scheduled statement to time out.
+
+The function now materializes the selected hands’ attribution rows once, then joins them on rake and player. It preserves duplicate attribution rows, NULL club fallback, receipt and historical seat precedence, accounting boundaries, unnamed hands, all five report outputs and their precision. Installation is one guarded function-only transaction against the exact previous producer body; it does not recount reports, alter indexes, change cron or increase timeouts.
+
+The existing required Data console PostgreSQL entry runs a source-bound native fixture. Its physical lookup budget is derived from the actual installed producer CTE source at runtime: the old body fails with 600 lookups against a maximum of 102, while the new body uses 102. All five saved outputs and return values match, including duplicate/NULL, receipt/seat/fallback, unnamed contributions, other-day exclusion, private privileges, installation rollback and an atomic late constraint failure.
+
+Live reporting remains subject to protected merge, exact migration installation and a natural post-install execution. The preceding installed day-fact and club-discovery changes are retained. Run 1543529 still timed out at the existing 300-second limit while a separate large index validation was active; neither concurrency nor a small cached sample establishes full-day timeout causality. No unrelated index operation is changed by this repair.

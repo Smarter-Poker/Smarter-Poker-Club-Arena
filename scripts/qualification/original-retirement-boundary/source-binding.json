@@ -3,7 +3,7 @@
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
     ".github/workflows/unpaid-lightning-funding-contracts.yml": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
-    "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "68fbab2f5885de6cee26a6e6f295b5d7195c81c05cf6227d4061aa4090c68628",
+    "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
     "scripts/ci/schema-manifest.d/original-treasury-funded-seats.json": "74a5d32dcab2549d181a70c4d0da87f62766b5e0a69246945d44d15463fa0396",
@@ -147,7 +147,7 @@
     "scripts/qualification/original-seven-discharge/test-discharge.py": "5d3e7c6874ac76244839a2a0f81804d44ad3f97bb59c96ab0c54053894a4d7b0",
     "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "c5f513be7637247fc709bd1ee2eab0fcf70f1da672676c987d6a9d0390191f39",
     "supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql": "63fff7d00a904cd398fc188275e0fbccc61427e0fc8ace8cea63c654afa5de35",
-    "supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql": "c658087af02c3b9231cb17efeba8343368e13bacefbc6327e755f6b1cd924ae7",
+    "supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql": "9c5c540f355db00112b97433d232b2393d19183b63100c9e45e4d837fd4dfe80",
     "tests/an-original-inventory-gap-needs-its-financial-evidence.law.test.ts": "41d5ea3494ca813cf47c708433afa3aa804b825d643345d997f3029b6507faed",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/qualified-owned-signatures.json": "3fd29fc387d5c41050214736fae065041f1a143a37ca1b5c386fd04cc9f3c50c",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/assert-delivery-owned.py": "0ea2558332bbf8684f1c3503237668896a8661ed7e787925b91b2f363c9fd1d4",
@@ -160,7 +160,11 @@
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/common-leaf/entry-claim.sql": "5241a5b0b324578f9cbf7efa93aa5847d46fc9adae64f01e6095dd7855041bfb",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/common-leaf/private-money-core.sql": "ea94e71890658c7366f31d90d9e3de1a6c4f2b26a4903c72deac0d3aa70c1a36",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/preserve-public-owner-acls.sql": "d89e94a972a8e09ce9b86bd5d590eb2d8bfe3f67e60ce10c408a71a8108a6303",
-    "scripts/qualification/original-retirement-boundary/treasury-gifts/public-owner-acls.json": "252c937bc80c90ab4cf575e5dba04cdc6f25f7afad8b800913585300cd7010c5"
+    "scripts/qualification/original-retirement-boundary/treasury-gifts/public-owner-acls.json": "252c937bc80c90ab4cf575e5dba04cdc6f25f7afad8b800913585300cd7010c5",
+    "scripts/ci/probes/chip-journal-atomicity/test_atomicity.py": "f7d6739a6489fee2d21d6b1356c5b3130a0803006c78efe1cf4b619f5e1dd9f1",
+    "scripts/ci/probes/chip-journal-atomicity/test_sql_function_parser.py": "2ad29f475d5f47bef8b3ffba104e1dd3848d1e58da58e8b434241d8583e5f84f",
+    "scripts/ci/probes/chip-journal-atomicity/test_rebuy_receipts.py": "01d5d47ca7974c1fbb98eb3b5aa6be957c7f6160329faaa954aa6a3ac747d0a8",
+    "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8"
   },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",

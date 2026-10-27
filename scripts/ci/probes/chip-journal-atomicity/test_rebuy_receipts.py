@@ -77,7 +77,7 @@ def verify_rebuy_receipts(run):
   for conflict in [False,True]:
    params=dict(name="rebuy purchase "+("scope conflict" if conflict else "replay"),setup=seed,actor=f"SELECT set_config('test.actor','{I}',true);",first=call(),second=call(U) if conflict else call(),numericReceipt=True,
     verify="DO $t$ BEGIN IF (SELECT chip_balance FROM club_members)<>95 OR (SELECT count(*) FROM entry_purchase_idempotency_receipts)<>1 OR (SELECT count(*) FROM table_pending_addons)<>1 THEN RAISE EXCEPTION 'Concurrent rebuy changed state';END IF;END $t$;",
-    cleanup="DROP SCHEMA public CASCADE;CREATE SCHEMA public;")
+    cleanup="DROP SCHEMA public CASCADE;DROP SCHEMA IF EXISTS smarter_private CASCADE;CREATE SCHEMA public;")
    if conflict:params["conflict"]=True
    # Each committed concurrency case uses a fresh database fixture.
    if conflict:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Execute real PostgreSQL bodies against isolated fixtures; never production."""
-import os, subprocess, sys, re
+import os, subprocess, sys, re, json, tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,11 +121,11 @@ def _is_word(token,value):
 
 
 def _qualified_public_name(tokens,index):
- if index+2>=len(tokens) or _ident(tokens[index])!="public":
+ if index+2>=len(tokens) or _ident(tokens[index])not in {"public","smarter_private"}:
   return None
  if tokens[index+1].value!="." or _ident(tokens[index+2]) is None:
   return None
- return _ident(tokens[index+2]),index+2,index+3
+ return ("smarter_private." if _ident(tokens[index])=="smarter_private" else "")+_ident(tokens[index+2]),index+2,index+3
 
 
 def _matching_paren(tokens,index):
@@ -476,7 +476,7 @@ def original_cash_funding_tables(root):
   raise RuntimeError("Original wallet transaction schema is missing")
  defaults="\n".join(line for line in captured.splitlines()
   if line.startswith('ALTER TABLE "public"."wallet_transactions" ALTER COLUMN '))
- return funding[start:end]+"\n"+wallet.group(0)+"\n"+defaults
+ return funding[start:end]+"\n"+wallet.group(0)+"\n"+defaults+"\n"+(root/"scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql").read_text()
 
 
 pg=os.environ.get("PSQL", "/opt/homebrew/opt/postgresql@17/bin/psql")
@@ -490,9 +490,14 @@ def run(sql,database=None):
  command=list(args)
  if database and "-d" in command:command[command.index("-d")+1]=database
  environment=dict(os.environ,PGDATABASE=database) if database else None
- r=subprocess.run(command,input=sql,text=True,capture_output=True,env=environment)
- if r.returncode: raise RuntimeError(r.stderr)
- return r.stdout
+ # File-backed streams avoid Python/macOS pipe deadlock when schema notices
+ # fill stderr while a complete dependency fixture is still being written.
+ with tempfile.TemporaryFile(mode="w+",encoding="utf8")as source,tempfile.TemporaryFile(mode="w+",encoding="utf8")as output,tempfile.TemporaryFile(mode="w+",encoding="utf8")as errors:
+  source.write(sql);source.seek(0)
+  r=subprocess.run(command,stdin=source,stdout=output,stderr=errors,text=True,env=environment)
+  output.seek(0);stdout=output.read();errors.seek(0);stderr=errors.read()
+ if r.returncode: raise RuntimeError(stderr)
+ return stdout
 if "--bootstrap" in sys.argv:
  here=Path(__file__).resolve().parent
  root=here.parents[3]
@@ -540,7 +545,7 @@ cases={
  "seat_funding":f"SELECT fn_horse_seat_from_treasury({b},{c},2,5,{op})",
  "reload_funding":f"SELECT fn_horse_fund_from_treasury({b},{u},5,{op})",
 }
-state_tables=["clubs","bbj_pools","club_members","table_seats","chip_ledger","chip_transactions","cash_baselines","rake_records","rake_distribution_legs","club_wallets","club_wallet_transactions","entry_purchase_idempotency_receipts","cash_participant_funding_receipts"]
+state_tables=["clubs","bbj_pools","club_members","table_seats","chip_ledger","chip_transactions","cash_baselines","rake_records","rake_distribution_legs","club_wallets","club_wallet_transactions","entry_purchase_idempotency_receipts","cash_participant_funding_receipts","union_pnl_inventory_events","union_pnl_original_flows","union_pnl_transaction_frames","smarter_private.original_treasury_funding_witnesses","smarter_private.original_treasury_historical_admissions"]
 state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {t} t)" for t in state_tables)+")"
 faults=["55P03","40P01","23514","23505","XX001"]
 mode=sys.argv[1]
@@ -596,7 +601,10 @@ if mode=="fixed":
     " AND (SELECT period_rake_collected FROM club_wallets)=5"
     " AND EXISTS(SELECT 1 FROM chip_ledger WHERE to_type='chip_retirement' AND category='burn' AND amount=5)"
     " AND EXISTS(SELECT 1 FROM accounting_cash_bank_receipts WHERE club_ledger_id IS NOT NULL AND amount=5)",
-  "seat_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15",
+  "seat_funding":"(SELECT chip_treasury FROM clubs)=95 AND (SELECT sum(stack) FROM table_seats)=15"
+    " AND (SELECT count(*) FROM smarter_private.original_treasury_funding_witnesses WHERE kind='gift')=1"
+    " AND EXISTS(SELECT FROM cash_participant_funding_receipts WHERE operation_kind='horse_funding' AND operation_key='00000000-0000-4000-8000-000000000005')"
+    " AND EXISTS(SELECT FROM entry_purchase_idempotency_receipts WHERE key_domain='horse_funding' AND idempotency_key='00000000-0000-4000-8000-000000000005' AND response->>'success'='true')",
   # A horse rebuys from its own wallet first (20261002134205): this horse
   # holds 100 in its club wallet, so the treasury does not pay at all.
   "reload_funding":"(SELECT chip_treasury FROM clubs)=100 AND (SELECT chip_balance FROM club_members)=95"
@@ -661,6 +669,10 @@ if mode=="fixed":
 
 if mode=="fixed":
  from test_insurance import verify_insurance
+ # The independent insurance projection contract deliberately requires an
+ # untouched private namespace. Retire ONLY this throwaway journal fixture
+ # after its full funding/receipt/fault/replay assertions have completed.
+ run("""DO $native$BEGIN IF current_user<>'journal_test'OR current_database()<>'postgres'OR inet_server_addr()IS NOT NULL THEN RAISE EXCEPTION 'native_journal_fixture_only';END IF;END$native$;DROP SCHEMA smarter_private CASCADE;""")
  verify_insurance(run)
 
 if mode=='fixed':

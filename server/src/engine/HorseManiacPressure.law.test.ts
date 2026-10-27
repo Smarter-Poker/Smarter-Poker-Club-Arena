@@ -116,9 +116,13 @@ describe('against a seat that pots every street', () => {
     expect(plo.engagedFrom!).toBeLessThanOrEqual(8);
   });
 
-  it('never raises preflop to fold preflop to the re-raise', () => {
+  it('limits preflop raise-folds without new third-party investment', () => {
     expect(nlh.rtfByStreet['preflop->preflop'] ?? 0).toBeLessThanOrEqual(3);
-    expect(plo.rtfByStreet['preflop->preflop'] ?? 0).toBeLessThanOrEqual(3);
+    // Preserve the full unfiltered tally; new callers can justify a priced refusal.
+    expect(plo.unchangedPublicLinePreflopRaiseFolds).toBeLessThanOrEqual(3);
+    expect(plo.rtfByStreet['preflop->preflop'] ?? 0).toBeGreaterThanOrEqual(
+      plo.unchangedPublicLinePreflopRaiseFolds
+    );
     expect(nlh.raiseThenFold / Math.max(1, nlh.horseAggressedHands)).toBeLessThan(0.1);
   });
 

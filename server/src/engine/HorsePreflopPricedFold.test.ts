@@ -11,7 +11,13 @@ afterEach(() => {
   HorseMind.reset();
   drainFires();
 });
-function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2) {
+function pricedSpot(
+  pending: boolean,
+  first = 0.44,
+  later = first,
+  stack = 396.2,
+  newCallerAces?: boolean
+) {
   const seat = (n: number, values: Partial<SeatPlayer>): SeatPlayer => ({
     seat: n,
     user_id: `public-${n}`,
@@ -32,7 +38,7 @@ function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2
     totalInvested: 11,
     cards: [
       { rank: 'A', suit: 'hearts' },
-      { rank: '8', suit: 'clubs' },
+      { rank: newCallerAces ? 'A' : '8', suit: 'clubs' },
       { rank: '8', suit: 'hearts' },
       { rank: '6', suit: 'clubs' },
       { rank: '2', suit: 'spades' },
@@ -46,7 +52,14 @@ function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2
   );
   vi.spyOn(HorseMind, 'opponentRead').mockReturnValue({ stats } as unknown as OpponentExploitRead);
   vi.spyOn(HorseMind, 'bandFor').mockReturnValue([0, 1]);
-  vi.spyOn(HorseMind, 'bandsForOpponents').mockReturnValue([[0, 1]]);
+  vi.spyOn(HorseMind, 'bandsForOpponents').mockReturnValue(
+    newCallerAces === undefined
+      ? [[0, 1]]
+      : [
+          [0, 1],
+          [0, 1],
+        ]
+  );
   const sampled = vi
     .spyOn(Eval, 'simulateEquity')
     .mockReturnValueOnce(first)
@@ -83,6 +96,16 @@ function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2
       { seat: 2, userId: 'public-2', stage: 'preflop', action: 'raise', amount: 167, timestamp: 4 },
     ],
   } as HorseGameStateV2;
+  if (newCallerAces !== undefined) {
+    gs.players[2] = seat(3, { bet: 167, totalInvested: 167 });
+    gs.pot = 345;
+    gs.contestablePot = 345;
+    gs.actionHistory = [
+      { seat: 1, userId: 'public-1', stage: 'preflop', action: 'raise', amount: 11, timestamp: 1 },
+      { seat: 2, userId: 'public-2', stage: 'preflop', action: 'raise', amount: 167, timestamp: 2 },
+      { seat: 3, userId: 'public-3', stage: 'preflop', action: 'call', amount: 167, timestamp: 3 },
+    ];
+  }
   Eval.seedFastRandom(20261027);
   enableBrainTelemetry();
   drainFires();
@@ -122,5 +145,14 @@ it('retains a borderline refusal without sampling until it passes', () => {
   const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.9, 156);
   expect(decision.action).toBe('fold');
   expect(sampled).toHaveBeenCalledTimes(1);
+  expect(fires.maniac_call_down).toBeUndefined();
+});
+
+it.each([false, true])('retains a newly multiway priced refusal, aces=%s', (aces) => {
+  const { decision, sampled, fires } = pricedSpot(false, 0.1, 0.9, 396.2, aces);
+  expect(decision.action).toBe('fold');
+  expect(decision.continuationGuard).toBe('preflop_priced_refusal');
+  expect(sampled).toHaveBeenCalledTimes(1);
+  expect(sampled.mock.calls[0][2]).toBe(2);
   expect(fires.maniac_call_down).toBeUndefined();
 });

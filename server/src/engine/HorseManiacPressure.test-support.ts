@@ -46,6 +46,35 @@ export interface PressureOptions {
   pairedBoardFold?: boolean;
 }
 
+/** New public investment after hero's latest raise changes the continuation question.
+ * Pending seats and forced contributions alone are not new voluntary evidence. */
+export function hasNewThirdPartyPreflopContribution(
+  history: readonly { stage: string; action: string; userId?: string; amount?: number }[],
+  heroId: string,
+  targetId: string
+): boolean {
+  const pre = history.filter((a) => a.stage === 'preflop');
+  let latestHeroRaise = -1;
+  for (let i = 0; i < pre.length; i++) {
+    const a = pre[i];
+    if (a.userId === heroId && ['raise', 'bet', 'all_in'].includes(a.action)) latestHeroRaise = i;
+  }
+  return (
+    latestHeroRaise >= 0 &&
+    pre
+      .slice(latestHeroRaise + 1)
+      .some(
+        (a) =>
+          !!a.userId &&
+          a.userId !== heroId &&
+          a.userId !== targetId &&
+          ['call', 'raise', 'all_in'].includes(a.action) &&
+          Number.isFinite(a.amount) &&
+          (a.amount ?? 0) > 0
+      )
+  );
+}
+
 export interface PressureTally {
   /** facing the maniac's preflop all-in, hero not yet in voluntarily */
   vsJam: { call: number; fold: number; callScores: number[]; foldScores: number[] };
@@ -62,6 +91,8 @@ export interface PressureTally {
   engagedFrom: number | null;
   /** raise-then-fold by street of the fold, and by street of the horse's last aggression */
   rtfByStreet: Record<string, number>;
+  /** Preflop raise-folds with no new third-party voluntary contribution. */
+  unchangedPublicLinePreflopRaiseFolds: number;
   /**
    * Postflop, heads-up against the maniac's bet: every fold with hero's true
    * equity against a RANDOM holding (the jammer / potter plays every hand)
@@ -101,6 +132,7 @@ export function playManiacPressure(
     hands: 0,
     engagedFrom: null,
     rtfByStreet: {},
+    unchangedPublicLinePreflopRaiseFolds: 0,
     postflopFolds: [],
     postflopCalls: 0,
     maniacReadByHand: [],
@@ -375,6 +407,15 @@ export function playManiacPressure(
           if (counted) {
             const k = `${aggrStreet.get(spot.hero.user_id)}->${street}`;
             tally.rtfByStreet[k] = (tally.rtfByStreet[k] ?? 0) + 1;
+            if (
+              k === 'preflop->preflop' &&
+              !hasNewThirdPartyPreflopContribution(
+                spot.state.actionHistory ?? [],
+                spot.hero.user_id,
+                PRESSURE_MANIAC
+              )
+            )
+              tally.unchangedPublicLinePreflopRaiseFolds++;
           }
         }
         let done = false;

@@ -78,7 +78,7 @@ describe('TablePage wiring', () => {
     // effect's dependencies (it re-applies the latest snapshot when a Lightning
     // exit hold ends); the order this contract pins is unchanged.
     const merge = TABLE_PAGE.indexOf(
-      '}, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);'
+      '}, [engineSnapshot, USE_ENGINE_WS, userId, tableId, lightningExitTick]);'
     );
     const release = TABLE_PAGE.indexOf('const snapshotWaitersRef = useRef<Set<() => void>>');
     expect(merge).toBeGreaterThan(-1);

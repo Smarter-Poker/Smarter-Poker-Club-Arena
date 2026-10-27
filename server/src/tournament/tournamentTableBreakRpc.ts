@@ -1,3 +1,4 @@
+import { runWithTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
 import { supabase } from '../services/supabase.js';
 import { UUID_SHAPE } from '../lib/uuidShape.js';
 import {
@@ -313,8 +314,14 @@ export class TournamentTableBreakRpc {
     uuid(tournamentId);
     uuid(leaseGeneration);
   }
+  private request(name: string, parameters: Record<string, unknown>) {
+    return runWithTournamentDataAuthority(
+      { tournamentId: this.tournamentId, leaseGeneration: this.leaseGeneration },
+      async () => await supabase.rpc(name, parameters)
+    );
+  }
   private async call(name: string, parameters: Record<string, unknown>): Promise<unknown> {
-    const { data, error } = await supabase.rpc(name, {
+    const { data, error } = await this.request(name, {
       p_tournament_id: this.tournamentId,
       p_lease_generation: this.leaseGeneration,
       ...parameters,
@@ -373,7 +380,7 @@ export class TournamentTableBreakRpc {
       state.terminal_handoff_required
     )
       throw new Error('F06 continuation premanifest identity required');
-    const { data, error } = await supabase.rpc('fn_f06_continue_no_start_last_table', {
+    const { data, error } = await this.request('fn_f06_continue_no_start_last_table', {
       p_tournament_id: this.tournamentId,
       p_lease_generation: this.leaseGeneration,
       p_table_id: uuid(state.source_table_id),
@@ -433,7 +440,7 @@ export class TournamentTableBreakRpc {
       state.terminal_handoff_required
     )
       throw new Error('F06 withdrawal premanifest identity required');
-    const { data, error } = await supabase.rpc('fn_f06_withdraw_unplaceable_park', {
+    const { data, error } = await this.request('fn_f06_withdraw_unplaceable_park', {
       p_tournament_id: this.tournamentId,
       p_lease_generation: this.leaseGeneration,
       p_table_id: uuid(state.source_table_id),
@@ -502,7 +509,7 @@ export class TournamentTableBreakRpc {
       state.terminal_handoff_required
     )
       throw new Error('F06 withdrawal premanifest identity required');
-    const { data, error } = await supabase.rpc('fn_f06_withdraw_unproven_movement_park', {
+    const { data, error } = await this.request('fn_f06_withdraw_unproven_movement_park', {
       p_tournament_id: this.tournamentId,
       p_lease_generation: this.leaseGeneration,
       p_table_id: uuid(state.source_table_id),

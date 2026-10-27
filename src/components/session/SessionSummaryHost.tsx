@@ -35,7 +35,7 @@ import { useNavigate } from 'react-router-dom';
 import HouseAdRotator from '../ads/HouseAdRotator';
 import { useUserStore } from '../../stores/useUserStore';
 import {
-  clearSessionSummary,
+  dismissSessionSummary,
   peekSessionSummary,
   settlePendingSummary,
   subscribeSessionSummary,
@@ -49,6 +49,7 @@ import { titleCase } from '../../utils/titleCase';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
+import { formatSessionProfit } from '../../utils/formatSessionProfit';
 import './SessionSummaryHost.css';
 
 /** Ease-out-back: overshoots slightly then settles. Reads as "landing". */
@@ -224,7 +225,10 @@ export function SessionSummaryHost() {
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
   const close = useCallback(() => {
-    clearSessionSummary();
+    dismissSessionSummary((tableId, seat) => {
+      masterBus.emit('TABLE_LEFT', { tableId, seat });
+      masterBus.emit('TABLE_MENU_ACTION', { tableId, action: 'CLOSE_TABLE_TAB' });
+    });
   }, []);
 
   /* ── Settlement reconciliation (Phase 4, 2026-08-22) ──
@@ -243,12 +247,13 @@ export function SessionSummaryHost() {
      which remains an honest card. */
   useEffect(() => {
     const pc = payload?.plPending ? payload.pendingCashout : undefined;
-    if (!pc) return undefined;
+    if (!pc || (pc.requireOccupancy && !pc.occupancyId)) return undefined;
 
     const totalBuyIn = payload?.totalBuyIn ?? 0;
     /* 2 min of slack: the engine stamps the row from its own clock, which can
        run ahead of the client's `sinceMs`. The tableId + category filters do
-       the real disambiguation; the time bound only fences off past sessions. */
+       the legacy disambiguation when an older payload has no occupancy.
+       New payloads read only their exact seat generation below. */
     const sinceIso = new Date(pc.sinceMs - 120_000).toISOString();
     let stopped = false;
 
@@ -274,6 +279,34 @@ export function SessionSummaryHost() {
           )
             return;
           settlePendingSummary(data.amount - totalBuyIn, pc);
+          return;
+        }
+        if (pc.occupancyId) {
+          // Cashout exits this exact occupancy and credits its final stack in
+          // one transaction. An older same-table ledger row proves nothing
+          // about this departure, including a zero-stack departure.
+          const { data, error } = await supabase
+            .from('table_seats')
+            .select('table_id, user_id, occupancy_id, left_at, stack')
+            .eq('table_id', pc.tableId)
+            .eq('user_id', pc.userId)
+            .eq('occupancy_id', pc.occupancyId)
+            .maybeSingle();
+          if (
+            stopped ||
+            error ||
+            !data ||
+            data.table_id !== pc.tableId ||
+            data.user_id !== pc.userId ||
+            data.occupancy_id !== pc.occupancyId ||
+            typeof data.left_at !== 'string' ||
+            !Number.isFinite(Date.parse(data.left_at)) ||
+            typeof data.stack !== 'number' ||
+            !Number.isFinite(data.stack) ||
+            data.stack < 0
+          )
+            return;
+          settlePendingSummary(data.stack - totalBuyIn, pc);
           return;
         }
         const { data } = await supabase
@@ -469,7 +502,7 @@ export function SessionSummaryHost() {
 
   const share = useCallback(async () => {
     if (!payload || !recordedReady || (target && recordedRecap?.handsPlayed === null)) return;
-    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
+    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatSessionProfit(Math.abs(payload.profitLoss))}`;
     const text =
       `${payload.tableName || 'Table Session'} - ${money}${payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''} over ` +
       `${payload.handsPlayed} hands on Smarter.Poker`;
@@ -581,7 +614,7 @@ export function SessionSummaryHost() {
             <span className="ssh-hero__label">{isProfit ? 'Profit' : 'Loss'}</span>
             <span className="ssh-hero__value">
               {isProfit ? '+' : '-'}
-              {formatChips(Math.abs(displayPL))}
+              {formatSessionProfit(Math.abs(displayPL))}
               {payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''}
             </span>
             {/* Phase 3 (2026-08-22): a mid-hand leave defers the cashout to

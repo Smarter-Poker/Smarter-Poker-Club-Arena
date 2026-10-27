@@ -193,7 +193,7 @@ try:
  def part_count(rnd):return int(q("SELECT count(*)FROM accounting_close_partials WHERE kind='round"+str(rnd)+"_union_window'"))
  reset_for_proofs()
  # Demonstrate the frozen269f gap before qualifying this new Scope body.
- old_scope=(W/'scope-pre-proof-windows.sql').read_text();assert hashlib.md5(old_scope.encode()).hexdigest()=='6821fb176cf93637cc2820602d93cd56'
+ old_scope=json.loads((W/'scope-pre-proof-windows.json').read_text())['definition'];assert hashlib.md5(old_scope.encode()).hexdigest()=='6821fb176cf93637cc2820602d93cd56'
  q(controlled(old_scope));out=json.loads(q("SET test.now='2026-10-26 08:30Z';"+scope));assert out['detail'][0]['result'].get('committed_round')==0 and out['detail'][0]['result'].get('stage')=='prepared' and part_count(2)==part_count(3)==0,out
  rec('frozen269f_reproduces_ready_pre04_scope_without_R2_R3_progress')
  q(controlled(next(c for c in changes if'fn_process_weekly_accounting_scope('in c['signature'])['after']))

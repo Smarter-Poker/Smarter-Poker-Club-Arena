@@ -90,18 +90,12 @@ BEGIN
         WHERE paid.user_id=p_user_id AND paid.tournament_id=p_tournament_id
           AND paid.status IN ('registered','playing')
      )
-     AND NOT EXISTS (
-       SELECT 1 FROM public.table_seats paid_seat
-         JOIN public.tables paid_table ON paid_table.id=paid_seat.table_id
-        WHERE paid_seat.user_id=p_user_id AND paid_seat.left_at IS NULL
-          AND paid_table.tournament_id=p_tournament_id
-     )
      AND (SELECT count(DISTINCT promise.tournament_id)
             FROM public.tournament_players promise
             JOIN public.tournaments promised ON promised.id=promise.tournament_id
            WHERE promise.user_id=p_user_id
              AND promise.status IN ('registered','playing')
-             AND upper(COALESCE(promised.status,'')) NOT IN ('COMPLETED','CANCELLED')) >= 4 THEN
+             AND upper(COALESCE(promised.status,'')) NOT IN ('COMPLETING','COMPLETED','CANCELLED')) >= 4 THEN
     RETURN jsonb_build_object('ok',false,'reason','horse_tournament_reservation_budget');
   END IF;
 
@@ -167,13 +161,15 @@ BEGIN
          JOIN public.tables paid_table ON paid_table.id=paid_seat.table_id
         WHERE paid_seat.user_id=p_user_id AND paid_seat.left_at IS NULL
           AND paid_table.tournament_id=p_tournament_id
+          AND paid_table.status <> 'closed'
+          AND paid_seat.table_id=public.fn_tournament_primary_table(p_tournament_id)
      )
      AND (SELECT count(DISTINCT promise.tournament_id)
             FROM public.tournament_players promise
             JOIN public.tournaments promised ON promised.id=promise.tournament_id
            WHERE promise.user_id=p_user_id
              AND promise.status IN ('registered','playing')
-             AND upper(COALESCE(promised.status,'')) NOT IN ('COMPLETED','CANCELLED')) >= 4 THEN
+             AND upper(COALESCE(promised.status,'')) NOT IN ('COMPLETING','COMPLETED','CANCELLED')) >= 4 THEN
     RETURN jsonb_build_object('ok',false,'reason','horse_tournament_reservation_budget');
   END IF;
 
@@ -200,5 +196,11 @@ BEGIN
     p_tournament_id,p_user_id);
 END;
 $function$;
+
+-- Restate the captured service-only ACL for the maintained exposure guard.
+REVOKE ALL ON FUNCTION public.fn_register_horse_for_tournament(uuid,uuid,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_register_horse_for_tournament(uuid,uuid,boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid,uuid) TO service_role;
 
 COMMIT;

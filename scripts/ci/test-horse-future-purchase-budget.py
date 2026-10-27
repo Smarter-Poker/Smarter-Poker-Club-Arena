@@ -63,6 +63,7 @@ CREATE FUNCTION fn_register_horse_for_tournament_before_terminal_gate(uuid,uuid,
  IF EXISTS(SELECT 1 FROM tournament_players WHERE tournament_id=$1 AND user_id=$2 AND status IN ('registered','playing')) THEN RETURN '{"ok":true,"already_registered":true}'::jsonb;END IF;
  PERFORM pg_sleep(.05); INSERT INTO tournament_players VALUES(gen_random_uuid(),$1,$2,'registered');INSERT INTO purchases VALUES($1,$2);RETURN '{"ok":true}'::jsonb;END$$;
 CREATE FUNCTION fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$DECLARE r jsonb;BEGIN
+ IF EXISTS(SELECT 1 FROM table_seats WHERE user_id=$2 AND table_id=fn_tournament_primary_table($1) AND left_at IS NULL) THEN RETURN '{"ok":true,"already_seated":true}'::jsonb;END IF;
  r:=fn_register_horse_for_tournament($1,$2,true);IF (r->>'ok')::boolean IS NOT TRUE THEN RETURN r;END IF;
  IF NOT EXISTS(SELECT 1 FROM table_seats WHERE user_id=$2 AND table_id=fn_tournament_primary_table($1) AND left_at IS NULL) THEN INSERT INTO table_seats VALUES(gen_random_uuid(),fn_tournament_primary_table($1),$2,NULL);END IF;RETURN r;END$$;
 """)
@@ -101,6 +102,14 @@ CREATE FUNCTION fn_seat_horse_in_seat_first_game_before_terminal_seat_gate(uuid,
                 results=list(pool.map(contender,[('race-a',False),('race-b',True)]))
             check('cross-wrapper concurrent last slot buys exactly once',sum(r.get('ok') is True for r in results)==1 and sum(r.get('reason')=='horse_tournament_reservation_budget' for r in results)==1)
             check('race leaves four promises and one charge',run('SELECT (SELECT count(*) FROM tournament_players)||\':\'||(SELECT count(*) FROM purchases)')=='4:1')
+            reset();run(f"UPDATE tournaments SET status='COMPLETING' WHERE id='{uid('old0')}';")
+            check('finished-play COMPLETING releases choice budget',json.loads(run(call('new')))['ok'])
+            run(f"UPDATE tournaments SET status='REGISTERING' WHERE id='{uid('old0')}';")
+            reset();run(f"UPDATE tables SET status='closed' WHERE tournament_id='{uid('new')}';INSERT INTO table_seats VALUES(gen_random_uuid(),'{uid('tablenew')}','{uid('horse')}',NULL);")
+            check('closed historical target chair cannot bypass new budget',json.loads(run(call('new',True))).get('reason')=='horse_tournament_reservation_budget')
+            run(f"UPDATE tables SET status='running' WHERE tournament_id='{uid('new')}';")
+            check('direct registration cannot use bare chair as payment',json.loads(run(call('new'))).get('reason')=='horse_tournament_reservation_budget')
+            check('live primary chair reaches only read-only replay',json.loads(run(call('new',True))).get('already_seated') is True and run('SELECT count(*) FROM purchases')=='0')
             reset();run(f"UPDATE tournaments SET status=NULL WHERE id='{uid('old0')}';")
             check('unknown event status cannot erase an outstanding promise',json.loads(run(call('new'))).get('reason')=='horse_tournament_reservation_budget')
             run(f"UPDATE tournaments SET status='CANCELLED' WHERE id='{uid('old0')}';")

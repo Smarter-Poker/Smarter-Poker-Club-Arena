@@ -10,7 +10,7 @@ import { shownRiverCallSamples } from '../engine/HorseRiverCallEvidence.js';
 import { reportThrottled } from './errorReporter.js';
 
 // Native PG17 qualification checks this against the exact installed function.
-export const HORSE_OWN_PUBLIC_HISTORY_DEFINITION_MD5 = '2b66063e989c88fa1a9e9f8d13e35965';
+export const HORSE_OWN_PUBLIC_HISTORY_DEFINITION_MD5 = '3a2ea02c1c36661b37ef51d328c92fce';
 /**
  * How long the engine waits for one horse's history before giving up on it.
  *
@@ -37,7 +37,7 @@ export async function readHorseOwnPublicHistory(
   try {
     const deadline = AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS);
     const { data, error } = await supabase
-      .rpc('fn_horse_own_public_history_read_v2', {
+      .rpc('fn_horse_own_public_history_read_v3', {
         p_observer: context.observerId,
         p_variant: context.variant,
         p_format: context.format,

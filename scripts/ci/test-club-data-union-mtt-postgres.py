@@ -221,10 +221,15 @@ finally:
 # The same required Data qualification owns this reporting producer too.
 # Use a separate source-bound world so neither fixture can supply the other's
 # tables or receipts. Any refusal fails the existing accounting job.
-subprocess.run([
-    sys.executable, "-B", str(ROOT / "scripts/ci/run_launch_reset_accounting_fixture.py"),
-    "--fixture", str(ROOT / "scripts/ci/fixtures/reporting-rollup-cutoffs.sql"),
-    "--candidate", str(ROOT / "supabase/migrations/20261027005822_reporting_rollups_read_each_club_cutoff_once.sql"),
-    "--work-root", os.environ.get("DATA_CONSOLE_PG_SCRATCH_PARENT", str(cluster.parent)),
-    "--pg-bin", str(PG),
-], cwd=ROOT, check=True, timeout=90)
+for fixture_name, candidate_name in [
+    ("reporting-rollup-cutoffs.sql", "20261027005822_reporting_rollups_read_each_club_cutoff_once.sql"),
+    ("reporting-shared-day-facts.sql", "20261027063331_reporting_rollups_share_one_bounded_day_fact_read.sql"),
+    ("reporting-catchup-club-probes.sql", "20261027063331_reporting_rollups_share_one_bounded_day_fact_read.sql"),
+]:
+    subprocess.run([
+        sys.executable, "-B", str(ROOT / "scripts/ci/run_launch_reset_accounting_fixture.py"),
+        "--fixture", str(ROOT / "scripts/ci/fixtures" / fixture_name),
+        "--candidate", str(ROOT / "supabase/migrations" / candidate_name),
+        "--work-root", os.environ.get("DATA_CONSOLE_PG_SCRATCH_PARENT", str(cluster.parent)),
+        "--pg-bin", str(PG),
+    ], cwd=ROOT, check=True, timeout=90)

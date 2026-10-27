@@ -1,0 +1,497 @@
+{
+  "schemas": [
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.accounting_close_certificates(kind text,union_id uuid,period_start timestamp with time zone,period_end timestamp with time zone,value jsonb,certified_at timestamp with time zone);",
+      "columns": [
+        ["kind", "text"],
+        ["union_id", "uuid"],
+        ["period_start", "timestamp with time zone"],
+        ["period_end", "timestamp with time zone"],
+        ["value", "jsonb"],
+        ["certified_at", "timestamp with time zone"]
+      ],
+      "relname": "accounting_close_certificates"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.accounting_close_partials(kind text,union_id uuid,period_start timestamp with time zone,period_end timestamp with time zone,window_start timestamp with time zone,window_end timestamp with time zone,value jsonb,cash_ids uuid[],cash_md5 bytea,fee_ids uuid[],fee_md5 bytea,computed_at timestamp with time zone);",
+      "columns": [
+        ["kind", "text"],
+        ["union_id", "uuid"],
+        ["period_start", "timestamp with time zone"],
+        ["period_end", "timestamp with time zone"],
+        ["window_start", "timestamp with time zone"],
+        ["window_end", "timestamp with time zone"],
+        ["value", "jsonb"],
+        ["cash_ids", "uuid[]"],
+        ["cash_md5", "bytea"],
+        ["fee_ids", "uuid[]"],
+        ["fee_md5", "bytea"],
+        ["computed_at", "timestamp with time zone"]
+      ],
+      "relname": "accounting_close_partials"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.bbj_payout_recipients(id uuid,payout_id uuid,user_id uuid,amount numeric(20,2),created_at timestamp with time zone);",
+      "columns": [
+        ["id", "uuid"],
+        ["payout_id", "uuid"],
+        ["user_id", "uuid"],
+        ["amount", "numeric(20,2)"],
+        ["created_at", "timestamp with time zone"]
+      ],
+      "relname": "bbj_payout_recipients"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.bbj_payouts(id uuid,pool_id uuid,hand_id uuid,table_id uuid,hand_number bigint,winner_user_id uuid,loser_user_id uuid,total_amount numeric(20,2),winner_share numeric(20,2),loser_share numeric(20,2),table_share numeric(20,2),table_player_count integer,metadata jsonb,created_at timestamp with time zone,kind text);",
+      "columns": [
+        ["id", "uuid"],
+        ["pool_id", "uuid"],
+        ["hand_id", "uuid"],
+        ["table_id", "uuid"],
+        ["hand_number", "bigint"],
+        ["winner_user_id", "uuid"],
+        ["loser_user_id", "uuid"],
+        ["total_amount", "numeric(20,2)"],
+        ["winner_share", "numeric(20,2)"],
+        ["loser_share", "numeric(20,2)"],
+        ["table_share", "numeric(20,2)"],
+        ["table_player_count", "integer"],
+        ["metadata", "jsonb"],
+        ["created_at", "timestamp with time zone"],
+        ["kind", "text"]
+      ],
+      "relname": "bbj_payouts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.cash_funding_application_receipts(pending_addon_id uuid,funding_receipt_id uuid,applied_at timestamp with time zone,original_occupancy_id uuid,applied_occupancy_id uuid,applied numeric,refunded numeric,transaction_id xid8);",
+      "columns": [
+        ["pending_addon_id", "uuid"],
+        ["funding_receipt_id", "uuid"],
+        ["applied_at", "timestamp with time zone"],
+        ["original_occupancy_id", "uuid"],
+        ["applied_occupancy_id", "uuid"],
+        ["applied", "numeric"],
+        ["refunded", "numeric"],
+        ["transaction_id", "xid8"]
+      ],
+      "relname": "cash_funding_application_receipts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.cash_participant_funding_receipts(id uuid,recorded_at timestamp with time zone,operation_kind text,operation_key text,user_id uuid,table_id uuid,seat_id uuid,occupancy_id uuid,seat_joined_at timestamp with time zone,source_ledger_id uuid,wallet_transaction_id uuid,account_type text,account_entity_id uuid,funding_club_id uuid,funding_union_id uuid,asset text,unit_scale integer,amount numeric,balance_before numeric,balance_after numeric,pending_addon_id uuid,transaction_id xid8);",
+      "columns": [
+        ["id", "uuid"],
+        ["recorded_at", "timestamp with time zone"],
+        ["operation_kind", "text"],
+        ["operation_key", "text"],
+        ["user_id", "uuid"],
+        ["table_id", "uuid"],
+        ["seat_id", "uuid"],
+        ["occupancy_id", "uuid"],
+        ["seat_joined_at", "timestamp with time zone"],
+        ["source_ledger_id", "uuid"],
+        ["wallet_transaction_id", "uuid"],
+        ["account_type", "text"],
+        ["account_entity_id", "uuid"],
+        ["funding_club_id", "uuid"],
+        ["funding_union_id", "uuid"],
+        ["asset", "text"],
+        ["unit_scale", "integer"],
+        ["amount", "numeric"],
+        ["balance_before", "numeric"],
+        ["balance_after", "numeric"],
+        ["pending_addon_id", "uuid"],
+        ["transaction_id", "xid8"]
+      ],
+      "relname": "cash_participant_funding_receipts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.cash_seat_move_receipts(move_id uuid,player_id uuid,game_id uuid,club_id uuid,from_table_id uuid,from_seat_number integer,source_occupancy_id uuid,to_table_id uuid,to_seat_number integer,destination_occupancy_id uuid,amount numeric,receipt jsonb,created_at timestamp with time zone,transaction_id xid8);",
+      "columns": [
+        ["move_id", "uuid"],
+        ["player_id", "uuid"],
+        ["game_id", "uuid"],
+        ["club_id", "uuid"],
+        ["from_table_id", "uuid"],
+        ["from_seat_number", "integer"],
+        ["source_occupancy_id", "uuid"],
+        ["to_table_id", "uuid"],
+        ["to_seat_number", "integer"],
+        ["destination_occupancy_id", "uuid"],
+        ["amount", "numeric"],
+        ["receipt", "jsonb"],
+        ["created_at", "timestamp with time zone"],
+        ["transaction_id", "xid8"]
+      ],
+      "relname": "cash_seat_move_receipts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.chip_ledger(id uuid,performed_by uuid,from_type text,from_entity_id uuid,from_label text,to_type text,to_entity_id uuid,to_label text,amount numeric(15,2),category text,description text,notes text,club_id uuid,union_id uuid,table_id uuid,hand_id uuid,tournament_id uuid,created_at timestamp with time zone,idempotency_key text,correlation_id uuid,causation_id uuid,settlement_id text,epoch_id integer,actor_service text,db_role text,pre_from_balance numeric,post_from_balance numeric,pre_to_balance numeric,post_to_balance numeric,status text,metadata jsonb,chain_seq bigint,prev_hash text,row_hash text);",
+      "columns": [
+        ["id", "uuid"],
+        ["performed_by", "uuid"],
+        ["from_type", "text"],
+        ["from_entity_id", "uuid"],
+        ["from_label", "text"],
+        ["to_type", "text"],
+        ["to_entity_id", "uuid"],
+        ["to_label", "text"],
+        ["amount", "numeric(15,2)"],
+        ["category", "text"],
+        ["description", "text"],
+        ["notes", "text"],
+        ["club_id", "uuid"],
+        ["union_id", "uuid"],
+        ["table_id", "uuid"],
+        ["hand_id", "uuid"],
+        ["tournament_id", "uuid"],
+        ["created_at", "timestamp with time zone"],
+        ["idempotency_key", "text"],
+        ["correlation_id", "uuid"],
+        ["causation_id", "uuid"],
+        ["settlement_id", "text"],
+        ["epoch_id", "integer"],
+        ["actor_service", "text"],
+        ["db_role", "text"],
+        ["pre_from_balance", "numeric"],
+        ["post_from_balance", "numeric"],
+        ["pre_to_balance", "numeric"],
+        ["post_to_balance", "numeric"],
+        ["status", "text"],
+        ["metadata", "jsonb"],
+        ["chain_seq", "bigint"],
+        ["prev_hash", "text"],
+        ["row_hash", "text"]
+      ],
+      "relname": "chip_ledger"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.chip_transactions(id uuid,club_id uuid,from_user_id uuid,to_user_id uuid,amount numeric(14,2),transaction_type text,notes text,related_cashout_id uuid,metadata jsonb,created_at timestamp with time zone,balance_after numeric(14,2),clawed_back boolean,reversible_until timestamp with time zone,is_reversed boolean,table_id uuid);",
+      "columns": [
+        ["id", "uuid"],
+        ["club_id", "uuid"],
+        ["from_user_id", "uuid"],
+        ["to_user_id", "uuid"],
+        ["amount", "numeric(14,2)"],
+        ["transaction_type", "text"],
+        ["notes", "text"],
+        ["related_cashout_id", "uuid"],
+        ["metadata", "jsonb"],
+        ["created_at", "timestamp with time zone"],
+        ["balance_after", "numeric(14,2)"],
+        ["clawed_back", "boolean"],
+        ["reversible_until", "timestamp with time zone"],
+        ["is_reversed", "boolean"],
+        ["table_id", "uuid"]
+      ],
+      "relname": "chip_transactions"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_accounting_credit_receipts(transaction_id xid8,id uuid,observed_at timestamp with time zone,idempotency_key text,tournament_id uuid,user_id uuid,asset text,amount numeric,ledger_id uuid,wallet_transaction_id uuid,payout_id uuid,credited_club_id uuid,ledger_snapshot jsonb,wallet_snapshot jsonb,payout_snapshot jsonb,registration_snapshot jsonb,tournament_snapshot jsonb,entry_receipt_ids uuid[]);",
+      "columns": [
+        ["transaction_id", "xid8"],
+        ["id", "uuid"],
+        ["observed_at", "timestamp with time zone"],
+        ["idempotency_key", "text"],
+        ["tournament_id", "uuid"],
+        ["user_id", "uuid"],
+        ["asset", "text"],
+        ["amount", "numeric"],
+        ["ledger_id", "uuid"],
+        ["wallet_transaction_id", "uuid"],
+        ["payout_id", "uuid"],
+        ["credited_club_id", "uuid"],
+        ["ledger_snapshot", "jsonb"],
+        ["wallet_snapshot", "jsonb"],
+        ["payout_snapshot", "jsonb"],
+        ["registration_snapshot", "jsonb"],
+        ["tournament_snapshot", "jsonb"],
+        ["entry_receipt_ids", "uuid[]"]
+      ],
+      "relname": "tournament_accounting_credit_receipts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_participant_funding_receipts(id uuid,transaction_id xid8,observed_at timestamp with time zone,registration_id uuid,tournament_id uuid,user_id uuid,operation text,purchase_key text,asset text,amount numeric,entitlement_id uuid,ledger_id uuid,wallet_transaction_id uuid,funding_club_id uuid,registration_snapshot jsonb,tournament_snapshot jsonb,entitlement_snapshot jsonb,ledger_snapshot jsonb,wallet_snapshot jsonb,custody_result jsonb);",
+      "columns": [
+        ["id", "uuid"],
+        ["transaction_id", "xid8"],
+        ["observed_at", "timestamp with time zone"],
+        ["registration_id", "uuid"],
+        ["tournament_id", "uuid"],
+        ["user_id", "uuid"],
+        ["operation", "text"],
+        ["purchase_key", "text"],
+        ["asset", "text"],
+        ["amount", "numeric"],
+        ["entitlement_id", "uuid"],
+        ["ledger_id", "uuid"],
+        ["wallet_transaction_id", "uuid"],
+        ["funding_club_id", "uuid"],
+        ["registration_snapshot", "jsonb"],
+        ["tournament_snapshot", "jsonb"],
+        ["entitlement_snapshot", "jsonb"],
+        ["ledger_snapshot", "jsonb"],
+        ["wallet_snapshot", "jsonb"],
+        ["custody_result", "jsonb"]
+      ],
+      "relname": "tournament_participant_funding_receipts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_payouts(id uuid,tournament_id uuid,user_id uuid,\"position\" integer,amount numeric(15,2),source text,created_at timestamp with time zone,idempotency_key text,paid_at timestamp with time zone,tournament_type text,field_size integer,prize_pool numeric,payout_structure jsonb,recorded_by text,metadata jsonb,terminal_closed_at timestamp with time zone);",
+      "columns": [
+        ["id", "uuid"],
+        ["tournament_id", "uuid"],
+        ["user_id", "uuid"],
+        ["position", "integer"],
+        ["amount", "numeric(15,2)"],
+        ["source", "text"],
+        ["created_at", "timestamp with time zone"],
+        ["idempotency_key", "text"],
+        ["paid_at", "timestamp with time zone"],
+        ["tournament_type", "text"],
+        ["field_size", "integer"],
+        ["prize_pool", "numeric"],
+        ["payout_structure", "jsonb"],
+        ["recorded_by", "text"],
+        ["metadata", "jsonb"],
+        ["terminal_closed_at", "timestamp with time zone"]
+      ],
+      "relname": "tournament_payouts"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_refund_entitlements(id uuid,tournament_id uuid,user_id uuid,entitlement_kind text,charge_category text,refund_wallet_club_id uuid,gross numeric(15,2),refund_prize numeric(15,2),refund_bounty numeric(15,2),refund_fee numeric(15,2),source_ledger_id uuid,registration_id uuid,source_satellite_id uuid,source_award_place integer,source_ticket_id uuid,escrow_bucket text,evidence_kind text,created_at timestamp with time zone);",
+      "columns": [
+        ["id", "uuid"],
+        ["tournament_id", "uuid"],
+        ["user_id", "uuid"],
+        ["entitlement_kind", "text"],
+        ["charge_category", "text"],
+        ["refund_wallet_club_id", "uuid"],
+        ["gross", "numeric(15,2)"],
+        ["refund_prize", "numeric(15,2)"],
+        ["refund_bounty", "numeric(15,2)"],
+        ["refund_fee", "numeric(15,2)"],
+        ["source_ledger_id", "uuid"],
+        ["registration_id", "uuid"],
+        ["source_satellite_id", "uuid"],
+        ["source_award_place", "integer"],
+        ["source_ticket_id", "uuid"],
+        ["escrow_bucket", "text"],
+        ["evidence_kind", "text"],
+        ["created_at", "timestamp with time zone"]
+      ],
+      "relname": "tournament_refund_entitlements"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_refund_tranches(wallet_transaction_id uuid,idempotency_key text,tournament_id uuid,obligation_id uuid,user_id uuid,source_wallet_club_id uuid,entitlement_id uuid,credit_ledger_id uuid,amount_paid_before numeric(15,2),amount_paid_now numeric(15,2),refund_prize numeric(15,2),refund_bounty numeric(15,2),refund_fee numeric(15,2),source text,description text,created_at timestamp with time zone,transaction_id xid8);",
+      "columns": [
+        ["wallet_transaction_id", "uuid"],
+        ["idempotency_key", "text"],
+        ["tournament_id", "uuid"],
+        ["obligation_id", "uuid"],
+        ["user_id", "uuid"],
+        ["source_wallet_club_id", "uuid"],
+        ["entitlement_id", "uuid"],
+        ["credit_ledger_id", "uuid"],
+        ["amount_paid_before", "numeric(15,2)"],
+        ["amount_paid_now", "numeric(15,2)"],
+        ["refund_prize", "numeric(15,2)"],
+        ["refund_bounty", "numeric(15,2)"],
+        ["refund_fee", "numeric(15,2)"],
+        ["source", "text"],
+        ["description", "text"],
+        ["created_at", "timestamp with time zone"],
+        ["transaction_id", "xid8"]
+      ],
+      "relname": "tournament_refund_tranches"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_satellite_awards(tournament_id uuid,place integer,user_id uuid,delivery_kind text,amount numeric(15,2),payout_id uuid,payout_source text,idempotency_key text,registration_id uuid,ticket_id uuid,obligation_id uuid,obligation_kind text,created_at timestamp with time zone);",
+      "columns": [
+        ["tournament_id", "uuid"],
+        ["place", "integer"],
+        ["user_id", "uuid"],
+        ["delivery_kind", "text"],
+        ["amount", "numeric(15,2)"],
+        ["payout_id", "uuid"],
+        ["payout_source", "text"],
+        ["idempotency_key", "text"],
+        ["registration_id", "uuid"],
+        ["ticket_id", "uuid"],
+        ["obligation_id", "uuid"],
+        ["obligation_kind", "text"],
+        ["created_at", "timestamp with time zone"]
+      ],
+      "relname": "tournament_satellite_awards"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_satellite_settlements(tournament_id uuid,target_id uuid,target_was_missing boolean,target_contract_version bigint,winner_id uuid,field_size integer,advertised_seats integer,pool numeric(15,2),target_buy_in numeric(15,2),target_fee numeric(15,2),ticket_cost numeric(15,2),ticket_award_count integer,seat_count integer,cash_ticket_count integer,entry_ticket_count integer,remainder numeric(15,2),bubble_user_id uuid,bubble_position integer,source_table_count integer,source_table_ids uuid[],source_seat_count integer,source_seat_ids uuid[],released_seat_count integer,released_seat_ids uuid[],source_closed_at timestamp with time zone,source_escrow_closed_at timestamp with time zone,source_escrow_close_note text,settled_at timestamp with time zone,receipt_version integer,qualifier_ids uuid[]);",
+      "columns": [
+        ["tournament_id", "uuid"],
+        ["target_id", "uuid"],
+        ["target_was_missing", "boolean"],
+        ["target_contract_version", "bigint"],
+        ["winner_id", "uuid"],
+        ["field_size", "integer"],
+        ["advertised_seats", "integer"],
+        ["pool", "numeric(15,2)"],
+        ["target_buy_in", "numeric(15,2)"],
+        ["target_fee", "numeric(15,2)"],
+        ["ticket_cost", "numeric(15,2)"],
+        ["ticket_award_count", "integer"],
+        ["seat_count", "integer"],
+        ["cash_ticket_count", "integer"],
+        ["entry_ticket_count", "integer"],
+        ["remainder", "numeric(15,2)"],
+        ["bubble_user_id", "uuid"],
+        ["bubble_position", "integer"],
+        ["source_table_count", "integer"],
+        ["source_table_ids", "uuid[]"],
+        ["source_seat_count", "integer"],
+        ["source_seat_ids", "uuid[]"],
+        ["released_seat_count", "integer"],
+        ["released_seat_ids", "uuid[]"],
+        ["source_closed_at", "timestamp with time zone"],
+        ["source_escrow_closed_at", "timestamp with time zone"],
+        ["source_escrow_close_note", "text"],
+        ["settled_at", "timestamp with time zone"],
+        ["receipt_version", "integer"],
+        ["qualifier_ids", "uuid[]"]
+      ],
+      "relname": "tournament_satellite_settlements"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.tournament_tickets(id uuid,club_id uuid,issued_by uuid,holder_id uuid,value numeric,note text,status text,redeemed_at timestamp with time zone,cancelled_at timestamp with time zone,created_at timestamp with time zone,redemption_mode text,source_tournament_id uuid,source_satellite_id uuid,source_refund_entitlement_id uuid,source_satellite_award_place integer,entry_prize numeric(15,2),entry_bounty numeric(15,2),entry_fee numeric(15,2));",
+      "columns": [
+        ["id", "uuid"],
+        ["club_id", "uuid"],
+        ["issued_by", "uuid"],
+        ["holder_id", "uuid"],
+        ["value", "numeric"],
+        ["note", "text"],
+        ["status", "text"],
+        ["redeemed_at", "timestamp with time zone"],
+        ["cancelled_at", "timestamp with time zone"],
+        ["created_at", "timestamp with time zone"],
+        ["redemption_mode", "text"],
+        ["source_tournament_id", "uuid"],
+        ["source_satellite_id", "uuid"],
+        ["source_refund_entitlement_id", "uuid"],
+        ["source_satellite_award_place", "integer"],
+        ["entry_prize", "numeric(15,2)"],
+        ["entry_bounty", "numeric(15,2)"],
+        ["entry_fee", "numeric(15,2)"]
+      ],
+      "relname": "tournament_tickets"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.union_pnl_cash_outcomes(table_id uuid,hand_number bigint,hand_id uuid,transaction_id xid8,recognized_at timestamp with time zone,payload_hash text,game_scope jsonb,evidence jsonb);",
+      "columns": [
+        ["table_id", "uuid"],
+        ["hand_number", "bigint"],
+        ["hand_id", "uuid"],
+        ["transaction_id", "xid8"],
+        ["recognized_at", "timestamp with time zone"],
+        ["payload_hash", "text"],
+        ["game_scope", "jsonb"],
+        ["evidence", "jsonb"]
+      ],
+      "relname": "union_pnl_cash_outcomes"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.union_pnl_inventory_events(event_id bigint,source_name text,row_id uuid,observed_at timestamp with time zone,transaction_id xid8,operation text,before_row jsonb,after_row jsonb);",
+      "columns": [
+        ["event_id", "bigint"],
+        ["source_name", "text"],
+        ["row_id", "uuid"],
+        ["observed_at", "timestamp with time zone"],
+        ["transaction_id", "xid8"],
+        ["operation", "text"],
+        ["before_row", "jsonb"],
+        ["after_row", "jsonb"]
+      ],
+      "relname": "union_pnl_inventory_events"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.union_pnl_opening_registration_resolutions(boundary timestamp with time zone,registration_id uuid,tournament_id uuid,user_id uuid,union_id uuid,registration_row_md5 text,tournament_row_md5 text,owning_club_id uuid,asset text,entries integer,entry_amount numeric,returned numeric,deferred_amount numeric,resolution_kind text,proof jsonb,proof_md5 text,reason text,resolved_by text,resolved_at timestamp with time zone);",
+      "columns": [
+        ["boundary", "timestamp with time zone"],
+        ["registration_id", "uuid"],
+        ["tournament_id", "uuid"],
+        ["user_id", "uuid"],
+        ["union_id", "uuid"],
+        ["registration_row_md5", "text"],
+        ["tournament_row_md5", "text"],
+        ["owning_club_id", "uuid"],
+        ["asset", "text"],
+        ["entries", "integer"],
+        ["entry_amount", "numeric"],
+        ["returned", "numeric"],
+        ["deferred_amount", "numeric"],
+        ["resolution_kind", "text"],
+        ["proof", "jsonb"],
+        ["proof_md5", "text"],
+        ["reason", "text"],
+        ["resolved_by", "text"],
+        ["resolved_at", "timestamp with time zone"]
+      ],
+      "relname": "union_pnl_opening_registration_resolutions"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.union_pnl_original_flows(ledger_id uuid,transaction_id xid8,recognized_at timestamp with time zone,game_scope jsonb,ledger_snapshot jsonb);",
+      "columns": [
+        ["ledger_id", "uuid"],
+        ["transaction_id", "xid8"],
+        ["recognized_at", "timestamp with time zone"],
+        ["game_scope", "jsonb"],
+        ["ledger_snapshot", "jsonb"]
+      ],
+      "relname": "union_pnl_original_flows"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.union_pnl_transaction_frames(transaction_id xid8,observed_at timestamp with time zone,book_start timestamp with time zone);",
+      "columns": [
+        ["transaction_id", "xid8"],
+        ["observed_at", "timestamp with time zone"],
+        ["book_start", "timestamp with time zone"]
+      ],
+      "relname": "union_pnl_transaction_frames"
+    },
+    {
+      "ddl": "CREATE TABLE IF NOT EXISTS public.wallet_credit_idempotency(key text,user_id uuid,amount numeric,created_at timestamp with time zone);",
+      "columns": [
+        ["key", "text"],
+        ["user_id", "uuid"],
+        ["amount", "numeric"],
+        ["created_at", "timestamp with time zone"]
+      ],
+      "relname": "wallet_credit_idempotency"
+    }
+  ],
+  "functions": [
+    {
+      "md5": "bb74ae7693dc40b812fce685cfc3c294",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_cash_original_funding_lineage(p_user uuid, p_table uuid, p_seat uuid, p_occupancy uuid, p_join timestamp with time zone, p_at timestamp with time zone, p_boundary boolean DEFAULT false)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nDECLARE m public.cash_seat_move_receipts%ROWTYPE; f public.cash_participant_funding_receipts%ROWTYPE;\n l public.chip_ledger%ROWTYPE; a public.cash_funding_application_receipts%ROWTYPE;\n current_table uuid:=p_table; current_occupancy uuid:=p_occupancy;\n seen uuid[]:=ARRAY[]::uuid[]; ids uuid[]:=ARRAY[]::uuid[]; refs jsonb:='[]'; moves jsonb:='[]'; issues jsonb:='[]';\n cutoff timestamptz:=p_at; cutoff_transaction xid8; move_at timestamptz;\n move_club uuid; n integer; depth integer:=0;\nBEGIN\n IF p_user IS NULL OR p_table IS NULL OR p_seat IS NULL OR p_occupancy IS NULL\n  OR p_join IS NULL OR NOT isfinite(p_join) OR p_at IS NULL OR NOT isfinite(p_at) THEN\n  RETURN jsonb_build_object('version',1,'observed_at',p_at,'funding_receipts',refs,'moves',moves,'issues',jsonb_build_array('cash_lineage_identity_missing'));\n END IF;\n LOOP\n  IF current_occupancy=ANY(seen) OR depth>64 THEN\n   issues:=issues||'\"cash_move_cycle_or_depth_unproven\"'::jsonb; EXIT;\n  END IF;\n  seen:=array_append(seen,current_occupancy);\n  FOR f IN SELECT r.* FROM public.cash_participant_funding_receipts r\n   LEFT JOIN public.union_pnl_transaction_frames b ON b.transaction_id=r.transaction_id\n   WHERE r.occupancy_id=current_occupancy AND (CASE WHEN p_boundary THEN COALESCE(b.observed_at,r.recorded_at) ELSE r.recorded_at END)<p_at\n    AND ((CASE WHEN p_boundary THEN COALESCE(b.observed_at,r.recorded_at) ELSE r.recorded_at END)<=cutoff OR r.transaction_id=cutoff_transaction)\n   ORDER BY r.recorded_at,r.id LOOP\n   IF f.id=ANY(ids) OR f.user_id IS DISTINCT FROM p_user OR f.table_id IS DISTINCT FROM current_table\n    OR (depth=0 AND (f.seat_id IS DISTINCT FROM p_seat OR f.seat_joined_at IS DISTINCT FROM p_join))\n    OR (move_club IS NOT NULL AND f.funding_club_id IS DISTINCT FROM move_club)\n    OR (f.account_type='player_wallet' AND f.account_entity_id IS DISTINCT FROM f.user_id)\n    OR (f.account_type='club_treasury' AND f.account_entity_id IS DISTINCT FROM f.funding_club_id)\n    OR f.asset IS DISTINCT FROM 'chips' OR f.unit_scale<>2 OR NOT isfinite(f.recorded_at)\n    OR f.amount<=0 OR f.amount<>round(f.amount,2) OR f.amount::text IN ('NaN','Infinity','-Infinity')\n    OR f.balance_before-f.balance_after IS DISTINCT FROM f.amount THEN\n    issues:=issues||'\"cash_lineage_funding_identity_invalid\"'::jsonb;\n   END IF;\n   SELECT * INTO l FROM public.chip_ledger WHERE id=f.source_ledger_id;\n   IF NOT FOUND OR l.status IS DISTINCT FROM 'posted' OR l.club_id IS DISTINCT FROM f.funding_club_id\n    OR l.from_type IS DISTINCT FROM f.account_type OR l.from_entity_id IS DISTINCT FROM f.account_entity_id\n    OR l.to_type IS DISTINCT FROM 'table_stack' OR l.to_entity_id IS DISTINCT FROM f.table_id\n    OR l.category IS DISTINCT FROM f.operation_kind OR l.amount IS DISTINCT FROM f.amount THEN\n    issues:=issues||'\"cash_lineage_original_debit_invalid\"'::jsonb;\n   END IF;\n   IF f.pending_addon_id IS NOT NULL AND NOT p_boundary THEN\n    SELECT * INTO a FROM public.cash_funding_application_receipts WHERE funding_receipt_id=f.id;\n    IF NOT FOUND OR a.original_occupancy_id IS DISTINCT FROM f.occupancy_id\n     OR NOT isfinite(a.applied_at) OR a.applied+a.refunded IS DISTINCT FROM f.amount\n     OR (a.applied>0 AND a.applied_occupancy_id IS DISTINCT FROM f.occupancy_id) THEN\n     issues:=issues||'\"pending_funding_application_unproven\"'::jsonb;\n    END IF;\n   END IF;\n   ids:=array_append(ids,f.id);\n   refs:=refs||jsonb_build_array(jsonb_build_object('id',f.id,'account_type',f.account_type,\n    'account_entity_id',f.account_entity_id,'funding_club_id',f.funding_club_id,'funding_union_id',f.funding_union_id,\n    'pending_addon_id',f.pending_addon_id));\n  END LOOP;\n  SELECT count(*) INTO n FROM public.cash_seat_move_receipts r LEFT JOIN public.union_pnl_transaction_frames b ON b.transaction_id=r.transaction_id\n   WHERE r.destination_occupancy_id=current_occupancy AND (CASE WHEN p_boundary THEN COALESCE(b.observed_at,r.created_at) ELSE r.created_at END)<p_at;\n  IF n=0 THEN EXIT; END IF;\n  IF n<>1 THEN issues:=issues||'\"cash_move_destination_fork\"'::jsonb; EXIT; END IF;\n  SELECT r.* INTO m FROM public.cash_seat_move_receipts r LEFT JOIN public.union_pnl_transaction_frames b ON b.transaction_id=r.transaction_id\n   WHERE r.destination_occupancy_id=current_occupancy AND (CASE WHEN p_boundary THEN COALESCE(b.observed_at,r.created_at) ELSE r.created_at END)<p_at;\n  SELECT observed_at INTO move_at FROM public.union_pnl_transaction_frames WHERE transaction_id=m.transaction_id;\n  IF p_boundary AND (m.transaction_id IS NULL OR move_at IS NULL) THEN\n   issues:=issues||'\"cash_move_original_transaction_frame_missing\"'::jsonb;\n  END IF;\n  IF m.player_id IS DISTINCT FROM p_user OR m.to_table_id IS DISTINCT FROM current_table\n   OR m.source_occupancy_id=ANY(seen) OR m.from_table_id=m.to_table_id\n   OR m.club_id IS NULL OR (move_club IS NOT NULL AND m.club_id IS DISTINCT FROM move_club)\n   OR m.amount<=0 OR m.amount<>round(m.amount,2) OR m.amount::text IN ('NaN','Infinity','-Infinity')\n   OR NOT isfinite(m.created_at) OR (CASE WHEN p_boundary THEN COALESCE(move_at,m.created_at) ELSE m.created_at END)>cutoff\n   OR (move_at IS NOT NULL AND (NOT isfinite(move_at) OR move_at>=p_at))\n   OR jsonb_typeof(m.receipt) IS DISTINCT FROM 'object' OR m.receipt->>'ok' IS DISTINCT FROM 'true'\n   OR m.receipt->>'move_id' IS DISTINCT FROM m.move_id::text OR m.receipt->>'player_id' IS DISTINCT FROM p_user::text\n   OR m.receipt->>'from_table_id' IS DISTINCT FROM m.from_table_id::text\n   OR m.receipt->>'to_table_id' IS DISTINCT FROM m.to_table_id::text\n   OR m.receipt->>'source_seat_number' IS DISTINCT FROM m.from_seat_number::text\n   OR m.receipt->>'to_seat_number' IS DISTINCT FROM m.to_seat_number::text\n   OR m.receipt->>'source_occupancy_id' IS DISTINCT FROM m.source_occupancy_id::text\n   OR m.receipt->>'destination_occupancy_id' IS DISTINCT FROM m.destination_occupancy_id::text\n   OR public.fn_pnl_evidence_cents(m.receipt->'stack') IS DISTINCT FROM m.amount\n   OR m.receipt->>'idempotency_key' IS DISTINCT FROM 'seatmove:'||m.move_id::text\n   OR (SELECT count(*) FROM public.cash_seat_move_receipts r LEFT JOIN public.union_pnl_transaction_frames b ON b.transaction_id=r.transaction_id WHERE r.source_occupancy_id=m.source_occupancy_id AND (CASE WHEN p_boundary THEN COALESCE(b.observed_at,r.created_at) ELSE r.created_at END)<p_at)<>1 THEN\n   issues:=issues||'\"cash_move_original_receipt_invalid\"'::jsonb; EXIT;\n  END IF;\n  moves:=moves||jsonb_build_array(to_jsonb(m));\n  move_club:=m.club_id; current_table:=m.from_table_id; current_occupancy:=m.source_occupancy_id;\n  cutoff:=CASE WHEN p_boundary THEN COALESCE(move_at,m.created_at) ELSE m.created_at END; cutoff_transaction:=m.transaction_id; depth:=depth+1;\n END LOOP;\n -- Every retained source must agree with the exact custody club through all moves.\n IF move_club IS NOT NULL AND EXISTS(SELECT 1 FROM jsonb_array_elements(refs) r WHERE r->>'funding_club_id' IS DISTINCT FROM move_club::text) THEN\n  issues:=issues||'\"cash_move_original_funding_club_mismatch\"'::jsonb;\n END IF;\n RETURN jsonb_build_object('version',1,'observed_at',p_at,'funding_receipts',refs,'moves',moves,'issues',issues);\nEXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range OR datetime_field_overflow THEN\n RETURN jsonb_build_object('version',1,'observed_at',p_at,'funding_receipts','[]'::jsonb,'moves',moves,'issues',jsonb_build_array('cash_move_malformed_original_evidence'));\nEND $function$\n",
+      "signature": "fn_cash_original_funding_lineage(uuid,uuid,uuid,uuid,timestamp with time zone,timestamp with time zone,boolean)"
+    },
+    {
+      "md5": "8d712bd799c3dfa691f2d8d9ff5101e8",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_pnl_evidence_cents(p_value jsonb)\n RETURNS numeric\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE v numeric;\nBEGIN\n IF jsonb_typeof(p_value) IS DISTINCT FROM 'number' THEN RETURN NULL; END IF;\n v := (p_value#>>'{}')::numeric;\n IF v::text IN ('NaN','Infinity','-Infinity') OR v<>round(v,2) THEN RETURN NULL; END IF;\n RETURN v;\nEXCEPTION WHEN numeric_value_out_of_range OR invalid_text_representation THEN RETURN NULL;\nEND $function$\n",
+      "signature": "fn_pnl_evidence_cents(jsonb)"
+    },
+    {
+      "md5": "e2daa1c8c9cf6f2cf21582983445a645",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_prove_late_settlement(p_ledger_id uuid)\n RETURNS TABLE(club_id uuid, user_id uuid, delta numeric)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET \"TimeZone\" TO 'UTC'\nAS $function$\nBEGIN\n RETURN QUERY\n WITH original AS MATERIALIZED (\n  SELECT q.* FROM public.union_pnl_original_flows q\n  JOIN public.chip_ledger l ON l.id=q.ledger_id AND to_jsonb(l)=q.ledger_snapshot\n  JOIN public.union_pnl_transaction_frames frame ON frame.transaction_id=q.transaction_id AND frame.observed_at=q.recognized_at\n  WHERE q.ledger_id=p_ledger_id AND q.ledger_snapshot->>'status'='posted'\n   AND q.ledger_snapshot->>'category'='settlement' AND q.ledger_snapshot->>'row_hash' IS NOT NULL\n   AND q.game_scope ?& ARRAY['host_club_id','game_union_id','asset','unit_scale','is_private','tournament_id']\n   AND jsonb_typeof(q.game_scope->'is_private')='boolean'\n   AND q.game_scope->'tournament_id'='null'::jsonb\n   AND q.game_scope->>'asset'='chips' AND q.game_scope->'unit_scale'='2'::jsonb\n   AND q.ledger_snapshot->>'idempotency_key' LIKE 'late_seat_settle:%'\n ), linked AS MATERIALIZED (\n  SELECT q.*,s.id settlement_id,s.hand_id legacy_id,s.totals,\n   a.*,o.evidence,o.game_scope outcome_scope,\n   live.hand_id live_hand_id,live.payload_hash live_payload_hash,live.stack_result live_stack_result,\n   live.post_commit_completed_at live_completed_at,live.post_commit_result live_postcommit,\n   cert.history_hand_id retained_hand_id,cert.manifest_id retained_manifest,cert.settled_at retained_completed_at,cert.hand_number retained_number,\n   cert.original_result_sha256 retained_result_sha,cert.original_request_sha256 retained_stack_request_sha,cert.accounting_evidence_sha256 retained_evidence_sha,\n   v.accepted_request,v.participants original_participants,v.stack_claim,v.stack_settlement,v.manifest_id original_manifest,v.accepted_at original_accepted_at,\n   smarter_private.horse_settlement_original_result(k.table_id,k.hand_id,k.result) claim_result,k.status claim_status\n  FROM original q\n  JOIN public.ca_settlements s ON s.id=(q.ledger_snapshot->>'settlement_id')::uuid\n   AND s.table_id=(q.ledger_snapshot->>'table_id')::uuid\n   AND s.settlement_type='hand_stacks' AND s.state='final' AND s.tournament_id IS NULL\n  JOIN public.settlement_idempotency_keys k ON k.table_id=s.table_id AND k.hand_id=s.hand_id\n  JOIN public.cash_hand_provenance_receipts v ON v.table_id=s.table_id AND v.hand_number=(k.result->>'hand_number')::bigint\n  CROSS JOIN LATERAL jsonb_populate_record(NULL::public.hand_atomic_commits,v.atomic_receipt) a\n  LEFT JOIN public.hand_atomic_commits live ON live.table_id=a.table_id AND live.hand_number=a.hand_number\n  LEFT JOIN smarter_private.horse_settlement_key_certificates cert ON cert.table_id=s.table_id AND cert.stack_hand_id=s.hand_id\n  JOIN public.union_pnl_cash_outcomes o ON o.table_id=a.table_id AND o.hand_number=a.hand_number\n   AND o.hand_id=a.hand_id AND o.payload_hash=a.payload_hash AND public.fn_union_pnl_cash_outcome_accepted(o)\n  WHERE q.game_scope=o.game_scope AND v.game_scope=o.game_scope\n   AND v.hand_id=a.hand_id AND v.payload_hash=a.payload_hash AND v.table_id=a.table_id AND v.hand_number=a.hand_number\n   AND s.hand_id=md5('ca-hand:'||s.table_id::text||':'||a.hand_number::text||\n    CASE WHEN s.totals->>'ref' IS NULL OR s.totals->>'ref'='' THEN '' ELSE ':'||(s.totals->>'ref') END)::uuid\n   AND q.ledger_snapshot->>'idempotency_key'='late_seat_settle:'||s.hand_id::text||':'||\n    CASE WHEN q.ledger_snapshot->>'to_type'='player_wallet' THEN q.ledger_snapshot->>'to_entity_id'\n      ELSE q.ledger_snapshot->>'from_entity_id' END\n ), witnessed AS (\n  SELECT a.*,d.v departed,p.v participant,r.v signed_request,own.v owner,\n   public.fn_pnl_evidence_cents(d.v->'delta') signed_delta,\n   public.fn_pnl_evidence_cents(a.ledger_snapshot->'amount') amount\n  FROM linked a\n  CROSS JOIN LATERAL (SELECT x v FROM jsonb_array_elements(a.stack_result->'departed') x\n   WHERE x->>'user_id'=CASE WHEN a.ledger_snapshot->>'to_type'='player_wallet' THEN a.ledger_snapshot->>'to_entity_id' ELSE a.ledger_snapshot->>'from_entity_id' END) d\n  CROSS JOIN LATERAL (SELECT x v FROM jsonb_array_elements(a.original_participants) x\n   WHERE x->>'user_id'=d.v->>'user_id') p\n  CROSS JOIN LATERAL (SELECT x v FROM jsonb_array_elements(a.accepted_request->'stacks') x\n   WHERE x->>'user_id'=d.v->>'user_id') r\n  CROSS JOIN LATERAL (SELECT x v FROM jsonb_array_elements(a.evidence->'participants') x\n   WHERE x->>'user_id'=d.v->>'user_id') own\n )\n SELECT (w.departed->>'club_id')::uuid,(w.departed->>'user_id')::uuid,w.signed_delta\n FROM witnessed w\n JOIN public.wallet_credit_idempotency credit ON credit.key=w.ledger_snapshot->>'idempotency_key'\n  AND credit.user_id=(w.departed->>'user_id')::uuid AND credit.amount=w.signed_delta\n WHERE w.claim_status='succeeded' AND w.claim_result=w.stack_result\n  AND w.stack_claim->'result'=w.stack_result AND w.stack_settlement->'totals'=w.totals\n  AND w.totals->'departed'=w.stack_result->'departed'\n  AND w.stack_result->'success'='true'::jsonb AND w.stack_result->'conservation_checked'='true'::jsonb\n  AND w.accepted_request->>'table_id'=w.table_id::text\n  AND w.accepted_request->>'hand_number'=w.hand_number::text\n  AND public.fn_cash_signed_retained_request_matches(w.table_id,w.hand_number,w.payload_hash,w.accepted_request)\n  AND (SELECT count(*) FROM jsonb_array_elements(w.stack_result#>'{request,stacks}') refs(v)\n   WHERE refs.v->>'user_id'=w.departed->>'user_id' AND refs.v->>'seat_id'=w.departed->>'seat_id'\n    AND refs.v->>'seat_joined_at'=w.departed->>'seat_joined_at'\n    AND public.fn_pnl_evidence_cents(refs.v->'stack')=public.fn_pnl_evidence_cents(w.participant->'stack_after')\n    AND public.fn_pnl_evidence_cents(refs.v->'stack_before')=public.fn_pnl_evidence_cents(w.participant->'stack_before'))=1\n  AND (SELECT count(*) FROM jsonb_array_elements(w.stack_result->'departed') q(v) WHERE q.v->>'user_id'=w.departed->>'user_id')=1\n  AND (SELECT count(*) FROM jsonb_array_elements(w.original_participants) q(v) WHERE q.v->>'user_id'=w.departed->>'user_id')=1\n  AND (SELECT count(*) FROM jsonb_array_elements(w.accepted_request->'stacks') q(v) WHERE q.v->>'user_id'=w.departed->>'user_id')=1\n  AND (SELECT count(*) FROM jsonb_array_elements(w.evidence->'participants') q(v) WHERE q.v->>'user_id'=w.departed->>'user_id')=1\n  AND (SELECT count(*) FROM jsonb_array_elements_text(w.owner->'funding_receipt_ids'))=\n      (SELECT count(DISTINCT v) FROM jsonb_array_elements_text(w.owner->'funding_receipt_ids') refs(v))\n  AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(w.original_participants) q(v)\n   WHERE public.fn_pnl_evidence_cents(q.v->'stack_before') IS NULL OR public.fn_pnl_evidence_cents(q.v->'stack_after') IS NULL\n    OR public.fn_pnl_evidence_cents(q.v->'poker_delta') IS DISTINCT FROM\n       public.fn_pnl_evidence_cents(q.v->'stack_after')-public.fn_pnl_evidence_cents(q.v->'stack_before'))\n  AND (SELECT sum(public.fn_pnl_evidence_cents(q.v->'poker_delta')) FROM jsonb_array_elements(w.original_participants) q(v))\n      +public.fn_pnl_evidence_cents(w.accepted_request->'rake')+public.fn_pnl_evidence_cents(w.accepted_request->'bbj')\n      =public.fn_pnl_evidence_cents(w.accepted_request->'inflow')\n  AND CASE WHEN w.live_hand_id IS NOT NULL THEN\n   w.live_hand_id=w.hand_id AND w.live_payload_hash=w.payload_hash AND w.live_stack_result=w.stack_result\n   AND w.live_completed_at IS NOT NULL AND isfinite(w.live_completed_at) AND w.live_postcommit->'ok'='true'::jsonb\n  ELSE w.retained_hand_id=w.hand_id AND w.retained_manifest=w.original_manifest\n   AND w.retained_number=w.hand_number AND w.retained_completed_at IS NOT NULL AND isfinite(w.retained_completed_at)\n   AND w.retained_completed_at>=w.original_accepted_at AND w.retained_completed_at>=w.committed_at\n   -- These digests name the full retained monetary original in provenance,\n   -- never the compact key's JSON or a reconstructed expired raw hand.\n   AND w.retained_result_sha=encode(extensions.digest(convert_to(w.stack_result::text,'UTF8'),'sha256'),'hex')\n   AND w.retained_stack_request_sha=encode(extensions.digest(convert_to((w.stack_result->'request')::text,'UTF8'),'sha256'),'hex')\n   AND w.retained_evidence_sha=encode(extensions.digest(convert_to((w.evidence-'accepted_bbj'-'accepted_rake'-'accepted_external_net')::text,'UTF8'),'sha256'),'hex') END\n  AND w.amount>0 AND w.signed_delta<>0 AND abs(w.signed_delta)=w.amount\n  AND public.fn_cash_original_funding_lineage((w.participant->>'user_id')::uuid,w.table_id,\n    (w.participant->>'seat_id')::uuid,(w.participant->>'occupancy_id')::uuid,\n    (w.participant->>'seat_joined_at')::timestamptz,(w.participant#>>'{funding_lineage,observed_at}')::timestamptz,false)\n      IS NOT DISTINCT FROM w.participant->'funding_lineage'\n  AND w.participant#>'{funding_lineage,issues}'='[]'::jsonb\n  AND (SELECT array_agg(refs.v->>'id' ORDER BY refs.v->>'id') FROM jsonb_array_elements(w.participant#>'{funding_lineage,funding_receipts}') refs(v))\n      IS NOT DISTINCT FROM (SELECT array_agg(refs.v ORDER BY refs.v) FROM jsonb_array_elements_text(w.owner->'funding_receipt_ids') refs(v))\n  AND w.participant->>'seat_id'=w.departed->>'seat_id'\n  AND w.participant->>'seat_joined_at'=w.departed->>'seat_joined_at'\n  AND w.signed_request->>'seat_id'=w.departed->>'seat_id'\n  AND w.signed_request->>'seat_joined_at'=w.departed->>'seat_joined_at'\n  AND public.fn_pnl_evidence_cents(w.participant->'stack_before') IS NOT NULL\n  AND public.fn_pnl_evidence_cents(w.participant->'stack_after') IS NOT NULL\n  AND public.fn_pnl_evidence_cents(w.participant->'stack_after')-public.fn_pnl_evidence_cents(w.participant->'stack_before')=w.signed_delta\n  AND public.fn_pnl_evidence_cents(w.signed_request->'stack_before')=public.fn_pnl_evidence_cents(w.participant->'stack_before')\n  AND public.fn_pnl_evidence_cents(w.signed_request->'stack')=public.fn_pnl_evidence_cents(w.participant->'stack_after')\n  AND w.owner->'ownership_certified'='true'::jsonb\n  AND w.owner->>'earning_club_id'=w.departed->>'club_id'\n  AND w.owner->>'earning_club_id'=w.ledger_snapshot->>'club_id'\n  AND public.fn_pnl_evidence_cents(w.owner->'observed_stack_delta')=w.signed_delta\n  AND jsonb_array_length(w.owner->'funding_receipt_ids')>0\n  AND (SELECT count(*) FROM jsonb_array_elements_text(w.owner->'funding_receipt_ids') refs(receipt_id)\n    JOIN public.cash_participant_funding_receipts f ON f.id=refs.receipt_id::uuid WHERE f.operation_kind='buyin')=1\n  AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(w.owner->'funding_receipt_ids') refs(receipt_id)\n   LEFT JOIN public.cash_participant_funding_receipts f ON f.id=refs.receipt_id::uuid\n   LEFT JOIN public.chip_ledger l ON l.id=f.source_ledger_id\n   WHERE f.id IS NULL OR f.user_id IS DISTINCT FROM (w.departed->>'user_id')::uuid\n    OR f.funding_club_id IS DISTINCT FROM (w.departed->>'club_id')::uuid\n    OR f.funding_union_id::text IS DISTINCT FROM w.game_scope->>'game_union_id'\n    OR f.account_type IS DISTINCT FROM 'player_wallet' OR f.account_entity_id IS DISTINCT FROM f.user_id\n    OR f.asset IS DISTINCT FROM 'chips' OR f.unit_scale IS DISTINCT FROM 2\n    OR f.amount<=0 OR f.amount IS NULL OR f.amount<>round(f.amount,2) OR f.amount::text IN('NaN','Infinity','-Infinity')\n    OR f.balance_before-f.balance_after IS DISTINCT FROM f.amount\n    OR l.id IS NULL OR l.row_hash IS NULL OR l.status IS DISTINCT FROM 'posted' OR l.amount IS DISTINCT FROM f.amount\n    OR l.club_id IS DISTINCT FROM f.funding_club_id OR l.from_type IS DISTINCT FROM f.account_type\n    OR l.from_entity_id IS DISTINCT FROM f.user_id OR l.to_type IS DISTINCT FROM 'table_stack'\n    OR l.to_entity_id IS DISTINCT FROM f.table_id OR l.category IS DISTINCT FROM f.operation_kind)\n  AND CASE WHEN w.signed_delta>0 THEN\n   w.ledger_snapshot->>'from_type'='table_stack' AND w.ledger_snapshot->>'from_entity_id'=w.table_id::text\n   AND w.ledger_snapshot->>'to_type'='player_wallet' AND w.ledger_snapshot->>'to_entity_id'=w.departed->>'user_id'\n  ELSE w.ledger_snapshot->>'from_type'='player_wallet' AND w.ledger_snapshot->>'from_entity_id'=w.departed->>'user_id'\n   AND w.ledger_snapshot->>'to_type'='table_stack' AND w.ledger_snapshot->>'to_entity_id'=w.table_id::text END;\nEXCEPTION WHEN SQLSTATE '55000' THEN\n IF SQLERRM='HORSE_SETTLEMENT_COMPACT_ORIGINAL_CONFLICT' THEN RETURN;END IF;RAISE;\nWHEN invalid_text_representation OR numeric_value_out_of_range OR invalid_parameter_value THEN\n RETURN;\nEND\n$function$\n",
+      "signature": "fn_union_pnl_prove_late_settlement(uuid)"
+    },
+    {
+      "md5": "3beddbfe1e3d204d1907b428d9358f08",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_satellite_seat_owner(p_registration_id uuid, p_tournament_id uuid)\n RETURNS uuid\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n WITH reg AS (\n  SELECT e.after_row r FROM public.union_pnl_inventory_events e\n  WHERE e.source_name='tournament_players' AND e.row_id=p_registration_id ORDER BY e.event_id LIMIT 1\n ), who AS (\n  SELECT (r->>'user_id')::uuid user_id,(r->>'source_satellite_id')::uuid satellite_id,(r->>'registered_at')::timestamptz registered_at,\n   (r->>'tournament_id')::uuid target_id\n  FROM reg WHERE (p_tournament_id IS NULL OR r->>'tournament_id'=p_tournament_id::text)\n   AND r->>'source_satellite_id' IS NOT NULL AND r->>'user_id' IS NOT NULL AND r->>'tournament_id' IS NOT NULL\n ), award AS (\n  SELECT a.tournament_id,a.user_id FROM who w\n  JOIN public.tournament_satellite_awards a ON a.tournament_id=w.satellite_id AND a.user_id=w.user_id\n  JOIN public.tournament_satellite_settlements s ON s.tournament_id=a.tournament_id AND s.target_id=w.target_id\n  WHERE (a.delivery_kind='seat' AND a.registration_id=p_registration_id)\n   OR (a.delivery_kind='ticket' AND a.registration_id IS NULL AND EXISTS(SELECT 1 FROM public.tournament_tickets t WHERE t.id=a.ticket_id\n     AND t.holder_id=w.user_id AND t.source_satellite_id=w.satellite_id AND t.source_tournament_id=w.target_id\n     AND t.status='redeemed' AND t.redemption_mode='tournament_entry_only' AND t.redeemed_at=w.registered_at))\n ), entry AS (\n  SELECT count(*) n,count(DISTINCT r.funding_club_id) clubs,min(r.funding_club_id::text)::uuid club,\n   count(*) FILTER(WHERE r.operation='entry') entries,\n   count(*) FILTER(WHERE r.asset IS DISTINCT FROM 'chips' OR r.amount IS NULL OR r.amount<=0 OR r.funding_club_id IS NULL OR NOT EXISTS(\n    SELECT 1 FROM (SELECT row.* FROM public.chip_ledger row WHERE row.id=r.ledger_id OFFSET 0) l WHERE l.status='posted' AND l.from_type='player_wallet' AND l.from_entity_id=r.user_id\n     AND l.to_type='prize_liability' AND l.to_entity_id=r.tournament_id AND l.tournament_id=r.tournament_id AND l.amount=r.amount\n     AND l.club_id=r.funding_club_id AND l.category IN ('tournament_buyin','rebuy','addon') AND l.row_hash IS NOT NULL)) bad\n  FROM award a JOIN public.tournament_participant_funding_receipts r ON r.tournament_id=a.tournament_id AND r.user_id=a.user_id\n )\n SELECT CASE WHEN (SELECT count(*) FROM award)=1 AND e.n>0 AND e.entries>=1 AND e.clubs=1 AND e.bad=0 THEN e.club END FROM entry e\n$function$\n",
+      "signature": "fn_union_pnl_satellite_seat_owner(uuid,uuid)"
+    },
+    {
+      "md5": "103f192a228084dad0e4268c36c82c4b",
+      "body": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+      "signature": "fn_union_week_start(timestamp with time zone)"
+    }
+  ]
+}

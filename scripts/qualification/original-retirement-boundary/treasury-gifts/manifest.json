@@ -1,0 +1,74 @@
+{
+  "scope": "isolated native PG17 loopback only",
+  "cards_exported": false,
+  "trust_helpers_overridden": false,
+  "finite245_tables_modified": false,
+  "tables": [
+    {
+      "table": "union_pnl_original_flows",
+      "rows": 7,
+      "keys": ["ledger_id"]
+    },
+    {
+      "table": "union_pnl_transaction_frames",
+      "rows": 7,
+      "keys": ["transaction_id"]
+    },
+    {
+      "table": "union_pnl_inventory_events",
+      "rows": 7,
+      "keys": ["event_id"]
+    },
+    {
+      "table": "chip_ledger",
+      "rows": 29,
+      "keys": ["id"]
+    },
+    {
+      "table": "chip_transactions",
+      "rows": 4,
+      "keys": ["id"]
+    },
+    {
+      "table": "entry_purchase_idempotency_receipts",
+      "rows": 4,
+      "keys": ["key_domain", "idempotency_key"]
+    },
+    {
+      "table": "wallet_transactions",
+      "rows": 3,
+      "keys": ["id"]
+    },
+    {
+      "table": "cash_participant_funding_receipts",
+      "rows": 22,
+      "keys": ["id"]
+    },
+    {
+      "table": "cash_funding_application_receipts",
+      "rows": 2,
+      "keys": ["funding_receipt_id"]
+    },
+    {
+      "table": "cash_seat_move_receipts",
+      "rows": 5,
+      "keys": ["move_id"]
+    },
+    {
+      "table": "cash_hand_provenance_receipts",
+      "rows": 78,
+      "keys": ["table_id", "hand_number"]
+    },
+    {
+      "table": "cash_hand_participant_manifests",
+      "rows": 78,
+      "keys": ["id"]
+    },
+    {
+      "table": "union_pnl_cash_outcomes",
+      "rows": 78,
+      "keys": ["table_id", "hand_number"]
+    }
+  ],
+  "limit": "78 request/atomic fixtures financial-only. Native cryptographic boundaries require explicit controlled lane; real production78 unchanged trust/hash proof retained separately. No fictitious funding receipts or source-history rewrites."
+}

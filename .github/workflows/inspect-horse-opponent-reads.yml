@@ -61,15 +61,15 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
           printf '%s\n' "$HOST_KEY" > "$SSH_DIR/known_hosts"
           chmod 0600 "$SSH_DIR/key" "$SSH_DIR/known_hosts"
-          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null
-          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
+          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null || { echo "::error::inspection_key_invalid"; exit 1; }
+          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null || { echo "::error::inspection_host_key_invalid"; exit 1; }
           timeout --signal=TERM --kill-after=5s 75s ssh \
             -i "$SSH_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_DIR/known_hosts" \
             -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "root@$HETZNER_HOST" \
-            "test -f /var/lock/club-arena-engine-up.lock && exec 9>/var/lock/club-arena-engine-up.lock && flock -n 9 && test \"\$(docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' club-arena-engine)\" = '$EXPECTED_ENGINE_SHA' && docker exec -i club-arena-engine node --input-type=module - '$SELECTION_BASE64'" \
+            "test -f /var/lock/club-arena-engine-up.lock || { echo inspection_lock_missing >&2; exit 1; }; exec 9>/var/lock/club-arena-engine-up.lock || { echo inspection_lock_open_failed >&2; exit 1; }; flock -n 9 || { echo inspection_lock_busy >&2; exit 1; }; test \"\$(docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' club-arena-engine)\" = '$EXPECTED_ENGINE_SHA' || { echo inspection_image_mismatch >&2; exit 1; }; docker exec -i club-arena-engine node --input-type=module - '$SELECTION_BASE64'" \
             < scripts/ci/inspect-horse-opponent-reads.mjs > "$RUNNER_TEMP/horse-opponent-reads.json"
           cat "$RUNNER_TEMP/horse-opponent-reads.json"
       - uses: actions/upload-artifact@v4

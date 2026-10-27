@@ -1,0 +1,5 @@
+{
+  "_owner": "madness-hand-delay-01a17b45",
+  "_comment": "Source declaration only, NOT INSTALLED. Install protected migration 20261027143251_horse_own_public_history_validates_only_the_selected_horizon.sql before activating the dependent engine. v1/v2 remain byte-identical. Require truthful v3 definition MD5 and service-only ACL readback.",
+  "functions": ["fn_horse_own_public_history_read_v3"]
+}

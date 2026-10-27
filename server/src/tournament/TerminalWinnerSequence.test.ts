@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -46,6 +47,7 @@ function finishStage(
   // This transport applies the manager's actual filters and ordering to rows.
   // Reversing callback timestamps therefore reproduces the old wrong candidate.
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     expect(table).toBe('tournament_players');
     let rows = [...entrants];
     let status: string | undefined;
@@ -269,7 +271,7 @@ describe('terminal candidate follows the durable elimination authority', () => {
     await manager.runEliminationSweep(new AbortController().signal);
     expect(manager.finishTournament).toHaveBeenCalledOnce();
     expect(manager.finishTournament).toHaveBeenCalledWith(firstUserId);
-    expect(fixture.from).toHaveBeenCalledTimes(3);
+    expect(fixture.from).toHaveBeenCalledTimes(4);
     expect(fixture.reportError).not.toHaveBeenCalled();
   });
 
@@ -278,7 +280,7 @@ describe('terminal candidate follows the durable elimination authority', () => {
     await manager.runEliminationSweep(new AbortController().signal);
     expect(manager.finishTournament).not.toHaveBeenCalled();
     expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
-    expect(fixture.from).toHaveBeenCalledTimes(3);
+    expect(fixture.from).toHaveBeenCalledTimes(4);
     expect(fixture.reportError).toHaveBeenCalledWith(
       { message: 'read failed' },
       'Tournament.finish_durable_winner_unreadable'
@@ -292,7 +294,7 @@ describe('terminal candidate follows the durable elimination authority', () => {
     await manager.runEliminationSweep(new AbortController().signal);
     expect(manager.finishTournament).toHaveBeenCalledOnce();
     expect(manager.finishTournament).toHaveBeenCalledWith(firstUserId);
-    expect(fixture.from).toHaveBeenCalledTimes(2);
+    expect(fixture.from).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -382,6 +384,7 @@ function cohortManager(
     throw new Error(`Unexpected cohort RPC ${name}`);
   });
   fixture.from.mockImplementation((name: string) => {
+    if (name === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const q: any = {
       select: vi.fn(() => q),
       eq: vi.fn(() => q),

@@ -12,9 +12,11 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/20261022165130_club_data_and_union_data_read_each_window_once.sql
+      - supabase/migrations/20261027002505_legacy_rake_data_authorizes_every_club_separately.sql
       - tests/fixtures/club-data-fact-db/**
       - tests/fixtures/club-data-report-db/**
       - scripts/ci/test-club-data-reads-each-window-once.py
+      - scripts/ci/test-club-data-union-mtt-postgres.py
       - .github/workflows/club-data-reads-each-window-once.yml
 
 permissions:
@@ -56,3 +58,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-club-data-reads-each-window-once.py
+      - name: Data ranks, recursive downlines and missing-club legacy APIs
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-club-data-union-mtt-postgres.py

@@ -27,12 +27,16 @@ import {
 } from '../../lightning/lightningSummaryStore';
 import { lightningJoinRoute } from '../../lightning/lightningLobby';
 import { writeLightningPrefs } from '../../lightning/lightningPrefs';
+import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
 import LightningStatsGrid from './LightningStatsGrid';
 import LightningRecentHands from './LightningRecentHands';
 import './LightningSession.css';
 
-export function useLightningSessionSummary(poolSessionId: string | null): {
+export function useLightningSessionSummary(
+  poolSessionId: string | null,
+  cashout?: { tableId: string; occupancyId: string }
+): {
   summary: Summary | null;
   failed: boolean;
 } {
@@ -41,23 +45,45 @@ export function useLightningSessionSummary(poolSessionId: string | null): {
   useEffect(() => {
     if (!poolSessionId) return;
     let live = true;
+    let generation = 0;
+    let completionRead = false;
     setSummary(null);
     setFailed(false);
-    fetchLightningSessionSummary(poolSessionId)
-      .then((s) => {
-        if (!live) return;
-        setSummary(s);
-        if (!s) setFailed(true);
-      })
-      .catch((err: unknown) => {
-        if (!live) return;
-        setFailed(true);
-        reportError(err, 'LightningSession.summary_read_failed', { poolSessionId });
-      });
+    const read = () => {
+      const request = ++generation;
+      return fetchLightningSessionSummary(poolSessionId)
+        .then((s) => {
+          if (!live || request !== generation) return;
+          setSummary(s);
+          setFailed(!s);
+        })
+        .catch((err: unknown) => {
+          if (!live || request !== generation) return;
+          setSummary(null);
+          setFailed(true);
+          reportError(err, 'LightningSession.summary_read_failed', { poolSessionId });
+        });
+    };
+    // The existing occupancy watcher follows the queued leave across navigation.
+    // Its completion event is emitted only after the seat's cashout commits.
+    const off = masterBus.subscribe('SEAT_CASHED_OUT', (event) => {
+      const landed = event?.payload;
+      if (
+        !cashout ||
+        completionRead ||
+        landed?.tableId !== cashout.tableId ||
+        landed.occupancyId !== cashout.occupancyId
+      )
+        return;
+      completionRead = true;
+      void read();
+    });
+    void read();
     return () => {
       live = false;
+      off();
     };
-  }, [poolSessionId]);
+  }, [poolSessionId, cashout?.tableId, cashout?.occupancyId]);
   return { summary, failed };
 }
 
@@ -123,7 +149,7 @@ export function LightningSessionSummaryHost() {
   const navigate = useNavigate();
   const [viewing, setViewing] = useState(false);
   const poolSessionId = req?.poolSessionId ?? null;
-  const { summary, failed } = useLightningSessionSummary(poolSessionId);
+  const { summary, failed } = useLightningSessionSummary(poolSessionId, req?.cashout);
   useEffect(() => {
     setViewing(false);
   }, [poolSessionId]);

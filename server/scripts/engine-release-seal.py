@@ -749,6 +749,78 @@ def cmd_reserve_recovery_window(args: argparse.Namespace) -> None:
         print(value["announcedAt"])
 
 
+def database_container_identity() -> dict[str, Any]:
+    # Select immutable fields only; never inspect runtime environment secrets.
+    template = '{"imageId":{{json .Image}},"sha":{{json (index .Config.Labels "sp.release.sha")}},"running":{{json .State.Running}}}'
+    return json.loads(run(["docker", "container", "inspect", "--format", template, "club-arena-engine"]))
+
+
+def reserve_database_window(request: dict[str, Any], repo: str) -> dict[str, Any]:
+    """One reviewed DB operation, sharing the release seal's rolling-hour ledger.
+
+    The caller holds the engine mutation lock for the complete operation. This
+    never changes desired/highWater/pending or grants an image activation token.
+    """
+    required = {"runId", "controlSha", "servingSha", "windowId"}
+    if set(request) != required or not RUN_ID_RE.fullmatch(str(request.get("runId", ""))):
+        die("invalid database maintenance identity")
+    control = valid_sha(request["controlSha"])
+    serving = valid_sha(request["servingSha"])
+    with SealLock():
+        state = load_state()
+        if state.get("pending") or state.get("finalization"):
+            die("engine transaction still owns mutation")
+        if state["desired"]["sha"] != serving:
+            die("database operation does not name the sealed serving engine")
+        git_is_ancestor(repo, control, "origin/main", "database control is not protected main")
+        git_is_ancestor(repo, serving, control, "database control predates the serving engine")
+        git_is_ancestor(repo, state["highWaterSha"], control, "database control predates the high-water release")
+        container = database_container_identity()
+        if container.get("running") is not True or container.get("sha") != serving or container.get("imageId") != state["desired"]["imageId"]:
+            die("database operation container differs from the sealed immutable image")
+        doc = json.loads(run(["git", "-C", repo, "show", control + ":server/release/owner-maintenance-windows.json"]))
+        matches = [w for w in doc.get("databaseWindows", []) if w.get("id") == request["windowId"]]
+        if doc.get("version") != 1 or len(matches) != 1:
+            die("database window must be uniquely reviewed")
+        window = matches[0]
+        from datetime import datetime
+        try:
+            start = int(datetime.fromisoformat(window["notBefore"].replace("Z", "+00:00")).timestamp() * 1000)
+            end = int(datetime.fromisoformat(window["notAfter"].replace("Z", "+00:00")).timestamp() * 1000)
+        except (ValueError, KeyError, TypeError):
+            die("database window bounds unreadable")
+        now_ms = int(time.time() * 1000)
+        if not (0 < end - start <= 6 * 3600000 and start <= now_ms and now_ms + 420000 <= end):
+            die("database window cannot contain full notice and maintenance")
+        if not isinstance(window.get("ownerOrder"), str) or len(window["ownerOrder"].strip()) < 10:
+            die("database window has no owner order")
+        git_is_ancestor(repo, valid_sha(window.get("contains", "")), control, "database window anchor is absent")
+        files = window.get("migrations")
+        if not isinstance(files, list) or len(files) != 1 or not re.fullmatch(r"[0-9]{14}_[a-z0-9_]+\.sql", files[0]):
+            die("database operation must name exactly one migration")
+        sql_bytes = subprocess.run(["git", "-C", repo, "show", control + ":supabase/migrations/" + files[0]],
+                                   check=True, capture_output=True, timeout=30).stdout
+        sql = sql_bytes.decode()
+        if "-- @install-window: daily-maintenance" not in sql.splitlines():
+            die("database operation migration is not a maintenance file")
+        binding = {**request, "type": "database-maintenance/v1", "imageId": state["desired"]["imageId"], "migration": files[0],
+                   "migrationSHA256": hashlib.sha256(sql_bytes).hexdigest()}
+        path = STATE_DIR / (RECOVERY_WINDOW_PREFIX + request["runId"] + ".json")
+        if path.exists():
+            receipt = json.loads(path.read_text())
+            if any(receipt.get(k) != v for k, v in binding.items()):
+                die("database operation replay changed its identity")
+            if now_ms >= receipt["endsAt"]:
+                die("database operation expired; read its original receipt")
+            return receipt
+        if recent_recovery_window(request["runId"], now_ms):
+            die("database window rolling hour is already owned")
+        receipt = {**binding, "announcedAt": now_ms, "endsAt": now_ms + 420000}
+        write_json_atomic(path, receipt)
+        audit_once("database_window_reserved", state, "database_window:" + request["runId"], window=receipt)
+        return receipt
+
+
 def cmd_pending_owner(_args: argparse.Namespace) -> None:
     """Describe only pending ownership/lifecycle, never its authorization hash."""
     with SealLock():

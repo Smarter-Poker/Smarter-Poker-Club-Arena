@@ -1348,6 +1348,18 @@
       "liveVerdict": "Active weekly rakeback payout outage: no wallets paid; original source calculation completes only one two-hour count window in roughly135seconds including original guards. Preserve exact original evidence/incomplete/drifted counts while joining bounded original source and batch keysets once. Native PostgreSQL17 actual original owner and exact reserved installer passed22faults in generic/custom plans, ACL/freeze/preimage/refusal/rollback/replay and metadata preservation. One full read-only production window matched all3durable original counts in17.160seconds with2full hash joins, one read per keyset and no temp spill; no uniform latency claim. No payer, receipt, schedule, financial rule, guard or source-authority pin changed. Qualified bytes installed through maintained applier, exact history/postimage/original40source authority read back. This immediate exact-byte recording is the next source action; actual human/agent wallet payment remains pending original guarded coordinator proof and asserted commit."
     },
     {
+      "version": "20261027034254",
+      "name": "existing_player_transfers_discharge_the_same_week_once",
+      "file": "supabase/migrations/20261027034254_existing_player_transfers_discharge_the_same_week_once.sql",
+      "md5": "5a9e8642e59fd6f728a74f7ab72a3129",
+      "appliedToProductionAt": "2026-10-27T05:04:19.106Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic migration installer; full source history,12owner/helper postimages, owner/config/volatility, runtime ACLs, immutable instructions and original guard baseline read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8291",
+      "refusedBy": [],
+      "liveVerdict": "Active production weekly rakeback payout outage: human wallets remain unpaid while owner-confirmed WooWoo and Mikey prior transfers must discharge exact certified obligations without a second personal credit. Exact locally qualified source was installed through the maintained atomic applier while hosted required checks were queued under the PUBLISHING active-outage exception. Exact full-file history and12function identities/metadata/ACLs, instruction presence, original source authority and declared correctness guard were read back. Native exact installer/original main-cached-v3 R2-R3 qualification passed40cases including actual unrelated concurrent beneficiary credit. This recording is the immediate next source action after installation. No wallet payment or completed book is certified by this schema recording; actual root financial proof/asserted commit/noDouble readback remain separate."
+    },
+    {
       "version": "20261027040245",
       "name": "rakeback_pages_index_the_player_and_earning_week",
       "file": "supabase/migrations/20261027040245_rakeback_pages_index_the_player_and_earning_week.sql",

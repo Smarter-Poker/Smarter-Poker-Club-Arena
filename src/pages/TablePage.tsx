@@ -26599,6 +26599,7 @@ function LiveTablePage({
                   <div className="lightning-felt-notices" data-testid="lightning-felt-notices">
                     <LightningNextHand
                       handInProgress={lightningHandLive && tableState.isHandInProgress}
+                      handComplete={tableHandIsOver}
                     />
                     <LightningEndingNotice clusterId={lightningRoom.clusterId} />
                   </div>

@@ -14,6 +14,9 @@ const unitsOf = (amount: number, unit: number) => {
   return Math.round(value);
 };
 
+/** Reuse the settlement owner's validated unit grid; never round off-grid money. */
+export const jointPotChipUnits = unitsOf;
+
 /** Every index, holes read as undefined (the spread-array check's reading). */
 function everyIndex<T>(values: readonly T[], test: (value: T) => boolean): boolean {
   for (let i = 0; i < values.length; i++) if (!test(values[i])) return false;

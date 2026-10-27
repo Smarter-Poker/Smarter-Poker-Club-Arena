@@ -1,4 +1,4 @@
-import { prepareJointPots } from './multiway/JointPotDistribution.js';
+import { prepareJointPots, jointPotChipUnits } from './multiway/JointPotDistribution.js';
 import type { SeatPlayer } from '../types.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 import { omahaBoatsAbove, omahaMadeClass } from './HorseEval.js';
@@ -93,11 +93,19 @@ export function smallPotNearNutRiverValue(hero: SeatPlayer, gs: HorseGameStateV2
   )
     return false;
   if (gs.chipUnit !== 0.01 && gs.chipUnit !== 1) return false;
+  let beforeBetUnits: number;
+  let effectiveUnits: number;
+  let betUnits: number;
   try {
+    const units = (amount: number) => jointPotChipUnits(amount, gs.chipUnit!);
+    betUnits = units(opp.bet);
+    const potUnits = units(gs.pot);
+    beforeBetUnits = potUnits - betUnits;
+    effectiveUnits = Math.min(units(hero.stack) + units(hero.bet), units(opp.stack) + betUnits);
     const prepared = prepareJointPots(gs.players, gs.chipUnit);
     // The settlement owner proves the only refund is the opening bet.
     if (
-      prepared.refunds[opp.user_id] !== opp.bet ||
+      units(prepared.refunds[opp.user_id]) !== betUnits ||
       Object.entries(prepared.refunds).some(([id, amount]) => id !== opp.user_id && amount !== 0) ||
       prepared.pots.some(
         (p) =>
@@ -105,7 +113,7 @@ export function smallPotNearNutRiverValue(hero: SeatPlayer, gs: HorseGameStateV2
           !p.eligiblePlayers.includes(hero.user_id) ||
           !p.eligiblePlayers.includes(opp.user_id)
       ) ||
-      Math.abs(gs.players.reduce((n, p) => n + p.totalInvested, 0) - gs.pot) > gs.chipUnit / 1e4
+      gs.players.reduce((n, p) => n + units(p.totalInvested), 0) !== potUnits
     )
       return false;
     // Supplied layers can include that proven refundable opening contribution,
@@ -115,13 +123,14 @@ export function smallPotNearNutRiverValue(hero: SeatPlayer, gs: HorseGameStateV2
         (p) =>
           !finite(p.amount) ||
           p.amount < 0 ||
+          !Number.isSafeInteger(units(p.amount)) ||
           !(
             (p.eligiblePlayers.length === 2 &&
               p.eligiblePlayers.includes(hero.user_id) &&
               p.eligiblePlayers.includes(opp.user_id)) ||
             (p.eligiblePlayers.length === 1 &&
               p.eligiblePlayers[0] === opp.user_id &&
-              p.amount === opp.bet)
+              units(p.amount) === betUnits)
           )
       )
     )
@@ -165,12 +174,12 @@ export function smallPotNearNutRiverValue(hero: SeatPlayer, gs: HorseGameStateV2
     return false;
   const above = omahaBoatsAbove(hero.cards, gs.communityCards);
   if (above.quads !== 0 || above.boats > 1) return false;
-  const beforeBet = gs.pot - opp.bet;
-  const effective = Math.min(hero.stack + hero.bet, opp.stack + opp.bet);
+  // The settlement owner bounds each input to 1e9 units; sums and these
+  // integer cross-products remain far below Number.MAX_SAFE_INTEGER.
   return (
-    beforeBet > 0 &&
-    beforeBet <= 0.25 * effective &&
-    opp.bet <= 0.1 * effective &&
-    opp.bet <= 0.5 * beforeBet
+    beforeBetUnits > 0 &&
+    4 * beforeBetUnits <= effectiveUnits &&
+    10 * betUnits <= effectiveUnits &&
+    2 * betUnits <= beforeBetUnits
   );
 }

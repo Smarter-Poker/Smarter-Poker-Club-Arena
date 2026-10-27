@@ -125,6 +125,241 @@ function decision(seed: number, flag?: boolean, mutate?: (gs: HorseGameStateV2) 
   return { action: d.action, amount: d.amount, next: fastRandom() };
 }
 describe('default-off small-pot near-nut river value', () => {
+  it('accepts canonical controller decimal unmatched layer in validated chip units', () => {
+    // Canonical own/public helper inputs; unconsumed nested publicNode history omitted.
+    // No opponent cards; amounts and authoritative pot layers retained exactly.
+    const snapshot = {
+      hero: {
+        seat: 1,
+        user_id: '00000000-0000-4000-8000-000000000001',
+        username: 'Synthetic conditional',
+        stack: 384,
+        bet: 0,
+        totalInvested: 48,
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+        is_horse: true,
+        cards: [
+          { rank: 'Q', suit: 'diamonds' },
+          { rank: 'Q', suit: 'spades' },
+          { rank: 'T', suit: 'clubs' },
+          { rank: '6', suit: 'hearts' },
+        ],
+        returnedUncalled: 0,
+        deadInvested: 0,
+        individualAnteInvested: 0,
+      },
+      gs: {
+        players: [
+          {
+            seat: 1,
+            user_id: '00000000-0000-4000-8000-000000000001',
+            username: 'Synthetic conditional',
+            stack: 384,
+            bet: 0,
+            totalInvested: 48,
+            is_folded: false,
+            is_all_in: false,
+            is_sitting_out: false,
+            is_horse: true,
+            cards: [],
+            returnedUncalled: 0,
+            deadInvested: 0,
+            individualAnteInvested: 0,
+          },
+          {
+            seat: 2,
+            user_id: '00000000-0000-4000-8000-000000000002',
+            username: 'Synthetic conditional',
+            stack: 345.6,
+            bet: 38.4,
+            totalInvested: 86.4,
+            is_folded: false,
+            is_all_in: false,
+            is_sitting_out: false,
+            is_horse: false,
+            cards: [],
+            returnedUncalled: 0,
+            deadInvested: 0,
+            individualAnteInvested: 0,
+          },
+        ],
+        communityCards: [
+          { rank: 'T', suit: 'diamonds' },
+          { rank: 'T', suit: 'spades' },
+          { rank: '6', suit: 'clubs' },
+          { rank: 'J', suit: 'clubs' },
+          { rank: 'Q', suit: 'hearts' },
+        ],
+        dealtSeatIds: [1, 2],
+        asset: 'chips',
+        chipUnit: 0.01,
+        bbjConfig: { enabled: true, feeBB: 0.25, minPotBB: 10, minPlayersDealt: 3 },
+        boardCount: 1,
+        pots: [
+          {
+            amount: 96,
+            eligiblePlayers: [
+              '00000000-0000-4000-8000-000000000001',
+              '00000000-0000-4000-8000-000000000002',
+            ],
+          },
+          { amount: 38.400000000000006, eligiblePlayers: ['00000000-0000-4000-8000-000000000002'] },
+        ],
+        pot: 134.4,
+        currentBet: 38.4,
+        stage: 'river',
+        minRaise: 38.4,
+        lastRaise: 38.4,
+        dealerSeat: 2,
+        blindSeats: { smallBlind: 2, bigBlind: 1 },
+        stateSchemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        gameMode: 'cash',
+        format: 'cash',
+        gameVariant: 'plo4',
+        bigBlind: 2,
+        smallBlind: 1,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        toCall: 38.4,
+        minRaiseTo: 76.8,
+        maxRaiseTo: 211.2,
+        bettingStructure: 'pot_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+        commitmentCapRemaining: null,
+        fixedLimitSmallBet: null,
+        contestablePot: 134.4,
+        variantRules: {
+          holeCardsDealt: 4,
+          holeCardsUse: 'exactly_two',
+          boardCardsUse: 'exactly_three',
+          deckSize: 52,
+          splitLow8OrBetter: false,
+        },
+        rakeConfig: {
+          percent: 10,
+          cap: 5,
+          noFlopNoDrop: true,
+          playerCountCaps: [
+            { players: 2, cap: 2.5 },
+            { players: 3, cap: 5 },
+            { players: 4, cap: 5 },
+          ],
+        },
+        actionHistory: [
+          {
+            seat: 2,
+            userId: '00000000-0000-4000-8000-000000000002',
+            action: 'raise',
+            amount: 6,
+            timestamp: 1793127540000,
+            stage: 'preflop',
+            isFullRaise: true,
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'call',
+            amount: 4,
+            timestamp: 1793127540001,
+            stage: 'preflop',
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'check',
+            amount: 0,
+            timestamp: 1793127540002,
+            stage: 'flop',
+          },
+          {
+            seat: 2,
+            userId: '00000000-0000-4000-8000-000000000002',
+            action: 'bet',
+            amount: 12,
+            timestamp: 1793127540003,
+            stage: 'flop',
+            isFullRaise: true,
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'call',
+            amount: 12,
+            timestamp: 1793127540004,
+            stage: 'flop',
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'check',
+            amount: 0,
+            timestamp: 1793127540005,
+            stage: 'turn',
+          },
+          {
+            seat: 2,
+            userId: '00000000-0000-4000-8000-000000000002',
+            action: 'bet',
+            amount: 30,
+            timestamp: 1793127540006,
+            stage: 'turn',
+            isFullRaise: true,
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'call',
+            amount: 30,
+            timestamp: 1793127540007,
+            stage: 'turn',
+          },
+          {
+            seat: 1,
+            userId: '00000000-0000-4000-8000-000000000001',
+            action: 'check',
+            amount: 0,
+            timestamp: 1793127540008,
+            stage: 'river',
+          },
+          {
+            seat: 2,
+            userId: '00000000-0000-4000-8000-000000000002',
+            action: 'bet',
+            amount: 38.4,
+            timestamp: 1793127540009,
+            stage: 'river',
+            isFullRaise: true,
+          },
+        ],
+        humanUserIds: ['00000000-0000-4000-8000-000000000002'],
+      },
+    } as unknown as { hero: SeatPlayer; gs: HorseGameStateV2 };
+    expect(snapshot.gs.pots![1].amount).toBe(38.400000000000006);
+    expect(snapshot.gs.players[1].bet).toBe(38.4);
+    expect(smallPotNearNutRiverValue(snapshot.hero, snapshot.gs)).toBe(true);
+    const smallerStack = structuredClone(snapshot);
+    smallerStack.hero.stack = 383.99;
+    smallerStack.gs.players[0].stack = 383.99;
+    expect(smallPotNearNutRiverValue(smallerStack.hero, smallerStack.gs)).toBe(false);
+    const largerBet = structuredClone(snapshot);
+    largerBet.gs.players[1].bet = 38.41;
+    largerBet.gs.players[1].totalInvested = 86.41;
+    largerBet.gs.pot = 134.41;
+    largerBet.gs.currentBet = largerBet.gs.toCall = 38.41;
+    largerBet.gs.actionHistory!.at(-1)!.amount = 38.41;
+    largerBet.gs.pots = calculatePots(largerBet.gs.players);
+    expect(smallPotNearNutRiverValue(largerBet.hero, largerBet.gs)).toBe(false);
+    for (const amount of [38.401, 38.405, 38.41, Number.MAX_SAFE_INTEGER]) {
+      const bad = structuredClone(snapshot);
+      bad.gs.pots![1].amount = amount;
+      expect(smallPotNearNutRiverValue(bad.hero, bad.gs)).toBe(false);
+    }
+  });
+
   it('only removes random calls in the declared public Liv fixture', () => {
     for (let seed = 1; seed <= 8; seed++) {
       expect(decision(seed)).toEqual(decision(seed, false));

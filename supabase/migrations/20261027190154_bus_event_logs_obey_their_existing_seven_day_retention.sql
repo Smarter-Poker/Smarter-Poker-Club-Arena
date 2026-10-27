@@ -1,6 +1,7 @@
 -- Enforce the seven-day browser-event retention specified by 20260311_bus_event_log.
 -- These are browser diagnostics, not chip ledgers, settlement replay keys or
 -- authoritative hand records. User requested daily/weekly disposable-data cleanup.
+-- periodic-work: expiry of disposable browser diagnostics is the requested retention product, not repair or compensation.
 -- One bounded daily batch; no gameplay, financial or managed Realtime cleanup.
 -- Existing backlog is not deleted by installation. Current/unknown-age rows stay.
 BEGIN;

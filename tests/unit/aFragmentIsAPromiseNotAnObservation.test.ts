@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { loadSchemaManifest } from '../../scripts/ci/schema-manifest.mjs';
 
@@ -92,5 +95,85 @@ describe('a fragment is a promise, not an observation', () => {
     // It may READ one from the environment and must never contain one.
     expect(GATE).toMatch(/process\.env\.SUPABASE_DB_URL \|\| process\.env\.DATABASE_URL/);
     expect(GATE).not.toMatch(/postgres(ql)?:\/\/[^\s'"`]*:[^\s'"`@]+@/);
+  });
+});
+
+describe('protected-main migration submission', () => {
+  it('reports new SQL pending without pretending it is live, while old/unknown inputs still fail', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'migration-submission-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: directory, stdio: 'pipe', encoding: 'utf8' }).trim();
+    const migration = 'supabase/migrations/20261027000000_new_retention.sql';
+    const existing = 'supabase/migrations/20261026000000_existing.sql';
+    const body =
+      'CREATE FUNCTION public.fn_retention() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;';
+    const write = (file: string, text: string) => writeFileSync(join(directory, file), text);
+    const run = (base: string) => {
+      const env = { ...process.env };
+      delete env.SUPABASE_DB_URL;
+      delete env.DATABASE_URL;
+      return spawnSync(process.execPath, ['scripts/ci/check-migrations-applied.mjs', base], {
+        cwd: directory,
+        encoding: 'utf8',
+        env,
+      });
+    };
+    try {
+      mkdirSync(join(directory, 'scripts/ci'), { recursive: true });
+      mkdirSync(join(directory, 'supabase/migrations'), { recursive: true });
+      for (const name of [
+        'check-migrations-applied',
+        'schema-manifest',
+        'sql-manifest-identifiers',
+        'recording-only',
+        'maintenance-window-migrations',
+        'owner-window-migration',
+      ])
+        cpSync(`scripts/ci/${name}.mjs`, join(directory, `scripts/ci/${name}.mjs`));
+      write(
+        'scripts/ci/supabase-schema-manifest.json',
+        JSON.stringify({ tables: [], functions: [] })
+      );
+      write('scripts/ci/supabase-columns-manifest.json', '{}');
+      write('scripts/ci/recorded-migrations.manifest.json', '{"recordings":[]}');
+      write(existing, '-- existing installed migration history');
+      git('init');
+      git('config', 'user.name', 'Isolated migration contract');
+      git('config', 'user.email', 'fixture@example.invalid');
+      git('add', '.');
+      git('commit', '-m', 'base');
+      const base = git('rev-parse', 'HEAD');
+      write(migration, body);
+      git('add', '.');
+      git('commit', '-m', 'new migration');
+      const pending = run(base);
+      expect(pending.status, pending.stderr).toBe(0);
+      expect(pending.stdout).toContain('PENDING PROTECTED-MAIN INSTALLATION, NOT INSTALLED');
+      expect(pending.stdout).not.toContain('every object these migrations declare exists');
+      expect(pending.stdout).toContain('dispatch apply-merged-migration');
+      expect(pending.stdout).toContain('1 pending protected-main installation');
+      expect(pending.stdout).not.toContain('0 unapplied object');
+      write(existing, body);
+      git('add', '.');
+      git('commit', '-m', 'modified old version');
+      const changedOld = run(base);
+      expect(changedOld.status, changedOld.stderr).toBe(1);
+      expect(changedOld.stderr).toContain('fn_retention');
+      // A rename of an old version cannot masquerade as a newly admitted file.
+      git('mv', existing, existing.replace('existing.sql', 'renamed.sql'));
+      git('commit', '-m', 'rename old version');
+      expect(run(base).status).toBe(1);
+      expect(run('does-not-exist').status).toBe(2);
+      // New SQL still undergoes strict schema validation before pending admission.
+      write(
+        migration,
+        'CREATE FUNCTION invalid_schema.fn_retention() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;'
+      );
+      git('add', '.');
+      git('commit', '-m', 'invalid schema');
+      expect(run(base).status).toBe(2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

@@ -97,6 +97,7 @@ with tempfile.TemporaryDirectory(prefix='lw-',dir=a.scratch)as tmp:
   assert materialized['original_rows']==2 and materialized['full_original_row_bag_md5']==exact_bag
   cases.append('pure_materialization_original_full_row_hash_predicate_parity')
   meta="SELECT jsonb_agg(to_jsonb(p)ORDER BY p.oid)FROM pg_proc p WHERE p.oid IN("+','.join(lit(f['signature'])+'::regprocedure'for f in catalog['owners'])+")"
+  meta=meta[:-1]+",'public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean)'::regprocedure)"
   metadata=q(meta)
   logical="SELECT jsonb_agg(jsonb_build_object('relation',c.oid::regclass::text,'owner',c.relowner,'acl',c.relacl,'columns',(SELECT jsonb_agg(to_jsonb(a)ORDER BY attnum)FROM pg_attribute a WHERE a.attrelid=c.oid),'constraints',(SELECT jsonb_agg(to_jsonb(k)ORDER BY k.oid)FROM pg_constraint k WHERE k.conrelid=c.oid),'triggers',(SELECT jsonb_agg(to_jsonb(t)ORDER BY t.oid)FROM pg_trigger t WHERE t.tgrelid=c.oid))ORDER BY c.relname)FROM pg_class c WHERE c.oid IN('public.union_pnl_cash_outcomes'::regclass,'public.union_pnl_cash_outcome_link_resolutions'::regclass,'public.union_pnl_cash_outcome_touches'::regclass,'smarter_private.posthand_escrow_certificates'::regclass)"
   before_logical=q(logical)
@@ -160,7 +161,7 @@ with tempfile.TemporaryDirectory(prefix='lw-',dir=a.scratch)as tmp:
   assert q("SELECT to_jsonb(p)FROM pg_proc p WHERE oid='smarter_private.original_inventory_proof_sources_match()'::regprocedure")==guardmeta
   assert q("SELECT pg_get_functiondef('smarter_private.original_inventory_basis_generation()'::regprocedure)")==generation_definition and q("SELECT to_jsonb(p)FROM pg_proc p WHERE oid='smarter_private.original_inventory_basis_generation()'::regprocedure")==generation_metadata
   assert q(logical)==before_logical;cases.append('all_four_actual_logical_table_catalogs_unchanged')
-  assert q(meta)==metadata;cases.append('complete_actual_source65_and_original_four_bodies_metadata_unchanged')
+  assert q(meta)==metadata;cases.append('complete_actual_source65_and_original_five_bodies_metadata_unchanged')
   out={'status':'passed','cases':cases,'case_count':len(cases),'migration_sha256':hashlib.sha256(migration.encode()).hexdigest(),'natural_index_nodes':access,'old_plan':old,'new_plan':new,'full_row_bag_md5':hashlib.md5(before[0].encode()).hexdigest(),'reducer':json.loads(before[1]),'witness':json.loads(before[2]),'wholeweek_reducer':json.loads(before_week_reducer),'all84_witness_json':json.loads(before84),'fixture_rows':96700,'baseline_installed_thin220709_index_retained':True,'whole_generation_definition_metadata_unchanged':True,'source65_definition_md5':hashlib.md5((guard+'\n').encode()).hexdigest(),'limits':'Actual original linked/reducer/witness/read bodies and full captured relation columns/constraints. Original hand-line/append owners reused unchanged. Unrelated source65 proof collaborators controlled only for functional native calls, then COMPLETE actual source65 loaded and preserved across exact installer replay. No production speed, whole84-window readiness, financial or deployment claim.'}
   a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(out,indent=2)+'\n');print(json.dumps({'status':'passed','case_count':len(cases),'output':str(a.output)}))
  finally:run([pg/'pg_ctl','-D',data,'-m','immediate','-w','stop'])

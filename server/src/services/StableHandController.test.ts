@@ -175,8 +175,8 @@ describe('planFloor - occupancy', () => {
         ],
       })
     );
-    expect(p.metrics[0]).toMatchObject({ peakCap: 233, nightCap: 29 });
-    expect(p.metrics[1]).toMatchObject({ peakCap: 166, nightCap: 20 });
+    expect(p.metrics[0]).toMatchObject({ peakCap: 116, nightCap: 14 });
+    expect(p.metrics[1]).toMatchObject({ peakCap: 83, nightCap: 10 });
   });
 
   it('holds the night cap at 04:00 and does not ramp past it', () => {
@@ -441,7 +441,7 @@ describe('the per-host seat cap', () => {
       { hour: 3, minute: 0 }
     );
     // 03:00 is the night window: 5% of the population (Dan 2026-09-04).
-    expect(caps.get(MIDWAY_UNION_ID)!).toBe(29);
+    expect(caps.get(MIDWAY_UNION_ID)!).toBe(14);
     expect(caps.get(DSS_CLUB_ID)!).toBeLessThan(caps.get(MIDWAY_UNION_ID)!);
   });
 
@@ -780,7 +780,7 @@ describe('planFloor - the night park', () => {
       table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
     );
     const p = nightSnap(thin);
-    expect(KEEP_OPEN).toBe(7);
+    expect(KEEP_OPEN).toBe(4);
     expect(p.park).toHaveLength(20 - KEEP_OPEN);
   });
 

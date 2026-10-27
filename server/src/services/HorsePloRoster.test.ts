@@ -19,12 +19,14 @@ describe('PLO eligibility is bankroll based, never profit-history based', () => 
   });
 });
 
-// Historical rankings never turn a scheduled horse into an ineligible horse.
-describe('the entire scheduled fleet can enter cash', () => {
-  it('admits off-roster horses even before a ranking read completes', () => {
-    for (const ids of [null, [], ['another-horse']]) {
-      __setCashRosterForTest(ids);
-      expect(cashRosterAllows('scheduled-horse')).toBe(true);
-    }
+describe('only the top cash performance roster can enter cash', () => {
+  it('distinguishes unknown membership from a known bench', () => {
+    __setCashRosterForTest(null);
+    expect(cashRosterAllows('horse')).toBeUndefined();
+    __setCashRosterForTest(['top-horse']);
+    expect(cashRosterAllows('top-horse')).toBe(true);
+    expect(cashRosterAllows('benched-horse')).toBe(false);
+    __setCashRosterForTest([]);
+    expect(cashRosterAllows('horse')).toBe(false);
   });
 });

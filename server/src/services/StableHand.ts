@@ -88,7 +88,7 @@ export interface HostPopulation {
 }
 
 export function peakCap(n: number): number {
-  return Math.floor(0.4 * n);
+  return Math.floor(0.4 * n * CASH_ACTIVITY_SCALE);
 }
 /**
  * The overnight hard ceiling, 03:00-08:00 Chicago.
@@ -103,7 +103,9 @@ export function peakCap(n: number): number {
  * and 9 percent across those five hours, so a 5% ceiling binds every one of
  * them and the whole window lands on 5%. Midway Union 29, Deep Stack 20.
  */
-export const NIGHT_CAP_PCT = 0.05;
+/** Owner October 26: half of the original daily cash schedule, at every minute. */
+export const CASH_ACTIVITY_SCALE = 0.5;
+export const NIGHT_CAP_PCT = 0.05 * CASH_ACTIVITY_SCALE;
 
 export function nightCap(n: number): number {
   return Math.floor(NIGHT_CAP_PCT * n);
@@ -173,7 +175,7 @@ export const NIGHT_MIN_PLAYERS = 4;
  * every table falls under NIGHT_MIN_PLAYERS, every table is parked, and the
  * host has nowhere left to seat anybody.
  */
-export const NIGHT_MIN_OPEN_TABLES = 6;
+export const NIGHT_MIN_OPEN_TABLES = 3;
 
 /** A full ring. What one kept-open table is assumed to hold. */
 export const NIGHT_SEATS_PER_TABLE = 6;
@@ -210,7 +212,7 @@ export function curvePctAt(chicagoHour: number, minute = 0): number {
   const a = OCCUPANCY_CURVE_PCT[h];
   const b = OCCUPANCY_CURVE_PCT[next];
   const f = Math.min(59, Math.max(0, minute)) / 60;
-  return a + (b - a) * f;
+  return (a + (b - a) * f) * CASH_ACTIVITY_SCALE;
 }
 
 export interface OccupancyTarget {
@@ -252,7 +254,7 @@ export function occupancyTargetForHost(
   }
 
   // +/-2pp of N, then re-clamp: a band must never lift you over a hard cap.
-  const band = Math.round(0.02 * n);
+  const band = Math.round(0.02 * n * CASH_ACTIVITY_SCALE);
   let min = Math.max(0, target - band);
   let max = target + band;
   max = Math.min(max, pk);

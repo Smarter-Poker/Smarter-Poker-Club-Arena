@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 238918,
-      "sha256": "8b9a1aec8de7f26ca9ded6543719d1f679758f03f91d3c078d2f73c2ef5905ee"
+      "bytes": 239149,
+      "sha256": "7546b27941b921c86b5fa377586eb571afd6f83f7dd18b48fe5a754a13c60a0c"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -419,6 +419,28 @@
     "originalBranchWorkflowPin": {
       "bytes": 237557,
       "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
+    }
+  },
+  "cashHalfInputBinding20261026": {
+    "reason": "The reviewed cash-capacity change adds one native Accounting2 step and its exact runner routing. Update current enforcement source identity only; preserve historical receipts, qualification verdicts and financial fixtures/assertions. Not an execution or production certificate.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 238487,
+          "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+        },
+        "current": {
+          "bytes": 238718,
+          "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+        }
+      }
+    }
+  },
+  "reportingRollupCutoffNative20261027": {
+    "reason": "Add the exact reporting cutoff before/after native fixture to existing accounting shard4 while preserving protected main cash-capacity and retention qualifications. Refresh only the current workflow input identity; preserve all historical pins, financial assertions and qualification verdicts. This is not production or financial execution evidence.",
+    "currentWorkflowPin": {
+      "bytes": 239149,
+      "sha256": "7546b27941b921c86b5fa377586eb571afd6f83f7dd18b48fe5a754a13c60a0c"
     }
   }
 }

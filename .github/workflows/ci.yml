@@ -1466,6 +1466,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/run_launch_reset_accounting_fixture.py --fixture scripts/ci/fixtures/scheduled-horses.sql --candidate supabase/migrations/20261023222825_scheduled_horses_play_every_game_without_roster_restrictions.sql --work-root "${{ runner.temp }}" --pg-bin "$PG_BIN"
+      - name: Half cash capacity keeps only measured top performers
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/test-cash-half-top-horses.py
       - name: Horse layer drift uses original eligible populations
         if: matrix.shard == 2
         env:

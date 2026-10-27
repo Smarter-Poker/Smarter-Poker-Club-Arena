@@ -33,3 +33,12 @@ This diagnostic does not fix saturation and is not evidence that Phase 4 is
 complete. The resulting hot stack must guide the source correction, relevant
 regression checks and normal protected delivery. Runtime engine changes
 retain the actual daily maintenance gate.
+
+The failure path now owns cleanup from the moment it signals the verified
+process. A discovery or WebSocket connection failure makes one bounded
+readback and closes only the matching, PID-verified inspector. An endpoint
+that changed identity is refused; an inspector present before this operation
+is never signaled or closed. Real child-process regressions open the inspector
+with SIGUSR1, inject discovery and connection failures, confirm the listener
+closes and prove the engine process survives. Unreachable remote/process
+state still fails visibly; no retry or background repair is introduced.

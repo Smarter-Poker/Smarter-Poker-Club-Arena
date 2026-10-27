@@ -1,0 +1,7 @@
+# A stopped bank successor retains its original table lifecycle
+
+The existing replacement CAS transfers a stopped tournament engine's exact time banks before the successor's initial hand-state read installs an allocator. It previously copied the banks and hand boundary but omitted their recorded table lifecycle. If that startup was interrupted, the successor could stop successfully while retaining banks whose physical custody identity could no longer be captured.
+
+Carry the original allocator or movement-admission lifecycle inside the same guarded bank transfer. Refuse a conflicting recipient lifecycle before either owner changes. Allocator installation preserves inherited identity and refuses a conflicting lifecycle before mutating any allocator state. Lease, process ownership, preparation, accounting, occupancy and database custody fences remain unchanged; no database-derived replacement identity or replay is introduced.
+
+Real-engine regressions reproduce the missing identity and both accepted conflicts on the old source, then pass with the correction. An additional boundary test preserves inherited identity when allocator installation omits its optional lifecycle. The complete parked-bank suite also passes. The two October 27 quarantines prompted this investigation, but their later failed in-memory objects were not captured: reproduction establishes this reachable defect, not the exact historical null clause. Protected delivery and live verification remain separate evidence.

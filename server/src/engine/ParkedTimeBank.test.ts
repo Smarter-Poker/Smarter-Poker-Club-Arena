@@ -59,8 +59,8 @@ import { loadPresenceFromPark, loadTimeBanksFromPark } from '../services/supabas
 const table = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const user = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const stay = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
-function engine(occupancy = stay) {
-  const e = new ServerTableEngine(table) as any;
+function engine(occupancy = stay, authority?: ConstructorParameters<typeof ServerTableEngine>[1]) {
+  const e = new ServerTableEngine(table, authority) as any;
   e.lifecycleCanMutate = () => true;
   e.tableInfo = { id: table, tournament_id: null };
   e.handCount = 12;
@@ -696,8 +696,8 @@ describe('a marked parked bank survives only its own unchanged stay and hand bou
 });
 
 describe('stopped tournament bank custody', () => {
-  function stoppedCandidate() {
-    const e = engine();
+  function stoppedCandidate(authority?: ConstructorParameters<typeof ServerTableEngine>[1]) {
+    const e = engine(stay, authority);
     e.tableInfo.tournament_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
     e.flushSnapshot = vi.fn().mockResolvedValue(undefined);
     e.timeBankEngine.initializePlayer(table, user, {
@@ -713,6 +713,111 @@ describe('stopped tournament bank custody', () => {
     });
     return e;
   }
+
+  const tournament = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const generation = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  function tournamentAuthority() {
+    return {
+      scope: 'tournament' as const,
+      verified: true as const,
+      tournamentId: tournament,
+      generation,
+      proofDeadlineMonotonicMs: performance.now() + 30_000,
+    };
+  }
+  async function stoppedOriginalWithLifecycle() {
+    const original = stoppedCandidate(tournamentAuthority());
+    original.installF06Allocator(
+      'original-allocation',
+      async () => 13,
+      () => true,
+      '1832609'
+    );
+    await original.stop();
+    expect(original.captureDrainedF06Identity(table, tournament, generation)?.lifecycle).toBe(
+      '1832609'
+    );
+    return original;
+  }
+
+  it('retains the original lifecycle when a bank successor stops before allocator admission', async () => {
+    const original = await stoppedOriginalWithLifecycle();
+    const next = new ServerTableEngine(table, tournamentAuthority()) as any;
+    // Replacement owns the original banks before the startup state read can
+    // install an allocator. An interrupted read must not erase that identity.
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    expect(next.hasF06Allocator()).toBe(false);
+    await next.stop();
+    expect(next.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(next.captureDrainedF06Identity(table, tournament, generation)).toMatchObject({
+      table_id: table,
+      lifecycle: '1832609',
+      allocation_epoch: null,
+      bank_custody: {
+        stopped_capture: {
+          lifecycle: '1832609',
+          snapshot: {
+            time_bank_snapshot: {
+              players: { [user]: { remainingSeconds: 7, occupancyId: stay } },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('refuses conflicting lifecycle adoption before either bank owner changes', async () => {
+    const original = await stoppedOriginalWithLifecycle();
+    const next = new ServerTableEngine(table, tournamentAuthority()) as any;
+    next.installF06Allocator(
+      'different-lifecycle',
+      async () => 13,
+      () => true,
+      '1832657'
+    );
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(false);
+    expect(original.hasUnretiredStoppedTimeBankCustody()).toBe(true);
+    expect(next.captureParkedTimeBanks()).toEqual({});
+    await next.stop();
+    expect(next.captureDrainedF06Identity(table, tournament, generation)?.lifecycle).toBe(
+      '1832657'
+    );
+  });
+
+  it('refuses an allocator for another lifecycle without mutating inherited identity', async () => {
+    const original = await stoppedOriginalWithLifecycle();
+    const next = new ServerTableEngine(table, tournamentAuthority()) as any;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    expect(() =>
+      next.installF06Allocator(
+        'different-lifecycle',
+        async () => 13,
+        () => true,
+        '1832657'
+      )
+    ).toThrow('f06_allocator_install_invalid');
+    expect(next.hasF06Allocator()).toBe(false);
+    await next.stop();
+    expect(next.captureDrainedF06Identity(table, tournament, generation)?.lifecycle).toBe(
+      '1832609'
+    );
+  });
+
+  it('keeps inherited lifecycle when allocator installation omits its optional lifecycle', async () => {
+    const original = await stoppedOriginalWithLifecycle();
+    const next = new ServerTableEngine(table, tournamentAuthority()) as any;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    next.installF06Allocator(
+      'successor-allocation',
+      async () => 13,
+      () => true
+    );
+    expect(next.hasF06Allocator()).toBe(true);
+    await next.stop();
+    expect(next.captureDrainedF06Identity(table, tournament, generation)?.lifecycle).toBe(
+      '1832609'
+    );
+  });
 
   it('retains actual stopped banks and transfers them only inside the replacement identity CAS', async () => {
     const original = stoppedCandidate();

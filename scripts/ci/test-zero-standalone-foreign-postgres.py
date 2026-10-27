@@ -112,7 +112,7 @@ try:
         results.append({'case':name,'passed':True,'expected_refusal':refusal});print('PASS',name,flush=True)
     # Reproduce the actual old false legacy refusal after the other scope paid.
     zcase('preimage-refuses-proven-zero-standalone-after-canonical-foreign-payment','SELECT '+R2+';','legacy_commission_payment_requires_reconciliation')
-    zero_migration=R/'supabase/migrations/20261027052225_zero_standalone_books_validate_foreign_paid_commission_receipts.sql'
+    zero_migration=R/'supabase/migrations/20261027052225_zero_standalone_validates_paid_union_receipts.sql'
     zero_sql=zero_migration.read_text()
     q(zero_sql.replace('COMMIT;','ROLLBACK;'))
     assert q("SELECT to_regprocedure('smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)')IS NULL").stdout.strip()=='t'

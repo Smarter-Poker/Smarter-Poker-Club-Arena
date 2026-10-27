@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 const sql = readFileSync(
-  'supabase/migrations/20261027052225_zero_standalone_books_validate_foreign_paid_commission_receipts.sql',
+  'supabase/migrations/20261027052225_zero_standalone_validates_paid_union_receipts.sql',
   'utf8'
 );
 const native = readFileSync('scripts/ci/test-zero-standalone-foreign-postgres.py', 'utf8');

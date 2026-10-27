@@ -1,4 +1,4 @@
-# Commission windows cover the original source lookup
+# tests/commission-windows-cover-original-source-lookup.law.test.ts
 
 The original R2 `_rw_ac` path selects source_type,source_id,club_id,user_id,amount,commission_rate,settled_at by its source_id/source_type key. Its existing partial lookup index holds the first three columns. A covering index may retain those exact keys and `source_id IS NOT NULL` predicate while including the four remaining columns. Do not narrow cross-club extras or change the query, bag, ordering, full result, source IDs/hashes, function authority or financial owners.
 

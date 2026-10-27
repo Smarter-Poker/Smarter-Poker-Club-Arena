@@ -9,6 +9,8 @@ import {
   heroId,
   opponentId,
   tableId,
+  requestAt,
+  lease,
 } from '../../testing/horseRegression/plan/fixture.js';
 import { HorseObserverReads } from './observerReads.js';
 import { HorseMind } from '../HorseMind.js';
@@ -259,3 +261,69 @@ it.each(['duplicate', 'other_actor', 'extra', 'wrong_type', 'not_called'])(
     expect(makeOwnPublicHistoryPacket(source, 200)).toBeNull();
   }
 );
+
+it('recovers a failed context only on a later real request after cooldown, with coalescing and no timer', async () => {
+  let now = 100;
+  let resolve!: (v: unknown) => void;
+  const load = vi
+    .fn()
+    .mockRejectedValueOnce(Error('temporary'))
+    .mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+  const cache = new HorseOwnPublicHistoryCache(load, () => now);
+  cache.forSnapshot(context(), 100);
+  await new Promise<void>((r) => setImmediate(r));
+  expect(cache.state(context())).toBe('unavailable');
+  now = 60_099;
+  cache.forSnapshot(context(), now);
+  expect(load).toHaveBeenCalledTimes(1);
+  now = 60_100;
+  cache.forSnapshot(context(), now);
+  cache.forSnapshot(context(), now + 1);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(cache.state(context())).toBe('pending');
+  resolve(window());
+  await new Promise<void>((r) => setImmediate(r));
+  expect(cache.forSnapshot(context(), now)).toMatchObject({ availableAtMs: now });
+  expect(cache.forSnapshot({ ...context(), observerId: opponentId }, now)).toBeUndefined();
+});
+
+it('bounds a long failed-load tail and explicitly caps recovered evidence while preserving issued plans', () => {
+  const bank = new HorseObserverReads(2048, 4096, () => 200);
+  const source = window();
+  for (let i = 0; i < 65; i++) {
+    const handNumber = 1000200 + i;
+    const r = {
+      ...requestAt(i + 1, tableId, handNumber),
+      ownPublicHistoryState: 'pending' as const,
+    };
+    bank.run(r, () => undefined);
+    bank.complete(
+      {
+        type: 'OBSERVE_COMPLETED_HAND',
+        requestId: 1000 + i,
+        generation: handNumber,
+        fence: `${tableId}:${handNumber}:${lease}:observe`,
+        handKey: `${tableId}:${handNumber}`,
+        committedHandId: `77777777-7777-4777-8777-${String(i + 1).padStart(12, '0')}`,
+        bigBlind: 2,
+        actions: source.hands[0].actions,
+        showdown: null,
+      },
+      () => undefined
+    );
+  }
+  const recovered = {
+    ...requestAt(2000, tableId, 1000300),
+    ownPublicHistory: makeOwnPublicHistoryPacket(source, 200)!,
+  };
+  bank.run(recovered, () => {
+    expect(HorseMind.getStats(opponentId)?.hands).toBe(65);
+  });
+  expect(bank.receipt(recovered)).toMatchObject({ version: 2, historyCapped: true });
+  HorseMind.reset();
+});

@@ -148,29 +148,53 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
         if (r.handKey!==c.handKey || r.sourceRelease!==input.sourceRelease || seen.has(r.eventId))
           return unknown(c,'record_binding_or_duplicate');
         seen.add(r.eventId);
-        if (r.kind==='decision' && (c.decisionRecordSha256===null || r.sha256===c.decisionRecordSha256)) {
-          const d=JSON.parse(r.body), p=d.snapshot?.player, g=d.snapshot?.gameState, ref=d.decision?.tournamentPreflopAttribution;
-          if (c.decisionRecordSha256!==null || (d.decision?.action==='all_in' && ref?.route==='variant_price'
-              && ref.referenceProposal?.action==='all_in' && ref.referenceProposal.amount===null
-              && Number.isFinite(p?.stack) && p.stack>0 && Number.isFinite(g?.currentBet)
-              && Number.isFinite(p.bet) && g.currentBet-p.bet>=p.stack)) decisions.push(r);
-        }
+        if (r.kind==='decision') decisions.push({r,body:JSON.parse(r.body)});
         if (r.kind==='execution') executions.push(r);
         if (r.kind==='accepted_hand') accepted.push(r);
       }
       if (accepted.length!==1) return unknown(c,'accepted_hand_missing_or_ambiguous');
-      if (decisions.length!==1) return unknown(c,decisions.length?'matching_decision_ambiguous':'matching_decision_missing');
-      const r=decisions[0], body=JSON.parse(r.body), s=body.snapshot, p=s.player, g=s.gameState;
-      const hand=JSON.parse(accepted[0].body), anchor=api.anchorHorseDecisionHand(s);
+      const hand=JSON.parse(accepted[0].body);
       if (hand.committedHandId!==c.handId || api.horseCompletedHandKey(hand)!==coordinate
           || accepted[0].turnKey!==c.handKey) return unknown(c,'accepted_hand_binding_mismatch');
-      if (anchor.status!=='anchored' || api.horseHandAnchorKey(anchor)!==coordinate)
-        return unknown(c,'original_snapshot_binding_mismatch');
-      const ref=body.decision.tournamentPreflopAttribution;
-      const toCall=Math.max(0,g.currentBet-p.bet);
-      if (body.decision.action!=='all_in' || !ref || ref.route!=='variant_price' || ref.referenceProposal?.action!=='all_in'
-          || ref.referenceProposal.amount!==null || !Number.isFinite(p.stack) || !(p.stack>0)
-          || !Number.isFinite(toCall) || !(toCall>=p.stack)) return unknown(c,'calloff_shape_not_observed');
+      // Only aggregate closed categories after every contributing original
+      // snapshot, record hash/source and accepted hand passed their bindings.
+      for (const {body} of decisions) {
+        const anchor=api.anchorHorseDecisionHand(body.snapshot);
+        if (anchor.status!=='anchored' || api.horseHandAnchorKey(anchor)!==coordinate)
+          return unknown(c,'original_snapshot_binding_mismatch');
+      }
+      const selectionCounts={decisionRecords:decisions.length,selectedRecords:0,
+        finalActionMismatch:0,referenceRouteMismatch:0,referenceActionMismatch:0,
+        referenceAmountMismatch:0,stackShapeMismatch:0,callPriceShapeMismatch:0,
+        notWholeStackCall:0,matchingShape:0};
+      const shapeReason=body=>{
+        const p=body.snapshot?.player,g=body.snapshot?.gameState;
+        const ref=body.decision?.tournamentPreflopAttribution;
+        if(body.decision?.action!=='all_in')return 'finalActionMismatch';
+        if(ref?.route!=='variant_price')return 'referenceRouteMismatch';
+        if(ref.referenceProposal?.action!=='all_in')return 'referenceActionMismatch';
+        if(ref.referenceProposal.amount!==null)return 'referenceAmountMismatch';
+        if(!Number.isFinite(p?.stack)||!(p.stack>0))return 'stackShapeMismatch';
+        if(!Number.isFinite(g?.currentBet)||!Number.isFinite(p.bet))return 'callPriceShapeMismatch';
+        const price=g.currentBet-p.bet;
+        if(!Number.isFinite(price))return 'callPriceShapeMismatch';
+        if(price<p.stack)return 'notWholeStackCall';
+        return 'matchingShape';
+      };
+      const selected=[];
+      for(const item of decisions) {
+        if(c.decisionRecordSha256!==null && item.r.sha256!==c.decisionRecordSha256)continue;
+        selectionCounts.selectedRecords++;
+        const reason=shapeReason(item.body);selectionCounts[reason]++;
+        if(c.decisionRecordSha256!==null || reason==='matchingShape')selected.push(item);
+      }
+      if(selected.length!==1) {
+        if(selected.length)return unknown(c,'matching_decision_ambiguous');
+        return {...unknown(c,'matching_decision_missing'),selectionCounts};
+      }
+      const {r,body}=selected[0],s=body.snapshot,p=s.player,g=s.gameState;
+      if(shapeReason(body)!=='matchingShape')
+        return {...unknown(c,'calloff_shape_not_observed'),selectionCounts};
       if (api.horsePhase6AttributionMismatch(body.decision,s)!==null
           || !api.horseDecisionReceiptIsValid(body.decision,g.gameVariant,{player:p,gameState:g}))
         return unknown(c,'calloff_receipt_refused');
@@ -251,8 +275,27 @@ def sanitize_positive_calloff_result(result, value):
         if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
             raise ValueError()
         if case.get('status') == 'unknown':
-            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in reasons:
+            extra = {'selectionCounts'} if 'selectionCounts' in case else set()
+            if set(case) != {'handKey', 'status', 'reason'} | extra or case.get('reason') not in reasons:
                 raise ValueError()
+            if extra:
+                counts = case['selectionCounts']
+                categories = {'finalActionMismatch', 'referenceRouteMismatch', 'referenceActionMismatch',
+                              'referenceAmountMismatch', 'stackShapeMismatch', 'callPriceShapeMismatch',
+                              'notWholeStackCall', 'matchingShape'}
+                if (case['reason'] not in {'matching_decision_missing', 'calloff_shape_not_observed'}
+                        or not isinstance(counts, dict)
+                        or set(counts) != categories | {'decisionRecords', 'selectedRecords'}
+                        or any(type(n) is not int or not 0 <= n <= 256 for n in counts.values())
+                        or counts['selectedRecords'] > counts['decisionRecords']
+                        or sum(counts[k] for k in categories) != counts['selectedRecords']
+                        or counts['matchingShape'] != 0
+                        or (original['decisionRecordSha256'] is not None and counts['selectedRecords'] > 1)
+                        or (original['decisionRecordSha256'] is None
+                            and counts['selectedRecords'] != counts['decisionRecords'])
+                        or (case['reason'] == 'calloff_shape_not_observed'
+                            and (original['decisionRecordSha256'] is None or counts['selectedRecords'] != 1))):
+                    raise ValueError()
             continue
         if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes
                 or case['status'] != 'observed' or case['sourceRelease'] != value['sourceRelease']

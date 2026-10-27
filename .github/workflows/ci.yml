@@ -1446,6 +1446,11 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Runtime privilege changes preserve the schema DDL boundary
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-runtime-privilege-ddl-guard-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
       - name: Retention bounds retained prefixes before accounting guards
         if: matrix.shard == 4
         env:

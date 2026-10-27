@@ -31,6 +31,13 @@ on:
         required: true
         type: string
 
+      policy_family:
+        description: Explicit isolated policy family; absence preserves legacy continuation
+        required: false
+        default: continuation_v2
+        type: choice
+        options: [continuation_v2, catastrophe_guard_v1]
+
 permissions:
   contents: read
 
@@ -62,7 +69,9 @@ jobs:
         working-directory: .
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          POLICY_FAMILY: ${{ inputs.policy_family || 'continuation_v2' }}
         run: |
+          [[ "$POLICY_FAMILY" == continuation_v2 || "$POLICY_FAMILY" == catastrophe_guard_v1 ]] || { echo "Unknown policy family"; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be 40 hex"; exit 1; }
 
       - name: Checkout
@@ -85,6 +94,7 @@ jobs:
         env:
           OBJECTIVE: ${{ matrix.objective }}
           SEED: ${{ matrix.seed }}
+          POLICY_FAMILY: ${{ inputs.policy_family || 'continuation_v2' }}
         run: |
           OUT="$RUNNER_TEMP/p82"
           mkdir -p "$OUT"
@@ -101,6 +111,7 @@ jobs:
             'kernel': platform.release(),
             'node': subprocess.run(['node', '--version'], capture_output=True, text=True).stdout.strip(),
             'workflowRun': f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+            'phase8PolicyFamily': os.environ['POLICY_FAMILY'],
             'sourceSha': subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip(),
           }, open(sys.argv[1], 'w'), indent=2)
           PY
@@ -109,13 +120,14 @@ jobs:
         env:
           OBJECTIVE: ${{ matrix.objective }}
           SEED: ${{ matrix.seed }}
+          POLICY_FAMILY: ${{ inputs.policy_family || 'continuation_v2' }}
           SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           OUT="$RUNNER_TEMP/p82"
           set +e
           npx tsx src/scripts/horseTournamentEvaluate.ts \
-            --output="$OUT/$OBJECTIVE-$SEED" --objective="$OBJECTIVE" --seed="$SEED" --promotion \
+            --output="$OUT/$OBJECTIVE-$SEED" --objective="$OBJECTIVE" --seed="$SEED" --policy-family="$POLICY_FAMILY" --promotion \
             > "$OUT/$OBJECTIVE-$SEED.log" 2>&1
           code=$?
           set -e

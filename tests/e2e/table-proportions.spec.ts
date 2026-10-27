@@ -1153,6 +1153,65 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           // two-pixel resting crop; only the crown may cross the bar.
           expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
           expect(crown.gap).toBeLessThan(2 * crown.scale);
+          if (state === 'normal' && revealed && villainCards === 6 && jackpot === 'mini') {
+            // A reload/new hand used to cache the image box mid-gesture. When
+            // the avatar later folded it left a permanent gap under the bar.
+            // Use the real choreography and real SeatSlot, never hide motion.
+            const anchoring = await page.evaluate(async (crowns) => {
+              const pod = document.querySelector<HTMLElement>('.seat-wrapper--top')!;
+              const seat = pod.querySelector<HTMLElement>('.seat')!;
+              const wrap = pod.querySelector<HTMLElement>('.seat__avatar-wrap')!;
+              const head = pod.querySelector<HTMLImageElement>('.seat__avatar-img')!;
+              const frame = () =>
+                new Promise<void>((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+                );
+              const originalSeat = seat.className;
+              const originalWrap = wrap.className;
+              wrap.classList.add('seat__avatar-wrap--celebrate');
+              await frame();
+              const gesture = wrap
+                .getAnimations()
+                .find(
+                  (animation) =>
+                    animation instanceof CSSAnimation &&
+                    animation.animationName === 'spAvatarCelebrate'
+                );
+              if (!gesture) throw new Error('Real Celebration Animation Missing');
+              gesture.pause();
+              gesture.currentTime = Number(gesture.effect!.getTiming().duration) * 0.4;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              const raisedShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              // Complete the actual gesture, then let the ordinary folded
+              // resting pose settle. No production animation is cancelled.
+              gesture.finish();
+              wrap.className = originalWrap;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              const restingShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              seat.classList.remove('seat--active', 'seat--winner');
+              seat.classList.add('seat--folded');
+              await frame();
+              await Promise.all(wrap.getAnimations().map((animation) => animation.finished));
+              await frame();
+              const foldedShift = parseFloat(pod.style.getPropertyValue('--sp-top-seat-shift'));
+              const box = head.getBoundingClientRect();
+              const file = /\/avatars\/table\/([^/?#]+)/.exec(head.currentSrc || head.src)?.[1];
+              const gap =
+                box.top +
+                box.height * ((file && crowns[file]) || 0) -
+                document.querySelector('.table-page')!.getBoundingClientRect().top;
+              seat.className = originalSeat;
+              document.dispatchEvent(new Event('fixture-next-hand'));
+              await frame();
+              return { raisedShift, restingShift, foldedShift, gap };
+            }, AVATAR_CROWN_TOP);
+            expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
+            expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
+            expect(anchoring.gap).toBeLessThan(0);
+            expect(anchoring.gap).toBeGreaterThan(-12 * crown.scale);
+          }
         }
         // The added desktop-width case owns the crown target. The
         // pre-existing marker certification below owns portrait <=768px.

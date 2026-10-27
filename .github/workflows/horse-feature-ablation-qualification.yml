@@ -1,0 +1,180 @@
+name: Horse Feature Ablation Qualification
+run-name: Held-out ${{ inputs.target }} at ${{ inputs.source_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: One independently preregistered contrast
+        required: true
+        type: choice
+        options: [plo6_v24, v53_pressure]
+      source_sha:
+        description: Exact protected-main commit containing the locked contract
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: horse-strength-hosted-capacity
+  queue: max
+  cancel-in-progress: false
+env:
+  SUPABASE_URL: https://supabase.invalid
+  SUPABASE_SERVICE_ROLE_KEY: feature-ablation-offline-placeholder
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Admit exact protected source and declared target
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$TARGET" =~ ^(plo6_v24|v53_pressure)$ ]] || exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select only a protected containing revision
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          git checkout --detach "$SOURCE_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Run original receipt boundary and read locked matrix
+        id: matrix
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          node --test tests/operations/feature-ablation-assemble.test.mjs
+          cd server
+          npx tsx src/scripts/featureAblationQualify.ts --plan --target="$TARGET" --source-sha="$SOURCE_SHA" --output="$RUNNER_TEMP/plan.json"
+          node --input-type=module - "$RUNNER_TEMP/plan.json" <<'JS'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          if(p.state!=='heldout_locked'||!Array.isArray(p.matrix)||!p.matrix.length||p.matrix.length>256||new Set(p.matrix.map(c=>c.key)).size!==p.matrix.length||!p.matrix.every(c=>/^[a-z0-9_-]{1,100}$/.test(c.key)))throw new Error('locked matrix refused');
+          appendFileSync(process.env.GITHUB_OUTPUT,'matrix='+JSON.stringify({include:p.matrix.map(c=>({key:c.key}))})+'\n');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fa-registered-plan-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan.json
+          if-no-files-found: error
+          retention-days: 30
+  cell:
+    name: Cell ${{ matrix.key }}
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 64
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      TARGET: ${{ inputs.target }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CELL: ${{ matrix.key }}
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Bind actual provider job before any held-out deal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx tsx scripts/feature-ablation-assemble.mjs --prepare --target="$TARGET" --source-sha="$SOURCE_SHA" --cell="$CELL" --output="$RUNNER_TEMP/feature-ablation"
+      - name: Execute the one registered cell without retry
+        id: evaluate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx tsx src/scripts/featureAblationQualify.ts --target="$TARGET" --source-sha="$SOURCE_SHA" --cell="$CELL" --output="$RUNNER_TEMP/feature-ablation" > "$RUNNER_TEMP/feature-ablation/evaluation.log" 2>&1
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - name: Retain original exit result
+        if: always() && steps.evaluate.outputs.exit_code != ''
+        run: node scripts/feature-ablation-assemble.mjs --finish --output="$RUNNER_TEMP/feature-ablation" --exit-code="${{ steps.evaluate.outputs.exit_code }}"
+      - name: Encode raw transport without changing decoded scientific bytes
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/feature-ablation/raw-pairs.jsonl" ]; then
+            gzip -n -- "$RUNNER_TEMP/feature-ablation/raw-pairs.jsonl"
+          fi
+      - name: Retain every attempt including incomplete execution
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fa-${{ inputs.target }}-${{ matrix.key }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/feature-ablation/
+          if-no-files-found: error
+          retention-days: 30
+  assemble:
+    needs: [plan, cell]
+    if: always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Download every original cell attempt
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fa-${{ inputs.target }}-*
+          path: ${{ runner.temp }}/runs
+          merge-multiple: false
+      - name: Verify provider inventory, raw pairs and original contract gates
+        working-directory: server
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TARGET: ${{ inputs.target }}
+        run: npx tsx scripts/feature-ablation-assemble.mjs --assemble --target="$TARGET" --source-sha="$SOURCE_SHA" --runs="$RUNNER_TEMP/runs" --output="$RUNNER_TEMP/assembled"
+      - name: Retain verdict and complete provider provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fa-assembly-${{ inputs.target }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/assembled/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,3 +1,4 @@
+import { CATASTROPHE_GUARD_VERSION } from '../HorseTournamentCatastropheGuard.js';
 import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
 import { omahaVariantReceiptBindingIsValid } from '../omaha/OmahaVariantLivePolicy.js';
@@ -394,6 +395,159 @@ export function horsePhase7EvidenceMismatch(
  * authority receipt for the running continuation, and the final action equal
  * to the ledger's candidate. Acceptance-time fields stay unset in the worker.
  */
+/** Distinct guard family; never admits a continuation receipt or unqualified candidate. */
+export function horsePhase8GuardLedgerIsValid(value: unknown, decision: RecordValue): boolean {
+  if (value === undefined) return true;
+  if (
+    !record(value) ||
+    !exact(value, [
+      'version',
+      'policyFamily',
+      'workKind',
+      'mode',
+      'eligible',
+      'fired',
+      'completed',
+      'changed',
+      'applied',
+      'selection',
+      'authority',
+      'authorityVerdict',
+      'reason',
+      'reasons',
+      'baselineAction',
+      'baselineAmount',
+      'candidateAction',
+      'candidateAmount',
+      'objective',
+      'confidence',
+      'futureGame',
+      'baselineFutureGame',
+      'guardPolicy',
+      'guardWork',
+      'baselineCriticalCommitment',
+      'candidateCriticalCommitment',
+      'before',
+      'after',
+      'latencyMs',
+      'simulationMs',
+      'policyMs',
+      'work',
+      'executionStatus',
+      'executedAction',
+      'executedAmount',
+      ...('selectionRefusal' in value ? ['selectionRefusal'] : []),
+    ])
+  )
+    return false;
+  if (
+    !record(value.guardPolicy) ||
+    !exact(value.guardPolicy, ['version', 'maxCandidates', 'deepStackBB', 'deepCommitFraction']) ||
+    !record(value.guardWork) ||
+    !exact(value.guardWork, ['assessmentCompleted', 'candidateCount']) ||
+    !record(value.work) ||
+    !exact(value.work, [
+      'attempts',
+      'candidateCount',
+      'candidatesCompleted',
+      'outcomeSamples',
+      'samplesVisited',
+      'rollouts',
+      'rolloutCacheHits',
+      'estimates',
+      'estimateCacheHits',
+      'icmMethod',
+      'levelBounds',
+      'budgetStop',
+    ]) ||
+    ![
+      'not_postflop',
+      'unsupported_variant',
+      'context_incomplete',
+      'multiple_boards',
+      'private_state_rejected',
+      'utility_unavailable',
+      'phase7_choice_retained',
+      'candidate_budget',
+      'baseline_not_legal',
+      'baseline_not_modeled',
+      'guard_baseline_retained',
+      'guard_safe_candidate_unavailable',
+      'guard_candidate_changed',
+    ].includes(String(value.reason)) ||
+    !Array.isArray(value.reasons) ||
+    value.reasons.some((r) => r !== 'deep_one_pair_commitment') ||
+    typeof value.baselineCriticalCommitment !== 'boolean' ||
+    typeof value.candidateCriticalCommitment !== 'boolean' ||
+    !ACTIONS.includes(value.baselineAction as never) ||
+    !ACTIONS.includes(value.candidateAction as never) ||
+    !(value.baselineAmount === null || nonnegative(value.baselineAmount)) ||
+    !(value.candidateAmount === null || nonnegative(value.candidateAmount))
+  )
+    return false;
+  if (
+    !record(value) ||
+    value.version !== CATASTROPHE_GUARD_VERSION ||
+    value.policyFamily !== 'catastrophe_guard_v1' ||
+    value.workKind !== 'phase7_candidate_guard' ||
+    !['shadow', 'candidate'].includes(String(value.mode)) ||
+    typeof value.eligible !== 'boolean' ||
+    value.fired !== value.eligible ||
+    value.completed !== value.eligible ||
+    typeof value.changed !== 'boolean' ||
+    typeof value.applied !== 'boolean' ||
+    value.authorityVerdict !== null ||
+    value.futureGame !== null ||
+    value.baselineFutureGame !== null ||
+    value.simulationMs !== 0 ||
+    !record(value.guardPolicy) ||
+    value.guardPolicy.version !== CATASTROPHE_GUARD_VERSION ||
+    value.guardPolicy.maxCandidates !== 16 ||
+    value.guardPolicy.deepStackBB !== PHASE8_POLICY.deepStackBB ||
+    value.guardPolicy.deepCommitFraction !== PHASE8_POLICY.deepCommitFraction ||
+    !record(value.guardWork) ||
+    value.guardWork.assessmentCompleted !== value.completed ||
+    !Number.isSafeInteger(value.guardWork.candidateCount) ||
+    Number(value.guardWork.candidateCount) < 0 ||
+    Number(value.guardWork.candidateCount) > 16 ||
+    (value.completed === true && Number(value.guardWork.candidateCount) < 1) ||
+    !record(value.work) ||
+    Object.entries(value.work).some(([key, v]) =>
+      key === 'icmMethod' ? v !== 'unavailable' : key === 'budgetStop' ? v !== 'none' : v !== 0
+    ) ||
+    !Array.isArray(value.before) ||
+    value.before.length > 16 ||
+    !Array.isArray(value.after) ||
+    value.after.length > 16 ||
+    !nonnegative(value.latencyMs) ||
+    !nonnegative(value.policyMs) ||
+    !['none', 'shadow_change', 'selected'].includes(String(value.selection)) ||
+    (value.selectionRefusal !== undefined &&
+      !['downstream_owner', 'illegal_candidate'].includes(String(value.selectionRefusal)))
+  )
+    return false;
+  const authority = value.authority;
+  if (
+    authority !== null &&
+    (!horseAuthorityReceiptIsWellFormed(authority) ||
+      authority.continuationVersion !== CATASTROPHE_GUARD_VERSION)
+  )
+    return false;
+  if (value.mode === 'candidate' && (!record(authority) || authority.state !== 'usable'))
+    return false;
+  if (!value.applied) return value.selection !== 'selected';
+  return (
+    value.mode === 'candidate' &&
+    value.changed === true &&
+    value.completed === true &&
+    value.selection === 'selected' &&
+    ['check', 'fold'].includes(String(value.candidateAction)) &&
+    value.candidateAmount === null &&
+    decision.action === value.candidateAction &&
+    (decision.amount ?? null) === null
+  );
+}
+
 export function horsePhase8LedgerIsValid(value: unknown, decision: RecordValue): boolean {
   if (value === undefined) return true;
   if (!record(value)) return false;
@@ -621,6 +775,12 @@ function packSelectionIsValid(
 
 /** Phase 7 owns the action Phase 8 received; an applied candidate replaces it. */
 function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'amount'> {
+  const guard = value.tournamentCatastropheGuard;
+  if (record(guard) && guard.changed === true)
+    return {
+      action: guard.baselineAction as HorseDecision['action'],
+      amount: (guard.baselineAmount as number | null) ?? undefined,
+    };
   const phase8 = value.tournamentPostflop;
   if (record(phase8) && phase8.applied === true)
     return {
@@ -803,6 +963,22 @@ export function horseDecisionReceiptRefusal(
   )
     return 'phase7_utility';
   if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return 'phase8_ledger';
+  if (
+    record(value.tournamentCatastropheGuard) &&
+    value.tournamentCatastropheGuard.eligible === true &&
+    context &&
+    !(
+      context.gameState.gameMode === 'tournament' &&
+      context.gameState.gameVariant === 'nlh' &&
+      ['flop', 'turn', 'river'].includes(context.gameState.stage) &&
+      (context.gameState.boardCount ?? 1) === 1 &&
+      !context.gameState.communityCards2?.length &&
+      !context.gameState.communityCards3?.length
+    )
+  )
+    return 'phase8_guard_domain';
+  if (!horsePhase8GuardLedgerIsValid(value.tournamentCatastropheGuard, selected))
+    return 'phase8_guard_ledger';
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
     return 'phase10_binding';
   if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return 'phase10_selection';

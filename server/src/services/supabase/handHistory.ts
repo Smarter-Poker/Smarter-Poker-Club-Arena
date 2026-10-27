@@ -652,6 +652,7 @@ export async function logHandHistory(params: {
   contributions?: Map<string, number>;
   /** Stacks frozen at deal time; source for exact effective-stack buckets. */
   dealtStacksAtDeal?: Map<string, number>;
+  allInRunoutWitness?: HandFactsInput['allInRunoutWitness'];
   /** Every seat dealt in: userId -> { seat, cards }. Includes folded players. */
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
@@ -840,6 +841,7 @@ export async function logHandHistory(params: {
           contributions: params.contributions!,
           dealtStacksAtDeal:
             params.dealtStacksAtDeal ?? dealtStacksFromAtomicCommit(params.atomicCommit),
+          allInRunoutWitness: params.allInRunoutWitness,
           winners: params.winners,
           actions: params.actions,
           roster: params.roster!,
@@ -983,6 +985,13 @@ export async function logHandHistory(params: {
       actions: acceptedActions,
       bigBlind: params.bigBlind,
       showdown: params.showdownReveal ?? null,
+      riverCallContext: {
+        variant: params.gameVariant,
+        boardCount: Math.max(
+          params.ritBoards?.length ?? 0,
+          params.communityCards3?.length ? 3 : params.communityCards2?.length ? 2 : 1
+        ),
+      },
       // HorseWinnerRead: every dealt player's net, from the committed hand.
       ...(params.contributions
         ? { results: handNetResults(params.contributions, params.winners) }

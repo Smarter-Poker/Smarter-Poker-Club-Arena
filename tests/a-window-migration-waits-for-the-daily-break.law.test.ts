@@ -244,8 +244,10 @@ describe('the route runs on the daily schedule that already exists', () => {
 
   it('runs on daily preparation or an explicit expiring owner migration window', () => {
     expect(job.needs).toBe('detect');
-    expect(job.if).toBe(
-      "needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')"
+    expect(job.if).toContain("needs.detect.result == 'success'");
+    expect(job.if).toContain("needs.detect.outputs.admission_allowed == 'true'");
+    expect(job.if).toContain(
+      "github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != ''"
     );
     expect(stage.on.schedule).toEqual([{ cron: '30 8 * * *' }, { cron: '30 9 * * *' }]);
     expect(job.permissions).toEqual({ contents: 'read' });
@@ -372,5 +374,66 @@ describe('a superseded window migration is never queued', () => {
     ).toBe(true);
     const run = runInstaller(root);
     expect(run.stdout).toContain(`skipped \`${name}\`: SUPERSEDED BY 20261024193818`);
+  });
+});
+
+// A consumed engine anchor must not strand a separately owed database file.
+describe('explicit database-only owner-window continuation', () => {
+  it('uses the same serialized installer while skipping every engine admission', () => {
+    const workflow = parse(read('.github/workflows/stage-engine-release.yml'));
+    expect(workflow.on.workflow_dispatch.inputs.owner_window_id.required).toBe(true);
+    expect(workflow.jobs.detect.if).toBe("github.event_name != 'workflow_dispatch'");
+    expect(workflow.jobs.signal.needs).toBe('detect');
+    const job = workflow.jobs['window-migrations'];
+    expect(job.if).toContain("github.ref == 'refs/heads/main'");
+    expect(job.if).toContain('always()');
+    expect(job.concurrency.group).toBe('daily-maintenance-window-migrations');
+    const install = job.steps.find(
+      (step: { env?: { OWNER_WINDOW_ID?: string } }) => step.env?.OWNER_WINDOW_ID
+    );
+    expect(install.env.OWNER_WINDOW_ID).toBe(
+      '${{ inputs.owner_window_id || needs.detect.outputs.owner_window_id }}'
+    );
+    expect(install.run).toContain('node scripts/ci/install-window-migrations.mjs');
+    expect(install.run).toContain('--owner-window');
+    expect(install.run).not.toMatch(/deploy-club-arena-engine|ssh |request_recovery/);
+  });
+});
+
+describe('database-only windows cannot displace engine admission', () => {
+  it('keeps its reviewed entry outside both engine consumers', () => {
+    const doc = JSON.parse(read('server/release/owner-maintenance-windows.json'));
+    const id = '2026-10-26-lightning-dwell-database-only';
+    expect(doc.windows.some((w: { id: string }) => w.id === id)).toBe(false);
+    expect(doc.databaseWindows.filter((w: { id: string }) => w.id === id)).toHaveLength(1);
+    expect(read('scripts/ci/owner-window-migration.mjs')).toContain(
+      '...(doc.databaseWindows ?? [])'
+    );
+    expect(read('.github/workflows/stage-engine-release.yml')).not.toContain('databaseWindows');
+    expect(read('server/scripts/engine-release-transaction.sh')).not.toContain('databaseWindows');
+  });
+});
+
+describe('one explicit database-only certified maintenance operation', () => {
+  it('runs real Git and seal-journal refusal/replay qualification', () => {
+    const r = spawnSync(
+      'python3',
+      ['-B', 'tests/operations/database-maintenance-reservation.test.py'],
+      { encoding: 'utf8', timeout: 60000 }
+    );
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+  }, 65000);
+  it('retains the original lock, loopback request and thaw instead of replacing the engine', () => {
+    const code = read('scripts/ci/database-maintenance-window.py');
+    expect(code).toContain('/var/lock/club-arena-engine-up.lock');
+    expect(code).toContain('fcntl.LOCK_EX | fcntl.LOCK_NB');
+    expect(code).toContain('*.awaiting-certificate');
+    expect(code).toContain("body:JSON.stringify({announcedAt,cause:'urgent'})");
+    expect(code).toContain('>= 285000');
+    expect(code).toContain("m.get('durableConfirmed') is True");
+    expect(code).toContain("waves.get('finishedAt', 0) >= end");
+    expect(code).not.toMatch(
+      /docker.*(?:restart|stop|start|run)|systemctl|fn_thaw_platform|force-desired/
+    );
   });
 });

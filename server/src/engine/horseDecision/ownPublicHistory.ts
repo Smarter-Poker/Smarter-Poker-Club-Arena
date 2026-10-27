@@ -5,6 +5,11 @@ import {
   type HorseObserverReadContext,
 } from '../HorseObserverReadContext.js';
 import type { ActionRecord } from '../../types.js';
+import {
+  finalRiverCallers,
+  riverCallCategoryIsUsable,
+  type RiverCallSample,
+} from '../HorseRiverCallEvidence.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_BYTES = 256 * 1024;
@@ -68,6 +73,8 @@ export interface HorseOwnPublicHand {
   bigBlind: number;
   actions: Array<ActionRecord & { amount: number; userId: string; timestamp: number }>;
   results: Array<{ user_id: string; net: number }> | null;
+  /** Per-hand public categories only. Absent means unavailable on older reads. */
+  riverCalls?: RiverCallSample[];
 }
 export interface HorseOwnPublicHistoryWindow {
   version: 1;
@@ -100,21 +107,25 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
   for (const h of value.hands) {
     if (
       !object(h) ||
-      !keys(h, [
-        'handId',
-        'tableId',
-        'handNumber',
-        'observerId',
-        'observerSeat',
-        'position',
-        'playersDealt',
-        'variant',
-        'format',
-        'playedAtMs',
-        'bigBlind',
-        'actions',
-        'results',
-      ]) ||
+      !keys(
+        h,
+        [
+          'handId',
+          'tableId',
+          'handNumber',
+          'observerId',
+          'observerSeat',
+          'position',
+          'playersDealt',
+          'variant',
+          'format',
+          'playedAtMs',
+          'bigBlind',
+          'actions',
+          'results',
+        ],
+        ['riverCalls']
+      ) ||
       typeof h.handId !== 'string' ||
       !UUID.test(h.handId) ||
       seen.has(h.handId.toLowerCase()) ||
@@ -173,6 +184,29 @@ function validWindow(value: unknown, availableAtMs: number): value is HorseOwnPu
       if (a.userId === context.observerId && a.seat !== h.observerSeat) return false;
     }
     if (actorSeats.size > context.dealtCount) return false;
+    if (h.riverCalls !== undefined) {
+      if (!Array.isArray(h.riverCalls) || h.riverCalls.length > context.dealtCount) return false;
+      if (
+        h.riverCalls.length &&
+        !riverCallCategoryIsUsable({ variant: h.variant as string, boardCount: 1 })
+      )
+        return false;
+      const callers = finalRiverCallers(h.actions as HorseOwnPublicHand['actions']);
+      const ids = new Set<string>();
+      for (const sample of h.riverCalls) {
+        if (
+          !object(sample) ||
+          !keys(sample, ['userId', 'weak']) ||
+          typeof sample.userId !== 'string' ||
+          !UUID.test(sample.userId) ||
+          !callers.has(sample.userId) ||
+          ids.has(sample.userId) ||
+          typeof sample.weak !== 'boolean'
+        )
+          return false;
+        ids.add(sample.userId);
+      }
+    }
     if (h.results !== null) {
       if (!Array.isArray(h.results) || h.results.length !== context.dealtCount) return false;
       const ids = new Set<string>();

@@ -718,7 +718,10 @@ export function playHand(
         } finally {
           HorseMind.setDecisionScope(previousScope);
         }
-        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope, false, {
+          variant: gameVariant,
+          boardCount: 1,
+        });
       });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
@@ -2470,6 +2473,15 @@ export async function runLeague(
             hands: r.hands,
             bb100: round2(r.bb100),
             stderr: round2(r.stderr),
+            // Persist the worker verdict before storage rounding: an inert
+            // experiment is not a measured zero. Clear stale reasons on rerun.
+            status: r.inert === true ? 'inert' : 'measured',
+            refusal_reason:
+              r.inert === true
+                ? `Inert experiment: ${r.divergentPairs ?? 'unknown'} of ${r.hands / 2} ` +
+                  `pairs diverged; paired stderr ${r.stderr}. Zero divergence or ` +
+                  `zero variance is not a measurement.`
+                : null,
             // A human-field card records its field here (leagueResultConfig);
             // a mirror card's configs are written exactly as before.
             config_a: leagueResultConfig(m, 'a') as never,

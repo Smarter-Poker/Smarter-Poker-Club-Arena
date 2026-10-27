@@ -731,6 +731,21 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V59'
   ),
   flag(
+    'drawOutlookQuality',
+    'NLH continuation planning excludes shared board improvements and dirty straight outs; false retains the historical outlook for paired offline comparisons',
+    'Draw outlook quality'
+  ),
+  flag(
+    'committedRaiseDiscipline',
+    'the existing NLH raised-hand call-only rule also guards the earlier committed-stack branch; false isolates the historical branch for paired offline comparisons',
+    'Committed raise discipline'
+  ),
+  flag(
+    'callDeductionPricing',
+    'canonical cash calls price actual capped rake and BBJ on matched awards after uncalled returns; false retains the historical marginal-rate approximation for offline comparisons',
+    'Net call deductions'
+  ),
+  flag(
     'phase7Utility',
     'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
     'Phase7'
@@ -2020,6 +2035,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic.decide (HorseHoldemPremiumAggression)',
     'NLH overpair QQ+ or AK top pair check postflop turned into a value bet',
     'Hold em premium aggression'
+  ),
+  receipt(
+    'short_all_in_call_floor',
+    'HorseLogic.decide (HorseShortAllInCallFloor)',
+    'Tournament fold facing an all in under 3 big blinds with 20+ big blinds behind turned into a call',
+    'Short all-in call floor'
+  ),
+  receipt(
+    'short_all_in_call_floor_commit',
+    'ServerTableEngineTurns.scheduleHorseAction (HorseShortAllInCallFloor)',
+    'The same floor at the commit door, after an authority withdrawal or a liveness fallback produced the fold',
+    'Short all-in call floor'
   ),
   receipt(
     'plo_paired_board_fold',

@@ -19,6 +19,14 @@ import {
   type HorseWinnerReadState,
 } from './HorseWinnerRead.js';
 import { noteFire } from './BrainTelemetry.js';
+import {
+  riverCallCategoryIsUsable,
+  riverCallConfidenceAboveBaseline,
+  type RiverCallContext,
+  type RiverCallSample,
+  shownRiverCallSamples,
+  finalRiverCallers,
+} from './HorseRiverCallEvidence.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE MIND — Real-Time Opponent Intelligence (V3 — 2026-07-23)
@@ -243,11 +251,6 @@ const STRONG_HAND_NAMES = new Set([
   'straight flush',
   'royal flush',
 ]);
-
-/** 2026-10-25: hand names that make a river CALL light - one pair or worse.
- *  The engine's evaluator names them 'High Card' and 'Pair' (PokerEngine);
- *  'one pair' is accepted for any evaluator that spells it out. */
-const WEAK_HAND_NAMES = new Set(['high card', 'pair', 'one pair']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOARD TEXTURE
@@ -2387,7 +2390,9 @@ export class HorseMind {
     /** V45: the hand's scope (variant family x dealt count), so the deep
      *  reads land in the scoped bucket too. Absent = pooled only. */
     scope?: ReadScope | null,
-    durableExploit = false
+    durableExploit = false,
+    riverCallContext?: RiverCallContext,
+    retainedRiverCalls?: readonly RiverCallSample[]
   ): void {
     // V45: settlement runs outside any decision; the scope travels with the
     // hand and is cleared on the way out.
@@ -2530,34 +2535,25 @@ export class HorseMind {
             if (strong) s.tankBetSDStrong++;
           }
         }
-
-        // ── River: what did a CALLER show? (2026-10-25) ──
-        // The caller-side mirror of the loop above. A player whose LAST river
-        // action was a call, and whose hand was shown (mucked === false), is
-        // one sample; a shown hand of one pair or worse is a light call. A
-        // call is the `call` action, or an `all_in` whose amount (the street
-        // bet level it reaches) does not exceed the river bet level already
-        // standing - an all-in for less or equal is a call, one above it
-        // raised (full or short) and is not. Once per player per hand by
-        // construction: the map keeps each player's last river action only.
-        let riverLevel = 0;
-        const lastRiver = new Map<string, boolean>();
-        for (const a of actions) {
-          if (a.stage !== 'river' || !a.userId) continue;
-          const amt = typeof a.amount === 'number' && isFinite(a.amount) ? a.amount : 0;
-          let called = a.action === 'call';
-          if (a.action === 'all_in') called = riverLevel > 0 && amt <= riverLevel + 0.005;
-          lastRiver.set(a.userId, called);
-          if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-            riverLevel = Math.max(riverLevel, amt);
-        }
-        for (const [id, called] of lastRiver) {
-          if (!called) continue;
-          const sd = shown.get(id);
-          if (!sd || sd.mucked !== false) continue;
-          const s = touch(id);
+      }
+      // Live public categories and retained per-hand evidence share one
+      // idempotent completion boundary and the same last-river-call rule.
+      if (riverCallCategoryIsUsable(riverCallContext)) {
+        const callers = finalRiverCallers(actions);
+        const samples =
+          retainedRiverCalls ?? shownRiverCallSamples(actions, showdown, riverCallContext!);
+        const counted = new Set<string>();
+        for (const sample of samples) {
+          if (
+            !callers.has(sample.userId) ||
+            counted.has(sample.userId) ||
+            typeof sample.weak !== 'boolean'
+          )
+            continue;
+          counted.add(sample.userId);
+          const s = touch(sample.userId);
           s.riverCallSD++;
-          if (WEAK_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) s.riverCallSDWeak++;
+          if (sample.weak) s.riverCallSDWeak++;
         }
       }
       mirror();
@@ -2630,15 +2626,32 @@ export class HorseMind {
   }
 
   /** 2026-10-25 RIVER CALL READ: of this player's shown river calls, the
-   *  fraction that were one pair or worse. Null below five shown calls. High =
+   *  fraction that were one pair or worse. Null below twelve shown calls. High =
    *  they call rivers light (bluff them less, value-bet them thinner). Read
    *  identically for every player, human or horse. A row decoded from a frame
    *  that predates the counters reads as no sample. */
-  static riverCallLightTendency(id: string): number | null {
-    const s = this.readStats(id);
+  static riverCallLightTendency(id: string, baseline = 0): number | null {
+    // These categories differ greatly by family. Never fall back to pooled
+    // hold'em/Omaha counters while a decision has an explicit scope.
+    const s = this.decisionScope
+      ? this.scoped.get(`${this.decisionScope}|${id}`)
+      : this.stats.get(id);
     const n = s?.riverCallSD ?? 0;
-    if (!s || !(n >= 5)) return null;
-    return (s.riverCallSDWeak ?? 0) / n;
+    const weak = s?.riverCallSDWeak ?? 0;
+    if (
+      !Number.isFinite(n) ||
+      !Number.isFinite(weak) ||
+      n < 12 ||
+      weak < 0 ||
+      weak > n ||
+      !Number.isFinite(baseline) ||
+      baseline < 0 ||
+      baseline >= 1
+    )
+      return null;
+    // The default is a raw frequency read, including strong-only samples.
+    if (baseline > 0 && !riverCallConfidenceAboveBaseline(n, weak, baseline)) return null;
+    return weak / n;
   }
 
   static tableExploit(

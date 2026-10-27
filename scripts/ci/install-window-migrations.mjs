@@ -171,6 +171,11 @@ for (const f of queued) {
   }
 }
 
+// Explicit controller admission checks exact history and static SQL BEFORE
+// reserving any announcement. This branch never waits or sends a migration.
+if (args.includes('--preflight-only'))
+  finish(0, 'PREFLIGHT QUEUED (history and static SQL checked; nothing sent)');
+
 const window = ownerWindow
   ? {
       startsAt: Date.now(),

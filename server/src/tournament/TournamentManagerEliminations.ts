@@ -775,6 +775,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           .eq('status', 'playing')
           .lte('chips', 0);
         let bustBatchHasMore = false;
+        let preserveBustWait = false;
         if (sweepStopped()) return;
 
         // PAYOUT-INTEGRITY 2026-08-25: an unreadable bust list is UNKNOWN. The
@@ -837,7 +838,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * stack in the database transaction that creates them. This check is
          * defence in depth against corruption; it is not a delayed-credit gate.
          */
-        if (busted && busted.length > 0) {
+        // Resolving or awaiting a rebuy ends this batch, not the sweep. The
+        // cursor must still advance so the same event reaches table balance.
+        bustedBatch: if (busted && busted.length > 0) {
           /**
            * ONE QUESTION, ONE ROUND TRIP (2026-09-11).
            *
@@ -1054,11 +1057,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // These busts have been resolved, so their old wait cannot
               // trigger a successor. Any untouched batch keeps a fresh clock.
               recordBustProgress();
-              // Everyone bought back in; nobody is eliminated this pass. The
-              // pass goes on to its later stages - balancing above all - and
-              // never returns from the sweep here (see A REBUY WINDOW DOES NOT
-              // STARVE THE BALANCER below).
-              break bustStage;
+              break bustedBatch; // everyone bought back in; continue toward balance
             }
           }
 
@@ -1152,6 +1151,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               const openDecisions = [...decisions].filter(([, open]) => open);
               if (openDecisions.every(([userId]) => (openUntilMs.get(userId) ?? 0) > nowMs)) {
                 recordBustProgress();
+              } else {
+                // A malformed/expired open-decision receipt proves no
+                // progress. Balancing may continue, but retain its stall age.
+                preserveBustWait = true;
               }
               /* A REBUY WINDOW DOES NOT STARVE THE BALANCER (Dan, 2026-10-26:
                  "TABLES NEED TO ALWAYS BE BALANCED 100% OF THE TIME NO MATTER
@@ -1171,7 +1174,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                  deciding a rebuy still count as playing, so the finish stage
                  cannot end the event on them. Same class of defect as the
                  2026-09-12 backlog return below. */
-              break bustStage;
+              break bustedBatch;
             }
           }
 
@@ -1584,8 +1587,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
-        // Later cursor stages must not carry a wait for already-settled busts.
-        recordBustProgress();
+        // Later stages retire only proven progress, never an unknown deadline.
+        if (!preserveBustWait) recordBustProgress();
         if (completedStage(2)) return;
       }
 
@@ -1637,7 +1640,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
-          this.mysteryPlayersRemainingHint = remainingCount;
+          // A hand may complete while this read is in flight. A closed field
+          // cannot grow; never overwrite a newer synchronous bust hint upward.
+          this.mysteryPlayersRemainingHint = this.prizePoolFinalized
+            ? Math.min(this.mysteryPlayersRemainingHint ?? remainingCount, remainingCount)
+            : remainingCount;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -1648,9 +1655,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.noteEliminationSweepStep('maybeActivateMysteryBounty');
             const awaitingBoundary = await this.maybeActivateMysteryBounty(remainingCount);
             if (sweepStopped()) return;
-            // Hold the parked boundary only while a hand is still in the air;
-            // every other answer is final for this count, so deal on.
+            // Unknown/unfinished activation retains custody; only a confirmed
+            // activation or a definitive ineligible answer releases the deal.
             if (awaitingBoundary !== true) this.releaseMysteryActivationBoundary();
+            else if (this.mysteryActivationBoundaryPending) {
+              // Continue this exact held transition after an unavailable RPC.
+              // Park edges also wake it; no independent repair job owns it.
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+            }
           } catch (mbErr) {
             reportError(mbErr, 'Tournament.mystery_bounty_activation_sweep');
             this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
@@ -2127,8 +2141,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               this.noteEliminationSweepStep('broadcast');
               await this.broadcast('bubble_burst', { playersRemaining: playingNow });
               if (sweepStopped()) return;
-              // Ending the bubble cannot release an overlapping tournament break.
-              if (!this.isOnBreak() && !this.successorDrainRequested) {
+              // The bubble does not own an overlapping mystery activation.
+              // Keep every table parked until its chest inventory is sealed.
+              if (
+                !this.isOnBreak() &&
+                !this.successorDrainRequested &&
+                !this.mysteryActivationBoundaryPending
+              ) {
                 for (const engine of this.tableEngines.values()) {
                   engine.resumeDealing();
                 }

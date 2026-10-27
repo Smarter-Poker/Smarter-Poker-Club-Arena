@@ -53,6 +53,8 @@ export interface PreflopCtx {
   /** V13: when false, keep the V11 price-in guard's original early-return
    *  shape (ablation only — see decidePreflopV7). Default true. */
   v13?: boolean;
+  /** Projected fraction removed from the final contested cash award. */
+  callDeductionFraction?: number;
   /** percentile hand strength 0..1 (variant-aware, jittered by caller) */
   strength: number;
   position: PreflopPosition;
@@ -437,6 +439,14 @@ const LIMP_BEHIND_MIN = 0.5;
  * substitute a call for a FOLD when the price forbids folding. Nothing else
  * about the guard changes.
  */
+function preflopCallOdds(ctx: PreflopCtx, pot: number, call: number): number {
+  const deduction =
+    ctx.mode === 'cash' && Number.isFinite(ctx.callDeductionFraction)
+      ? Math.max(0, Math.min(1, ctx.callDeductionFraction!))
+      : 0;
+  return call / Math.max(1e-9, (pot + call) * (1 - deduction));
+}
+
 export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   // ═══ V46 (2026-09-05) ═══ THE PERCENTILE IS LYING. Three or four of a rank
   // in an Omaha hand (AAA-x above all) rates high on the hold'em ladder and
@@ -461,7 +471,7 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   const pricePot = Number.isFinite(ctx.contestablePot)
     ? Math.max(0, ctx.contestablePot as number)
     : ctx.pot;
-  const guardOdds = effCall / (pricePot + effCall);
+  const guardOdds = preflopCallOdds(ctx, pricePot, effCall);
   const isTourney = ctx.mode === 'tournament';
   const stackBB = stack / bb;
   const pricedIn =
@@ -643,7 +653,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // that, folding burns chips no strategy can win back. Applies to every
   // branch below: checked FIRST, before any strength threshold can fold.
   const effCall = Math.min(toCall, stack);
-  const guardOdds = effCall > 0 ? effCall / (pricePot + effCall) : 1;
+  const guardOdds = effCall > 0 ? preflopCallOdds(ctx, pricePot, effCall) : 1;
   const pricedIn =
     ctx.mode !== undefined && // V11 on — ablation (mode absent) keeps legacy
     toCall > 0 &&
@@ -1425,7 +1435,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // percentile means what it says.
     let callBar = callThresh - bbDiscount;
     if (ctx.isOmaha && ctx.ploPriceDefense === true) {
-      const odds = toCall / Math.max(1e-9, pricePot + toCall);
+      const odds = preflopCallOdds(ctx, pricePot, Math.min(toCall, stack));
       const priceRelief = Math.max(0, 0.5 - odds); // BB ~0.17, cold call ~0.09
       callBar -= priceRelief;
     }

@@ -38,6 +38,34 @@ describe('Phase 8 paired tournament league', () => {
     expect(result.conservationErrors).toBe(0);
     expect(result.truncatedHands).toBe(0);
     expect(result.meanDifference).toBe(0);
+    const diagnostics = result.opportunityDiagnostics!;
+    expect(diagnostics).toBeDefined();
+    expect(diagnostics.arm).toBe('evaluated');
+    // Identical policies produce identical arms: merging both arms would double this.
+    expect(diagnostics.decisions * 2).toBe(result.decisions);
+    expect(diagnostics.designatedHeroDecisions).toBeGreaterThan(0);
+    expect(diagnostics.otherActorDecisions).toBeGreaterThan(0);
+    expect(diagnostics.decisions).toBe(
+      diagnostics.designatedHeroDecisions + diagnostics.otherActorDecisions
+    );
+    expect(diagnostics.designatedHeroDecisions).toBe(
+      diagnostics.heroPreflopDecisions +
+        diagnostics.heroPostflopDecisions +
+        diagnostics.heroOtherStreetDecisions
+    );
+    expect(diagnostics.heroPostflopDecisions).toBeGreaterThan(0);
+    expect(diagnostics.heroPostflopDecisions).toBe(
+      diagnostics.heroPostflopLedgerMissing +
+        diagnostics.heroPostflopEligible +
+        Object.values(diagnostics.preEligibleRefusals).reduce((sum, count) => sum + count!, 0)
+    );
+    expect(
+      horseLeagueComputeResponseIsValid({
+        type: 'TOURNAMENT_RESULT',
+        jobId: 1,
+        result,
+      })
+    ).toBe(true);
     expect(result.candidateFinish).toEqual(result.baselineFinish);
     expect(tournamentBaselineRunVerified(result)).toBe(false);
     const exercising = {

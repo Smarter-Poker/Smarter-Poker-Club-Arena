@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
 import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
 import {
@@ -844,6 +845,38 @@ test.describe('Production Cashier Certification', () => {
     await panel.getByRole('searchbox', { name: 'Search Transaction History' }).fill('');
     expect((await restored).status()).toBe(200);
     await expect(panel).toHaveAttribute('aria-busy', 'false');
+    // Read-only handoff through the real export control, using the reserved
+    // identity's own book. No money is sent and no real member is impersonated.
+    const exportResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+        response.request().postDataJSON()?.p_limit === 251,
+      { timeout: 30_000 }
+    );
+    const downloaded = page.waitForEvent('download');
+    await panel.getByRole('button', { name: 'Download These Transactions', exact: true }).click();
+    const exportFeed = await exportResponse;
+    expect(exportFeed.status()).toBe(200);
+    expect(exportFeed.request().postDataJSON()).toMatchObject({
+      p_club_id: clubId,
+      p_scope: 'mine',
+      p_search: null,
+      p_before_at: null,
+      p_before_id: null,
+    });
+    const download = await downloaded;
+    expect(await download.failure()).toBeNull();
+    expect(download.suggestedFilename()).toMatch(/^transaction-history-mine-.*\.csv$/);
+    const downloadedPath = await download.path();
+    expect(downloadedPath).toBeTruthy();
+    const csv = await readFile(downloadedPath!, 'utf8');
+    expect(csv.replace(/^\uFEFF/, '').split(/\r?\n/)[0]).toBe(
+      'Date,Type,Direction,From,To,Chips,Route,Detail,Invoice,Cash-Out Status,Entry'
+    );
+    await testInfo.attach('cashier-own-history-export.csv', {
+      path: downloadedPath!,
+      contentType: 'text/csv',
+    });
     for (const width of [375, 393, 768, 1440]) {
       await page.setViewportSize({ width, height: 852 });
       await expect(panel).toBeVisible();

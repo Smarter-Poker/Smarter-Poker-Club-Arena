@@ -9,7 +9,7 @@ const source=readFileSync(new URL('./qualify-agent-boundary.mjs',import.meta.url
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@example.invalid') {
  const id='00000000-0000-4000-8000-000000000001';
- const state={role:'admin',agent:null,reads:0,results:null};
+ const state={role:'admin',agent:null,reads:0,results:null,exportCancelled:false};
  const account={id,email,password:'reserved-fixture-only'};
  const fetch=async(url,init)=>{
   state.reads++;const u=new URL(url);const method=init.method;const body=init.body?JSON.parse(init.body):null;
@@ -28,6 +28,16 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
    data=state.agent?[state.agent]:[];
   } else if(u.pathname==='/rest/v1/player_stats' || u.pathname==='/rest/v1/audit_trail') data=[];
   else if(u.pathname==='/rest/v1/clubs') {status=failure==='private-column'?200:403;data=[];}
+  else if(u.pathname==='/rest/v1/rpc/fn_ca_club_data_scope') data='downline';
+  else if(u.pathname==='/rest/v1/rpc/ca_club_data_screen') data={scope:'downline',rows:failure==='data-leak'?[{id:'unrelated'}]:[],summary:{games:0,fee:0,total_winnings:0,mtt_winnings:0,on_felt:0}};
+  else if(u.pathname==='/rest/v1/rpc/fn_agent_downline_rake' || u.pathname==='/rest/v1/rpc/fn_agent_downline_rake_summary') {
+   if(body.p_club_id==='fade0000-0000-0000-0000-000000000001') {status=403;data={code:'42501'};}
+   else if(u.pathname.endsWith('_summary')) data={members:0,hands:0,rake_generated:failure==='legacy-leak'?100:0,commission_rate:0,estimated_commission:0};
+   else data=[];
+  }
+  else if(['ca_club_game_export_start','ca_club_player_export_start','ca_rake_export_start','ca_rake_export_start_v2'].some(name=>u.pathname==='/rest/v1/rpc/'+name)) {status=failure==='export-leak'?200:403;data=status===200?{export_id:id}:{code:'42501'};}
+  else if(u.pathname==='/rest/v1/rpc/ca_club_data_export_cancel') {state.exportCancelled=true;data=true;}
+  else if(['ca_club_data_snapshot_v2','ca_rake_snapshot_v2'].some(name=>u.pathname==='/rest/v1/rpc/'+name)) {status=403;data={code:'42501'};}
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_cashier_scope') data='downline';
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_bank_role') data=state.role;
   else if(u.pathname==='/rest/v1/rpc/fn_cashier_statement_scope') data={authorized:true,role:state.role,scope:'downline'};
@@ -48,9 +58,10 @@ test('all three ranks are exercised and zero-balance fixture restores before com
  assert.deepEqual(state.results.results.map(r=>r.role),['super_agent','agent','sub_agent']);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
 });
-for(const failure of ['private-column','unknown-create']) test('cleanup reads durable state after '+failure,async()=>{
+for(const failure of ['private-column','unknown-create','data-leak','legacy-leak','export-leak']) test('cleanup reads durable state after '+failure,async()=>{
  const {state,pending}=await fixture(failure);await assert.rejects(pending);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
+ if(failure==='export-leak') assert.equal(state.exportCancelled,true);
 });
 test('a personal account is refused before any request',async()=>{
  const {state,pending}=await fixture(null,'personal@example.invalid');await assert.rejects(pending);

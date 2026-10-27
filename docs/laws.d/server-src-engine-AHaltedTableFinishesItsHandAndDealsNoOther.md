@@ -102,3 +102,20 @@ abandoning a slow rule read cannot let a late, pre-halt answer lift an acknowled
 Cluster table polls once a minute. The every-pass leave retry covers only seats deferred by
 LIGHTNING_HAND_IN_PROGRESS (tracked in memory, found after a restart by one probe per halt or
 engine start); a leave the stay clock holds keeps its own release.
+
+ONE NARROW EXCEPTION, 2026-10-26 - THE CASH SIT-OUT CLOCK OF A CLUSTER THAT IS LIGHTNING. The
+halt parks every anchor table for as long as its Cluster is Lightning, not only for the
+conversion, and the parked pass was the only loop such a table ran, so a player who sat out at
+their anchor was never stood up: in production one sat SITTING_OUT for 7 h 45 min, holding the
+seat and the chips. `passWhileDealingHalted` now calls `standUpExpiredLightningSitOuts`, which
+runs only at an acknowledged Lightning halt (`lightningObserverCluster()`), only once somebody's
+cash sit-out clock (`DisconnectEngine.SITOUT_MAX_MS`, the same thaw) has actually run out, read
+in memory first, and only after `cash_games.cluster_mode` reads 'lightning' - never while a
+conversion is still counting its population, which is what "unseats nobody and moves no chip"
+protects, and only for occupants whose live seat row, read then, still says `is_sitting_out`
+(memory alone never cashes anyone out; an unreadable row stands nobody up). Then it runs the
+ordinary `evictExpiredSitOuts` limited to the sit-out clock and those occupants
+(`sitOutOnly`): the away-blind, nit and abandoned-seat rules judge the anchor's own sockets and
+hands, and a Lightning player plays in their room. The departure is the cash rule's own
+cash-out and `seat_left` 'sit_out_timeout'; the anchor-seat trigger exits the pool session. Every
+player alike, horse or human. The parked pass itself still never calls `evictExpiredSitOuts`.

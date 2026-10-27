@@ -422,38 +422,18 @@ it('journal-only Lightning owner context preserves exact policy key, real action
   ).toBe('unavailable');
 });
 
-it('an accepted off-turn fold captures its actual legal public menu without moving the current actor', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+it('the controller refuses an off-turn fold without recording an action', async () => {
   const formed = formedHand(6, 82000);
   const host = buildHost(formed, Array(6).fill(40));
   await host.host.start();
   const controller = (host.host as any).hc;
-  const state = controller.getState();
-  const originalTurn = state.currentPlayerSeat;
-  const actor = state.players.find(
-    (p: any) => p.seat !== originalTurn && !p.is_folded && p.stack > 0 && state.currentBet > p.bet
+  const before = structuredClone(controller.getState());
+  const actor = before.players.find(
+    (p: any) => p.seat !== before.currentPlayerSeat && !p.is_folded && p.stack > 0
   );
-  const accepted: any[] = [];
-  expect(
-    controller.performImmediateFold(actor.seat, 'horse_policy', (record: any) =>
-      accepted.push(record)
-    )
-  ).toBe(true);
-  expect(accepted).toHaveLength(1);
-  expect(accepted[0]).toMatchObject({
-    action: 'fold',
-    amount: 0,
-    seat: actor.seat,
-    publicNode: {
-      status: 'captured',
-      actorSeat: actor.seat,
-      legalActions: expect.arrayContaining(['fold']),
-    },
-  });
-  expect(controller.getState().currentPlayerSeat).toBe(originalTurn);
-  expect(controller.getState().players.find((p: any) => p.seat === actor.seat).is_folded).toBe(
-    true
-  );
-  expect(JSON.stringify(accepted[0].publicNode)).not.toContain('cards');
+  const accepted = vi.fn();
+  expect(controller.performImmediateFold(actor.seat, 'horse_policy', accepted)).toBe(false);
+  expect(accepted).not.toHaveBeenCalled();
+  expect(controller.getState()).toEqual(before);
   await (host.host as any).abandon('isolated_metadata_test_complete');
 });

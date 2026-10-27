@@ -340,9 +340,9 @@
   font-size: 12px;
   font-weight: 700;
   color: #e4e6eb;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 
 .rit-panel__player-equity {

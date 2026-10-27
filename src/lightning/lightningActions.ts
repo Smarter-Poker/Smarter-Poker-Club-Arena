@@ -15,7 +15,7 @@ import {
 
 export type LightningFoldKind = 'fast_fold' | 'fold_watch';
 
-/** Off-turn preflop Fold uses the visible Fold/Check-Fold pre-action rule. */
+/** Old engines queue every off-turn fold. New engines privately release priced folds. */
 export function lightningFoldOnTurn(
   snapshot: Record<string, unknown> | null,
   userId: string,
@@ -24,7 +24,11 @@ export function lightningFoldOnTurn(
   if (kind !== 'fast_fold') return null;
   const unavailable = { error: 'This Hand Is Not Available. Wait For The Table To Update.' };
   if (!snapshot || typeof snapshot.stage !== 'string') return unavailable;
-  if (snapshot.stage !== 'preflop' || snapshot.current_player === userId) return null;
+  if (
+    !['preflop', 'flop', 'turn', 'river'].includes(snapshot.stage) ||
+    snapshot.current_player === userId
+  )
+    return null;
   // A null actor during a turn handoff is not proof of our own turn.
   if (!Array.isArray(snapshot.players)) return unavailable;
   const hero = snapshot.players.find((p) => p?.user_id === userId);
@@ -42,6 +46,9 @@ export function lightningFoldOnTurn(
   )
     return unavailable;
   const toCall = Math.max(0, price - hero.bet);
+  const engineQueuesFold =
+    (snapshot.lightning as { fold_on_turn?: unknown } | null)?.fold_on_turn === true;
+  if (toCall > 0 && engineQueuesFold) return null;
   return { handId, toCall };
 }
 

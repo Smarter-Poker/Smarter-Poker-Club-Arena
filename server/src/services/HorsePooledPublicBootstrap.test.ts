@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+import { PooledPublicProfiles } from '../engine/horseDecision/pooledPublicProfiles.js';
 import { freshExploitCounters } from '../engine/HorseOpponentExploit.js';
 const mock = vi.hoisted(() => ({
   from: vi.fn(),
@@ -58,10 +59,21 @@ it('joins bounded pages and refuses malformed, duplicate, over-limit and failed 
   expect(await readHorsePooledPublicBootstrap()).toBeNull();
   mock.abort.mockRejectedValueOnce(Error('transport'));
   expect(await readHorsePooledPublicBootstrap()).toBeNull();
-  for (let i = 0; i < 21; i++)
+  for (let i = 0; i < 33; i++)
     mock.abort.mockResolvedValueOnce({
       data: Array.from({ length: 1000 }, (_, j) => row(i * 1000 + j + 1)),
       error: null,
     });
   expect(await readHorsePooledPublicBootstrap()).toBeNull();
+});
+
+it('loads the production-sized saved population above the old twenty-thousand ceiling', async () => {
+  for (let i = 0; i < 25; i++)
+    mock.abort.mockResolvedValueOnce({
+      data: Array.from({ length: i === 24 ? 369 : 1000 }, (_, j) => row(i * 1000 + j + 1)),
+      error: null,
+    });
+  const snapshot = await readHorsePooledPublicBootstrap();
+  expect(snapshot?.profiles).toHaveLength(24369);
+  expect(new PooledPublicProfiles().bootstrap(snapshot!)).toBe(true);
 });

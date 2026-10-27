@@ -28,9 +28,9 @@ export class PooledPublicProfiles {
   private bootstrapped = false;
   constructor(
     private readonly now: () => number = Date.now,
-    private readonly capacity = 20000
+    private readonly capacity = 32768
   ) {
-    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 20000)
+    if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 32768)
       throw Error('Invalid public profile capacity');
   }
   bootstrap(snapshot: { availableAtMs: number; profiles: DurableOpponentProfile[] }): boolean {

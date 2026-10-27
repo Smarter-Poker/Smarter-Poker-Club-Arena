@@ -16,7 +16,7 @@ export async function readHorsePooledPublicBootstrap(): Promise<HorsePooledPubli
   const seen = new Set<string>();
   const deadline = AbortSignal.timeout(5000);
   try {
-    for (let offset = 0; offset <= 20000; offset += 1000) {
+    for (let offset = 0; offset <= 32768; offset += 1000) {
       const { data, error } = await supabase
         .from('horse_exploit_profiles')
         .select('user_id,variant,mode,size,counters,observed_hands,initialized')
@@ -30,7 +30,7 @@ export async function readHorsePooledPublicBootstrap(): Promise<HorsePooledPubli
       for (const row of data) {
         if (!validOpponentProfile(row)) return null;
         const key = JSON.stringify([row.user_id, row.variant, row.mode, row.size]);
-        if (seen.has(key) || profiles.length >= 20000) return null;
+        if (seen.has(key) || profiles.length >= 32768) return null;
         seen.add(key);
         profiles.push(row);
       }

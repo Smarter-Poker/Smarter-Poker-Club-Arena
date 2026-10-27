@@ -422,6 +422,12 @@ export async function startOwnedServices(shard?: {
     const bootLoads = await Promise.allSettled([
       step('pooled_public_profiles', async () => {
         publicProfileBootstrap = await readHorsePooledPublicBootstrap();
+        console.log(
+          `[HorseDecisionWorker] shard ${shard?.index ?? 0} pooled public bootstrap ` +
+            (publicProfileBootstrap
+              ? `loaded ${publicProfileBootstrap.profiles.length} profiles at ${publicProfileBootstrap.availableAtMs}`
+              : 'unavailable')
+        );
         noteFire(
           publicProfileBootstrap
             ? 'horse_pooled_public_bootstrap_loaded'

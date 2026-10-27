@@ -38,6 +38,7 @@ export interface HorseDecisionFence {
 export type LiveHorseDecideOpts = Omit<
   HorseDecideOpts,
   | 'telemetry'
+  | 'phase8PolicyFamily'
   | 'deepEquity'
   | 'decisionTimeMs'
   | 'observeMind'
@@ -349,6 +350,7 @@ export type HorseDecisionWorkerRequest =
   | { type: 'SHUTDOWN' };
 
 export interface HorseDecisionWorkerReady {
+  phase8GuardAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   type: 'READY';
   solverStores: {
     charts: number;
@@ -433,6 +435,7 @@ export interface FastHorseDecisionResult extends HorseDecisionFence {
   /** The worker's Phase 8 authority after this decision. Optional only for
    * injected test workers; absent is never usable authority. */
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase8GuardAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   /** P10.3: the worker's Phase 10 (PLO4) authority after this decision; the
    * same receipt shape and laws as Phase 8. Absent is never usable authority. */
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
@@ -486,6 +489,7 @@ export interface DeepHorseDecisionResult extends HorseDecisionFence {
   computeMs: number;
   governorScale: number;
   phase8Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
+  phase8GuardAuthority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase10Authority?: import('../HorseQualifiedAuthority.js').HorseAuthorityReceipt;
   phase11Authority?: HorsePhase11AuthorityReceipts;
   phase12Authority?: HorsePhase12AuthorityReceipts;

@@ -59,6 +59,29 @@ function payload(keys = [hand]) {
 }
 const wire = (value = payload(), label = source) => label + '\n' + JSON.stringify(value) + '\n';
 describe('canonical authenticated private journal transport', () => {
+  it('separates authenticated process instance from container and preserves legacy headers', async () => {
+    const s = setup(),
+      container = 'e'.repeat(64),
+      instance = 'engine-instance-2';
+    const r = await createAuthenticatedHorseJournalReader(s.env, {
+      execute: async () => wire(payload(), source + ' ' + container + ' ' + instance),
+    })([hand]);
+    expect(r).toMatchObject({
+      status: 'authenticated_journal_batch',
+      containerId: container,
+      instanceId: instance,
+    });
+    const legacy = await createAuthenticatedHorseJournalReader(s.env, {
+      execute: async () => wire(),
+    })([hand]);
+    expect(legacy.status).toBe('authenticated_journal_batch');
+    expect(legacy).not.toHaveProperty('instanceId');
+    const bad = await createAuthenticatedHorseJournalReader(s.env, {
+      execute: async () => wire(payload(), source + ' ' + container + ' invalid_instance'),
+    })([hand]);
+    expect(bad.status).toBe('unavailable');
+  });
+
   it('the fixed same-container command parses in the remote POSIX shell', () => {
     expect(() =>
       execFileSync('/bin/sh', ['-n'], {

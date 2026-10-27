@@ -1,3 +1,5 @@
+import { PHASE8_GUARD_PROTECTED_RELEASE_SELECTION } from './HorseTournamentCatastropheGuardSelection.js';
+import { liveHorsePhase8GuardAuthority } from './HorseTournamentCatastropheGuardAuthority.js';
 /** Phase 14 functional admission reuses the generation-bound S4 holder and
  * main gate. Legacy literal catalogs retain their historical inactive schema;
  * a functional attachment additionally requires an independently pinned
@@ -427,7 +429,10 @@ export function horsePhase14AuthorityVerdict(receipt: {
   baselineSelectionsDigest: string;
   authority?: HorseAuthorityReceipt;
   baselineAuthorities?: Partial<
-    Record<'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13', HorseAuthorityReceipt>
+    Record<
+      'phase8' | 'phase8_guard' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+      HorseAuthorityReceipt
+    >
   >;
 }): HorseAuthorityVerdict {
   const gate = liveHorsePhase14Authorities[receipt.domain],
@@ -441,7 +446,7 @@ export function horsePhase14AuthorityVerdict(receipt: {
     const variant = correctiveDomain.variant,
       now = Date.now();
     const baselineGateUsable = (
-      owner: 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
+      owner: 'phase8' | 'phase8_guard' | 'phase10' | 'phase11' | 'phase12' | 'phase13',
       selected: unknown,
       gate: HorsePhase8AuthorityGate | undefined
     ) => {
@@ -455,8 +460,15 @@ export function horsePhase14AuthorityVerdict(receipt: {
     };
     if (
       !baselineGateUsable(
+        'phase8_guard',
+        correctiveDomain.mode === 'tournament' ? PHASE8_GUARD_PROTECTED_RELEASE_SELECTION : null,
+        liveHorsePhase8GuardAuthority
+      ) ||
+      !baselineGateUsable(
         'phase8',
-        correctiveDomain.mode === 'tournament' ? PHASE8_PROTECTED_RELEASE_SELECTION : null,
+        correctiveDomain.mode === 'tournament' && !PHASE8_GUARD_PROTECTED_RELEASE_SELECTION
+          ? PHASE8_PROTECTED_RELEASE_SELECTION
+          : null,
         liveHorsePhase8Authority
       ) ||
       !baselineGateUsable(

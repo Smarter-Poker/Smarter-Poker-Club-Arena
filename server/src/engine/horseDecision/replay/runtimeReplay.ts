@@ -70,12 +70,17 @@ export interface HorseRuntimeReplayOutcome {
   /** The optional-owner modes this replay's runtime passed to decide (null: not reached). */
   admission: HorseDecisionReplayAdmission | null;
   corrective: HorseCorrectiveReplayState | null;
+  /** Private local observation, absent unless explicitly requested. */
+  v56PressureRangeFires?: number | null;
 }
 
 /** P15-A exact replay: worker-owned state restored from the record, not read live. */
 export interface HorseRuntimeReplayBindings {
   /** The Phase 8 safety sentinel the original decision read; restored afterwards. */
   phase8SafetyDisabledReason?: string | null;
+  /** Private counterfactual arm only; never forwarded from an original request. */
+  v56PressureCounterfactual?: 'off';
+  captureV56PressureWitness?: boolean;
 }
 
 const readiness = (): HorseDecisionWorkerReadiness => {
@@ -94,6 +99,8 @@ export async function replayThroughWorkerRuntime(
   input: HorseReplayInput,
   bindings: HorseRuntimeReplayBindings = {}
 ): Promise<HorseRuntimeReplayOutcome> {
+  if (bindings.v56PressureCounterfactual === 'off' && input.deepRequest)
+    throw new Error('V56 counterfactual supports original FAST only');
   const request = input.request;
   const planContext = horsePlanBatchBindingFromRequest(request).planContext;
   const readView = decodeHorseDecisionReads(
@@ -105,6 +112,7 @@ export async function replayThroughWorkerRuntime(
   const messages: HorseDecisionWorkerResponse[] = [];
   const features: string[] = [];
   let admission: HorseDecisionReplayAdmission | null = null;
+  let v56WitnessCaptured = false;
   let corrective: HorseCorrectiveReplayState | null = null;
   let deepRngAfter: number | null = null;
   const deps: HorseDecisionWorkerDependencies = {
@@ -133,9 +141,19 @@ export async function replayThroughWorkerRuntime(
     prepareOriginalReads: (player, gameState, opts) =>
       HorseLogic.prepareOriginalReads(player, gameState, { ...opts, observeMind: false }),
     decide: (player, gameState, style, mods, opts) => {
-      admission = horseDecisionReplayAdmission(opts);
+      admission = horseDecisionReplayAdmission({
+        ...opts,
+        ...(opts?.phase8PolicyFamily === 'catastrophe_guard_v1'
+          ? { phase8CatastropheGuard: opts.phase8Postflop }
+          : {}),
+      });
+      v56WitnessCaptured = opts?.telemetry === true;
       corrective = horseCorrectiveReplayState(gameState, opts?.phase14, opts?.phase14Corrective);
-      return HorseLogic.decide(player, gameState, style, mods, { ...opts, observeMind: false });
+      return HorseLogic.decide(player, gameState, style, mods, {
+        ...opts,
+        observeMind: false,
+        ...(bindings.v56PressureCounterfactual === 'off' ? { v56OmahaPressureRange: false } : {}),
+      });
     },
     decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
     runDecisionReadView: (_request, fn) => HorseMind.runInSandbox(readView, fn),
@@ -173,6 +191,7 @@ export async function replayThroughWorkerRuntime(
   const parkedSafety = liveHorsePhase8Safety.disabledReason;
   equityGovernor.__setScaleForTest(input.originalFast?.governorScale ?? input.governorScale);
   const startedAt = performance.now();
+  let fires: ReturnType<typeof drainFires> = [];
   try {
     if (bindings.phase8SafetyDisabledReason !== undefined)
       liveHorsePhase8Safety.disabledReason = bindings.phase8SafetyDisabledReason;
@@ -188,11 +207,12 @@ export async function replayThroughWorkerRuntime(
     liveHorsePhase8Safety.disabledReason = parkedSafety;
     equityGovernor.__setScaleForTest(null);
     restoreFastRandom(canonicalRng);
+    fires = drainFires();
+    restoreFires(parkedFires);
   }
   const wallMs = performance.now() - startedAt;
   const after = equityWorkCounters();
-  const fires = drainFires();
-  restoreFires(parkedFires);
+
   const fastResult =
     messages.find(
       (m): m is FastHorseDecisionResult =>
@@ -223,6 +243,14 @@ export async function replayThroughWorkerRuntime(
     features,
     admission,
     corrective,
+    ...(bindings.captureV56PressureWitness
+      ? {
+          v56PressureRangeFires:
+            v56WitnessCaptured && !input.deepRequest
+              ? (fires.find((row) => row.feature === 'v56_omaha_pressure_range')?.fires ?? 0)
+              : null,
+        }
+      : {}),
     work: {
       equityCalls: after.calls - before.calls,
       equitySamples: after.samples - before.samples,

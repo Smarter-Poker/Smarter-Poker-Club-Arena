@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 it('uses only the pinned individual public reader and original context, with a finite read deadline', async () => {
   expect(await readHorseOwnPublicHistory(context)).toEqual(fixture.response.data.window);
-  expect(fixture.rpc).toHaveBeenCalledWith('fn_horse_own_public_history_read', {
+  expect(fixture.rpc).toHaveBeenCalledWith('fn_horse_own_public_history_read_v3', {
     p_observer: context.observerId,
     p_variant: 'nlh',
     p_format: 'cash',

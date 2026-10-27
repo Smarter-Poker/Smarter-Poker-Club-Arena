@@ -117,6 +117,7 @@ const SHADOW_RECEIPTS = new Set([
   'omahaVariantPolicy',
   'remainingVariantPolicy',
   'tournamentPostflop',
+  'tournamentCatastropheGuard',
 ]);
 const isShadowReceipt = (value: unknown): boolean =>
   !!value &&
@@ -130,6 +131,12 @@ export function stableReceipt(value: unknown): unknown {
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
       const item = (value as Record<string, unknown>)[key];
       if (VOLATILE_KEY.test(key) || key === 'executionWitness') continue;
+      if (
+        key === 'policyMs' &&
+        (value as Record<string, unknown>).policyFamily === 'catastrophe_guard_v1' &&
+        (value as Record<string, unknown>).version === 'horse-tournament-catastrophe-guard-v1'
+      )
+        continue;
       if (SHADOW_RECEIPTS.has(key) && isShadowReceipt(item)) continue;
       if (key === 'policyOwnership' && isShadowReceipt(item)) {
         // A shadow owner's outcome is a work-budget observation; its identity is not.

@@ -276,6 +276,7 @@ import {
   type TournamentUtilityOpponentEvidence,
   type TournamentUtilityShowdownSample,
 } from './HorseTournamentUtility.js';
+import { evaluateTournamentCatastropheGuard } from './HorseTournamentCatastropheGuard.js';
 import { evaluateTournamentPostflop, type Phase8Mode } from './HorseTournamentPostflop.js';
 import { liveHorsePhase8Safety } from './HorsePhase8Safety.js';
 import { performance } from 'node:perf_hooks';
@@ -2085,6 +2086,8 @@ export interface HorseDecideOpts {
   phase7Utility?: boolean;
   /** Phase 8 is shadow by default. Candidate mode is for isolated promotion runs. */
   phase8Postflop?: Phase8Mode;
+  /** Internal qualified-worker/isolated-evaluator family; live request values are overwritten. */
+  phase8PolicyFamily?: 'continuation_v2' | 'catastrophe_guard_v1';
   /** Phase 10 complete baseline runs in shadow until its own promotion gate passes. */
   phase10Plo4?: Plo4LiveMode;
   /** Offline fixed-work evaluation only; rejected at the live worker boundary. */
@@ -3979,6 +3982,48 @@ export class HorseLogic {
     decision = arbitration.decision;
     const { phase8UtilityInput, phase8ReuseUtility } = arbitration;
     decision = graph.run('tournament_continuation', decision, () => {
+      if (opts.phase8PolicyFamily === 'catastrophe_guard_v1') {
+        if (
+          (opts.phase8Postflop ?? 'shadow') === 'off' ||
+          !isTournamentMode(gs) ||
+          gs.stage === 'preflop'
+        )
+          return { decision };
+        const guard = evaluateTournamentCatastropheGuard(
+          player,
+          gs,
+          decision,
+          opts.phase8Postflop === 'candidate' ? 'candidate' : 'shadow',
+          () => performance.now()
+        );
+        const legal = this.legalize(guard.decision, player, gs, vi);
+        if (legal.action !== guard.decision.action || legal.amount !== guard.decision.amount) {
+          guard.ledger.applied = false;
+          guard.ledger.selection = 'none';
+          guard.ledger.selectionRefusal = 'illegal_candidate';
+        } else decision = guard.decision;
+        if (tele) {
+          const ledger = guard.ledger;
+          noteFire('phase8_seen');
+          noteFire('phase8_family_catastrophe_guard_v1');
+          noteFire('phase8_work_kind_phase7_candidate_guard');
+          noteDecisionMs('phase8', ledger.latencyMs);
+          noteFire(`phase8_format_${gs.format ?? 'unknown'}`);
+          noteFire(`phase8_reason_${ledger.reason}`);
+          if (ledger.eligible) noteFire('phase8_eligible');
+          if (ledger.completed) noteFire('phase8_completed');
+          if (ledger.fired) {
+            noteFire('phase8_fired');
+            noteFire(`phase8_objective_${ledger.objective}`);
+          }
+          if (ledger.changed) noteFire('phase8_shadow_changed');
+          noteFire(`phase8_selection_${ledger.selection}`);
+          noteFire(ledger.applied ? 'phase8_applied' : 'phase8_baseline_retained');
+          for (const reason of ledger.reasons) noteFire(`phase8_feature_${reason}`);
+        }
+        return { decision: { ...decision, tournamentCatastropheGuard: guard.ledger } };
+      }
+
       if (
         (opts.phase8Postflop ?? 'shadow') !== 'off' &&
         isTournamentMode(gs) &&
@@ -4416,6 +4461,16 @@ export class HorseLogic {
     if (phase6Attribution) decision.tournamentPreflopAttribution = phase6Attribution;
     if (phase7Refusal !== null && decision.tournamentUtility === undefined)
       decision.tournamentUtilityRefusal = phase7Refusal;
+    const guard = decision.tournamentCatastropheGuard;
+    if (
+      guard?.applied &&
+      (decision.action !== guard.candidateAction ||
+        (decision.amount ?? null) !== guard.candidateAmount)
+    ) {
+      guard.applied = false;
+      guard.selection = 'none';
+      guard.selectionRefusal = 'downstream_owner';
+    }
     return graph.finish(decision);
   }
 

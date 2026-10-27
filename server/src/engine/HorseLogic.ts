@@ -2566,7 +2566,12 @@ function maniacCallDown(
     // A heads-up preflop all-in also realizes its sampled equity in full.
     // Its close rejection needs the same bounded confirmation as postflop;
     // ordinary preflop flats retain their separate realization policy.
-    const canRefineRecovery = live.length === 1 && (street !== 'preflop' || allInCall);
+    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
+    // outcomes (and replacing them with a fresh mean) favors continuation.
+    // Keep the existing price/range model, without outcome-selected samples.
+    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    const canRefineRecovery =
+      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =

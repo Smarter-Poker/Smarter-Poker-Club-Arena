@@ -201,3 +201,89 @@ it.each(['plo4', 'plo5', 'plo6'])(
     expect(eq).toHaveBeenCalledTimes(1);
   }
 );
+
+// Public price/board and shown own cards from50221666. Controlled read/equity,
+// not a historical replay. Variant extensions exercise the same owner.
+it.each(['plo4', 'plo5', 'plo6'])(
+  '%s uses one fixed recovery estimate at a weak-pair stack price',
+  (variant) => {
+    const { hero, gs } = spot({ is_folded: true });
+    hero.stack = 313.3;
+    hero.cards = [
+      { rank: 'A', suit: 'clubs' },
+      { rank: 'A', suit: 'spades' },
+      { rank: 'T', suit: 'diamonds' },
+      { rank: '8', suit: 'hearts' },
+      { rank: '7', suit: 'clubs' },
+      { rank: '2', suit: 'diamonds' },
+    ].slice(0, Number(variant.at(-1))) as SeatPlayer['cards'];
+    gs.players[0] = { ...hero, cards: [] };
+    gs.players[1] = { ...gs.players[1], stack: 500, bet: 365, is_all_in: false };
+    gs.gameVariant = variant;
+    gs.stage = 'flop';
+    gs.currentBet = 365;
+    gs.pot = 1094;
+    gs.contestablePot = 1042.3;
+    gs.communityCards = [
+      { rank: '3', suit: 'spades' },
+      { rank: 'J', suit: 'hearts' },
+      { rank: 'K', suit: 'diamonds' },
+    ];
+    gs.actionHistory = [
+      { seat: 2, userId: 'seat-2', stage: 'flop', action: 'bet', amount: 365, timestamp: 1 },
+    ];
+    const read = HorseMind.opponentRead('seat-2')!;
+    vi.mocked(HorseMind.opponentRead).mockReturnValue({
+      ...read,
+      stats: {
+        ...read.stats,
+        betCheckedTo: { ...read.stats.betCheckedTo, engaged: 'high', mean: 1 },
+      },
+    });
+    vi.mocked(Eval.equitySampleSizeOfLastCall).mockReturnValue(240);
+    const eq = vi.spyOn(Eval, 'simulateEquity');
+    const run = () =>
+      HorseLogic.__testables.maniacCallDown(
+        { action: 'fold', thinkTime: 0 },
+        hero,
+        gs,
+        Eval.variantInfo(variant),
+        { v10Rake: false }
+      );
+    eq.mockReturnValueOnce(0.225).mockReturnValue(0.9);
+    expect(run().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(240);
+    eq.mockReset().mockReturnValueOnce(0.3).mockReturnValue(0.01);
+    expect(run().action).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
+    eq.mockReset().mockReturnValueOnce(0.05).mockReturnValue(0.9);
+    expect(run().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][0]).toEqual(hero.cards);
+    expect(eq.mock.calls[0][1]).toEqual(gs.communityCards);
+    expect(eq.mock.calls[0][2]).toBe(1);
+    expect(gs.players.every((p) => p.cards.length === 0)).toBe(true);
+    // Exercise the actual reference graph caller with its decision controlled,
+    // so the regression isolates recovery rather than adding strategy deals.
+    vi.spyOn(
+      HorseLogic as unknown as { decidePostflop: () => { action: 'fold'; thinkTime: number } },
+      'decidePostflop'
+    ).mockReturnValue({ action: 'fold', thinkTime: 0 });
+    eq.mockReset().mockReturnValueOnce(0.225).mockReturnValue(0.9);
+    expect(
+      HorseLogic.decide(
+        hero,
+        gs,
+        'balanced',
+        {},
+        {
+          v10Rake: false,
+          phase13Joint: 'off',
+          telemetry: false,
+        }
+      ).action
+    ).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+  }
+);

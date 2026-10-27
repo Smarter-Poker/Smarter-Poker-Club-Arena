@@ -114,6 +114,40 @@ def qualify(root, out, cmd, command, run, probe, require, results):
       probe('continuation-concurrent-duplicate-bounded',"SET LOCAL lock_timeout='150ms';"+auth()+call,error='55P03')
     with held(writers['private']):
       probe('continuation-writer-first-refuses',"SET LOCAL lock_timeout='150ms';"+auth()+call,error='55P03')
+    # The Oct27 Spin has its original preparation-cancellation receipt, not a
+    # generation abort. Seed a separate event through the actual cancellation RPC.
+    seed=(here/'no-start-fixture.sql').read_text().replace('fixture_seed_no_start','fixture_seed_cancelled_spin').replace('no-start','cancelled-spin').replace('12428969','22428969').replace('12429075','22429075')
+    run('cancelled-spin-seeder',seed)
+    setup="SELECT fixture_seed_cancelled_spin();" + auth('cancelled-spin-old').replace("md5('no-start')","md5('cancelled-spin')") + """
+      UPDATE engine_tournament_leases SET lease_generation=md5('cancelled-spin-old')::uuid WHERE tournament_id=md5('cancelled-spin')::uuid;
+      INSERT INTO smarter_private.f06_operations(break_id,tournament_id,source_table_id,lifecycle,boundary_id,origin_generation,custody_id,custody_generation,revision)
+      SELECT md5('cancelled-spin-park')::uuid,tournament_id,id,f06_lifecycle,md5('cancelled-spin-boundary')::uuid,
+        md5('cancelled-spin-old')::uuid,md5('cancelled-spin-park-custody')::uuid,md5('cancelled-spin-old')::uuid,1
+        FROM tables WHERE id=md5('cancelled-spin-table')::uuid;
+      SELECT fn_f06_cancel_prepared_hand(md5('cancelled-spin')::uuid,md5('cancelled-spin-old')::uuid,md5('cancelled-spin-table')::uuid,
+        (SELECT f06_lifecycle FROM tables WHERE id=md5('cancelled-spin-table')::uuid),md5('cancelled-spin-permit')::uuid,22429075,md5('cancelled-spin-custody')::uuid);
+      UPDATE engine_tournament_leases SET lease_generation=md5('cancelled-spin-current')::uuid WHERE tournament_id=md5('cancelled-spin')::uuid;
+      UPDATE smarter_private.f06_operations SET custody_generation=md5('cancelled-spin-current')::uuid WHERE break_id=md5('cancelled-spin-park')::uuid;
+    """ + auth('cancelled-spin-current').replace("md5('no-start')","md5('cancelled-spin')")
+    spin_call=call.replace('no-start','cancelled-spin')
+    predecessor=(root/'tests/fixtures/digest-spin-continuation-preimage.sql').read_text()
+    spin_migration=(root/'supabase/migrations/20261027142851_cancelled_original_continues_after_park_custody_passes.sql').read_text().replace('BEGIN;','',1).removesuffix('COMMIT;\n')
+    # All fixtures, function changes and effects are rolled back together.
+    probe('cancelled-spin-reproduces-live-refusal',predecessor+setup+spin_call,error='F06_CONTINUATION_EXACT_PREMANIFEST_PARK')
+    patched=predecessor+spin_migration+setup
+    result=json.loads(probe('cancelled-spin-exact-successor-continues',patched+spin_call).splitlines()[-1])
+    require(result['credit']==0 and result['state']=='continued_never_started','Wrong cancelled Spin result')
+    replay=probe('cancelled-spin-duplicate-reuses-receipt',patched+spin_call+spin_call).splitlines()[-2:]
+    require(json.loads(replay[0])==json.loads(replay[1]),'Cancelled Spin duplicate changed receipt')
+    for label,mutation,error in [
+      ('manifest',"UPDATE smarter_private.f06_operations SET manifest='[]' WHERE break_id=md5('cancelled-spin-park')::uuid;",'F06_CONTINUATION_EXACT_PREMANIFEST_PARK'),
+      ('stack',"UPDATE table_seats SET stack=stack+1 WHERE id=md5('cancelled-spin-seat1')::uuid;",'F06_CONTINUATION_ROSTER_CHANGED'),
+      ('foreign-lease',"UPDATE engine_tournament_leases SET lease_generation=gen_random_uuid() WHERE tournament_id=md5('cancelled-spin')::uuid;",'42501'),
+      ('expired-lease',"UPDATE engine_tournament_leases SET heartbeat_at=now()-interval '1 hour' WHERE tournament_id=md5('cancelled-spin')::uuid;",'42501'),
+      ('dispatch',"INSERT INTO smarter_private.f06_hand_dispatch VALUES(md5('cancelled-spin-permit')::uuid,txid_current());",'F06_CONTINUATION_STARTED_OR_ROSTER_CHANGED'),
+    ]:
+      probe('cancelled-spin-refuses-'+label,patched+mutation+spin_call,error=error)
+    require(run('cancelled-spin-all-protected-boundaries-retained',witness)==before,'Cancelled Spin leaked state')
     run('continuation-durable-owner-transition',auth()+call)
     require(run('continuation-no-financial-or-permit-effect',witness)==before,'Durable transition changed protected state')
     run('continuation-durable-replay',auth()+call)

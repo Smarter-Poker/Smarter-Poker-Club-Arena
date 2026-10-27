@@ -5,6 +5,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,7 +156,10 @@ try:
     require(before == after and before.count('"fee"') > 0, "union reads counted once return exactly the figures they replaced")
     # Owner 2026-10-26: arbitrary-depth downlines, exact per-user totals,
     # and refusal of the whole report/union for every agent rank.
-    boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text()
+    # Setup and authenticated assertions use separate connections. Bind their
+    # shared reporting date once in Chicago, including across local midnight.
+    report_day = date.fromisoformat(q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date::text")).isoformat()
+    boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text().replace("@REPORT_DAY@", report_day)
     setup, checks = boundary.split("-- AFTER MIGRATION", 1)
     run(psql("live"), setup)
     require(q("live", "SELECT cardinality(fn_ca_club_data_downline(md5('boundary-club')::uuid,md5('super_agent')::uuid))") == '21', "baseline reproduces the twenty-level downline cutoff")

@@ -415,7 +415,7 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(doors).toHaveAttribute('data-footer-doors', /^(member|operator)$/);
     const kind = await doors.getAttribute('data-footer-doors');
     const baseFrame =
-      kind === 'member' ? 'club-arena-footer-player-v1.webp' : 'club-arena-footer-v3.webp';
+      kind === 'member' ? 'club-arena-footer-player-v2.webp' : 'club-arena-footer-v4.webp';
     const artwork = doors.locator('..');
     await expect(artwork).toHaveCount(1);
     await expect(artwork.locator(`picture > img[src$="/${baseFrame}"]`)).toHaveCount(1);

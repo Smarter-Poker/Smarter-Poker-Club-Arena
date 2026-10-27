@@ -134,6 +134,7 @@ export function createDefaultMenuSections(
     onLeaderboard?: () => void;
     onHelp?: () => void;
     onLeaveTable?: () => void;
+    onLeaveTableNextHand?: () => void;
     /* `onChangeAvatar`, `onToggleAlias` and `aliasLabel` were declared here and
        used by nothing — see the note on TableMenuProps.onOpenIdentity. The
        Identity section belongs to TableMenu itself; the alias handler now
@@ -288,6 +289,13 @@ export function createDefaultMenuSections(
     },
     {
       actions: [
+        {
+          id: 'leave-next-hand',
+          label: 'Leave Table Next Hand',
+          icon: <LeaveTableIcon />,
+          onClick: handlers.onLeaveTableNextHand || (() => {}),
+          disabled: !handlers.onLeaveTableNextHand,
+        },
         {
           id: 'leave',
           label: 'Leave Table',

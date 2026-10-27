@@ -1,3 +1,4 @@
+import { bindTournamentDataAuthority } from './supabase/dataActorContext.js';
 import { observeCurrentEngineWriter } from './F06EngineWriterCapture.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 export type F06Rpc = (
@@ -75,6 +76,10 @@ export class F06HandPermit {
     private readonly startAllowed: () => boolean = current
   ) {
     this.binding = identity(input);
+    this.rpc = bindTournamentDataAuthority(
+      { tournamentId: this.binding.tournament_id, leaseGeneration: this.binding.lease_generation },
+      rpc
+    );
   }
   recoveryState(): string {
     return this.phase;

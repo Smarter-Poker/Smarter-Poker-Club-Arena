@@ -2,6 +2,17 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-public-herd-notes-pineapple-01a178a8",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, global order recorded in Diamond Arena chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" In this public herd-notes chat he also ordered: \"MAKE SURE EVERYTHING WAS UPDATED, PUSHED AND PUBLISHED.\" One certified activation of the qualified protected main containing PR #8235 public-profile pooling, saved first-decision bootstrap and exact Pineapple schema extension. The minimum protected anchor ad4a8b46166c112211bd8a343869cf177ca8d148 was independently absent from healthy serving 814862e363946b90f103b71246dc69dec24c31d5 at preparation. This anchor is a minimum admission condition, not proof that #8235 is installed: verify the actual squash inclusion and affected live behavior separately. This entry ends when its anchor is serving or at the end of October 26 Chicago, whichever comes first. Preserve all required source and PostgreSQL checks, immutable exact-SHA staging, two-minute last-hand lead, hand-boundary drain, durable database freeze, certified full 285-second cutover and rollback reserve, existing one-window-per-hour seal and thaw. Only the two named window migrations use the existing certified installer; never replay an installed version. No second publisher, watcher, schedule or direct restart is authorized.",
+      "contains": "ad4a8b46166c112211bd8a343869cf177ca8d148",
+      "notBefore": "2026-10-27T03:10:20Z",
+      "notAfter": "2026-10-27T05:00:00Z",
+      "migrations": [
+        "20261026033405_horse_mind_river_call_reads.sql",
+        "20261027005705_horse_opponent_memory_pineapple.sql"
+      ]
+    },
+    {
       "id": "2026-10-26-cash-full-stack-return-8249-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in this cash-return-rule chat: \"Check the SSD again and finish PR #8249. Get all checks passing, merge it, install the migration, publish everything and verify the new rules live. Don’t leave anything unfinished or wait until 4 AM.\" One immediate certified activation of the protected main that carries PR #8249 and this entry together. The minimum protected anchor is 7fdb2223b24acf54ce11440531347890fcd61897, independently absent from serving 6d016ccedc3d20c3489f8df865da96e3391b520c when this entry was prepared. This entry is introduced in the same protected PR as the cash minimum-stay removal and full-stack two-hour return fix; prove inclusion of its actual squash and live behavior separately. It grants nothing once its anchor is serving and expires within six hours. Preserve all required checks, immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, the existing one-window-per-hour seal and thaw. The function-only migration uses the independent approved Apply Merged Migration route; this entry installs no migrations and adds no publisher, watcher or direct restart.",
       "contains": "7fdb2223b24acf54ce11440531347890fcd61897",

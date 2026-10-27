@@ -22,7 +22,10 @@ import {
   type HorseDecisionWorkerResponse,
 } from './horseDecision/protocol.js';
 import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
-import { controllerDecisionState } from './remainingVariants/RemainingVariantControllerSpots.test-support.js';
+import {
+  controllerDecisionState,
+  controllerSpotRandom,
+} from './remainingVariants/RemainingVariantControllerSpots.test-support.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import { applyTableCommitmentCap } from './ServerTableEngineTurns.js';
 import { seedFastRandom } from './HorseEval.js';
@@ -202,6 +205,25 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
       is_horse: true,
     })) as SeatPlayer[];
     const controller = new HandController(config, players, 1 + (hand % seats));
+    // seedFastRandom controls the brain, not the controller's crypto deck.
+    // As in Plo4PolicyLeague, fix only this offline instance's deal stream;
+    // canonicalize before shuffling so its constructor's crypto draw is irrelevant.
+    const deck = controller.getState().deck;
+    const cards = deck
+      .getRemainingCards()
+      .sort((a, b) => `${a.suit}:${a.rank}`.localeCompare(`${b.suit}:${b.rank}`));
+    const dealRandom = controllerSpotRandom((1000 + hand) ^ 0xdecafbad);
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(dealRandom() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    deck.deal = (n = 1) => {
+      if (cards.length < n) throw Error('Owner activation fixture exhausted its physical deck');
+      return cards.splice(0, n);
+    };
+    deck.dealOne = () => deck.deal(1)[0];
+    deck.remaining = () => cards.length;
+    deck.getRemainingCards = () => cards.slice();
     controller.start();
     for (let step = 0; step < 80; step++) {
       const live = controller.getState();
@@ -319,7 +341,8 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
         generation: 1,
         fence: `${table}:${config.handNumber}:${spot.hero.seat}:${step}:1`,
         decisionKey: '',
-        decisionTimeMs: Date.now() + 10000,
+        // Close the hourly mood input without changing the real authority clock.
+        decisionTimeMs: Date.UTC(2026, 9, 26, 12) + hand * 1000 + step,
         player: spot.hero,
         gameState: spot.state,
         style: 'balanced' as const,

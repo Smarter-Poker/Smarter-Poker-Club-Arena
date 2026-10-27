@@ -1418,6 +1418,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Active rakeback payout outage follow-up: transaction-local payer reuse must preserve the existing STABLE read-only report contract. A native real R2/R3 commit followed by BEGIN READ ONLY reproduced forbidden TEMP creation; the exact three-line read-only branch now delegates unchanged pure payer validation while every read-write cache byte and fresh financial predicate remains intact. Exact split receipt/cache/reserve/validator function postimages/metadata/runtime ACLs and original source authority were read back. The existing private cache returns the original pure validator output in PostgreSQL READ ONLY transactions; every READWRITE cache byte and split receipt check remains unchanged. No amounts/certificates/source proofs change. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027162805",
+      "name": "book_memos_follow_paid_player_round",
+      "file": "supabase/migrations/20261027162805_book_memos_follow_paid_player_round.sql",
+      "md5": "419777585b3322246f469b0e6e5d8447",
+      "appliedToProductionAt": "2026-10-27T16:39:47.651Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and all3 owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8334",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original coordinator timed out before agents and players while optional pre-fee report memo generation read full inventory; qualified helper keeps memo ineligible until canonical R3 and preserves original financial authorities. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Optional book memo generation follows canonical R3 eligibility only; original generation after eligibility and all financial/late-book authorities remain unchanged. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     }
   ]
 }

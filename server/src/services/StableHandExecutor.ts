@@ -246,7 +246,7 @@ export interface FloorStandOrders {
 /** PURE. Both kinds of stand order, from ONE pass of the planner. */
 export function standOrdersFor(
   snap: FloorSnapshot,
-  bankrollOnlyCashHorse: (horseId: string) => boolean = () => false
+  _bankrollOnlyCashHorse: (horseId: string) => boolean = () => false
 ): FloorStandOrders {
   const waitSince = new Map<string, number>();
   const hostOfTable = new Map<string, string>();
@@ -264,7 +264,7 @@ export function standOrdersFor(
       .filter((o) => o.reason === 'human_yield')
       .map((order) => ({ order, waitingSinceMs: waitSince.get(order.tableId) ?? NaN })),
     windDowns: plan.stand
-      .filter((o) => o.reason === 'occupancy_wind_down' && !bankrollOnlyCashHorse(o.horseId))
+      .filter((o) => o.reason === 'occupancy_wind_down')
       .map((order) => ({ order, hostId: hostOfTable.get(order.tableId) ?? '' })),
     alerts: plan.alerts,
     plan,

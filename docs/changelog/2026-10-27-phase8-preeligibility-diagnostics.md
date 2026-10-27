@@ -1,0 +1,7 @@
+# Phase 8 league explains decisions refused before eligibility
+
+The original MTT seed 8101101 qualification completed 1,024 paired tournaments with zero eligible continuations, but its completion collector discarded every pre-eligible refusal. That artifact cannot say whether the designated hero had supported short-table postflop opportunities or which earlier public gate refused them.
+
+The evaluator now reports optional version 1 aggregate opportunity diagnostics for the evaluated arm: all actor decisions versus the designated hero, preflop versus postflop, funded local seats within the existing work cap, missing ledgers, eligible ledgers and a fixed allowlist of first pre-eligibility refusal reasons. Unknown text becomes one fixed unknown bucket. No hands, cards, identities or arbitrary reason strings enter this aggregate. The existing strict transport validates counts, reconciliation, version and keys while accepting older receipts without this field.
+
+Bookkeeping runs after HorseLogic returns the finalized measured ledger. It does not change strategy, timing measurement, completion semantics, promotion predicates, seeds or qualification thresholds. The original 18 source-9e runs and artifacts remain unchanged. New evaluator executions have a different whole-source fingerprint and must retain their own source identity; the diagnostic cannot retrospectively explain or relabel older receipts.

@@ -549,23 +549,23 @@ describe('T20 - a 24 hour simulation respects every cap', () => {
     const a = curvePctAt(1, 0);
     const b = curvePctAt(1, 30);
     const c = curvePctAt(2, 0);
-    expect(a).toBeCloseTo(28, 5);
-    expect(c).toBeCloseTo(16, 5);
+    expect(a).toBeCloseTo(14, 5);
+    expect(c).toBeCloseTo(8, 5);
     expect(b).toBeLessThan(a);
     expect(b).toBeGreaterThan(c);
   });
   it('caps Midway Union at 233 and Deep Stack Society at 166 (measured N)', () => {
-    expect(peakCap(584)).toBe(233);
-    expect(peakCap(416)).toBe(166);
+    expect(peakCap(584)).toBe(116);
+    expect(peakCap(416)).toBe(83);
   });
 
   /* Dan 2026-09-04, on reading the first night the curve was enforced:
      "there should not be 89 people playing in the middle of the night, cut
      that from 10% to 5%." These were 58 and 41. */
   it('holds the night at FIVE percent: Midway Union 29, Deep Stack Society 20', () => {
-    expect(NIGHT_CAP_PCT).toBe(0.05);
-    expect(nightCap(584)).toBe(29);
-    expect(nightCap(416)).toBe(20);
+    expect(NIGHT_CAP_PCT).toBe(0.025);
+    expect(nightCap(584)).toBe(14);
+    expect(nightCap(416)).toBe(10);
   });
 
   it('the 5% ceiling binds every hour of the night window, so the whole window is 5%', () => {
@@ -995,7 +995,7 @@ describe('the night keeps open the tables it still needs', () => {
     // Midway Union: 29 bodies at up to 1.3 seats each is 38 seats, which is
     // seven full rings. Parking down to six would leave the seeder unable to
     // place everyone the curve allows.
-    expect(nightTablesNeeded(nightCap(584), 4)).toBe(7);
+    expect(nightTablesNeeded(nightCap(584), 4)).toBe(4);
   });
 
   it('never goes below the hard floor for a small host', () => {
@@ -1127,5 +1127,27 @@ describe('the neediest band is one the host deals', () => {
     expect(neediestStakeBand(seats, bands('micro', 'low', 'mid'))).toBe('mid');
     expect(neediestStakeBand(seats, bands())).toBeNull();
     expect(neediestStakeBand({ micro: 0, low: 0, mid: 0, high: 0 }, bands('low'))).toBe('low');
+  });
+});
+
+describe('October 26: cash activity is halved for every minute of the day', () => {
+  it('preserves the old daily shape at half scale, including the night ceiling', () => {
+    const original = [
+      35, 28, 16, 10, 8, 7, 8, 9, 10, 14, 18, 22, 26, 28, 30, 33, 36, 38, 40, 40, 40, 39, 38, 36,
+    ];
+    for (const n of [0, 1, 17, 584, 1000]) {
+      for (let h = 0; h < 24; h++)
+        for (let m = 0; m < 60; m++) {
+          const pct = original[h] + ((original[(h + 1) % 24] - original[h]) * m) / 60;
+          const oldCap = Math.min(
+            Math.floor(0.4 * n),
+            h >= 3 && h < 8 ? Math.floor(0.05 * n) : Infinity
+          );
+          const oldTarget = Math.min(Math.round((pct * n) / 100), oldCap);
+          const actual = occupancyTargetForHost(n, h, m);
+          expect(Math.abs(actual.target - oldTarget * 0.5)).toBeLessThanOrEqual(1);
+          expect(actual.max).toBeLessThanOrEqual(Math.ceil(oldCap * 0.5));
+        }
+    }
   });
 });

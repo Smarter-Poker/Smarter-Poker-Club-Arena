@@ -1,4 +1,6 @@
 -- Isolated native fixture only; never execute against production.
+-- The maintained harness binds @REPORT_DAY@ once to the Chicago reporting date
+-- for both setup and authenticated assertions, independently of session timezone.
 INSERT INTO clubs(id,name,owner_id) VALUES(md5('boundary-club')::uuid,'Boundary Club',md5('owner')::uuid);
 INSERT INTO profiles(id,username,is_admin)
 SELECT md5(r)::uuid,r,false FROM unnest(ARRAY['owner','co_owner','admin','super_agent','agent','sub_agent','player','outsider']) r;

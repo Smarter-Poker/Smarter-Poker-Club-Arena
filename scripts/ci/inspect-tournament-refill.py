@@ -584,7 +584,7 @@ def merge_bounded_events(target, addition):
 
 
 def tournament_cases(raw, expected):
-    """New mode uses original-coordinate v2 custody; legacy reference bytes stay unchanged."""
+    """Version 2 adds the original public full-list ordinal; version 1 is unchanged."""
     if len(raw) > REFERENCE_CASE_BYTES:
         raise ValueError('tournament_cases_refused')
     def unique(pairs):
@@ -595,10 +595,21 @@ def tournament_cases(raw, expected):
             result[key] = item
         return result
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique)
-    if not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] != 1:
+    if not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] not in (1, 2):
         raise ValueError('tournament_cases_refused')
-    validated = reference_cases(json.dumps({**value, 'version': 2}).encode('utf-8'), expected)
-    return {**validated, 'version': 1}
+    if value['version'] == 1:
+        validated = reference_cases(json.dumps({**value, 'version': 2}).encode('utf-8'), expected)
+        return {**validated, 'version': 1}
+    if not isinstance(value.get('cases'), list):
+        raise ValueError('tournament_cases_refused')
+    cases = []
+    for case in value['cases']:
+        if (not isinstance(case, dict) or 'actionOrdinal' not in case
+                or type(case['actionOrdinal']) is not int or not 0 <= case['actionOrdinal'] < 4096):
+            raise ValueError('tournament_cases_refused')
+        cases.append({k:v for k,v in case.items() if k != 'actionOrdinal'})
+    reference_cases(json.dumps({**value, 'cases': cases, 'version': 2}).encode('utf-8'), expected)
+    return value
 
 
 def sanitize_tournament_result(result, value):
@@ -609,7 +620,9 @@ def sanitize_tournament_result(result, value):
                'execution_missing_or_ambiguous', 'execution_not_intended',
                'hand_not_reconciled', 'record_or_validator_unavailable', 'journal_or_runtime_unavailable',
                'runtime_identity_unverified'}
-    fixed = {'version': 1, 'rawRecordsExported': False, 'replayVerified': False,
+    if value['version'] == 2:
+        reasons.add('original_action_ordinal_unavailable')
+    fixed = {'version': value['version'], 'rawRecordsExported': False, 'replayVerified': False,
              'activationAllowed': False, 'v56Causality': 'unknown', 'previousLevelBranch': 'unknown'}
     if not isinstance(result, dict) or result.get('status') not in ('unknown', 'observed'):
         raise ValueError('tournament_result_refused')
@@ -633,6 +646,8 @@ def sanitize_tournament_result(result, value):
               'completeOriginalContextProvenance', 'phase7ReceiptReadFrameBound', 'recordHashesVerified',
               'originalHandBound', 'sameTurnExecution', 'intendedActionAccepted', 'handReconciled'}
     observed = hashes | guards | {'handKey', 'status', 'observation', 'bubbleProtectionEnabled'}
+    if value['version'] == 2:
+        observed.add('actionOrdinal')
     for case, original in zip(result['cases'], value['cases']):
         if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
             raise ValueError('tournament_result_refused')
@@ -645,6 +660,7 @@ def sanitize_tournament_result(result, value):
                 or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
                 or any(case[k] is not True for k in guards)
                 or type(case['bubbleProtectionEnabled']) is not bool
+                or (value['version'] == 2 and (type(case['actionOrdinal']) is not int or case['actionOrdinal'] != original['actionOrdinal']))
                 or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])):
             raise ValueError('tournament_result_refused')
     if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):

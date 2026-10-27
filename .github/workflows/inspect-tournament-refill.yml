@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       tournament_cases_json:
-        description: Optional original tournament payout/context metadata for at most six exact accepted hands; sanitized predicates only
+        description: Optional v1 unique/hash or v2 original public-action ordinal tournament metadata for at most six accepted hands; sanitized predicates only
         required: false
         type: string
 permissions:

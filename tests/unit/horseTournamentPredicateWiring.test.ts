@@ -185,3 +185,27 @@ m['main'](d['input']['sourceRelease'],None,d['input'])`,
     );
   }
 });
+it('version2 encodes an exact original full-list ordinal and refuses invalid or mixed key sets', () => {
+  const v2 = { ...input, version: 2, cases: [{ ...input.cases[0], actionOrdinal: 0 }] };
+  for (const ordinal of [0, 4095]) {
+    const valid = { ...v2, cases: [{ ...v2.cases[0], actionOrdinal: ordinal }] };
+    const result = spawnSync('python3', ['-B', inspector, '--encode-tournament-cases', source], {
+      input: JSON.stringify(valid),
+      encoding: 'utf8',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(Buffer.from(result.stdout.trim(), 'base64').toString())).toEqual(valid);
+  }
+  for (const invalid of [-1, 4096, 9007199254740992, 0.5, true, '0', null]) {
+    const result = spawnSync('python3', ['-B', inspector, '--encode-tournament-cases', source], {
+      input: JSON.stringify({ ...v2, cases: [{ ...v2.cases[0], actionOrdinal: invalid }] }),
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(1);
+  }
+  const legacy = spawnSync('python3', ['-B', inspector, '--encode-tournament-cases', source], {
+    input: JSON.stringify({ ...v2, version: 1 }),
+    encoding: 'utf8',
+  });
+  expect(legacy.status).toBe(1);
+});

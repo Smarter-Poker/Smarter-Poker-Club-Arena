@@ -15,7 +15,7 @@ const exact = (value, keys) =>
 export function tournamentPredicateInputIsValid(input, expectedSource) {
   if (
     !exact(input, ['version', 'sourceRelease', 'cases']) ||
-    input.version !== 1 ||
+    ![1, 2].includes(input.version) ||
     !hex(expectedSource, 40) ||
     input.sourceRelease !== expectedSource ||
     !Array.isArray(input.cases) ||
@@ -34,7 +34,12 @@ export function tournamentPredicateInputIsValid(input, expectedSource) {
         'handNumber',
         'leaseGeneration',
         'decisionRecordSha256',
+        ...(input.version === 2 ? ['actionOrdinal'] : []),
       ]) ||
+      (input.version === 2 &&
+        (!Number.isSafeInteger(c.actionOrdinal) ||
+          c.actionOrdinal < 0 ||
+          c.actionOrdinal >= 4096)) ||
       !hex(c.handKey, 64) ||
       !uuid(c.tableId) ||
       !uuid(c.handId) ||
@@ -112,7 +117,7 @@ export function explicitTournamentPredicates(capture, api) {
 /** Whole-hand review owns identity/read-frame/execution agreement. Outputs never copy private values. */
 export function inspectTournamentPredicateRecords(input, batch, api) {
   const base = {
-    version: 1,
+    version: input?.version === 2 ? 2 : 1,
     status: 'unknown',
     rawRecordsExported: false,
     replayVerified: false,
@@ -167,12 +172,10 @@ export function inspectTournamentPredicateRecords(input, batch, api) {
         }
       }
       if (accepted.length !== 1) return unknown('accepted_hand_missing_or_ambiguous');
-      if (decisions.length !== 1)
+      if (input.version === 1 && decisions.length !== 1)
         return unknown(
           decisions.length ? 'matching_decision_ambiguous' : 'matching_decision_missing'
         );
-      const { r, capture, predicates } = decisions[0],
-        s = capture.snapshot;
       const hand = JSON.parse(accepted[0].body),
         coordinate = `${c.tableId}:${c.handNumber}:${c.leaseGeneration}`;
       if (
@@ -181,6 +184,29 @@ export function inspectTournamentPredicateRecords(input, batch, api) {
         accepted[0].turnKey !== c.handKey
       )
         return unknown('accepted_hand_binding_mismatch');
+      let selected = decisions;
+      if (input.version === 2) {
+        if (
+          !Array.isArray(hand.actions) ||
+          hand.actions.length > 4096 ||
+          c.actionOrdinal >= hand.actions.length
+        )
+          return unknown('original_action_ordinal_unavailable');
+        selected = decisions.filter(({ r }) => {
+          const sameTurn = executions.filter(
+            (e) => e.producerId === r.producerId && e.turnKey === r.turnKey
+          );
+          if (sameTurn.length !== 1) return false;
+          const bound = api.bindHorseDecisionToCommittedHand(JSON.parse(sameTurn[0].body), hand);
+          return bound.status === 'bound' && bound.actionOrdinal === c.actionOrdinal;
+        });
+      }
+      if (selected.length !== 1)
+        return unknown(
+          selected.length ? 'matching_decision_ambiguous' : 'matching_decision_missing'
+        );
+      const { r, capture, predicates } = selected[0],
+        s = capture.snapshot;
       const anchor = api.anchorHorseDecisionHand(s);
       if (anchor.status !== 'anchored' || api.horseHandAnchorKey(anchor) !== coordinate)
         return unknown('original_snapshot_binding_mismatch');
@@ -219,6 +245,7 @@ export function inspectTournamentPredicateRecords(input, batch, api) {
         executionRecordSha256: e.sha256,
         acceptedRecordSha256: accepted[0].sha256,
         decisionKeySha256: digest(s.decisionKey),
+        ...(input.version === 2 ? { actionOrdinal: c.actionOrdinal } : {}),
         ...predicates,
         recordHashesVerified: true,
         originalHandBound: true,

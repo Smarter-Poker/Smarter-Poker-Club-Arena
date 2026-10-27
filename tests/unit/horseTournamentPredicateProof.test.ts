@@ -17,6 +17,7 @@ import * as review from '../../server/src/services/horseDecisionJournal/review';
 import * as validation from '../../server/src/engine/horseDecision/responseValidation';
 import * as witness from '../../server/src/engine/HorseExecutionWitness';
 import { buildHorseDecisionKey } from '../../server/src/engine/horseDecision/protocol';
+import { remainingReferenceDeck } from '../../server/src/benchmark/RemainingVariantReference';
 import { jointPolicyFixture } from '../../server/src/engine/multiway/JointRangeFixture.test-support';
 import { HorseLogic } from '../../server/src/engine/HorseLogic';
 import { HorseMind } from '../../server/src/engine/HorseMind';
@@ -225,7 +226,7 @@ beforeAll(() => {
     sourceRelease: source,
     recordsByHand: [{ handKey, records: rows }],
   };
-  fixture = { capture, w, hand, rows, input, batch, make, handKey };
+  fixture = { capture, w, hand, rows, input, batch, make, handKey, action };
 });
 afterAll(() => channelHub.close());
 it('observes actual finalized payout/provenance validators and actual reconciled intended hand', () => {
@@ -409,4 +410,194 @@ it('keeps missing execution, accepted identity, duplicate, oversized and malform
   const input = structuredClone(fixture.input);
   input.cases[0].decisionRecordSha256 = fixture.rows[0].sha256;
   expect(inspectTournamentPredicateRecords(input, fixture.batch, api).status).toBe('observed');
+});
+function multipleP7Fixture() {
+  const first = fixture.capture,
+    second = structuredClone(first),
+    s = second.snapshot;
+  // Local synthetic second player's ordinary turn; preserve the full accepted prefix.
+  const firstAction = structuredClone(fixture.hand.actions[0]);
+  const hero = s.gameState.players[1];
+  const used = new Set(
+    [...s.gameState.communityCards, ...first.snapshot.player.cards].map((c: any) =>
+      JSON.stringify(c)
+    )
+  );
+  hero.cards = remainingReferenceDeck(false)
+    .filter((c) => !used.has(JSON.stringify(c)))
+    .slice(0, 2);
+  s.player = hero;
+  s.gameState.heroSeat = hero.seat;
+  s.gameState.currentPlayerSeat = hero.seat;
+  s.gameState.actionHistory = [firstAction];
+  if (['bet', 'raise', 'all_in'].includes(firstAction.action)) {
+    s.gameState.currentBet = firstAction.amount;
+    s.gameState.toCall = Math.max(0, firstAction.amount - hero.bet);
+    s.gameState.legalActions = ['fold', 'call', 'raise', 'all_in'];
+  }
+  const prov = s.gameState.tournament.contextProvenance;
+  prov.projection.actorId = hero.user_id;
+  prov.projection.actorSeat = hero.seat;
+  s.requestId = 11;
+  s.decisionTimeMs = 1002;
+  s.fence = `${table}:123:${hero.seat}:${lease}:7`;
+  s.handJournalContext = binding.captureHorseHandJournalContext([firstAction]);
+  s.decisionKey = buildHorseDecisionKey(s);
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    seedFastRandom(1500923);
+    second.decision = HorseLogic.decide(
+      hero,
+      s.gameState,
+      'balanced',
+      {},
+      { ...s.opts, decisionTimeMs: 1002 }
+    );
+  } finally {
+    clock.mockRestore();
+  }
+  expect(
+    second.decision.tournamentUtility?.evidence,
+    JSON.stringify({
+      action: firstAction.action,
+      amount: firstAction.amount,
+      refusal: second.decision.tournamentUtilityRefusal,
+    })
+  ).toBeDefined();
+  second.readFrame = encodeHorseDecisionReads(
+    HorseMind.createSandbox(),
+    s.gameState.players,
+    HorseMind.handKeyOf(s.gameState.actionHistory)
+  );
+  second.decision.tournamentUtility.readFrameSha256 = second.readFrame.sha256;
+  const w = witness.createHorseExecutionWitness(s, second.decision, {
+    requestId: 11,
+    lane: 'fast',
+    computeMs: 1,
+    governorScale: 1,
+  });
+  const action: any = {
+    seat: hero.seat,
+    userId: hero.user_id,
+    action: second.decision.action,
+    amount: w.expectedExecutionAmount,
+    timestamp: 1003,
+    stage: 'river',
+  };
+  witness.settleHorseExecutionWitness(w, {
+    applied: true,
+    acceptedActions: [{ record: action, intended: true }],
+  });
+  const hand = structuredClone(fixture.hand);
+  hand.actions.push({
+    ...action,
+    origin: 'horse_policy',
+    publicNode: { version: 1, status: 'captured', actorSeat: hero.seat, street: 'river' },
+    observationIdentity: {
+      version: 1,
+      status: 'bound',
+      handId,
+      actionOrdinal: 1,
+      observationId: `${handId}:1`,
+      sessionKey: 'd'.repeat(64),
+    },
+  });
+  const turnKey = records.journalHash(
+    JSON.stringify([s.generation, s.fence, s.requestId, s.decisionKey, s.decisionTimeMs])
+  );
+  const make = (kind: any, sequence: number, body: any) =>
+    records.makeHorseJournalRecord(
+      {
+        producerId: producer,
+        sequence,
+        atMs: 2000,
+        sourceRelease: source,
+        kind,
+        handKey: fixture.handKey,
+        turnKey,
+      },
+      body
+    );
+  const rows = [
+    fixture.rows[0],
+    fixture.rows[1],
+    make('decision', 3, second),
+    make('execution', 4, w),
+    fixture.make('accepted_hand', 5, hand),
+  ];
+  const input = { ...structuredClone(fixture.input), version: 2 };
+  input.cases[0].actionOrdinal = 1;
+  const batch = { ...fixture.batch, recordsByHand: [{ handKey: fixture.handKey, records: rows }] };
+  return { input, batch, rows, make, second, w, hand };
+}
+it('version2 binds an exact original ordinal among multiple real P7 turns; version1 stays ambiguous', () => {
+  const f = multipleP7Fixture();
+  expect(review.reconcileHorseJournalHand(f.rows, fixture.handKey)).toMatchObject({
+    status: 'reconciled',
+    gaps: [],
+    matchedActions: 2,
+  });
+  expect(inspectTournamentPredicateRecords(fixture.input, f.batch, api).cases[0].reason).toBe(
+    'matching_decision_ambiguous'
+  );
+  const result = inspectTournamentPredicateRecords(f.input, f.batch, api);
+  expect(result).toMatchObject({ version: 2, status: 'observed' });
+  expect(result.cases[0]).toMatchObject({
+    actionOrdinal: 1,
+    decisionRecordSha256: f.rows[2].sha256,
+  });
+  const runSanitizer = (value: any) =>
+    spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());\ntry: print(json.dumps(m['sanitize_tournament_result'](d['result'],d['input'])))\nexcept Exception: print('refused')",
+        resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+      ],
+      { input: JSON.stringify({ result: value, input: f.input }), encoding: 'utf8' }
+    );
+  const sanitized = runSanitizer(result);
+  expect(sanitized.status, sanitized.stderr).toBe(0);
+  expect(JSON.parse(sanitized.stdout)).toEqual(result);
+  for (const ordinal of [0, true, '1']) {
+    const altered = structuredClone(result);
+    altered.cases[0].actionOrdinal = ordinal;
+    expect(runSanitizer(altered).stdout.trim()).toBe('refused');
+  }
+
+  const exact = structuredClone(f.input);
+  exact.cases[0].decisionRecordSha256 = f.rows[2].sha256;
+  expect(inspectTournamentPredicateRecords(exact, f.batch, api).status).toBe('observed');
+  exact.cases[0].actionOrdinal = 0;
+  expect(inspectTournamentPredicateRecords(exact, f.batch, api).status).toBe('unknown');
+});
+it('version2 refuses out-of-hand ordinals, forged same-turn identity and duplicate binding ambiguity', () => {
+  const f = multipleP7Fixture(),
+    input = structuredClone(f.input);
+  input.cases[0].actionOrdinal = 2;
+  expect(inspectTournamentPredicateRecords(input, f.batch, api).cases[0].reason).toBe(
+    'original_action_ordinal_unavailable'
+  );
+  const w = structuredClone(f.w);
+  w.identity.requestId++;
+  const wrong = {
+    ...f.batch,
+    recordsByHand: [
+      {
+        handKey: fixture.handKey,
+        records: [...f.rows.slice(0, 3), f.make('execution', 4, w), f.rows[4]],
+      },
+    ],
+  };
+  expect(inspectTournamentPredicateRecords(f.input, wrong, api).status).toBe('unknown');
+  const duplicate = {
+    ...f.batch,
+    recordsByHand: [
+      { handKey: fixture.handKey, records: [...f.rows, f.make('decision', 6, f.second)] },
+    ],
+  };
+  expect(inspectTournamentPredicateRecords(f.input, duplicate, api).cases[0].reason).toBe(
+    'matching_decision_ambiguous'
+  );
 });

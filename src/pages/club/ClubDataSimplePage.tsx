@@ -224,6 +224,7 @@ export default function ClubDataSimplePage() {
     items: RosterMember[];
     failed: boolean;
   } | null>(null);
+  const [playerSearchAccess, setPlayerSearchAccess] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [snapshotScope, setSnapshotScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -249,6 +250,9 @@ export default function ClubDataSimplePage() {
     stakes,
     search,
   ]);
+  const identityKey = JSON.stringify([userId, clubParam, clubUuid]);
+  const playerSearchReady =
+    !isHydrating && !!userId && playerSearchAccess === identityKey && !denied;
   const activeScopeRef = useRef(scopeKey);
   activeScopeRef.current = scopeKey;
   const visibleSnapshot = !isHydrating && userId && snapshotScope === scopeKey ? snapshot : null;
@@ -352,6 +356,7 @@ export default function ClubDataSimplePage() {
           setSnapshot(null);
           setSnapshotScope(null);
           setDenied(true);
+          setPlayerSearchAccess(null);
           setError(null);
         } else {
           reportError(rpcError, 'ClubDataSimplePage.snapshot');
@@ -364,6 +369,7 @@ export default function ClubDataSimplePage() {
         return;
       }
       setSnapshot(data);
+      setPlayerSearchAccess(identityKey);
       setSnapshotScope(requestScope);
       if (data.club_name) setClubName(data.club_name);
       setDenied(false);
@@ -388,12 +394,13 @@ export default function ClubDataSimplePage() {
     stakesApply,
     search,
     scopeKey,
+    identityKey,
   ]);
 
   // Server roster permissions remain authoritative. Bind results to the exact
   // viewer, club and query, and retire them before a changed identity paints.
   useEffect(() => {
-    if (!clubUuid || !userId || isHydrating || !search || !visibleSnapshot) return;
+    if (!clubUuid || !playerSearchReady || !search) return;
     const controller = new AbortController();
     let dead = false;
     const key = scopeKey;
@@ -422,7 +429,7 @@ export default function ClubDataSimplePage() {
       dead = true;
       controller.abort();
     };
-  }, [clubUuid, userId, isHydrating, search, scopeKey, !!visibleSnapshot]);
+  }, [clubUuid, playerSearchReady, search, scopeKey]);
 
   // Read now, then keep reading while the screen is in view.
   useEffect(() => {
@@ -683,7 +690,7 @@ export default function ClubDataSimplePage() {
         </svg>
       </label>
 
-      {visibleSnapshot &&
+      {playerSearchReady &&
         search &&
         searchInput.trim() === search &&
         playerResults?.key === scopeKey && (

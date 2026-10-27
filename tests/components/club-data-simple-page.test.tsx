@@ -470,3 +470,28 @@ describe('earned fees and direct player lookup', () => {
     expect(screen.queryByRole('button', { name: /View Player Data/i })).not.toBeInTheDocument();
   });
 });
+
+it('finds a player independently when the game search fails', async () => {
+  rpcMock.mockResolvedValueOnce({ data: live, error: null });
+  rpcMock.mockResolvedValue({
+    data: null,
+    error: { code: '57014', message: 'Game Read Timed Out' },
+  });
+  rosterMock.mockResolvedValue({
+    items: [
+      {
+        user_id: 'woo-id',
+        alias: 'WooWoo',
+        can_view_financials: true,
+        management_club_id: CLUB_ID,
+      },
+    ],
+  });
+  render(<ClubDataSimplePage />);
+  await screen.findByText('Shark Tank');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'WooWoo' } });
+  expect(await screen.findByRole('button', { name: /WooWoo.*View Player Data/i })).toBeVisible();
+  expect(
+    screen.getByText('Club Data Could Not Be Read. Showing The Last Good Figures.')
+  ).toBeVisible();
+});

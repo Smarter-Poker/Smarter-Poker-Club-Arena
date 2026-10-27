@@ -214,6 +214,8 @@ def main():
         finally:
             command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
 
+    subprocess.run([sys.executable, '-B', str(ROOT/'scripts/ci/test-horse-future-purchase-budget.py')], cwd=ROOT, env={**ENV, 'PG_BIN':str(PG), 'TMPDIR':str(BASE)}, check=True, timeout=120)
+
     # Daily horse reporting shares this existing required native owner. Run the
     # source-bound audit fixture after the accepted-hand cluster is stopped;
     # no new workflow/matrix, shared input-map churn or optional test path.

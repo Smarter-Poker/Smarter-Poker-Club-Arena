@@ -1,3 +1,4 @@
+import { horseRetainedPlanContext } from '../services/horseDecisionJournal/effects.js';
 import { Deck } from './PokerEngine.js';
 import { freshExploitCounters } from './HorseOpponentExploit.js';
 import { HorseObserverReads } from './horseDecision/observerReads.js';
@@ -325,6 +326,7 @@ it('transports canonical reader sidecars into the actual worker independent read
     expect(result.decision.action).toBeTruthy();
     expect(consumed).toMatchObject({ opportunities: 10, folds: 10 });
     const capture = h.captures.at(-1)!;
+    expect(horseRetainedPlanContext(capture, request).kind).toBe('current');
     expect(capture.observerReads).toMatchObject({ history: 'own_public_window', historyHands: 10 });
     expect(JSON.stringify(capture)).toContain('horse-decision-reads-v9');
   } finally {

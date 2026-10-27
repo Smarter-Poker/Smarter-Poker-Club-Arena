@@ -1375,7 +1375,9 @@ export default function PlayerStatsPage() {
       statsWorkspaceService.evaluateAlerts({
         vpip: overall.vpip * 100,
         pfr: overall.pfr * 100,
-        three_bet_percent: overall.three_bet_percent * 100,
+        ...(statsContract.quality.metric_availability.three_bet_percent
+          ? { three_bet_percent: overall.three_bet_percent * 100 }
+          : {}),
         bb_per_100: overall.bb_per_100,
         total_profit: overall.total_profit,
         rake_paid: rakeStats?.rake_paid ?? 0,
@@ -1421,6 +1423,8 @@ export default function PlayerStatsPage() {
   const advancedInitialData = useMemo(
     () => ({
       total_hands: overall.total_hands,
+      cash_hands: overall.cash_hands,
+      metric_availability: statsContract.quality.metric_availability,
       total_profit: overall.total_profit,
       hours_played: overall.hours_played,
       showdowns_won: overall.showdowns_won,
@@ -1434,7 +1438,7 @@ export default function PlayerStatsPage() {
       bb_per_100: overall.bb_per_100,
       total_winnings: overall.total_winnings,
     }),
-    [overall]
+    [overall, statsContract.quality.metric_availability]
   );
   // Memoised: this array is the `initialSessions` prop for both SessionHistory
   // and BankrollTracker, whose effects key on prop identity. A fresh [] every

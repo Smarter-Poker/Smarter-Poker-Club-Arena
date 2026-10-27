@@ -44,6 +44,10 @@ PY
 "${psql[@]}" -f "$work/funded-resolver.sql" -f "$fixture/funded-before.sql" \
  -f "$repo/supabase/migrations/20261018163053_player_stats_follow_the_funded_club.sql" \
  -f "$fixture/funded-after.sql"
+# Qualify the recorded-opportunity reader on the actual funded-club predecessor.
+"${psql[@]}" -f "$fixture/recorded-opportunities-before.sql" \
+ -f "$repo/supabase/migrations/20261027173840_player_stat_rates_use_recorded_opportunities.sql" \
+ -f "$fixture/recorded-opportunities-after.sql"
 if [[ -n "${STATS_FUNDED_EXPORT:-}" ]]; then
  "${psql[@]}" -Atc "SELECT pg_get_functiondef('public.ca_player_stats_overview_v2_by_club(uuid,integer,text,text,uuid)'::regprocedure)" >"$STATS_FUNDED_EXPORT"
 fi

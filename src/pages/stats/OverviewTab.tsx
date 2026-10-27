@@ -126,7 +126,7 @@ export default function OverviewTab({
         <StatRow
           label="Hours Played"
           value={
-            clubId && !metricAvailability.hours_played
+            metricAvailability?.hours_played === false
               ? NOT_YET_MEASURED
               : `${overall.hours_played.toFixed(1)}h`
           }
@@ -245,16 +245,18 @@ export default function OverviewTab({
           // RPC computes over CASH hands only. Passing total_hands let a
           // player with 400 cash + 900 tournament hands clear the 500-hand
           // confidence gate on a 400-hand sample.
-          handsPlayed={overall.cash_hands || overall.total_hands}
+          handsPlayed={overall.cash_hands}
           days={windowDays}
           values={{
-            bb100: overall.bb_per_100,
+            bb100: overall.cash_hands > 0 ? overall.bb_per_100 : undefined,
             // The same memo the gauge uses. Matches the field definition:
             // hands won over hands dealt.
             win_rate: overall.total_hands > 0 ? handsWonPct : undefined,
-            vpip: overall.vpip * 100,
-            pfr: overall.pfr * 100,
-            three_bet: overall.three_bet_percent * 100,
+            vpip: overall.total_hands > 0 ? overall.vpip * 100 : undefined,
+            pfr: overall.total_hands > 0 ? overall.pfr * 100 : undefined,
+            three_bet: metricAvailability?.three_bet_percent
+              ? overall.three_bet_percent * 100
+              : undefined,
           }}
         />
       </PanelBoundary>
@@ -273,7 +275,7 @@ export default function OverviewTab({
               profit: overall.total_profit,
               vpip: overall.vpip * 100,
               pfr: overall.pfr * 100,
-              hoursPlayed: clubId && !metricAvailability.hours_played ? null : overall.hours_played,
+              hoursPlayed: metricAvailability?.hours_played === false ? null : overall.hours_played,
             }}
             rangeLabel={rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`}
             scopeLabel={clubLabel}

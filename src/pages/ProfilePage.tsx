@@ -1293,12 +1293,20 @@ export default function ProfilePage() {
                       isVisible={visibleStats.has(22)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.threeBet, 1)}%`}
+                      value={
+                        stats.threeBetMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.threeBet, 1)}%`
+                      }
                       label="3-Bet"
                       isVisible={visibleStats.has(4)}
                     />
                     <StatCard
-                      value={fixedTrunc(stats.aggression, 2)}
+                      value={
+                        stats.aggressionMeasured === false
+                          ? 'Not Yet Measured'
+                          : fixedTrunc(stats.aggression, 2)
+                      }
                       label="Aggression"
                       isVisible={visibleStats.has(5)}
                     />
@@ -1317,7 +1325,11 @@ export default function ProfilePage() {
                         against a "Hours" label, which reads as none at all.
                         It is "1m" now, and "9.9h" once past the hour. */}
                     <StatCard
-                      value={formatHours(stats.hoursPlayed)}
+                      value={
+                        stats.hoursMeasured === false
+                          ? 'Not Yet Measured'
+                          : formatHours(stats.hoursPlayed)
+                      }
                       label="On Felt"
                       isVisible={visibleStats.has(15)}
                     />

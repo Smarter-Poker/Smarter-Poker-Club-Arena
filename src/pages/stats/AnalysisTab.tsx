@@ -192,15 +192,18 @@ export default function AnalysisTab({
       exportStatsOverview(
         {
           ...overall,
-          three_bet_percent:
-            clubId && !availability.three_bet_percent ? 'Unavailable' : overall.three_bet_percent,
-          fold_to_three_bet:
-            clubId && !availability.fold_to_three_bet ? 'Unavailable' : overall.fold_to_three_bet,
-          cbet_flop: clubId && !availability.cbet_flop ? 'Unavailable' : overall.cbet_flop,
-          aggression_factor:
-            clubId && !availability.aggression_factor ? 'Unavailable' : overall.aggression_factor,
-          wtsd: clubId && !availability.wtsd ? 'Unavailable' : overall.wtsd,
-          hours_played: clubId && !availability.hours_played ? 'Unavailable' : overall.hours_played,
+          three_bet_percent: !availability.three_bet_percent
+            ? 'Unavailable'
+            : overall.three_bet_percent,
+          fold_to_three_bet: !availability.fold_to_three_bet
+            ? 'Unavailable'
+            : overall.fold_to_three_bet,
+          cbet_flop: !availability.cbet_flop ? 'Unavailable' : overall.cbet_flop,
+          aggression_factor: !availability.aggression_factor
+            ? 'Unavailable'
+            : overall.aggression_factor,
+          wtsd: !availability.wtsd ? 'Unavailable' : overall.wtsd,
+          hours_played: !availability.hours_played ? 'Unavailable' : overall.hours_played,
           tournament_entries: tournaments.entries,
           tournament_cashes: tournaments.cashes,
           tournament_wins: tournaments.wins,

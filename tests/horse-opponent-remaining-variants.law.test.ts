@@ -30,3 +30,22 @@ describe('remaining opponent variant storage uses its maintained owner', () => {
     expect(ci).toContain('npx vitest run --config vitest.opponent-memory.config.ts');
   });
 });
+
+describe('Pineapple is included in public opponent memory', () => {
+  it('keeps the hot constraint change in the existing bounded certified installer', () => {
+    const pineapple = readdirSync(directory).filter((f) =>
+      f.endsWith('_horse_opponent_memory_pineapple.sql')
+    );
+    expect(pineapple).toHaveLength(1);
+    const sql = readFileSync(join(directory, pineapple[0]!), 'utf8');
+    expect(windowDeclaration(sql)).toBe('daily-maintenance');
+    expect(() => validateWindowMigration(pineapple[0], sql, { preamble: [] })).not.toThrow();
+    expect(sql).toContain("'pineapple'");
+    expect(sql).not.toMatch(/ca\.break_window_migration_override|pg_sleep|pg_advisory_lock\s*\(/i);
+    const native = readFileSync(
+      join(process.cwd(), 'server/tests/HorseOpponentMemory.postgres.test.ts'),
+      'utf8'
+    );
+    expect(native).toContain('Pineapple public opponent memory exact schema extension');
+  });
+});

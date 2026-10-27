@@ -14,7 +14,7 @@
  *         (D)       ← Position chip near avatar
  *
  * Active player: neon yellow glowing border around the info box
- * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
+ * that DISAPPEARS as the clock counts down (compositor-clipped static ink).
  */
 
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
@@ -36,6 +36,7 @@ import {
 } from '../../hooks/actionClockStore';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
+import { ActionTimerRing } from './ActionTimerRing';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
@@ -879,8 +880,8 @@ function seatWrapperPercent(wrap: HTMLElement): { x: number; y: number } {
 //
 // The info box border glows neon blue and the border progressively disappears
 // as the clock counts down, at a constant rate along the border, reaching
-// empty at the engine's deadline. It is a conic-gradient on `.seat__timer-ring`
-// driven by a pure-CSS animation (`spTimerRingShrink`) that SeatSlot only
+// empty at the engine's deadline. Native transforms clip static rounded ink
+// in ActionTimerRing; the timing (`spTimerRingShrink`) is still only
 // SEEDS, once per turn - see "THE RING RAN AT DOUBLE SPEED" in the render.
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3280,6 +3281,7 @@ export const SeatSlot = memo(
                 : undefined
             }
           >
+            {showHolo && <span className="seat__holo" aria-hidden="true" />}
             {/* Bible V8 §11.1 show_avatars: when the toggle is OFF the image is
                 not rendered at all. It used to render and be hidden with
                 `visibility: hidden` on the wrap, so a player who turned avatars
@@ -3457,7 +3459,7 @@ export const SeatSlot = memo(
 
         {/* Info Box — name + stack, with neon timer border when active.
             The React `key` forces a fresh mount per turn so the CSS
-            @property animation restarts from 100%. */}
+            countdown animation restarts for that turn. */}
         {/* ANIMATION AUDIT 2026-08-27: data-motion="keep" — the countdown ring
             IS duration-carrying CSS animation (spTimerRingShrink runs the whole
             turn; its length is the information). reducedMotion.css collapses
@@ -3473,17 +3475,9 @@ export const SeatSlot = memo(
           inert={foldIdentityHidden}
           aria-hidden={foldIdentityHidden || undefined}
         >
-          {/* The neon countdown ring. A real element (it was `.seat__info::before`
-              until 2026-10-04) because it has to be a size container: the
-              sweep is converted from "fraction of the BORDER spent" to a conic
-              angle in CSS, and that needs the ring's own width and height.
-              See "A CLOCK THAT IS LINEAR ALONG THE BORDER" in SeatSlot.css.
-              Decorative: the time is announced elsewhere. */}
-          {isActingNow && (
-            <span className="seat__timer-ring" aria-hidden="true">
-              <span className="seat__timer-ring-arc" />
-            </span>
-          )}
+          {/* Native transform clips drain stationary rounded ink. Timing is
+              inherited from the same frozen engine-clock anchor above. */}
+          {isActingNow && <ActionTimerRing timing={timerStyle} />}
           {/* Full names wrap within the seat plate (owner 2026-10-26). */}
           <span className="seat__name">{player.name?.trim()}</span>
           <span

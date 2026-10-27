@@ -1,0 +1,10 @@
+[
+  {
+    "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_proof_lifetime()\n RETURNS interval\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT interval '72 hours' $function$\n",
+    "signature": "fn_accounting_close_proof_lifetime()"
+  },
+  {
+    "body": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_windows(p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS TABLE(window_start timestamp with time zone, window_end timestamp with time zone)\n LANGUAGE sql\n STABLE\n SET search_path TO 'public'\nAS $function$\n SELECT g, LEAST(g+interval '2 hours', p_end)\n   FROM generate_series(p_start, p_end-interval '1 microsecond', interval '2 hours') g\n  WHERE p_start<p_end AND isfinite(p_start) AND isfinite(p_end)\n$function$\n",
+    "signature": "fn_accounting_close_windows(timestamp with time zone,timestamp with time zone)"
+  }
+]

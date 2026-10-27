@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import {
   validateSelection,
   summarizeDecision,
@@ -80,4 +81,38 @@ test('runs only from an explicit default-branch dispatch, through pinned provide
   assert.match(y, /flock -n 9/);
   assert.match(y, /docker exec -i/);
   assert.doesNotMatch(y, /schedule:|repository_dispatch:|docker restart|auto-deploy/);
+});
+test('remote guards explain refusal and never reach journal execution after a failed guard', () => {
+  const y = readFileSync(
+    new URL('../../.github/workflows/inspect-horse-opponent-reads.yml', import.meta.url),
+    'utf8'
+  );
+  const line = y.split('\n').find((line) => line.trim().startsWith('"test -f '));
+  assert.ok(line);
+  const command = line
+    .trim()
+    .slice(1, -3)
+    .replaceAll('\\"', '"')
+    .replaceAll('\\$', '$')
+    .replaceAll('/var/lock/club-arena-engine-up.lock', '/dev/null')
+    .replaceAll('$EXPECTED_ENGINE_SHA', selection.sourceSha)
+    .replaceAll('$SELECTION_BASE64', 'selection');
+  for (const [failure, expected] of [
+    ['missing', 'inspection_lock_missing'],
+    ['busy', 'inspection_lock_busy'],
+    ['image', 'inspection_image_mismatch'],
+    ['none', 'journal_reached'],
+  ]) {
+    const script = `test() { if [ "$1" = -f ]; then [ "$FAILURE" != missing ]; else builtin test "$@"; fi; }
+flock() { [ "$FAILURE" != busy ]; }
+docker() { if [ "$1" = inspect ]; then if [ "$FAILURE" = image ]; then echo wrong; else echo ${selection.sourceSha}; fi; else echo journal_reached; fi; }
+${command}`;
+    const result = spawnSync('bash', ['-c', script], {
+      encoding: 'utf8',
+      env: { ...process.env, FAILURE: failure },
+    });
+    assert.equal(result.status, failure === 'none' ? 0 : 1, result.stderr);
+    assert.ok((result.stdout + result.stderr).includes(expected), result.stdout + result.stderr);
+    if (failure !== 'none') assert.ok(!result.stdout.includes('journal_reached'));
+  }
 });

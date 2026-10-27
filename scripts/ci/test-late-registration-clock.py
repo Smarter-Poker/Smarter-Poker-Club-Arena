@@ -209,3 +209,6 @@ print(json.dumps({'passed': all(c['passed'] for c in results['checks']), 'checks
 # predicate, so a later transition or rebuy cannot silently ignore its clock.
 import sys
 subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-tournament-entry-boundary.py')], check=True)
+
+# Dealer admission consumes a committed capacity receipt under service-role access.
+subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-capacity-receipt-read-postgres.py')], check=True)

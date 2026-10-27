@@ -626,6 +626,12 @@ BEGIN
     GROUP BY (e->>'club_id'),(e->>'user_id') HAVING min(e->>'agent_min') IS DISTINCT FROM max(e->>'agent_max')),
   'entitlement_bad',agg.entitlement_bad>0);
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_combine(text,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_combine(text,uuid,timestamptz,timestamptz) TO service_role;
 DO $post$ BEGIN
  IF md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)'::regprocedure)) IS DISTINCT FROM '5f24e7244d59db5f2d5e3b6ad18e620b' THEN RAISE EXCEPTION 'historical_agent_role_owner_postimage_changed:fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)';END IF;
  IF md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz)'::regprocedure)) IS DISTINCT FROM 'c7a3a18fd098b9cde222107007aae316' THEN RAISE EXCEPTION 'historical_agent_role_owner_postimage_changed:fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz)';END IF;

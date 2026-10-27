@@ -16,7 +16,7 @@ describe('one explicit read-only fleet observation in the original provider', ()
     expect(workflow.on.repository_dispatch.types).toContain('observe-club-arena-horse-fleet');
     expect(job.if).toBe("github.event.action == 'observe-club-arena-horse-fleet'");
     expect(job.needs).toBeUndefined();
-    expect(job['timeout-minutes']).toBe(10);
+    expect(job['timeout-minutes']).toBe(35);
     expect(job.permissions).toEqual({ contents: 'read' });
     expect(job.concurrency).toEqual({
       group: 'club-arena-private-horse-fleet-observation',
@@ -51,8 +51,8 @@ describe('one explicit read-only fleet observation in the original provider', ()
     expect(commands).toContain('StrictHostKeyChecking=yes');
     expect(commands).toContain('GlobalKnownHostsFile=/dev/null');
     expect(commands).toContain('chmod 0600');
-    expect(commands).toContain('--ssh-command "$HSSH"');
-    expect(commands).toContain('--summarize');
+    expect(commands).toContain('"$HSSH" "$PRIVATE_DIR/result.json"');
+    expect(commands).toContain('--observe-bounded');
     expect(job.steps.at(-1).if).toBe('always()');
     expect(job.steps.at(-1).run).toContain('rm -rf -- "$PRIVATE_DIR"');
     expect(

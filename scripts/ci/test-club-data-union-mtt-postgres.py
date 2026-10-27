@@ -6,6 +6,7 @@ import socket
 import subprocess
 import tempfile
 from pathlib import Path
+from decimal import Decimal
 
 ROOT = Path(__file__).resolve().parents[2]
 MIG = ROOT / "supabase/migrations/20261017160125_club_data_counts_what_the_club_played.sql"
@@ -165,6 +166,38 @@ try:
     run(psql("live"), downline, expect_fail="preimage changed")
     p = run(psql("live", user="authenticator"), checks)
     require("DATA ACCESS BOUNDARY PASSED" in p.stdout + p.stderr, "every rank: scoped facts, deep descendants, sibling exclusion, cycles, whole-club and union refusal")
+
+    # Missing-club calls must authorize each returned club independently, even
+    # when a descendant has an unrelated second agency with a higher rate.
+    run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/legacy-rake-preimages.sql").read_text())
+    legacy_setup, legacy_checks = (ROOT / "tests/fixtures/club-data-report-db/legacy-rake-scope.sql").read_text().split("-- AFTER MIGRATION", 1)
+    run(psql("live"), legacy_setup)
+    caller = "SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid',md5('legacy-x')::uuid::text,false);"
+    leaked = "SELECT sum(rake_generated) FROM fn_agent_downline_rake(md5('legacy-y')::uuid,NULL,now()-interval '1 hour',now(),NULL,100000);"
+    require(Decimal(q("live", caller + leaked, user="authenticator").splitlines()[-1]) == 103, "baseline missing-club API reproduces 100 of unrelated-club rake")
+    rate = "SELECT fn_agent_downline_rake_summary(md5('legacy-y')::uuid,NULL,now()-interval '1 hour',now())->>'commission_rate';"
+    require(q("live", caller + rate, user="authenticator").splitlines()[-1] == '0.9', "baseline summary reproduces unrelated-club rate")
+    legacy_migration = (M / "20261027002505_legacy_rake_data_authorizes_every_club_separately.sql").read_text()
+    run(psql("live"), "SET ROLE authenticated;\n" + legacy_migration, expect_fail="maintained installer")
+    run(psql("live"), legacy_migration.replace("\nCOMMIT;", "\nROLLBACK;"))
+    require(Decimal(q("live", caller + leaked, user="authenticator").splitlines()[-1]) == 103, "rolled-back legacy repair leaves original definitions intact")
+    run(psql("live"), legacy_migration)
+    run(psql("live"), legacy_migration, expect_fail="preimage changed")
+    run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/export-page-preimage.sql").read_text())
+    q("live", "INSERT INTO ca_club_data_exports(id,user_id,club_id,kind,status,total_rows) VALUES(md5('legacy-export')::uuid,md5('legacy-x')::uuid,md5('legacy-a')::uuid,'games','ready',1),(md5('foreign-export')::uuid,md5('legacy-owner')::uuid,md5('legacy-a')::uuid,'games','ready',1);")
+    for rank in ('super_agent', 'agent', 'sub_agent'):
+        q("live", "UPDATE club_members SET role='" + rank + "' WHERE user_id=md5('legacy-x')::uuid; UPDATE agents SET role='" + rank + "' WHERE user_id=md5('legacy-x')::uuid;")
+        result = run(psql("live", user="authenticator"), legacy_checks.replace('@RANK@', rank))
+        require('LEGACY RAKE DATA BOUNDARY PASSED' in result.stdout + result.stderr, rank + ': missing/explicit club, deep descendants, summary rate, sibling/player refusal and private helper ACL')
+        for kind, scope in [('games','club'),('players','club'),('rake','club'),('rake','union')]:
+            q("live", "UPDATE ca_club_data_exports SET kind='"+kind+"',scope_type='"+scope+"',union_id='fade0000-0000-0000-0000-000000000001' WHERE id=md5('legacy-export')::uuid;")
+            run(psql("live", user="authenticator"), caller + "SELECT ca_club_data_export_page(md5('legacy-export')::uuid);", expect_fail="export is no longer authorized")
+        run(psql("live", user="authenticator"), caller + "SELECT ca_club_data_export_page(md5('foreign-export')::uuid);", expect_fail="export is unavailable")
+        require(True, rank + ': real export page refuses owned whole-club/union jobs and another user export ID')
+
+    q("live", "UPDATE agents SET parent_agent_id=md5('legacy-deep-agent25')::uuid WHERE id=md5('legacy-x-agent')::uuid; UPDATE club_members SET agent_id=md5('legacy-deep25')::uuid WHERE user_id=md5('legacy-x')::uuid; UPDATE agents SET parent_agent_id=md5('legacy-x-agent')::uuid WHERE id=md5('legacy-yb-agent')::uuid;")
+    result = run(psql("live", user="authenticator"), legacy_checks.replace('@RANK@', 'sub_agent'))
+    require('LEGACY RAKE DATA BOUNDARY PASSED' in result.stdout + result.stderr, 'cycles terminate and malformed cross-club agency edges cannot widen Data')
 
     evidence=os.environ.get('CLUB_DATA_CONTRACT_EVIDENCE')
     if evidence:

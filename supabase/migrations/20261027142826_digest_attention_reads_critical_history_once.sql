@@ -233,6 +233,8 @@ END $function$
 ;
 ;
 
+REVOKE ALL ON FUNCTION public.fn_sp_digest_attention(date,jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_attention(date,jsonb) TO service_role;
 DO $post$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_sp_digest_attention(date,jsonb)'::regprocedure)
  IS DISTINCT FROM '8af7731ee44487167c47fbfe14edea9c' THEN RAISE EXCEPTION 'DIGEST_SPIN_POSTIMAGE_DRIFT'; END IF;

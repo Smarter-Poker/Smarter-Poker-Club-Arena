@@ -162,6 +162,8 @@ END $function$
 ;
 ;
 
+REVOKE ALL ON FUNCTION public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint) TO service_role;
 DO $post$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure)
  IS DISTINCT FROM '02f09cb7ea48547dba423294f95b9cc5' THEN RAISE EXCEPTION 'DIGEST_SPIN_POSTIMAGE_DRIFT'; END IF;

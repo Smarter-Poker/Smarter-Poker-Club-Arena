@@ -31,3 +31,7 @@ python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-
 # Valid historical role promotion cannot strand the original commission cascade.
 python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Deleted-agent reserves reuse only unchanged original payer proofs per request.
+python3 -B "$root/scripts/ci/test-deleted-reserve-reuse-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

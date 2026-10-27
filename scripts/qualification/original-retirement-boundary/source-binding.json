@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -211,5 +211,11 @@
     "compositeAuthorityContext": "accepted(public.union_pnl_cash_outcomes) and its body hash resolve under sourceguard pg_catalog search_path.",
     "retiredDelivery": "03208 was uninstalled; its exactqualified SQL is an archivefixture, not migration history.",
     "queuedOldProducerBoundary": "Real PG17 original old compiled outer queued behind installer gate resumes through the same-OID atomic common leaf; actual current cutover, original outer bytes and private money-core prosrc preserved, rollback/replay/NULL key and subtransaction cases qualified."
+  },
+  "cashierMainIntegration20261027": {
+    "reason": "Repair stale input identity inherited from protected main PR8296 after reviewing its workflow diff: adds the treasury migration argument and two original-treasury native qualification steps. No test, financial body, assertion or historical certification is changed; this records workflow input identity only.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928"
   }
 }

@@ -1778,7 +1778,7 @@ export default function WalletCashierModal({
                travelling or the Chip Mint is up, exactly as the cashout sheet
                and the mint hide theirs; the overlay, Escape and every Close
                word guard the same. */
-            className={bankTransfer ? transferStyles.console : undefined}
+            className={bankTransfer || personalClaim ? transferStyles.console : undefined}
             eyebrow={
               bankTransfer ? `${clubName || 'Club Arena'} · Club Bank` : clubName || 'Club Arena'
             }
@@ -2241,7 +2241,7 @@ export default function WalletCashierModal({
                     </div>
                   </div>
 
-                  {bankTransfer && (
+                  {(bankTransfer || personalClaim) && (
                     <section
                       className={transferStyles.walletRow}
                       aria-label={
@@ -2272,9 +2272,11 @@ export default function WalletCashierModal({
                             strokeWidth="2"
                           />
                         </svg>
-                        <CashierFrameBalance
-                          text={spendBalance === null ? 'Unavailable' : fmtWallet(spendBalance)}
-                        />
+                        {tab === 'send' && (
+                          <CashierFrameBalance
+                            text={spendBalance === null ? 'Unavailable' : fmtWallet(spendBalance)}
+                          />
+                        )}
                       </span>
                       <select
                         className={transferStyles.walletSelect}

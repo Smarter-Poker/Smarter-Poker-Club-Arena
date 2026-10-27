@@ -988,7 +988,7 @@ test.describe('Production Cashier Certification', () => {
     expect(money.club_promo_wallet).not.toBeNull();
     const expectedPromo = Number(money.club_promo_wallet);
     expect(Number.isFinite(expectedPromo)).toBe(true);
-    const promoDialog = page.getByRole('dialog', { name: 'Promo Wallet Cashier', exact: true });
+    const promoDialog = page.getByRole('dialog', { name: 'PROMO WALLET Cashier', exact: true });
     const promoFigure = promoDialog.locator('.cbc-bank strong');
     const printedPromo = expectedPromo.toLocaleString('en-US', {
       minimumFractionDigits: 2,

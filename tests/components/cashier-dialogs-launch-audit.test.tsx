@@ -371,6 +371,10 @@ describe('agents reclaim from their own wallets at any time', () => {
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('250.00')
       );
+      const returns = screen.getByRole('combobox', { name: 'Claim Into' });
+      expect(returns).toHaveValue('agent_wallet');
+      expect(within(returns).getByRole('option', { name: 'My Promo Wallet' })).toBeTruthy();
+      expect(within(returns).queryByRole('option', { name: 'My Player Wallet' })).toBeNull();
       fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '50' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Chips', exact: true }));
       fireEvent.click(screen.getByRole('button', { name: 'Yes, Claim It', exact: true }));

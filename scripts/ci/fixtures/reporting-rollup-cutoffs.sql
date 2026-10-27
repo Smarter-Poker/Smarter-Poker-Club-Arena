@@ -290,6 +290,8 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) TO service_role;
 ROLLBACK;
 DO $$BEGIN IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_ca_reporting_rollups_from_facts(date)'::regprocedure))<>'9b54cb00d59fa616522f049b67237def' THEN RAISE EXCEPTION 'rollback changed producer'; END IF; END$$;
 -- Reporting rollups read each club launch boundary once.
@@ -431,6 +433,8 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) TO service_role;
 COMMIT;
 SELECT setval('public.fixture_cutoff_calls',1,false);
 SELECT public.fn_ca_reporting_rollups_from_facts(current_date-1);

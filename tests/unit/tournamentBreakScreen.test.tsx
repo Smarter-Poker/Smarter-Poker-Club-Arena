@@ -89,7 +89,7 @@ describe('the tournament break card', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('uses the server clock after a delayed tick, and never declares play resumed at zero', () => {
+  it('uses the server clock and removes the expired popup without declaring play resumed', () => {
     render(<TournamentBreakScreen {...props} breakEndsAtMs={clock.now + 241000} />);
     expect(screen.getByRole('timer')).toHaveTextContent('4:01');
     act(() => {
@@ -101,8 +101,9 @@ describe('the tournament break card', () => {
       clock.now += 5000;
       vi.advanceTimersByTime(1000);
     });
-    expect(screen.getByRole('timer')).toHaveTextContent('0:00');
-    expect(screen.getByRole('status')).toHaveTextContent('Waiting For Play To Resume');
+    expect(screen.queryByRole('timer')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('Play Resumed')).toBeNull();
   });
 
   it('keeps last-hand completion distinct from the timed break', () => {
@@ -198,4 +199,15 @@ describe('the tournament break card', () => {
     view.rerender(<TournamentBreakScreen {...props} isVisible={false} />);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+});
+
+it('removes the minimized popup when the break expires', () => {
+  render(<TournamentBreakScreen {...props} breakEndsAtMs={clock.now + 1000} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(screen.getByRole('button', { name: 'Open Break Screen' })).toBeVisible();
+  act(() => {
+    clock.now += 1000;
+    vi.advanceTimersByTime(1000);
+  });
+  expect(screen.queryByRole('button', { name: 'Open Break Screen' })).toBeNull();
 });

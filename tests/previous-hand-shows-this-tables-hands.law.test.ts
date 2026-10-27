@@ -70,7 +70,7 @@ describe('the correct hands', () => {
     expect(svc).not.toContain(".order('created_at', { ascending: false })\n      .limit(limit)");
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(
-      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,?\s*\}\)/
+      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*throwOnError: true,?\s*\}\)/
     );
     expect(page).toContain('handHistoryService.getPlayerHands(userId, 1, { tableId })');
   });

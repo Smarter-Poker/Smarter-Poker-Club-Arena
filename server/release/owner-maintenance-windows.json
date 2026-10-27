@@ -3,9 +3,17 @@
   "windows": [
     {
       "id": "2026-10-26-winning-card-timing-now",
-      "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" This same-day order covers the assigned winning-card display extension in chat 01a17b12: one certified activation of the protected main carrying this entry and the synchronized 1500ms showdown/RIT-result extension together. Protected anchor 93d49d86f72d6911a30f5d08aa1f0254c05aa1c6 is absent from the observed serving 814862e363946b90f103b71246dc69dec24c31d5; prove the actual timing merge is included and live separately. Preserve all required checks, immutable exact-SHA staging, last-hand notice, hand-boundary drain, durable freeze, certificate, full rollback reserve, one-window-per-hour seal and thaw. No migration, second publisher, watcher or direct restart. Expires at the end of the owner-authorized Chicago date and grants nothing once its anchor serves.",
-      "contains": "93d49d86f72d6911a30f5d08aa1f0254c05aa1c6",
-      "notBefore": "2026-10-27T02:07:00Z",
+      "ownerOrder": "Dan, directly in Codex chat 01a17b12: \"FINISH PR #8275. GET ALL CHECKS PASSING, MERGE IT, PUBLISH NOW, AND VERIFY BOTH CHANGES LIVE. DON'T LEAVE IT PENDING.\" Reaffirmed in the same chat: \"Complete every outstanding task within this chat's authorized scope\" and \"publish through the approved provider\" while preserving required engine cutover safeguards. One immediate certified activation of protected main carrying this entry and PR #8275 together, to extend ordinary winning-card display and each multi-run result by 1500ms. This window is renewed while integrating concurrent main after hosted runner queue delay; its protected anchor is absent from serving engine 814862e363946b90f103b71246dc69dec24c31d5 at preparation. Prove the actual #8275 squash and live timings independently; ancestry of this anchor alone is insufficient. Expires within six hours and grants nothing once the anchor is serving. Preserve operation ownership, required checks, immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, full rollback reserve, one-window-per-rolling-hour seal and thaw. No migrations, second publisher, watcher, or direct restart.",
+      "contains": "b935999c78011ebfc3acbfe67f299fe80863a39f",
+      "notBefore": "2026-10-27T04:14:56Z",
+      "notAfter": "2026-10-27T10:04:56Z",
+      "migrations": []
+    },
+    {
+      "id": "2026-10-26-horse-call-receipts-and-rebuy-context-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, Codex chat 01a1789a-6e62-7c92-8ccf-83b892671b74, explicitly answered: \"Activate off-cycle as soon as ready\" for PRs #8191, #8196 and #8197; subsequently: \"complete the task in full\". One certified off-cycle activation of protected main containing actual #8191 squash c5f27b75ea784400980aca7c8856b2710c5bd072, which includes #8196 bc4407e84afbb566c345bd9b06d295b2692e81db and #8197 2b8f43887bd2a5088d0a42667538141881dd0d02. This activates valid whole-stack call-off and PLO6 river-call receipts, all-in-or-fold call legalization, and tournament context during far-from-money rebuy offers. The earlier cash-window anchor 7fdb2223 is already in serving 814862e3 and grants nothing for these pending fixes. Preserve existing operation ownership, exact immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-rolling-hour seal and thaw. Ends once its anchor is serving, or at expiry before the end of October 26 Chicago. No migrations, unrelated strategy changes, second publisher, watcher or direct restart.",
+      "contains": "c5f27b75ea784400980aca7c8856b2710c5bd072",
+      "notBefore": "2026-10-27T02:15:22Z",
       "notAfter": "2026-10-27T04:59:59Z",
       "migrations": []
     },

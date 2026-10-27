@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   emptyTournamentCompletionCounts,
   recordTournamentCompletion,
+  recordTournamentOpportunity,
   MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
   runTournamentLeague,
 } from './HorseTournamentLeague.js';
@@ -39,6 +40,111 @@ const state = {
 } as HorseGameStateV2;
 
 describe('Phase8 completion counters record returned useful continuations', () => {
+  it('retains pre-eligibility reasons and separates designated-hero opportunities from all actors', () => {
+    const counts = emptyTournamentCompletionCounts();
+    const six = {
+      ...state,
+      players: Array.from({ length: 6 }, () => ({ stack: 100 })),
+    } as HorseGameStateV2;
+    const two = { ...six, players: six.players.slice(0, 2) };
+    const refused = {
+      ...layer(false, 'future_hand_seats_outside_work_budget'),
+      eligible: false,
+      fired: false,
+    };
+    const before = structuredClone(refused);
+    recordTournamentOpportunity(counts, false, six, undefined);
+    recordTournamentOpportunity(counts, true, { ...six, stage: 'preflop' }, undefined);
+    recordTournamentOpportunity(counts, true, six, refused);
+    recordTournamentOpportunity(counts, true, two, { ...refused, reason: 'utility_unavailable' });
+    recordTournamentOpportunity(counts, true, two, layer(true, 'baseline_retained'));
+    recordTournamentOpportunity(counts, true, two, undefined);
+    expect(counts.opportunityDiagnostics).toEqual({
+      version: 1,
+      arm: 'evaluated',
+      decisions: 6,
+      designatedHeroDecisions: 5,
+      otherActorDecisions: 1,
+      heroPreflopDecisions: 1,
+      heroPostflopDecisions: 4,
+      heroOtherStreetDecisions: 0,
+      heroPostflopWithinSeatBudget: 3,
+      heroPostflopLedgerMissing: 1,
+      heroPostflopEligible: 1,
+      preEligibleRefusals: { future_hand_seats_outside_work_budget: 1, utility_unavailable: 1 },
+    });
+    expect(refused).toEqual(before); // Includes finalized latency and work; observation cannot alter it.
+    expect(counts.completed).toBe(0);
+    expect(counts.completionRefusals).toEqual({});
+    expect(counts.completionDiagnostics).toEqual([]);
+  });
+  it('never copies an arbitrary refusal string into the public aggregate', () => {
+    const counts = emptyTournamentCompletionCounts();
+    recordTournamentOpportunity(counts, true, state, {
+      ...layer(false, 'private raw input'),
+      eligible: false,
+    });
+    expect(counts.opportunityDiagnostics?.preEligibleRefusals).toEqual({
+      unknown_preeligibility_refusal: 1,
+    });
+    expect(JSON.stringify(counts)).not.toContain('private raw input');
+  });
+  it('admits original receipts and strictly validates optional opportunity denominators', async () => {
+    const original = await runTournamentLeague(
+      { objective: 'mtt', pairs: 1, seed: 1 },
+      () => false
+    );
+    const counts = emptyTournamentCompletionCounts();
+    recordTournamentOpportunity(counts, true, state, {
+      ...layer(false, 'utility_unavailable'),
+      eligible: false,
+    });
+    const result = { ...original, ...counts, decisions: 1 };
+    const message = { type: 'TOURNAMENT_RESULT', jobId: 1, result };
+    expect(horseLeagueComputeResponseIsValid({ ...message, result: original })).toBe(true);
+    expect(horseLeagueComputeResponseIsValid(message)).toBe(true);
+    const d = counts.opportunityDiagnostics!;
+    // Keep every partition valid while forging eligibility outside the seat budget.
+    expect(
+      horseLeagueComputeResponseIsValid({
+        ...message,
+        result: {
+          ...result,
+          eligible: 1,
+          opportunityDiagnostics: {
+            ...d,
+            heroPostflopWithinSeatBudget: 0,
+            heroPostflopEligible: 1,
+            preEligibleRefusals: {},
+          },
+        },
+      })
+    ).toBe(false);
+    for (const patch of [
+      { version: 2 },
+      { arm: 'baseline' },
+      { heroPostflopDecisions: 2 },
+      { heroPostflopEligible: 1 },
+      { decisions: -1 },
+      { decisions: NaN },
+      { decisions: Infinity },
+      { decisions: 0.5 },
+      { designatedHeroDecisions: 0 },
+      { otherActorDecisions: 1 },
+      { heroPostflopWithinSeatBudget: 2 },
+      { heroPostflopLedgerMissing: 1 },
+      { preEligibleRefusals: { private_cards: 1 } },
+      { preEligibleRefusals: { utility_unavailable: NaN } },
+      { preEligibleRefusals: { utility_unavailable: 0 } },
+      { cards: ['As'] },
+    ])
+      expect(
+        horseLeagueComputeResponseIsValid({
+          ...message,
+          result: { ...result, opportunityDiagnostics: { ...d, ...patch } },
+        })
+      ).toBe(false);
+  });
   it('separates computed-but-refused results and retains exact refusal reasons', () => {
     const counts = emptyTournamentCompletionCounts();
     recordTournamentCompletion(counts, layer(false, 'budget_exhausted'), state);

@@ -652,6 +652,7 @@ export async function logHandHistory(params: {
   contributions?: Map<string, number>;
   /** Stacks frozen at deal time; source for exact effective-stack buckets. */
   dealtStacksAtDeal?: Map<string, number>;
+  allInRunoutWitness?: HandFactsInput['allInRunoutWitness'];
   /** Every seat dealt in: userId -> { seat, cards }. Includes folded players. */
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
@@ -840,6 +841,7 @@ export async function logHandHistory(params: {
           contributions: params.contributions!,
           dealtStacksAtDeal:
             params.dealtStacksAtDeal ?? dealtStacksFromAtomicCommit(params.atomicCommit),
+          allInRunoutWitness: params.allInRunoutWitness,
           winners: params.winners,
           actions: params.actions,
           roster: params.roster!,

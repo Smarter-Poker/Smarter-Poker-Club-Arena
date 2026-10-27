@@ -29,6 +29,7 @@ import {
   tournamentRunCanPromote,
   tournamentLeagueEntrants,
   MAX_TOURNAMENT_COMPLETION_DIAGNOSTICS,
+  TOURNAMENT_PRE_ELIGIBILITY_REASONS,
   type TournamentLeagueRequest,
   type TournamentLeagueResult,
 } from './HorseTournamentLeague.js';
@@ -347,6 +348,55 @@ const continuationWorkCounts = [
   'estimateCacheHits',
   'levelBounds',
 ] as const;
+
+function validTournamentOpportunities(r: Record<string, unknown>): boolean {
+  if (!('opportunityDiagnostics' in r)) return true; // Original schema-1 receipts remain valid.
+  const d = r.opportunityDiagnostics;
+  const counts = [
+    'decisions',
+    'designatedHeroDecisions',
+    'otherActorDecisions',
+    'heroPreflopDecisions',
+    'heroPostflopDecisions',
+    'heroOtherStreetDecisions',
+    'heroPostflopWithinSeatBudget',
+    'heroPostflopLedgerMissing',
+    'heroPostflopEligible',
+  ];
+  if (
+    !isRecord(d) ||
+    !hasExactKeys(d, ['version', 'arm', ...counts, 'preEligibleRefusals']) ||
+    d.version !== 1 ||
+    d.arm !== 'evaluated' ||
+    !counts.every((k) => isNonnegativeSafeInteger(d[k])) ||
+    !isRecord(d.preEligibleRefusals) ||
+    !Object.entries(d.preEligibleRefusals).every(
+      ([reason, n]) =>
+        TOURNAMENT_PRE_ELIGIBILITY_REASONS.some((known) => known === reason) &&
+        isNonnegativeSafeInteger(n) &&
+        n > 0
+    )
+  )
+    return false;
+  const refused = Object.values(d.preEligibleRefusals).reduce<number>(
+    (sum, n) => sum + Number(n),
+    0
+  );
+  return (
+    Number.isSafeInteger(refused) &&
+    Number(d.decisions) <= Number(r.decisions) &&
+    d.decisions === Number(d.designatedHeroDecisions) + Number(d.otherActorDecisions) &&
+    d.designatedHeroDecisions ===
+      Number(d.heroPreflopDecisions) +
+        Number(d.heroPostflopDecisions) +
+        Number(d.heroOtherStreetDecisions) &&
+    Number(d.heroPostflopWithinSeatBudget) <= Number(d.heroPostflopDecisions) &&
+    Number(d.heroPostflopEligible) <= Number(d.heroPostflopWithinSeatBudget) &&
+    d.heroPostflopDecisions ===
+      Number(d.heroPostflopLedgerMissing) + Number(d.heroPostflopEligible) + refused &&
+    d.heroPostflopEligible === r.eligible
+  );
+}
 
 function validTournamentCompletion(r: Record<string, unknown>): boolean {
   if (
@@ -721,10 +771,12 @@ export function horseLeagueComputeResponseIsValid(
           'completionRefusals',
           'completionDiagnostics',
           'completionDiagnosticsDropped',
+          ...('opportunityDiagnostics' in r ? ['opportunityDiagnostics'] : []),
           ...('opponentPopulation' in r ? ['opponentPopulation', 'humanResponses'] : []),
         ])
       )
         return false;
+      if (!validTournamentOpportunities(r)) return false;
       // Condition (b) monitoring: a human-calibrated field reports its
       // population and its response counts per node, counts only.
       if (

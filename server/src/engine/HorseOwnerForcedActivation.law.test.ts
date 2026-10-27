@@ -10,8 +10,7 @@
  * worker returns, and that the main-thread gate rechecks the authority as
  * usable, so nothing falls back to the engine's safety default.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Deck } from './PokerEngine.js';
+import { afterEach, describe, expect, it } from 'vitest';
 import { HandController } from './HandController.js';
 import { HorseMind } from './HorseMind.js';
 import {
@@ -23,10 +22,7 @@ import {
   type HorseDecisionWorkerResponse,
 } from './horseDecision/protocol.js';
 import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
-import {
-  controllerDecisionState,
-  controllerSpotRandom,
-} from './remainingVariants/RemainingVariantControllerSpots.test-support.js';
+import { controllerDecisionState } from './remainingVariants/RemainingVariantControllerSpots.test-support.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import { applyTableCommitmentCap } from './ServerTableEngineTurns.js';
 import { seedFastRandom } from './HorseEval.js';
@@ -66,12 +62,9 @@ import {
   HORSE_OWNER_FORCED_ACTIVATION,
   isHorseOwnerForcedAuthority,
 } from './HorseOwnerForcedActivation.js';
-import type { Card, HandConfig, HorseDecision, SeatPlayer } from '../types.js';
+import type { HandConfig, HorseDecision, SeatPlayer } from '../types.js';
 
-afterEach(() => {
-  HorseMind.reset();
-  vi.restoreAllMocks();
-});
+afterEach(() => HorseMind.reset());
 
 describe('the owner order activates every phase (Dan 2026-10-26)', () => {
   it('records the order verbatim and covers all six gated phases', () => {
@@ -167,18 +160,6 @@ function gateFor(key: keyof HorseDecision, variant: string): HorsePhase8Authorit
 
 /** Plays controller hands through production admissions, without substituting rejected actions. */
 async function playHands(variant: string, hands: number, mode: 'cash' | 'tournament' = 'cash') {
-  // seedFastRandom seeds decisions, not the controller's cryptographic deck.
-  // Freeze the deals too: six random hands can all end before a postflop
-  // candidate exists, making the tournament assertion depend on chance.
-  let dealSeed = 1000;
-  vi.spyOn(Deck.prototype, 'shuffle').mockImplementation(function (this: Deck) {
-    const random = controllerSpotRandom(dealSeed);
-    const cards = (this as unknown as { cards: Card[] }).cards;
-    for (let i = cards.length - 1; i > 0; i--) {
-      const j = Math.floor(random() * (i + 1));
-      [cards[i], cards[j]] = [cards[j], cards[i]];
-    }
-  });
   const messages: HorseDecisionWorkerResponse[] = [];
   const worker = new HorseDecisionWorkerRuntime((m) => messages.push(m), {
     ...defaults,
@@ -195,7 +176,6 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
   const bump = (k: string) => seen.modes.set(k, (seen.modes.get(k) ?? 0) + 1);
   let requestId = 1;
   for (let hand = 0; hand < hands; hand++) {
-    dealSeed = 1000 + hand;
     seedFastRandom(1000 + hand);
     const seats = 2 + (hand % 5);
     const table = `30000000-0000-4000-8000-${String(hand).padStart(12, '0')}`;
@@ -223,6 +203,23 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
     })) as SeatPlayer[];
     const controller = new HandController(config, players, 1 + (hand % seats));
     controller.start();
+    if (variant === 'nlh' && mode === 'tournament' && hand === 0) {
+      // The deck is crypto-random: seeding the brain does not ensure a free-play
+      // hand survives preflop. Reach one real flop through legal controller
+      // actions so Phase 8 coverage never depends on six random deals.
+      for (let setup = 0; setup < seats; setup++) {
+        const live = controller.getState();
+        if (live.stage !== 'preflop') break;
+        const actor = live.players.find((p) => p.seat === live.currentPlayerSeat)!;
+        const menu = controller.getAuthoritativeActionState(actor.user_id)!;
+        const action = menu.toCall > 0 ? 'call' : 'check';
+        expect(menu.canAct).toBe(true);
+        expect(menu.legalActions).toContain(action);
+        expect(controller.performAction(actor.seat, action)).toBe(true);
+      }
+      expect(controller.getState().stage).toBe('flop');
+      expect(controller.getState().players.every((p) => !p.is_folded && !p.is_all_in)).toBe(true);
+    }
     for (let step = 0; step < 80; step++) {
       const live = controller.getState();
       if (live.stage === 'pineapple_discard') {

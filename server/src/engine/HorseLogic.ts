@@ -3361,10 +3361,7 @@ export class HorseLogic {
           : 0
       ),
       typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash',
-      // PLO presumption (2026-10-25): the seats the engine roster says a
-      // person plays, read by HorseMind.opponentRead.
-      Array.isArray(gameState.humanUserIds) ? gameState.humanUserIds : null
+      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
     );
     // V3: ingest the action stream into the opponent-intelligence layer.
     // Wrapped so observation can never take down a decision.

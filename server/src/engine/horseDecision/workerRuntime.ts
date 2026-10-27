@@ -1,3 +1,7 @@
+import {
+  readHorsePooledPublicBootstrap,
+  type HorsePooledPublicBootstrap,
+} from '../../services/HorsePooledPublicBootstrap.js';
 import { admitHorsePhase8GuardAuthority } from '../HorseTournamentCatastropheGuardAuthority.js';
 import { CATASTROPHE_GUARD_VERSION } from '../HorseTournamentCatastropheGuard.js';
 import { PHASE8_GUARD_PROTECTED_RELEASE_SELECTION } from '../HorseTournamentCatastropheGuardSelection.js';
@@ -252,6 +256,7 @@ export interface HorseDecisionWorkerDependencies {
   /** Release SHA bound into each receipt; absent means unavailable (null). */
   sourceRelease?: () => string | null;
   startServices(): Promise<HorseDecisionWorkerReadiness>;
+  publicProfileBootstrap?(): HorsePooledPublicBootstrap | null;
   stopServices(): Promise<void>;
   decide: typeof HorseLogic.decide;
   prepareOriginalReads?: typeof HorseLogic.prepareOriginalReads;
@@ -324,6 +329,7 @@ export interface HorseDecisionWorkerDependencies {
   correctiveDraw?(): number;
 }
 
+let publicProfileBootstrap: HorsePooledPublicBootstrap | null = null;
 let ownedServicesStarted = false;
 
 /** The exact chart and open-node stores this worker decides with (Phase 6C G4). */
@@ -418,6 +424,20 @@ export async function startOwnedServices(shard?: {
        at the same instant instead of after it. READY is still withheld until
        every one of them has finished, exactly as before. */
     const bootLoads = await Promise.allSettled([
+      step('pooled_public_profiles', async () => {
+        publicProfileBootstrap = await readHorsePooledPublicBootstrap();
+        console.log(
+          `[HorseDecisionWorker] shard ${shard?.index ?? 0} pooled public bootstrap ` +
+            (publicProfileBootstrap
+              ? `loaded ${publicProfileBootstrap.profiles.length} profiles at ${publicProfileBootstrap.availableAtMs}`
+              : 'unavailable')
+        );
+        noteFire(
+          publicProfileBootstrap
+            ? 'horse_pooled_public_bootstrap_loaded'
+            : 'horse_pooled_public_bootstrap_unavailable'
+        );
+      }),
       step('horse_mind_db', () => hydrateHorseMindFromDb()).then((lastFlush) =>
         step('horse_mind_replay', () => hydrateHorseMind(lastFlush))
       ),
@@ -498,6 +518,11 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   journalPlanReceipt: journalHorsePlanReceipt,
   sourceRelease: () => resolveReleaseIdentity().releaseSha,
   startServices: startOwnedServices,
+  publicProfileBootstrap: () => {
+    const saved = publicProfileBootstrap;
+    publicProfileBootstrap = null;
+    return saved;
+  },
   stopServices: stopOwnedServices,
   admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
   admitPhase8GuardAuthority: () => admitHorsePhase8GuardAuthority(),
@@ -834,6 +859,9 @@ export class HorseDecisionWorkerRuntime {
     // taken before that is silently dropped (no phaseN_authority_worker_*
     // counter had ever reached horse_brain_telemetry before this).
     this.readyPromise = this.deps.startServices().then((readiness) => {
+      const saved = this.deps.publicProfileBootstrap?.();
+      if (saved && !this.observerReads.bootstrapPublicProfiles(saved))
+        this.deps.noteFeature('horse_pooled_public_bootstrap_refused');
       this.noteAuthorityAdmissions();
       return { ...readiness, phase8GuardAuthority: this.phase8GuardAuthority.receipt() };
     });

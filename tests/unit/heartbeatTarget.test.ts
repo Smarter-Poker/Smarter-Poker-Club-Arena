@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  createHeartbeatRecoveryGuard,
   shouldAskTableRow,
   shouldHeartbeatOverHttp,
   tableRowSaysClosed,
@@ -70,5 +71,45 @@ describe('TablePage heartbeat wiring', () => {
     expect(page.indexOf('heartbeatRowClosedRef.current = false;', connected)).toBeGreaterThan(
       connected
     );
+  });
+});
+
+describe('heartbeat recovery wins over delayed failures', () => {
+  it.each(['socket reconnect', 'successful heartbeat', 'effect cleanup'])(
+    'rejects a late closed-row result after %s',
+    async () => {
+      const guard = createHeartbeatRecoveryGuard();
+      const isCurrent = guard.capture();
+      let resolveRow!: (row: { status: string }) => void;
+      const row = new Promise<{ status: string }>((resolve) => {
+        resolveRow = resolve;
+      });
+      let stopped = false;
+      const pending = row.then((value) => {
+        if (isCurrent() && tableRowSaysClosed(value)) stopped = true;
+      });
+      guard.invalidate();
+      resolveRow({ status: 'closed' });
+      await pending;
+      expect(stopped).toBe(false);
+      expect(guard.capture()()).toBe(true);
+    }
+  );
+
+  it('accepts a current closed verdict and rejects an old HTTP failure', () => {
+    const guard = createHeartbeatRecoveryGuard();
+    const beforeRecovery = guard.capture();
+    expect(beforeRecovery()).toBe(true);
+    guard.invalidate();
+    expect(beforeRecovery()).toBe(false);
+    expect(guard.capture()()).toBe(true);
+  });
+
+  it('binds both async boundaries and recovery events in TablePage', () => {
+    const page = read('src/pages/TablePage.tsx');
+    expect(page).toContain('const verdictIsCurrent = heartbeatRecoveryGuardRef.current.capture();');
+    expect(page).toContain('if (!heartbeatAlive || !verdictIsCurrent()) return;');
+    expect(page).toContain('if (!heartbeatAlive || !verdictIsCurrent() || error) return;');
+    expect(page.match(/heartbeatRecoveryGuardRef.current.invalidate\(\)/g)).toHaveLength(4);
   });
 });

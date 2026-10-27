@@ -10,6 +10,7 @@ import { qualifiedPhase13TestAdmission } from '../HorsePhase13Authority.test-sup
 import type { HorseTournamentJointSamplerProvenance } from '../HorseTournamentUtilityEvidence.js';
 import {
   horseDecisionReceiptIsValid,
+  horseDecisionReceiptRefusal,
   horsePhase7EvidenceMismatch,
   horseTournamentUtilityReceiptIsValid,
 } from './responseValidation.js';
@@ -24,6 +25,33 @@ function receipt(): HorseDecision {
   }
   return graph.finish(decision);
 }
+
+describe('receipt rejection names retain the original refusal boundary', () => {
+  it('accepts the same complete graph without mutation', () => {
+    const value = receipt();
+    const before = structuredClone(value);
+    expect(horseDecisionReceiptRefusal(value)).toBeNull();
+    expect(horseDecisionReceiptIsValid(value)).toBe(true);
+    expect(value).toEqual(before);
+  });
+  it.each([
+    ['decision_shape', () => ({ ...receipt(), thinkTime: NaN })],
+    ['policy_graph', () => ({ ...receipt(), policyGraph: {} })],
+    ['exception_fallback', () => ({ ...receipt(), policyFallback: 'brain_exception' })],
+    ['phase7_refusal', () => ({ ...receipt(), tournamentUtilityRefusal: 'private cards 123' })],
+    ['phase10_binding', () => ({ ...receipt(), plo4Policy: { inputs: {} } })],
+    ['phase11_binding', () => ({ ...receipt(), omahaVariantPolicy: { inputs: {} } })],
+    ['phase12_binding', () => ({ ...receipt(), remainingVariantPolicy: { inputs: {} } })],
+    ['phase13_binding', () => ({ ...receipt(), jointPolicy: { inputs: {} } })],
+    ['phase6_attribution', () => ({ ...receipt(), tournamentPreflopAttribution: {} })],
+  ] as const)('names %s without leaking the rejected input', (reason, corrupt) => {
+    const value = corrupt();
+    const before = structuredClone(value);
+    expect(horseDecisionReceiptRefusal(value)).toBe(reason);
+    expect(horseDecisionReceiptIsValid(value)).toBe(false);
+    expect(value).toEqual(before);
+  });
+});
 
 let capturedUtilityDecision: HorseDecision | undefined;
 function utilityReceipt(): HorseDecision {
@@ -590,5 +618,47 @@ describe('P13.1 over P13-A: a round-2 response tree receipt at the boundary', ()
     const forged = structuredClone(d);
     forged.jointPolicy!.responseTree!.raiseBranches = 99;
     expect(horseDecisionReceiptIsValid(forged, 'flo8')).toBe(false);
+  });
+});
+
+describe('PLO6 final river discipline receipt', () => {
+  function reduction(
+    variant: string,
+    from: HorseDecision['action'],
+    to: HorseDecision['action'],
+    amount: number
+  ) {
+    const graph = new HorsePolicyGraph(() => 0);
+    let decision: HorseDecision = {
+      action: from,
+      amount: from === 'all_in' ? undefined : 200,
+      thinkTime: 1,
+    };
+    for (const node of HORSE_POLICY_ORDER) {
+      decision = graph.run(node, node === 'reference' ? null : decision, () => ({
+        decision: node === 'wager_rules' ? { ...decision, action: to, amount } : decision,
+      })).decision;
+    }
+    const { hero, state } = jointPolicyFixture('plo6', 1, 'cash', 'river');
+    // This receipt claims a 40-chip call, so its request must actually offer it.
+    state.toCall = 40;
+    state.currentBet = hero.bet + 40;
+    state.legalActions = ['fold', 'call', 'raise', 'all_in'];
+    return horseDecisionReceiptIsValid(graph.finish(decision), variant, {
+      player: hero,
+      gameState: state,
+    });
+  }
+  it('admits PLO6 raise and shove reductions to a priced call', () => {
+    expect(reduction('plo6', 'raise', 'call', 40)).toBe(true);
+    expect(reduction('plo6', 'all_in', 'call', 40)).toBe(true);
+  });
+  it('refuses foreign variants, increased commitments and unrelated passive transitions', () => {
+    for (const variant of ['nlh', 'plo4', 'plo5', 'plo8'])
+      expect(reduction(variant, 'raise', 'call', 40)).toBe(false);
+    expect(reduction('plo6', 'raise', 'call', 201)).toBe(false);
+    expect(reduction('plo6', 'fold', 'call', 40)).toBe(false);
+    expect(reduction('plo6', 'check', 'call', 40)).toBe(false);
+    expect(reduction('plo6', 'raise', 'call', 0)).toBe(false);
   });
 });

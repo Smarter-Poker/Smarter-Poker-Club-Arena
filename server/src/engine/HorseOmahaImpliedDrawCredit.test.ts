@@ -118,6 +118,14 @@ describe('physical Omaha draw credit reaches the actual pricing consumer', () =>
     expect(o.input!.equity).toBeCloseTo(0.39, 10);
     expect(o.decision.action).toBe('call');
   });
+  for (const variant of ['plo4', 'plo5', 'plo6'] as const)
+    it(`${variant}: a queen-high nut draw reaches decision pricing when ace and king are on board`, () => {
+      const o = price(variant, 'Qs Js 3h 4c', 'As Ks 2d 7h');
+      expect(o.draw).toMatchObject({ nutFlushDraw: true, dominatedFlushDraw: false });
+      expect(o.input).toBeDefined();
+      expect(o.input!.equity).toBeCloseTo(0.39, 10);
+      expect(o.decision.policyGraph?.finalAction.action).toBe(o.decision.action);
+    });
   it('retains existing dominated-flush draw credit', () => {
     const o = price('plo4', '8s Th Ad 7s');
     expect(o.draw.dominatedFlushDraw).toBe(true);

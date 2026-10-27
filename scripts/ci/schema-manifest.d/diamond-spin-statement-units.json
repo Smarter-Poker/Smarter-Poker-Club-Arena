@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/diamond-spin-statement-units: candidate declarations; not installation evidence",
+  "functions": ["fn_diamond_spin_chip_payouts", "fn_diamond_spin_statement_message"]
+}

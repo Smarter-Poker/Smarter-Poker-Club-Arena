@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import {
   mysteryBountyFieldTooSmall,
   mysteryBountyThresholdReached,
@@ -115,8 +116,22 @@ describe('the mystery phase opens at a boundary the engine holds', () => {
     f.subject.holdMysteryActivationBoundary();
     expect(f.subject.mysteryActivationBoundaryPending).toBe(true);
     for (const table of f.tables) {
-      expect(table.pauseAfterHand).toHaveBeenCalledWith(20000, { beforeNextHand: true });
+      expect(table.pauseAfterHand).toHaveBeenCalledWith(undefined, {
+        beforeNextHand: true,
+        untilResumed: true,
+      });
     }
+  });
+
+  it('accumulates successive busts before the asynchronous count refreshes', () => {
+    const f = fixture({ mysteryPlayersRemainingHint: 5 });
+    expect(f.subject.mysteryActivationMayOpenOnBust(bust)).toBe(false);
+    expect(f.subject.mysteryActivationMayOpenOnBust(bust)).toBe(true);
+  });
+
+  it('the bubble-burst resume cannot lift the mystery boundary', () => {
+    const burst = sliceEnclosingBlock(sweep, 'BUBBLE BURST -');
+    expect(burst).toContain('!this.mysteryActivationBoundaryPending');
   });
 
   it('a bust far from the threshold, the final bust, or an open phase holds nothing', () => {
@@ -182,26 +197,26 @@ describe('the mystery phase opens at a boundary the engine holds', () => {
   it('under hand-for-hand the release hands the tables back to its barrier', () => {
     const f = fixture({ handForHandActive: true });
     f.subject.holdMysteryActivationBoundary();
-    for (const table of f.tables) expect(table.pauseAfterHand).not.toHaveBeenCalled();
+    for (const table of f.tables) expect(table.pauseAfterHand).toHaveBeenCalledOnce();
     f.subject.releaseMysteryActivationBoundary();
     expect(f.subject.advanceHandForHandBarrier).toHaveBeenCalledOnce();
     for (const table of f.tables) expect(table.resumeDealing).not.toHaveBeenCalled();
   });
 
-  it('a break owns its tables: no hold is armed and nothing is resumed', () => {
+  it('a break and mystery keep independent ownership of the same parked tables', () => {
     const f = fixture({ onBreak: true });
     f.subject.holdMysteryActivationBoundary();
-    expect(f.subject.mysteryActivationBoundaryPending).toBe(false);
-    for (const table of f.tables) expect(table.pauseAfterHand).not.toHaveBeenCalled();
+    expect(f.subject.mysteryActivationBoundaryPending).toBe(true);
+    f.subject.releaseMysteryActivationBoundary();
+    for (const table of f.tables) expect(table.resumeDealing).not.toHaveBeenCalled();
   });
 
-  it('the hold can never outlive its budget', () => {
+  it('elapsed time cannot release an unresolved financial boundary', () => {
     const f = fixture();
     f.subject.holdMysteryActivationBoundary();
-    expect(f.timers).toHaveLength(1);
-    f.timers[0]();
-    expect(f.subject.mysteryActivationBoundaryPending).toBe(false);
-    for (const table of f.tables) expect(table.resumeDealing).toHaveBeenCalledOnce();
+    expect(f.timers).toHaveLength(0);
+    expect(f.subject.mysteryActivationBoundaryPending).toBe(true);
+    for (const table of f.tables) expect(table.resumeDealing).not.toHaveBeenCalled();
   });
 
   it('the sweep keeps the hold only while a hand is in the air, and a park re-asks', () => {
@@ -209,7 +224,9 @@ describe('the mystery phase opens at a boundary the engine holds', () => {
     expect(sweep).toMatch(
       /const awaitingBoundary = await this\.maybeActivateMysteryBounty\(remainingCount\);[\s\S]{0,300}if \(awaitingBoundary !== true\) this\.releaseMysteryActivationBoundary\(\);/
     );
-    expect(sweep).toContain('this.mysteryPlayersRemainingHint = remainingCount;');
+    expect(sweep).toContain(
+      'Math.min(this.mysteryPlayersRemainingHint ?? remainingCount, remainingCount)'
+    );
     expect(base).toMatch(
       /if \(this\.mysteryActivationBoundaryPending\)\s+this\.requestEliminationSweep\('mystery_activation_boundary'\);/
     );

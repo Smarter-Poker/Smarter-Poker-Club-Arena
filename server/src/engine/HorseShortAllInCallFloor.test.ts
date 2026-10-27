@@ -8,7 +8,10 @@ import {
   shortAllInSpot,
 } from './HorseShortAllInCallFloor.js';
 import { ploPairedBoardMustFold } from './HorsePloPairedBoardFold.js';
-import { horseDecisionReceiptIsValid } from './horseDecision/responseValidation.js';
+import {
+  horseDecisionReceiptIsValid,
+  horseDecisionReceiptRefusal,
+} from './horseDecision/responseValidation.js';
 import type { Card, HorseDecision, SeatPlayer } from '../types.js';
 
 const suits: Record<string, Card['suit']> = { c: 'clubs', d: 'diamonds', h: 'hearts', s: 'spades' };
@@ -311,6 +314,7 @@ describe('HorseLogic.decide obeys it end to end', () => {
     expect(d.policyGraph?.finalAction).toEqual({ action: 'call', amount: 500 });
     expect(horseDecisionReceiptIsValid(d, 'nlh')).toBe(true);
     expect(horseDecisionReceiptIsValid(d, 'nlh', { player: s.hero, gameState: s.gs })).toBe(true);
+    expect(horseDecisionReceiptRefusal(d, 'nlh', { player: s.hero, gameState: s.gs })).toBeNull();
   });
 
   it('the worker boundary admits a fold turned into a call only in the short all-in spot', () => {
@@ -326,6 +330,9 @@ describe('HorseLogic.decide obeys it end to end', () => {
     const cash = preflop({ mode: 'cash' });
     expect(horseDecisionReceiptIsValid(d, 'nlh', { player: cash.hero, gameState: cash.gs })).toBe(
       false
+    );
+    expect(horseDecisionReceiptRefusal(d, 'nlh', { player: cash.hero, gameState: cash.gs })).toBe(
+      'policy_graph'
     );
   });
 

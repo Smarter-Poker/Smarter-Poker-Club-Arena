@@ -26,6 +26,7 @@ import { controllerDecisionState } from './remainingVariants/RemainingVariantCon
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import { applyTableCommitmentCap } from './ServerTableEngineTurns.js';
 import { seedFastRandom } from './HorseEval.js';
+import { buildTournamentMState } from './HorseTournamentPreflop.js';
 import {
   admitHorsePhase8LiveAuthority,
   admitHorsePhase8ReleaseAuthority,
@@ -157,10 +158,9 @@ function gateFor(key: keyof HorseDecision, variant: string): HorsePhase8Authorit
   return undefined;
 }
 
-/** Plays real cash hands through the production worker for one variant. */
-async function playCash(variant: string, hands: number) {
-  // A filtered variant must admit its own main-thread gates; another test's
-  // admission assertions are not setup for this real-worker exercise.
+/** Plays controller hands through production admissions, without substituting rejected actions. */
+async function playHands(variant: string, hands: number, mode: 'cash' | 'tournament' = 'cash') {
+  // Every filtered variant admits its own main-thread gates independently.
   const pack = PACK[variant];
   if (pack) gateFor(pack, variant)?.ensureAdmitted();
   gateFor('jointPolicy', variant)?.ensureAdmitted();
@@ -195,8 +195,8 @@ async function playCash(variant: string, hands: number) {
       gameVariant: variant,
       smallBlind: 1,
       bigBlind: 2,
-      isTournament: false,
-      rakeConfig: { percent: 5, cap: 6, noFlopNoDrop: true },
+      isTournament: mode === 'tournament',
+      rakeConfig: { percent: mode === 'cash' ? 5 : 0, cap: 6, noFlopNoDrop: true },
     } as HandConfig;
     const players = Array.from({ length: seats }, (_, i) => ({
       seat: i + 1,
@@ -221,12 +221,105 @@ async function playCash(variant: string, hands: number) {
         controller.flushPineappleSettle();
         continue;
       }
-      const spot = controllerDecisionState(controller, variant as never, 'cash', config);
+      const spot = controllerDecisionState(controller, variant as never, mode, config);
       if (!spot) break;
+      if (mode === 'tournament') {
+        const stacks = Object.fromEntries(
+          live.players.map((p) => [p.user_id, p.stack + p.totalInvested])
+        );
+        spot.state.tournament = {
+          schemaVersion: 1,
+          contextStatus: 'complete',
+          contextIssues: [],
+          sourceAgeMs: 0,
+          tournamentId: `synthetic-${table}`,
+          tournamentType: 'MTT',
+          tournamentStatus: 'RUNNING',
+          gameVariant: variant,
+          entrants: live.players.length,
+          playersLeft: live.players.length,
+          spotsPaid: 2,
+          avgStackChips: Object.values(stacks).reduce((a, b) => a + b, 0) / live.players.length,
+          medianStackChips: Object.values(stacks).sort((a, b) => a - b)[
+            Math.floor(live.players.length / 2)
+          ],
+          seatsPerTable: seats,
+          playersAtTable: live.players.length,
+          currentLevel: 1,
+          nearBubble: false,
+          inMoney: live.players.length <= 2,
+          registrationOpen: false,
+          lateRegistrationOpen: false,
+          registrationRequiresAuthorization: false,
+          isPko: false,
+          isBounty: false,
+          isMysteryBounty: false,
+          mysteryBountyStage: 'none',
+          reentryAllowed: false,
+          rebuyAllowed: false,
+          addOnAvailable: false,
+          onBreak: false,
+          handForHand: false,
+          handForHandExpected: false,
+          mysteryTopLive: false,
+          finalTable: true,
+          satellite: false,
+          satelliteSeats: 0,
+          maxReentries: 0,
+          maxRebuys: 0,
+          addOnCost: null,
+          addOnChips: null,
+          addOnLevels: null,
+          levelDurationMin: 10,
+          levelElapsedMin: 5,
+          nextBlindMult: 2,
+          bountyFactor: 0,
+          mysteryChestsLeft: 0,
+          mysteryMeanCents: 0,
+          mysteryTopCents: 0,
+          meanBountyCents: 0,
+          bountyByUser: {},
+          payoutPct: [65, 35],
+          stacks: Object.values(stacks),
+          stackByUser: stacks,
+          currentSmallBlind: config.smallBlind,
+          currentBigBlind: config.bigBlind,
+          currentAnte: 0,
+          anteType: 'none',
+          nextSmallBlind: config.bigBlind,
+          nextBigBlind: config.bigBlind * 2,
+          nextAnte: 0,
+          nextBlindInMin: 5,
+          prizePoolCents: 100000,
+          bountyPoolCents: 0,
+          reentryOpen: false,
+          rebuyOpen: false,
+          addOnPeriodOpen: false,
+          reloadsUsed: 0,
+          addOnTaken: false,
+          rebuyAffordable: false,
+          addOnAffordable: false,
+          m: buildTournamentMState({
+            stackChips: spot.hero.stack,
+            smallBlind: config.smallBlind,
+            bigBlind: config.bigBlind,
+            ante: 0,
+            anteType: 'none',
+            playersAtTable: live.players.length,
+            nextSmallBlind: config.bigBlind,
+            nextBigBlind: config.bigBlind * 2,
+            nextAnte: 0,
+            minutesToNextLevel: 5,
+            opponentStacks: live.players
+              .filter((p) => p.user_id !== spot.hero.user_id)
+              .map((p) => ({ userId: p.user_id, stackChips: p.stack })),
+          }),
+        };
+      }
       spot.state.commitmentCapRemaining = applyTableCommitmentCap(
         controller.getAuthoritativeActionState(spot.hero.user_id)!,
         spot.hero,
-        false,
+        mode === 'tournament',
         0,
         config.bigBlind
       ).commitmentCapRemaining;
@@ -250,7 +343,8 @@ async function playCash(variant: string, hands: number) {
       const result = messages.slice(before).find((m) => m.type === 'FAST_RESULT') as
         | (HorseDecisionWorkerResponse & { decision: HorseDecision } & Record<string, any>)
         | undefined;
-      if (!result) break;
+      expect(result, JSON.stringify(messages.slice(before))).toBeDefined();
+      if (!result) throw new Error('The production worker returned no decision');
       seen.decisions++;
       const decision = result.decision;
       if (!horseDecisionReceiptIsValid(decision, variant)) {
@@ -272,6 +366,20 @@ async function playCash(variant: string, hands: number) {
       }
       // Mirror the client: observe every pack's worker receipt, stamp, recheck.
       const r = result as Record<string, any>;
+      if (r.phase8Authority) liveHorsePhase8Authority.observeWorker(r.phase8Authority);
+      const continuation = decision.tournamentPostflop;
+      if (continuation) {
+        bump(`tournamentPostflop:${continuation.mode}`);
+        if (continuation.applied) {
+          expect(continuation.authority).not.toBeNull();
+          if (
+            liveHorsePhase8Authority.check(
+              liveHorsePhase8Authority.stamp(continuation.authority!)
+            ) !== 'usable'
+          )
+            seen.refusedAtGate++;
+        }
+      }
       if (r.phase10Authority) liveHorsePhase10Authority.observeWorker(r.phase10Authority);
       for (const [all, gates] of [
         [r.phase11Authority, liveHorsePhase11Authorities],
@@ -299,10 +407,10 @@ async function playCash(variant: string, hands: number) {
           : decision.amount === undefined
             ? undefined
             : Number(decision.amount);
-      if (!controller.performAction(spot.hero.seat, decision.action, amount)) {
-        if (!controller.performAction(spot.hero.seat, spot.baseline.action, spot.baseline.amount))
-          break;
-      }
+      expect(
+        controller.performAction(spot.hero.seat, decision.action, amount),
+        JSON.stringify({ variant, hand, step, decision, legalActions: spot.state.legalActions })
+      ).toBe(true);
     }
   }
   await worker.drain();
@@ -312,7 +420,7 @@ async function playCash(variant: string, hands: number) {
 describe('the real worker decides every game with its phase pack in charge', () => {
   for (const variant of Object.keys(PACK))
     it(`${variant}: the ${PACK[variant]} pack runs as candidate and every decision is accepted`, async () => {
-      const seen = await playCash(variant, 6);
+      const seen = await playHands(variant, 6);
       expect(seen.decisions).toBeGreaterThan(5);
       expect(
         seen.invalid,
@@ -332,7 +440,7 @@ describe('the real worker decides every game with its phase pack in charge', () 
     }, 120_000);
 
   it('nlh: the joint multiway owner runs as candidate and every decision is accepted', async () => {
-    const seen = await playCash('nlh', 8);
+    const seen = await playHands('nlh', 8);
     expect(seen.decisions).toBeGreaterThan(5);
     expect(
       seen.invalid,
@@ -342,6 +450,24 @@ describe('the real worker decides every game with its phase pack in charge', () 
       )
     ).toBe(0);
     expect(seen.refusedAtGate).toBe(0);
+    expect(
+      seen.modes.get('jointPolicy:candidate') ?? 0,
+      JSON.stringify([...seen.modes])
+    ).toBeGreaterThan(0);
     expect(seen.modes.get('jointPolicy:shadow') ?? 0, JSON.stringify([...seen.modes])).toBe(0);
   }, 120_000);
+});
+
+describe('production admissions preserve accepted tournament decisions in every game', () => {
+  for (const variant of ['nlh', ...Object.keys(PACK)])
+    it(`${variant}: complete tournament context reaches the worker and controller`, async () => {
+      const seen = await playHands(variant, 6, 'tournament');
+      expect(seen.decisions).toBeGreaterThan(5);
+      expect(seen.invalid, JSON.stringify([...seen.modes])).toBe(0);
+      expect(seen.refusedAtGate).toBe(0);
+      if (variant === 'nlh') {
+        expect(seen.modes.get('tournamentPostflop:candidate') ?? 0).toBeGreaterThan(0);
+        expect(seen.modes.get('tournamentPostflop:shadow') ?? 0).toBe(0);
+      }
+    }, 120_000);
 });

@@ -102,7 +102,6 @@ export interface HorseDiscardControllerReceipt {
 export class HandController {
   private config: HandConfig;
   private state: GameState;
-  private immediateFoldCount = 0;
   /**
    * CALLED HANDS ARE SHOWN (Dan 2026-10-25: "show the hand at call down").
    * Per seat, whether its LAST river decision was a call - a plain call, or an
@@ -1134,24 +1133,18 @@ export class HandController {
     return this.performBettingAction(seat, action, amount, origin, onAccepted);
   }
 
-  /** Early folds do not replace the current actor's still-owed decision. */
+  /** Only ordered actions advance the current decision identity. */
   getDecisionActionCount(): number {
-    return this.state.actionHistory.length - this.immediateFoldCount;
+    return this.state.actionHistory.length;
   }
 
-  /** Explicit Lightning fold: final now, even while another player owes a decision. */
-  /**
-   * An early (Lightning) fold. `origin` labels the record exactly as the
-   * turn door does: 'player' for a person's request, 'horse_policy' for a
-   * horse's own decision (Dan 2026-10-24, "HORSES SHOULD FOLD RIGHT AWAY IF
-   * THEY WERE ALREADY FOLDING"). The rules are the same for both.
-   */
+  /** Compatibility door: a fold always belongs to the current actor. */
   performImmediateFold(
     seat: number,
     origin: AcceptedActionOrigin = 'player',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
-    return this.performBettingAction(seat, 'fold', undefined, origin, onAccepted, true);
+    return this.performAction(seat, 'fold', undefined, origin, onAccepted);
   }
 
   private performBettingAction(
@@ -1159,8 +1152,7 @@ export class HandController {
     action: ActionType,
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown',
-    onAccepted?: (record: Readonly<ActionRecord>) => void,
-    immediateFold = false
+    onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
     /* A TOURNAMENT CHIP IS WHOLE, LIKE A DIAMOND (launch audit 2026-10-05).
        Every place this controller splits or rounds already treats a
@@ -1181,9 +1173,7 @@ export class HandController {
     // or advance the hand with a live seat still holding three cards.
     if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
-    const earlyFold = immediateFold && action === 'fold' && seat !== this.state.currentPlayerSeat;
-    if (earlyFold && !['preflop', 'flop', 'turn', 'river'].includes(this.state.stage)) return false;
-    if (!player || (!earlyFold && seat !== this.state.currentPlayerSeat)) return false;
+    if (!player || seat !== this.state.currentPlayerSeat) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
     // whatever currentPlayerSeat claims. Without this, any stale turn pointer
     // lets an automated path (watchdog force-action, disconnect auto-action, a
@@ -1271,8 +1261,8 @@ export class HandController {
     try {
       publicNode = captureHorsePublicActionNode(
         this.config,
-        earlyFold ? { ...this.state, currentPlayerSeat: player.seat } : this.state,
-        this.getAuthoritativeActionState(player.user_id, { asIfToAct: earlyFold }),
+        this.state,
+        this.getAuthoritativeActionState(player.user_id),
         this.getActiveBoardCount(),
         this.readPublicTournamentStage
       );
@@ -1374,7 +1364,6 @@ export class HandController {
       publicNode,
     });
     this.state.actionHistory.push(record);
-    if (earlyFold) this.immediateFoldCount++;
 
     // Observe the exact clamped, validated and cent-snapped action before
     // broadcasts/advanceGame can change the current street or turn. A receipt
@@ -1401,11 +1390,7 @@ export class HandController {
         : 'unknown',
     });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
-    if (!earlyFold) this.advanceGame();
-    else if (this.getActivePlayers().length === 1) this.completeHand();
-    else if (this.isBettingRoundComplete()) this.advanceStage();
-    // Otherwise the same current actor still owes the same decision. Do not
-    // call advanceGame(), which would move past that player's live clock.
+    this.advanceGame();
     return true;
   }
 

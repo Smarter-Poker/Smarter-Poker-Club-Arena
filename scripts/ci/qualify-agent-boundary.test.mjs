@@ -28,6 +28,9 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
    data=state.agent?[state.agent]:[];
   } else if(u.pathname==='/rest/v1/player_stats' || u.pathname==='/rest/v1/audit_trail') data=[];
   else if(u.pathname==='/rest/v1/clubs') {status=failure==='private-column'?200:403;data=[];}
+  else if(u.pathname==='/rest/v1/rpc/fn_ca_club_data_scope') data='downline';
+  else if(u.pathname==='/rest/v1/rpc/ca_club_data_screen') data={scope:'downline',rows:failure==='data-leak'?[{id:'unrelated'}]:[],summary:{games:0,fee:0,total_winnings:0,mtt_winnings:0,on_felt:0}};
+  else if(['ca_club_data_snapshot_v2','ca_rake_snapshot_v2'].some(name=>u.pathname==='/rest/v1/rpc/'+name)) {status=403;data={code:'42501'};}
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_cashier_scope') data='downline';
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_bank_role') data=state.role;
   else if(u.pathname==='/rest/v1/rpc/fn_cashier_statement_scope') data={authorized:true,role:state.role,scope:'downline'};
@@ -48,7 +51,7 @@ test('all three ranks are exercised and zero-balance fixture restores before com
  assert.deepEqual(state.results.results.map(r=>r.role),['super_agent','agent','sub_agent']);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
 });
-for(const failure of ['private-column','unknown-create']) test('cleanup reads durable state after '+failure,async()=>{
+for(const failure of ['private-column','unknown-create','data-leak']) test('cleanup reads durable state after '+failure,async()=>{
  const {state,pending}=await fixture(failure);await assert.rejects(pending);
  assert.equal(state.role,'admin');assert.equal(state.agent,null);
 });

@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237998,
-      "sha256": "a6af9fdff98ba8b2452dbb381e61f6fc8bfaaabd7022dedab160f00f65371773"
+      "bytes": 238727,
+      "sha256": "f4c210f0934fcb941a4d3ab5979a2b8c59d7a0f4c8e595c6960c02443f21b67b"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -357,21 +357,6 @@
       }
     }
   },
-  "horseRiverCallPersistenceNative20261026": {
-    "reason": "Add the exact river-call persistence migration and legacy-writer PostgreSQL 17 qualification to existing required accounting shard 4. Refresh only the reviewed additive workflow input identity; preserve historical receipts, source pins, financial assertions and qualification verdicts. Source binding is not production installation evidence.",
-    "changes": {
-      ".github/workflows/ci.yml": {
-        "previous": {
-          "bytes": 237490,
-          "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
-        },
-        "current": {
-          "bytes": 237730,
-          "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
-        }
-      }
-    }
-  },
   "digestPlayerPeriodNative20261026": {
     "reason": "Add exact isolated PostgreSQL17 player-period qualification in existing accounting shard2. Reviewed diff adds one step only. Current workflow identity changes; all financial inputs, assertions, historical execution receipts and qualification states are preserved. Not production or financial execution evidence. Integration preserves protected-main Ubuntu browser-mirror repair and all its audit entries.",
     "execution_performed": false,
@@ -388,6 +373,21 @@
       "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
     }
   },
+  "horseRiverCallPersistenceNative20261026": {
+    "reason": "Add the exact river-call persistence migration and legacy-writer PostgreSQL 17 qualification to existing required accounting shard 4. Refresh only the reviewed additive workflow input identity; preserve historical receipts, source pins, financial assertions and qualification verdicts. Source binding is not production installation evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 237490,
+          "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+        },
+        "current": {
+          "bytes": 237730,
+          "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
+        }
+      }
+    }
+  },
   "riverAndDigestNativeIntegration20261026": {
     "reason": "Preserve the additive river-call persistence and protected-main digest player-period PostgreSQL 17 qualification steps together in existing accounting shard 4. Bind only the exact combined current workflow; retain both independent audit records, all historical pins, financial inputs, assertions and verdicts. Source identity is not production installation or native execution evidence.",
     "riverWorkflowPin": {
@@ -401,6 +401,21 @@
     "combinedWorkflowPin": {
       "bytes": 237998,
       "sha256": "a6af9fdff98ba8b2452dbb381e61f6fc8bfaaabd7022dedab160f00f65371773"
+    }
+  },
+  "riverRecoveryIntegration20261026": {
+    "reason": "Preserve protected-main cash-return and prior native qualifications plus river-call persistence in accounting shard4. Refresh only active workflow identity; preserve historical receipts and assertions. Source binding is not execution or installation proof.",
+    "previousRiverWorkflowPin": {
+      "bytes": 237998,
+      "sha256": "a6af9fdff98ba8b2452dbb381e61f6fc8bfaaabd7022dedab160f00f65371773"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 238487,
+      "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 238727,
+      "sha256": "f4c210f0934fcb941a4d3ab5979a2b8c59d7a0f4c8e595c6960c02443f21b67b"
     }
   }
 }

@@ -38,10 +38,18 @@ class Harness extends TournamentManagerBase {
     return true;
   }
   protected override requestUrgentEliminationSweepAfter(): void {}
-  async offer() {
+  stopForTest() {
+    this.running = false;
+  }
+  abortForTest() {
+    const controller = new AbortController();
+    controller.abort();
+    this.eliminationSweepSignal = controller.signal;
+  }
+  async offer(budgetMs = 5000) {
     // The ordinary five-second admission budget: the held-field pass must not
     // be cut short by it.
-    this.eliminationSweepDeadlineAt = Date.now() + 5000;
+    this.eliminationSweepDeadlineAt = Date.now() + budgetMs;
     await this.tryTournamentAddOns();
     return this.lastAddOnOfferPass;
   }
@@ -53,7 +61,7 @@ afterEach(() => {
   setMaintenanceFrozen(false);
 });
 
-function field(count: number, rpcMs = 300) {
+function field(count: number, rpcMs = 300, readMs = 0) {
   const ids = Array.from(
     { length: count },
     (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
@@ -71,8 +79,9 @@ function field(count: number, rpcMs = 300) {
         if (table === 'profiles') batch = values;
         return c;
       },
-      then: (resolve: any) =>
-        Promise.resolve({
+      then: async (resolve: any) => {
+        if (readMs) await new Promise((done) => setTimeout(done, readMs));
+        return Promise.resolve({
           error: null,
           data:
             table === 'tournament_players'
@@ -82,7 +91,8 @@ function field(count: number, rpcMs = 300) {
                 : table === 'table_seats'
                   ? ids.map((user_id) => ({ user_id }))
                   : batch.map((id) => ({ id })),
-        }).then(resolve),
+        }).then(resolve);
+      },
     };
     return c;
   });
@@ -189,4 +199,56 @@ it('the freeze stops the pool before its next request', async () => {
   await vi.runAllTimersAsync();
   await pass;
   expect(f.load.calls).toBe(TournamentManagerBase.ADD_ON_BREAK_CONCURRENCY);
+});
+
+it('serves a held field when eligibility reads outlast the ordinary work budget', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-26T13:48:55Z'));
+  const f = field(186, 300, 1_600);
+  const m = new Harness(60_000, 'addon_break');
+  const pass = m.offer();
+  await vi.runAllTimersAsync();
+  await pass;
+  expect(f.receipts.size).toBe(186);
+  expect(f.load.calls).toBe(186);
+});
+
+it.each(['stop', 'abort', 'freeze', 'offer_deadline', 'pass_deadline'] as const)(
+  'never starts purchases when %s ends a slow held-field snapshot',
+  async (reason) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-26T13:48:55Z'));
+    const f = field(186, 300, reason === 'pass_deadline' ? 6_000 : 1_600);
+    const m = new Harness(reason === 'offer_deadline' ? 3_000 : 60_000, 'addon_break');
+    if (reason === 'stop') setTimeout(() => m.stopForTest(), 3_000);
+    if (reason === 'abort') setTimeout(() => m.abortForTest(), 3_000);
+    if (reason === 'freeze') setTimeout(() => setMaintenanceFrozen(true), 3_000);
+    const pass = m.offer();
+    await vi.runAllTimersAsync();
+    await pass;
+    expect(f.load.calls).toBe(0);
+    expect(f.receipts.size).toBe(0);
+  }
+);
+
+it('serves a held field even if its ordinary budget was already spent', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-26T13:48:55Z'));
+  const f = field(186);
+  const m = new Harness(60_000, 'addon_break');
+  const pass = m.offer(-1);
+  await vi.runAllTimersAsync();
+  await pass;
+  expect(f.receipts.size).toBe(186);
+});
+
+it('still yields slow eligibility reads while the field is playing', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-26T13:48:55Z'));
+  const f = field(186, 300, 1_600);
+  const m = new Harness(60_000, 'none');
+  const pass = m.offer();
+  await vi.runAllTimersAsync();
+  await pass;
+  expect(f.load.calls).toBe(0);
 });

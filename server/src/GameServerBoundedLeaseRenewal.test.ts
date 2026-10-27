@@ -72,7 +72,8 @@ function harness({
   const outcomes: string[] = [],
     outstandingHalves: string[] = [],
     retired: any[] = [],
-    reports: string[] = [];
+    reports: string[] = [],
+    reportDetails: any[] = [];
   // Dynamic VM bridge only: production method bodies are extracted unchanged.
   const context: any = {
     performance: { now: () => now },
@@ -130,8 +131,9 @@ function harness({
       inc: (_n: number, { half }: { half: string }) => outstandingHalves.push(half),
     },
     leaseRenewalLoopRelaunchesTotal: { inc() {} },
-    reportError: (_e: unknown, label: string) => {
+    reportError: (_e: unknown, label: string, detail?: unknown) => {
       reports.push(label);
+      reportDetails.push({ message: String(_e), label, detail });
       if (reportThrows) throw Error('report failed');
     },
     retired,
@@ -173,6 +175,7 @@ function harness({
     outstandingHalves,
     retired,
     reports,
+    reportDetails,
     stats: () => ({ cashCalls, tournamentCalls, timers: timers.length, now }),
   };
 }
@@ -767,4 +770,45 @@ test('supervisor exits on owner loss while underlying transport remains retained
   await h.flush();
   assert.equal(e.renewed, 0);
   assert.equal(h.retired.length, 0);
+});
+
+test('an answered but refused tournament proof never claims no answer arrived', async () => {
+  const h = harness({ tournament: async () => tourProof() });
+  const m = manager() as any;
+  m.stoodDownWithItsLeaseIntact = () => false;
+  m.renewTournamentLeaseProof = () => false;
+  m.getTournamentLeaseRenewalRefusal = () => ({ reason: 'dealer_refused', tableId: 'dealer-a' });
+  h.p.tournamentEngines.set('t', m);
+  await h.p.renewOwnedEngineLeaseProofs();
+  const report = h.reportDetails.find((r: any) => r.label === 'GameServer.tournament_lease_lost');
+  assert(report, 'the existing lost-lease report still reaches its reader');
+  assert.match(report.message, /heartbeat answered/);
+  assert.doesNotMatch(report.message, /no answer arrived/);
+  assert.deepEqual(JSON.parse(JSON.stringify(report.detail.renewalFailure)), {
+    reason: 'dealer_refused',
+    tableId: 'dealer-a',
+  });
+  assert.equal(m.fenced, 1);
+});
+
+test('a retained heartbeat callback reports its local refusal before fencing', async () => {
+  let deliver!: (outcome: any) => void;
+  const h = harness({
+    tournament: async (_args, _n, onBatch) => {
+      deliver = onBatch!;
+      return { status: 'unknown' };
+    },
+  });
+  const m = manager() as any;
+  m.stoodDownWithItsLeaseIntact = () => false;
+  m.renewTournamentLeaseProof = () => false;
+  m.getTournamentLeaseRenewalRefusal = () => ({ reason: 'heartbeat_deadline_elapsed' });
+  h.p.tournamentEngines.set('t', m);
+  await h.p.renewOwnedEngineLeaseProofs();
+  deliver(tourProof());
+  const report = h.reportDetails.find((r: any) => r.label === 'GameServer.tournament_lease_lost');
+  assert(report);
+  assert.match(report.message, /heartbeat answered/);
+  assert.equal(report.detail.renewalFailure.reason, 'heartbeat_deadline_elapsed');
+  assert.equal(m.fenced, 1);
 });

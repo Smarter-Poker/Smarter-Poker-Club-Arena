@@ -17,7 +17,7 @@
  *   - an all-in leaver was REFUSED, so the seat stayed and was dealt the next
  *     hand, and the one after.
  *
- * Now: off-turn leavers fold at once (the controller's early fold), on-turn
+ * Owner correction 2026-10-26: off-turn leavers queue their fold until their turn, on-turn
  * leavers fold as before, and an all-in leaver's request is accepted and
  * recorded while the seat plays its hand out un-greyed and is sat out only
  * at settlement. Every spec has a human and a horse twin (CLAUDE.md 10.5).
@@ -117,7 +117,7 @@ for (const [who, id, seat] of [
   ['horse', HORSE, 2],
 ] as const) {
   describe(`${who}: leave in the middle of a hand`, () => {
-    it('off their turn: folds NOW (early fold), no queued auto_fold, out of the next deal', async () => {
+    it('off their turn: queues the fold, keeps cards live, prevents the next deal', async () => {
       const live: LivePlayer[] = [
         { user_id: HUMAN, seat: 1, is_folded: false, is_all_in: false },
         { user_id: HORSE, seat: 2, is_folded: false, is_all_in: false },
@@ -128,13 +128,12 @@ for (const [who, id, seat] of [
 
       expect(res).toMatchObject({ success: true, immediate: false });
       expect(departure).toHaveBeenCalledWith(id, TABLE, seat, OCC[id], 'voluntary');
-      expect(e.handController.performImmediateFold).toHaveBeenCalledWith(seat, 'forced');
+      expect(e.handController.performImmediateFold).not.toHaveBeenCalled();
       expect(e.handController.performAction).not.toHaveBeenCalled();
-      expect(live.find((p) => p.user_id === id)!.is_folded).toBe(true);
-      expect(queuedAutoFold(e, id)).toBe(false);
-      // The fold is done, so the seat may leave the deal straight away.
-      expect(sittingOut(e, id)).toBe(true);
-      expect(e.pendingSitOut.has(id)).toBe(false);
+      expect(live.find((p) => p.user_id === id)!.is_folded).toBe(false);
+      expect(queuedAutoFold(e, id)).toBe(true);
+      expect(sittingOut(e, id)).toBe(false);
+      expect(e.pendingSitOut.has(id)).toBe(true);
       // The player whose turn it is was not touched.
       expect(live.find((p) => p.user_id === OTHER)!.is_folded).toBe(false);
     });

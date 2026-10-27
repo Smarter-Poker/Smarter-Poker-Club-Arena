@@ -121,18 +121,13 @@ describe('a locked player is refused synchronously, human and horse alike', () =
     ['human', HUMAN],
     ['horse', HORSE],
   ] as const) {
-    it(`${who}: the mirror says locked -> LEAVE_LOCKED with the label, no cash-out attempted`, async () => {
+    it(`${who}: a legacy winning-player clock cannot hold a cashout`, async () => {
       const e = makeEngine();
       e.chipContinuity.rows.set(id, row(id));
+      cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
       const res = await e.leaveTable(id);
-      expect(res).toMatchObject({ success: false, code: 'LEAVE_LOCKED', immediate: false });
-      expect(res.error).toMatch(/^Leave Available In \d+:\d\d$/);
-      expect(cashoutVoluntary).not.toHaveBeenCalled();
-      expect(cashout).not.toHaveBeenCalled();
-      expect(e.hub.emitEvent).not.toHaveBeenCalledWith(
-        TABLE,
-        expect.objectContaining({ type: 'seat_left' })
-      );
+      expect(res).toMatchObject({ success: true });
+      expect(cashoutVoluntary).toHaveBeenCalled();
     });
 
     it(`${who}: the mirror is empty but the DATABASE refuses -> refusal returned, seat kept, nothing torn down`, async () => {
@@ -228,7 +223,7 @@ describe('a kick is a system exit', () => {
 });
 
 describe('a leave refused at settlement is held by the clock, then released', () => {
-  it('counts as active for the clock, and the heartbeat opens the door at zero', async () => {
+  it('releases an old held leave without waiting for the retired clock', async () => {
     const e = makeEngine();
     e.onLeaveRefusedAtSettlement(HORSE, 500, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(true);
@@ -237,10 +232,7 @@ describe('a leave refused at settlement is held by the clock, then released', ()
     e.chipContinuity.rows.set(HORSE, row(HORSE, { stay_remaining_ms: 5_000 }));
     cashoutVoluntary.mockResolvedValue({ ok: true, stack: 180 });
     await e.releaseLeavesHeldByClock();
-    expect(cashoutVoluntary).not.toHaveBeenCalled();
-    // Clock at zero: released through the guarded door, seat_left follows.
-    e.chipContinuity.rows.set(HORSE, row(HORSE, { stay_remaining_ms: 0, stay_running: false }));
-    await e.releaseLeavesHeldByClock();
+    // The retired timer cannot hold an existing pending leave either.
     expect(cashoutVoluntary).toHaveBeenCalledWith(HORSE, TABLE, 2, occupancyId);
     expect(e.leaveHeldByClock.has(HORSE)).toBe(false);
     expect(e.hub.emitEvent).toHaveBeenCalledWith(

@@ -77,9 +77,30 @@ describe('Lightning preflop Fold waits for its own turn', () => {
       lightningFoldOnTurn({ ...snapshot, current_player: 'hero' }, 'hero', 'fast_fold')
     ).toBeNull();
     expect(lightningFoldOnTurn(snapshot, 'hero', 'fold_watch')).toBeNull();
-    for (const stage of ['flop', 'turn', 'river', 'waiting']) {
-      expect(lightningFoldOnTurn({ ...snapshot, stage }, 'hero', 'fast_fold')).toBeNull();
+    for (const stage of ['flop', 'turn', 'river']) {
+      expect(lightningFoldOnTurn({ ...snapshot, stage }, 'hero', 'fast_fold')).toEqual({
+        handId: HAND,
+        toCall: 8,
+      });
+      expect(
+        lightningFoldOnTurn(
+          { ...snapshot, stage, lightning: { fold_on_turn: true } },
+          'hero',
+          'fast_fold'
+        )
+      ).toBeNull();
+      expect(
+        lightningFoldOnTurn(
+          { ...snapshot, stage, current_bet: 0, lightning: { fold_on_turn: true } },
+          'hero',
+          'fast_fold'
+        )
+      ).toEqual({ handId: HAND, toCall: 0 });
     }
+    expect(lightningFoldOnTurn({ ...snapshot, stage: 'waiting' }, 'hero', 'fast_fold')).toBeNull();
+    expect(
+      lightningFoldOnTurn({ ...snapshot, lightning: { fold_on_turn: true } }, 'hero', 'fast_fold')
+    ).toBeNull();
   });
   it('refuses incomplete preflop state instead of falling through to early release', () => {
     for (const bad of [

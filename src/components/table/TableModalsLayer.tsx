@@ -1254,9 +1254,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         accountBalance={accountBalance}
         onRetryBalance={onRetryAccountBalance}
         bigBlind={safeBB(blinds)}
-        cashoutRestriction={
-          arenaAsset === 'chips' && cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined
-        }
+        cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
         diamondGamesClubId={diamondGamesClubId}
         onPlayDiamonds={onPlayDiamonds}
         countdown={buyInSecondsLeft ?? undefined}

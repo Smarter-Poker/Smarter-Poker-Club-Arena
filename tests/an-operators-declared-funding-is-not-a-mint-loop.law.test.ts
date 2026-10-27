@@ -103,7 +103,11 @@ describe("an operator's declared funding is not a mint loop", () => {
     expect(MIG).toContain(
       'REVOKE ALL ON FUNCTION public.fn_ca_mint_velocity_watch() FROM PUBLIC, anon, authenticated;'
     );
-    expect(MIG).toContain('GRANT EXECUTE ON FUNCTION public.fn_ca_mint_velocity_watch() TO service_role;');
-    expect(newestFile()).toBe(FILE);
+    expect(MIG).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_ca_mint_velocity_watch() TO service_role;'
+    );
+    expect(newestFile()).toBe(
+      '20261026150531_the_mint_watch_recognizes_its_completed_issuance_receipt_and.sql'
+    );
   });
 });

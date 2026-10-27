@@ -23,6 +23,7 @@ export function barrelContinuationValue(spot: {
   stack: number;
   continuation: BarrelContinuation;
   rakeMarg?: number;
+  callDeductionFraction?: number;
   riskPremium?: number;
 }): number {
   const { continuation: plan } = spot;
@@ -30,9 +31,18 @@ export function barrelContinuationValue(spot: {
   const q = clamp(plan.betProbability, 0, 1);
   const f = Math.max(0, plan.betFraction);
   const rake = clamp(spot.rakeMarg ?? 0, 0, 0.5);
+  const initialPot = spot.pot + c;
+  const exact = Number.isFinite(spot.callDeductionFraction);
+  const initialFee = initialPot * clamp(spot.callDeductionFraction ?? 0, 0, 1);
   const risk = clamp(spot.riskPremium ?? 0, 0, 0.15);
-  const terminal = (pot: number, spent: number): number =>
-    clamp(spot.equity * (1 - rake) - risk * Math.sqrt(spent / Math.max(1, spot.stack)), 0, 1) * pot;
+  const terminal = (pot: number, spent: number): number => {
+    const premium = risk * Math.sqrt(spent / Math.max(1, spot.stack));
+    if (!exact) return clamp(spot.equity * (1 - rake) - premium, 0, 1) * pot;
+    // Charge the current award's fee once. Additional modeled bets retain
+    // the existing marginal-rate approximation, including zero at the cap.
+    const net = Math.max(0, pot - initialFee - Math.max(0, pot - initialPot) * rake);
+    return Math.max(0, clamp(spot.equity, 0, 1) * net - premium * pot);
+  };
   const value = (pot: number, hero: number, opp: number, left: number, spent: number): number => {
     if (left <= 0 || hero <= 0 || opp <= 0 || f <= 0 || q <= 0) return terminal(pot, spent);
     const bet = Math.min(f * pot, hero, opp);
@@ -116,6 +126,7 @@ export function callContinuationValue(s: {
   call: number;
   stack: number;
   rake: number;
+  callDeductionFraction?: number;
   risk: number;
   continuation?: BarrelContinuation;
 }): number {
@@ -127,12 +138,19 @@ export function callContinuationValue(s: {
       stack: s.stack,
       continuation: s.continuation,
       rakeMarg: s.rake,
+      callDeductionFraction: s.callDeductionFraction,
       riskPremium: s.risk,
     });
   const r = s.call >= s.stack ? 1 : s.realization;
   return (
     clamp(
-      s.equity * r * (1 - s.rake) - s.risk * Math.sqrt(clamp(s.call / Math.max(1, s.stack), 0, 1)),
+      s.equity *
+        r *
+        (1 -
+          (Number.isFinite(s.callDeductionFraction)
+            ? clamp(s.callDeductionFraction!, 0, 1)
+            : s.rake)) -
+        s.risk * Math.sqrt(clamp(s.call / Math.max(1, s.stack), 0, 1)),
       0,
       1
     ) *

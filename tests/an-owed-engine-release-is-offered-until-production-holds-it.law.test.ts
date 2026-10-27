@@ -365,7 +365,10 @@ describe('the offer is the existing release, not a second publisher', () => {
   });
 
   it('is driven by protected-main pushes only: no timer, no chain off a finished release', () => {
-    expect(Object.keys(stage.on)).toEqual(['push', 'schedule']);
+    expect(Object.keys(stage.on)).toEqual(['workflow_dispatch', 'push', 'schedule']);
+    // Explicit dispatch is database-only: it cannot produce engine outputs.
+    expect(stage.jobs.detect.if).toBe("github.event_name != 'workflow_dispatch'");
+    expect(stage.jobs.signal.needs).toBe('detect');
     expect(stage.on.schedule).toEqual([{ cron: '30 8 * * *' }, { cron: '30 9 * * *' }]);
     expect(stage.jobs.signal.if).toContain("needs.detect.outputs.admission_allowed == 'true'");
     expect(stage.on.push.branches).toEqual(['main']);

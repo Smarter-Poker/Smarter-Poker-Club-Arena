@@ -2,14 +2,6 @@
   "version": 1,
   "windows": [
     {
-      "id": "2026-10-26-tournament-capacity-and-whole-field-addon-8278-now",
-      "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in this tournament freeze and horse add-on task: \"KEEP GOING WITH PR #8227. FINISH THE REQUIRED CHECKS, MERGE, PUSH AND PUBLISH TODAY. VERIFY EVERY ELIGIBLE HORSE GETS ITS ADD-ON AND THE TABLES RESUME DEALING. DO NOT STOP AT ANOTHER PENDING STATUS.\" Latest continuation: \"Please pick up where you left off, complete the task in full and do not claim success until you have verified that everything is 100% accomplished for this task. Re launch the swarm or use multiple agents to get this done as quickly and efficiently as possible. DO NOT DO ANY UN NECESSARY TESTS, OR WORK OUTSIDE OF THIS SCOPE. FINISH ANY AND ALL TASKS USING THE FASTEST, MOST EFFICiENT ROUTE.\" One immediate certified activation of the protected source carrying PR #8278 and this entry together: retain refused wake custody, hand canonical pending receipts to the original manager admission, finish the captured funded add-on cohort during its held minute, and carry the related #8253 causal consolidation admission and bounded balance-preparation repairs in this same #8278 source. The latest protected main anchor f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd was independently absent from serving 814862e363946b90f103b71246dc69dec24c31d5 and current staged targets 253abdb886ee4c1ad7d74db33ac10cfcb6949c10 and c5f27b75ea784400980aca7c8856b2710c5bd072 when prepared. This minimum anchor establishes readiness only: independently prove the actual protected #8278 squash is included and verify all eligible add-ons, the exact pause and resumed dealing. If another release serves the anchor before this merge, this entry grants nothing; repair actual admission without borrowing a consumed anchor. This is October 26 Chicago only and expires at local midnight, within six hours. Preserve all required checks, forward-only exact-SHA immutable staging, two-minute last-hand lead, hand-boundary drain, durable database freeze, certificate, the full 285-second cutover and rollback reserve, rolling one-window-per-hour seal, thaw and other operations ownership. No migration, second publisher, watcher, timer or direct restart.",
-      "contains": "f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd",
-      "notBefore": "2026-10-27T03:24:39Z",
-      "notAfter": "2026-10-27T05:00:00Z",
-      "migrations": []
-    },
-    {
       "id": "2026-10-26-horse-call-receipts-and-rebuy-context-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, Codex chat 01a1789a-6e62-7c92-8ccf-83b892671b74, explicitly answered: \"Activate off-cycle as soon as ready\" for PRs #8191, #8196 and #8197; subsequently: \"complete the task in full\". One certified off-cycle activation of protected main containing actual #8191 squash c5f27b75ea784400980aca7c8856b2710c5bd072, which includes #8196 bc4407e84afbb566c345bd9b06d295b2692e81db and #8197 2b8f43887bd2a5088d0a42667538141881dd0d02. This activates valid whole-stack call-off and PLO6 river-call receipts, all-in-or-fold call legalization, and tournament context during far-from-money rebuy offers. The earlier cash-window anchor 7fdb2223 is already in serving 814862e3 and grants nothing for these pending fixes. Preserve existing operation ownership, exact immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-rolling-hour seal and thaw. Ends once its anchor is serving, or at expiry before the end of October 26 Chicago. No migrations, unrelated strategy changes, second publisher, watcher or direct restart.",
       "contains": "c5f27b75ea784400980aca7c8856b2710c5bd072",
@@ -214,6 +206,24 @@
       "contains": "a1d1a637371f601921f0620f1d26fa517eb06f29",
       "notBefore": "2026-10-24T02:33:00Z",
       "notAfter": "2026-10-24T06:33:00Z"
+    },
+    {
+      "id": "2026-10-27-tournament-capacity-and-whole-field-addon-8278-extension",
+      "ownerOrder": "Dan, directly in this tournament freeze and horse add-on task: \"KEEP GOING WITH PR #8227. FINISH THE REQUIRED CHECKS, MERGE, PUSH AND PUBLISH TODAY. VERIFY EVERY ELIGIBLE HORSE GETS ITS ADD-ON AND THE TABLES RESUME DEALING. DO NOT STOP AT ANOTHER PENDING STATUS.\" On October 26 at approximately 23:41 America/Chicago, after being told the today-only exception expires at midnight and asked whether to extend off-cycle activation for this repair for up to six more hours while retaining every check and cutover safeguard, Dan explicitly answered: \"Extend off-cycle activation for this repair\". This bounded extension runs October 27 00:00 through 06:00 America/Chicago, exactly six hours, for one certified activation of protected source carrying PR #8278: retained manager wake custody, canonical pending wake admission, continuous captured eligible add-on purchases during the held minute, and the related #8253 causal consolidation and bounded preparation repairs already combined in this PR. Protected anchor c23bc9467a1a1a5668234ca3a3288f4e1f327d64 was independently absent from serving 814862e363946b90f103b71246dc69dec24c31d5 when prepared. Anchor ancestry alone is not completion: independently prove the actual protected #8278 squash is included, every captured eligible horse has its canonical add-on receipt, the full pause is preserved, and tables resume dealing. If another release serves the anchor before this merge, this entry grants nothing. Preserve required checks, exact-SHA immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full 285-second cutover and rollback reserve, rolling one-window-per-hour seal, thaw, forward-only publication and other operations ownership. No migration, unrelated work, second publisher, watcher, timer or direct restart. Ends when its anchor is serving or at the stated expiry.",
+      "contains": "c23bc9467a1a1a5668234ca3a3288f4e1f327d64",
+      "notBefore": "2026-10-27T05:00:00Z",
+      "notAfter": "2026-10-27T11:00:00Z",
+      "migrations": []
+    }
+  ],
+  "databaseWindows": [
+    {
+      "id": "2026-10-26-lightning-dwell-database-only",
+      "ownerOrder": "Dan October 26 direct order in SUGGESTED PROMPTS: all upgrades go live when ready today, no 04:00 deferral; LIGHTNING GAMES explicitly assigns this agent sole ownership of remaining mode-dwell installation tonight. Database-only continuation for the already merged and qualified mode-dwell migration. This entry never requests an engine restart. Its anchor is the already serving qualified engine, so ordinary engine admission is consumed. Explicit database dispatch may join an independently owned certified Deployment Recovery freeze, or its reviewed request_database_break path may reserve one database-only window through the existing provider and typed host seal within this interval. Preserve the existing one-hour seal, engine/source locks, unchanged immutable engine and instance, two-minute notice, hand-boundary drain, durable confirmed freeze, full 285-second reserve, existing installer lock/statement/transaction budgets and completed own-window v3 thaw. No second publisher or independent engine activation is authorized. No competing operation and no replay of installed one-second migration.",
+      "contains": "814862e363946b90f103b71246dc69dec24c31d5",
+      "notBefore": "2026-10-27T01:50:00Z",
+      "notAfter": "2026-10-27T04:59:00Z",
+      "migrations": ["20261026110858_a_lightning_game_stays_in_its_mode_long_enough_to_play_it.sql"]
     }
   ]
 }

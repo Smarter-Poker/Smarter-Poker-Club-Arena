@@ -27,10 +27,12 @@ export function validateOwnerMigrationWindow(w, file, at = Date.now()) {
 export function readOwnerMigrationWindow(id, file) {
   const doc = JSON.parse(readFileSync('server/release/owner-maintenance-windows.json', 'utf8'));
   if (doc.version !== 1) throw new Error('invalid owner manifest version');
-  const w = validateOwnerMigrationWindow(
-    doc.windows?.find((w) => w.id === id),
-    file
+  // Database-only continuations never enter the engine's windows array.
+  const matches = [...(doc.windows ?? []), ...(doc.databaseWindows ?? [])].filter(
+    (w) => w.id === id
   );
+  if (matches.length !== 1) throw new Error('owner migration window must be unique');
+  const w = validateOwnerMigrationWindow(matches[0], file);
   execFileSync('git', ['merge-base', '--is-ancestor', w.contains, 'HEAD'], { stdio: 'pipe' });
   return w;
 }

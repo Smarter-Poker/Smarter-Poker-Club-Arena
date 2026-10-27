@@ -1343,7 +1343,7 @@ jobs:
     # depends on another's state. They are split across four runners by
     # measured weight, each step keeping its own `if:` and evidence upload:
     #   1  BBJ replay, accounting/credit/cash-source suites, Spin expiry
-    #   2  Full weekly accounting activation and its retained evidence
+    #   2  Full weekly accounting activation, split recompute and their evidence
     #   3  F06 custody lanes, tournament probes, Diamond SQL acceptance, Lightning
     #   4  Production alert SQL, cash pg_cron, PKO, MTT, satellite, Breakfast, V31
     # Shards 3 and 4 build the native isolation tester because their suites
@@ -1359,6 +1359,10 @@ jobs:
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
     # preserving the 40m cap, every suite, financial deadline and artifact.
+    # October 27 run 40539287233: shard 1 reached the 40m cap during cleanup;
+    # its unchanged split weekly recompute took 13m, while shard 2 took 18m39s.
+    # Keep that proof and its artifact together on shard 2 (~32m observed sum),
+    # leaving headroom on both without extending any deadline or omitting work.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1901,7 +1905,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -1909,7 +1913,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}

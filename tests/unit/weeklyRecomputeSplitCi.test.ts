@@ -21,7 +21,7 @@ describe('exact weekly recompute qualification reaches required CI', () => {
       (item: { id?: string }) => item.id === 'weekly_recompute_split'
     );
     expect(step).toMatchObject({
-      if: 'matrix.shard == 1',
+      if: 'matrix.shard == 2',
       env: { PG_BIN: '/usr/lib/postgresql/17/bin' },
     });
     expect(step.run).toContain(
@@ -32,6 +32,8 @@ describe('exact weekly recompute qualification reaches required CI', () => {
       (item: { name?: string }) => item.name === 'Retain exact weekly recompute qualification'
     );
     expect(artifact.if).toContain('always()');
+    expect(artifact.if).toContain('matrix.shard == 2');
+    expect(artifact.if).toContain("steps.weekly_recompute_split.outcome != 'skipped'");
     expect(artifact.with['if-no-files-found']).toBe('error');
     expect(artifact.with.path).toContain('*.json');
   });

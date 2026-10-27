@@ -927,7 +927,7 @@ it('accepts explicit positive-calloff metadata without pretending it was an erro
     expect(encodeCases(JSON.stringify({ ...positiveInput, cases: [bad] })).status).toBe(1);
 });
 
-function acceptedCalloffFixture(mode: string) {
+function acceptedCalloffFixture(mode: string, postflop = false) {
   const extract = spawnSync(
     'python3',
     [
@@ -957,10 +957,18 @@ const records=await import('data:text/javascript;base64,${Buffer.from(recordJs).
 const binding=await import('data:text/javascript;base64,${Buffer.from(bindingJs).toString('base64')}');
 const mode=${JSON.stringify(mode)}, input=${JSON.stringify(positiveInput)},c=input.cases[0];
 const coordinate=${JSON.stringify(originalCoordinate)};
+const postflop=${postflop};
 const actor='52345678-abcd-4321-abcd-123456789abc';
 const snapshot={type:'DECIDE_FAST',generation:7,requestId:9,decisionTimeMs:1000,
  fence:c.tableId+':123:1:'+c.leaseGeneration+':7',handJournalContext:binding.captureHorseHandJournalContext([]),
  decisionKey:'private-decision-id',player:{seat:1,user_id:actor,stack:100,bet:20},gameState:{currentBet:120,gameVariant:'nlh'}};
+if(postflop) {input.version=3;c.stage='flop';c.actorId=actor;c.seat=1;snapshot.gameState.stage='flop';snapshot.gameState.gameVariant='plo5';snapshot.gameState.pot=250;snapshot.gameState.contestablePot=225;snapshot.player.cards=['As','Kd','Qc','Jh','Ts'];}
+if(postflop && ['turn','river'].includes(mode)) {c.stage=mode;snapshot.gameState.stage=mode;}
+if(mode==='made-category') {snapshot.player.cards=['A','K','Q','J','T'].map(rank=>({rank,suit:'spades'}));snapshot.gameState.communityCards=['2','3','4'].map(rank=>({rank,suit:'hearts'}));}
+if(mode==='wrong-stage') snapshot.gameState.stage='turn';
+if(mode==='wrong-actor') c.actorId='62345678-abcd-4321-abcd-123456789abc';
+if(mode==='wrong-seat') c.seat=2;
+if(mode==='missing-contestable') delete snapshot.gameState.contestablePot;
 if(mode==='zero-stack') snapshot.player.stack=0;
 if(mode==='chips-behind'||mode==='diagnostic-call-price') snapshot.player.stack=101;
 if(mode==='diagnostic-stack') snapshot.player.stack=0;
@@ -968,14 +976,17 @@ if(mode==='diagnostic-bet') snapshot.player.bet='20';
 if(mode==='diagnostic-overflow') {snapshot.player.bet=-Number.MAX_VALUE;snapshot.gameState.currentBet=Number.MAX_VALUE;}
 if(mode==='diagnostic-anchor') snapshot.fence=snapshot.fence.replace(':123:',':124:');
 const decision={action:'all_in',tournamentPreflopAttribution:{route:'variant_price',referenceProposal:{action:'all_in',amount:null}}};
+if(postflop) delete decision.tournamentPreflopAttribution;
 if(mode==='wrong-route'||mode==='diagnostic-route') decision.tournamentPreflopAttribution.route='chart_open_jam';
 if(mode==='diagnostic-final-action') decision.action='call';
 if(mode==='diagnostic-reference-action') decision.tournamentPreflopAttribution.referenceProposal.action='call';
 if(mode==='sized-reference'||mode==='diagnostic-amount') decision.tournamentPreflopAttribution.referenceProposal.amount=100;
-const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:'preflop'};
-const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:'preflop'},
+const acceptedAction={seat:1,userId:actor,action:'all_in',amount:100,timestamp:1001,stage:postflop?c.stage:'preflop'};
+const witness={handAnchor:binding.anchorHorseDecisionHand(snapshot),identity:{stage:postflop?c.stage:'preflop'},
  executionStatus:'intended',retirementReason:null,selected:{action:'all_in'},executedAction:'all_in',
  acceptedActions:[{intended:true,record:acceptedAction}]};
+if(mode==='wrong-execution-stage') witness.identity.stage='turn';
+if(mode==='wrong-execution-actor') acceptedAction.userId='62345678-abcd-4321-abcd-123456789abc';
 if(mode==='coerced') witness.executionStatus='coerced';
 if(mode==='fold-executed') witness.executedAction='fold';
 let sequence=0;
@@ -986,7 +997,7 @@ c.decisionRecordSha256=(['discover','discovery-ambiguous'].includes(mode)||mode.
 const e=make('execution',witness,mode==='wrong-turn'?'c'.repeat(64):d.turnKey);
 const hand={generation:123,fence:c.tableId+':123:'+c.leaseGeneration+':observe',handKey:c.tableId+':123',
  committedHandId:c.handId,actions:[{...acceptedAction,origin:'horse_policy',
- publicNode:{version:1,status:'captured',actorSeat:1,street:'preflop'},
+ publicNode:{version:1,status:'captured',actorSeat:1,street:postflop?c.stage:'preflop'},
  observationIdentity:{version:1,status:'bound',handId:c.handId,actionOrdinal:0,observationId:c.handId+':0',sessionKey:'a'.repeat(64)}}]};
 if(mode==='unbound') hand.actions[0].observationIdentity.actionOrdinal=1;
 if(mode==='diagnostic-accepted') hand.committedHandId=actor;
@@ -997,6 +1008,7 @@ if(mode==='discovery-ambiguous') rows.push(make('decision',{snapshot,decision}))
 if(mode==='tampered-record') rows[0]={...d,body:d.body+' '};
 if(mode==='wrong-decision') c.decisionRecordSha256='f'.repeat(64);
 const api={...records,...binding,
+ omahaNutStatus:mode==='made-category'?()=>({category:2}):undefined,
  horsePhase6AttributionMismatch:()=>mode==='phase6-refused'?'reference_shape':null,
  horseDecisionReceiptIsValid:()=>mode!=='invalid-receipt',
  reconcileHorseJournalHand:()=>({status:mode==='unreconciled'?'incomplete':'reconciled',gaps:mode==='unreconciled'?['input_mismatch']:[],
@@ -1010,7 +1022,7 @@ console.log(JSON.stringify({input,result:inspectAcceptedCalloffRecords(input,bat
   });
   expect(run.status, run.stderr).toBe(0);
   expect(run.stdout + run.stderr).not.toMatch(
-    /private-secret|private-decision-id|"player"|"stack"|currentBet/
+    /private-secret|private-decision-id|"player"|currentBet|As|Kd|Qc|Jh|Ts/
   );
   return JSON.parse(run.stdout);
 }
@@ -1276,4 +1288,147 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`,
     });
     expect(checked.stdout + checked.stderr).not.toContain('private-secret');
   }
+});
+
+it('v3 admits only exact actor, seat and postflop stage metadata', () => {
+  const c = {
+    ...positiveCase,
+    actorId: '52345678-abcd-4321-abcd-123456789abc',
+    seat: 1,
+    stage: 'flop',
+  };
+  const input = { ...positiveInput, version: 3, cases: [c] };
+  expect(encodeCases(JSON.stringify(input)).status).toBe(0);
+  for (const change of [
+    { stage: 'preflop' },
+    { stage: undefined },
+    { actorId: 'unknown' },
+    { seat: 0 },
+    { seat: true },
+    { seat: 11 },
+    { cards: ['As'] },
+  ])
+    expect(encodeCases(JSON.stringify({ ...input, cases: [{ ...c, ...change }] })).status).toBe(1);
+  expect(encodeCases(JSON.stringify({ ...input, version: 2 })).status).toBe(1);
+});
+it('v3 observes original postflop scalars without requiring a preflop reference', () => {
+  const { input, result } = acceptedCalloffFixture('ok', true);
+  expect(result.status).toBe('observed');
+  expect(result.version).toBe(3);
+  expect(result.cases[0].snapshotSummary).toEqual({
+    stage: 'flop',
+    variant: 'plo5',
+    call: 100,
+    stack: 100,
+    pot: 250,
+    contestablePot: 225,
+    contestablePotPresent: true,
+    ownCardCount: 5,
+    readFramePresent: false,
+    ownMadeCategory: null,
+    finalAction: 'all_in',
+  });
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_reference_result'](d['result'],d['input'])))`,
+      script,
+    ],
+    { input: JSON.stringify({ input, result }), encoding: 'utf8' }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+});
+it.each([
+  'wrong-execution-stage',
+  'wrong-execution-actor',
+  'wrong-stage',
+  'wrong-actor',
+  'wrong-seat',
+  'wrong-turn',
+  'tampered-record',
+  'wrong-source',
+  'unbound',
+  'unreconciled',
+  'coerced',
+  'chips-behind',
+  'duplicate-execution',
+  'wrong-decision',
+  'invalid-receipt',
+])('v3 preserves %s as unknown', (mode) => {
+  const { input, result } = acceptedCalloffFixture(mode, true);
+  expect(result.status).toBe('unknown');
+  const checked = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_reference_result'](d['result'],d['input'])))`,
+      script,
+    ],
+    { input: JSON.stringify({ input, result }), encoding: 'utf8' }
+  );
+  expect(checked.status, checked.stderr).toBe(0);
+});
+it('v3 never substitutes public pot for absent contestable pot', () => {
+  expect(
+    acceptedCalloffFixture('missing-contestable', true).result.cases[0].snapshotSummary
+  ).toMatchObject({ pot: 250, contestablePot: null, contestablePotPresent: false });
+});
+
+it('v3 refuses private fields, invalid scalar types and false witnesses at the output boundary', () => {
+  const { input, result } = acceptedCalloffFixture('ok', true);
+  for (const mutation of [
+    { cards: ['As'] },
+    { stage: 'turn' },
+    { variant: 'private-secret' },
+    { stack: true },
+    { call: 99 },
+    { contestablePotPresent: false },
+    { ownCardCount: 7 },
+    { ownMadeCategory: 10 },
+    { readFramePresent: 'private-secret' },
+  ]) {
+    const bad = {
+      ...result,
+      cases: [
+        {
+          ...result.cases[0],
+          snapshotSummary: { ...result.cases[0].snapshotSummary, ...mutation },
+        },
+      ],
+    };
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        `import json,runpy,sys
+m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());m['reference_diagnostic'].__globals__['bounded_command']=lambda *a,**k:json.dumps(d['result']);print(json.dumps(m['reference_diagnostic'](d['input'])))`,
+        script,
+      ],
+      { input: JSON.stringify({ input, result: bad }), encoding: 'utf8' }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(JSON.parse(checked.stdout)).toEqual({
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+    });
+    expect(checked.stdout + checked.stderr).not.toMatch(/private-secret|As/);
+  }
+});
+
+it.each(['turn', 'river'])('v3 binds a valid %s calloff using its original stage', (mode) => {
+  const { result } = acceptedCalloffFixture(mode, true);
+  expect(result.status).toBe('observed');
+  expect(result.cases[0].snapshotSummary.stage).toBe(mode);
+});
+
+it('v3 derives only a bounded category when the installed deterministic API and original physical cards are available', () => {
+  expect(
+    acceptedCalloffFixture('made-category', true).result.cases[0].snapshotSummary.ownMadeCategory
+  ).toBe(2);
 });

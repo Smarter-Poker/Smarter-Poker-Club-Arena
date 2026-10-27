@@ -4,6 +4,7 @@ import datetime
 import base64
 import hashlib
 import json
+import math
 import re
 import selectors
 import subprocess
@@ -32,16 +33,17 @@ def reference_cases(raw, expected):
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
     uuid = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     if (not isinstance(value, dict) or set(value) != {'version', 'sourceRelease', 'cases'}
-            or type(value['version']) is not int or value['version'] not in (1, 2)
+            or type(value['version']) is not int or value['version'] not in (1, 2, 3)
             or value['sourceRelease'] != expected
             or not re.fullmatch(r'[0-9a-f]{40}', expected)
             or not isinstance(value['cases'], list) or not 1 <= len(value['cases']) <= 6):
         raise ValueError('reference_cases_refused')
-    positive = value['version'] == 2
+    positive = value['version'] in (2, 3)
+    postflop = value['version'] == 3
     seen = set()
     for case in value['cases']:
         if (not isinstance(case, dict) or set(case) != {
-                'handKey', 'tableId', 'decisionRecordSha256' if positive else 'errorAt', 'handId', 'handNumber', 'leaseGeneration'}
+                'handKey', 'tableId', 'decisionRecordSha256' if positive else 'errorAt', 'handId', 'handNumber', 'leaseGeneration'} | ({'stage', 'actorId', 'seat'} if postflop else set())
                 or not all(isinstance(case[k], str) and re.fullmatch(uuid, case[k])
                            for k in ('tableId', 'handId', 'leaseGeneration'))
                 or type(case['handNumber']) is not int or not 1 <= case['handNumber'] <= 9007199254740991
@@ -52,6 +54,10 @@ def reference_cases(raw, expected):
                     or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', case['errorAt'])))
                 or not isinstance(case['handKey'], str)
                 or not re.fullmatch(r'[0-9a-f]{64}', case['handKey'])):
+            raise ValueError('reference_cases_refused')
+        if postflop and (case['stage'] not in ('flop', 'turn', 'river')
+                or not isinstance(case['actorId'], str) or not re.fullmatch(uuid, case['actorId'])
+                or type(case['seat']) is not int or not 1 <= case['seat'] <= 10):
             raise ValueError('reference_cases_refused')
         if not positive:
             datetime.datetime.fromisoformat(case['errorAt'].replace('Z', '+00:00'))
@@ -130,9 +136,24 @@ export function inspectReferenceRecords(input, batch, api) {
   return {status:cases.every(c=>c.status==='observed')?'observed':'unknown',sourceRelease:input.sourceRelease,cases,
     rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
-// Version 2 observes one explicitly named successful decision. The original
+// Version 2 observes a preflop reference; version 3 pins a postflop actor/seat/stage.
+// Both require one exact successful decision. The original
 // reconciler owns the complete capture/execution/read-frame join, not this report.
+// Optional deterministic installed evaluator; no equity sampling or future cards.
+function originalOmahaCategory(p,g,api) {
+  const count={plo4:4,plo5:5,plo6:6}[g.gameVariant];
+  if(!count || typeof api.omahaNutStatus!=='function' || !Array.isArray(p.cards)
+      || p.cards.length!==count || !Array.isArray(g.communityCards)
+      || g.communityCards.length!=={flop:3,turn:4,river:5}[g.stage]) return null;
+  const cards=[...p.cards,...g.communityCards];
+  if(cards.some(c=>!c || !['hearts','diamonds','clubs','spades'].includes(c.suit)
+      || !['2','3','4','5','6','7','8','9','T','J','Q','K','A'].includes(c.rank))
+      || new Set(cards.map(c=>c.rank+':'+c.suit)).size!==cards.length) return null;
+  try {const n=api.omahaNutStatus(p.cards,g.communityCards).category;
+    return Number.isInteger(n)&&n>=0&&n<=9?n:null;} catch {return null;}
+}
 export function inspectAcceptedCalloffRecords(input, batch, api) {
+  const postflop=input.version===3;
   const unknown = (c, reason) => ({handKey:c.handKey,status:'unknown',reason});
   if (!batch || batch.sourceRelease !== input.sourceRelease || batch.status !== 'canonical_journal_export'
       || !Array.isArray(batch.recordsByHand) || batch.recordsByHand.length !== input.cases.length)
@@ -166,16 +187,18 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
       const selectionCounts={decisionRecords:decisions.length,selectedRecords:0,
         finalActionMismatch:0,referenceRouteMismatch:0,referenceActionMismatch:0,
         referenceAmountMismatch:0,stackShapeMismatch:0,callPriceShapeMismatch:0,
-        notWholeStackCall:0,matchingShape:0};
+        notWholeStackCall:0,matchingShape:0,...(postflop?{targetMismatch:0}:{})};
       const shapeReason=body=>{
         const p=body.snapshot?.player,g=body.snapshot?.gameState;
         const ref=body.decision?.tournamentPreflopAttribution;
         if(body.decision?.action!=='all_in')return 'finalActionMismatch';
-        if(ref?.route!=='variant_price')return 'referenceRouteMismatch';
-        if(ref.referenceProposal?.action!=='all_in')return 'referenceActionMismatch';
-        if(ref.referenceProposal.amount!==null)return 'referenceAmountMismatch';
+        if(postflop && (g?.stage!==c.stage || p?.user_id!==c.actorId || p?.seat!==c.seat)) return 'targetMismatch';
+        if(!postflop && ref?.route!=='variant_price')return 'referenceRouteMismatch';
+        if(!postflop && ref.referenceProposal?.action!=='all_in')return 'referenceActionMismatch';
+        if(!postflop && ref.referenceProposal.amount!==null)return 'referenceAmountMismatch';
         if(!Number.isFinite(p?.stack)||!(p.stack>0))return 'stackShapeMismatch';
-        if(!Number.isFinite(g?.currentBet)||!Number.isFinite(p.bet))return 'callPriceShapeMismatch';
+        if(!Number.isFinite(g?.currentBet)||!Number.isFinite(p.bet)
+            || (postflop && (g.currentBet<0 || p.bet<0)))return 'callPriceShapeMismatch';
         const price=g.currentBet-p.bet;
         if(!Number.isFinite(price))return 'callPriceShapeMismatch';
         if(price<p.stack)return 'notWholeStackCall';
@@ -207,19 +230,31 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
           || w.acceptedActions[0].intended!==true || w.acceptedActions[0].record.action!=='all_in'
           || api.bindHorseDecisionToCommittedHand(w,hand).status!=='bound')
         return unknown(c,'calloff_execution_not_intended');
+      if(postflop && (w.identity?.stage!==c.stage || w.acceptedActions[0].record.stage!==c.stage
+          || w.acceptedActions[0].record.seat!==c.seat || w.acceptedActions[0].record.userId!==c.actorId))
+        return unknown(c,'calloff_execution_not_intended');
       const review=api.reconcileHorseJournalHand(entry.records,c.handKey);
       if (review.status!=='reconciled' || review.gaps.length || !(review.matchedActions>0)
           || review.matchedActions!==review.acceptedHorseActions)
         return unknown(c,'calloff_hand_not_reconciled');
       return {handKey:c.handKey,status:'observed',sourceRelease:r.sourceRelease,
-        observation:'accepted_variant_price_whole_stack_calloff',decisionRecordSha256:r.sha256,
+        observation:postflop?'accepted_postflop_whole_stack_calloff':'accepted_variant_price_whole_stack_calloff',
+        ...(postflop?{snapshotSummary:{stage:g.stage,
+          variant:['nlh','plo4','plo5','plo6'].includes(g.gameVariant)?g.gameVariant:null,
+          call:Math.min(g.currentBet-p.bet,p.stack),stack:p.stack,
+          pot:Number.isFinite(g.pot)&&g.pot>=0?g.pot:null,
+          contestablePotPresent:Object.hasOwn(g,'contestablePot'),
+          contestablePot:Number.isFinite(g.contestablePot)&&g.contestablePot>=0?g.contestablePot:null,
+          ownCardCount:Array.isArray(p.cards)&&p.cards.length<=6?p.cards.length:null,
+          readFramePresent:body.readFrame!=null,ownMadeCategory:originalOmahaCategory(p,g,api),finalAction:body.decision.action}}:{}),
+        decisionRecordSha256:r.sha256,
         executionRecordSha256:e.sha256,acceptedRecordSha256:accepted[0].sha256,
         decisionKeySha256:hash(s.decisionKey),guards:{recordHashVerified:true,originalHandBound:true,
           exactDecisionBound:true,positiveStackCalloff:true,receiptValid:true,sameTurnExecution:true,
           intendedAllInAccepted:true,handReconciled:true}};
     } catch {return unknown(c,'record_or_validator_unavailable');}
   });
-  return {version:2,status:cases.every(c=>c.status==='observed')?'observed':'unknown',
+  return {version:postflop?3:2,status:cases.every(c=>c.status==='observed')?'observed':'unknown',
     sourceRelease:input.sourceRelease,cases,rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
 if (process.argv[1] === '--reference-shape-diagnostic') {
@@ -234,10 +269,12 @@ if (process.argv[1] === '--reference-shape-diagnostic') {
     // Match the existing private export CLI: this finite child owns no lobby timer.
     const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
     const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
-    if (input.version===2) {
+    if (input.version===2 || input.version===3) {
       const review=await import('/app/dist/services/horseDecisionJournal/review.js');
       const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
-      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation})));
+      let evaluator={};
+      if(input.version===3) {try {evaluator=await import('/app/dist/engine/HorseEval.js');} catch { /* optional, remains unknown */ }}
+      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation,omahaNutStatus:evaluator.omahaNutStatus})));
     } else console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
   } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
   process.exit(0);
@@ -246,6 +283,7 @@ if (process.argv[1] === '--reference-shape-diagnostic') {
 
 
 def sanitize_positive_calloff_result(result, value):
+    postflop = value['version'] == 3
     reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
                'original_snapshot_binding_mismatch', 'accepted_hand_missing_or_ambiguous',
@@ -263,7 +301,7 @@ def sanitize_positive_calloff_result(result, value):
             raise ValueError()
         return result
     if (set(result) != {'version', 'status', 'sourceRelease', 'cases', 'rawRecordsExported', 'replayVerified', 'activationAllowed'}
-            or type(result['version']) is not int or result['version'] != 2
+            or type(result['version']) is not int or result['version'] != value['version']
             or result['sourceRelease'] != value['sourceRelease']
             or any(result[k] is not False for k in ('rawRecordsExported', 'replayVerified', 'activationAllowed'))
             or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
@@ -282,7 +320,7 @@ def sanitize_positive_calloff_result(result, value):
                 counts = case['selectionCounts']
                 categories = {'finalActionMismatch', 'referenceRouteMismatch', 'referenceActionMismatch',
                               'referenceAmountMismatch', 'stackShapeMismatch', 'callPriceShapeMismatch',
-                              'notWholeStackCall', 'matchingShape'}
+                              'notWholeStackCall', 'matchingShape'} | ({'targetMismatch'} if postflop else set())
                 if (case['reason'] not in {'matching_decision_missing', 'calloff_shape_not_observed'}
                         or not isinstance(counts, dict)
                         or set(counts) != categories | {'decisionRecords', 'selectedRecords'}
@@ -297,21 +335,45 @@ def sanitize_positive_calloff_result(result, value):
                             and (original['decisionRecordSha256'] is None or counts['selectedRecords'] != 1))):
                     raise ValueError()
             continue
-        if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes
+        if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes | ({'snapshotSummary'} if postflop else set())
                 or case['status'] != 'observed' or case['sourceRelease'] != value['sourceRelease']
-                or case['observation'] != 'accepted_variant_price_whole_stack_calloff'
+                or case['observation'] != ('accepted_postflop_whole_stack_calloff' if postflop else 'accepted_variant_price_whole_stack_calloff')
                 or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])
                 or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
                 or not isinstance(case['guards'], dict) or set(case['guards']) != guard_keys
                 or any(v is not True for v in case['guards'].values())):
             raise ValueError()
+        if postflop:
+            summary = case['snapshotSummary']
+            if (not isinstance(summary, dict) or set(summary) != {
+                    'stage', 'variant', 'call', 'stack', 'pot', 'contestablePotPresent',
+                    'contestablePot', 'ownCardCount', 'readFramePresent', 'ownMadeCategory', 'finalAction'}
+                    or summary['stage'] != original['stage']
+                    or summary['variant'] not in (None, 'nlh', 'plo4', 'plo5', 'plo6')
+                    or summary['finalAction'] != 'all_in'
+                    or type(summary['contestablePotPresent']) is not bool
+                    or type(summary['readFramePresent']) is not bool
+                    or (summary['ownMadeCategory'] is not None and
+                        (type(summary['ownMadeCategory']) is not int or not 0 <= summary['ownMadeCategory'] <= 9))
+                    or (summary['ownCardCount'] is not None and
+                        (type(summary['ownCardCount']) is not int or not 0 <= summary['ownCardCount'] <= 6))):
+                raise ValueError()
+            for key in ('call', 'stack', 'pot', 'contestablePot'):
+                n = summary[key]
+                if n is None and key in ('pot', 'contestablePot'):
+                    continue
+                if type(n) not in (int, float) or not math.isfinite(n) or n < 0:
+                    raise ValueError()
+            if (summary['stack'] <= 0 or summary['call'] != summary['stack']
+                    or (not summary['contestablePotPresent'] and summary['contestablePot'] is not None)):
+                raise ValueError()
     if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
         raise ValueError()
     return result
 
 
 def sanitize_reference_result(result, value):
-    if value['version'] == 2:
+    if value['version'] in (2, 3):
         return sanitize_positive_calloff_result(result, value)
     unknown_reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                        'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',

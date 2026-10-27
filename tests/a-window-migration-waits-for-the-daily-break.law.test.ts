@@ -399,3 +399,17 @@ describe('explicit database-only owner-window continuation', () => {
     expect(install.run).not.toMatch(/deploy-club-arena-engine|ssh |request_recovery/);
   });
 });
+
+describe('database-only windows cannot displace engine admission', () => {
+  it('keeps its reviewed entry outside both engine consumers', () => {
+    const doc = JSON.parse(read('server/release/owner-maintenance-windows.json'));
+    const id = '2026-10-26-lightning-dwell-database-only';
+    expect(doc.windows.some((w: { id: string }) => w.id === id)).toBe(false);
+    expect(doc.databaseWindows.filter((w: { id: string }) => w.id === id)).toHaveLength(1);
+    expect(read('scripts/ci/owner-window-migration.mjs')).toContain(
+      '...(doc.databaseWindows ?? [])'
+    );
+    expect(read('.github/workflows/stage-engine-release.yml')).not.toContain('databaseWindows');
+    expect(read('server/scripts/engine-release-transaction.sh')).not.toContain('databaseWindows');
+  });
+});

@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027180331",
+      "name": "cash_evidence_reads_the_accrual_status_cover",
+      "file": "supabase/migrations/20261027180331_cash_evidence_reads_the_accrual_status_cover.sql",
+      "md5": "11068ab8b64973ea000a47edc9a6b58a",
+      "appliedToProductionAt": "2026-10-27T18:13:33.246Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained concurrent-preamble installer; exact full-file history/VALID READY LIVE full index shape/original unchanged assertion metadata and source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8357",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: two original fresh raw completeness assertions totaled166.440seconds and exhausted a guarded remaining-player payout attempt. Actual plan already used the raw positive-week cover but seqscanned all3.7m accrual-batch heap rows (~4GiB) only for identity/status; no existing batch index covered both,99.66percent all-visible. This exact nonpartial nonunique status cover preserves the original0df assertion body, authorization, fresh checks twice, metadata, financial rules, source pins, paid math/cache identity and budgets. Native actual whole owner24cases/full qualifying ID sets,9auth/input cases,7catalog faults including real INVALID CCI, frozen/rollback/replay and real2sessionMVCC visibility fallback passed; unchanged query naturally chose IndexOnlyScan with zero heap fetches in the bounded fixture. Root installed exact qualified bytes once through the maintained active-outage concurrent route while hosted checks pending. This is the very next source recording after verified installation; actual original production timing and remaining player credits/no-double readback remain separate proof."
     }
   ]
 }

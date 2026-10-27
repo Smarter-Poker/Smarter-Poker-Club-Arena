@@ -120,6 +120,11 @@
       "file": "supabase/migrations/20261006154000_an_escrow_refund_and_a_cutover_entry_refund_are_proven.sql",
       "by": "20261012224150",
       "reason": "Installed on 2026-10-06 as version20261006154000 under an_escrow_refund_and_a_cutover_entry_refund_are_proven_returns (recorded SQL MD5 9e343f2876db3bb9b5b85ef02b64901d). Its original-flow function was replaced in full by installed20261012224150, retaining the escrow and wallet-charge branches. Later ticket evidence extends the entitlement list to satellite_seat, wallet_charge and tournament_ticket, making the old exact two-value live-proof false although the original behavior remains. Read-only catalog and maintained replacement source verified2026-10-20. The original exact-match patch must never be replayed against the evolved function; no migration bytes, history, financial functions or rows change."
+    },
+    {
+      "file": "supabase/migrations/20261027142050_deleted_reserves_reuse_unchanged_payer_proofs.sql",
+      "by": "20261027174253",
+      "reason": "142050 was installed and recorded once; never replay its immutable bytes. 74253 changes only its private payer helper to retain the original pure-reader contract in READ ONLY transactions; its live proof requires the qualified new helper plus unchanged original reserve2673336b266659907cb9a787d9847a18, validator89b7297462b6cd4ba6bf145c7d5fa261 and split receipt516cd5a271fd21f4b2fe6f98e503dc75. No history or financial source authority changes."
     }
   ],
   "_superseded": "A merged migration that must never run, because a later file replaced it, is marked by a first line `-- SUPERSEDED BY <version>` or, when the file is byte-pinned and cannot be edited, by a row here. Either way the named version must have a file in this tree, or the mark is ignored."

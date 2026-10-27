@@ -1,0 +1,7 @@
+# Read-only payer receipts
+
+Child source ownership: codex/read-only-payer-receipts-01a17898 in external rb-discharge-01a17898. Parent root solely owns production installer, exact recording and financial operations. No install while root financial57985 active.
+Canonical policies2.9 full reader17:19 and hardening/reference reread; manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. Repository instructions/publication/current checkpoint retained. No source40/65 authority renewal.
+Actual native exact installed73150 after genuine R2/R3 COMMIT then BEGIN READ ONLY failed with cannot execute CREATE TABLE. Separate official74253 adds only early PostgreSQL transaction_read_only pure-validator return to existing private helper. Every old READWRITE byte and metadata remains unchanged. Original73150/142050 installed bytes untouched. Existing alias mapping supersedes only old142050 inline helper proof; new proof retains reserve267/validator89/split516 and newhelper51fd.
+Native18 PASS includes genuine post-COMMIT READONLY success without TEMP, invalid invoice refusal, actual R2/R3/deferred guard and all11 after-cache-hit receipt/source faults. Evidence work/readonly-payer-receipts/native.json. No production calls. Acceptance remaining normal checks/push/protected integration, root install/exact readback, live readonly consumer proof.
+Parent8315 protected main integrated; manifest records unioned with duplicate versions required byte-identical. Parent8345 dependency installed/recorded8735b9b2ca; this follow-up preserves it.

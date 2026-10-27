@@ -1,0 +1,9 @@
+# Deleted reserves reuse unchanged original payer proofs
+
+The original R2 payment transaction timed out while six deleted agents repeatedly decoded split certificates' large allocation arrays to reserve downstream player liabilities. The same certificate was validated again for each deleted user.
+
+The original reserve still locks every fresh pending-period cohort FOR SHARE NOWAIT and validates latest certificate identity and payout conflicts on every call. Only the split-payer validator result is reused within the current transaction, produced by the unchanged original validator. The private PostgreSQL-owned temporary relation drops at commit; certificate physical row versions and every small payer-contract row version are reread before reuse. Same-transaction updates, insertion/deletion and a new latest certificate cannot reuse stale output. No published obligation, human/horse liability, source proof, rate or financial writer changes.
+
+Native qualification includes the original53 role/discharge cases, actual deleted-agent R2 holding player liabilities followed by actual R3 payment, same-transaction invalidation, valid recalculation, forged TEMP refusals, original validator call counts, COMMIT cleanup and concurrent NOWAIT refusal. A controlled4000allocation six-call comparison measured53.298ms original versus12.932ms reuse. This is computational fixture evidence; the actual production bounded payment proof remains required.
+
+Final qualification also binds actual command-ID cmin and physical relation generation; small payer rows include a semantic digest. Controlled same-transaction repeated TRUNCATE/reinsert reproduces identical old ctid/xmin/count but still invalidates and original validator refuses changed amounts. Native74 cases PASS; helper catalogs explicitly qualified and pg_temp is last in its search_path. No production calls.

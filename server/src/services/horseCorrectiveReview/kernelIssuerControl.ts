@@ -11,6 +11,9 @@ export const CORRECTIVE_ISSUER_CONTROL_FILES = Object.freeze(
     '.github/workflows/horse-phase14-qualification.yml',
     'scripts/ci/check-phase14-generation-ledger.mjs',
     'server/src/scripts/horseCorrectiveKernelIssue.ts',
+    'server/src/scripts/horseV56PrivateReplay.ts',
+    'server/src/services/horseCorrectiveReview/v56PrivateReplay.ts',
+    'server/scripts/phase15-exact-replay.mjs',
     'server/src/scripts/horsePrivateJournalExport.ts',
     ...[
       'kernelTournamentDefinition.ts',

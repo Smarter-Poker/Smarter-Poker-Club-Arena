@@ -19,6 +19,8 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseNearNutRiverValue.ts':
+      'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':
       'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':

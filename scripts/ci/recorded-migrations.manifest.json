@@ -1502,6 +1502,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8352",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: original R3 starts a fresh90-second payment slice even when the existing attempt deadline has nearly elapsed, so mandatory postlude/deferred validation can lose all progress at the hard statement timeout. This exact owner now clamps only chunked batches to the original existing deadline. No new budget, reserve, cap, loop, source/math/cache retag or financial condition is introduced; each atomic period and every unchanged postlude/deferred check still completes. Native45 including old-fail/new-partial genuine progress, complete/replay, original money family, invalid chunk deadline and unchanged malformed nonchunk mode passed, with metadata preserved. Installed once via qualified active-outage route, immediate next exact source recording. Actual remaining payment and normal-budget capacity still require live verification."
+    },
+    {
+      "version": "20261027184348",
+      "name": "original_cash_returns_use_their_original_occupancy_keys",
+      "file": "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql",
+      "md5": "d0d91270b7660140029a76bfaf993008",
+      "appliedToProductionAt": "2026-10-27T19:12:08.225Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained qualified-outage installer; full-file history and all4 source postimages/actual before-metadata plus source65 read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly book closure outage: first original2hour flow window timed out240seconds. Original whole/window return lookup now selects candidates by the same original seat-event/refund occupancy keys, retaining every original predicate/math/helper. Only the advance whole-reader pin and those3 guard65 pins evolve. Exact qualified source installed; history/all4 postimages/actual before-metadata and source65 TRUE verified. Native245/84BBJ/7treasury/original key variants/READONLY and normal prechecks qualified. No payments, witness admissions, paid earning math or existing receipts changed. Actual installed window timing, original advance progress and all-books completion require separate live observations."
     }
   ]
 }

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "b6653c5e4330d8b6d1a8480f0cea28ea874ac0b1fce754dbb15586ee28fa6278",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -56,9 +56,9 @@
     "scripts/qualification/original-retirement-boundary/run-certificate-native.py": "cd69823e06d6f7c618e0ab113e8d255539ea3668153141bf598b0c932f313e51",
     "scripts/qualification/original-retirement-boundary/run-generation-cache-native.py": "5748e431ebf6a2a6fb6c7b95928fc55b789eb7d8679dd82d08d6580eae002fb7",
     "scripts/qualification/original-retirement-boundary/run-installer-native.py": "2fb6dd34483b423ab95fc6cac68b52a98594e078ea7369752e0c5bfcf4ae548f",
-    "scripts/qualification/original-retirement-boundary/run-native.py": "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+    "scripts/qualification/original-retirement-boundary/run-native.py": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3",
     "scripts/qualification/original-retirement-boundary/run-source-ref-native.py": "8d93c7d1613f1e8cda69f2acc74abe04181663985993d1459fa8050ba1dc8e8b",
-    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/bootstrap.sql": "997688087569fb095402b1bff74c64d7f1b2cda45ea151255875cddcca6d0dad",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/qualified-parent-20200734.sql": "a4f06a169d4a9b6e95a25d8bd768cde18684cc353d5e7996a00a662f8af67e18",
     "scripts/qualification/original-retirement-boundary/source-ref-reader-proposal.sql": "44432aa686271a580beb4af5a5840b1d0fe06e9f7d2d7309212684843d330cd9",
@@ -164,7 +164,12 @@
     "scripts/ci/probes/chip-journal-atomicity/test_atomicity.py": "f7d6739a6489fee2d21d6b1356c5b3130a0803006c78efe1cf4b619f5e1dd9f1",
     "scripts/ci/probes/chip-journal-atomicity/test_sql_function_parser.py": "2ad29f475d5f47bef8b3ffba104e1dd3848d1e58da58e8b434241d8583e5f84f",
     "scripts/ci/probes/chip-journal-atomicity/test_rebuy_receipts.py": "01d5d47ca7974c1fbb98eb3b5aa6be957c7f6160329faaa954aa6a3ac747d0a8",
-    "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8"
+    "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8",
+    "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+    "scripts/ci/fixtures/original-flow-occupancy/original-authorities.json": "9e3a5c802d9d192c9b7bc8a95ca8cb07688438d639222cec854ce21cd662ebf8",
+    "scripts/ci/fixtures/original-flow-occupancy/expected-postimages.json": "0c0c708d61b22e6f976fe7682108229bcdf57fb5346981c697869692f19d5ba7",
+    "scripts/qualification/original-retirement-boundary/original-flow-occupancy/native-input.py": "72f329ae5f3df2e53d349f042b629f8e13a59d6bb485dd6f0603a5ec17f53c6b",
+    "scripts/qualification/original-retirement-boundary/original-flow-occupancy/witness-cases.sql": "3c0e698bd4dc0a15ce5919062069334db09133d6babaf6e0e110e8879d9372a6"
   },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
@@ -285,6 +290,70 @@
         "ours": "b6899b098829a3eab86240346df2b55abefe04dad0afcddd5a2cff2431c549fb",
         "incoming": "493330fb72213bf83695cf0ec1e5d1047cf916883f234f5714d2081f450604b3",
         "combined": "b6653c5e4330d8b6d1a8480f0cea28ea874ac0b1fce754dbb15586ee28fa6278"
+      }
+    ]
+  },
+  "additiveOccupancyQualifierAudit": {
+    "changes": [
+      [
+        "scripts/qualification/original-retirement-boundary/run-native.py",
+        "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+        "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      ],
+      [
+        "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+        "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
+      ]
+    ],
+    "scope": "Qualified optional exact184348 followup after immutable31649 baseline. Original245/BBJ/treasury bodies/assertions preserved; no cryptographic trust helper replaced or mocked.",
+    "workflow_change": {
+      "previousSHA256": ["9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826"],
+      "currentSHA256": "df54a8dc147afa1fb6a69ed2bbd98c906fc3a9e1a4e0a3aeb2bfbde92e5cc8c8",
+      "reason": "Append only optional exact184348 followup to the existing original245/31649 native command. Immutable31649 baseline, every existing command/assertion and cryptographic source helper remain unchanged."
+    },
+    "qualification": {
+      "status": "passed",
+      "original_cases": 245,
+      "original_wallet_bbj": 84,
+      "original_treasury": 7,
+      "native_witness_variants": 7,
+      "read_only_context": true,
+      "changed_financial_source_pins": 3,
+      "original_ret_predicate_unchanged": true,
+      "migrationSHA256": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+      "native_resultSHA256": "78c5efff0ece8905c3b215ee3acbdacabe2fa8c23c50a38c1e8f18ed218191a6",
+      "boundary": "Finite isolated original-family qualification. Actual first-window production rollback-only parity is separate; no universal fullweek timing guarantee.",
+      "fixtureGuard": "Dedicated original_source_refs database, PostgreSQL17, Unix socket, port55931 only; never production."
+    },
+    "newNativeInputs": [
+      "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql",
+      "scripts/ci/fixtures/original-flow-occupancy/original-authorities.json",
+      "scripts/ci/fixtures/original-flow-occupancy/expected-postimages.json",
+      "scripts/qualification/original-retirement-boundary/original-flow-occupancy/native-input.py",
+      "scripts/qualification/original-retirement-boundary/original-flow-occupancy/witness-cases.sql"
+    ]
+  },
+  "rakebackConsolidationOriginalOccupancyAudit20261027": {
+    "reason": "Exact qualified184348 native wrappers retained byte-identical from installed-recorded c6c448a8; reviewed additive optional occupancy fixture and output identity only. Combined workflow preserves all qualified existing steps including zero-wallet and fee preparation. Other financial source pins unchanged.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "prior": "b6653c5e4330d8b6d1a8480f0cea28ea874ac0b1fce754dbb15586ee28fa6278",
+        "qualifiedIncoming": "df54a8dc147afa1fb6a69ed2bbd98c906fc3a9e1a4e0a3aeb2bfbde92e5cc8c8",
+        "combined": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-native.py",
+        "prior": "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+        "qualifiedIncoming": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3",
+        "combined": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "prior": "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+        "qualifiedIncoming": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880",
+        "combined": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
       }
     ]
   }

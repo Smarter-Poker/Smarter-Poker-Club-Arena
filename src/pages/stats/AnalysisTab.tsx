@@ -235,7 +235,12 @@ export default function AnalysisTab({
               page already holds, declares a minimum sample per rule, ranks by
               cost, and says the consequence rather than the statistic. */}
       <PanelBoundary name="What To Work On" resetKey={panelResetKey}>
-        <LeakPanel overall={overall} positions={full?.positions} still={printing} />
+        <LeakPanel
+          overall={overall}
+          positions={full?.positions}
+          still={printing}
+          metricAvailability={advancedInitialData.metric_availability}
+        />
       </PanelBoundary>
 
       {/* Advanced Stats */}

@@ -5,6 +5,7 @@ import { EMPTY_OVERALL } from '../../src/pages/stats/playerStatsPageModel';
 import OverviewTab from '../../src/pages/stats/OverviewTab';
 import { playerStyleFromStats } from '../../src/components/stats/playerStyleFromStats';
 import { profileStatsFromV2 } from '../../src/utils/profileStats';
+import { findLeaks } from '../../src/components/stats/findLeaks';
 import AdvancedStatsSummary from '../../src/components/stats/AdvancedStatsSummary';
 
 vi.mock('../../src/components/stats/BenchmarkPanel', () => ({
@@ -45,6 +46,24 @@ function overview(available: boolean, cashHands = 100) {
 }
 
 describe('recorded rates remain distinct from unavailable values', () => {
+  it('does not coach from unmeasured advanced rates', () => {
+    const result = findLeaks(
+      {
+        total_hands: 2000,
+        vpip: 0.25,
+        pfr: 0.2,
+        fold_to_three_bet: 0.9,
+        aggression_factor: 0.61,
+        cbet_flop: 0.99,
+      } as any,
+      [],
+      {}
+    );
+    expect(result.leaks.map((x) => x.id)).not.toEqual(
+      expect.arrayContaining(['folds_to_3bet', 'passive_postflop', 'cbet_too_high'])
+    );
+    expect(result.leaks.some((x) => /3bet|passive|cbet/.test(x.id))).toBe(false);
+  });
   it('does not classify a player from an unqualified aggression denominator', () => {
     expect(
       playerStyleFromStats(

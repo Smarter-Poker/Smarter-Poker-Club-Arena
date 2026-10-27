@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { serverNow } from '../../utils/serverClock';
+import './SeatSlot.css';
 
 /** Five straight perimeter runs, clockwise from twelve o'clock. The ink
  * counter-translates inside each sliding clip, so its rounded frame never

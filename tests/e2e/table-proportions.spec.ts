@@ -2102,6 +2102,8 @@ test('the phone action clock uses stationary ink and compositor clips at its rea
     write: false,
     format: 'iife',
     jsx: 'automatic',
+    // The fixture installs the real stylesheet below.
+    loader: { '.css': 'empty' },
     define: { 'process.env.NODE_ENV': '"production"' },
   });
   await page.setViewportSize({ width: 393, height: 852 });

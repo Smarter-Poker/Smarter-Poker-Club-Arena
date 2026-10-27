@@ -63,3 +63,44 @@ export function horseObserverReadsWereIndependent(
     return false;
   }
 }
+
+/** Validates retained pooled-public provenance, never independent observation,
+ * full history coverage, poker strength or live delivery. */
+export function horseObserverReadsUsedPublicPool(
+  value: unknown,
+  request: LiveHorseDecisionSnapshot
+): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const { individualVersion, pooledPublicProfiles, ...base } = v;
+  if (
+    v.version !== 3 ||
+    v.disposition !== 'pooled_public' ||
+    ![1, 2].includes(individualVersion as number) ||
+    !pooledPublicProfiles ||
+    typeof pooledPublicProfiles !== 'object' ||
+    Array.isArray(pooledPublicProfiles)
+  )
+    return false;
+  const p = pooledPublicProfiles as Record<string, unknown>;
+  if (
+    Object.keys(p).length !== 5 ||
+    p.version !== 1 ||
+    !['accepted_hand_public_profiles', 'saved_and_accepted_public_profiles'].includes(
+      p.source as string
+    ) ||
+    typeof p.digest !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(p.digest) ||
+    !Number.isSafeInteger(p.profiles) ||
+    (p.profiles as number) < 1 ||
+    (p.profiles as number) > 9 ||
+    !Number.isSafeInteger(p.availableAtMs) ||
+    (p.availableAtMs as number) < 0 ||
+    (p.availableAtMs as number) > request.decisionTimeMs
+  )
+    return false;
+  return horseObserverReadsWereIndependent(
+    { ...base, version: individualVersion, disposition: 'independent' },
+    request
+  );
+}

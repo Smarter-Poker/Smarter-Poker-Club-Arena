@@ -11,6 +11,12 @@ name: Stage Exact Club Arena Engine Release
 # (scripts/ci/install-window-migrations.mjs). It adds no schedule, sends no
 # event, and never touches the engine or the host.
 on:
+  workflow_dispatch:
+    inputs:
+      owner_window_id:
+        description: 'Reviewed database-only owner window; never requests an engine release or a break'
+        required: true
+        type: string
   push:
     branches: [main]
   schedule:
@@ -21,6 +27,7 @@ permissions: {}
 
 jobs:
   detect:
+    if: github.event_name != 'workflow_dispatch'
     name: Prove Whether The Server Tree Changed
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -270,7 +277,11 @@ jobs:
   window-migrations:
     name: Install Queued Daily-Maintenance Migrations
     needs: detect
-    if: needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')
+    if: >-
+      always() &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (needs.detect.result == 'success' && needs.detect.outputs.admission_allowed == 'true' &&
+        (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')))
     runs-on: ubuntu-latest
     timeout-minutes: 75
     concurrency:
@@ -294,10 +305,14 @@ jobs:
       - name: Install the Postgres client library
         run: npm i pg@8 --no-save --no-audit --no-fund
 
-      - name: Install every queued window migration inside the 04:00 break
+      # An explicit dispatch only consumes a reviewed migration window. The
+      # detector is skipped, so it cannot signal an engine or request a break.
+      # The existing installer validates the manifest/ancestry and requires
+      # the database-owned freeze with all admission and commit reserves.
+      - name: Install every queued window migration inside the certified break
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          OWNER_WINDOW_ID: ${{ needs.detect.outputs.owner_window_id }}
+          OWNER_WINDOW_ID: ${{ inputs.owner_window_id || needs.detect.outputs.owner_window_id }}
         run: |
           owner_args=()
           if [ -n "$OWNER_WINDOW_ID" ]; then owner_args=(--owner-window "$OWNER_WINDOW_ID"); fi

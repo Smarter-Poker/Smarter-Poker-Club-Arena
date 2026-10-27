@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -166,5 +167,30 @@ describe('private explicit refusal without provider work', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('finite direct operator lifecycle', () => {
+  it('returns usage and exits without leaving the lobby publisher alive', () => {
+    const child = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', 'src/scripts/horseV56PrivateReplay.ts'],
+      {
+        cwd: process.cwd(),
+        timeout: 5000,
+        encoding: 'utf8',
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          TMPDIR: process.env.TMPDIR,
+          SUPABASE_URL: 'https://supabase.invalid',
+          SUPABASE_SERVICE_ROLE_KEY: 'offline-private-replay-test',
+        },
+      }
+    );
+    expect(child.error).toBeUndefined();
+    expect(child.status).toBe(64);
+    expect(child.stdout).toContain('Usage: horseV56PrivateReplay');
+    expect(child.stderr).not.toContain('private-hole-card-marker');
   });
 });

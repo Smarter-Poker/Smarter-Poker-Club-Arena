@@ -16,6 +16,9 @@ export async function runHorseV56PrivateReplay(args: readonly string[]) {
   return runV56PrivateReplay(args[0]!, args[1]!, args[2]!);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Finite offline operator invocations do not own the lobby publisher.
+  const { channelHub } = await import('../hub/ChannelHub.js');
+  channelHub.close();
   const r = await runHorseV56PrivateReplay(process.argv.slice(2));
   process.stdout.write(r.output);
   process.exitCode = r.code;

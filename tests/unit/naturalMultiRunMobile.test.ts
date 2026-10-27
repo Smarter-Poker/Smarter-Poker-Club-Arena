@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import {
   completedNaturalRuns,
+  naturalMultiRunTiming,
   naturalMultiRunEngineIdentity,
   installNaturalMultiRunWitness,
   readNaturalMultiRunHistory,
@@ -42,6 +43,7 @@ const witness = () => ({
   flights: [{ hand: 41, recipient: 'winner', landedAt: 300, distance: 0.2 }],
 });
 afterEach(() => {
+  (window as any).__naturalMultiRunWitness?.stop();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
@@ -596,4 +598,95 @@ it('targets three-run history and permits mandatory three while refusing mandato
   expect(selectNaturalMultiRunSubject(tables, rows, [3]).id).toBe('three');
   expect(() => selectNaturalMultiRunSubject([tables[0]], rows, [3])).toThrow(/eligible/);
   expect(selectNaturalMultiRunSubject(tables, rows).id).toBe('choice');
+});
+
+it('natural timing requires one 1500ms confirmation and the full 4100ms winning-card results', () => {
+  const w: any = {
+    confirmations: { '41': [{ shownAt: 0, hiddenAt: 1500 }] },
+    hands: [
+      {
+        hand: 41,
+        runs: 3,
+        lanes: [10000, 14100, 18200].map((winnerAt) => ({ winnerAt })),
+        resultEndedAt: 22300,
+      },
+    ],
+  };
+  expect(naturalMultiRunTiming(packet, w)).toMatchObject({
+    ready: true,
+    violations: [],
+    confirmationMs: 1500,
+    resultGapsMs: [4100, 4100],
+    lastResultMs: 4100,
+  });
+  w.confirmations['41'][0].hiddenAt = 4500;
+  expect(naturalMultiRunTiming(packet, w).violations).toContain(
+    'Run Confirmation Did Not Clear At 1500ms'
+  );
+  w.confirmations['41'].push({ shownAt: 6000, hiddenAt: 7500 });
+  expect(naturalMultiRunTiming(packet, w).violations).toContain('Run Confirmation Repeated');
+  w.hands[0].lanes[1].winnerAt = 12600;
+  expect(naturalMultiRunTiming(packet, w).violations).toContain(
+    'Winning Card Result Did Not Receive Its Additional 1500ms'
+  );
+  w.hands[0].resultEndedAt = 20800;
+  expect(naturalMultiRunTiming(packet, w).violations).toContain(
+    'Final Winning Cards Cleared Early'
+  );
+  w.hands[0].resultEndedAt = null;
+  expect(naturalMultiRunTiming(packet, w).ready).toBe(false);
+});
+
+it('the actual passive DOM witness measures confirmation expiry and both winner windows', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 393, 852));
+  let tick!: FrameRequestCallback;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    tick = callback;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  await installNaturalMultiRunWitness({
+    addInitScript: async (callback: () => void) => callback(),
+  } as any);
+  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span><div class="rit-felt-banner">Players Have Accepted Running It Twice.</div>${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}</div>`;
+  tick(1);
+  now = 2500;
+  document.querySelector('.rit-felt-banner')!.remove();
+  tick(2);
+  const lanes = document.querySelectorAll('.community-area__run');
+  now = 10000;
+  lanes[0].insertAdjacentHTML(
+    'beforeend',
+    '<span class="community-area__run-winner">Winner</span>'
+  );
+  tick(3);
+  now = 14100;
+  lanes[1].insertAdjacentHTML(
+    'beforeend',
+    '<span class="community-area__run-winner">Winner</span>'
+  );
+  tick(4);
+  now = 18200;
+  lanes.forEach((lane) => lane.remove());
+  tick(5);
+  const read = () => (window as any).__naturalMultiRunWitness.read();
+  expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read())).toEqual({
+    ready: true,
+    violations: [],
+    confirmationMs: 1500,
+    resultGapsMs: [4100],
+    lastResultMs: 4100,
+  });
+  document
+    .querySelector('.table-page')!
+    .insertAdjacentHTML(
+      'beforeend',
+      '<div class="rit-felt-banner">Players Have Accepted Running It Twice.</div>'
+    );
+  tick(6);
+  expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read()).violations).toContain(
+    'Run Confirmation Repeated'
+  );
 });

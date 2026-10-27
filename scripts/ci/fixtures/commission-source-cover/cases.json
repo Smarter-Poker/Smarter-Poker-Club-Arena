@@ -1,0 +1,235 @@
+[
+  [
+    "clean",
+    "",
+    {
+      "sources": 3,
+      "read_failed": false,
+      "odd": 0,
+      "tiers_failed": false,
+      "unclassified": 0,
+      "tier_bad": 0,
+      "dup": 0,
+      "e1": 0,
+      "e2": 0,
+      "e3": 0
+    }
+  ],
+  [
+    "missing_commission",
+    "DELETE FROM agent_commissions WHERE user_id=fixture.u(110)",
+    {
+      "e1": 1,
+      "e2": 1
+    }
+  ],
+  [
+    "settled_commission",
+    "UPDATE agent_commissions SET settled_at='2026-10-20' WHERE user_id=fixture.u(110)",
+    {
+      "unclassified": 1,
+      "e1": 1
+    }
+  ],
+  [
+    "wrong_amount",
+    "UPDATE agent_commissions SET amount=amount+.01 WHERE user_id=fixture.u(110)",
+    {
+      "e1": 1,
+      "e3": 1
+    }
+  ],
+  [
+    "wrong_rate",
+    "UPDATE agent_commissions SET commission_rate=.1 WHERE user_id=fixture.u(110)",
+    {
+      "e1": 1
+    }
+  ],
+  [
+    "wrong_club",
+    "UPDATE agent_commissions SET club_id=fixture.u(77) WHERE user_id=fixture.u(110)",
+    {
+      "e1": 1
+    }
+  ],
+  [
+    "commission_outside_window",
+    "UPDATE agent_commissions SET created_at='2026-10-18' WHERE user_id=fixture.u(110)",
+    {
+      "e1": 0,
+      "e2": 0,
+      "e3": 0
+    }
+  ],
+  [
+    "extra_crossclub",
+    "INSERT INTO agent_commissions(source_type,source_id,club_id,user_id,amount,commission_rate,created_at) VALUES('cash_rake_accrual',fixture.u(101),fixture.u(77),fixture.u(777),1,.1,'2026-10-18')",
+    {
+      "e3": 1
+    }
+  ],
+  [
+    "extra_sameclub",
+    "INSERT INTO agent_commissions(source_type,source_id,club_id,user_id,amount,commission_rate,created_at) VALUES('cash_rake_accrual',fixture.u(101),fixture.u(1),fixture.u(777),1,.1,'2026-10-19 08:00Z')",
+    {
+      "e3": 1
+    }
+  ],
+  [
+    "unclassified_null_type",
+    "UPDATE agent_commissions SET source_type=NULL WHERE user_id=fixture.u(110)",
+    {
+      "unclassified": 1,
+      "e1": 1
+    }
+  ],
+  [
+    "unclassified_unknown_type",
+    "UPDATE agent_commissions SET source_type='unknown' WHERE user_id=fixture.u(110)",
+    {
+      "unclassified": 1,
+      "e1": 1
+    }
+  ],
+  [
+    "unclassified_null_id",
+    "UPDATE agent_commissions SET source_id=NULL WHERE user_id=fixture.u(110)",
+    {
+      "unclassified": 1,
+      "e1": 1
+    }
+  ],
+  [
+    "duplicate_commission_bag",
+    "DROP INDEX uq_agent_commissions_source;INSERT INTO agent_commissions(source_type,source_id,club_id,user_id,amount,commission_rate,settled_at,created_at) SELECT source_type,source_id,club_id,user_id,amount,commission_rate,settled_at,created_at FROM agent_commissions WHERE user_id=fixture.u(110)",
+    {
+      "e2": 1
+    }
+  ],
+  [
+    "wrong_contract_club",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{club_id}',to_jsonb(fixture.u(8))) WHERE source_id=fixture.u(101)",
+    {
+      "odd": 1
+    }
+  ],
+  [
+    "object_tiers",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers}','{}') WHERE source_id=fixture.u(101)",
+    {
+      "odd": 1
+    }
+  ],
+  [
+    "missing_tiers",
+    "UPDATE accounting_payable_earning_sources SET contract=contract-'tiers' WHERE source_id=fixture.u(101)",
+    {
+      "odd": 1
+    }
+  ],
+  [
+    "malformed_tier_id",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,agent_id}',to_jsonb('bad'::text)) WHERE source_id=fixture.u(101)",
+    {
+      "tiers_failed": true
+    }
+  ],
+  [
+    "malformed_tier_amount",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,amount}',to_jsonb('bad'::text)) WHERE source_id=fixture.u(101)",
+    {
+      "tiers_failed": true
+    }
+  ],
+  [
+    "invalid_parent",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,agreement,terms,parent_agent_id}',to_jsonb(fixture.u(88))) WHERE source_id=fixture.u(101)",
+    {
+      "tier_bad": 1
+    }
+  ],
+  [
+    "negative_tier",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,amount}','-1') WHERE source_id=fixture.u(101)",
+    {
+      "tier_bad": 1
+    }
+  ],
+  [
+    "excess_rate",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,rate}','1.1') WHERE source_id=fixture.u(101)",
+    {
+      "tier_bad": 1
+    }
+  ],
+  [
+    "zero_tier_still_commission",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,0,amount}','0') WHERE source_id=fixture.u(101)",
+    {
+      "e2": 1,
+      "e3": 1
+    }
+  ],
+  [
+    "missing_agent_user",
+    "UPDATE accounting_payable_earning_sources SET contract=contract#-'{tiers,0,user_id}' WHERE source_id=fixture.u(101)",
+    {
+      "tier_bad": 1
+    }
+  ],
+  [
+    "duplicate_tier_user",
+    "UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers,1,user_id}',to_jsonb(fixture.u(110))) WHERE source_id=fixture.u(101)",
+    {
+      "dup": 1
+    }
+  ],
+  [
+    "read_failed_duplicate_source",
+    "INSERT INTO accounting_payable_earning_sources SELECT * FROM accounting_payable_earning_sources WHERE source_id=fixture.u(101)",
+    {
+      "read_failed": true
+    }
+  ],
+  [
+    "read_failed_null_source_id",
+    "UPDATE accounting_payable_earning_sources SET source_id=NULL WHERE source_id=fixture.u(101)",
+    {
+      "read_failed": true
+    }
+  ],
+  [
+    "read_failed_null_source_type",
+    "UPDATE accounting_payable_earning_sources SET source_type=NULL WHERE source_id=fixture.u(101)",
+    {
+      "read_failed": true
+    }
+  ],
+  [
+    "other_scope_ignored",
+    "INSERT INTO accounting_payable_earning_sources VALUES('cash_rake_accrual',fixture.u(1111),fixture.u(1),'2026-10-19 08:00Z',fixture.u(88),jsonb_build_object('club_id',fixture.u(1),'tiers','[]'::jsonb))",
+    {
+      "sources": 3
+    }
+  ],
+  [
+    "empty_window",
+    "DELETE FROM accounting_payable_earning_sources;DELETE FROM agent_commissions",
+    {
+      "sources": 0,
+      "read_failed": false
+    }
+  ],
+  [
+    "same_uuid_distinct_source_types",
+    "UPDATE accounting_payable_earning_sources SET source_id=fixture.u(101) WHERE source_id=fixture.u(102);UPDATE agent_commissions SET source_id=fixture.u(101) WHERE source_id=fixture.u(102)",
+    {
+      "sources": 3,
+      "read_failed": false,
+      "e1": 0,
+      "e2": 0,
+      "e3": 0
+    }
+  ]
+]

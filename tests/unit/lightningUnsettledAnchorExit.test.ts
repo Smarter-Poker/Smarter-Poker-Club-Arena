@@ -31,5 +31,7 @@ describe('Lightning original-hand departure ownership', () => {
     expect(workflow).toContain('- scripts/ci/test-lightning-unsettled-anchor-exit.py');
     expect(workflow).toContain('run: python3 scripts/ci/test-lightning-unsettled-anchor-exit.py');
     expect(workflow).toContain('path: artifacts/lightning-unsettled-anchor/RESULTS.json');
+    expect(workflow).toContain('run: python3 scripts/ci/test-lightning-void-recovery.py');
+    expect(workflow).toContain('path: artifacts/lightning-void-recovery/RESULTS.json');
   });
 });

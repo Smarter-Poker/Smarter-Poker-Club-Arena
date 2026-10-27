@@ -18,3 +18,15 @@ committed reservations, disconnects, responsible gaming, frozen evidence, termin
 exit idempotency and the existing anchor stack/deletion guards. Configuration and
 RG eligibility are fixture boundaries; terminal states are supplied directly.
 The existing Lightning native workflow runs this regression for relevant changes.
+
+The companion recovery migration names the single PLO4 pool frozen by this
+incident. Its original instance reaper had already voided the uncommitted hand;
+the 1.00 committed-at-fold exposure never became an anchor debit. Recovery never
+replays that hand or charges, credits or claws back chips. After verifying the
+exact corrected departure functions and original void evidence, it calls the
+existing unfreeze door, which retires the old pool sessions and advances the
+epoch while asserting the anchor chip total is unchanged. The same transaction
+resolves the original alert with its evidence preserved. Changed incident state
+is refused; an already recorded recovery is a no-op. A separate native
+PostgreSQL regression exercises the actual unfreeze function and guards through
+the existing Lightning workflow.

@@ -551,6 +551,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorsePreflop.decidePreflopV7'
   ),
   flag('v7Barrels', 'multi-street barrel plans', 'V7'),
+  flag(
+    'barrelContinuationOutlook',
+    'default-off planned turn barrel records its private river outlook without re-rolling intent; requires incremental qualification',
+    'Continuation outlook'
+  ),
   flag('v7SizeReads', 'bet-size-aware range narrowing', 'V7'),
   flag('v7CounterAdapt', 'recency blending against adapting opponents', 'V7'),
   flag('v7AdaptiveMC', 'Monte Carlo early exit when far from every threshold', 'V7'),

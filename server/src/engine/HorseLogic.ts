@@ -1721,6 +1721,9 @@ export interface HorseDecideOpts {
   v7Preflop?: boolean;
   v7SizeReads?: boolean;
   v7Barrels?: boolean;
+  /** Default off until incremental qualification: carry the accepted planned
+   * turn barrel's own-card outlook into the river, without re-rolling its plan. */
+  barrelContinuationOutlook?: boolean;
   v7CounterAdapt?: boolean;
   v7AdaptiveMC?: boolean;
   /** disable the V8 layer: plo8 scoop/quarter awareness, Omaha nut-draw and
@@ -7291,6 +7294,15 @@ export class HorseLogic {
       isTournamentMode(gs) &&
       !vi.isOmaha &&
       gs.allInOrFold !== true;
+    const recordBarrelOutlook = (): void => {
+      try {
+        const o = nextCardOutlook(player.cards, board, vi, opts.drawOutlookQuality !== false);
+        HorseMind.noteOutlook(handKey, player.user_id, street, o.good, o.scare);
+        if (tele15) noteFire('v39_outlook_recorded');
+      } catch {
+        /* the outlook is best-effort */
+      }
+    };
     const planBarrel = (equityNow: number): void => {
       if (!useBarrels || isRiver) return;
       // Only bluffs/semi-bluffs need a plan — value hands bet themselves.
@@ -7300,13 +7312,7 @@ export class HorseLogic {
       if (equityNow < 0.55) {
         HorseMind.notePlan(handKey, player.user_id, fastRandom() < (tourneyAggro ? 0.5 : 0.35));
         // V39: and what the next card would mean, decided now.
-        try {
-          const o = nextCardOutlook(player.cards, board, vi, opts.drawOutlookQuality !== false);
-          HorseMind.noteOutlook(handKey, player.user_id, street, o.good, o.scare);
-          if (tele15) noteFire('v39_outlook_recorded');
-        } catch {
-          /* the outlook is best-effort */
-        }
+        recordBarrelOutlook();
       }
     };
 
@@ -8545,6 +8551,12 @@ export class HorseLogic {
           // barrels abandoned — the original volume measurably lost.
           const continueBase = tourneyAggro ? (isRiver ? 0.42 : 0.66) : isRiver ? 0.35 : 0.52;
           if (fastRandom() < continueBase * Math.min(1.25, bluffScale) * outlookMul39) {
+            // The turn continuation used to return before recording its
+            // river outlook. Keep the existing plan and RNG untouched; the
+            // worker commits this private effect only for the exact action.
+            if (opts.barrelContinuationOutlook === true && street === 'turn') {
+              recordBarrelOutlook();
+            }
             return this.betSize(
               planHandKey,
               pot,

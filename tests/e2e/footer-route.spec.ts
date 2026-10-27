@@ -68,6 +68,18 @@ test.describe('Club Arena footer route contract', () => {
     }
   });
 
+  test('Game Lobby keeps the current query-scoped club', async ({ page }) => {
+    await page.goto('dev/footer?club=kings-club');
+    const nav = page.getByRole('navigation', { name: 'Poker Arena' });
+    const lobby = nav.getByRole('link', { name: 'Game Lobby' });
+    await expect(lobby).toHaveAttribute('href', '/hub/club-arena/clubs/kings-club');
+    await expect(nav.locator('[data-footer-control="game-lobby"]')).toHaveCount(1);
+    await expect(nav.getByRole('link', { name: 'Market', exact: true })).toHaveCount(0);
+    // A second club must replace the previous destination immediately.
+    await page.goto('dev/footer?club=deep-stack-society');
+    await expect(lobby).toHaveAttribute('href', '/hub/club-arena/clubs/deep-stack-society');
+  });
+
   test.describe('on the narrowest phone', () => {
     test.use({ viewport: { width: 320, height: 700 }, hasTouch: true, isMobile: true });
 

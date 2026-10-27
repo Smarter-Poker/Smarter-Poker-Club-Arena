@@ -54,7 +54,7 @@ def main():
         r=command([PG/'pg_ctl','-D',data,'-l',Path(raw)/'postgres.log','-o',f'-k {sock} -p 55498 -c listen_addresses= -c fsync=off','-w','start'])
         if r.returncode: raise RuntimeError(r.stderr)
         try:
-            run("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA auth; CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT current_setting('request.jwt.claim.role',true)$$; CREATE TABLE profiles(id uuid PRIMARY KEY,is_horse boolean,status text,horse_status text); CREATE TABLE ca_horse_fleet_register(horse_id uuid PRIMARY KEY,retired_at timestamptz); CREATE TABLE tournaments(id uuid PRIMARY KEY,format_contract text,table_size integer,max_players integer); CREATE TABLE hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,game_variant text,tournament_id uuid,big_blind numeric,ended_at timestamptz,actions jsonb,players jsonb,hole_cards jsonb); CREATE TABLE ca_hand_facts(hand_id uuid,user_id uuid,table_id uuid,tournament_id uuid,played_at timestamptz,game_variant text,seat integer,position text,players_dealt integer,net numeric,hole_cards jsonb,PRIMARY KEY(hand_id,user_id)); CREATE INDEX idx_ca_hand_facts_user_time ON ca_hand_facts(user_id,played_at DESC);")
+            run("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE SCHEMA auth; CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT current_setting('request.jwt.claim.role',true)$$; CREATE TABLE profiles(id uuid PRIMARY KEY,is_horse boolean,status text,horse_status text); CREATE TABLE ca_horse_fleet_register(horse_id uuid PRIMARY KEY,retired_at timestamptz); CREATE TABLE tournaments(id uuid PRIMARY KEY,format_contract text,table_size integer,max_players integer); CREATE TABLE hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,game_variant text,tournament_id uuid,big_blind numeric,ended_at timestamptz,actions jsonb,players jsonb,hole_cards jsonb); CREATE TABLE ca_hand_facts(hand_id uuid,user_id uuid,table_id uuid,tournament_id uuid,played_at timestamptz,game_variant text,seat smallint,position text,players_dealt smallint,net numeric,hole_cards jsonb,PRIMARY KEY(hand_id,user_id)); CREATE INDEX idx_ca_hand_facts_user_time ON ca_hand_facts(user_id,played_at DESC);")
             for actor in [1,2,3]:
                 run(f"INSERT INTO profiles VALUES ('{uid(actor)}',true,'active','available'); INSERT INTO ca_horse_fleet_register VALUES ('{uid(actor)}',NULL);")
             run(MIGRATION.read_text())
@@ -167,6 +167,50 @@ def main():
             check('large windows keep complete hands within byte budget',0<len(byte_limited['hands'])<64 and byte_limited['capped'] is True and len(json.dumps(byte_limited).encode())<256*1024)
             check('public hand actions are never truncated',all(len(h['actions'])==256 for h in byte_limited['hands']))
             check('large payload still excludes every card',all(x not in json.dumps(byte_limited) for x in ['secret','hole_cards','cards']))
+            # Realistic sparse-context regression: v2 must filter context before
+            # its horizon, without fetching the observer's other contexts' heap.
+            # Include a wide private canary to expose scattered heap work, never
+            # include it in the index or reader projection.
+            run(f"INSERT INTO ca_hand_facts SELECT ('00000000-0000-0000-0004-'||lpad(n::text,12,'0'))::uuid,'{uid(1)}','{uid(100)}',NULL,'2026-10-25T01:15:00Z'::timestamptz+n*interval '0.01 second','plo6',1,'BTN',6,0,to_jsonb(repeat('secret_private_canary',32)) FROM generate_series(1,100000) n; ANALYZE ca_hand_facts;")
+            sparse_before=read(variant='plo5')
+            empty_before=read(variant='plo8')
+            def candidates_plan(variant):
+                source=V2_MIGRATION.read_text()
+                sql=source[source.index('SELECT f.hand_id'):source.index('  ), matched AS')]
+                for key,value in [('p_observer',"'"+uid(1)+"'::uuid"),('p_variant',"'"+variant+"'"),('p_format',"'cash'"),('p_dealt_count','2'),('p_before',"'2026-10-25T02:00:00Z'::timestamptz")]:
+                    sql=sql.replace(key,value)
+                return json.loads(run('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON) '+sql))[0]
+            def walk(plan):
+                yield plan
+                for child in plan.get('Plans',[]): yield from walk(child)
+            before_plan=candidates_plan('plo5')
+            check('baseline reproduces irrelevant-context heap filtering',sum(n.get('Rows Removed by Filter',0)*n.get('Actual Loops',1) for n in walk(before_plan['Plan']))>=99999)
+            index_migration=ROOT/'supabase/migrations/20261027150929_horse_public_history_context_cover.sql'
+            module=(ROOT/'scripts/ci/migration-concurrent-preamble.mjs').as_uri()
+            code="import{readFileSync}from'node:fs';import{splitConcurrentPreamble}from'"+module+"';const s=splitConcurrentPreamble(readFileSync(process.argv[1],'utf8'));if(!s.ok||s.indexes.length!==1)throw Error('shape');console.log(JSON.stringify(s));"
+            split=command(['node','--input-type=module','-e',code,index_migration])
+            if split.returncode: raise AssertionError(split.stderr)
+            shape=json.loads(split.stdout)
+            definition_before=run("SELECT md5(pg_get_functiondef('public.fn_horse_own_public_history_read_v2(uuid,text,text,integer,timestamptz)'::regprocedure));")
+            run(shape['indexes'][0]['statement']);run(shape['body'])
+            # All fixture rows are immutable: qualify genuine index-only access.
+            run('VACUUM ANALYZE ca_hand_facts')
+            after_plan=candidates_plan('plo5')
+            scans=[n for n in walk(after_plan['Plan']) if n.get('Index Name')=='ca_hand_facts_observer_context_cover']
+            check('sparse context uses covering observer variant count time range',len(scans)==1 and scans[0]['Node Type']=='Index Only Scan' and all(k in scans[0]['Index Cond'] for k in ['user_id','game_variant','players_dealt','played_at']))
+            check('sparse context avoids irrelevant heap reads',scans[0].get('Heap Fetches',0)<=scans[0]['Actual Rows'] and sum(n.get('Rows Removed by Filter',0) for n in walk(after_plan['Plan']))==0)
+            check('sparse and absent contexts preserve byte-exact public history',read(variant='plo5')==sparse_before and read(variant='plo8')==empty_before)
+            check('running engine exact source receipt remains compatible',definition_before==run("SELECT md5(pg_get_functiondef('public.fn_horse_own_public_history_read_v2(uuid,text,text,integer,timestamptz)'::regprocedure));"))
+            # The same physical key is usable after PL/pgSQL switches to a
+            # generic cached plan. No force_custom_plan runtime workaround.
+            source=V2_MIGRATION.read_text();sql=source[source.index('SELECT f.hand_id'):source.index('  ), matched AS')]
+            for key,value in [('p_observer','$1'),('p_variant','$2'),('p_dealt_count','$3'),('p_before','$4'),('p_format','$5')]: sql=sql.replace(key,value)
+            generic=json.loads(run("SET plan_cache_mode=force_generic_plan; PREPARE context_read(uuid,text,integer,timestamptz,text) AS "+sql+"; EXPLAIN(FORMAT JSON) EXECUTE context_read('"+uid(1)+"','plo5',2,'2026-10-25T02:00:00Z','cash');"))[0]['Plan']
+            check('generic cached reader plan uses the same context cover',any(n.get('Index Name')=='ca_hand_facts_observer_context_cover' for n in walk(generic)))
+            run('DROP INDEX ca_hand_facts_observer_context_cover; CREATE INDEX ca_hand_facts_observer_context_cover ON ca_hand_facts(user_id,played_at);')
+            check('wrong named preexisting index is refused','horse_history_context_cover_shape_changed' in run(shape['body'],False))
+            run('DROP INDEX ca_hand_facts_observer_context_cover;');run(shape['indexes'][0]['statement']);run(shape['body'])
+            print(json.dumps(dict(performance=dict(before_ms=before_plan['Execution Time'],after_ms=after_plan['Execution Time'],before_blocks=before_plan['Plan'].get('Shared Hit Blocks',0)+before_plan['Plan'].get('Shared Read Blocks',0),after_blocks=after_plan['Plan'].get('Shared Hit Blocks',0)+after_plan['Plan'].get('Shared Read Blocks',0)))))
             print(json.dumps(dict(checks=checks,passed=len(checks),definitionMd5=p['definitionMd5'])))
         finally:
             r=command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])

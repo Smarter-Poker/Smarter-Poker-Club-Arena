@@ -31,6 +31,14 @@ class FunctionHistoryScannerTest(unittest.TestCase):
     (directory/f"{index:03d}.sql").write_text(sql)
    return authoritative_function_closure(root,fixture,set(roots),through=through)
 
+ def test_private_money_dependency_keeps_its_schema_and_real_body(self):
+  private=function("money",body="BEGIN /* REAL_PRIVATE */ RETURN; END").replace("public.money(","smarter_private.money(")
+  public=function("money",body="BEGIN /* OTHER_PUBLIC */ RETURN; END")
+  root=function("root",body="BEGIN PERFORM smarter_private.money(); END")
+  closure=dict(self.closure([private+public+root],{"root"}))
+  self.assertIn("REAL_PRIVATE",closure["smarter_private.money"])
+  self.assertNotIn("money",closure)
+
  def test_migration_ceiling_pins_the_complete_function_graph(self):
   first=function("helper",body="BEGIN /* PINNED */ RETURN; END")+function(
    "root",body="BEGIN PERFORM public.helper(); END"

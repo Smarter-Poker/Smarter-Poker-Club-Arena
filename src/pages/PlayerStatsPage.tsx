@@ -1361,10 +1361,13 @@ export default function PlayerStatsPage() {
   );
   // Style label for the share card. Shared with TrophyRoom so the two can
   // never disagree about what style a player is - see playerStyleFromStats.
-  const shareStyle = useMemo(
-    () => playerStyleFromStats(allTimeStats?.overall ?? full?.overall),
-    [allTimeStats?.overall, full?.overall]
-  );
+  const shareStyle = useMemo(() => {
+    const source = allTimeStats ?? full;
+    return playerStyleFromStats(
+      source?.overall,
+      source?.contract.quality.metric_availability.aggression_factor === true
+    );
+  }, [allTimeStats?.overall, full?.overall]);
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;

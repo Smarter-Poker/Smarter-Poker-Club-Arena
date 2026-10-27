@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { EMPTY_OVERALL } from '../../src/pages/stats/playerStatsPageModel';
 import OverviewTab from '../../src/pages/stats/OverviewTab';
+import { playerStyleFromStats } from '../../src/components/stats/playerStyleFromStats';
 import { profileStatsFromV2 } from '../../src/utils/profileStats';
 import AdvancedStatsSummary from '../../src/components/stats/AdvancedStatsSummary';
 
@@ -44,6 +45,14 @@ function overview(available: boolean, cashHands = 100) {
 }
 
 describe('recorded rates remain distinct from unavailable values', () => {
+  it('does not classify a player from an unqualified aggression denominator', () => {
+    expect(
+      playerStyleFromStats(
+        { total_hands: 1000, vpip: 0.25, pfr: 0.2, aggression_factor: 0.61 },
+        false
+      )
+    ).toBeNull();
+  });
   it('retains unavailable rate evidence in the profile normalization', () => {
     const absent = profileStatsFromV2({
       contract_version: 2,

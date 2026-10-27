@@ -241,6 +241,7 @@ export default function OverviewTab({
           they are converted exactly once, here, at the boundary. */}
       <PanelBoundary name="Benchmarks" resetKey={panelResetKey}>
         <BenchmarkPanel
+          scope={scope}
           // The metric being benchmarked hardest here is bb/100, which the
           // RPC computes over CASH hands only. Passing total_hands let a
           // player with 400 cash + 900 tournament hands clear the 500-hand

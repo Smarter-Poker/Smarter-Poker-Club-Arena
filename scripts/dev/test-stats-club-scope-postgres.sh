@@ -48,6 +48,9 @@ PY
 "${psql[@]}" -f "$fixture/recorded-opportunities-before.sql" \
  -f "$repo/supabase/migrations/20261027173840_player_stat_rates_use_recorded_opportunities.sql" \
  -f "$fixture/recorded-opportunities-after.sql"
+"${psql[@]}" -f "$fixture/cohort-bootstrap.sql" \
+ -f "$repo/supabase/migrations/20261027174948_stat_comparisons_use_exact_asset_scoped_cohorts.sql" \
+ -f "$fixture/cohort-assertions.sql"
 if [[ -n "${STATS_FUNDED_EXPORT:-}" ]]; then
  "${psql[@]}" -Atc "SELECT pg_get_functiondef('public.ca_player_stats_overview_v2_by_club(uuid,integer,text,text,uuid)'::regprocedure)" >"$STATS_FUNDED_EXPORT"
 fi

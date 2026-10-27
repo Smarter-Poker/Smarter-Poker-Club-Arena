@@ -40,3 +40,10 @@ prove inclusion of the actual #8278 squash. Required checks, immutable staging,
 two-minute lead, drain, database freeze, full 285-second rollback reserve,
 rolling-hour seal and thaw remain required. An anchor consumed by another
 release grants no later activation. No activation or dispatch occurs here.
+
+Related #8253 consolidation repairs are integrated into this same candidate:
+classify an undealable spread field at its existing hand/adoption edge, and let
+one bounded balance preparation reach its first durable fence before yielding.
+Their original regression protection remains intact. The combined protected
+candidate includes both source histories and current main; one exact-head
+qualification and certified activation cover the connected tournament repair.

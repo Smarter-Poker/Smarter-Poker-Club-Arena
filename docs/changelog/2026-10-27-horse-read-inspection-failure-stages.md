@@ -1,0 +1,5 @@
+# Horse read inspection failure stages
+
+The bounded opponent-read inspector previously collapsed every runtime refusal into one generic error, preventing diagnosis of the retained Doc/Woo inspection failure. It now emits a closed unavailable result with a stage code on stderr, preserving exit status 1 and withholding partial success output. Internal exception text, paths, records, selections, and private cards never become diagnostic fields. Untrusted exceptions cannot supply their own codes.
+
+Selection and read limits, source identity, journal reconciliation, independent observer evaluation, successful output, pinned SSH guards and provider dispatch remain unchanged. The existing native test workflow exercises the actual CLI with isolated synthetic modules, including malformed input, wrong identity, import failure, missing journal configuration, read/reconcile/decode/plan/frame/summary refusal, the byte bound, forged errors, and successful output. This is diagnostic tooling only; it neither repairs nor reclassifies the historical failure and does not prove any horse decision or playing strength. No production inspection was dispatched by this change.

@@ -16,6 +16,14 @@ The existing FourTableLimit source contract now reads trigger installation
 from its original migration, as its seat-trigger test already did. Function
 assertions continue to read the latest definition and pin RUNNING admission.
 
+Required CI also exposed an independent native fixture clock mismatch after
+UTC midnight. The Club Data boundary scenario seeded UTC `CURRENT_DATE`,
+while its real reader correctly clamps to the Chicago business day. The
+existing runner now captures one Chicago day from its private database and
+uses that same explicit date for setup and assertions. The original scenario
+failed with `operator totals wrong`; the corrected full scenario passes all
+unchanged fee, privacy, downline and role assertions. No reporting SQL changed.
+
 Advance bookings can still become simultaneous commitments later. This change
 closes the demonstrated late-entry bypass; it does not cancel previously paid
 entries or promise a scheduling interval policy for future events.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import {
   runTournamentLeague,
+  tournamentLeagueBlindLevels,
   tournamentBaselineRunVerified,
   TOURNAMENT_LEAGUE_OBJECTIVES,
   summarizeTournamentPromotion,
@@ -13,6 +15,35 @@ import {
 import { horseLeagueComputeResponseIsValid } from './HorseLeagueComputeWorkerClient.js';
 
 describe('Phase 8 paired tournament league', () => {
+  it.each([0, 1, 2])('forecasts the actual next blind and ante level from level %i', (level) => {
+    const forecast = tournamentLeagueBlindLevels(level);
+    const dealtNextLevel = tournamentLeagueBlindLevels(level + 1).current;
+    expect(forecast.next).toEqual(dealtNextLevel);
+    expect(forecast.current.ante).toBe(level < 2 ? 0 : 4);
+    const projected = buildTournamentMState({
+      stackChips: 2000,
+      ...forecast.current,
+      anteType: forecast.anteType,
+      playersAtTable: 6,
+      nextSmallBlind: forecast.next.smallBlind,
+      nextBigBlind: forecast.next.bigBlind,
+      nextAnte: forecast.next.ante,
+      minutesToNextLevel: 3,
+    });
+    const nextLevel = tournamentLeagueBlindLevels(level + 1);
+    const dealt = buildTournamentMState({
+      stackChips: 2000,
+      ...nextLevel.current,
+      anteType: nextLevel.anteType,
+      playersAtTable: 6,
+    });
+    expect(projected.projectedOrbitCostChips).toBe(dealt.orbitCostChips);
+    if (level === 1) {
+      expect(projected.orbitCostChips).toBe(30);
+      expect(projected.projectedOrbitCostChips).toBe(84); // 20+40+6*4, not 60.
+    }
+  });
+
   it('conserves two satellite seats when equal stacks tie for the final award', () => {
     const returns = [50, 25, 25].map((prizePct) =>
       realizedTournamentReturn('satellite', prizePct, 0, 36000, 0)

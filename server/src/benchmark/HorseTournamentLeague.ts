@@ -38,6 +38,18 @@ export function tournamentLeagueEntrants(objective: TournamentLeagueObjective): 
   return objective === 'spin' ? 3 : objective === 'sng' ? 6 : 18;
 }
 
+/** The league forecast must describe the same schedule that deals its next level. */
+export function tournamentLeagueBlindLevels(level: number) {
+  const at = (index: number) => {
+    const bigBlind = 10 * 2 ** index;
+    return { smallBlind: bigBlind / 2, bigBlind, ante: index >= 2 ? Math.round(bigBlind / 10) : 0 };
+  };
+  const current = at(level);
+  const next = at(level + 1);
+  const anteType = current.ante > 0 || next.ante > 0 ? ('per_player' as const) : ('none' as const);
+  return { current, next, anteType };
+}
+
 /** A dead heat can split the last satellite award. Counting every nonzero
  * fraction as a whole seat would create more seat equity than was funded. */
 export function realizedTournamentReturn(
@@ -466,8 +478,8 @@ async function playTournament(
       .map((p, index) => ({ ...p, seat: index + 1 }));
     const dealerSeat = Math.min(buttons.get(tableIndex) ?? 1, tablePlayers.length);
     const level = Math.floor(hand / 6);
-    const bigBlind = 10 * 2 ** level;
-    const ante = level >= 2 ? Math.round(bigBlind / 10) : 0;
+    const { current, next, anteType } = tournamentLeagueBlindLevels(level);
+    const { bigBlind, ante } = current;
     const starts = new Map(alive.map((p) => [p.user_id, p.stack]));
     const totalBefore = alive.reduce((sum, p) => sum + p.stack, 0);
     const config = {
@@ -475,7 +487,7 @@ async function playTournament(
       handNumber: hand + 1,
       gameVariant: 'nlh' as const,
       isTournament: true,
-      smallBlind: bigBlind / 2,
+      smallBlind: current.smallBlind,
       bigBlind,
       ante,
       rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
@@ -553,15 +565,15 @@ async function playTournament(
         stackByUser: Object.fromEntries(
           state.players.map((p) => [p.user_id, p.stack + p.totalInvested])
         ),
-        currentSmallBlind: bigBlind / 2,
+        currentSmallBlind: current.smallBlind,
         currentBigBlind: bigBlind,
         currentAnte: ante,
-        anteType: ante > 0 ? 'per_player' : 'none',
+        anteType,
         playersAtTable: state.players.length,
         seatsPerTable: 6,
-        nextSmallBlind: bigBlind,
-        nextBigBlind: bigBlind * 2,
-        nextAnte: Math.round(bigBlind / 5),
+        nextSmallBlind: next.smallBlind,
+        nextBigBlind: next.bigBlind,
+        nextAnte: next.ante,
         nextBlindInMin: (6 - (hand % 6)) / 2,
         currentLevel: level,
         levelDurationMin: 3,
@@ -590,14 +602,14 @@ async function playTournament(
       };
       tournament.m = buildTournamentMState({
         stackChips: hero.stack,
-        smallBlind: bigBlind / 2,
+        smallBlind: current.smallBlind,
         bigBlind,
         ante,
         anteType: tournament.anteType!,
         playersAtTable: state.players.length,
-        nextSmallBlind: bigBlind,
-        nextBigBlind: bigBlind * 2,
-        nextAnte: Math.round(bigBlind / 5),
+        nextSmallBlind: next.smallBlind,
+        nextBigBlind: next.bigBlind,
+        nextAnte: next.ante,
         minutesToNextLevel: tournament.nextBlindInMin,
       });
       const gs: HorseGameStateV2 = {

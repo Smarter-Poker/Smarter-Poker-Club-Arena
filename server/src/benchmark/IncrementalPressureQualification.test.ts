@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 /** Structural fixtures only; never warm histories, consume seeds or execute deals. */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -270,3 +272,30 @@ test('each applicable component needs its own registered positive counter, never
     )
   );
 });
+
+test('actual CLI disables its governor before transitive imports and refuses absent plans without output', () => {
+  const server = fileURLToPath(new URL('../../', import.meta.url));
+  const program = `process.argv=[process.execPath,'featureAblationQualify.ts','--plan','--target=pressure_package','--source-sha='+'a'.repeat(40),'--output='+process.cwd()+'/never-written-unregistered-plan.json'];try {await import('./src/scripts/featureAblationQualify.ts');} catch {} const {equityGovernor}=await import('./src/engine/EquityLoadGovernor.ts');const {existsSync}=await import('node:fs');const receipt={enabled:equityGovernor.snapshot().enabled,outputExists:existsSync(process.cwd()+'/never-written-unregistered-plan.json')};console.log(JSON.stringify(receipt));process.exit(receipt.enabled||receipt.outputExists?1:0);`;
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', '--input-type=module', '-e', program],
+    {
+      cwd: server,
+      env: {
+        ...process.env,
+        EQUITY_GOVERNOR: 'on',
+        NODE_ENV: 'qualification',
+        VITEST: '',
+        SUPABASE_URL: 'https://supabase.invalid',
+        SUPABASE_SERVICE_ROLE_KEY: 'qualification-offline-placeholder',
+      },
+      encoding: 'utf8',
+      timeout: 20000,
+    }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.trim().split('\n').at(-1)!), {
+    enabled: false,
+    outputExists: false,
+  });
+}, 25000);

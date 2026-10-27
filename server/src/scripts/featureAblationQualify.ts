@@ -1,10 +1,3 @@
-import {
-  assertIncrementalWorkerFlags,
-  authenticateIncrementalPlan,
-  incrementalQualificationRules,
-  isIncrementalQualificationTarget,
-} from '../benchmark/IncrementalPressureQualification.js';
-import { buildIncrementalWarmRecords } from '../benchmark/IncrementalPressureDevelopment.js';
 import type { FeatureAblationTarget } from '../benchmark/FeatureAblationQualification.js';
 /** Manual, protected, contract-only provider runner. It never calls the DEV
  * export and has no production database credentials, writer or activation. */
@@ -30,6 +23,14 @@ for (const key of ['target', 'source-sha', 'output'])
   if (!args.has(key)) throw Error('Missing --' + key);
 if (!planOnly && !args.has('cell')) throw Error('Missing registered cell');
 if (planOnly && args.has('cell')) throw Error('Plan mode never selects or deals a cell');
+const {
+  assertIncrementalWorkerFlags,
+  authenticateIncrementalPlan,
+  incrementalQualificationRules,
+  isIncrementalQualificationTarget,
+} = await import('../benchmark/IncrementalPressureQualification.js');
+const { buildIncrementalWarmRecords } =
+  await import('../benchmark/IncrementalPressureDevelopment.js');
 const {
   qualificationPlan,
   qualificationPlanDigest,

@@ -31,3 +31,7 @@ python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-
 # Valid historical role promotion cannot strand the original commission cascade.
 python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Optional club-book memo generation begins after the original player round.
+python3 -B "$root/scripts/ci/test-book-memo-after-r3-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

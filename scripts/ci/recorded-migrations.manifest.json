@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027194250",
+      "name": "foreign_certificates_read_their_original_cash_cover",
+      "file": "supabase/migrations/20261027194250_foreign_certificates_read_their_original_cash_cover.sql",
+      "md5": "059a7ca4303b58798f4c33ea9b143560",
+      "appliedToProductionAt": "2026-10-27T20:08:18.036Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation; full-file history, seven-column/two-key complete index metadata and actual pre/post original source metadata readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: the former Deep Stack Society standalone original strict foreign-certificate Round3 timed out285s while its required original club/week rawcash heap scan estimated1328676 rows. The exact native-qualified nonpartial seven-column club/earned covering index was installed through the maintained one-shot CCI route. Full-file history and VALID/READY/LIVE metadata, both default key opclasses/collations/options, original154b8 helper wholemetadata, both original effective/payable views including owner/ACL/definition, all source columns and all earlier indexes were read back against the actual preinstall baseline. Original Scope72ab, countscc867 and65-source authority remain unchanged. Native37/12boundaries/9catalog faults/RR/MVCC and normal809prepush checks passed. No function, earning row, rate, paid certificate, source pin, cache, generation, ACL or budget was changed by this index source. This readback queries no wallet or source data and makes no payment, closure, actual helper timing or4AMcapacity claim; these remain separate live verification."
     }
   ]
 }

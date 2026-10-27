@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const acquire = vi.fn();
 const prewarm = vi.fn();
+const waitForTableEntry = vi.fn();
 const isSubscribed = vi.fn(() => false);
 const getSeatedPlayers = vi.fn();
 const getToken = vi.fn();
@@ -21,6 +22,7 @@ vi.mock('../src/utils/ChunkPreloader', () => ({ preloadRoute: vi.fn() }));
 vi.mock('../src/services/EngineSocketMux', () => ({
   engineSocketMux: {
     prewarm: (...a: unknown[]) => prewarm(...a),
+    waitForTableEntry: (...a: unknown[]) => waitForTableEntry(...a),
     acquireWarm: (...a: unknown[]) => acquire(...a),
     isSubscribed: (id: string) => isSubscribed(id),
   },
@@ -54,6 +56,7 @@ beforeEach(async () => {
   acquire.mockReset().mockImplementation(() => fakeFacade());
   isSubscribed.mockReset().mockReturnValue(false);
   getSeatedPlayers.mockReset();
+  waitForTableEntry.mockReset().mockResolvedValue(undefined);
   getToken.mockReset().mockResolvedValue('jwt-token');
   warm = await import('../src/services/tableWarmup');
 });
@@ -418,4 +421,50 @@ describe('an unanswered warm state probe repairs lobby preparation', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(acquire).toHaveBeenCalledTimes(1);
   });
+});
+
+it('entry shares a pending token read and awaits real table readiness before opening', async () => {
+  let token!: (value: string) => void;
+  let acknowledge!: () => void;
+  getToken.mockReturnValue(
+    new Promise<string>((resolve) => {
+      token = resolve;
+    })
+  );
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  waitForTableEntry.mockReturnValue(
+    new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    })
+  );
+  warm.warmTable(T);
+  const entered = vi.fn();
+  const ready = warm.prepareTableForEntry(T).then(entered);
+  await Promise.resolve();
+  expect(getToken).toHaveBeenCalledTimes(1);
+  expect(acquire).not.toHaveBeenCalled();
+  expect(entered).not.toHaveBeenCalled();
+  token('jwt');
+  await vi.waitFor(() => expect(waitForTableEntry).toHaveBeenCalledWith(T));
+  expect(acquire).toHaveBeenCalledOnce();
+  expect(entered).not.toHaveBeenCalled();
+  acknowledge();
+  await ready;
+  expect(entered).toHaveBeenCalledOnce();
+});
+
+it('failed table preparation rejects the entry rather than opening an empty felt', async () => {
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  waitForTableEntry.mockRejectedValue(new Error('subscription refused'));
+  await expect(warm.prepareTableForEntry(T)).rejects.toThrow('subscription refused');
+});
+
+it('explicit retry replaces a failed warm roster read immediately', async () => {
+  getSeatedPlayers.mockRejectedValueOnce(new Error('temporary roster failure'));
+  warm.warmTable(T);
+  await vi.waitFor(() => expect(warm.warmSeatsPromise(T)).toBeNull());
+  getSeatedPlayers.mockResolvedValueOnce(ROWS);
+  await warm.prepareTableForEntry(T);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(2);
+  expect(warm.peekWarmSeats(T)).toHaveLength(2);
 });

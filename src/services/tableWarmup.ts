@@ -69,6 +69,7 @@ interface WarmEntry {
   seatsFailed: boolean;
   facade: MuxTableSocket | null;
   socketPending: boolean;
+  socketTask: Promise<void> | null;
   ttl: ReturnType<typeof setTimeout> | null;
 }
 
@@ -105,6 +106,12 @@ function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): voi
   entry.facade = null;
 }
 
+function startWarmSocket(tableId: string, entry: WarmEntry): Promise<void> {
+  if (entry.socketPending && entry.socketTask) return entry.socketTask;
+  entry.socketTask = warmSocket(tableId, entry);
+  return entry.socketTask;
+}
+
 async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   if (!isMuxEnabled() || entry.socketPending) return;
   if (entry.facade && entry.facade.readyState !== 3) {
@@ -136,7 +143,7 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
       ) {
         queueMicrotask(() => {
           if (entries.get(tableId) === entry && document.visibilityState !== 'hidden') {
-            void warmSocket(tableId, entry);
+            void startWarmSocket(tableId, entry);
           }
         });
       }
@@ -156,10 +163,10 @@ export function warmTable(tableId: string | null | undefined): void {
   if (!tableId) return;
   preloadRoute(`/table/${tableId}`);
   const existing = entries.get(tableId);
-  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) {
+  if (existing && !existing.seatsFailed && Date.now() - existing.startedAt < SEATS_FRESH_MS) {
     // Fresh seats do not imply a live stream: actual entry may have reclaimed
     // this speculative slot, or all slots may have been occupied earlier.
-    void warmSocket(tableId, existing);
+    void startWarmSocket(tableId, existing);
     return;
   }
   // Refresh roster data without tearing down a healthy speculative stream.
@@ -172,6 +179,7 @@ export function warmTable(tableId: string | null | undefined): void {
     seatsFailed: false,
     facade: null,
     socketPending: false,
+    socketTask: null,
     ttl: null,
   };
   if (entry.ttl !== null) clearTimeout(entry.ttl);
@@ -199,7 +207,20 @@ export function warmTable(tableId: string | null | undefined): void {
   // rejection must not surface as an unhandled one.
   entry.promise.catch(() => undefined);
   entries.set(tableId, entry);
-  void warmSocket(tableId, entry);
+  void startWarmSocket(tableId, entry);
+}
+
+/** Explicit entry shares preparation and never opens an unprepared felt. */
+export async function prepareTableForEntry(tableId: string): Promise<void> {
+  warmTable(tableId);
+  if (!isMuxEnabled()) return;
+  const entry = entries.get(tableId);
+  if (!entry) throw new Error('Table Preparation Could Not Start');
+  // Explicit View renews ownership while its original request finishes.
+  if (entry.ttl !== null) clearTimeout(entry.ttl);
+  entry.ttl = setTimeout(() => dropEntry(tableId, entry, true), WARM_TTL_MS);
+  await entry.socketTask;
+  await Promise.all([entry.promise, engineSocketMux.waitForTableEntry(tableId)]);
 }
 
 /**

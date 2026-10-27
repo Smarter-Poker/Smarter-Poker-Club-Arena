@@ -1,0 +1,73 @@
+[
+  {
+    "signature": "public.fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)",
+    "before_md5": "e3940cd164188f2dfb38871308a232e2",
+    "after_md5": "62c444b0953cced8a4f3144fc86af51b",
+    "replacements": [
+      [
+        " SELECT COALESCE(array_agg(c.club_id ORDER BY c.club_id),ARRAY[]::uuid[]) INTO clubs\n",
+        " -- The fee windows belong to fee preparation, before later club books.\n -- Only enter the original advance when its fee prefix has missing work:\n -- that prefix ends its attempt before any P&L branch. Its proof, IDs, row\n -- hashes, refusal path and unchanged time budget remain authoritative.\n IF p_union_id IS NOT NULL\n  AND COALESCE(current_setting('app.weekly_accounting_chunked',true),'')='on'\n  AND current_setting('app.accounting_close_memo',true)='on'\n  AND NULLIF(current_setting('app.weekly_accounting_scope_deadline',true),'') IS NOT NULL\n  AND EXISTS(SELECT FROM public.accounting_cash_accrual_cutover WHERE singleton AND starts_at<=p_from)\n  AND NOT EXISTS(SELECT FROM public.accounting_routed_settlement_runs r\n   WHERE r.scope_kind='union' AND r.scope_id=p_union_id AND r.round_no=3\n    AND r.period_start=p_from AND r.period_end=p_to)\n  AND public.fn_accounting_close_certificate('earned_plan',p_union_id,p_from,p_to) IS NULL\n  AND EXISTS(SELECT FROM public.fn_accounting_close_windows(p_from,p_to) w\n   WHERE NOT EXISTS(SELECT FROM public.accounting_close_partials p\n    WHERE p.kind='earned_plan_window' AND p.union_id=p_union_id\n     AND p.period_start=p_from AND p.period_end=p_to\n     AND p.window_start=w.window_start AND p.window_end=w.window_end\n     AND p.computed_at>=p_to\n     AND p.computed_at>clock_timestamp()-public.fn_accounting_close_proof_lifetime())) THEN\n  IF public.fn_accounting_union_earned_plan_advance(p_union_id,p_from,p_to) IS DISTINCT FROM false THEN\n   RAISE EXCEPTION 'earned_fee_window_advance_did_not_stop_after_fee_work' USING ERRCODE='55000';\n  END IF;\n  RETURN jsonb_build_object('success',false,'accounting_version',3,\n   'union_id',p_union_id,'club_id',p_club_id,'period_start',p_from,'period_end',p_to,'clubs',0,\n   'problems',jsonb_build_array(jsonb_build_object('reason','earned_fee_certification_in_progress')));\n END IF;\n SELECT COALESCE(array_agg(c.club_id ORDER BY c.club_id),ARRAY[]::uuid[]) INTO clubs\n"
+      ]
+    ]
+  },
+  {
+    "signature": "public.fn_process_weekly_accounting_scope(uuid,uuid)",
+    "before_md5": "72ab1c8c7e8408119bf670db527e8e64",
+    "after_md5": "6821fb176cf93637cc2820602d93cd56",
+    "replacements": [
+      [
+        "  v_preparation jsonb; v_club record;",
+        "  v_preparing_before_due boolean:=false;\n  v_preparation jsonb; v_club record;"
+      ],
+      [
+        "__BOTH_UNION_DUE_PREDICATES__",
+        "v_now>=public.fn_union_accounting_run_at(public.fn_union_week_start(w.first_week+interval '8 days'))",
+        "v_now>=CASE WHEN v_chunked THEN public.fn_union_week_start(w.first_week+interval '8 days') ELSE public.fn_union_accounting_run_at(public.fn_union_week_start(w.first_week+interval '8 days')) END"
+      ],
+      [
+        "__STANDALONE_DUE_PREDICATE__",
+        "v_now>=public.fn_union_accounting_run_at(public.fn_union_week_start(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))+interval '8 days'))",
+        "v_now>=CASE WHEN v_chunked THEN public.fn_union_week_start(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))+interval '8 days') ELSE public.fn_union_accounting_run_at(public.fn_union_week_start(GREATEST(w.first_week,public.fn_club_settlement_floor_week(w.club_id))+interval '8 days')) END"
+      ],
+      [
+        "      IF v_now < v_due THEN EXIT; END IF;",
+        "      v_preparing_before_due:=v_chunked AND v_end=v_to AND v_now>=v_end AND v_now<v_due;\n      IF v_now < v_due AND NOT v_preparing_before_due THEN EXIT; END IF;"
+      ],
+      [
+        "        IF v_now<v_due THEN EXIT;END IF;",
+        "        v_preparing_before_due:=v_chunked AND v_end=v_to AND v_now>=v_end AND v_now<v_due;\n        IF v_now<v_due AND NOT v_preparing_before_due THEN EXIT;END IF;"
+      ],
+      [
+        "        IF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'\n",
+        "        IF v_preparing_before_due AND v_preparation->>'success'='true' THEN\n          -- A closed week may prepare from02; the04 financial gate remains.\n          v_result:=jsonb_build_object('success',false,'chunk_committed',true,'committed_round',0,'stage','prepared',\n            'purpose','fees_before_due','union_id',v_union.id,'period_start',v_from,'period_end',v_end);\n        ELSIF v_chunked AND v_preparation->>'success' IS DISTINCT FROM 'true'\n"
+      ],
+      [
+        "          AND v_preparation#>'{problems,0,pnl_evidence,issues}'='[\"union_pnl_certification_in_progress\"]'::jsonb THEN",
+        "          AND (v_preparation#>'{problems,0,pnl_evidence,issues}'='[\"union_pnl_certification_in_progress\"]'::jsonb\n           OR v_preparation#>>'{problems,0,reason}'='earned_fee_certification_in_progress') THEN"
+      ],
+      [
+        "          IF v_chunked AND (CASE WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true",
+        "          IF v_chunked AND (CASE WHEN v_preparing_before_due THEN true\n            WHEN public.fn_accounting_preparation_calculating(v_preparation) THEN true"
+      ],
+      [
+        "      SELECT result INTO v_previous FROM public.union_accounting_runs\n",
+        "      -- Older club books cannot withhold this week's unpaid earned fees.\n      -- A complete canonical player-payment receipt is the prerequisite;\n      -- unpaid older fees keep their chronological priority. Leave the old\n      -- book/result untouched and return to it after current fees are paid.\n      IF v_chunked AND v_end<v_to\n       AND EXISTS(SELECT FROM public.accounting_routed_settlement_runs r\n        WHERE r.scope_kind='union' AND r.scope_id=v_union.id AND r.period_start=v_from\n         AND r.period_end=v_end AND r.round_no=3 AND r.result->>'success'='true'\n         AND r.result->>'routing_version'='3' AND r.result->>'source_version'='2'\n         AND r.result->'shortfalls'='0'::jsonb)\n       AND NOT EXISTS(SELECT FROM public.accounting_routed_settlement_runs r\n        WHERE r.scope_kind='union' AND r.scope_id=v_union.id AND r.period_end=v_to\n         AND r.period_start=public.fn_union_prev_week_start(v_now) AND r.round_no=3\n         AND r.result->>'success'='true' AND r.result->>'routing_version'='3'\n         AND r.result->>'source_version'='2' AND r.result->'shortfalls'='0'::jsonb) THEN\n        v_from:=v_end;CONTINUE;\n      END IF;\n      SELECT result INTO v_previous FROM public.union_accounting_runs\n"
+      ],
+      [
+        "        SELECT result INTO v_previous FROM public.union_accounting_runs q\n",
+        "        -- A paid older standalone book also yields to current unpaid fees.\n        IF v_chunked AND v_end<v_to\n         AND EXISTS(SELECT FROM public.accounting_routed_settlement_runs r\n          WHERE r.scope_kind='club' AND r.scope_id=v_club.id AND r.period_start=v_from\n           AND r.period_end=v_end AND r.round_no=3 AND r.result->>'success'='true'\n           AND r.result->>'routing_version'='3' AND r.result->>'source_version'='2'\n           AND r.result->'shortfalls'='0'::jsonb)\n         AND NOT EXISTS(SELECT FROM public.accounting_routed_settlement_runs r\n          WHERE r.scope_kind='club' AND r.scope_id=v_club.id AND r.period_end=v_to\n           AND r.period_start=public.fn_union_prev_week_start(v_now) AND r.round_no=3\n           AND r.result->>'success'='true' AND r.result->>'routing_version'='3'\n           AND r.result->>'source_version'='2' AND r.result->'shortfalls'='0'::jsonb) THEN\n          v_from:=v_end;CONTINUE;\n        END IF;\n        SELECT result INTO v_previous FROM public.union_accounting_runs q\n"
+      ]
+    ]
+  },
+  {
+    "signature": "public.fn_weekly_close_first_visits_pending()",
+    "before_md5": "eb386885eb1a705358951fd94dbeca73",
+    "after_md5": "7185f43f5cb8dc23606ef5e486da9c5d",
+    "replacements": [
+      [
+        "clock_timestamp() >= d.due AND clock_timestamp() < d.due",
+        "clock_timestamp() >= d.wk AND clock_timestamp() < d.due"
+      ]
+    ]
+  }
+]

@@ -9,6 +9,7 @@ import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import { attributeKnockout, type KnockoutClaimant } from '../tournament/knockoutAttribution.js';
 import {
   deepOnePairCommitment,
+  futureHandSeats,
   PHASE8_POLICY,
   type Phase8Mode,
   type HorseTournamentPostflopLedger,
@@ -114,11 +115,125 @@ export interface TournamentCompletionDiagnostic {
   work: HorseTournamentPostflopLedger['work'];
 }
 export interface TournamentCompletionCounts {
+  /** Optional observational counters for the evaluated arm only; absent in older receipts. */
+  opportunityDiagnostics?: TournamentOpportunityDiagnostics;
   completionSchemaVersion: 1;
   completed: number;
   completionRefusals: Record<string, number>;
   completionDiagnostics: TournamentCompletionDiagnostic[];
   completionDiagnosticsDropped: number;
+}
+export const TOURNAMENT_PRE_ELIGIBILITY_REASONS = [
+  'not_postflop',
+  'unsupported_variant',
+  'context_incomplete',
+  'multiple_boards',
+  'utility_unavailable',
+  'objective_conflict',
+  'mystery_value_unavailable',
+  'private_state_rejected',
+  'candidate_budget',
+  'baseline_not_modeled',
+  'future_context_unavailable',
+  'phase7_choice_retained',
+  'position_unavailable',
+  'future_hand_seats_outside_work_budget',
+  'unknown_preeligibility_refusal',
+] as const;
+type TournamentPreEligibilityReason = (typeof TOURNAMENT_PRE_ELIGIBILITY_REASONS)[number];
+export interface TournamentOpportunityDiagnostics {
+  version: 1;
+  arm: 'evaluated';
+  decisions: number;
+  designatedHeroDecisions: number;
+  otherActorDecisions: number;
+  heroPreflopDecisions: number;
+  heroPostflopDecisions: number;
+  heroOtherStreetDecisions: number;
+  /** Geometry only: this does not assert that earlier context/utility gates passed. */
+  heroPostflopWithinSeatBudget: number;
+  heroPostflopLedgerMissing: number;
+  heroPostflopEligible: number;
+  preEligibleRefusals: Partial<Record<TournamentPreEligibilityReason, number>>;
+}
+function emptyTournamentOpportunities(): TournamentOpportunityDiagnostics {
+  return {
+    version: 1,
+    arm: 'evaluated',
+    decisions: 0,
+    designatedHeroDecisions: 0,
+    otherActorDecisions: 0,
+    heroPreflopDecisions: 0,
+    heroPostflopDecisions: 0,
+    heroOtherStreetDecisions: 0,
+    heroPostflopWithinSeatBudget: 0,
+    heroPostflopLedgerMissing: 0,
+    heroPostflopEligible: 0,
+    preEligibleRefusals: {},
+  };
+}
+/** Observe only AFTER the chooser has returned its finalized measured ledger.
+ * This public aggregate never changes a ledger, sampling, clock or promotion gate. */
+export function recordTournamentOpportunity(
+  target: TournamentCompletionCounts,
+  designatedHero: boolean,
+  state: Pick<HorseGameStateV2, 'stage' | 'players'>,
+  layer: HorseTournamentPostflopLedger | undefined
+): void {
+  const d = (target.opportunityDiagnostics ??= emptyTournamentOpportunities());
+  d.decisions++;
+  if (!designatedHero) {
+    d.otherActorDecisions++;
+    return;
+  }
+  d.designatedHeroDecisions++;
+  if (state.stage === 'preflop') {
+    d.heroPreflopDecisions++;
+    return;
+  }
+  if (!['flop', 'turn', 'river'].includes(state.stage)) {
+    d.heroOtherStreetDecisions++;
+    return;
+  }
+  d.heroPostflopDecisions++;
+  if (futureHandSeats(state as HorseGameStateV2) <= PHASE8_POLICY.maxFutureHandSeats)
+    d.heroPostflopWithinSeatBudget++;
+  if (!layer) {
+    d.heroPostflopLedgerMissing++;
+    return;
+  }
+  if (layer.eligible) {
+    d.heroPostflopEligible++;
+    return;
+  }
+  const reason =
+    TOURNAMENT_PRE_ELIGIBILITY_REASONS.find((r) => r === layer.reason) ??
+    'unknown_preeligibility_refusal';
+  d.preEligibleRefusals[reason] = (d.preEligibleRefusals[reason] ?? 0) + 1;
+}
+function mergeTournamentOpportunities(
+  target: TournamentCompletionCounts,
+  source: TournamentCompletionCounts
+): void {
+  const from = source.opportunityDiagnostics;
+  if (!from) return;
+  const into = (target.opportunityDiagnostics ??= emptyTournamentOpportunities());
+  for (const key of [
+    'decisions',
+    'designatedHeroDecisions',
+    'otherActorDecisions',
+    'heroPreflopDecisions',
+    'heroPostflopDecisions',
+    'heroOtherStreetDecisions',
+    'heroPostflopWithinSeatBudget',
+    'heroPostflopLedgerMissing',
+    'heroPostflopEligible',
+  ] as const)
+    into[key] += from[key];
+  for (const reason of TOURNAMENT_PRE_ELIGIBILITY_REASONS)
+    if (from.preEligibleRefusals[reason] !== undefined)
+      into.preEligibleRefusals[reason] =
+        (into.preEligibleRefusals[reason] ?? 0) + from.preEligibleRefusals[reason]!;
 }
 export function emptyTournamentCompletionCounts(): TournamentCompletionCounts {
   return {
@@ -540,6 +655,7 @@ async function playTournament(
             );
       receipt.decisions++;
       const layer = decision.tournamentPostflop;
+      recordTournamentOpportunity(receipt, hero.user_id === heroId, gs, layer);
       if (layer) {
         recordTournamentCompletion(receipt, layer, gs);
         receipt.eligible += Number(layer.eligible);
@@ -762,6 +878,7 @@ export async function runTournamentLeague(
       result.candidateFinish[a.finish - 1]++;
       result.baselineFinish[b.finish - 1]++;
       result.decisions += a.decisions + b.decisions;
+      mergeTournamentOpportunities(result, a);
       result.eligible += a.eligible;
       result.fired += a.fired;
       result.completed += a.completed;

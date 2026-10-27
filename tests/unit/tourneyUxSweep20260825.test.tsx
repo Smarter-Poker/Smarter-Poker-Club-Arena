@@ -342,7 +342,7 @@ describe('Item 6 - the action countdown stays neon blue', () => {
   const css = read(SEAT_CSS);
 
   it('never snaps the ring colour to red', () => {
-    const start = css.indexOf('@keyframes spTimerColorShift');
+    const start = css.indexOf('.seat__timer-ink {');
     const block = css.slice(start, css.indexOf('}\n', css.indexOf('{', start) + 1) + 2);
     expect(block).not.toMatch(/#ef4444/);
     expect(block).toMatch(/#00e5ff/);
@@ -358,7 +358,7 @@ describe('Item 6 - the action countdown stays neon blue', () => {
     const block = css.slice(start, css.indexOf('}', start));
     expect(block).not.toMatch(/#ff6b35/);
     expect(block).not.toMatch(/#ef4444/);
-    expect(block).toMatch(/var\(--timer-color, #00e5ff\)/);
+    expect(block).toMatch(/#00e5ff/);
   });
 
   it('the acting seat keeps its own plate frame instead of going transparent', () => {

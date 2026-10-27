@@ -31,3 +31,7 @@ python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-
 # A former standalone zero book verifies the paid foreign original R2 receipts.
 python3 -B "$root/scripts/ci/test-zero-standalone-foreign-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Valid historical role promotion cannot strand the original commission cascade.
+python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

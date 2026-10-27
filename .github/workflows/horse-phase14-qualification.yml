@@ -17,7 +17,7 @@ on:
           - signer-identity
           - v56-private-replay
       replay_request:
-        description: Metadata-only JSON sourceRelease and 1..6 handKey/decisionSha256 pairs (no raw journals)
+        description: Metadata-only JSON sourceRelease and 1..6 handKey/actionOrdinal cases with optional decisionSha256 (no raw journals)
         required: false
         type: string
       plan_commit:

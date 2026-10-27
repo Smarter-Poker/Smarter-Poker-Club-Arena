@@ -45,7 +45,7 @@ import { replayThroughWorkerRuntime } from './runtimeReplay.js';
 import { HorseReplayAuthorityRefusal } from './qualifiedAuthority.js';
 import { stableReceipt } from './HorseDecisionReplay.js';
 import {
-  HORSE_OPTIONAL_OWNER_OPTIONS,
+  horseDecisionReplayAdmissionMismatch,
   currentHorseDecisionRuntime,
   isHorseDecisionReplayState,
   isHorseDecisionReplayStateV1,
@@ -474,9 +474,12 @@ export async function exactReplayHorseDecisionRecord(
     verdict.v56PressureRangeFires = outcome.v56PressureRangeFires ?? null;
   // An optional owner this process cannot admit the way the worker did is a
   // missing input (its authority state), never a substitution.
-  for (const option of HORSE_OPTIONAL_OWNER_OPTIONS)
-    if (outcome.result && outcome.admission?.[option] !== state.admission[option])
-      return finish(`non_replayable:admission:${option}`);
+  const admissionMismatch = horseDecisionReplayAdmissionMismatch(
+    outcome.admission,
+    state.admission
+  );
+  if (outcome.result && admissionMismatch)
+    return finish(`non_replayable:admission:${admissionMismatch}`);
 
   if (
     state.corrective

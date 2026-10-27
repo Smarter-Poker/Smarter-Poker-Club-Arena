@@ -48,7 +48,15 @@
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -62,14 +70,32 @@ process.env.EQUITY_GOVERNOR = 'off';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(here, '..');
-const sourceRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: serverRoot,
+// Hooks export repository-local Git variables. They must not rebase discovery
+// on cwd=server or redirect verification to a different worktree/repository.
+const sourceRepo = path.resolve(serverRoot, '..');
+const gitEnvironment = { ...process.env };
+const gitLocalNames = execFileSync('git', ['rev-parse', '--local-env-vars'], {
+  cwd: sourceRepo,
   encoding: 'utf8',
+})
+  .trim()
+  .split('\n');
+for (const name of gitLocalNames) delete gitEnvironment[name];
+const discoveredRepo = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: sourceRepo,
+  encoding: 'utf8',
+  env: gitEnvironment,
 }).trim();
+if (realpathSync(discoveredRepo) !== realpathSync(sourceRepo))
+  throw new Error('Assembler module must belong to the verified repository root');
 
 const league = await import('../src/benchmark/HorseTournamentLeague.ts');
 const { PHASE8_POLICY } = await import('../src/engine/HorseTournamentPostflop.ts');
 const authority = await import('../src/engine/HorseQualifiedAuthority.ts');
+const { horseLeagueComputeResponseIsValid } =
+  await import('../src/benchmark/HorseLeagueComputeWorkerClient.ts');
+const phase8Digest = await import('../src/engine/HorsePhase8PolicyDigest.ts');
+const guardRuntimeDigest = await import('../src/engine/HorseCatastropheGuardPolicyDigest.ts');
 
 export const STRENGTH_SCHEMA = 'horse-phase8-strength-v1';
 export const QUALIFICATION_SCHEMA = 'horse-phase8-qualification-v1';
@@ -86,6 +112,69 @@ const POLICY_SOURCE_FILES = [
   'server/src/engine/HorseTournamentFutureHand.ts',
   'server/src/engine/HorseQualifiedAuthority.ts',
 ];
+// The runtime closure is Docker-computable from src/. Qualification additionally
+// binds its evaluator/transport/assembler/workflow; plain protected selection
+// metadata belongs to neither functional closure.
+export const GUARD_RUNTIME_POLICY_SOURCE_FILES =
+  guardRuntimeDigest.HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES.map((file) => 'server/' + file);
+export const GUARD_QUALIFICATION_SOURCE_FILES = [
+  ...new Set([
+    ...GUARD_RUNTIME_POLICY_SOURCE_FILES,
+    ...phase8Digest.HORSE_PHASE8_POLICY_SOURCE_FILES.map((file) => 'server/' + file),
+    ...POLICY_SOURCE_FILES,
+    'server/src/engine/HorseTournamentCatastropheGuard.ts',
+    'server/src/engine/HorseLogic.ts',
+    'server/src/engine/HorseTournamentUtility.ts',
+    'server/src/engine/PokerEngine.ts',
+    'server/src/benchmark/HorseTournamentLeague.ts',
+    'server/src/benchmark/HorseLeagueComputeWorkerClient.ts',
+    'server/src/scripts/horseTournamentEvaluate.ts',
+    'server/src/benchmark/HorseLeagueComputeProtocol.ts',
+    'server/src/benchmark/HorseLeagueComputeWorker.ts',
+    'server/scripts/phase8-strength-assemble.mjs',
+    '.github/workflows/horse-phase8-strength-league.yml',
+  ]),
+];
+// Retain the prior exported name as the full qualification compatibility list.
+export const GUARD_POLICY_SOURCE_FILES = GUARD_QUALIFICATION_SOURCE_FILES;
+export function phase8FamilyIdentity(manifest, result) {
+  const family = league.tournamentPolicyFamily(manifest.phase8PolicyFamily);
+  if (league.tournamentPolicyFamily(result.phase8PolicyFamily) !== family)
+    throw new Error('policy_family_mismatch');
+  if (manifest.policyVersion !== undefined && manifest.policyVersion !== result.version)
+    throw new Error('manifest_policy_version_mismatch');
+  if (
+    manifest.workKind !== undefined &&
+    manifest.workKind !== league.tournamentPolicyWorkKind(family)
+  )
+    throw new Error('manifest_work_kind_mismatch');
+  if (result.version !== league.tournamentPolicyVersion(family))
+    throw new Error('policy_version_mismatch');
+  if (
+    family === 'catastrophe_guard_v1' &&
+    (manifest.policyVersion !== result.version ||
+      manifest.workKind !== 'phase7_candidate_guard' ||
+      result.workKind !== 'phase7_candidate_guard')
+  )
+    throw new Error('guard_work_kind_mismatch');
+  return family;
+}
+export function guardPolicyDigest(read = (file) => readFileSync(path.join(sourceRepo, file))) {
+  return guardRuntimeDigest.horseCatastropheGuardPolicyDigest((file) => read('server/' + file));
+}
+export function guardQualificationSourceDigest(
+  read = (file) => readFileSync(path.join(sourceRepo, file))
+) {
+  const hash = createHash('sha256');
+  hash.update('horse-catastrophe-guard-qualification-source-v1\0');
+  hash.update(guardPolicyDigest(read) + '\0');
+  for (const file of GUARD_QUALIFICATION_SOURCE_FILES) {
+    hash.update(file + '\0');
+    hash.update(read(file));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
 const RECEIPTS = ['manifest.json', 'summary.json', 'baseline-verification.json'];
 const RESULT_FILE = /^[a-z]+-\d+\.json$/;
 
@@ -239,6 +328,23 @@ export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
     const manifest = readJson(path.join(dir, 'manifest.json'));
     const summary = readJson(path.join(dir, 'summary.json'));
     const baseline = readJson(path.join(dir, 'baseline-verification.json'));
+    let family;
+    try {
+      family = phase8FamilyIdentity(manifest, result);
+    } catch (error) {
+      reasons.push(`policy_family_invalid:${key}:${error.message}`);
+      continue;
+    }
+    if (
+      family === 'catastrophe_guard_v1' &&
+      (baseline.phase8PolicyFamily !== family || baseline.workKind !== 'phase7_candidate_guard')
+    )
+      reasons.push(`baseline_family_mismatch:${key}`);
+    if (
+      family === 'catastrophe_guard_v1' &&
+      !horseLeagueComputeResponseIsValid({ type: 'TOURNAMENT_RESULT', jobId: 1, result })
+    )
+      reasons.push(`guard_result_invalid:${key}`);
     const claim = `${result.objective}-${result.seed}`;
     claimed.set(claim, (claimed.get(claim) ?? 0) + 1);
     if (result.objective !== objective || result.seed !== seed)
@@ -307,19 +413,44 @@ export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
       reasons.push(`identity_mismatch:${field}`);
   if (new Set(runs.map((r) => r.result.version)).size > 1)
     reasons.push('identity_mismatch:version');
-  if (runs.some((r) => r.result.version !== PHASE8_POLICY.version))
-    reasons.push(`continuation_version_mismatch:${PHASE8_POLICY.version}`);
+  const families = new Set();
+  for (const manifest of manifests) {
+    try {
+      families.add(league.tournamentPolicyFamily(manifest.phase8PolicyFamily));
+    } catch {
+      reasons.push('unknown_policy_family');
+    }
+  }
+  if (families.size > 1) reasons.push('identity_mismatch:policy_family');
+  const family = [...families][0] ?? 'continuation_v2';
+  const policySourceFiles =
+    family === 'catastrophe_guard_v1' ? GUARD_POLICY_SOURCE_FILES : POLICY_SOURCE_FILES;
   const head = manifests[0]?.head;
   if (head) {
     try {
       execFileSync('git', ['cat-file', '-e', `${head}^{commit}`], {
         cwd: sourceRepo,
+        env: gitEnvironment,
         stdio: 'ignore',
       });
-      execFileSync('git', ['diff', '--quiet', head, 'HEAD', '--', ...POLICY_SOURCE_FILES], {
+      execFileSync('git', ['diff', '--quiet', head, 'HEAD', '--', ...policySourceFiles], {
         cwd: sourceRepo,
+        env: gitEnvironment,
         stdio: 'ignore',
       });
+      if (family === 'catastrophe_guard_v1' && !fixture) {
+        for (const file of policySourceFiles)
+          execFileSync('git', ['cat-file', '-e', `${head}:${file}`], {
+            cwd: sourceRepo,
+            env: gitEnvironment,
+            stdio: 'ignore',
+          });
+        execFileSync('git', ['diff', '--quiet', head, '--', ...policySourceFiles], {
+          cwd: sourceRepo,
+          env: gitEnvironment,
+          stdio: 'ignore',
+        });
+      }
     } catch (error) {
       reasons.push(
         error.status === 1 ? 'policy_source_changed' : `policy_source_unverifiable:${head}`
@@ -327,13 +458,27 @@ export function inspectRuns({ runsDir, hosts, fixture, defective = {} }) {
     }
   }
   if (!runs.length) reasons.push('no_run_results');
-  return { reasons, runs, defectiveRuns, head };
+  return { reasons, runs, defectiveRuns, head, family };
 }
 
 function runRecord(r, hosts, copies) {
   const x = r.result;
   return {
     run: r.key,
+    ...(x.phase8PolicyFamily === 'catastrophe_guard_v1'
+      ? {
+          phase8PolicyFamily: x.phase8PolicyFamily,
+          policyVersion: x.version,
+          workKind: x.workKind,
+          evidenceMode: x.evidenceMode,
+          candidateMode: x.candidateMode,
+          completionSchemaVersion: x.completionSchemaVersion,
+          completionDiagnostics: x.completionDiagnostics,
+          entrants: x.entrants,
+          candidateFinish: x.candidateFinish,
+          baselineFinish: x.baselineFinish,
+        }
+      : {}),
     objective: r.objective,
     seed: r.seed,
     host: r.host,
@@ -400,9 +545,11 @@ export async function assemble(options) {
   if (!options['no-format'] && !prettier) inspected.reasons.push('prettier_unavailable');
   if (inspected.reasons.length) return { refused: true, reasons: inspected.reasons };
 
-  const { runs, defectiveRuns, head } = inspected;
+  const { runs, defectiveRuns, head, family } = inspected;
+  const guard = family === 'catastrophe_guard_v1';
   const verdict = league.summarizeTournamentPromotion(runs.map((r) => r.result));
-  const policyDigest = authority.horsePhase8PolicyDigest();
+  const policyDigest = guard ? guardPolicyDigest() : authority.horsePhase8PolicyDigest();
+  const qualificationSourceDigest = guard ? guardQualificationSourceDigest() : null;
   const first = runs[0].manifest;
   const runsOut = path.join(out, 'runs');
   const copies = new Map();
@@ -440,7 +587,15 @@ export async function assemble(options) {
     copies.set(d.key, list);
   }
   const strength = {
-    schema: STRENGTH_SCHEMA,
+    schema: guard ? 'horse-phase8-guard-strength-v1' : STRENGTH_SCHEMA,
+    ...(guard
+      ? {
+          phase8PolicyFamily: family,
+          isolatedCandidate: true,
+          activationAllowed: false,
+          selection: 'not_selected',
+        }
+      : {}),
     phase: 'P8.2',
     mode: fixture ? 'fixture' : 'promotion',
     contract: {
@@ -449,20 +604,29 @@ export async function assemble(options) {
       pairsPerRun: league.TOURNAMENT_PROMOTION_PAIRS,
       requiredRuns:
         league.TOURNAMENT_PROMOTION_SEEDS.length * league.TOURNAMENT_LEAGUE_OBJECTIVES.length,
-      domain: authority.HORSE_PHASE8_DOMAIN,
+      domain: guard
+        ? 'nlh-single-board-tournament-phase7-candidate-guard'
+        : authority.HORSE_PHASE8_DOMAIN,
       verdictFunctions:
         'summarizeTournamentPromotion and tournamentRunCanPromote, server/src/benchmark/HorseTournamentLeague.ts',
       runner:
         'server/src/scripts/horseTournamentEvaluate.ts --output=<dir> --objective=<o> --seed=<s> --promotion',
       // Since 2026-10-16 the continuation does its declared work and no clock
       // cuts it; budgetMs is the measured p99 the league's gates allow.
-      limits: {
-        latencyP99GateMs: PHASE8_POLICY.budgetMs,
-        maxCandidates: PHASE8_POLICY.maxCandidates,
-        maxFutureOutcomeSamples: PHASE8_POLICY.maxFutureOutcomeSamples,
-        maxFutureIcmTrials: PHASE8_POLICY.maxFutureIcmTrials,
-        maxFutureHandSeats: PHASE8_POLICY.maxFutureHandSeats,
-      },
+      limits: guard
+        ? {
+            latencyP99GateMs: PHASE8_POLICY.budgetMs,
+            maxCandidates: 16,
+            deepStackBB: PHASE8_POLICY.deepStackBB,
+            deepCommitFraction: PHASE8_POLICY.deepCommitFraction,
+          }
+        : {
+            latencyP99GateMs: PHASE8_POLICY.budgetMs,
+            maxCandidates: PHASE8_POLICY.maxCandidates,
+            maxFutureOutcomeSamples: PHASE8_POLICY.maxFutureOutcomeSamples,
+            maxFutureIcmTrials: PHASE8_POLICY.maxFutureIcmTrials,
+            maxFutureHandSeats: PHASE8_POLICY.maxFutureHandSeats,
+          },
     },
     source: {
       head,
@@ -470,9 +634,24 @@ export async function assemble(options) {
       sourceSha256: first.sourceSha256,
       sourceFiles: first.sourceFiles,
       serverLockSha256: first.serverLockSha256,
-      continuationVersion: runs[0].result.version,
+      ...(guard
+        ? { policyVersion: runs[0].result.version }
+        : { continuationVersion: runs[0].result.version }),
       policyDigest,
-      policyDigestCheck: `computed by horsePhase8PolicyDigest(); ${POLICY_SOURCE_FILES.join(', ')} are identical at ${head} and the assembling checkout`,
+      ...(guard
+        ? {
+            runtimePolicyDigest: policyDigest,
+            policySourceFiles: GUARD_RUNTIME_POLICY_SOURCE_FILES,
+            qualificationSourceDigest,
+            qualificationSourceFiles: GUARD_QUALIFICATION_SOURCE_FILES,
+            phase8PolicyFamily: family,
+            workKind: 'phase7_candidate_guard',
+          }
+        : {}),
+      policyDigestCheck:
+        guard && fixture
+          ? 'fixture source digest only; no source certification or qualification'
+          : `computed by ${guard ? 'guardPolicyDigest() (runtime) and guardQualificationSourceDigest() (full qualification)' : 'horsePhase8PolicyDigest()'}; ${(guard ? GUARD_POLICY_SOURCE_FILES : POLICY_SOURCE_FILES).join(', ')} are identical at ${head} and the assembling checkout`,
     },
     hosts: hosts.hosts,
     hostAssignment: hosts.assignment ?? null,
@@ -507,14 +686,31 @@ export async function assemble(options) {
   const strengthText = await formatted(prettier, path.join(out, 'strength.json'), strength);
   const qualified = !fixture && verdict.promoted === true;
   const qualification = {
-    schema: QUALIFICATION_SCHEMA,
+    schema: guard ? 'horse-phase8-guard-qualification-v1' : QUALIFICATION_SCHEMA,
+    ...(guard
+      ? {
+          phase8PolicyFamily: family,
+          isolatedCandidate: true,
+          activationAllowed: false,
+          selection: 'not_selected',
+          workKind: 'phase7_candidate_guard',
+          qualificationSourceDigest,
+          qualificationSourceFiles: GUARD_QUALIFICATION_SOURCE_FILES,
+        }
+      : {}),
     qualified,
     mode: strength.mode,
     sourceSha: head,
-    continuationVersion: runs[0].result.version,
-    packId: PACK_ID,
-    packIdSource: PACK_ID_SOURCE,
-    domain: authority.HORSE_PHASE8_DOMAIN,
+    ...(guard
+      ? { policyVersion: runs[0].result.version }
+      : { continuationVersion: runs[0].result.version }),
+    packId: guard ? 'horse-tournament-catastrophe-guard' : PACK_ID,
+    packIdSource: guard
+      ? 'server/scripts/phase8-strength-assemble.mjs isolated catastrophe_guard_v1 packId literal'
+      : PACK_ID_SOURCE,
+    domain: guard
+      ? 'nlh-single-board-tournament-phase7-candidate-guard'
+      : authority.HORSE_PHASE8_DOMAIN,
     policyDigest,
     evidencePath,
     evidenceSha256: sha256(strengthText),

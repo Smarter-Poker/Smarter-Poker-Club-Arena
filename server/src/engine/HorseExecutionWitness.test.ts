@@ -6,6 +6,8 @@ import {
   createHorseExecutionWitness,
   retireHorseExecutionWitness,
   settleHorseExecutionWitness,
+  withdrawHorsePhase8GuardSelection,
+  recordHorsePhase8GuardVerdict,
   type HorseAcceptedAction,
 } from './HorseExecutionWitness.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
@@ -59,6 +61,65 @@ beforeEach(() => {
 });
 
 describe('private execution witness', () => {
+  it.each(['accepted', 'withdrawn'] as const)(
+    'keeps the distinct guard candidate bound through %s acceptance',
+    (outcome) => {
+      // Synthetic binding control only. Admission is independently checked by
+      // the worker/main authority gates, not granted by a witness receipt.
+      const authority = {
+        version: 'horse-qualified-authority-receipt-v1',
+        epoch: 'guard-worker',
+        generation: 1,
+        state: 'usable',
+        reason: null,
+        continuationVersion: 'horse-tournament-catastrophe-guard-v1',
+        approvalGeneration: 1,
+        authorityKey: 'a'.repeat(64),
+        evidenceSha256: 'b'.repeat(64),
+        sourceSha: 'c'.repeat(40),
+        expiresAt: null,
+        mainGeneration: 1,
+      };
+      const decision = {
+        action: 'check',
+        thinkTime: 1,
+        tournamentCatastropheGuard: {
+          version: 'horse-tournament-catastrophe-guard-v1',
+          policyFamily: 'catastrophe_guard_v1',
+          mode: 'candidate',
+          selection: 'selected',
+          authority,
+          candidateAction: 'check',
+          candidateAmount: null,
+          baselineAction: 'bet',
+          baselineAmount: 20,
+        },
+      } as unknown as HorseDecision;
+      const witness = make(decision);
+      expect(witness).not.toHaveProperty('phase8Authority');
+      expect(witness.phase8GuardAuthority?.candidate).toEqual({ action: 'check', amount: null });
+      authority.generation = 99;
+      expect(witness.phase8GuardAuthority?.authority?.generation).toBe(1);
+      if (outcome === 'withdrawn') {
+        withdrawHorsePhase8GuardSelection(witness, input, 'withdrawn');
+        expect(witness.selected).toEqual({ action: 'bet', amount: 20 });
+      } else recordHorsePhase8GuardVerdict(witness, 'usable');
+      settleHorseExecutionWitness(witness, {
+        applied: true,
+        acceptedActions: outcome === 'withdrawn' ? accepted('bet', 20) : accepted('check', 0),
+      });
+      expect(witness.executionStatus).toBe('intended');
+      expect(witness.phase8GuardAuthority?.selection).toBe(
+        outcome === 'withdrawn' ? 'withdrawn_before_acceptance' : 'controller_accepted'
+      );
+      // A delayed verdict cannot rewrite an already accepted/retired witness.
+      recordHorsePhase8GuardVerdict(witness, 'expired');
+      expect(witness.phase8GuardAuthority?.verdict).toBe(
+        outcome === 'withdrawn' ? 'withdrawn' : 'usable'
+      );
+    }
+  );
+
   it('owns a compact immutable commitment to the Phase 13 input binding (P13.1)', () => {
     const { hero, state } = jointPolicyFixture('plo6', 2, 'cash', 'turn');
     seedFastRandom(7301301);

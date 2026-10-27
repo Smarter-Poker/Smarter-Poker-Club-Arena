@@ -1370,6 +1370,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8288",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: remaining club calculation pages use a cash player-only access path and tournament nonleading player index. Two matching concurrent indexes preserve all original calculation, source, rate, payer, certificate, fingerprint, guard and cache bytes. Native PostgreSQL17 actual allocation/check/write/certificate/payer qualification passed9cases including independent1727amount oracle, full ordered source fingerprints, partial replay, wrong shapes and real INVALID build refusal; TypeScript/focused laws/normal pre-push passed. Native reads126794to6121blocks with local317.680to273.047ms; no production timing or04AM guarantee. Hosted required checks queued while human wallets remain unpaid, so qualified exact bytes installed through PUBLISHING active-outage exception. Official assigned-project Metrics API proved /data available276379811840bytes at2026-10-27T04:26:35.435Z. Exact full-file history and live index definitions plus original40source authority read back. This recording is the very next source action; human payments and final protected merge/live capacity proof remain separate pending gates."
+    },
+    {
+      "version": "20261027070115",
+      "name": "historical_agent_roles_keep_their_earned_commission",
+      "file": "supabase/migrations/20261027070115_historical_agent_roles_keep_their_earned_commission.sql",
+      "md5": "e6967607e96b3892e048190f4f05669b",
+      "appliedToProductionAt": "2026-10-27T07:07:47.577Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and all3 owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8309",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     }
   ]
 }

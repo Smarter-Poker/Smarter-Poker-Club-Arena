@@ -1477,6 +1477,22 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.started()).toBe(1);
     expect(h.messages[0]).toEqual({
       type: 'READY',
+      phase8GuardAuthority: {
+        version: 'horse-qualified-authority-receipt-v1',
+        state: 'unselected',
+        reason: 'unselected',
+        continuationVersion: 'horse-tournament-catastrophe-guard-v1',
+        epoch: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        ),
+        generation: 0,
+        mainGeneration: null,
+        approvalGeneration: null,
+        authorityKey: null,
+        evidenceSha256: null,
+        expiresAt: null,
+        sourceSha: null,
+      },
       solverStores: {
         charts: 7,
         postflop: 8,

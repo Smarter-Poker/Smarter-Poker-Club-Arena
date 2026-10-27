@@ -1,3 +1,4 @@
+import { featureLiveDomainRefusals } from './HorseFeatureLiveDomain.js';
 /** Feature promotion reuses the generation-bound holder/gate. Measurement
  * reports remain inactive; only a protected, shipped selection can admit one.
  * There are deliberately no selected features in the current release. */
@@ -47,6 +48,7 @@ export interface HorseFeatureDomain {
   dealtSeats: number[];
   remainingPlayers: number[];
   effectiveStackBB: [number, number];
+  startingStackBB: number;
   smallBlind: number;
   bigBlind: number;
   ante: number;
@@ -87,10 +89,9 @@ export function admitHorseFeatureReleaseAuthority(): HorseAuthorityAdmission {
   return admitHorseFeatureAuthority(selection);
 }
 
-/** Prospective schema, intentionally not the stress-only assembler schema.
- * A future maintained promoter must bind calibrated population evidence and
- * the exact protected assembly, plan, source closure and admitted live domain.
- * No current stress report can satisfy this contract. */
+/** Admits the maintained assembler condition(a) artifact. Human-calibrated
+ * condition(b) is monitoring/withdrawal only under the October 9 amendment.
+ * DEV output and absent locked declarations never grant authority. */
 export function admitHorseFeatureAuthority(
   selection: HorseFeatureSelection | null,
   reader: HorseAuthorityEvidenceReader = releaseEvidenceReader,
@@ -139,6 +140,7 @@ export function admitHorseFeatureAuthority(
     if (
       q.schema !== 'horse-feature-live-admission-v1' ||
       q.version !== HORSE_FEATURE_AUTHORITY_VERSION ||
+      q.qualificationKind !== 'locked_paired_condition_a' ||
       q.qualified !== true ||
       q.activationAllowed !== false ||
       !Array.isArray(q.reasons) ||
@@ -153,8 +155,7 @@ export function admitHorseFeatureAuthority(
       return JSON.parse(b.toString());
     };
     const assembly = readBound(q.assembly),
-      plan = readBound(q.plan),
-      population = readBound(q.population);
+      plan = readBound(q.plan);
     if (
       assembly.schema !== 'horse-feature-ablation-assembly-v1' ||
       assembly.qualified !== true ||
@@ -171,26 +172,12 @@ export function admitHorseFeatureAuthority(
       !hex(assembly.provider?.inventorySha256, 64)
     )
       return refuse('evidence_mismatch');
-    // Calibration cannot be supplied by a user name, VPIP estimate, fixture or
-    // stress population label. Its provider-custodied report is a separate input.
     if (
-      population.schema !== 'horse-public-population-qualification-v1' ||
-      population.qualified !== true ||
-      population.activationAllowed !== false ||
-      population.evidenceClass !== 'public_observed_disjoint_holdout' ||
-      population.selectionOverlap !== false ||
-      !hex(population.rawEvidenceSha256, 64) ||
-      !hex(population.providerInventorySha256, 64) ||
-      !Number.isSafeInteger(population.opportunities) ||
-      population.opportunities <= 0 ||
-      !Array.isArray(population.reasons) ||
-      population.reasons.length ||
-      population.domainDigest !== hash(q.domain) ||
-      population.populationId !== plan.population ||
-      q.populationUncertaintyDigest !== population.uncertaintyDigest ||
-      !hex(population.uncertaintyDigest, 64)
+      featureLiveDomainRefusals(plan).length ||
+      q.profileId !== plan.liveAdmission.profileId ||
+      hash(q.domain) !== hash(plan.liveAdmission.domain)
     )
-      return refuse('not_qualified');
+      return refuse('evidence_mismatch');
     const d = q.domain as HorseFeatureDomain;
     if (
       !d ||
@@ -206,7 +193,7 @@ export function admitHorseFeatureAuthority(
       d.effectiveStackBB.length !== 2 ||
       !d.effectiveStackBB.every(Number.isFinite) ||
       d.effectiveStackBB[0] < 0 ||
-      d.effectiveStackBB[1] <= d.effectiveStackBB[0] ||
+      d.effectiveStackBB[1] < d.effectiveStackBB[0] ||
       !validFeatureEconomics(d) ||
       assembly.summary.byVariant?.[d.variant]?.qualified !== true
     )
@@ -307,6 +294,11 @@ export function runningFeatureSourcePaths(): string[] {
       'src/engine/HorseLogic.ts',
       'src/engine/HorseReferenceDecisionSources.ts',
       'src/engine/HorseFeatureAuthority.ts',
+      'src/engine/HorseFeatureLiveDomain.ts',
+      'src/config/leagueCashPricing.ts',
+      'src/config/RakeConfig.ts',
+      'src/config/rakeSpec.ts',
+      'src/config/cashRakePolicy.ts',
       'src/engine/HorseQualifiedAuthority.ts',
       'src/engine/horseDecision/workerRuntime.ts',
       'src/engine/horseDecision/client.ts',
@@ -363,6 +355,15 @@ export function featureDomainMatches(d: HorseFeatureDomain, gs: HorseGameStateV2
     gs.allInOrFold === false &&
     gs.straddleActive === false &&
     d.dealtSeats.includes(gs.dealtSeatIds?.length ?? 0) &&
+    gs.players.filter((p) => gs.dealtSeatIds?.includes(p.seat)).length ===
+      gs.dealtSeatIds?.length &&
+    gs.players
+      .filter((p) => gs.dealtSeatIds?.includes(p.seat))
+      .every(
+        (p) =>
+          Number.isFinite(p.totalInvested) &&
+          Math.abs((p.stack + p.totalInvested) / bb - d.startingStackBB) < 1e-9
+      ) &&
     d.remainingPlayers.includes(active.length) &&
     Number.isFinite(depth) &&
     depth >= d.effectiveStackBB[0] &&

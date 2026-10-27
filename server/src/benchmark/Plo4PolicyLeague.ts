@@ -1,3 +1,4 @@
+import { publishedCashPricing as publishedLeagueCashPricing } from '../config/leagueCashPricing.js';
 import {
   REMAINING_VARIANT_PACKS,
   REMAINING_VARIANT_DOMAIN,
@@ -47,7 +48,7 @@ import {
   uniqueCards,
 } from './OmahaReference.js';
 import { effectiveBbjDrop, effectiveRake } from '../config/rakeSpec.js';
-import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
+import { getFullRakeConfig } from '../config/RakeConfig.js';
 import {
   PLO4_DIVERGENCE_STREETS,
   PLO4_STRENGTH_BB,
@@ -1016,26 +1017,13 @@ export function runPlo4PolicyLeague(
 /** The engine's own cash pricing for the published 1/2 game of the profile's
  * variant (PLO4 when the profile names none), built the way
  * ServerTableEngineBase builds a cash hand config. */
+
 function publishedCashPricing(
   profile: Plo4LeagueProfile
 ): Pick<HandConfig, 'rakeConfig' | 'bbjConfig'> {
   if (profile.tournament || BB !== PLO4_STRENGTH_BB)
     throw new Error('Published PLO4 pricing is the cash 1/2 game only');
-  const full = getFullRakeConfig(1, BB, profile.variant ?? 'plo4');
-  return {
-    rakeConfig: {
-      percent: full.rakePercent,
-      cap: full.rakeCap,
-      noFlopNoDrop: true,
-      playerCountCaps: getPlayerCountCaps(full.rakeCap, profile.tableSeats ?? profile.seats),
-    },
-    bbjConfig: {
-      enabled: full.bbjEnabled,
-      feeBB: full.bbjFeeBB,
-      minPotBB: full.rules.minPotBB,
-      minPlayersDealt: full.rules.minPlayersDealt,
-    },
-  };
+  return publishedLeagueCashPricing(profile);
 }
 
 /** Independent per-hand settlement and deduction checks (Phase 9 rules). The

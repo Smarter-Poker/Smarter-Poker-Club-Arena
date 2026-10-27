@@ -457,3 +457,133 @@ test('provider lineage detects deleted runs without assuming numbering starts at
     assertIncrementalFamilyHistory([snapshots[0], snapshots[2], snapshots[1]], family)
   );
 });
+
+// Prospective declaration and producer exercise existing locked-plan validation;
+// fixture evidence is unsigned and never installed as a release selection.
+test('condition(a) producer binds an exact declared profile without a condition(b) gate', async () => {
+  const { featureAdmissionArtifacts } = await import('../../scripts/feature-ablation-assemble.mjs');
+  const { featureLiveDomainRefusals } = await import('./FeatureAblationQualification.js');
+  const { publishedCashPricing } = await import('../config/leagueCashPricing.js');
+  const { admitHorseFeatureAuthority, runningFeatureSourcePaths } =
+    await import('../engine/HorseFeatureAuthority.js');
+  const { HorseQualifiedAuthorityHolder } = await import('../engine/HorseQualifiedAuthority.js');
+  const sourceBytes = Buffer.from('unsigned structural source fixture'),
+    sourceHash = createHash('sha256').update(sourceBytes).digest('hex');
+  const p = fixture('combo_draw_pressure');
+  for (const path of [...Object.keys(p.runtimeSourceFiles), ...runningFeatureSourcePaths()])
+    p.runtimeSourceFiles[path] = sourceHash;
+  p.dependencyDigest = sourceHash;
+  const profile = p.profiles.find((x: any) => x.variant === 'plo4' && x.seats === 2);
+  p.liveAdmission = {
+    schema: 'horse-feature-live-domain-v1',
+    profileId: profile.id,
+    domain: {
+      variant: 'plo4',
+      mode: 'cash',
+      asset: 'chips',
+      chipUnit: 0.01,
+      boardCount: 1,
+      smallBlind: 1,
+      bigBlind: 2,
+      ante: 0,
+      bigBlindAnte: false,
+      bettingStructure: 'pot_limit',
+      sidePots: false,
+      dealtSeats: [2],
+      remainingPlayers: [2],
+      startingStackBB: 100,
+      effectiveStackBB: [0, 100],
+      ...publishedCashPricing({ variant: 'plo4', tournament: false, seats: 2, tableSeats: 6 }),
+    },
+  };
+  for (const f of [
+    'src/engine/HorseFeatureAuthority.ts',
+    'src/engine/HorseFeatureLiveDomain.ts',
+    'src/config/leagueCashPricing.ts',
+  ])
+    p.runtimeSourceFiles[f] = sourceHash;
+  p.runtimeSourceDigest = hash(p.runtimeSourceFiles);
+  assert.deepEqual(validateLockedFeatureAblationPlan(p), []);
+  const assembly: any = {
+    schema: 'horse-feature-ablation-assembly-v1',
+    sourceSha: 'b'.repeat(40),
+    target: p.target,
+    planDigest: hash(p),
+    qualified: true,
+    activationAllowed: false,
+    reasons: [],
+    summary: {
+      qualified: true,
+      activationAllowed: false,
+      planDigest: hash(p),
+      byVariant: { plo4: { qualified: true } },
+    },
+    provider: { rawArtifactsRetained: true, inventorySha256: H },
+  };
+  const produce = (plan = p, a = assembly) =>
+    featureAdmissionArtifacts({
+      plan,
+      assembly: a,
+      validatePlan: validateLockedFeatureAblationPlan,
+      validateDomain: featureLiveDomainRefusals,
+    });
+  const output = produce();
+  assert.equal(output.admission.qualified, true);
+  assert.equal(output.admission.activationAllowed, false);
+  assert.equal(output.admission.conditionB, 'post_launch_monitoring_withdrawal_only');
+  assert.equal('population' in output.admission, false);
+  for (const binding of [output.admission.plan, output.admission.assembly]) {
+    const name = binding.path.split('/').at(-1)!;
+    assert.equal(createHash('sha256').update(output.files[name]).digest('hex'), binding.sha256);
+  }
+  const admissionFile = Object.entries(output.files).find(([name]) =>
+    name.endsWith('-admission.json')
+  )!;
+  const now = Date.now(),
+    selection = {
+      schema: 'horse-feature-release-selection-v1' as const,
+      qualificationPath: 'docs/evidence/feature-activation/' + admissionFile[0],
+      qualificationSha256: createHash('sha256')
+        .update(admissionFile[1] as string)
+        .digest('hex'),
+      sourceSha: assembly.sourceSha,
+      approvalGeneration: 1,
+      issuedAt: new Date(now - 1000).toISOString(),
+      expiresAt: new Date(now + 60000).toISOString(),
+      withdrawn: null,
+    };
+  const admitted = admitHorseFeatureAuthority(
+    selection,
+    { read: (path) => Buffer.from(output.files[path.split('/').at(-1)!]) },
+    now,
+    () => sourceBytes
+  );
+  assert.equal(admitted.status, 'admitted');
+  const holder = new HorseQualifiedAuthorityHolder(
+    '11111111-1111-4111-8111-111111111111',
+    'horse-feature-promotion-v1'
+  );
+  holder.apply(admitted);
+  assert.equal(holder.receipt().state, 'usable');
+  assert.equal(produce(p, { ...assembly, reasons: undefined }).admission.qualified, false);
+  assert.equal(produce(p, { ...assembly, qualified: false }).admission.qualified, false);
+  for (const change of [
+    { smallBlind: 2 },
+    { ante: 1 },
+    { asset: 'diamonds' },
+    { dealtSeats: [2, 4] },
+    { startingStackBB: 200 },
+    { effectiveStackBB: [0, 200] },
+    { rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true } },
+  ]) {
+    const bad = structuredClone(p);
+    Object.assign(bad.liveAdmission.domain, change);
+    assert.notDeepEqual(featureLiveDomainRefusals(bad), []);
+    assert.equal(produce(bad).admission.qualified, false);
+  }
+  const dev = { ...p, state: 'development_only' };
+  assert.equal(produce(dev).admission.qualified, false);
+  const missing = { ...p };
+  delete missing.liveAdmission;
+  assert.equal(produce(missing).admission.qualified, false);
+});

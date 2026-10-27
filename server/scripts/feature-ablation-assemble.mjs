@@ -19,6 +19,62 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
 import { createGunzip } from 'node:zlib';
 
+/** Called only after the existing provider/locked-contract assembler. A result
+ * stays inactive until a separate protected release selection names its bytes. */
+export function featureAdmissionArtifacts({ plan, assembly, validatePlan, validateDomain }) {
+  const reasons = [...validatePlan(plan), ...validateDomain(plan)];
+  if (
+    assembly.schema !== 'horse-feature-ablation-assembly-v1' ||
+    assembly.qualified !== true ||
+    assembly.activationAllowed !== false ||
+    !Array.isArray(assembly.reasons) ||
+    assembly.reasons.length ||
+    assembly.planDigest !== sha256(canonical(plan)) ||
+    assembly.target !== plan.target ||
+    assembly.summary?.qualified !== true ||
+    assembly.summary?.activationAllowed !== false ||
+    assembly.summary?.planDigest !== assembly.planDigest ||
+    !assembly.provider?.rawArtifactsRetained ||
+    !hex(assembly.provider?.inventorySha256) ||
+    !/^([0-9a-f]{40})$/.test(assembly.sourceSha ?? '')
+  )
+    reasons.push('condition_a_not_qualified');
+  const stem = `${plan.target}-${assembly.sourceSha}-${assembly.planDigest}`;
+  const planName = `${stem}-plan.json`,
+    assemblyName = `${stem}-assembly.json`,
+    admissionName = `${stem}-admission.json`;
+  const bytes = (value) => JSON.stringify(value, null, 2) + '\n';
+  const bind = (name, value) => ({
+    path: `docs/evidence/feature-activation/${name}`,
+    sha256: sha256(bytes(value)),
+  });
+  const admission = {
+    schema: 'horse-feature-live-admission-v1',
+    version: 'horse-feature-promotion-v1',
+    qualificationKind: 'locked_paired_condition_a',
+    sourceSha: assembly.sourceSha,
+    qualified: reasons.length === 0,
+    activationAllowed: false,
+    reasons: [...new Set(reasons)],
+    assembly: bind(assemblyName, assembly),
+    plan: bind(planName, plan),
+    profileId: plan.liveAdmission?.profileId,
+    domain: plan.liveAdmission?.domain,
+    compositionDigest: sha256(canonical(plan.flags)),
+    conditionB: 'post_launch_monitoring_withdrawal_only',
+    scope:
+      'Only the exact declared locked profile and flag composition; not universal profitability',
+  };
+  return {
+    files: {
+      [planName]: bytes(plan),
+      [assemblyName]: bytes(assembly),
+      [admissionName]: bytes(admission),
+    },
+    admission,
+  };
+}
+
 export function featureAblationDealSeed(profileId, seed, pairIndex) {
   if (
     typeof profileId !== 'string' ||
@@ -985,7 +1041,7 @@ async function main(argv) {
     summarize: contract.summarizeFeatureAblationQualification,
   });
   sourceAuthority(sourceSha);
-  writeJson(path.join(out, 'assembly.json'), {
+  const finalAssembly = {
     ...assembly,
     provider: {
       runId: String(provider.run.id),
@@ -995,7 +1051,25 @@ async function main(argv) {
       rawArtifactsRetained: true,
       ...(familyCustody ? { familyCustody } : {}),
     },
-  });
+  };
+  writeJson(path.join(out, 'assembly.json'), finalAssembly);
+  if (plan.liveAdmission !== undefined) {
+    const produced = featureAdmissionArtifacts({
+      plan,
+      assembly: finalAssembly,
+      validatePlan: contract.validateLockedFeatureAblationPlan,
+      validateDomain: contract.featureLiveDomainRefusals,
+    });
+    for (const [name, bytes] of Object.entries(produced.files))
+      writeFileSync(path.join(out, name), bytes);
+  } else
+    writeJson(path.join(out, 'admission-unavailable.json'), {
+      schema: 'horse-feature-live-admission-v1',
+      qualified: false,
+      activationAllowed: false,
+      reasons: ['live_domain_not_declared'],
+      conditionB: 'post_launch_monitoring_withdrawal_only',
+    });
   if (assembly.reasons.length) process.exitCode = 2;
   console.log(
     JSON.stringify({

@@ -1,3 +1,35 @@
+import { featureLiveDomainRefusals as validateLiveDeclaration } from '../engine/HorseFeatureLiveDomain.js';
+import { incrementalDevelopmentProfiles } from './IncrementalPressureDevelopment.js';
+import { publishedCashPricing } from '../config/leagueCashPricing.js';
+export function featureLiveDomainRefusals(plan: FeatureAblationQualificationPlan): string[] {
+  const reasons = validateLiveDeclaration(plan);
+  if (reasons.length) return reasons;
+  const declaration = plan.liveAdmission!,
+    d = declaration.domain;
+  const actual = incrementalDevelopmentProfiles(
+    plan.target as import('./IncrementalPressureDevelopment.js').IncrementalTarget,
+    d.variant
+  ).find((p) => p.id === declaration.profileId);
+  if (
+    !actual ||
+    actual.stackBB !== d.startingStackBB ||
+    actual.seats !== d.dealtSeats[0] ||
+    actual.anteBB !== 0 ||
+    actual.tournament ||
+    actual.straddle ||
+    !actual.publishedRake ||
+    (actual.asset && actual.asset !== 'chips')
+  )
+    return ['live_domain_physical_profile'];
+  const pricing = publishedCashPricing(actual);
+  if (
+    featureQualificationCanonical(pricing.rakeConfig) !==
+      featureQualificationCanonical(d.rakeConfig) ||
+    featureQualificationCanonical(pricing.bbjConfig) !== featureQualificationCanonical(d.bbjConfig)
+  )
+    return ['live_domain_physical_pricing'];
+  return [];
+}
 /** Generic locked flag-contrast contract. No plan, sample size or positive
  * verdict is supplied by this module. Actual plans must be frozen after the
  * separate development pilot and protected-merged before any held-out deal. */
@@ -46,6 +78,7 @@ export interface FeatureQualificationCell {
   pairs: number;
 }
 export interface FeatureAblationQualificationPlan {
+  liveAdmission?: import('../engine/HorseFeatureLiveDomain.js').HorseFeatureLiveDeclaration;
   schema: 'horse-feature-ablation-plan-v1' | 'horse-incremental-ablation-plan-v2';
   version: string;
   state: 'heldout_locked';
@@ -367,6 +400,17 @@ export function validateLockedFeatureAblationPlan(p: FeatureAblationQualificatio
         bad('coverage_minima:' + profile.id);
     }
   if (incremental) reasons.push(...incremental.validate(p));
+  if (p.liveAdmission !== undefined) {
+    reasons.push(...featureLiveDomainRefusals(p));
+    if (
+      ![
+        'src/engine/HorseFeatureAuthority.ts',
+        'src/engine/HorseFeatureLiveDomain.ts',
+        'src/config/leagueCashPricing.ts',
+      ].every((k) => digest(p.runtimeSourceFiles?.[k]))
+    )
+      bad('live_admission_source_closure');
+  }
   return [...new Set(reasons)];
 }
 function freeze<T>(v: T): T {

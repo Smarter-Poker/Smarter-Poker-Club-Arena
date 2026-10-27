@@ -1,3 +1,4 @@
+import { publishedCashPricing } from '../config/leagueCashPricing.js';
 import {
   requestAt,
   workerHarness,
@@ -45,14 +46,14 @@ const domain: HorseFeatureDomain = {
   dealtSeats: [2],
   remainingPlayers: [2],
   effectiveStackBB: [20, 100],
+  startingStackBB: 100,
   smallBlind: 1,
   bigBlind: 2,
   ante: 0,
   bigBlindAnte: false,
   bettingStructure: 'pot_limit',
   chipUnit: 0.01,
-  rakeConfig: { percent: 5, cap: 2.5, noFlopNoDrop: true },
-  bbjConfig: null,
+  ...publishedCashPricing({ tournament: false, variant: 'plo4', tableSeats: 6, seats: 2 }),
   sidePots: false,
 };
 // Unsigned in-memory fixture only. No production selection or population is created.
@@ -66,6 +67,8 @@ function fixture(mutate?: (q: any, plan: any, pop: any) => void) {
   ];
   const files = Object.fromEntries(paths.map((p) => [p, bh(source)]));
   const plan: any = {
+    schema: 'horse-incremental-ablation-plan-v2',
+    state: 'heldout_locked',
     target: 'combo_draw_pressure',
     population: 'fixture',
     flags: { candidate: { comboDrawPressure: true }, reference: { comboDrawPressure: false } },
@@ -90,6 +93,7 @@ function fixture(mutate?: (q: any, plan: any, pop: any) => void) {
   const q: any = {
     schema: 'horse-feature-live-admission-v1',
     version: HORSE_FEATURE_AUTHORITY_VERSION,
+    qualificationKind: 'locked_paired_condition_a',
     qualified: true,
     activationAllowed: false,
     reasons: [],
@@ -99,6 +103,24 @@ function fixture(mutate?: (q: any, plan: any, pop: any) => void) {
     populationUncertaintyDigest: pop.uncertaintyDigest,
   };
   mutate?.(q, plan, pop);
+  q.domain = {
+    ...q.domain,
+    ...publishedCashPricing({
+      tournament: false,
+      variant: q.domain.variant,
+      tableSeats: 6,
+      seats: 2,
+    }),
+  };
+  q.profileId = `${plan.target}-${q.domain.variant}-6max-2dealt-100bb`;
+  plan.profiles = [
+    { id: q.profileId, variant: q.domain.variant, seats: 2, stackBB: 100, weight: 1 },
+  ];
+  plan.liveAdmission = {
+    schema: 'horse-feature-live-domain-v1',
+    profileId: q.profileId,
+    domain: q.domain,
+  };
   const assembly = {
     schema: 'horse-feature-ablation-assembly-v1',
     qualified: true,
@@ -124,7 +146,7 @@ function fixture(mutate?: (q: any, plan: any, pop: any) => void) {
   };
   q.plan = bound('plan', plan);
   q.assembly = bound('assembly', assembly);
-  q.population = bound('population', pop);
+
   const binding = bound('qualification', q);
   const selection: HorseFeatureSelection = {
     schema: 'horse-feature-release-selection-v1',
@@ -166,8 +188,8 @@ function state() {
     boardCount: 1,
     dealtSeatIds: [0, 1],
     players: [
-      { stack: 100, bet: 0, is_folded: false },
-      { stack: 100, bet: 0, is_folded: false },
+      { seat: 0, stack: 200, bet: 0, totalInvested: 0, is_folded: false },
+      { seat: 1, stack: 200, bet: 0, totalInvested: 0, is_folded: false },
     ],
     smallBlind: 1,
     bigBlind: 2,
@@ -176,7 +198,7 @@ function state() {
     bettingStructure: 'pot_limit',
     chipUnit: 0.01,
     rakeConfig: domain.rakeConfig,
-    bbjConfig: null,
+    bbjConfig: domain.bbjConfig,
     pots: [],
     straddleActive: false,
     bombPot: false,
@@ -310,7 +332,36 @@ describe('feature authority connected admission and receipt', () => {
           bombPot: false,
           allInOrFold: false,
         });
+        r.player.stack = 194;
+        r.gameState.players.forEach((p) => (p.stack = 194));
+        r.gameState.rakeConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).rakeConfig;
+        r.gameState.bbjConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).bbjConfig;
         r.opts = { comboDrawPressure: true, multiwayRiverBluffCheckRaise: true };
+        r.decisionKey = buildHorseDecisionKey(r);
+        r.player.stack = 194;
+        r.gameState.players.forEach((p) => (p.stack = 194));
+        r.gameState.rakeConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).rakeConfig;
+        r.gameState.bbjConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).bbjConfig;
         r.decisionKey = buildHorseDecisionKey(r);
         const result = await h.fast(r);
         expect(seen.at(-1).comboDrawPressure).toBe(admitted);
@@ -338,12 +389,27 @@ describe('feature authority connected admission and receipt', () => {
           boardCount: 1,
           ante: 0,
           bigBlindAnte: false,
-          bbjConfig: null,
+          bbjConfig: domain.bbjConfig,
           rakeConfig: domain.rakeConfig,
           straddleActive: false,
           bombPot: false,
           allInOrFold: false,
         });
+        r.decisionKey = buildHorseDecisionKey(r);
+        r.player.stack = 194;
+        r.gameState.players.forEach((p) => (p.stack = 194));
+        r.gameState.rakeConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).rakeConfig;
+        r.gameState.bbjConfig = publishedCashPricing({
+          tournament: false,
+          variant: 'nlh',
+          tableSeats: 6,
+          seats: 2,
+        }).bbjConfig;
         r.decisionKey = buildHorseDecisionKey(r);
         const result = await h.fast(r);
         expect(result.decision.featureAuthority).toBeDefined();

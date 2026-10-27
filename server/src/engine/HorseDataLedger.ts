@@ -381,6 +381,12 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V24'
   ),
   tag(
+    'one_pair_turn_stackoff',
+    'measurement',
+    'single-board showdown one-pair shape with turn commitment, mirrored on wins; not turn decision EV or strategy authority',
+    'V24'
+  ),
+  tag(
     'board_paired_two_pair_stackoff',
     'measurement',
     'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',
@@ -3153,6 +3159,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
     'V50'
   ),
+  {
+    ...receipt(
+      'horse_pooled_public_bootstrap_*',
+      'HorseDecisionWorkerRuntime startup public-profile hydration',
+      'boot-only observation: loaded means a finite saved public-profile batch was read, unavailable means the read failed or exceeded its bounds, and refused means cache admission rejected the batch; none proves decision consumption, independent history, complete fleet coverage or activation',
+      'V50'
+    ),
+    cadence: 'boot',
+  },
   receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',

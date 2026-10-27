@@ -57,6 +57,7 @@ it('canonical variants remain distinct and donor batches keep the ten actor boun
     'flh',
     'flo8',
     'short_deck',
+    'pineapple',
   ]);
   expect(validOpponentDonorProfiles([donor('flh')], ids, 'nlh', 'cash', 'full')).toBe(false);
   expect(validOpponentDonorProfiles([donor('flo8')], ids, 'plo8', 'cash', 'full')).toBe(false);

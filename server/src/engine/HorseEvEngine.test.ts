@@ -190,6 +190,31 @@ describe('V38 the arithmetic', () => {
     expect(calls).toBeGreaterThan(30);
     expect(calls).toBeLessThan(70);
   });
+
+  it.each([undefined, 0.1])(
+    'reports river call EV using the same partial-stack risk as its action (deduction %s)',
+    (callDeductionFraction) => {
+      // Half the stack is at risk, so the established policy charges the
+      // square root of that share, not the full stack-off premium.
+      const award = 200 * (1 - (callDeductionFraction ?? 0));
+      const premium = 0.1 * Math.sqrt(0.5);
+      const required = 50 / award + premium;
+      for (const gap of [-0.02, 0.02]) {
+        const verdict = riverCallVerdict({
+          equity: required + gap,
+          pot: 150,
+          toCall: 50,
+          stack: 100,
+          riskPremium: 0.1,
+          callDeductionFraction,
+          rand: () => 0.5,
+        });
+        expect(verdict.required).toBeCloseTo(required, 10);
+        expect(verdict.call).toBe(gap > 0);
+        expect(verdict.evCall).toBeCloseTo(gap * award, 10);
+      }
+    }
+  );
 });
 
 describe('V38 wiring: the engine reaches decide()', () => {

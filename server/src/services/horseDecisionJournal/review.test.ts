@@ -355,6 +355,37 @@ const directory = () => {
   return d;
 };
 describe('private retained-hand journal consumer', () => {
+  it('counts authorized pooled notes separately and rejects future provenance', () => {
+    const f = fixture('nlh', [], false, false, false, false, false, true);
+    const original = structuredClone(f.d.observerReads)!;
+    f.d.observerReads = {
+      ...original,
+      version: 3,
+      individualVersion: original.version as 1 | 2,
+      disposition: 'pooled_public',
+      pooledPublicProfiles: {
+        version: 1,
+        source: 'accepted_hand_public_profiles',
+        availableAtMs: 100,
+        digest: 'a'.repeat(64),
+        profiles: 1,
+      },
+    };
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      status: 'reconciled',
+      independentReadActions: 0,
+      independentReadsVerified: false,
+      pooledPublicReadActions: 1,
+      publicReadProvenanceVerified: true,
+      activationAllowed: false,
+    });
+    f.d.observerReads.pooledPublicProfiles!.availableAtMs = f.d.snapshot.decisionTimeMs + 1;
+    expect(reconcileHorseJournalHand(f.rows(), handKey)).toMatchObject({
+      pooledPublicReadActions: 0,
+      publicReadProvenanceVerified: false,
+    });
+  });
+
   it('reconciles the distinct guard worker capture and refuses cross-family or changed acceptance evidence', async () => {
     // The worker/capture are real components; the retained controller hand and
     // qualification are explicit controls, not natural production evidence.

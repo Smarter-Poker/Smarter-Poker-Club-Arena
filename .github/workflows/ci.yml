@@ -1359,6 +1359,10 @@ jobs:
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
     # preserving the 40m cap, every suite, financial deadline and artifact.
+    # October 27 run 40542328149: shard 1 hit 40m while the exact weekly
+    # recompute proof took 893s; shard 2 finished in 1203s. Move that unchanged
+    # suite and its always-upload to 2 (~2096s combined, ~304s reserve).
+    # No suite, assertion, native deadline or 40m cap changes.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1738,6 +1742,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 tests/sql/run-horse-observation-window.py
 
+      - name: Horse river-call evidence survives exact migration and legacy writers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-river-call-persistence.py
+
       - name: Horse hand review publishes its row, rollup and receipt atomically
         if: matrix.shard == 4
         env:
@@ -1901,7 +1911,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -1909,7 +1919,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}

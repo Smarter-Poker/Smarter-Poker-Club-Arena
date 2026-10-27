@@ -659,6 +659,7 @@ import {
 import { canonicalCards, normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { heroHandLabel } from '../lib/heroHandLabel';
 import { getAnimationSpeed } from '../utils/animationSpeed';
+import { winningCardAwardResetAt } from '../utils/winningCardTiming';
 import { formatAwardAtUnit, formatChipAward } from '../utils/format';
 // The unit a printed amount is named in: Chips, or Diamonds at a Diamond seat.
 // Never a dollar sign (Dan 2026-10-09, check-ui-dollar.mjs).
@@ -20550,7 +20551,16 @@ function LiveTablePage({
              this, and a client that missed HAND_COMPLETE has no pending
              reset to extend and is left alone. */
           {
-            const wantResetAt = potAwardAnimEndAtRef.current + 400;
+            const wantResetAt = winningCardAwardResetAt(potAwardAnimEndAtRef.current, {
+              wentToShowdown:
+                handShowdownRef.current.wentToShowdown ||
+                tableStateRef.current.boardStage === 'showdown',
+              ritRuns: Math.max(
+                ritExpectedRunsRef.current,
+                ritResultRef.current?.boards.length ?? 1
+              ),
+              speed: getAnimationSpeed(),
+            });
             if (
               handCompleteTimerRef.current &&
               handCompleteResetFnRef.current &&

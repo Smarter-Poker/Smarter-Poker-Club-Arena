@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
+import { winningCardAwardResetAt } from '../src/utils/winningCardTiming';
 afterEach(() => vi.useRealTimers());
 import { HAND_COMPLETION as H, handCompletionHoldMs } from '../src/config/handCompletionSpec';
 const source = readFileSync(resolve(__dirname, '../src/pages/TablePage.tsx'), 'utf8');
@@ -80,4 +81,29 @@ it('the actual banner timer clears at 1500ms and never restores the waiting stri
   expect(ref.current).toBeNull();
   vi.advanceTimersByTime(25000);
   expect(state).toBeNull();
+});
+
+it.each([1, 2])(
+  'the full extra winning-card read survives a longer pot animation at speed %s',
+  (speed) => {
+    for (const baseHold of [3500, 5500]) {
+      for (const awardEndAt of [1000, 3600, 4300, 9000]) {
+        const before = Math.max(baseHold * speed, awardEndAt + 400);
+        const after = Math.max(
+          (baseHold + 1500) * speed,
+          winningCardAwardResetAt(awardEndAt, { wentToShowdown: true, ritRuns: 1, speed })
+        );
+        expect(after - before).toBe(1500 * speed);
+      }
+    }
+    expect(source).toContain(
+      'const wantResetAt = winningCardAwardResetAt(potAwardAnimEndAtRef.current,'
+    );
+  }
+);
+it('keeps fold timing and the already-extended RIT result timeline unchanged', () => {
+  expect(winningCardAwardResetAt(4300, { wentToShowdown: false, ritRuns: 1, speed: 1 })).toBe(4700);
+  for (const ritRuns of [2, 3]) {
+    expect(winningCardAwardResetAt(4300, { wentToShowdown: true, ritRuns, speed: 1 })).toBe(4700);
+  }
 });

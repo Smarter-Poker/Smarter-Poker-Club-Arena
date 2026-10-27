@@ -435,6 +435,8 @@ describe('earned fees and direct player lookup', () => {
         {
           user_id: 'woo-id',
           alias: 'WooWoo',
+          display_name: 'Private Legal Name',
+          username: 'account-name',
           can_view_financials: true,
           management_club_id: CLUB_ID,
         },
@@ -447,6 +449,7 @@ describe('earned fees and direct player lookup', () => {
     fireEvent.click(await screen.findByRole('button', { name: /WooWoo.*View Player Data/i }));
     expect(navigateMock).toHaveBeenCalledWith(`/clubs/${CLUB_ID}/members/woo-id`);
     expect(screen.queryByText('Private')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private Legal Name')).not.toBeInTheDocument();
   });
 
   it('discards player results after account hydration begins', async () => {

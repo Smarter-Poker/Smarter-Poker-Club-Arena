@@ -41,6 +41,7 @@ import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { ClubRosterService, type RosterMember } from '../../services/ClubRosterService';
 import { titleCase } from '../../utils/titleCase';
+import { playerDisplayName } from '../../utils/playerDisplayName';
 import { useFitText } from '../../components/lobby/game-cards/useFitText';
 import {
   CLUB_DATA_ZONE_LABEL,
@@ -712,9 +713,7 @@ export default function ClubDataSimplePage() {
                         )
                       }
                     >
-                      <span className={styles.rowName}>
-                        {titleCase(player.alias || player.display_name || player.username)}
-                      </span>
+                      <span className={styles.rowName}>{titleCase(playerDisplayName(player))}</span>
                       <span className={styles.rowFee}>View Player Data</span>
                     </button>
                   </li>

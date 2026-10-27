@@ -128,7 +128,7 @@ it('does not recover a non-all-in flat while another live seat still owes the ra
       {}
     ).action
   ).toBe('fold');
-  expect(eq).not.toHaveBeenCalled();
+  expect(eq).toHaveBeenCalledTimes(1);
   gs.players[2].is_folded = true;
   expect(
     HorseLogic.__testables.maniacCallDown(

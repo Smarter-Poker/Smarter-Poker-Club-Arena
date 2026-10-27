@@ -2441,15 +2441,6 @@ function maniacCallDown(
             (p) => p.is_all_in || (Number.isFinite(p.bet) && p.bet >= gs.currentBet - 0.005)
           )
         : allLive;
-    // A flat that leaves chips behind is not a terminal heads-up price while
-    // another live seat still owes the raise. Do not invent that seat's call
-    // or cards; retain the earlier range decision until a closed price exists.
-    if (
-      street === 'preflop' &&
-      toCall < player.stack &&
-      allLive.some((p) => !p.is_all_in && p.stack > 0 && p.bet < gs.currentBet - 0.005)
-    )
-      return decision;
     const opponentCards = vi.isOmaha ? vi.holeCount : player.cards.length;
     const deck =
       (vi.isShortDeck ? 36 : 52) - player.cards.length - (gs.communityCards?.length ?? 0);
@@ -2549,6 +2540,15 @@ function maniacCallDown(
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
       return { ...decision, action: 'all_in', amount: undefined };
     }
+    // A flat that leaves chips behind is not a terminal heads-up price while
+    // another live seat still owes the raise. Do not invent that seat's call
+    // or cards; retain the earlier range decision until a closed price exists.
+    if (
+      street === 'preflop' &&
+      toCall < player.stack &&
+      allLive.some((p) => !p.is_all_in && p.stack > 0 && p.bet < gs.currentBet - 0.005)
+    )
+      return decision;
     const rawRequired =
       call / ((pot + call) * (1 - rake)) +
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
@@ -5104,7 +5104,7 @@ export class HorseLogic {
               p.seat !== player.seat &&
               p.seat !== lastRaiserSeat
           );
-          const eq38 = simulateEquity(
+          let eq38 = simulateEquity(
             player.cards,
             [],
             inPotPlayers38.length,
@@ -5195,6 +5195,61 @@ export class HorseLogic {
             dominationMargin38 +
             realization38;
           const required38 = exactRake38 === null ? Math.min(0.99, rawRequired38) : rawRequired38;
+          // Confirm a noisy heads-up price at THIS owner's unchanged
+          // threshold. The later recovery must not lower its domination/risk
+          // margins. Reuse the existing recovery's bounded sample ceilings;
+          // simulateEquity retains the governor; the existing worker deadline remains.
+          if (
+            vi.isOmaha &&
+            inPotPlayers38.length === 1 &&
+            (effCall38 >= player.stack || !otherLiveResponder38)
+          ) {
+            const terminal38 = effCall38 >= player.stack;
+            const iterations38 = Math.max(160, Math.floor(vi.iterations * 0.8));
+            let samples38 = equitySampleSizeOfLastCall();
+            const uncertainty38 = () =>
+              2 * Math.sqrt(Math.max(0.01, eq38 * (1 - eq38)) / Math.max(1, samples38));
+            if (eq38 < required38 && required38 - eq38 <= uncertainty38()) {
+              const refined38 = simulateEquity(
+                player.cards,
+                [],
+                inPotPlayers38.length,
+                vi,
+                iterations38 * (terminal38 ? 4 : 1),
+                bands38,
+                false,
+                undefined,
+                undefined,
+                undefined,
+                player.knownDeadCards ?? []
+              );
+              const granted38 = equitySampleSizeOfLastCall();
+              eq38 =
+                (eq38 * samples38 + refined38 * granted38) / Math.max(1, samples38 + granted38);
+              samples38 += granted38;
+            }
+            const boundarySamples38 = Math.ceil(0.25 / (0.01 * 0.01));
+            if (
+              terminal38 &&
+              samples38 < boundarySamples38 &&
+              eq38 < required38 &&
+              required38 - eq38 <= uncertainty38()
+            ) {
+              eq38 = simulateEquity(
+                player.cards,
+                [],
+                inPotPlayers38.length,
+                vi,
+                boundarySamples38,
+                bands38,
+                false,
+                undefined,
+                undefined,
+                undefined,
+                player.knownDeadCards ?? []
+              );
+            }
+          }
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
           if (
@@ -5257,7 +5312,11 @@ export class HorseLogic {
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
           notePhase6Route('variant_fallback', 'variant_price');
-          return { action: 'fold', thinkTime: 0, continuationGuard: 'preflop_priced_refusal' };
+          return {
+            action: 'fold',
+            thinkTime: 0,
+            ...(vi.isOmaha ? { continuationGuard: 'preflop_priced_refusal' as const } : {}),
+          };
         } catch {
           if (telemetryOn(opts)) noteFire('v38_preflop_price_unavailable');
           /* No invented opponent/equity: the explicit range fallback decides. */

@@ -11,7 +11,7 @@ afterEach(() => {
   HorseMind.reset();
   drainFires();
 });
-it.each([false, true])('retains a priced Omaha refusal with pending responder=%s', (pending) => {
+function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2) {
   const seat = (n: number, values: Partial<SeatPlayer>): SeatPlayer => ({
     seat: n,
     user_id: `public-${n}`,
@@ -27,7 +27,7 @@ it.each([false, true])('retains a priced Omaha refusal with pending responder=%s
     ...values,
   });
   const hero = seat(1, {
-    stack: 396.2,
+    stack,
     bet: 11,
     totalInvested: 11,
     cards: [
@@ -47,7 +47,10 @@ it.each([false, true])('retains a priced Omaha refusal with pending responder=%s
   vi.spyOn(HorseMind, 'opponentRead').mockReturnValue({ stats } as unknown as OpponentExploitRead);
   vi.spyOn(HorseMind, 'bandFor').mockReturnValue([0, 1]);
   vi.spyOn(HorseMind, 'bandsForOpponents').mockReturnValue([[0, 1]]);
-  const sampled = vi.spyOn(Eval, 'simulateEquity').mockReturnValue(0.44);
+  const sampled = vi
+    .spyOn(Eval, 'simulateEquity')
+    .mockReturnValueOnce(first)
+    .mockReturnValue(later);
   vi.spyOn(Eval, 'equitySampleSizeOfLastCall').mockReturnValue(360);
   const gs = {
     stateSchemaVersion: 1,
@@ -97,6 +100,27 @@ it.each([false, true])('retains a priced Omaha refusal with pending responder=%s
   );
   const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
   expect(fires.v38_preflop_allin_price).toBe(1);
+  return { decision, sampled, fires };
+}
+it.each([false, true])('retains a priced Omaha refusal with pending responder=%s', (pending) => {
+  const { decision, sampled } = pricedSpot(pending);
+  expect(decision.action).toBe('fold');
+  expect(sampled).toHaveBeenCalledTimes(pending ? 1 : 2);
+});
+it('confirms noisy terminal equity at the same authoritative price', () => {
+  const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.6, 156);
+  expect(['call', 'all_in']).toContain(decision.action);
+  expect(sampled).toHaveBeenCalledTimes(2);
+  expect(fires.maniac_call_down).toBeUndefined();
+});
+it('does not resample a decisive bad price or lower the final threshold', () => {
+  const { decision, sampled } = pricedSpot(false, 0.1, 0.9, 156);
   expect(decision.action).toBe('fold');
   expect(sampled).toHaveBeenCalledTimes(1);
+});
+it('retains a borderline refusal after the bounded confirmation', () => {
+  const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.44, 156);
+  expect(decision.action).toBe('fold');
+  expect(sampled.mock.calls.length).toBeLessThanOrEqual(3);
+  expect(fires.maniac_call_down).toBeUndefined();
 });

@@ -1574,6 +1574,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Active original weekly book closure outage after all player rakeback was paid: the original linked hand reducer timed out240s while scanning and hashing all off-window resolutions before the original recognition predicate. This exact index-only migration passed17 native original linked/full-row/reducer/witness/materialization/catalog/installer cases and normal local checks. Actual full-file history and VALID READY LIVE one nonpartial recognized_at timestamptz key/default opclass/no INCLUDE were read back, with full five original function definitions/metadata including ACL, complete logical outcome/resolution columns/constraints/triggers/owner ACL, Scope/count hashes and source65 TRUE unchanged from the real preinstall baseline. No source pin, function, proof, wallet, paid receipt, admission, generation, cache, permission, budget or accounting math changed. This installation receipt is not proof of the remaining84 hand windows, document closure or future4AM capacity."
+    },
+    {
+      "version": "20261027223143",
+      "name": "standalone_entry_covers_original_tournament_witnesses",
+      "file": "supabase/migrations/20261027223143_standalone_entry_covers_original_tournament_witnesses.sql",
+      "md5": "2a2db2ea4bd22fdfb3fae8761dbe286d",
+      "appliedToProductionAt": "2026-10-27T23:06:34.313Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained concurrent active-book-outage install and READ ONLY full-file history/index/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active original weekly book closure outage after all player rakeback was paid: original standalone Scope ENTRY timed out285seconds on the NULL-coordinator tournament fee source heap scan. This exact physical two-key/four-scalar cover passed56 native exact ENTRY/first-week/current cutoff helper/source metadata/constraint/MVCC/catalog/freeze/permission cases and normal local checks. Full-file history and exact VALID READY LIVE NULL-coordinator cover, six complete original function definitions and metadata including ACL, all eleven original table columns/constraints/triggers/owner ACL, Scope/count hashes and source65 TRUE were read back unchanged from the actual preinstall baseline. No source pin, function, earning witness, receipt, money, generation, cache, permission, budget or accounting math changed. Native fixture did not reproduce production285second timing; this install receipt is not full document closure or future4AM capacity proof."
     }
   ]
 }

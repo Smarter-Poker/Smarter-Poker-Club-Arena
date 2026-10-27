@@ -45,3 +45,27 @@ export function isFleetWideStall(condemned: number, candidates: number): boolean
   if (candidates <= 0) return false;
   return condemned * FLEET_WIDE_ZOMBIE_SHARE_DIVISOR > candidates;
 }
+
+/** Startup is progressing when it enters a new boot step. Its object may
+ * already be older than the zombie budget after admission and earlier reads.
+ * Do not reinterpret ordinary gameplay phase changes as hand progress.
+ * A step that actually hangs still ages into the same recovery threshold.
+ */
+export function zombieProgressAge(engine: {
+  describeStallForRecovery(): string;
+  msSinceProgress(): number;
+  msSinceLoopPhase(): number;
+}): number {
+  const progress = engine.msSinceProgress();
+  const phase = engine.describeStallForRecovery().split(':', 1)[0];
+  switch (phase) {
+    case 'start_load_table':
+    case 'start_seed_hand_count':
+    case 'start_crash_recovery':
+    case 'start_time_bank_restore':
+    case 'start_wait_for_players':
+      return Math.min(progress, engine.msSinceLoopPhase());
+    default:
+      return progress;
+  }
+}

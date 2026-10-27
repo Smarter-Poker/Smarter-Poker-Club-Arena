@@ -1,3 +1,8 @@
+import { admitHorsePhase13LiveAuthority } from '../../engine/HorsePhase13Authority.js';
+import {
+  HORSE_OWNER_FORCED_EVIDENCE_PATH,
+  HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+} from '../../engine/HorseOwnerForcedActivation.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HorseFleetPhaseInterpreter,
@@ -183,6 +188,54 @@ describe('private phase interpretation requires source-qualified accepted eviden
     }
   );
 
+  it('does not call a signed corrective composition independently qualified when its retained baseline is forced', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const h = harness(true, 0),
+      r = request(),
+      result = await run(h, r);
+    const capture = structuredClone(h.records[0]) as HorsePhaseCapture;
+    const w = createHorseExecutionWitness(r, result.decision, {
+      requestId: r.requestId,
+      lane: 'fast',
+      computeMs: result.computeMs,
+      governorScale: result.governorScale,
+    });
+    w.phase14Authority!.verdict = 'usable';
+    settleHorseExecutionWitness(w, {
+      applied: true,
+      acceptedActions: [
+        {
+          intended: true,
+          record: {
+            seat: r.player.seat,
+            userId: r.player.user_id,
+            action: result.decision.action,
+            amount: result.decision.action === 'fold' ? 0 : result.decision.amount!,
+            stage: 'river',
+          },
+        },
+      ],
+    });
+    // Explicit consumer input: a signed corrective owner composed with the
+    // actual running NLH cash baseline's forced authority, not a P8 cash claim.
+    const baseline = admitHorsePhase13LiveAuthority('nlh', now);
+    if (baseline.status !== 'admitted') throw Error('baseline fixture');
+    const holder = new HorseQualifiedAuthorityHolder('10000000-0000-4000-8000-000000000001');
+    holder.apply(baseline);
+    const receipt = holder.receipt();
+    expect(receipt.evidenceSha256).toBe(HORSE_OWNER_FORCED_EVIDENCE_SHA256);
+    capture.decision.correctivePolicy!.baselineAuthorities = { phase13: receipt };
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase14Attachment').mockReturnValue(h.attachment);
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase13Authority').mockReturnValue(baseline);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(capture, w, plans).phase14
+    ).toMatchObject({
+      status: 'applicable-active',
+      application: 'accepted',
+      qualification: 'owner-forced',
+      reason: 'owner_forced_not_independently_qualified',
+    });
+  });
   it('requires request-owned DEEP admission and one exact retained FAST input, without borrowing globals', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const h = harness(),
@@ -365,6 +418,27 @@ describe('private phase interpretation requires source-qualified accepted eviden
       ).toBe(originalFastBinding ? 'refused' : 'unknown');
     }
   );
+  it('keeps owner-forced accepted use active without claiming independent qualification', () => {
+    const f = structuredClone(fixture());
+    if (f.admission.status !== 'admitted') throw Error('fixture admission');
+    const evidence = {
+      evidencePath: HORSE_OWNER_FORCED_EVIDENCE_PATH,
+      evidenceSha256: HORSE_OWNER_FORCED_EVIDENCE_SHA256,
+    };
+    Object.assign(f.admission.authority, evidence);
+    Object.assign(f.capture.decision.tournamentPostflop!.authority!, evidence);
+    Object.assign(f.witness.phase8Authority!.authority!, evidence);
+    vi.spyOn(qualifiedReplayAdmissions, 'admitPhase8Authority').mockReturnValue(f.admission);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase8
+    ).toMatchObject({
+      status: 'applicable-active',
+      eligibility: 'eligible',
+      application: 'accepted',
+      qualification: 'owner-forced',
+      reason: 'owner_forced_not_independently_qualified',
+    });
+  });
   it('verifies an optional owner through the maintained admission and original epoch restorer', () => {
     const f = fixture();
     const admit = vi

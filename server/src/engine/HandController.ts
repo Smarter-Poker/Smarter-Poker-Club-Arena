@@ -47,6 +47,7 @@ import type {
   Card,
   HandStage,
   SeatPlayer,
+  AllInRunoutWitness,
   ActionType,
   GameVariant,
   HandConfig,
@@ -202,6 +203,7 @@ export class HandController {
    * for exactly one hand, so no reset is needed.
    */
   private allInShowdownLocked = false;
+  private allInRunoutWitness: AllInRunoutWitness | null = null;
   /**
    * SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) award breakdown
    * collected by determineWinners for the WINNERS emit. Per-hand — a
@@ -1833,6 +1835,14 @@ export class HandController {
         // preset) in the same stroke. Idempotent: completeHand/RIT call it
         // again later and get 0.
         this.returnUncalledBet();
+        // Capture the original obligation before async equity or further cards.
+        // Includes callers and covering stacks, independently of equity success.
+        if (!this.allInRunoutWitness) {
+          this.allInRunoutWitness = Object.freeze({
+            street: this.state.stage as 'preflop' | 'flop' | 'turn',
+            playerIds: Object.freeze(this.getActivePlayers().map((p) => p.user_id)),
+          });
+        }
         this.emit({
           type: 'ALL_IN_RUNOUT',
           board: [...this.state.communityCards],
@@ -3890,6 +3900,11 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
   // Getters
   // ─────────────────────────────────────────────────────────────────────────
+
+  /** Private stats input owned by this controller, never a reconstructed action. */
+  getAllInRunoutWitness(): AllInRunoutWitness | null {
+    return this.allInRunoutWitness;
+  }
 
   getState(): GameState {
     return {

@@ -608,6 +608,11 @@ export interface ActionRecord {
   origin?: AcceptedActionOrigin;
 }
 
+export interface AllInRunoutWitness {
+  readonly street: 'preflop' | 'flop' | 'turn';
+  readonly playerIds: readonly string[];
+}
+
 export type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
   | {

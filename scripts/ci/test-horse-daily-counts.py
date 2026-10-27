@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'tests/sql/fixtures/horse-daily-counts'
 MIGRATION = ROOT / 'supabase/migrations/20261025185247_horse_daily_counts_share_the_accepted_hand_receipt.sql'
 SEAT_MIGRATION = ROOT / 'supabase/migrations/20261026142110_accepted_horse_hand_projection_updates_its_physical_seat_clo.sql'
+WITNESS_MIGRATION = ROOT / 'supabase/migrations/20261026181909_all_in_runout_witnesses_survive_the_accepted_stats_projector.sql'
 PG = Path(os.environ.get('PG_BIN', '/usr/lib/postgresql/17/bin'))
 BASE = Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or tempfile.gettempdir())
 if sys.platform == 'darwin' and not str(BASE).startswith('/Volumes/SmarterWork/agent-work/'):
@@ -109,14 +110,23 @@ def main():
             run(MIGRATION.read_text())
             run("CREATE TABLE ca_horse_fleet_state(horse_id uuid PRIMARY KEY,table_id uuid,last_action_at timestamptz,updated_at timestamptz); INSERT INTO ca_horse_fleet_state VALUES ('"+uid('horse')+"','"+uid('table')+"',NULL,now());")
             run(SEAT_MIGRATION.read_text())
+            witness_baseline=payload('witness-before')
+            witness_baseline['facts'][0].update(all_in_equity_owed=True,was_all_in=True,went_to_showdown=True,all_in_street='flop')
+            baseline_sql="BEGIN; INSERT INTO hand_atomic_commits VALUES ('"+uid('witness-before')+"','"+uid('table')+"',"+literal(dict(accepted_hand_facts=dict(stats_facts=witness_baseline)))+"); SELECT ca_project_hand_stats_facts('"+uid('witness-before')+"'); SELECT all_in_equity_owed FROM ca_hand_facts WHERE hand_id='"+uid('witness-before')+"'; ROLLBACK;"
+            check('before repair the real projector drops a true original witness',run(baseline_sql).splitlines()[-1]=='f')
+            run(WITNESS_MIGRATION.read_text())
+            check('exact witness projector postimage',run("SELECT md5(pg_get_functiondef('ca_project_hand_stats_facts(uuid)'::regprocedure));")=='1fbfe441e124bff9317e4f8b1c3def8c')
+
             accept('once',payload('once')); project('once'); project('once')
             check('lost ACK / duplicate projection counts once',counts()==[1,1,1])
             check('accepted hand advances physical seat clock',run("SELECT last_action_at='2026-10-24T23:59:59.125Z'::timestamptz FROM ca_horse_fleet_state;")=='t')
             run("UPDATE ca_horse_fleet_state SET last_action_at='2026-10-25T01:00:00Z';")
-            accept('race',payload('race'))
+            race=payload('race'); race['facts'][0].update(all_in_equity_owed=True,was_all_in=True,went_to_showdown=True,all_in_street='turn')
+            accept('race',race)
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
                 list(executor.map(lambda _:project('race'),range(8)))
             check('eight concurrent projections count once',counts()==[2,2,2])
+            check('concurrent original receipt retains its owed witness',run("SELECT all_in_equity_owed FROM ca_hand_facts WHERE hand_id='"+uid('race')+"';")=='t')
             check('older accepted hand never regresses the seat clock',run("SELECT last_action_at='2026-10-25T01:00:00Z'::timestamptz FROM ca_horse_fleet_state;")=='t')
             d=payload('legacy'); d.pop('horse_rollups'); accept('legacy',d); project('legacy')
             check('legacy receipt never adds new daily counts',counts()==[2,2,3])
@@ -173,6 +183,30 @@ def main():
             for arm in ['nets','play']:forged['horse_rollups'][arm][0]['format']='lightning_2bb'
             accept('forged-lightning',forged)
             check('ordinary hand cannot claim a Lightning bucket','paired_fact_scope' in project('forged-lightning',False))
+            for street in ['preflop','flop','turn']:
+                label='witness-'+street
+                d=payload(label)
+                d['facts'][0].update(all_in_equity_owed=True,was_all_in=True,went_to_showdown=True,all_in_street=street,all_in_equity=None)
+                accept(label,d); first=project(label); second=project(label)
+                check(street+' original owed witness persists without invented equity',run("SELECT all_in_equity_owed AND all_in_equity IS NULL FROM ca_hand_facts WHERE hand_id='"+uid(label)+"';")=='t')
+                check(street+' duplicate original projection is stable',first==second)
+            check('legacy omitted witness remains false',run("SELECT NOT all_in_equity_owed FROM ca_hand_facts WHERE hand_id='"+uid('legacy')+"';")=='t')
+            for bad in [None,'true',1]:
+                label='witness-invalid-'+str(bad)
+                d=payload(label); d['facts'][0]['all_in_equity_owed']=bad
+                accept(label,d)
+                check('malformed witness '+str(bad)+' refused','invalid_all_in_equity_witness' in project(label,False))
+            d=payload('witness-false'); d['facts'][0]['all_in_equity_owed']=False
+            accept('witness-false',d); project('witness-false')
+            check('explicit false witness persists',run("SELECT NOT all_in_equity_owed FROM ca_hand_facts WHERE hand_id='"+uid('witness-false')+"';")=='t')
+            run("UPDATE ca_hand_facts SET all_in_equity_owed=false WHERE hand_id='"+uid('witness-flop')+"';")
+            unchanged=counts()
+            check('original receipt detects a changed stored witness','existing_fact_conflict' in project('witness-flop',False))
+            check('witness conflict cannot recount either daily aggregate',counts()==unchanged)
+            d=payload('witness-turn'); d['facts'][0].update(all_in_equity_owed=False,was_all_in=True,went_to_showdown=True,all_in_street='turn',all_in_equity=None)
+            run("UPDATE hand_atomic_commits SET post_commit_payload="+literal(dict(accepted_hand_facts=dict(stats_facts=d)))+" WHERE hand_id='"+uid('witness-turn')+"';")
+            check('changed original witness cannot replace accepted hash','source_hash_conflict' in project('witness-turn',False))
+            check('installed witness migration cannot replay','all_in_witness_projector_preimage_changed' in run(WITNESS_MIGRATION.read_text(),False))
             spec=importlib.util.spec_from_file_location('booking_cap',ROOT/'scripts/ci/horse-booking-cap-native.py')
             booking_cap=importlib.util.module_from_spec(spec)
             spec.loader.exec_module(booking_cap)
@@ -196,7 +230,7 @@ def main():
         raise AssertionError('Daily audit native fixture supplied no passing receipt')
     print(json.dumps(dict(passed=True, checks=checks,
         migration_sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),
-        audit_reporting=audit_reporting, production_mutations=False), indent=2))
+        audit_reporting=audit_reporting, witness_migration_sha256=hashlib.sha256(WITNESS_MIGRATION.read_bytes()).hexdigest(), production_mutations=False), indent=2))
 
 
 if __name__=='__main__':

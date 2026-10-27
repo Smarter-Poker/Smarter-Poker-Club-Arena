@@ -180,6 +180,24 @@ class PacketContracts(unittest.TestCase):
   for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',75497473),('acceptedDecisions',True),('boundReached',1)]:
    bad=dict(o);bad[field]=value
    with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
+ def read_result(self):
+  p,a=self.convert(self.rows());horses=[]
+  for i,id in enumerate(p['horseIds']):
+   n=int(i==0);horses.append({'horseId':id,'acceptedDecisions':n,'retainedReceiptCounts':{'pooledPublicReads':n},'riverLearning':{'qualifiedReadDecisions':n,'qualifiedReadBasisCounts':{'individual_scoped_basic_component_of_pooled_public_receipt':n},'ownHistoryLoadedDecisions':n,'positiveSampleDecisions':n,'positiveSampleWithHistoryDecisions':n,'retainedHistoryRiverSampleDecisions':n}})
+  river={'scope':'at_least_one_qualified_observer_context','counterMeaning':'maximum_scoped_opponent_samples_per_accepted_read','readBasis':'original_individual_scoped_basic_counters','pooledIndividualScopedBasicReadHorses':1,'pooledIndividualScopedBasicReadDecisions':1,'qualifiedReadHorses':1,'ownHistoryLoadedHorses':1,'positiveSampleHorses':1,'positiveSampleWithHistoryHorses':1,'retainedHistoryRiverSampleHorses':1}
+  r={'packetDigest':a['packetDigest'],'sourceSha':a['sourceSha'],'qualifiedExecution':True,'execution':{'observation':{'observedHorses':1,'acceptedDecisions':1,'horses':horses,'riverLearningEvidence':river}}};return p,a,r
+ def test_public_reads_survive_summary_without_private_payload_or_independence_inference(self):
+  p,a,r=self.read_result();r['execution']['observation']['horses'][0]['PRIVATE']=['CARD']
+  out=module.summarize(a,r,p);self.assertEqual(out['publicReadEvidence']['pooledPublicReadDecisions'],1);self.assertEqual(out['publicReadEvidence']['independentPublicReadDecisions'],0)
+  self.assertEqual(out['riverLearningEvidence']['pooledIndividualScopedBasicReadDecisions'],1);self.assertFalse(out['riverLearningEvidence']['allContextsVerified']);self.assertNotIn('10000000-',json.dumps(out));self.assertNotIn('PRIVATE',json.dumps(out));self.assertFalse(out['allPhasesVerified'])
+ def test_read_summary_missing_packet_or_legacy_rows_remains_unknown(self):
+  p,a,r=self.read_result();self.assertEqual(module.summarize(a,r)['publicReadEvidence']['status'],'unknown')
+  del r['execution']['observation']['horses'][0]['riverLearning'];self.assertEqual(module.summarize(a,r,p)['riverLearningEvidence']['status'],'unknown')
+ def test_read_summary_refuses_false_counts_duplicate_actor_and_noncanonical_packet(self):
+  mutations=[lambda p,r:r['execution']['observation']['horses'][0]['retainedReceiptCounts'].update(pooledPublicReads=True),lambda p,r:r['execution']['observation']['horses'][1].update(horseId=p['horseIds'][0]),lambda p,r:r['execution']['observation']['riverLearningEvidence'].update(pooledIndividualScopedBasicReadDecisions=2),lambda p,r:r['execution']['observation']['horses'][0]['riverLearning']['qualifiedReadBasisCounts'].update(independent_public_receipt=1),lambda p,r:p['horseIds'].pop()]
+  for mutate in mutations:
+   p,a,r=self.read_result();mutate(p,r)
+   with self.assertRaises(ValueError):module.summarize(a,r,p)
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)

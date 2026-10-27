@@ -1406,6 +1406,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8322",
       "refusedBy": [],
       "liveVerdict": "Active Club Arena production outage: context-specific independent history reads were disk-bound and competing with games and pages. Exact committed covering index installed under the PUBLISHING active-outage exception while required hosted checks were queued. Native PostgreSQL17 passed104 cases including original privacy, context, retirement and access boundaries plus sparse-context custom/generic index-only plans and shape refusal. Production index is VALID READY LIVE; exact source history and helper body/MD5/bytes match; unchanged reader definition2b66063e989c88fa1a9e9f8d13e35965 and service-role-only ACL read back. Actual full-query plan uses the cover in2279.669ms with13473hits/1545reads. No engine replacement, financial write, private cards, shared observer reads or role-timeout change. This exact-byte recording is the next source action. Protected recording merge and clean-window gameplay verification remain pending; initial authenticated page recovery and independent populated history RPCs are measured separately."
+    },
+    {
+      "version": "20261027220709",
+      "name": "original_linked_outcomes_follow_the_recognition_window",
+      "file": "supabase/migrations/20261027220709_original_linked_outcomes_follow_the_recognition_window.sql",
+      "md5": "f0f42a900ee973bb5083e2958111a306",
+      "appliedToProductionAt": "2026-10-27T22:26:19.517Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained concurrent active-book-outage install and READ ONLY full-file history/index/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active original weekly book closure outage after all player rakeback was paid: the original linked hand reducer timed out240s while scanning and hashing all off-window resolutions before the original recognition predicate. This exact index-only migration passed17 native original linked/full-row/reducer/witness/materialization/catalog/installer cases and normal local checks. Actual full-file history and VALID READY LIVE one nonpartial recognized_at timestamptz key/default opclass/no INCLUDE were read back, with full five original function definitions/metadata including ACL, complete logical outcome/resolution columns/constraints/triggers/owner ACL, Scope/count hashes and source65 TRUE unchanged from the real preinstall baseline. No source pin, function, proof, wallet, paid receipt, admission, generation, cache, permission, budget or accounting math changed. This installation receipt is not proof of the remaining84 hand windows, document closure or future4AM capacity."
     }
   ]
 }

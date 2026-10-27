@@ -258,6 +258,7 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
     sourceRelease:input.sourceRelease,cases,rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
 if (process.argv[1] === '--reference-shape-diagnostic') {
+  let report;
   try {
     let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
     const input=JSON.parse(raw);
@@ -274,9 +275,13 @@ if (process.argv[1] === '--reference-shape-diagnostic') {
       const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
       let evaluator={};
       if(input.version===3) {try {evaluator=await import('/app/dist/engine/HorseEval.js');} catch { /* optional, remains unknown */ }}
-      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation,omahaNutStatus:evaluator.omahaNutStatus})));
-    } else console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
-  } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
+      report=inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation,omahaNutStatus:evaluator.omahaNutStatus});
+    } else report=inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB});
+  } catch {report={status:'unknown',reason:'journal_or_runtime_unavailable'};}
+  await new Promise(resolve=>{
+    process.stdout.once('error',()=>process.exit(1));
+    process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
+  });
   process.exit(0);
 }
 '''

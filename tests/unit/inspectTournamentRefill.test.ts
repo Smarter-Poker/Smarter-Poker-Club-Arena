@@ -1432,3 +1432,26 @@ it('v3 derives only a bounded category when the installed deterministic API and 
     acceptedCalloffFixture('made-category', true).result.cases[0].snapshotSummary.ownMadeCategory
   ).toBe(2);
 });
+
+it('flushes the actual diagnostic writer through a backpressured child pipe before exit', () => {
+  const fixture = `
+import json,runpy,subprocess,sys,time
+program=runpy.run_path(sys.argv[1])['REFERENCE_DIAGNOSTIC_JS']
+start=program.index('  await new Promise(resolve=>{')
+end=program.index('  process.exit(0);',start)+len('  process.exit(0);')
+report={'status':'unknown','reason':'x'*200000}
+writer='const report='+json.dumps(report)+';'+program[start:end]
+child=subprocess.Popen([sys.argv[2],'--input-type=module'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+child.stdin.write(writer.encode());child.stdin.close()
+time.sleep(.05)
+raw=child.stdout.read();error=child.stderr.read();code=child.wait(timeout=5)
+assert code==0 and not error and json.loads(raw)==report and raw.endswith(b'\\n')
+print(json.dumps({'complete':True,'bytes':len(raw)}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toMatchObject({ complete: true });
+});

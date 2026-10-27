@@ -7,3 +7,5 @@ V3 retains served-source/stable-container checks and original record hashes, acc
 This is diagnostic tooling, not an engine strategy change, equity replay, qualification or activation. Missing records/APIs and ambiguous or mismatched evidence remain UNKNOWN. No production inspection was dispatched during implementation.
 
 Focused regression: before implementation three new v3 positive/schema checks failed; after implementation the existing inspector suite and added target/binding/privacy/scalar checks pass. Root TypeScript compilation passes. Live evidence remains pending protected delivery and a separately owned bounded inspection.
+
+The diagnostic child also awaits stdout completion before exiting, preserving the pending tournament inspector transport repair without importing unrelated tournament changes. A real backpressured child-pipe regression verifies complete report delivery.

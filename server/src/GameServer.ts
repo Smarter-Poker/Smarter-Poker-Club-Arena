@@ -283,7 +283,7 @@ import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { BootPhaseTimeline } from './engine/bootPhases.js';
 import { decisionPipelineDistress } from './decisionPipelinePressure.js';
-import { isFleetWideStall } from './fleetWideZombieVerdict.js';
+import { isFleetWideStall, zombieProgressAge } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
   awaitsFirstDeal,
@@ -7887,7 +7887,9 @@ export class GameServer {
             !heldByMaintenanceBreak && engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose) zombieCandidates += 1;
-          if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
+          // A newly entered boot read is progress even after earlier admission
+          // work made the engine object older than the zombie threshold.
+          if (shouldBeDealing && !parkedOnPurpose && zombieProgressAge(engine) > 180_000) {
             zombieVerdicts.push([id, engine]);
           }
         }

@@ -18,6 +18,14 @@
       "migrations": []
     },
     {
+      "id": "2026-10-26-tournament-freeze-causal-admission-now",
+      "ownerOrder": "Dan, October 26, 2026, Codex chat 01a17a17-5fad-79a0-8d39-8e4e9e6a7a8a: \"THE ORIGINAL SCOPE INCLUDED BOTH TOURNAMENT ALERTS. Finish their root-cause fixes, confirm whether they involved Trustmefold’s MTT, push, publish, verify live, and then stop.\" Later: \"you have to figure out what is causing this or any tournament to freeze ever... hard code fix it at the root causes\". This continues the same-day owner order quoted in the Diamond balancing entries to publish all qualified work now rather than at 04:00. One certified activation of the protected source carrying this entry and the causal consolidation-admission and bounded preparation fixes. Protected anchor 82ddd7204fbdb51a02fffed32ee3031d7c846da5 was independently absent from serving engine 6d016ccedc3d20c3489f8df865da96e3391b520c at 22:44 UTC; the same PR carries the runtime fix and must pass all applicable checks. Anchor ancestry alone is not live proof: verify the resulting protected fix merge and affected behavior. Preserve immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-hour seal and thaw. No migration, second publisher, watcher or direct restart. This entry grants nothing once its anchor is serving and expires within six hours.",
+      "contains": "82ddd7204fbdb51a02fffed32ee3031d7c846da5",
+      "notBefore": "2026-10-26T22:44:00Z",
+      "notAfter": "2026-10-27T04:34:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-diamond-balancing-8200-qualified-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, directly in Diamond Arena table-balancing chat 01a17891-37d5-72e0-9e81-068368902917: \"NO, GET IT LIVE NOW, NOT AT 4AM. ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM. SAVE THAT TO MEMORY FOR ALL AGENTS WORK TODAY.\" The owner subsequently ordered finishing all pending fixes and publication in this same chat. One certified activation containing the actual protected PR #8200 squash 8974a503cb13874e65c8b6f231bf4f3b47631bac. All applicable required source checks passed before that protected merge. The earlier fb048 anchor was consumed by serving a274417819f8331db77d3f3dfbbe47b3c0822164 before #8200 merged, so it cannot authorize installing this correction. This entry names only the qualified balancing merge, ends once it is serving, and expires within six hours. Preserve exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, rollback reserve, the existing one-window-per-hour seal and thaw. No migrations, second publisher, watcher or direct restart.",
       "contains": "8974a503cb13874e65c8b6f231bf4f3b47631bac",

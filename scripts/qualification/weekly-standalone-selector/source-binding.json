@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 239646,
-      "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -447,5 +447,86 @@
     },
     "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
+  },
+  "horseRiverCallPersistenceNative20261026": {
+    "reason": "Add the exact river-call persistence migration and legacy-writer PostgreSQL 17 qualification to existing required accounting shard 4. Refresh only the reviewed additive workflow input identity; preserve historical receipts, source pins, financial assertions and qualification verdicts. Source binding is not production installation evidence.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 237490,
+          "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+        },
+        "current": {
+          "bytes": 237730,
+          "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
+        }
+      }
+    }
+  },
+  "riverAndDigestNativeIntegration20261026": {
+    "reason": "Preserve the additive river-call persistence and protected-main digest player-period PostgreSQL 17 qualification steps together in existing accounting shard 4. Bind only the exact combined current workflow; retain both independent audit records, all historical pins, financial inputs, assertions and verdicts. Source identity is not production installation or native execution evidence.",
+    "riverWorkflowPin": {
+      "bytes": 237730,
+      "sha256": "89de912d60c85c09f69c2d72dfc0249c928d3040414c3b18f263fb55e19cac78"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 237758,
+      "sha256": "c928589fb562ecff23c797141b525640c2985327c0c9fc83a89e3acc973400a5"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 237998,
+      "sha256": "a6af9fdff98ba8b2452dbb381e61f6fc8bfaaabd7022dedab160f00f65371773"
+    }
+  },
+  "riverRecoveryIntegration20261026": {
+    "reason": "Preserve protected-main cash-return and prior native qualifications plus river-call persistence in accounting shard4. Refresh only active workflow identity; preserve historical receipts and assertions. Source binding is not execution or installation proof.",
+    "previousRiverWorkflowPin": {
+      "bytes": 237998,
+      "sha256": "a6af9fdff98ba8b2452dbb381e61f6fc8bfaaabd7022dedab160f00f65371773"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 238487,
+      "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 238727,
+      "sha256": "f4c210f0934fcb941a4d3ab5979a2b8c59d7a0f4c8e595c6960c02443f21b67b"
+    }
+  },
+  "pooledRiverCashHalfSourceIntegration20261027": {
+    "reason": "Preserve additive river-call Accounting4 qualification and protected-main half-cash Accounting2 qualification together. Only the active combined CI source identity changes; both historical audit records, qualification flags, financial fixtures and assertions are preserved. This is not execution or production evidence.",
+    "execution_performed": false,
+    "poolWorkflowPin": {
+      "bytes": 238727,
+      "sha256": "f4c210f0934fcb941a4d3ab5979a2b8c59d7a0f4c8e595c6960c02443f21b67b"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 238718,
+      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 238958,
+      "sha256": "a5b0395029028357aa0848ae9c679c300fc5467e3a931958b3bfcbabcf974876"
+    }
+  },
+  "horsePoolGuardSourceIntegration20261027": {
+    "reason": "Preserve additive river-call persistence Accounting4 with current protected-main qualification workflow; refresh only active combined CI source identity, retaining historical receipts and qualification verdicts. Not execution or installation evidence.",
+    "previousProtectedMainWorkflowPin": {
+      "bytes": 239346,
+      "sha256": "d4763691771f3b3433574b72e0ee61a74d80197f661c4be0da1d521292f19ce0"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "execution_performed": false
+  },
+  "riverPersistenceBudgetIntegration20261027": {
+    "review": "Retains protected-main river persistence Accounting4 step and existing measured Accounting2 50-minute budget. Both historical audits and all financial assertions preserved; active CI pin binds their additive composition.",
+    "combinedWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "execution_performed": false
   }
 }

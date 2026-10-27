@@ -1,3 +1,4 @@
+import { AVATAR_CROWN_TOP } from '../../../src/components/table/avatarCrownBounds';
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -36,7 +37,7 @@ export async function certifyMobileLiveTableLayout(
       );
       await expect(page.locator('.table-art-cover:visible')).toHaveCount(0);
       const read = () =>
-        page.evaluate(() => {
+        page.evaluate((crowns) => {
           const table = Array.from(document.querySelectorAll<HTMLElement>('.table-page')).find(
             (element) => element.getBoundingClientRect().width > 0
           );
@@ -156,7 +157,11 @@ export async function certifyMobileLiveTableLayout(
                 violations.push(`Player Or Bet Covers Board: ${node.className}`);
           }
           const mini = table.querySelector('.bbj-mini-plate');
-          const head = table.querySelector('.seat-wrapper--top .seat__avatar-img');
+          const head = table.querySelector(
+            table.getAttribute('data-seats') === '6'
+              ? '.seat-wrapper--cap .seat__avatar-img'
+              : '.seat-wrapper--top .seat__avatar-img'
+          );
           const topGap = mini && head && visible(head) ? box(head).top - box(mini).bottom : null;
           // A PLO5/PLO6 hand reserves a full card-height lane above the
           // top plate; keep its player close beneath that lane and the BBJ.
@@ -173,7 +178,23 @@ export async function certifyMobileLiveTableLayout(
             largeHand && capPlate && head
               ? Math.max(12, (cardWidth * 92) / 64 + 10 - (box(capPlate).top - box(head).top))
               : 12;
-          if (topGap !== null && (topGap < -1 || topGap > gapLimit))
+          if (
+            table.getAttribute('data-seats') === '6' &&
+            box(table).width > 480 &&
+            head &&
+            visible(head)
+          ) {
+            const scaler = table.querySelector<HTMLElement>('.table-scaler')!;
+            const scale = box(scaler).width / scaler.offsetWidth || 1;
+            const source = (head as HTMLImageElement).currentSrc || (head as HTMLImageElement).src;
+            const file = /\/avatars\/table\/((?:free|vip)_[\w-]+(?:@2x)?\.webp)(?:[?#]|$)/.exec(
+              source
+            )?.[1];
+            const gap =
+              box(head).top + box(head).height * ((file && crowns[file]) || 0) - box(table).top;
+            if (gap < -12 * scale || gap > 2 * scale)
+              violations.push('Six-Max Crown Does Not Meet The Top Bar');
+          } else if (topGap !== null && (topGap < -1 || topGap > gapLimit))
             violations.push('Top Player Does Not Sit Immediately Below Mini BBJ');
           return {
             violations,
@@ -186,7 +207,7 @@ export async function certifyMobileLiveTableLayout(
             topGap,
             boards: table.querySelectorAll('.community-cards__card').length,
           };
-        });
+        }, AVATAR_CROWN_TOP);
       await expect
         .poll(async () => (await read()).violations, {
           timeout: 10_000,

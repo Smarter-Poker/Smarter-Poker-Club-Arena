@@ -43,9 +43,15 @@ const BASE = fs.readFileSync(
   'utf8'
 );
 
+function balanceOwner(): string {
+  const entry = sliceMethod(MANAGER, 'protected async checkTableBalance');
+  expect(entry).toContain('return await this.prepareFreshTableBalance();');
+  return entry + sliceMethod(MANAGER, 'private async prepareFreshTableBalance');
+}
+
 describe("a table with one player is still the balancer's problem", () => {
   it('the balancer no longer decides anything from the engine count', () => {
-    const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
+    const balance = balanceOwner();
     expect(balance).not.toContain('this.tableEngines.size <= 1');
     expect(balance).not.toContain('this.tableEngines.size > 1');
     // and it never sources its table list from the engines either
@@ -54,7 +60,7 @@ describe("a table with one player is still the balancer's problem", () => {
   });
 
   it('both steps take the tables that hold players, from the database', () => {
-    const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
+    const balance = balanceOwner();
     expect(balance).toContain(
       'const liveTableIds = await this.liveTournamentTableIdsWithPlayers();'
     );
@@ -66,7 +72,7 @@ describe("a table with one player is still the balancer's problem", () => {
   });
 
   it('an unreadable table list is UNKNOWN, never balanced', () => {
-    const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
+    const balance = balanceOwner();
     // both gates must re-arm and return rather than fall through
     const nulls = balance.match(/TableIds === null/g) ?? [];
     expect(nulls.length, 'both steps must handle an unreadable list').toBe(2);

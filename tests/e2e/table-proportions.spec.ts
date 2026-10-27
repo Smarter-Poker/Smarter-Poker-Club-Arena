@@ -1,3 +1,4 @@
+import { AVATAR_CROWN_TOP } from '../../src/components/table/avatarCrownBounds';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  EVERYTHING ON THE FELT IS THE SAME FRACTION OF IT, ON EVERY DEVICE
@@ -839,8 +840,8 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
-for (const width of [320, 375, 393, 430, 480, 600, 768])
-  for (const count of [6, 9])
+for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
+  for (const count of width === 1024 ? [6] : [6, 9])
     test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats`, async ({
       page,
     }, testInfo) => {
@@ -1004,7 +1005,9 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
                   ? 960
                   : width === 768
                     ? 1024
-                    : 852,
+                    : width === 1024
+                      ? 2048
+                      : 852,
         });
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
@@ -1126,6 +1129,36 @@ for (const width of [320, 375, 393, 430, 480, 600, 768])
           await page.screenshot({
             path: testInfo.outputPath(`${width}px-${count}-seats-PLO${villainCards}-${state}.png`),
           });
+        }
+        if (count === 6 && width > 480) {
+          const crown = await page.evaluate((crowns) => {
+            const table = document.querySelector('.table-page')!;
+            const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
+            const head = table.querySelector<HTMLImageElement>(
+              '.seat-wrapper--top .seat__avatar-img'
+            )!;
+            const source = head.currentSrc || head.src;
+            const file = /\/avatars\/table\/((?:free|vip)_[\w-]+(?:@2x)?\.webp)(?:[?#]|$)/.exec(
+              source
+            )?.[1];
+            return {
+              gap:
+                head.getBoundingClientRect().top +
+                head.getBoundingClientRect().height * ((file && crowns[file]) || 0) -
+                table.getBoundingClientRect().top,
+              scale: scaler.getBoundingClientRect().width / scaler.offsetWidth,
+            };
+          }, AVATAR_CROWN_TOP);
+          // Preserve breathing, tense and celebration poses around the
+          // two-pixel resting crop; only the crown may cross the bar.
+          expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
+          expect(crown.gap).toBeLessThan(2 * crown.scale);
+        }
+        // The added desktop-width case owns the crown target. The
+        // pre-existing marker certification below owns portrait <=768px.
+        if (width === 1024) {
+          await page.screenshot({ path: testInfo.outputPath(`desktop-sixmax-${state}.png`) });
+          continue;
         }
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();
@@ -1788,7 +1821,7 @@ for (const spectatorSeats of [2, 3, 4, 5, 6, 7, 8, 9])
       [430, 932, 59, 34],
     ];
     const cases = viewports.map((viewport) => [spectatorSeats, ...viewport]);
-    if (spectatorSeats >= 8)
+    if (spectatorSeats === 6 || spectatorSeats >= 8)
       cases.push([spectatorSeats, 393, 852, 47, 34, 1], [spectatorSeats, 430, 932, 59, 34, 1]);
     for (const [seats, width, height, insetTop = 0, insetBottom = 0, tournament = 0] of cases) {
       await page.setViewportSize({ width, height });

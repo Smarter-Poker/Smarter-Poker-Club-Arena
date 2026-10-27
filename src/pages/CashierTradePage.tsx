@@ -685,6 +685,13 @@ function CashierTradeWorkspace() {
   const [bankBalance, setBankBalance] = useState<number | null>(null);
   const [mgmtClaimAmount, setMgmtClaimAmount] = useState('');
   const [mgmtClaiming, setMgmtClaiming] = useState(false);
+  const [mgmtClaimSource, setMgmtClaimSource] = useState<SendDestination>('player_wallet');
+  const [claimWalletRead, setClaimWalletRead] = useState<{
+    key: string;
+    balances: Partial<Record<SendDestination, number>>;
+    error: string | null;
+  } | null>(null);
+  const [claimWalletReload, setClaimWalletReload] = useState(0);
   /** Double tap on a roster row opens Player Management (Dan 2026-10-15). */
   const lastRowTapRef = useRef<{ userId: string; at: number } | null>(null);
   const [reversible, setReversible] = useState<ReversibleSend[]>([]);
@@ -3345,7 +3352,7 @@ function CashierTradeWorkspace() {
    * audited RPCs (the same ones the Club Bank cashier and Fund Me use):
    *
    *   Send Out to yourself  -> fn_club_bank_send      bank -> own player wallet
-   *   Claim Back, any time  -> fn_club_bank_claim_back player wallet -> bank
+   *   Claim Back, any time  -> fn_club_bank_claim_back selected wallet -> bank
    *
    * "OWNERS, CO OWNERS AND ADMIN'S HAVE THE ABILITY TO CLAIM BACK CHIPS AT
    * ANY POINT". Every other role keeps the ten minute reversal anchored on
@@ -3371,6 +3378,64 @@ function CashierTradeWorkspace() {
       : picked.length === 1
         ? picked[0]
         : null;
+
+  const claimWalletKey = JSON.stringify([
+    clubUuid,
+    user?.id,
+    claimOpen,
+    managementClaims,
+    managementClaimTarget?.userId,
+  ]);
+  const claimWalletBalance =
+    claimWalletRead?.key === claimWalletKey
+      ? (claimWalletRead.balances[mgmtClaimSource] ?? null)
+      : null;
+  const claimWalletError = claimWalletRead?.key === claimWalletKey ? claimWalletRead.error : null;
+
+  useEffect(() => {
+    setMgmtClaimSource('player_wallet');
+    setMgmtClaimAmount('');
+  }, [claimWalletKey]);
+
+  useEffect(() => {
+    if (!claimOpen || !managementClaims || !managementClaimTarget || !clubUuid) return;
+    let live = true;
+    setClaimWalletRead(null);
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_cashier_recipient_wallet_balances', {
+          p_club_id: clubUuid,
+          p_user_ids: [managementClaimTarget.userId],
+        });
+        if (error) throw error;
+        if (!Array.isArray(data)) throw new Error('Wallet Balance Response Missing');
+        const row = data.find((item) => item.user_id === managementClaimTarget.userId);
+        if (!row) throw new Error('Member Wallet Balances Missing');
+        const balances: Partial<Record<SendDestination, number>> = {};
+        for (const wallet of ['player_wallet', 'agent_wallet', 'promo_wallet'] as const) {
+          if (
+            row[wallet] !== null &&
+            row[wallet] !== undefined &&
+            Number.isFinite(Number(row[wallet])) &&
+            Number(row[wallet]) >= 0
+          )
+            balances[wallet] = Number(row[wallet]);
+        }
+        if (live) setClaimWalletRead({ key: claimWalletKey, balances, error: null });
+      } catch (error) {
+        reportError(error, 'CashierTradePage.claimWalletBalances');
+        if (live)
+          setClaimWalletRead({
+            key: claimWalletKey,
+            balances: {},
+            error: 'Wallet Balances Could Not Be Verified',
+          });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [claimWalletKey, claimWalletReload]);
 
   const loadBankBalance = useCallback(async () => {
     if (!clubUuid || !user?.id) return;
@@ -3491,8 +3556,14 @@ function CashierTradeWorkspace() {
       toast?.error?.(parsed.error);
       return;
     }
-    if (parsed.value > target.chipBalance) {
-      toast?.error?.(`${titleCase(target.name)} Only Holds ${exactChipFigure(target.chipBalance)}`);
+    if (claimWalletBalance === null) {
+      toast?.error?.('Wallet Balance Could Not Be Verified');
+      return;
+    }
+    if (parsed.value > claimWalletBalance) {
+      toast?.error?.(
+        `${SEND_DESTINATION_LABELS[mgmtClaimSource]} Only Holds ${exactChipFigure(claimWalletBalance)}`
+      );
       return;
     }
     const owningView = transferView.current;
@@ -3511,7 +3582,7 @@ function CashierTradeWorkspace() {
         {
           p_club_id: clubUuid,
           p_from_user_id: target.userId,
-          p_source: 'player_wallet',
+          p_source: mgmtClaimSource,
           p_amount: parsed.value,
           p_reason: 'Cashier Claim Back',
         }
@@ -3522,7 +3593,7 @@ function CashierTradeWorkspace() {
         p_club_id: clubUuid,
         p_from_user_id: target.userId,
         p_amount: parsed.value,
-        p_source: 'player_wallet',
+        p_source: mgmtClaimSource,
         p_reason: 'Cashier Claim Back',
         p_op_id: operation.operationId,
       });
@@ -6129,6 +6200,8 @@ function CashierTradeWorkspace() {
                           breakFrozen ||
                           mgmtClaiming ||
                           cashierAuthorityBlocked ||
+                          claimWalletBalance === null ||
+                          claimWalletBalance <= 0 ||
                           !parseTradeAmount(mgmtClaimAmount).ok,
                         onClick: () => void claimToBank(managementClaimTarget),
                       },
@@ -6139,12 +6212,58 @@ function CashierTradeWorkspace() {
             >
               <div className={styles.glass}>
                 {/* OWNERS, CO OWNERS AND ADMINS CLAIM BACK AT ANY POINT (Dan
-                    2026-10-15). Any amount the player holds, straight into the
+                    2026-10-15). Claim from the selected member wallet into the
                     Club Bank, on fn_club_bank_claim_back. Every other role keeps
                     the ten minute reversal below. */}
                 {managementClaims && managementClaimTarget && (
                   <>
-                    <CashierPlayerCard row={managementClaimTarget} balanceLabel="Player Wallet" />
+                    <CashierPlayerCard
+                      row={managementClaimTarget}
+                      balanceLabel={SEND_DESTINATION_LABELS[mgmtClaimSource]}
+                      walletBalance={claimWalletBalance}
+                      walletControl={
+                        <select
+                          className={styles.walletSelect}
+                          aria-label="Claim From"
+                          value={mgmtClaimSource}
+                          disabled={mgmtClaiming}
+                          onChange={(event) => {
+                            setMgmtClaimSource(event.target.value as SendDestination);
+                            setMgmtClaimAmount('');
+                          }}
+                        >
+                          {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const).map(
+                            (wallet) => {
+                              const balance =
+                                claimWalletRead?.key === claimWalletKey
+                                  ? claimWalletRead.balances[wallet]
+                                  : undefined;
+                              return (
+                                <option key={wallet} value={wallet}>
+                                  {SEND_DESTINATION_LABELS[wallet]}:{' '}
+                                  {balance === undefined
+                                    ? 'Unavailable'
+                                    : formatWalletChips(balance)}
+                                </option>
+                              );
+                            }
+                          )}
+                        </select>
+                      }
+                    />
+                    {claimWalletError && (
+                      <div className={styles.modalHint} role="alert">
+                        {claimWalletError}{' '}
+                        <button
+                          type="button"
+                          className={styles.retryBtn}
+                          disabled={mgmtClaiming}
+                          onClick={() => setClaimWalletReload((value) => value + 1)}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
                     <CashierWalletRow label="Into The Club Bank" balance={bankBalance} />
                     <label className={styles.entryRow}>
                       <span className={styles.entryRowSlot}>Amount</span>
@@ -6169,14 +6288,15 @@ function CashierTradeWorkspace() {
                     <button
                       type="button"
                       className={styles.claimAll}
-                      disabled={mgmtClaiming || managementClaimTarget.chipBalance <= 0}
-                      onClick={() =>
-                        setMgmtClaimAmount(
-                          String(Math.floor(managementClaimTarget.chipBalance * 100) / 100)
-                        )
+                      disabled={
+                        mgmtClaiming || claimWalletBalance === null || claimWalletBalance <= 0
                       }
+                      onClick={() => setMgmtClaimAmount(String(claimWalletBalance ?? 0))}
                     >
-                      Claim All {formatWalletChips(managementClaimTarget.chipBalance)}
+                      Claim All{' '}
+                      {claimWalletBalance === null
+                        ? 'Unavailable'
+                        : formatWalletChips(claimWalletBalance)}
                     </button>
                   </>
                 )}

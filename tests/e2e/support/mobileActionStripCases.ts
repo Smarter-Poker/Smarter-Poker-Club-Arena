@@ -32,6 +32,35 @@ export function registerMobileActionStripCases() {
           <div class="table-tab-bar"><div class="table-tab-bar__menu-container"><button class="table-menu__trigger" aria-label="Menu">Menu</button></div>
           <div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO</button><button class="table-tab-bar__tab">Lobby</button><button class="table-tab-bar__add" aria-label="Add">+</button></div></div>
           <button class="mtp-lobby-btn" aria-label="Game Lobby">Lobby</button></div></main>`);
+            // Pin the approved geometry independently of the CSS tokens. A lower
+            // bound alone lets an oversized band or a drifting sibling pass.
+            const assertGeometry = async (top: number) => {
+              const controls = await page
+                .locator(
+                  '.table-menu__trigger,.table-tab-bar__tab,.table-tab-bar__add,.mtp-lobby-btn,.multi-table-page__pnl-chip'
+                )
+                .evaluateAll((elements) =>
+                  elements.map((el) => {
+                    const rect = el.getBoundingClientRect();
+                    return {
+                      label: el.getAttribute('aria-label') || el.textContent,
+                      sibling: el.matches('.mtp-lobby-btn,.multi-table-page__pnl-chip'),
+                      y: rect.y,
+                      height: rect.height,
+                    };
+                  })
+                );
+              for (const control of controls) {
+                const expectedTop = top + (control.sibling && width > 480 ? 0.5 : 0);
+                expect(control.height, `${control.label}: control height`).toBeCloseTo(
+                  controlHeight,
+                  1
+                );
+                expect(control.y, `${control.label}: top placement`).toBeCloseTo(expectedTop, 1);
+              }
+            };
+            const safeTop = standalone && width <= 480 ? Math.max(60, inset) : inset;
+            await assertGeometry(safeTop + topPad);
             await page.evaluate(() => {
               (window as any).stripClicks = [];
               document
@@ -89,6 +118,7 @@ export function registerMobileActionStripCases() {
                 el.closest('.multi-table-page__tab-bar-wrapper')!.lastElementChild
               );
             });
+            await assertGeometry(safeTop + topPad);
             if (width >= 375 && width <= 480) {
               const allVisible = await page.locator('.table-tab-bar__tabs').evaluate((el) => {
                 const bounds = el.getBoundingClientRect();
@@ -130,6 +160,18 @@ export function registerMobileActionStripCases() {
             expect(
               (await page.getByRole('button', { name: 'Menu', exact: true }).boundingBox())!.y
             ).toBe(100 + topPad);
+            await assertGeometry(100 + topPad);
+            // The ticker owns its inset. Both in-flow and pinned controls must
+            // move with it exactly once, including the separate Lobby/tracker.
+            await page.locator('.multi-table-page__tab-bar-wrapper').evaluate((el) => {
+              (el as HTMLElement).style.setProperty('--mtt-ticker-h', '31px');
+            });
+            await assertGeometry(131 + topPad);
+            await page.locator('.multi-table-page__tab-bar-wrapper').evaluate((el) => {
+              el.classList.remove('multi-table-page__tab-bar-wrapper--pinned');
+              (el as HTMLElement).style.setProperty('--sp-tabbar-inset', '0px');
+            });
+            await assertGeometry(31 + topPad);
           });
         }
       }

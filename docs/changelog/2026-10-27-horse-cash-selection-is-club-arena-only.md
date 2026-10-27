@@ -23,3 +23,5 @@ regression checks the complete 1,000 versus 500 roster distinction and malformed
 identity cases. Source wiring pins admission and rotation to the same predicate.
 Production installation, engine publication and natural play evidence remain
 separate from these isolated checks.
+
+The full hosted server shard caught an older strict projection pin that still required max_buy_in to be the final selected column. The canonical Diamond identity is additive; the pin now requires every previous field plus the exact joined asset/platform/union identity. All21 lone-table controls and4 roster controls pass. No runtime predicate or refusal safeguard changed.

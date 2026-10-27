@@ -1071,3 +1071,94 @@ describe('remaining saved opponent contexts with real PostgreSQL', () => {
     expect(variants).toEqual(expect.arrayContaining([...addedVariants]));
   });
 });
+
+describe('Pineapple public opponent memory exact schema extension', () => {
+  const pineappleActor = 'd1000000-0000-4000-8000-000000000001';
+  let migration: string;
+  const before = new Map<string, string>();
+  beforeAll(async () => {
+    const path = join(process.cwd(), '../supabase/migrations');
+    const file = readdirSync(path).find((f) => f.endsWith('_horse_opponent_memory_pineapple.sql'));
+    if (!file) throw Error('Pineapple migration missing');
+    migration = readFileSync(join(path, file), 'utf8');
+    for (const name of [
+      'fn_horse_exploit_accept_hand()',
+      'fn_horse_exploit_mark_hand()',
+      'fn_horse_exploit_profiles_read(text[],text,text,text)',
+    ])
+      before.set(
+        name,
+        (await client.query('select pg_get_functiondef($1::regprocedure) body', [name])).rows[0]
+          .body
+      );
+    await client.query(migration);
+  });
+  it('changes only the exact variant literal and preserves service-only grants', async () => {
+    for (const [name, body] of before) {
+      const after = (await client.query('select pg_get_functiondef($1::regprocedure) body', [name]))
+        .rows[0].body;
+      expect(after).toBe(
+        body.replace(
+          "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck')",
+          "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck','pineapple')"
+        )
+      );
+    }
+    expect(
+      (
+        await client.query(
+          "select has_function_privilege('service_role','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') service,has_function_privilege('authenticated','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') browser,has_function_privilege('anon','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') anon"
+        )
+      ).rows[0]
+    ).toEqual({ service: true, browser: false, anon: false });
+  });
+  it('marks and learns an accepted Pineapple hand exactly once through real triggers', async () => {
+    const row = hand('d2000000-0000-4000-8000-000000000001', 'raise', 'pineapple');
+    row.actions = [{ userId: pineappleActor, action: 'raise', stage: 'preflop' }];
+    row.players = [{ userId: pineappleActor }, { userId: other }, { userId: uid }];
+    await insert(row);
+    await insert(row);
+    expect(
+      (await client.query('select horse_exploit_recorded from hand_history where id=$1', [row.id]))
+        .rows[0].horse_exploit_recorded
+    ).toBe(true);
+    const read = async (variant = 'pineapple', mode = 'cash', size = 'short') =>
+      (
+        await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+          [pineappleActor],
+          variant,
+          mode,
+          size,
+        ])
+      ).rows[0];
+    const p = await read();
+    expect(Number(p.observed_hands)).toBe(1);
+    expect(p.counters.hands).toBe(1);
+    expect(p.counters.pfr).toBe(1);
+    for (const [v, m, z] of [
+      ['nlh', 'cash', 'short'],
+      ['pineapple', 'tournament', 'short'],
+      ['pineapple', 'cash', 'hu'],
+    ])
+      expect((await read(v, m, z)).counters.hands).toBe(0);
+  });
+  it('refuses unsupported variants and refuses replay without changing installed definitions', async () => {
+    await expect(
+      client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+        [pineappleActor],
+        'unsupported',
+        'cash',
+        'short',
+      ])
+    ).rejects.toMatchObject({ code: '22023' });
+    await expect(client.query(migration)).rejects.toThrow(/variant constraint preimage differs/);
+    await client.query('rollback');
+    expect(
+      (
+        await client.query(
+          "select convalidated,pg_get_constraintdef(oid) body from pg_constraint where conrelid='horse_exploit_profiles'::regclass and conname='horse_exploit_profiles_variant_check'"
+        )
+      ).rows[0]
+    ).toMatchObject({ convalidated: true, body: expect.stringContaining("'pineapple'::text") });
+  });
+});

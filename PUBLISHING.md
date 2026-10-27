@@ -65,7 +65,9 @@ protected main, locked dependencies and the existing OpenClaw gateway's supporte
 `plugins install --link` route. Keep source and durable state on the external SSD.
 Install its migration through Apply Merged Migration before enabling the private
 channel. Preserve existing gateway services and loopback binding; use only a
-public Supabase client key from the configured key tool. This component cannot
+public Supabase client key from the configured key tool plus the dedicated receive
+capability held in canonical Supabase Vault and macOS Keychain. A public key alone
+cannot read pending deliveries or join the event channel. This component cannot
 publish games or initiate, advance, retry or certify any release.
 
 Follow its README for exact installation/readback requirements. Completion needs

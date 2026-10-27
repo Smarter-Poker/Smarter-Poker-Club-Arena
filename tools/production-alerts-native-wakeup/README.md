@@ -30,11 +30,18 @@ an immutable external SSD directory for source and a separate owned state folder
 under `/Volumes/SmarterWork/agent-work/`. Preserve existing gateway configuration,
 channels and plugins. The plugin manifest accepts only a public publishable/anon
 client key from the configured Supabase key tool; it rejects privileged JWTs.
-Never use a service-role key or create a public gateway listener.
+Never use a service-role key or create a public gateway listener. Provision a
+dedicated random 256-bit receive capability in Supabase Vault under
+`ca_native_alert_receive_capability_v1` and macOS Keychain service
+`Smarter.Poker Production Alerts Receive v1`, account
+`production-alerts-native-wakeup`. Do not put its bytes in source, logs, chat or
+plugin config. The plugin reads it directly through the configured Keychain; the
+server validates it against the one fixed Vault entry before any pending lookup
+or private-channel read. A public client API key alone reveals no pending state.
 
 Install the exact migration from protected main through Apply Merged Migration;
 read back its history, functions, ACLs and two Realtime policies. Do not probe
-production with DDL or replay an installed version. The fixed private channel
+production with DDL or replay an installed version. The credential-authenticated private channel
 exposes only opaque identifiers; client INSERT is restrictively denied even if
 another permissive writer policy is added. Full read/ack RPCs are service-only.
 

@@ -6,6 +6,7 @@
     "smarter_private.ca_native_alert_signal",
     "fn_ca_native_alert_pending",
     "fn_ca_read_native_alert",
-    "fn_ca_ack_native_alert"
+    "fn_ca_ack_native_alert",
+    "fn_ca_native_alert_capability"
   ]
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import {
   createIntake,
   acceptedReceipt,
@@ -102,6 +103,20 @@ describe('committed operational alert wakes native intake', () => {
     expect(acceptedReceipt(`Queued message ${A} for thread ${TARGET}.`)).toBe(A);
     for (const text of ['accepted', '', `Queued message ${A} for thread ${B}.`])
       expect(() => acceptedReceipt(text)).toThrow();
+  });
+  it('parses the actual shipped gateway entry and requires credential authentication', () => {
+    expect(() =>
+      execFileSync(process.execPath, ['--check', 'tools/production-alerts-native-wakeup/index.mjs'])
+    ).not.toThrow();
+    const migration = readFileSync(
+      'supabase/migrations/20261027175950_native_alert_event_delivery.sql',
+      'utf8'
+    );
+    expect(migration).toContain("WHERE name='ca_native_alert_receive_capability_v1'");
+    expect(migration).toContain(
+      'IF NOT public.fn_ca_native_alert_capability(p_channel) THEN RAISE EXCEPTION'
+    );
+    expect(migration).toContain('USING (public.fn_ca_native_alert_capability(realtime.topic()))');
   });
   it('keeps native database qualification on the existing alert qualification path', () => {
     expect(readFileSync('scripts/ci/test-alert-ledger-roots.py', 'utf8')).toContain(

@@ -17,7 +17,9 @@ try:
     command([PG/'initdb','-D',BASE/'db','-A','trust','-U','postgres','--no-locale'])
     command([PG/'pg_ctl','-D',BASE/'db','-l',BASE/'log','-o',f"-k {SOCK} -p 55883 -c listen_addresses=''",'-w','start'])
     sql('''CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
-CREATE SCHEMA smarter_private; CREATE SCHEMA realtime;
+CREATE SCHEMA smarter_private; CREATE SCHEMA realtime; CREATE SCHEMA vault;
+CREATE TABLE vault.decrypted_secrets(name text PRIMARY KEY,decrypted_secret text);
+INSERT INTO vault.decrypted_secrets VALUES('ca_native_alert_receive_capability_v1',repeat('a',64));
 CREATE TABLE public.operational_alert_events(id bigint PRIMARY KEY,payload jsonb NOT NULL, investigation_status text DEFAULT 'new');
 CREATE TABLE realtime.messages(id bigint GENERATED ALWAYS AS IDENTITY,payload jsonb,event text,topic text,private boolean);
 ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
@@ -36,21 +38,29 @@ INSERT INTO operational_alert_events VALUES(1,'{"private":"not a wake"}','new');
     sql('''INSERT INTO operational_alert_events VALUES(2,'{"target_task_id":"01a09b86-5ba8-7290-8657-1041f13dd3ca","private":"complete evidence"}','new'),
 (3,'{"target_task_id":"00000000-0000-0000-0000-000000000001"}','new'),(4,'{}','new');''')
     check('(SELECT count(*)=2 FROM smarter_private.ca_native_alert_deliveries)')
-    check("(SELECT bool_and(private AND topic='ca-native-alert-intake-v1' AND event='inbox_committed' AND (SELECT count(*)=2 FROM jsonb_object_keys(payload)) AND NOT payload ? 'private') FROM realtime.messages)")
+    check("(SELECT bool_and(private AND topic='ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' AND event='inbox_committed' AND (SELECT count(*)=2 FROM jsonb_object_keys(payload)) AND NOT payload ? 'private') FROM realtime.messages)")
     check("NOT has_table_privilege('anon','public.operational_alert_events','SELECT')")
     for role in ['anon','authenticated']:
         check(f"NOT has_table_privilege('{role}','smarter_private.ca_native_alert_deliveries','SELECT')")
         check(f"NOT has_function_privilege('{role}','fn_ca_read_native_alert(uuid)','EXECUTE')")
         check(f"NOT has_function_privilege('{role}','fn_ca_ack_native_alert(uuid[],uuid)','EXECUTE')")
-        value=json.loads(sql(f"SET ROLE {role}; SELECT fn_ca_native_alert_pending();"))
+        value=json.loads(sql(f"SET ROLE {role}; SELECT fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');"))
         assert sorted(value)==['active_acknowledged','pending','version'] and len(value['pending'])==2
+    for role in ['anon','authenticated']:
+        for channel in ['missing', 'ca-native-alert-intake-v1:'+'b'*64]:
+            try:
+                sql(f"SET ROLE {role}; SELECT fn_ca_native_alert_pending('{channel}');")
+                raise AssertionError('public key alone exposed pending state')
+            except RuntimeError as e: assert 'native receive capability required' in str(e)
+        check(f"NOT has_table_privilege('{role}','vault.decrypted_secrets','SELECT')")
+    check("NOT fn_ca_native_alert_capability(NULL) AND NOT fn_ca_native_alert_capability('wrong')")
     # Verify RLS against the real role, not only catalog policy strings.
     check("(SELECT count(*)=0 FROM realtime.messages WHERE false)")
-    assert sql("SET test.topic='ca-native-alert-intake-v1'; SET ROLE anon; SELECT count(*) FROM realtime.messages;")=='2'
+    assert sql("SET test.topic='ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; SET ROLE anon; SELECT count(*) FROM realtime.messages;")=='2'
     assert sql("SET test.topic='another-topic'; SET ROLE anon; SELECT count(*) FROM realtime.messages;")=='0'
     sql('''CREATE POLICY simulated_future_broad_sender ON realtime.messages FOR INSERT TO anon,authenticated WITH CHECK(true);''')
     try:
-        sql("SET test.topic='ca-native-alert-intake-v1'; SET ROLE anon; INSERT INTO realtime.messages(payload,event,topic,private) VALUES('{}','intake_acknowledged','ca-native-alert-intake-v1',true);")
+        sql("SET test.topic='ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; SET ROLE anon; INSERT INTO realtime.messages(payload,event,topic,private) VALUES('{}','intake_acknowledged','ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',true);")
         raise AssertionError('forged signal allowed')
     except RuntimeError as e: assert 'row-level security' in str(e)
     sql("SET test.topic='unrelated'; SET ROLE anon; INSERT INTO realtime.messages(payload,event,topic,private) VALUES('{}','other','unrelated',true);")
@@ -72,8 +82,8 @@ INSERT INTO operational_alert_events VALUES(1,'{"private":"not a wake"}','new');
     sql(ack); stamp=sql(f"SELECT read_at FROM smarter_private.ca_native_alert_deliveries WHERE wake_id='{w}';")
     sql(ack); assert sql(f"SELECT read_at FROM smarter_private.ca_native_alert_deliveries WHERE wake_id='{w}';")==stamp
     check("(SELECT investigation_status='new' FROM operational_alert_events WHERE id=2)")
-    check(f"(fn_ca_native_alert_pending(ARRAY['{w}']::uuid[])->>'active_acknowledged')::boolean")
-    check("NOT (fn_ca_native_alert_pending(ARRAY['00000000-0000-0000-0000-000000000001']::uuid[])->>'active_acknowledged')::boolean")
+    check(f"(fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',ARRAY['{w}']::uuid[])->>'active_acknowledged')::boolean")
+    check("NOT (fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',ARRAY['00000000-0000-0000-0000-000000000001']::uuid[])->>'active_acknowledged')::boolean")
     sql("UPDATE operational_alert_events SET investigation_status='investigating' WHERE id=2;")
     check('(SELECT count(*)=3 FROM smarter_private.ca_native_alert_deliveries)')
     print('PASS: native capture, destination isolation, real RLS, future broad-policy forgery refusal, private full reads, rollback, signal outage, atomic invalid ack, duplicate ack, unknown state, no financial/investigation mutation')

@@ -15,9 +15,21 @@ ALTER TABLE smarter_private.ca_native_alert_deliveries ENABLE ROW LEVEL SECURITY
 REVOKE ALL ON smarter_private.ca_native_alert_deliveries FROM PUBLIC,anon,authenticated,service_role;
 CREATE INDEX ca_native_alert_pending ON smarter_private.ca_native_alert_deliveries(created_at,wake_id) WHERE read_at IS NULL;
 
+-- A dedicated 256-bit receive capability lives only in the existing canonical
+-- Vault/Keychain stores, never in source or the public Supabase client key.
+CREATE FUNCTION public.fn_ca_native_alert_capability(p_channel text) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
+ SELECT coalesce(p_channel='ca-native-alert-intake-v1:'||(
+   SELECT decrypted_secret FROM vault.decrypted_secrets
+   WHERE name='ca_native_alert_receive_capability_v1' AND decrypted_secret ~ '^[0-9a-f]{64}$'
+ ),false)
+$$;
+REVOKE ALL ON FUNCTION public.fn_ca_native_alert_capability(text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_native_alert_capability(text) TO anon,authenticated,service_role;
+
 CREATE FUNCTION smarter_private.ca_native_alert_signal() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
-DECLARE w uuid;
+DECLARE w uuid; channel text;
 BEGIN
   IF TG_TABLE_SCHEMA<>'public' OR TG_TABLE_NAME<>'operational_alert_events'
      OR TG_OP<>'INSERT' OR TG_WHEN<>'AFTER' OR TG_LEVEL<>'ROW' THEN
@@ -28,7 +40,8 @@ BEGIN
     VALUES(NEW.id) ON CONFLICT(inbox_event_id) DO NOTHING RETURNING wake_id INTO w;
   IF w IS NOT NULL THEN
     BEGIN
-      PERFORM realtime.send(jsonb_build_object('version',1,'wake_id',w),'inbox_committed','ca-native-alert-intake-v1',true);
+      SELECT 'ca-native-alert-intake-v1:'||decrypted_secret INTO STRICT channel FROM vault.decrypted_secrets WHERE name='ca_native_alert_receive_capability_v1' AND decrypted_secret ~ '^[0-9a-f]{64}$';
+      PERFORM realtime.send(jsonb_build_object('version',1,'wake_id',w),'inbox_committed',channel,true);
     EXCEPTION WHEN OTHERS THEN
       -- The durable delivery remains pending. A reconnect reads that exact
       -- outbox; a missing realtime hint never erases the inbox receipt.
@@ -45,14 +58,15 @@ CREATE TRIGGER ca_native_alert_committed AFTER INSERT ON public.operational_aler
 -- Restrictive INSERT policy also prevents a future broad writer policy from
 -- allowing an untrusted client to forge an intake/ack signal on this topic.
 CREATE POLICY ca_native_alert_receive ON realtime.messages FOR SELECT TO anon,authenticated
- USING (realtime.topic()='ca-native-alert-intake-v1');
+ USING (public.fn_ca_native_alert_capability(realtime.topic()));
 CREATE POLICY ca_native_alert_no_client_send ON realtime.messages AS RESTRICTIVE FOR INSERT TO anon,authenticated
- WITH CHECK (realtime.topic() IS DISTINCT FROM 'ca-native-alert-intake-v1');
+ WITH CHECK (left(coalesce(realtime.topic(),''),length('ca-native-alert-intake-v1:'))<>'ca-native-alert-intake-v1:');
 
-CREATE FUNCTION public.fn_ca_native_alert_pending(p_active uuid[] DEFAULT '{}') RETURNS jsonb
+CREATE FUNCTION public.fn_ca_native_alert_pending(p_channel text,p_active uuid[] DEFAULT '{}') RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
 DECLARE pending jsonb; ack boolean;
 BEGIN
+  IF NOT public.fn_ca_native_alert_capability(p_channel) THEN RAISE EXCEPTION 'native receive capability required' USING ERRCODE='42501'; END IF;
   IF p_active IS NULL OR cardinality(p_active)>32 OR array_position(p_active,NULL) IS NOT NULL THEN
     RAISE EXCEPTION 'expected at most 32 opaque delivery ids';
   END IF;
@@ -64,8 +78,8 @@ BEGIN
   ) s;
   RETURN jsonb_build_object('version',1,'active_acknowledged',ack,'pending',pending);
 END $$;
-REVOKE ALL ON FUNCTION public.fn_ca_native_alert_pending(uuid[]) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_native_alert_pending(uuid[]) TO anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_native_alert_pending(text,uuid[]) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_native_alert_pending(text,uuid[]) TO anon,authenticated,service_role;
 
 CREATE FUNCTION public.fn_ca_read_native_alert(p_wake_id uuid) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
@@ -78,7 +92,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_read_native_alert(uuid) TO service_role;
 
 CREATE FUNCTION public.fn_ca_ack_native_alert(p_wake_ids uuid[],p_reader_task_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
-DECLARE n integer;
+DECLARE n integer; channel text;
 BEGIN
   IF p_reader_task_id IS DISTINCT FROM '01a09b86-5ba8-7290-8657-1041f13dd3ca'::uuid
     OR p_wake_ids IS NULL OR cardinality(p_wake_ids) NOT BETWEEN 1 AND 32
@@ -95,7 +109,8 @@ BEGIN
   -- This means read, never resolved. Financial state and investigation status
   -- remain with their existing authorized owners.
   BEGIN
-    PERFORM realtime.send(jsonb_build_object('version',1),'intake_acknowledged','ca-native-alert-intake-v1',true);
+    SELECT 'ca-native-alert-intake-v1:'||decrypted_secret INTO STRICT channel FROM vault.decrypted_secrets WHERE name='ca_native_alert_receive_capability_v1' AND decrypted_secret ~ '^[0-9a-f]{64}$';
+    PERFORM realtime.send(jsonb_build_object('version',1),'intake_acknowledged',channel,true);
   EXCEPTION WHEN OTHERS THEN RAISE WARNING 'native alert ack signal unavailable SQLSTATE=%',SQLSTATE;
   END;
   RETURN jsonb_build_object('acknowledged',n,'reader_task_id',p_reader_task_id);

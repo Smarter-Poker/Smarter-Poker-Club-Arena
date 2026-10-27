@@ -62,6 +62,22 @@ export default {
             await dir.close();
           }
         };
+        const { stdout: capabilityOutput } = await execute(
+          '/usr/bin/security',
+          [
+            'find-generic-password',
+            '-s',
+            'Smarter.Poker Production Alerts Receive v1',
+            '-a',
+            'production-alerts-native-wakeup',
+            '-w',
+          ],
+          { timeout: 5_000, maxBuffer: 4096, encoding: 'utf8', shell: false }
+        );
+        const capability = capabilityOutput.trim();
+        if (!/^[0-9a-f]{64}$/.test(capability))
+          throw new Error('native receive credential unavailable');
+        const channelName = TOPIC + ':' + capability;
         const client = createClient('https://kuklfnapbkmacvwxktbh.supabase.co', publishableKey, {
           auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
           global: {
@@ -83,6 +99,7 @@ export default {
           async pending(ids) {
             const { data, error } = await client.rpc('fn_ca_native_alert_pending', {
               p_active: ids,
+              p_channel: channelName,
             });
             if (error) throw new Error('opaque pending read unavailable');
             return data;
@@ -107,7 +124,7 @@ export default {
             );
         };
         this.channel = client
-          .channel(TOPIC, { config: { private: true } })
+          .channel(channelName, { config: { private: true } })
           .on('broadcast', { event: 'inbox_committed' }, onEvent)
           .on('broadcast', { event: 'intake_acknowledged' }, onEvent)
           .subscribe((status) => {

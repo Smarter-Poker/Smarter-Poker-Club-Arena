@@ -11,7 +11,7 @@ OpenClaw gateway uses the documented native queue command. It serializes one
 bounded batch until the canonical chat acknowledges actual full reads through
 service-only RPCs. Queue timeouts/crashes retain an unknown operation instead of
 blind resubmission. Alert text, accounts, amounts and original IDs never enter the
-public receive-only projection. No public listener, privileged local API key,
+credential-authenticated receive-only projection. No public listener, privileged local API key,
 polling repair loop, scheduler, financial writer or release action is introduced.
 
 The existing PostgreSQL alert qualification invokes a real isolated RLS/ACL and

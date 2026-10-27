@@ -201,8 +201,14 @@ test('actual CLI reports the failing bounded stage and preserves successful outp
         `
       export function readHorseJournalHandRecords() { fail('journal_read_failed'); return [{kind:'decision', sourceRelease:'${selection.sourceSha}', bytes: process.env.FIXTURE_FAILURE === 'inspection_bound' ? 33554433 : 1, body: process.env.FIXTURE_FAILURE === 'record_decode_failed' ? 'PRIVATE_INVALID_JSON' : JSON.stringify({snapshot:{type:'DECIDE_FAST', player:{user_id:'${id}'}, gameState:{players:[{user_id:'${id}'}],actionHistory:[]}},decision:{action:'fold'}})}]; }
       export function reconcileHorseJournalHand() { fail('journal_reconciliation_failed'); return {status:'synthetic'}; }
-      export function horseRetainedPlanContext() { fail('retained_plan_refused'); return {kind:process.env.FIXTURE_FAILURE === 'invalid_plan' ? 'invalid' : 'legacy'}; }
+
     `
+    );
+    // Match the real module boundary: review imports this helper but does not export it.
+    writeFileSync(
+      join(cwd, 'dist/services/horseDecisionJournal/effects.js'),
+      fault +
+        `export function horseRetainedPlanContext() { fail('retained_plan_refused'); return {kind:process.env.FIXTURE_FAILURE === 'invalid_plan' ? 'invalid' : 'legacy'}; }`
     );
     writeFileSync(
       join(cwd, 'dist/engine/HorseDecisionReadFrame.js'),

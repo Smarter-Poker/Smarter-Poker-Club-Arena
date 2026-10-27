@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/table-review-lifecycle-20261027 - SessionSummaryHost is mounted at the app root so every table exit can show its result after navigation. Its small dependency-free formatSessionProfit helper must format exact cents synchronously in the hero value and share text; lazy I/O would delay or alter the result. This adds only the local numeric formatter, no account, route or service dependency.",
+  "modules": ["src/utils/formatSessionProfit.ts"]
+}

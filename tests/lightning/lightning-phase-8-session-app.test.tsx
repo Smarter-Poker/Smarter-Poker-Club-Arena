@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation, useParams } from 'react-router-dom';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const POOL = '11111111-1111-4111-8111-111111111111';
 const POOL_B = '11111111-1111-4111-8111-222222222222';
@@ -644,11 +644,32 @@ describe('the session summary', () => {
     expect(screen.queryByTestId('lightning-summary-play-again')).toBeNull();
   });
 
-  it('TablePage: both leave doors of a Lightning room open the Lightning summary', () => {
+  it('TablePage: both leave doors and a remote exit open the matching Lightning summary', () => {
     const page = read('src/pages/TablePage.tsx');
-    expect(page.match(/openLightningSessionSummary\(\{/g)).toHaveLength(2);
     expect(page).toMatch(/const lightningSummaryRoom = lightningRoomRef\.current;/);
     expect(page).toMatch(/const forceSummaryRoom = lightningRoomRef\.current;/);
+    for (const [guard, room, seat] of [
+      [
+        'if (lightningLeave && lightningSummaryRoom && tableId)',
+        'lightningSummaryRoom',
+        'seatAtLeave',
+      ],
+      ['if (forceLightning && forceSummaryRoom && tableId)', 'forceSummaryRoom', 'forceHeroSeat'],
+    ]) {
+      const door = sliceBlockAfter(page, guard);
+      expect(door).toContain('openLightningSessionSummary({');
+      expect(door).toContain('poolSessionId: tableId,');
+      expect(door).toContain(`clusterId: ${room}.clusterId,`);
+      expect(door).toContain(`name: ${room}.meta?.name ?? null,`);
+      expect(door).toContain('closeTableId: tableId,');
+      expect(door).toContain(`closeSeat: ${seat},`);
+    }
+    const remoteExit = sliceBlockAfter(page, 'const presentRemoteSeatExit = () =>');
+    expect(remoteExit).toContain('openLightningSessionSummary({');
+    expect(remoteExit).toContain('poolSessionId: lightningRoom.poolSessionId,');
+    expect(remoteExit).toContain('clusterId: lightningRoom.clusterId,');
+    expect(remoteExit).toContain('closeTableId: tableId,');
+    expect(remoteExit).toContain('closeSeat: remoteSessionSeat,');
     expect(page).not.toContain('<LightningRoomTools');
   });
 });

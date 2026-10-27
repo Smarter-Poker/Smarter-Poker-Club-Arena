@@ -128,6 +128,11 @@ export interface TournamentResult {
 }
 
 export interface SessionSummaryPayload {
+  /** UI tab retired only after the player acknowledges the completed result. */
+  closeTableId?: string;
+  closeSeat?: number;
+  /** Canonical seat generation shared by every window. */
+  closeOccupancyId?: string;
   /** A seat rebuild knows the durable finish, not this device session counters. */
   resultOnly?: boolean;
   arenaAsset?: 'chips' | 'diamonds';
@@ -176,12 +181,12 @@ export interface SessionSummaryPayload {
   pendingCashout?: {
     tableId: string;
     userId: string;
-    /** Epoch ms of the leave — bounds the ledger query so a cashout row from
-     *  an earlier session at the same table can never be mistaken for this
-     *  settlement. */
+    /** Epoch ms of the leave, used only to bound legacy ledger reads. */
     sinceMs: number;
-    /** Exact seat generation required for a Diamond cash-out receipt. */
+    /** Exact seat generation for current chip and Diamond settlements. */
     occupancyId?: string;
+    /** Current producers never fall back to an ambiguous legacy ledger read. */
+    requireOccupancy?: boolean;
   };
 }
 
@@ -189,6 +194,44 @@ type Listener = (payload: SessionSummaryPayload | null) => void;
 
 let pending: SessionSummaryPayload | null = null;
 const listeners = new Set<Listener>();
+
+const acknowledgedCashCompletions = new Set<string>();
+function cashCompletionKey(payload: SessionSummaryPayload | null): string | null {
+  const owner = readLocalSession()?.userId;
+  const generation =
+    payload?.closeOccupancyId || payload?.pendingCashout?.occupancyId || payload?.sessionStart;
+  return owner && payload?.closeTableId && generation !== undefined
+    ? `${owner}:${payload.closeTableId}:${generation}`
+    : null;
+}
+let completionChannel: BroadcastChannel | null = null;
+let channelAttempted = false;
+function summaryChannel(): BroadcastChannel | null {
+  if (channelAttempted) return completionChannel;
+  channelAttempted = true;
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return null;
+  try {
+    completionChannel = new BroadcastChannel('club-arena-session-completion-v1');
+    completionChannel.onmessage = (event: MessageEvent) => {
+      const envelope = event.data;
+      const owner = readLocalSession()?.userId;
+      if (!owner || envelope?.owner !== owner || !envelope.payload?.closeTableId) return;
+      publishSessionSummary(envelope.payload, false);
+    };
+  } catch {
+    /* This device still receives the server's seat-left event. */
+  }
+  return completionChannel;
+}
+function broadcastCompletion(payload: SessionSummaryPayload): void {
+  const owner = readLocalSession()?.userId;
+  if (!owner || !payload.closeTableId) return;
+  try {
+    summaryChannel()?.postMessage({ owner, payload });
+  } catch {
+    /* Local display survives. */
+  }
+}
 
 function emit(): void {
   persistTournamentReports();
@@ -282,15 +325,32 @@ export function hasAcknowledgedTournamentReport(
 }
 
 /** A delayed elimination callback must not reopen an acknowledged report. */
-export function dismissSessionSummary(): void {
+export function dismissSessionSummary(closeTable?: (tableId: string, seat: number) => void): void {
+  const cashKey = cashCompletionKey(pending);
+  if (cashKey) acknowledgedCashCompletions.add(cashKey);
+  const tableId = pending?.closeTableId;
+  const seat = pending?.closeSeat ?? 0;
   const id = tournamentReportKey(pending?.tournament);
   if (id) acknowledgedTournamentIds.add(id);
   clearSessionSummary();
+  if (tableId) closeTable?.(tableId, seat);
 }
 
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
-export function publishSessionSummary(payload: SessionSummaryPayload): void {
+export function publishSessionSummary(payload: SessionSummaryPayload, broadcast = true): void {
   restoreTournamentReports();
+  const cashKey = cashCompletionKey(payload);
+  if (cashKey && acknowledgedCashCompletions.has(cashKey)) return;
+  // A later seat-left observation is an estimate, never a replacement for the
+  // settled result already received for this exact occupancy in another window.
+  if (
+    cashKey &&
+    cashKey === cashCompletionKey(pending) &&
+    pending?.plPending !== true &&
+    payload.plPending === true
+  )
+    return;
+  if (broadcast) broadcastCompletion(payload);
   const id = tournamentReportKey(payload.tournament);
   if (id && acknowledgedTournamentIds.has(id)) return;
   if (pending?.tournament) {
@@ -359,6 +419,7 @@ export function settlePendingSummary(
     plPending: false,
     pendingCashout: undefined,
   };
+  broadcastCompletion(pending);
   emit();
 }
 
@@ -372,6 +433,7 @@ export function clearSessionSummary(): void {
 
 /** Subscribe to changes. Returns an unsubscribe function. */
 export function subscribeSessionSummary(listener: Listener): () => void {
+  summaryChannel();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

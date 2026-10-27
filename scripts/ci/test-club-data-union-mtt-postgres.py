@@ -4,6 +4,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -183,3 +184,14 @@ finally:
     if started:
         run([PG / "pg_ctl", "-D", data, "-m", "fast", "-w", "stop"])
     shutil.rmtree(cluster, ignore_errors=True)
+
+# The same required Data qualification owns this reporting producer too.
+# Use a separate source-bound world so neither fixture can supply the other's
+# tables or receipts. Any refusal fails the existing accounting job.
+subprocess.run([
+    sys.executable, "-B", str(ROOT / "scripts/ci/run_launch_reset_accounting_fixture.py"),
+    "--fixture", str(ROOT / "scripts/ci/fixtures/reporting-rollup-cutoffs.sql"),
+    "--candidate", str(ROOT / "supabase/migrations/20261027005822_reporting_rollups_read_each_club_cutoff_once.sql"),
+    "--work-root", os.environ.get("DATA_CONSOLE_PG_SCRATCH_PARENT", str(cluster.parent)),
+    "--pg-bin", str(PG),
+], cwd=ROOT, check=True, timeout=90)

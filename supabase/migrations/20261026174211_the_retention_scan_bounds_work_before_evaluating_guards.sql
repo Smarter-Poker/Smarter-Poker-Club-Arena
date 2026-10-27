@@ -12,6 +12,16 @@
 -- and disposals together. Exact preimage and metadata refuse source drift.
 BEGIN;
 SET LOCAL lock_timeout='2s';
+-- The old pruner holds the PRIVATE cursor through its batch; a 2s ALTER
+-- timeout failed in owning runs 40397866510 and 40417950987. Reserve the
+-- existing cron lane first. A queued request here cannot delay purchases or
+-- maintenance: only this retention cron uses this key, and it uses try-lock.
+-- postgres cron role's actual statement ceiling is 120s, not set_config's
+-- misleading mid-statement 30s. Allow that batch plus 5s admission headroom.
+SET LOCAL statement_timeout='150s';
+SET LOCAL lock_timeout='125s';
+SELECT pg_catalog.pg_advisory_xact_lock(hashtext('sp-prune-hand-history'));
+SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='60s';
 ALTER TABLE smarter_private.hand_history_prune_cursor ADD COLUMN resume_id uuid;
 DO $install$

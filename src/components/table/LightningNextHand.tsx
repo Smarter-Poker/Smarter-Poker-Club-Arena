@@ -23,19 +23,26 @@ import './LightningFoldBar.css';
 
 export default function LightningNextHand({
   handInProgress,
+  handComplete = false,
   thresholdMs = LIGHTNING_NEXT_HAND_NOTICE_MS,
 }: {
   handInProgress: boolean;
+  /** The felt's hand-bound completion latch, after its full award hold. */
+  handComplete?: boolean;
   thresholdMs?: number;
 }) {
-  const quietSinceRef = useRef<number | null>(handInProgress ? null : Date.now());
+  // A winner can keep the completed hand's snapshot while waiting to be
+  // matched again. The existing completion latch ends that hand on the felt;
+  // handSettling alone is too early because the pot push is still playing.
+  const handActive = handInProgress && !handComplete;
+  const quietSinceRef = useRef<number | null>(handActive ? null : Date.now());
   const [, setTick] = useState(0);
   /* Whether the line has been shown since it last finished leaving. Read in
      render so the fade-out starts in the same frame the deal does: the line
      is never unmounted and remounted on its way out. */
   const shownRef = useRef(false);
   useEffect(() => {
-    if (handInProgress) {
+    if (handActive) {
       quietSinceRef.current = null;
       setTick((t) => t + 1);
       return;
@@ -44,9 +51,9 @@ export default function LightningNextHand({
     const wait = Math.max(0, quietSinceRef.current + thresholdMs - Date.now());
     const timer = setTimeout(() => setTick((t) => t + 1), wait);
     return () => clearTimeout(timer);
-  }, [handInProgress, thresholdMs]);
+  }, [handActive, thresholdMs]);
   const due = nextHandNoticeDue({
-    handInProgress,
+    handInProgress: handActive,
     quietSinceMs: quietSinceRef.current,
     nowMs: Date.now(),
     thresholdMs,

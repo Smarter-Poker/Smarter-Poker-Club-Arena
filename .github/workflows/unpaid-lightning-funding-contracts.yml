@@ -13,6 +13,9 @@ on:
       - scripts/ci/fixtures/linked-outcome-window-index/**
       - scripts/ci/test-linked-outcome-window-index-postgres.py
       - tests/linked-outcome-windows-retain-original-proof.law.test.ts
+      - scripts/ci/fixtures/standalone-entry-cover/**
+      - scripts/ci/test-standalone-entry-cover-postgres.py
+      - tests/standalone-entry-retains-historical-first-week.law.test.ts
       - scripts/ci/fixtures/fees-before-club-books/**
       - scripts/ci/fixtures/weekly-fee-preparation/**
       - scripts/ci/test-weekly-fee-preparation-postgres.py
@@ -139,3 +142,5 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-linked-outcome-window-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/linked-outcome-window-index.json"
+      - name: Standalone entry retains its original historical first week
+        run: python3 -B scripts/ci/test-standalone-entry-cover-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/standalone-entry-cover"

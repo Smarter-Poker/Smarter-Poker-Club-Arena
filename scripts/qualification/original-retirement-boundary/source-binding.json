@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "6c2c0f86f0ec0c47f1ab25d56a0d3a8e1402b74799d467a5658470752103a999",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -411,5 +411,13 @@
     "qualifiedIncomingHead": "4bd3999d3553bb4ca18e3f63768a214eafd1a550",
     "qualifiedMigrationSHA256": "5a744e2fa61360c1cb75074b4798249829862e3544016150ff7a8aa125da6b2c",
     "qualification": "17 real PostgreSQL17 original-full-row/reducer/witness/catalog/freeze/CCI refusal cases passed in released candidate; inherited exact source and evidence retained. Local qualification is not production installation or closed84-window books."
+  },
+  "rakebackConsolidationStandaloneEntryCoverAudit20261027": {
+    "reason": "Add only three matching triggers and one qualified native standalone-entry domain-cover step. Every preceding workflow line and command remains in original order. Index-only SQL changes no function, financial source pin, original historical first-week domain, budget, ACL or schedule.",
+    "previousSHA256": "6c2c0f86f0ec0c47f1ab25d56a0d3a8e1402b74799d467a5658470752103a999",
+    "currentSHA256": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
+    "qualifiedIncomingHead": "9266fbef38a7e8fb7b0bcf584f56089bf51ee108",
+    "qualifiedMigrationSHA256": "175e3ac2756500e92c43fa92b5c1100b017011f143714231f3c39c36ee204a20",
+    "qualification": "Released nativePG17 56cases with actual entry/allhelpers/fullsixdefinition+metadata/11tablecatalog/58existingindex context; local evidence is not installation, closed books or future4AM capacity."
   }
 }

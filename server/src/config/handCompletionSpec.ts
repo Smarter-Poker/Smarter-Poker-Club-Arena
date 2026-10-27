@@ -94,7 +94,8 @@ export const HAND_COMPLETION = {
    * been watching. 1400ms still clears the 300ms-staggered flip for a heads-up
    * showdown, which is what the floor was originally for.
    */
-  SHOWDOWN_READ_BASE_MS: 1400,
+  // Owner 2026-10-26: keep the winning cards visible 1500ms longer.
+  SHOWDOWN_READ_BASE_MS: 2900,
   /** Each additional shown hand needs its own beat to read. */
   SHOWDOWN_READ_PER_EXTRA_HAND_MS: 350,
   /**
@@ -122,7 +123,7 @@ export const HAND_COMPLETION = {
    */
   ALL_IN_SHOWDOWN_EXTRA_MS: 2000,
   /** A big multiway showdown must still not stall the table forever. */
-  SHOWDOWN_READ_MAX_MS: 2200,
+  SHOWDOWN_READ_MAX_MS: 3700,
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 3): per-seat stagger on the
    * showdown card flip, in reveal order — the final-street last aggressor
@@ -399,7 +400,8 @@ export const HAND_COMPLETION = {
    * beat, the ship, and a settle before the next run takes the stage
    * (measured ~2.5-3.2s per run in the reference).
    */
-  RIT_RESULT_RUN_MS: 2600,
+  // Owner 2026-10-26: each board gets the same additional 1500ms read.
+  RIT_RESULT_RUN_MS: 4100,
 } as const;
 
 /**

@@ -6429,14 +6429,7 @@ function LiveTablePage({
       ),
     [RIT_WAITING_BANNER_RENDERED]
   );
-  /**
-   * @param revertToWaiting — RUN IT 3X recording: a per-player accept banner
-   * shows for a few seconds, then the table drops BACK to the waiting strip
-   * while the offer still hangs. When set, expiry restores the waiting text
-   * instead of clearing, as long as the offer deadline is still in the
-   * future.
-   */
-  const showRitFeltBanner = useCallback((text: string, ms?: number, revertToWaiting?: boolean) => {
+  const showRitFeltBanner = useCallback((text: string, ms?: number) => {
     if (ritFeltBannerTimerRef.current) {
       clearTimeout(ritFeltBannerTimerRef.current);
       ritFeltBannerTimerRef.current = null;
@@ -6450,19 +6443,12 @@ function LiveTablePage({
     if (ms && ms > 0) {
       ritFeltBannerTimerRef.current = setTimeout(() => {
         ritFeltBannerTimerRef.current = null;
-        setRitFeltBanner(
-          revertToWaiting && ritDeadlineRef.current > Date.now()
-            ? formatPopupText(RIT_WAITING_BANNER)
-            : null
-        );
+        setRitFeltBanner(null);
       }, ms);
     }
   }, []);
-  /** When the last per-player accept banner fired — the collective
-   *  "players have accepted" banner is skipped if one just showed
-   *  (the 3X recording goes straight from the final accept's named banner
-   *  into the runout). */
-  const ritLastAcceptBannerAtRef = useRef(0);
+  /** Final run-count confirmation is shown once until the hand resets. */
+  const ritConfirmationShownRef = useRef(false);
   // Reference behavior: the panel slides in a beat AFTER the table settles
   // into "waiting" — not in the same frame as the all-in.
   const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -6649,7 +6635,7 @@ function LiveTablePage({
     ritFaceUpBoardsRef.current.clear();
     pendingRitAwardsRef.current.clear();
     ritRunRibbonAtRef.current = [];
-    ritLastAcceptBannerAtRef.current = 0;
+    ritConfirmationShownRef.current = false;
     ritDeadlineRef.current = 0;
     ritTimelineEndsAtRef.current = 0;
     ritRevealEndsAtRef.current = 0;
@@ -12613,23 +12599,11 @@ function LiveTablePage({
         return;
       }
 
-      // POKERBROS PARITY 2026-08-26: a player accepted — tick their check.
-      // RUN IT 3X recording: the felt also announces each accept BY NAME for
-      // a few seconds ("<name> has accepted running multi-times."), then
-      // drops back to the waiting strip while the offer still hangs — this
-      // is the whole story for spectators and folded players, who have no
-      // panel.
+      // Acceptance checkmarks update silently; only unanimous consent announces the count.
       if (eventType === 'rit_response_update') {
         const acceptedIds = (handState.accepted_ids as string[]) || [];
         if (acceptedIds.length > 0) {
           setRitAcceptedIds((prev) => [...new Set([...prev, ...acceptedIds])]);
-        }
-        const who = handState.player_id as string | null;
-        if (who) {
-          const name =
-            tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player';
-          ritLastAcceptBannerAtRef.current = Date.now();
-          showRitFeltBanner(`${name} Has Accepted Running Multi-Times.`, 3500, true);
         }
         return;
       }
@@ -12665,16 +12639,14 @@ function LiveTablePage({
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
         ritExpectedRunsRef.current = runs;
         setRitRunsThisHand(runs);
-        // RUN IT 3X recording: when the FINAL accept's named banner just
-        // fired, the table goes straight into the runout under that banner —
-        // the collective line only shows when completion arrived without one
-        // (e.g. the chooser's own pick completed the consent).
-        if (Date.now() - ritLastAcceptBannerAtRef.current > 2000) {
+        // One final confirmation per hand, including duplicate/replayed events.
+        if (!ritConfirmationShownRef.current) {
+          ritConfirmationShownRef.current = true;
           showRitFeltBanner(
             runs === 3
               ? 'Players Have Accepted Running It 3 Times.'
               : 'Players Have Accepted Running It Twice.',
-            4500
+            1500
           );
         }
         return;
@@ -12690,10 +12662,15 @@ function LiveTablePage({
         // must not keep a clock or a waiting strip alive (see rit_all_accepted).
         ritDeadlineRef.current = 0;
         setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
-        showRitFeltBanner(
-          runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
-          4500
-        );
+        if (!ritConfirmationShownRef.current) {
+          ritConfirmationShownRef.current = true;
+          showRitFeltBanner(
+            runs === 3
+              ? 'Mandatory Run It 3 Times This Hand.'
+              : 'Mandatory Run It Twice This Hand.',
+            1500
+          );
+        }
         return;
       }
 

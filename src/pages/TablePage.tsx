@@ -4136,9 +4136,27 @@ function LiveTablePage({
       }
     };
     void beat();
-    const heartbeatInterval = setInterval(() => void beat(), 5000);
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    const startHeartbeat = () => {
+      if (!heartbeatInterval && heartbeatAlive) {
+        heartbeatInterval = setInterval(() => void beat(), 5000);
+      }
+    };
+    const stopHeartbeat = () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    };
+    startHeartbeat();
+
     const onResume = () => {
-      if (document.visibilityState !== 'hidden' && isNativeAppActive()) void beat();
+      if (document.visibilityState !== 'hidden' && isNativeAppActive()) {
+        startHeartbeat();
+        void beat();
+      } else {
+        stopHeartbeat();
+      }
     };
     window.addEventListener(NATIVE_RESUME_EVENT, onResume);
     window.addEventListener('pageshow', onResume);
@@ -4146,7 +4164,7 @@ function LiveTablePage({
     return () => {
       heartbeatAlive = false;
       heartbeatRecoveryGuardRef.current.invalidate();
-      clearInterval(heartbeatInterval);
+      stopHeartbeat();
       window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
       window.removeEventListener('pageshow', onResume);
       document.removeEventListener('visibilitychange', onResume);

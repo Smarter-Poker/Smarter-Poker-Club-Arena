@@ -27,6 +27,8 @@ describe('deleted reserves retain original authority while reusing unchanged out
   it('binds original output to every actual rowversion and drops it at commit', () => {
     for (const s of [
       'c.ctid,c.xmin::text',
+      'pg_catalog.pg_relation_filenode(c.tableoid)',
+      'pg_catalog.pg_relation_filenode(g.tableoid)',
       'g.tableoid::text',
       'g.ctid::text',
       'g.xmin::text',

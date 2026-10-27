@@ -1,4 +1,4 @@
--- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='adcb4312740429737a2880721ff5e4a1' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
+-- @live-proof: md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='c2a3aedb97cf5782be7e9bc7a2a6e03b' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261'
 BEGIN;
 SET LOCAL lock_timeout='2s';
 DO $pre$ BEGIN
@@ -11,9 +11,9 @@ DECLARE cert_tid tid;cert_xid text;v_contracts_version text;cached jsonb;cache_o
 BEGIN
  -- Re-read physical row versions on every call. xmin alone is insufficient:
  -- updates performed in this same transaction retain xmin but replace ctid.
- SELECT c.ctid,c.xmin::text INTO STRICT cert_tid,cert_xid
+ SELECT c.ctid,c.xmin::text||'/'||c.cmin::text||'/'||c.tableoid::text||'/'||pg_catalog.pg_relation_filenode(c.tableoid)::text INTO STRICT cert_tid,cert_xid
  FROM public.accounting_rakeback_period_calculations c WHERE c.id=p_calculation;
- SELECT md5(count(*)::text||':'||coalesce(string_agg(g.tableoid::text||'/'||g.ctid::text||'/'||g.xmin::text,',' ORDER BY g.tableoid,g.ctid),''))
+ SELECT md5(count(*)::text||':'||coalesce(string_agg(g.tableoid::text||'/'||pg_catalog.pg_relation_filenode(g.tableoid)::text||'/'||g.ctid::text||'/'||g.xmin::text||'/'||g.cmin::text||'/'||md5(to_jsonb(g)::text),',' ORDER BY g.tableoid,g.ctid),''))
  INTO v_contracts_version FROM public.accounting_rakeback_payer_contracts g WHERE g.calculation_id=p_calculation;
  cache_oid:=to_regclass('pg_temp._deleted_reserve_payer_proofs');
  IF cache_oid IS NULL THEN
@@ -121,5 +121,5 @@ BEGIN
 END;
 $function$;
 REVOKE ALL ON FUNCTION smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)FROM PUBLIC,anon,authenticated,service_role;
-DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='adcb4312740429737a2880721ff5e4a1' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
+DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('smarter_private.deleted_reserve_certificate_payers(bigint)'::regprocedure))='c2a3aedb97cf5782be7e9bc7a2a6e03b' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='2673336b266659907cb9a787d9847a18' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261')THEN RAISE EXCEPTION 'deleted_reserve_reuse_postimage_changed';END IF;END $post$;
 COMMIT;

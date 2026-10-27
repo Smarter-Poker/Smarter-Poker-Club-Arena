@@ -38,8 +38,8 @@ interface AccountResolvedClub {
   clubId: string | null;
 }
 
-const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v3.webp`;
-const PHONE_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-mobile-v1.webp`;
+const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v4.webp`;
+const PHONE_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-mobile-v2.webp`;
 // Native columns retained from the member frame. Only empty gaps are omitted.
 const MEMBER_PHONE_SLICES = [
   [0, 377],
@@ -48,7 +48,7 @@ const MEMBER_PHONE_SLICES = [
   [1183, 234],
   [1514, 352],
 ] as const;
-const APPROVED_PLAYER_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-player-v1.webp`;
+const APPROVED_PLAYER_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-player-v2.webp`;
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();
@@ -177,9 +177,9 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
       { key: 'players', label: 'Players', to: clubRoot ? `${clubRoot}/members` : '/players' },
       { key: 'cashier', label: 'Cashier', to: clubRoot ? `${clubRoot}/cashier` : '/cashier' },
       {
-        key: 'marketplace',
-        label: 'Market',
-        to: withClubContext('/marketplace', resolvedClubId),
+        key: 'game-lobby',
+        label: 'Game Lobby',
+        to: clubRoot ?? '/clubs',
       },
     ];
     if (canSeeData) {

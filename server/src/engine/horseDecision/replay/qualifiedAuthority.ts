@@ -1,3 +1,4 @@
+import { admitHorsePhase8GuardAuthority } from '../../HorseTournamentCatastropheGuardAuthority.js';
 /** Offline replay admission uses the same protected selections and exact
  * qualification files as production. A record cannot turn a pack on. */
 import { admitHorsePhase14LiveAttachment } from '../../HorsePhase14Authority.js';
@@ -30,6 +31,7 @@ export class HorseReplayAuthorityRefusal extends Error {
 /** No mode override: the production runtime still derives each mode from
  * its own holder, original request/domain and ordinary qualified verdict. */
 export const qualifiedReplayAdmissions = {
+  admitPhase8GuardAuthority: () => admitHorsePhase8GuardAuthority(),
   admitPhase8Authority: () => admitHorsePhase8LiveAuthority(),
   admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
   admitPhase11Authority: (variant: OmahaPolicyVariant) => admitHorsePhase11LiveAuthority(variant),
@@ -39,6 +41,7 @@ export const qualifiedReplayAdmissions = {
   admitPhase14Attachment: (domain: string) => admitHorsePhase14LiveAttachment(domain),
 } satisfies Pick<
   HorseDecisionWorkerDependencies,
+  | 'admitPhase8GuardAuthority'
   | 'admitPhase8Authority'
   | 'admitPhase10Authority'
   | 'admitPhase11Authority'
@@ -61,6 +64,7 @@ export function qualifiedReplayAuthorityHolders(
   const receipts = new Map<string, HorseAuthorityReceipt>();
   const policies = [
     ['phase8', null, original.tournamentPostflop],
+    ['phase8_guard', null, original.tournamentCatastropheGuard],
     ['phase10', null, original.plo4Policy],
     ['phase11', variant, original.omahaVariantPolicy],
     ['phase12', variant, original.remainingVariantPolicy],
@@ -83,12 +87,12 @@ export function qualifiedReplayAuthorityHolders(
     original.correctivePolicy?.baselineAuthorities ?? {}
   )) {
     if (
-      !['phase8', 'phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
+      !['phase8', 'phase8_guard', 'phase10', 'phase11', 'phase12', 'phase13'].includes(owner) ||
       !horseAuthorityReceiptIsWellFormed(receipt) ||
       receipt.state !== 'usable'
     )
       throw new HorseReplayAuthorityRefusal(`${owner}:missing_baseline_receipt`);
-    const key = `${owner}:${owner === 'phase8' || owner === 'phase10' ? '' : variant}`;
+    const key = `${owner}:${owner === 'phase8' || owner === 'phase8_guard' || owner === 'phase10' ? '' : variant}`;
     const prior = receipts.get(key);
     if (prior && JSON.stringify(prior) !== JSON.stringify(receipt))
       throw new HorseReplayAuthorityRefusal(`${owner}:conflicting_baseline_receipt`);
@@ -100,17 +104,19 @@ export function qualifiedReplayAuthorityHolders(
     let admission: HorseAuthorityAdmission;
     try {
       admission =
-        owner === 'phase8'
-          ? admissions.admitPhase8Authority()
-          : owner === 'phase10'
-            ? admissions.admitPhase10Authority()
-            : owner === 'phase11'
-              ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
-              : owner === 'phase12'
-                ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
-                : owner === 'phase13'
-                  ? admissions.admitPhase13Authority(pack as JointVariant)
-                  : admissions.admitPhase14Attachment(pack ?? '').admission;
+        owner === 'phase8_guard'
+          ? admissions.admitPhase8GuardAuthority()
+          : owner === 'phase8'
+            ? admissions.admitPhase8Authority()
+            : owner === 'phase10'
+              ? admissions.admitPhase10Authority()
+              : owner === 'phase11'
+                ? admissions.admitPhase11Authority(pack as OmahaPolicyVariant)
+                : owner === 'phase12'
+                  ? admissions.admitPhase12Authority(pack as RemainingPolicyVariant)
+                  : owner === 'phase13'
+                    ? admissions.admitPhase13Authority(pack as JointVariant)
+                    : admissions.admitPhase14Attachment(pack ?? '').admission;
       return HorseQualifiedAuthorityHolder.fromReplayReceipt(receipt, admission, runningVersion);
     } catch (error) {
       throw new HorseReplayAuthorityRefusal(

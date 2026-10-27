@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-27-tournament-park-grace-custody",
+      "ownerOrder": "Dan, directly in Trustmefold tournament freeze chat 01a17a17-5fad-79a0-8d39-8e4e9e6a7a8a, after being told yesterday's exceptions have expired and the serving engine does not meet automatic emergency criteria, explicitly answered: \"Activate off-cycle once qualified\" to one certified activation within the next six hours. Limited to the maintained original-park grace fix: immutable park age survives manager custody changes while the existing atomic movement refusal/custody/roster/hand proof still controls withdrawal. Protected minimum anchor d3fc249921d9858d565d0f6f33383b9a7864bb02 is absent from serving bf0e33aee46a342f977cba6bc7c10da3b2b2a03b when prepared; this same protected PR must contain the runtime fix, pass required checks and be proved included independently. The compatible metadata-only migration must install from protected main through Apply Merged Migration with history/postimage/ACL readback before activation; this entry installs no migration. Preserve exact immutable staging, current operation ownership, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full 285-second cutover/rollback reserve, rolling-hour seal and v3 thaw. No second publisher, watcher, repair loop, direct restart or unrelated work. Ends when its anchor is serving or at expiry.",
+      "contains": "d3fc249921d9858d565d0f6f33383b9a7864bb02",
+      "notBefore": "2026-10-27T15:20:34Z",
+      "notAfter": "2026-10-27T21:20:34Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-cash-half-top-horses-8260-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago: \"cut the cash games being played by 50%\" across \"the entire daily schedule\", \"only allow the top horses play\"; later in this chat: \"don't do any work outside of the scope, finish push and publish\", and \"complete the task in full ... do not claim success until ... verified\". The same-day owner direction covering all authorized work is \"ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM\". One certified activation containing protected PR #8260 squash f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd, which halves the daily cash activity curve, restores its host-cap and safe-exit enforcement, and restricts cash seats to measured top performers. The previous 7fdb2223 window is already served and grants nothing further. This entry expires before October 26 Chicago ends and grants nothing once its anchor is serving. Preserve required checks, immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-hour seal and thaw. The function-only migration installs independently through Apply Merged Migration. No second installer, publisher, watcher, direct restart or unrelated work.",
       "contains": "f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd",
@@ -173,6 +181,14 @@
       "notBefore": "2026-10-24T22:56:00Z",
       "notAfter": "2026-10-25T02:58:00Z",
       "announceAtChicagoMinutes": [53, 54],
+      "migrations": []
+    },
+    {
+      "id": "2026-10-27-winning-card-timing-8275-now",
+      "ownerOrder": "Dan, directly in Codex chat 01a17b12, ordered: \"FINISH PR #8275. GET ALL CHECKS PASSING, MERGE IT, PUBLISH NOW, AND VERIFY BOTH CHANGES LIVE. DON'T LEAVE IT PENDING.\" After the hosted runner queue and protected merge, the same owner continued on October 27: \"Please pick up where you left off, complete the task in full and do not claim success until you have verified that everything is 100% accomplished for this task\" and \"FINISH ANY AND ALL TASKS USING THE FASTEST, MOST EFFICiENT ROUTE.\" One immediate certified activation of protected main containing the actual #8275 squash 857b756726fecd4948938ed8cf537dbb5f128e2c: extend ordinary winning-card display and each multi-run result by 1500ms. The final 1500ms run-count confirmation is an independently published client change. Stage run40478252105 proved the old admission anchor already serving and skipped dispatch; at preparation healthy serving bf0e33aee46a342f977cba6bc7c10da3b2b2a03b is three commits behind #8275 and excludes it. This separate admission-only follow-up remedies that demonstrated gap; all earlier windows are expired. Prove the protected timing squash is included, the immutable selected release is serving, and both live timing measurements independently. This entry expires within six hours and grants nothing once its exact anchor is serving. Preserve existing operation ownership, every required check, exact-SHA immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, full 285-second cutover and rollback reserve, rolling one-window-per-hour seal, forward-only publication and v3 thaw. No migrations, unrelated gameplay or strategy changes, second publisher, watcher, timer or direct restart.",
+      "contains": "857b756726fecd4948938ed8cf537dbb5f128e2c",
+      "notBefore": "2026-10-27T14:40:02Z",
+      "notAfter": "2026-10-27T20:30:02Z",
       "migrations": []
     },
     {

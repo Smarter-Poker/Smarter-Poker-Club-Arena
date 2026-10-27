@@ -2602,10 +2602,10 @@ export class TournamentManager extends TournamentManagerEliminations {
    * until a fifth migration taught the proof one more arrival shape.
    *
    * The proof is right to refuse what it cannot prove, and it stays strict.
-   * What was wrong is that the table waited on it. A park that has not begun
-   * and whose movement admission has been refused for
-   * UNPROVEN_MOVEMENT_PARK_GRACE_MS (long enough for an unrecorded bust, the
-   * commonest transient refusal, to be recorded) is withdrawn through
+   * What was wrong is that the table waited on it. A park that has not begun,
+   * has existed for UNPROVEN_MOVEMENT_PARK_GRACE_MS, and whose movement
+   * admission still refuses (allowing an unrecorded bust, the commonest
+   * transient refusal, time to be recorded) is withdrawn through
    * fn_f06_withdraw_unproven_movement_park. The database re-asks the proof,
    * withdraws only while it still refuses with a named F06_MOVEMENT_*
    * refusal, proves the park never began, writes that refusal into the
@@ -2635,8 +2635,19 @@ export class TournamentManager extends TournamentManagerEliminations {
       return false;
     }
     const now = Date.now();
-    const since = this.unprovenMovementParkSince.get(state.break_id);
-    if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    // A successor must not restart this original park's grace. The database's
+    // immutable creation time survives adoption; the withdrawal door still
+    // re-proves the refusal and exact custody before changing anything.
+    let since: number | undefined;
+    if (state.park_created_at !== undefined) {
+      since = Date.parse(state.park_created_at);
+      if (!Number.isFinite(since) || since > now) return false;
+    } else {
+      // Compatibility with the pre-timestamp RPC contract: retain its local
+      // first-refusal grace until the database supplies durable age evidence.
+      since = this.unprovenMovementParkSince.get(state.break_id);
+      if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    }
     if (since === undefined || now - since < TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS)
       return false;
     if (!(await this.withdrawUnbegunPark(state, 'unproven_movement'))) return false;

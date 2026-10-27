@@ -1138,5 +1138,29 @@
   "baseline_installed_thin220709_index_retained": true,
   "whole_generation_definition_metadata_unchanged": true,
   "source65_definition_md5": "8734797c6093c7e5a2a72de9b387a6de",
-  "limits": "Actual original linked/reducer/witness/read bodies and full captured relation columns/constraints. Original hand-line/append owners reused unchanged. Unrelated source65 proof collaborators controlled only for functional native calls, then COMPLETE actual source65 loaded and preserved across exact installer replay. No production speed, whole84-window readiness, financial or deployment claim."
+  "limits": "Actual original linked/reducer/witness/read bodies and full captured relation columns/constraints. Original hand-line/append owners reused unchanged. Unrelated source65 proof collaborators controlled only for functional native calls, then COMPLETE actual source65 loaded and preserved across exact installer replay. No production speed, whole84-window readiness, financial or deployment claim.",
+  "qualified_input_sha256": {
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-week-hand-lines.sql": "196e0a4025420f7bb21aee8b2c3fcf3e4992b421018480663d75eccd5ef3c95e",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/materialized-baseline-readonly.sql": "0df588bfac569292da463afbcc66b398eafae1365090c2772c993a5f4512d591",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-hand-parts.sql": "07cf5bd3731bae22fa6cf0358d84d88f7c8c95a61e1c2fcef1c26e815ee8004e",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/actual-neighbor-relations.sql": "89b9f13dfb9c65519ca769dda04b73066e0f4c453f19279f7d17d71959ca1cd7",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/actual-neighbor-catalog.json": "e52f61caec9c47abab95572ddcd4b207b39fe498bc7ae5a9f8e900f686eacee5",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-generation.sql": "3358bdd662b5ea91e0f1036443f49ae7e794d2dfc9646a7e30d1f7e559cd5ac2",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-source65.sql": "809806842af07372e2994df024a3a56f1d7f3edbc6f50a90f3523020c8b49615",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/README.md": "af92d89e053c3baf3b756522d4f6042c2e9432dd16dab6948229dcc07466a17f",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/actual-relations.sql": "71693ea1a9a84693732e022bece6b7ced574864d50df3175925903e56b00dfcc",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/actual-indexes.json": "bd4a1b3f413aae5633b516b4b66b0dbbf03441c72d1adae510f192e96d3258c0",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-linked.sql": "b85a3e318732bffd9543853a9ca31cdfd2967f8d37fd1383cd82798e0b7dfd66",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/original-treasury-cash-outcome.sql": "4c80e1e74006a9a5bede3b91685ca6672a75fb66d1a74ba3003066a74fc85ffc",
+    "scripts/ci/fixtures/outcome-recognition-join-cover/actual-catalog.json": "2fa0a5a0ce4b15019d9311c2c869e509ce556014734200a7745c2186a8789e1e"
+  },
+  "native_harness_sha256": "c3e44ee4be07b5420998b5aa358d3d553521d6f8ba1d49e5dc49edbd1a08cd87",
+  "policy_receipt": {
+    "version": "2.9",
+    "manifestSHA256": "a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b",
+    "emittedAt": "2026-10-27T23:41:53.361Z"
+  },
+  "local_typecheck": "npx tsc --noEmit exit0",
+  "local_law_registry": "1184passed",
+  "production": "NOT_INSTALLED; actualwholehistory/index/source/gen/catalog/witness/bookliveproofpending"
 }

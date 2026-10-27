@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('reader', ROOT/'scripts/ci/read-scoped-runtime-errors.py')
@@ -21,6 +21,103 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_lease_metrics_requires_explicit_original_window(self):
+        self.assertFalse(reader.lease_metrics_requested(None, None))
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        self.assertTrue(reader.lease_metrics_requested(True, window))
+        for value, selected in [(True, None), (False, window), ('true', window), (1, window)]:
+            with self.assertRaises(ValueError):
+                reader.lease_metrics_requested(value, selected)
+
+    def test_lease_metrics_keeps_only_fixed_numeric_evidence(self):
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00')).timestamp()
+        metric = {'__name__': 'poker_lease_heartbeat_outcomes_total', 'scope': 'tournament',
+                  'state': 'kept', 'job': 'PRIVATE_JOB', 'instance': 'PRIVATE_HOST'}
+        source = {'status': 'success', 'data': {'resultType': 'matrix', 'result': [
+            {'metric': metric, 'values': [[start, '12'], [start+15, 'NaN']]}]}}
+        result = reader.extract_lease_metrics(source, window)
+        self.assertEqual(result['status'], 'partial')
+        self.assertIn('poker_lease_renewal_loop_running', result['missingMetrics'])
+        self.assertEqual(result['series'][0]['labels'], {'scope': 'tournament', 'state': 'kept'})
+        self.assertEqual(result['series'][0]['values'], [[start, 12.0], [start+15, None]])
+        self.assertEqual(result['unknownSamples'], 1)
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        empty = {'status': 'success', 'data': {'resultType': 'matrix', 'result': []}}
+        self.assertEqual(reader.extract_lease_metrics(empty, window)['status'], 'no_series')
+        import copy
+        for mutate in [
+            lambda d: d['data']['result'][0]['metric'].update(user_id=EVENT),
+            lambda d: d['data']['result'][0]['metric'].update(__name__='private_metric'),
+            lambda d: d['data']['result'][0]['metric'].update(scope='PRIVATE_SECRET'),
+            lambda d: d['data']['result'][0].update(values=[[start-1, '1']]),
+            lambda d: d['data']['result'][0].update(values=[[start, 'PRIVATE_SECRET']]),
+            lambda d: d['data']['result'][0].update(values=[[start+15, '1'], [start, '2']]),
+            lambda d: d['data']['result'][0].update(values=[[start, '1']]*62),
+            lambda d: d['data']['result'][0].update(values=[[float('nan'), '1']]),
+            lambda d: d['data'].update(result=d['data']['result']*65),
+        ]:
+            changed = copy.deepcopy(source)
+            mutate(changed)
+            with self.assertRaises(ValueError):
+                reader.extract_lease_metrics(changed, window)
+
+    def test_lease_metrics_remote_entry_is_opt_in_and_identity_bracketed(self):
+        import base64
+        import io
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        start = now-datetime.timedelta(hours=1)
+        request = {'scopes': SCOPES, 'windowStart': start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                   'leaseIncidentMetrics': True}
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
+        calls = []
+        identity = {'version': 'abcdef012345', 'instanceId': 'fixture'}
+        output = io.StringIO()
+        with patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'archived_window', return_value=([], {})), patch.object(reader, 'health', side_effect=lambda *_: calls.append('identity') or identity), patch.object(reader, 'read_lease_metrics', side_effect=lambda _: calls.append('metrics') or {'status': 'no_series', 'series': [], 'unknownSamples': 0}), patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+            reader.main()
+        self.assertEqual(calls, ['identity', 'metrics', 'identity'])
+        self.assertEqual(json.loads(output.getvalue())['leaseIncidentMetrics']['status'], 'no_series')
+        del request['leaseIncidentMetrics']
+        encoded = base64.b64encode(json.dumps(request).encode()).decode()
+        output = io.StringIO()
+        with patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'archived_window', return_value=([], {})), patch.object(reader, 'health', return_value=identity), patch.object(reader, 'read_lease_metrics') as metrics, patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+            reader.main()
+        metrics.assert_not_called()
+        self.assertNotIn('leaseIncidentMetrics', json.loads(output.getvalue()))
+
+    def test_lease_metrics_transport_is_fixed_bounded_and_reports_unknown(self):
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        response = Mock()
+        response.status = 200
+        response.read.return_value = json.dumps({'status': 'success', 'data': {'resultType': 'matrix', 'result': []}}).encode()
+        context = Mock()
+        context.__enter__ = Mock(return_value=response)
+        context.__exit__ = Mock(return_value=False)
+        opener = Mock()
+        opener.open.return_value = context
+        with patch.object(reader.urllib.request, 'build_opener', return_value=opener) as build:
+            self.assertEqual(reader.read_lease_metrics(window)['status'], 'no_series')
+        self.assertIs(build.call_args.args[0], reader.NoRedirect)
+        with self.assertRaises(RuntimeError):
+            reader.NoRedirect().redirect_request(None, None, 302, '', {}, 'http://unrequested')
+        url = reader.urllib.parse.urlparse(opener.open.call_args.args[0])
+        self.assertEqual((url.scheme, url.netloc, url.path), ('http', '127.0.0.1:9090', '/api/v1/query_range'))
+        query = reader.urllib.parse.parse_qs(url.query)
+        self.assertEqual(set(query), {'query', 'start', 'end', 'step'})
+        self.assertEqual(query['start'], [window['since']])
+        self.assertEqual(query['end'], [window['until']])
+        self.assertEqual(query['step'], ['15s'])
+        self.assertEqual(query['query'], ['{job="engine_game_server",__name__=~"'+'|'.join(sorted(reader.LEASE_METRIC_NAMES))+'"}'])
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 5)
+        response.read.assert_called_once_with(262145)
+        for body in [b'PRIVATE_SECRET', b'x'*262145,
+                     b'{"status":"error","error":"PRIVATE_SECRET"}']:
+            response.read.return_value = body
+            with patch.object(reader.urllib.request, 'build_opener', return_value=opener):
+                result = reader.read_lease_metrics(window)
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+
     def test_break_refusals_keep_only_named_guards_and_symbolic_codes(self):
         prefix = '[Tournament:'+EVENT[:8]+'] Break abcdef12 '
         lines = [prefix+'not begun: source_roster_unread:PRIVATE_SQL_PASSWORD',
@@ -694,7 +791,7 @@ class NativeLogReader(unittest.TestCase):
 
     def test_transport_admission_ephemeral_permissions_and_failure_cleanup(self):
         original_run = subprocess.run
-        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux']:
+        for fail in ['none', 'transport', 'identity', 'host_identity', 'window', 'mux', 'missing_mux', 'extra_mux', 'lease', 'missing_lease', 'extra_lease']:
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as name:
                 directory = Path(name)
                 generated = directory/'fixture_key'
@@ -704,10 +801,13 @@ class NativeLogReader(unittest.TestCase):
                 event = directory/'event.json'
                 payload = {'tournament_log_observation': SCOPES}
                 mux = fail in ['mux', 'missing_mux']
-                start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux else None
+                lease = fail in ['lease', 'missing_lease']
+                start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ') if mux or lease else None
                 window = reader.log_window(start)
                 if mux:
                     payload.update(tournament_log_window_start=start, mux_subscription_timing=True)
+                if lease:
+                    payload.update(tournament_log_window_start=start, leaseIncidentMetrics=True)
                 event.write_text(json.dumps({'action': 'audit-production-integrity', 'client_payload': payload}))
                 identity = {'version': 'abcdef012345', 'instanceId': '1-fixture'}
                 calls = []
@@ -724,17 +824,19 @@ class NativeLogReader(unittest.TestCase):
                     self.assertIn('IdentitiesOnly=yes', args)
                     self.assertIn(f'ConnectTimeout={reader.CONNECT_TIMEOUT}', args)
                     self.assertGreater(kwargs['timeout'], 2 * reader.HEALTH_TIMEOUT + reader.CAPTURE_TIMEOUT + reader.CONNECT_TIMEOUT)
-                    self.assertLessEqual(kwargs['timeout'], 55)
+                    self.assertEqual(kwargs['timeout'], 60 if lease else 55)
                     self.assertEqual(args[-2], 'root@fixture.example')
                     self.assertRegex(args[-1], r"^python3 - --remote '[A-Za-z0-9+/=]+'$")
                     self.assertEqual(kwargs['input'], (ROOT/'scripts/ci/read-scoped-runtime-errors.py').read_bytes())
                     import base64
                     request = json.loads(base64.b64decode(args[-1].split("'")[1]))
-                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {})})
+                    self.assertEqual(request, {'scopes': SCOPES, 'windowStart': start, **({'muxTiming': True} if mux else {}), **({'leaseIncidentMetrics': True} if lease else {})})
                     host = {**identity, 'instanceId': 'other-host'} if fail == 'host_identity' else identity
                     output = {'schema': 'scoped-runtime-errors/v1', 'readOnly': True, 'window': reader.window_description(window), 'hostEngineBefore': host, 'hostEngineAfter': host, **reader.extract(b'', SCOPES)}
                     if fail in ['mux', 'extra_mux']:
                         output['muxSubscriptionTimings'] = reader.extract_mux_timings(self.mux_line(self.mux_record()).encode())
+                    if fail in ['lease', 'extra_lease']:
+                        output['leaseIncidentMetrics'] = {'status': 'no_series', 'series': []}
                     if fail == 'window':
                         output['window'] = {'since': 'unrequested'}
                     return subprocess.CompletedProcess(args, 1 if fail == 'transport' else 0, json.dumps(output).encode(), b'sensitive transport error')
@@ -745,7 +847,7 @@ class NativeLogReader(unittest.TestCase):
                     env = {'GITHUB_EVENT_NAME': 'repository_dispatch', 'GITHUB_EVENT_PATH': str(event), 'RUNNER_TEMP': str(directory), 'HETZNER_HOST': 'fixture.example', 'HETZNER_SSH_PRIVATE_KEY': private, 'HETZNER_HOST_KEY': pin}
                     after = {**identity, 'instanceId': '2-changed'} if fail == 'identity' else identity
                     with patch.dict(os.environ, env), patch.object(sys, 'argv', [str(ROOT/'scripts/ci/read-scoped-runtime-errors.py')]), patch.object(reader, 'health', side_effect=[identity, after]), patch.object(subprocess, 'run', side_effect=transport):
-                        if fail in ['none', 'mux']:
+                        if fail in ['none', 'mux', 'lease']:
                             reader.main()
                         else:
                             with self.assertRaises(RuntimeError):
@@ -753,10 +855,11 @@ class NativeLogReader(unittest.TestCase):
                     self.assertEqual(len(calls), 1)
                     self.assertFalse(list(directory.glob('scoped-engine-read-*')))
                     output = directory/'artifacts/scoped-runtime-errors/observation.json'
-                    self.assertEqual(output.exists(), fail in ['none', 'mux'])
+                    self.assertEqual(output.exists(), fail in ['none', 'mux', 'lease'])
                     if output.exists():
                         saved = json.loads(output.read_text())
                         self.assertEqual('muxSubscriptionTimings' in saved, mux)
+                        self.assertEqual('leaseIncidentMetrics' in saved, lease)
                         if mux:
                             self.assertEqual(saved['muxSubscriptionTimings']['matchingRecords'], 1)
                         self.assertNotIn(private, output.read_text())

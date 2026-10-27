@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   validateSelection,
   summarizeDecision,
+  sanitizeInspectionFailure,
 } from '../../scripts/ci/inspect-horse-opponent-reads.mjs';
 const id = '11111111-1111-4111-8111-111111111111';
 const selection = { sourceSha: 'a'.repeat(40), opponentId: id, handKeys: ['b'.repeat(64)] };
@@ -114,5 +117,127 @@ ${command}`;
     assert.equal(result.status, failure === 'none' ? 0 : 1, result.stderr);
     assert.ok((result.stdout + result.stderr).includes(expected), result.stdout + result.stderr);
     if (failure !== 'none') assert.ok(!result.stdout.includes('journal_reached'));
+  }
+});
+
+// Exercise the actual CLI boundary, including errors whose messages contain private text.
+test('CLI failures expose a closed stage code without selection or raw exception data', () => {
+  const script = new URL('../../scripts/ci/inspect-horse-opponent-reads.mjs', import.meta.url);
+  for (const [input, env, reason] of [
+    ['PRIVATE_RAW_JSON', {}, 'selection_decode_failed'],
+    [JSON.stringify({ ...selection, command: 'PRIVATE_COMMAND' }), {}, 'selection_refused'],
+    [JSON.stringify(selection), { GIT_COMMIT_SHA: 'wrong' }, 'serving_identity_refused'],
+  ]) {
+    const result = spawnSync(
+      process.execPath,
+      [script.pathname, Buffer.from(input).toString('base64')],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+      }
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.deepEqual(JSON.parse(result.stderr), {
+      scope: 'selected_horse_opponent_reads',
+      status: 'unavailable',
+      reason,
+    });
+  }
+});
+
+test('untrusted errors cannot forge diagnostic codes or disclose their payload', () => {
+  for (const error of [
+    new Error('read_frame_refused'),
+    { reason: 'journal_read_failed', cards: 'PRIVATE' },
+    null,
+    'PRIVATE',
+  ]) {
+    assert.deepEqual(sanitizeInspectionFailure(error), {
+      scope: 'selected_horse_opponent_reads',
+      status: 'unavailable',
+      reason: 'inspection_unavailable',
+    });
+  }
+});
+test('actual CLI reports the failing bounded stage and preserves successful output', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'horse-read-diagnostic-'));
+  const script = new URL('../../scripts/ci/inspect-horse-opponent-reads.mjs', import.meta.url)
+    .pathname;
+  const run = (stage, journal = 'unused-synthetic-directory') =>
+    spawnSync(
+      process.execPath,
+      [script, Buffer.from(JSON.stringify(selection)).toString('base64')],
+      {
+        cwd,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GIT_COMMIT_SHA: selection.sourceSha,
+          HORSE_DECISION_JOURNAL_DIR: journal,
+          FIXTURE_FAILURE: stage,
+        },
+      }
+    );
+  const refused = (result, reason) => {
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.deepEqual(JSON.parse(result.stderr), {
+      scope: 'selected_horse_opponent_reads',
+      status: 'unavailable',
+      reason,
+    });
+    assert.ok(!result.stderr.includes('PRIVATE'));
+  };
+  try {
+    refused(run(''), 'module_load_failed');
+    mkdirSync(join(cwd, 'dist/services/horseDecisionJournal'), { recursive: true });
+    mkdirSync(join(cwd, 'dist/engine'), { recursive: true });
+    writeFileSync(join(cwd, 'package.json'), '{"type":"module"}');
+    const fault = `const fail = s => { if (process.env.FIXTURE_FAILURE === s) throw Error('PRIVATE_CARDS_AND_RAW_RECORD'); };`;
+    writeFileSync(
+      join(cwd, 'dist/services/horseDecisionJournal/review.js'),
+      fault +
+        `
+      export function readHorseJournalHandRecords() { fail('journal_read_failed'); return [{kind:'decision', sourceRelease:'${selection.sourceSha}', bytes: process.env.FIXTURE_FAILURE === 'inspection_bound' ? 33554433 : 1, body: process.env.FIXTURE_FAILURE === 'record_decode_failed' ? 'PRIVATE_INVALID_JSON' : JSON.stringify({snapshot:{type:'DECIDE_FAST', player:{user_id:'${id}'}, gameState:{players:[{user_id:'${id}'}],actionHistory:[]}},decision:{action:'fold'}})}]; }
+      export function reconcileHorseJournalHand() { fail('journal_reconciliation_failed'); return {status:'synthetic'}; }
+      export function horseRetainedPlanContext() { fail('retained_plan_refused'); return {kind:process.env.FIXTURE_FAILURE === 'invalid_plan' ? 'invalid' : 'legacy'}; }
+    `
+    );
+    writeFileSync(
+      join(cwd, 'dist/engine/HorseDecisionReadFrame.js'),
+      fault +
+        `export function decodeHorseDecisionReads() { fail('read_frame_refused'); return {stats:new Map()}; }`
+    );
+    writeFileSync(
+      join(cwd, 'dist/engine/HorseDecisionEffects.js'),
+      'export function horsePlanHandKey() { return "synthetic"; }'
+    );
+    writeFileSync(
+      join(cwd, 'dist/engine/HorseObserverReadEvidence.js'),
+      fault +
+        `export function horseObserverReadsWereIndependent() { fail('decision_summary_failed'); return false; }`
+    );
+    refused(run('', ''), 'journal_configuration_missing');
+    for (const reason of [
+      'journal_read_failed',
+      'inspection_bound',
+      'journal_reconciliation_failed',
+      'record_decode_failed',
+      'retained_plan_refused',
+      'read_frame_refused',
+      'decision_summary_failed',
+    ])
+      refused(run(reason), reason);
+    refused(run('invalid_plan'), 'retained_plan_refused');
+    const success = run('');
+    assert.equal(success.status, 0, success.stderr);
+    assert.equal(success.stderr, '');
+    const result = JSON.parse(success.stdout);
+    assert.equal(result.completePopulation, false);
+    assert.equal(result.hands.length, 1);
+    assert.equal(result.hands[0].decisions[0].action, 'fold');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });

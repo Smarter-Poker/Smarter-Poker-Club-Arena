@@ -877,16 +877,22 @@
    today's dvh behaviour instead of losing the table. */
 @supports (height: 100svh) {
   .table-container {
-    --sp-page-h: 100svh;
+    --sp-page-h: var(--sp-table-stable-viewport-h, 100svh);
   }
 
   .table-page--embedded .table-container {
-    --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
+    --sp-page-h: calc(
+      var(--sp-table-stable-viewport-h, 100svh) -
+        var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px)))
+    );
   }
 
   @media (max-width: 480px) {
     .table-page--embedded .table-container {
-      --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+      --sp-page-h: calc(
+        var(--sp-table-stable-viewport-h, 100svh) -
+          var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px)))
+      );
     }
   }
 }

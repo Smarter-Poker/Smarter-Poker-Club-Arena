@@ -14,6 +14,10 @@ import { buildReplay, replayInputFromRow, type ReplayModel } from '../utils/hand
 import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
 import { DIAMOND_ARENA_CLUB_ID } from '../lib/constants';
+import {
+  fetchLightningRecentHands,
+  LIGHTNING_RECENT_HANDS_LIMIT,
+} from '../lightning/lightningSessionApi';
 
 /**
  * ONE SELECT LIST (2026-09-04). `getHand` and `getPlayerHands` each carried
@@ -417,6 +421,8 @@ class HandHistoryServiceClass {
        * nothing; a live table always passes its own id.
        */
       tableId?: string | null;
+      /** Lightning rooms are pool sessions, not hand_history.table_id values. */
+      lightningPoolSessionId?: string | null;
       /**
        * PAGING (2026-09-04). The archive used to ask for `PAGE_SIZE * page`
        * rows and re-download every earlier page with each Load More. Rows
@@ -469,6 +475,34 @@ class HandHistoryServiceClass {
     const clubId =
       opts.clubId?.trim() || (opts.asset === 'diamonds' ? DIAMOND_ARENA_CLUB_ID : null);
     const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+    if (opts.lightningPoolSessionId) {
+      // Resolve this viewer's settled session hands through the existing
+      // authenticated door. Physical instances change between Lightning hands;
+      // filtering their records by the pool-room UUID can never find them.
+      if (readLocalSession()?.userId !== userId || offset >= LIGHTNING_RECENT_HANDS_LIMIT)
+        return [];
+      try {
+        const references = await fetchLightningRecentHands({
+          poolSessionId: opts.lightningPoolSessionId,
+          limit: Math.min(LIGHTNING_RECENT_HANDS_LIMIT, offset + Math.max(1, Math.floor(limit))),
+        });
+        if (readLocalSession()?.userId !== userId) return [];
+        const ids = references
+          .slice(offset, offset + Math.max(1, Math.floor(limit)))
+          .flatMap((hand) => (hand.handHistoryId ? [hand.handHistoryId] : []));
+        const hands = await this.getHandsByIds(ids);
+        if (readLocalSession()?.userId !== userId) return [];
+        // getHandsByIds retains canonical RLS, private-card reads and the common
+        // mapper. A missing/pruned history row is never fabricated from stats.
+        return hands
+          .filter((hand) => hand.players.some((player) => player.user_id === userId))
+          .sort((a, b) => b.hand_number - a.hand_number);
+      } catch (error) {
+        if (opts.throwOnError) throw error;
+        reportError(error, 'HandHistoryService.getPlayerHands_lightning_query');
+        return [];
+      }
+    }
     if (clubId) {
       const { data, error } = await supabase.rpc(HAND_HISTORY_ARENA_RPC, {
         p_club_id: clubId,

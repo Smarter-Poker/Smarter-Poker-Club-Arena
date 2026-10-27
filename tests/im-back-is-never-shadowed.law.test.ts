@@ -40,6 +40,8 @@ describe("LAW - I'm Back is never shadowed by the reserved bar", () => {
     expect(PAGE).toMatch(
       /stack:\s*lightningWaitingSeat\?\.stack \?\? heroRowStack \?\? pendingSeatStackRef\.current \?\? 0,/
     );
-    expect(PAGE).toMatch(/select\('user_id, is_sitting_out, sit_out_at, leave_pending, stack'\)/);
+    expect(PAGE).toMatch(
+      /select\('user_id, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack'\)/
+    );
   });
 });

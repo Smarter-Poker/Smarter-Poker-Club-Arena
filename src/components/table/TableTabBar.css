@@ -549,6 +549,13 @@
     border-radius: 17px;
   }
 
+  /* Font metrics vary across Safari platforms. Label pills may share the
+     available strip down to their 44px target floor; card previews keep the
+     base non-shrinking rule so every private card remains whole. */
+  .table-tab-bar__tab:not(.table-tab-bar__tab--cards) {
+    flex-shrink: 1;
+  }
+
   /* No close-button reserve remains; keep the active label legible. */
   .table-tab-bar__tab--active:not(.table-tab-bar__tab--cards) {
     min-width: 55px;
@@ -1074,5 +1081,24 @@
 @media (max-width: 480px) and (display-mode: standalone) and (orientation: portrait) {
   :root {
     --sp-tabbar-safe-top: max(60px, env(safe-area-inset-top, 0px));
+  }
+}
+
+/* Short occupied phones need the same large controls without squeezing the
+   player/card lanes. Keep an 8px lower inset and use the former bottom air. */
+@media (max-width: 375px) and (max-height: 700px) and (orientation: portrait) {
+  :root {
+    --sp-tabbar-pad-top: 8px;
+    --sp-tabbar-pad-bottom: 0px;
+  }
+}
+
+/* The smallest short phone retains its existing accessible 44px band: even
+   four extra pixels crowd its six-seat dealer/board lane. Standard phone and
+   wider table views use the enlarged controls and lower insets above. */
+@media (max-width: 340px) and (max-height: 650px) and (orientation: portrait) {
+  :root {
+    --sp-tabbar-control: 44px;
+    --sp-tabbar-pad-top: 0px;
   }
 }

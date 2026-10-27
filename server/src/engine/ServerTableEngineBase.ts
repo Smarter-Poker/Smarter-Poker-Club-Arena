@@ -2254,6 +2254,7 @@ export abstract class ServerTableEngineBase {
       receipt.table_id !== this.tableId ||
       receipt.tournament_id !== this.engineLeaseTournamentId ||
       receipt.lease_generation !== this.engineLeaseGeneration ||
+      (this.f06TableLifecycle !== null && receipt.lifecycle !== this.f06TableLifecycle) ||
       !current() ||
       !this.engineLeaseAuthorityIsCurrent()
     )

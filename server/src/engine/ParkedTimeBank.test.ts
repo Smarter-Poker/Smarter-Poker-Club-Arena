@@ -819,6 +819,39 @@ describe('stopped tournament bank custody', () => {
     );
   });
 
+  it('refuses conflicting movement admission before changing an inherited bank owner', async () => {
+    const original = await stoppedOriginalWithLifecycle();
+    const next = new ServerTableEngine(table, tournamentAuthority()) as any;
+    expect(next.adoptStoppedTimeBankCustody(original)).toBe(true);
+    const owner = 'ffffffff-0000-4000-8000-000000000001';
+    const receipt = {
+      admission_id: 'ffffffff-0000-4000-8000-000000000002',
+      tournament_id: tournament,
+      lease_generation: generation,
+      table_id: table,
+      lifecycle: '1832657',
+      break_id: 'ffffffff-0000-4000-8000-000000000003',
+      custody_id: 'ffffffff-0000-4000-8000-000000000004',
+      revision: '1',
+      proof_hash: 'a'.repeat(64),
+    };
+    const revalidate = vi.fn(async () => {});
+    expect(() => next.installF06MovementAdmission(owner, receipt, () => true, revalidate)).toThrow(
+      'f06_movement_engine_identity_unproven'
+    );
+    expect(next.f06MovementAdmission).toBeNull();
+    expect(next.tournamentMovePauseOwners.size).toBe(0);
+    expect(next.holdBeforeNextHand).toBe(false);
+    expect(next.captureParkedTimeBanks()[user].remainingSeconds).toBe(7);
+    const matching = { ...receipt, lifecycle: '1832609' };
+    next.installF06MovementAdmission(owner, matching, () => true, revalidate);
+    expect(next.f06MovementAdmission.receipt).toBe(matching);
+    await next.stop();
+    expect(next.captureDrainedF06Identity(table, tournament, generation)?.lifecycle).toBe(
+      matching.lifecycle
+    );
+  });
+
   it('retains actual stopped banks and transfers them only inside the replacement identity CAS', async () => {
     const original = stoppedCandidate();
     original.disconnectEngine.restoreFsmStates(table, {

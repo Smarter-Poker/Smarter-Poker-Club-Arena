@@ -3366,6 +3366,7 @@ function riverBluffCheckRaise(
     gs.bombPot ||
     gs.allInOrFold ||
     gs.variantRules?.splitLow8OrBetter ||
+    gs.dealtSeatIds?.length !== 2 ||
     gs.bettingStructure === 'fixed_limit' ||
     !['nlh', 'plo4', 'plo5', 'plo6'].includes(gs.gameVariant) ||
     (gs.boardCount ?? 1) !== 1 ||

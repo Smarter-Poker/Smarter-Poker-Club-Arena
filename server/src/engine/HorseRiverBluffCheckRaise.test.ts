@@ -89,6 +89,16 @@ describe('Same-size public check-raise response read', () => {
     otherSize[2].amount = 25;
     expect(riverTripleCheckRaiseIncrements(otherSize, 2).size).toBe(0);
     expect(riverTripleCheckRaiseIncrements(line(), 3).size).toBe(0);
+    expect(
+      riverTripleCheckRaiseIncrements([{ ...a('third', 'fold'), stage: 'preflop' }, ...line()], 3)
+        .size
+    ).toBe(0);
+    expect(
+      riverTripleCheckRaiseIncrements(
+        [{ ...a('third', 'all_in', 5), stage: 'preflop' }, ...line()],
+        3
+      ).size
+    ).toBe(0);
     const allIn = line();
     allIn[1].action = 'all_in';
     expect(riverTripleCheckRaiseIncrements(allIn, 2).size).toBe(0);

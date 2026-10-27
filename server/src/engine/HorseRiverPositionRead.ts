@@ -73,12 +73,16 @@ export function riverPositionIncrements(
  * counted only after it occurs; a pending raise is not a fold. Amounts use
  * the public controller ABI: an opening bet and a raise are street totals.
  * Keeping the size fixed avoids extrapolating ordinary bet folds or tiny
- * raise folds to a large check-raise. All-in wagers are deliberately absent. */
+ * raise folds to a large check-raise. Explicit all_in opening/raising actions
+ * are absent. Public action history has no stack snapshot: a raise action can
+ * itself exhaust a stack, so historical non-all-in sizing is not certified.
+ * The candidate requires independent qualification for that model limitation. */
 export function riverTripleCheckRaiseIncrements(
   actions: readonly PublicAction[] | undefined,
   dealtCount: unknown
 ): Map<string, { opportunities: number; folds: number }> {
   const out = new Map<string, { opportunities: number; folds: number }>();
+  if (dealtCount !== 2) return out; // No side-pot or folded-third-player sample pooling.
   const position = riverPositionIncrements(actions, dealtCount);
   if (!position.size || !actions) return out;
   const river = actions.filter((a) => a.stage === 'river' && voluntary.has(String(a.action)));

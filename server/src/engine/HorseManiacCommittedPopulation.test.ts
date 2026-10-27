@@ -157,3 +157,47 @@ it('a presumed aggressive prior cannot substitute for measured call-down evidenc
   ).toBe('fold');
   expect(eq).not.toHaveBeenCalled();
 });
+
+it.each(['plo4', 'plo5', 'plo6'])(
+  'uses measured postflop evidence while %s preflop aggression is presumed',
+  (variant) => {
+    const { hero, gs } = spot({ is_folded: true });
+    hero.cards = [
+      ...hero.cards,
+      { rank: 'A', suit: 'diamonds' },
+      { rank: 'Q', suit: 'clubs' },
+      { rank: '6', suit: 'hearts' },
+      { rank: '5', suit: 'spades' },
+    ].slice(0, Number(variant.at(-1))) as SeatPlayer['cards'];
+    gs.gameVariant = variant;
+    gs.stage = 'flop';
+    gs.communityCards = [
+      { rank: 'K', suit: 'clubs' },
+      { rank: '7', suit: 'diamonds' },
+      { rank: '2', suit: 'hearts' },
+    ];
+    gs.actionHistory = [
+      { seat: 2, userId: 'seat-2', stage: 'flop', action: 'bet', amount: 200, timestamp: 1 },
+    ];
+    const read = HorseMind.opponentRead('seat-2')!;
+    vi.mocked(HorseMind.opponentRead).mockReturnValue({
+      ...read,
+      presumed: true,
+      stats: {
+        ...read.stats,
+        betCheckedTo: { ...read.stats.betCheckedTo, engaged: 'high', mean: 0.9 },
+      },
+    });
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValue(0.9);
+    expect(
+      HorseLogic.__testables.maniacCallDown(
+        { action: 'fold', thinkTime: 0 },
+        hero,
+        gs,
+        Eval.variantInfo(variant),
+        {}
+      ).action
+    ).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
+  }
+);

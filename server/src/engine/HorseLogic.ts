@@ -2415,7 +2415,9 @@ function maniacCallDown(
     // was never priced here. Its postflop bets carry as little information as
     // a preflop maniac's do; its preflop range is its (wide) calling range.
     const postflopOnly =
-      street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read);
+      street !== 'preflop' &&
+      (read?.presumed === true || maniacRaiseWidth(read) === null) &&
+      isPostflopManiac(read);
     // A shared starting prior is not observed evidence for undoing a fold.
     const width = postflopOnly ? 1 : read?.presumed ? null : maniacRaiseWidth(read);
     if (width === null) return decision;

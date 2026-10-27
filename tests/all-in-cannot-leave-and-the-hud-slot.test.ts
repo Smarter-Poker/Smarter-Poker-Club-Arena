@@ -149,7 +149,7 @@ describe('the bottom-left HUD slot', () => {
     // 2026-09-04: `heroPromptedToAct` is isHeroTurnContext minus the turns
     // the engine is taking for the player (armed pre-action) - still the
     // turn context, never seat occupancy.
-    expect(strip(TABLE_PAGE)).toMatch(/heroPromptedToAct\s*\n?\s*\?\s*'timebank'/);
+    expect(strip(TABLE_PAGE)).toMatch(/tableHudControl\(\{\s*heroPromptedToAct,/);
     expect(strip(TABLE_PAGE)).toMatch(
       /const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;/
     );
@@ -163,11 +163,12 @@ describe('the bottom-left HUD slot', () => {
     // Inside the same stack, between the tile and the previous-hand card.
     expect(rabbit).toBeLessThan(stackEnd);
     expect(TABLE_PAGE.slice(0, rabbit)).toMatch(/\{hudSlotControl === 'rabbit' && \(/);
-    // And it still requires that no hand be in progress. This is NOT redundant
-    // with the branch order: a reveal freezes the engine snapshot for 3s and
-    // paints cards onto the live board, so the gate is a safety rule about the
-    // REVEAL, not only about who gets the slot.
-    expect(strip(TABLE_PAGE)).toMatch(/!tableState\.isHandInProgress && isRabbitAvailable/);
+    // The authoritative completion event may precede the hand-free snapshot.
+    // Runtime boundary tests in tableHudControl.test.ts pin immediate offers,
+    // stale-turn suppression, and priority of a real next-hand decision.
+    expect(strip(TABLE_PAGE)).toMatch(
+      /handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable,/
+    );
   });
 
   it('the slot is filled by one control chosen in one place, not by two conditions', () => {
@@ -186,7 +187,9 @@ describe('the bottom-left HUD slot', () => {
     expect(body.match(/hudSlotControl === 'rabbit'/g)).toHaveLength(1);
     // The time bank wins the slot: the hero is on the clock, and the Rabbit
     // Hunt offer survives being displaced (the server holds it 90s).
-    expect(body.indexOf("? 'timebank'")).toBeLessThan(body.indexOf("? 'rabbit'"));
+    expect(body).toMatch(
+      /const hudSlotControl: 'timebank' \| 'rabbit' \| null = tableHudControl\(/
+    );
     // No second, independent gate may render either widget.
     expect(body).not.toMatch(/\{isHeroTurnContext && \(\s*<TimebankCounter/);
     expect(body).not.toMatch(/isRabbitAvailable && \(\s*<RabbitHunt/);

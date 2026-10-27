@@ -35,7 +35,7 @@ import { useNavigate } from 'react-router-dom';
 import HouseAdRotator from '../ads/HouseAdRotator';
 import { useUserStore } from '../../stores/useUserStore';
 import {
-  clearSessionSummary,
+  dismissSessionSummary,
   peekSessionSummary,
   settlePendingSummary,
   subscribeSessionSummary,
@@ -49,6 +49,7 @@ import { titleCase } from '../../utils/titleCase';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../utils/format';
 import { arenaAssetUnitCents } from '../../lib/arenaUnitCents';
 import { CHIP_UNIT_CENTS, normalizeUnitCents } from '../../../server/src/tournament/tournamentUnit';
+import { formatSessionProfit } from '../../utils/formatSessionProfit';
 import './SessionSummaryHost.css';
 
 /** Ease-out-back: overshoots slightly then settles. Reads as "landing". */
@@ -224,7 +225,10 @@ export function SessionSummaryHost() {
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
   const close = useCallback(() => {
-    clearSessionSummary();
+    dismissSessionSummary((tableId, seat) => {
+      masterBus.emit('TABLE_LEFT', { tableId, seat });
+      masterBus.emit('TABLE_MENU_ACTION', { tableId, action: 'CLOSE_TABLE_TAB' });
+    });
   }, []);
 
   /* ── Settlement reconciliation (Phase 4, 2026-08-22) ──
@@ -469,7 +473,7 @@ export function SessionSummaryHost() {
 
   const share = useCallback(async () => {
     if (!payload || !recordedReady || (target && recordedRecap?.handsPlayed === null)) return;
-    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
+    const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatSessionProfit(Math.abs(payload.profitLoss))}`;
     const text =
       `${payload.tableName || 'Table Session'} - ${money}${payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''} over ` +
       `${payload.handsPlayed} hands on Smarter.Poker`;
@@ -581,7 +585,7 @@ export function SessionSummaryHost() {
             <span className="ssh-hero__label">{isProfit ? 'Profit' : 'Loss'}</span>
             <span className="ssh-hero__value">
               {isProfit ? '+' : '-'}
-              {formatChips(Math.abs(displayPL))}
+              {formatSessionProfit(Math.abs(displayPL))}
               {payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''}
             </span>
             {/* Phase 3 (2026-08-22): a mid-hand leave defers the cashout to

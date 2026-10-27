@@ -32,3 +32,11 @@ unadmitted after 43 minutes; another recovered after manager readoption drained
 durable requests. This proves an unresolved handoff class, but does not identify
 the precise historical frame loss. Protected checks, publication and affected
 live proof remain separate requirements.
+
+The same PR carries a bounded October 26 Chicago owner window for these repairs.
+It expires at local midnight and adds no announcement-minute restriction. The
+fresh protected-main anchor is a readiness condition; delivery must separately
+prove inclusion of the actual #8278 squash. Required checks, immutable staging,
+two-minute lead, drain, database freeze, full 285-second rollback reserve,
+rolling-hour seal and thaw remain required. An anchor consumed by another
+release grants no later activation. No activation or dispatch occurs here.

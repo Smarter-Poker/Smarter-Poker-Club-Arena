@@ -1,3 +1,4 @@
+import { recheckHorseQualifiedBeforeAcceptance } from '../engine/HorseQualifiedAcceptance.js';
 import {
   recheckHorsePhase14BeforeAcceptance,
   observeHorsePhase14Execution,
@@ -1833,6 +1834,10 @@ export class LightningHandHost {
    * do. True when the fold landed.
    */
   private executeHorseFastFold(userId: string, decision: LightningHorseDecision): boolean {
+    if (decision.fast) {
+      const result = this.recheckHorseDecisionAtDoor(userId, decision, true);
+      if (!result || result.checked.action !== 'fold') return false;
+    }
     const acceptedActions: HorseAcceptedAction[] = [];
     const out = this.handlePlayerAction(
       userId,
@@ -2193,6 +2198,42 @@ export class LightningHandHost {
       .catch(() => undefined /* aborted: the turn moved on */);
   }
 
+  private recheckHorseDecisionAtDoor(
+    userId: string,
+    decision: LightningHorseDecision,
+    asIfToAct = false
+  ) {
+    if (!decision.fast || !this.hc) return null;
+    const hc = this.hc;
+    const current = hc.getState();
+    const hero = current.players.find((p) => p.user_id === userId);
+    const auth = hc.getAuthoritativeActionState(userId, { asIfToAct });
+    if (!hero || !auth?.canAct) {
+      retireHorseExecutionWitness(decision.fast.decision.executionWitness, 'turn_abandoned');
+      return null;
+    }
+    const qualified = recheckHorseQualifiedBeforeAcceptance(decision.fast.decision, {
+      player: hero,
+      gameState: {
+        players: current.players,
+        communityCards: current.communityCards,
+        communityCards2: current.communityCards2,
+        communityCards3: current.communityCards3,
+        stage: current.stage,
+        currentBet: current.currentBet,
+        pot: current.pot,
+        minRaise: current.minRaise,
+        ...hc.getBlindSnapshot(),
+        gameMode: 'cash',
+        gameVariant: String(this.rules?.game_variant ?? 'nlh'),
+        toCall: auth.toCall,
+      } as import('../engine/HorseLogic.js').HorseGameStateV2,
+    });
+    const checked = recheckHorsePhase14BeforeAcceptance(qualified);
+    decision.fast.decision = checked;
+    return { checked };
+  }
+
   /**
    * Execute a horse's answer through the action door, then settle its
    * receipts exactly as the physical engine does
@@ -2218,9 +2259,13 @@ export class LightningHandHost {
   ): void {
     const hc = this.hc!;
     if (decision.fast) {
-      const checked = recheckHorsePhase14BeforeAcceptance(decision.fast.decision);
-      decision.fast.decision = checked;
-      decision = { ...decision, action: checked.action, amount: checked.amount };
+      const result = this.recheckHorseDecisionAtDoor(userId, decision);
+      if (!result) return;
+      decision = {
+        ...decision,
+        action: result.checked.action,
+        amount: result.checked.amount,
+      };
     }
     const shaped = shapeLightningHorseAction(hc, userId, decision, allInOrFold);
     const fast = decision.fast;
@@ -2486,16 +2531,26 @@ export class LightningHandHost {
         : null;
     this.actionLock = true;
     let ok = false;
+    let accepted = false;
+    const observeAccepted = (record: Readonly<ActionRecord>) => {
+      accepted = true;
+      onAccepted?.(record);
+    };
     try {
       this.disconnect.recordPlayerActed(this.timerKey, userId);
       if (this.timeBankActive || this.timeBank.isArmed(this.timerKey, userId)) {
         this.timeBank.playerActed(this.timerKey, userId);
       }
       this.timer.cancelTimer(this.timerKey, userId);
-      ok = hc.performAction(player.seat, a as ActionType, amount, origin, onAccepted);
+      ok = hc.performAction(player.seat, a as ActionType, amount, origin, observeAccepted);
+    } catch (error) {
+      reportError(error, 'LightningHandHost.acceptedAction');
     } finally {
       this.actionLock = false;
     }
+    // An accepted chip mutation survives a later event/advance exception or
+    // contradictory return. Never submit a second action for that mutation.
+    ok = ok || accepted;
     if (!ok) {
       if (a === 'fold' && foldType) this.foldTypes.delete(userId);
       // The clock keeps running for the decision that is still owed.

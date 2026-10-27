@@ -275,7 +275,9 @@ test('each applicable component needs its own registered positive counter, never
 
 test('actual CLI disables its governor before transitive imports and refuses absent plans without output', () => {
   const server = fileURLToPath(new URL('../../', import.meta.url));
-  const program = `process.argv=[process.execPath,'featureAblationQualify.ts','--plan','--target=pressure_package','--source-sha='+'a'.repeat(40),'--output='+process.cwd()+'/never-written-unregistered-plan.json'];try {await import('./src/scripts/featureAblationQualify.ts');} catch {} const {equityGovernor}=await import('./src/engine/EquityLoadGovernor.ts');const {existsSync}=await import('node:fs');const receipt={enabled:equityGovernor.snapshot().enabled,outputExists:existsSync(process.cwd()+'/never-written-unregistered-plan.json')};console.log(JSON.stringify(receipt));process.exit(receipt.enabled||receipt.outputExists?1:0);`;
+  const cliUrl = new URL('../scripts/featureAblationQualify.ts', import.meta.url).href;
+  const governorUrl = new URL('../engine/EquityLoadGovernor.ts', import.meta.url).href;
+  const program = `process.argv=[process.execPath,'featureAblationQualify.ts','--plan','--target=pressure_package','--source-sha='+'a'.repeat(40),'--output='+process.cwd()+'/never-written-unregistered-plan.json'];try {await import(${JSON.stringify(cliUrl)});} catch {} const {equityGovernor}=await import(${JSON.stringify(governorUrl)});const {existsSync}=await import('node:fs');const receipt={enabled:equityGovernor.snapshot().enabled,outputExists:existsSync(process.cwd()+'/never-written-unregistered-plan.json')};console.log(JSON.stringify(receipt));process.exit(receipt.enabled||receipt.outputExists?1:0);`;
   const result = spawnSync(
     process.execPath,
     ['--import', 'tsx', '--input-type=module', '-e', program],

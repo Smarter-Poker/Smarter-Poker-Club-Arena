@@ -32,10 +32,10 @@ export function summarize(profile) {
     }) };
 }
 
-export async function profileTarget(endpoint, expectedPid, durationMs = 30000) {
+async function inspectorSession(endpoint, expectedPid, operation) {
   const url = new URL(endpoint);
   if (url.protocol !== 'ws:' || url.hostname !== '127.0.0.1' || !Number.isInteger(expectedPid)
-      || expectedPid < 1 || !Number.isInteger(durationMs) || durationMs < 50 || durationMs > 30000) {
+      || expectedPid < 1) {
     throw new Error('profile_target_refused');
   }
   const socket = new WebSocket(url);
@@ -59,21 +59,15 @@ export async function profileTarget(endpoint, expectedPid, durationMs = 30000) {
     pending.set(id,{resolve:v=>{clearTimeout(timer);resolve(v);},reject:e=>{clearTimeout(timer);reject(e);}});
     socket.send(JSON.stringify({id,method,params}));
   });
-  await Promise.race([
-    new Promise((resolve,reject) => { socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',()=>reject(new Error('inspector_connect_failed')),{once:true}); }),
-    delay(5000).then(()=>{throw new Error('inspector_connect_timeout');})
-  ]);
   try {
+    await Promise.race([
+      new Promise((resolve,reject) => { socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',()=>reject(new Error('inspector_connect_failed')),{once:true}); }),
+      delay(5000).then(()=>{throw new Error('inspector_connect_timeout');})
+    ]);
     const identity = await send('Runtime.evaluate',{expression:'process.pid',returnByValue:true});
     if (identity.result?.value !== expectedPid) throw new Error('profile_pid_mismatch');
     owned = true;
-    await send('Profiler.enable');
-    await send('Profiler.setSamplingInterval',{interval:1000});
-    await send('Profiler.start');
-    await delay(durationMs);
-    const {profile} = await send('Profiler.stop');
-    stopped = true;
-    return summarize(profile);
+    return await operation(send, () => { stopped = true; });
   } finally {
     // Never close somebody else's inspector on a mismatched target.
     if (owned && socket.readyState === WebSocket.OPEN) {
@@ -83,6 +77,67 @@ export async function profileTarget(endpoint, expectedPid, durationMs = 30000) {
       await Promise.race([closed,delay(5000).then(()=>{throw new Error('inspector_cleanup_timeout');})]);
     }
     socket.close();
+  }
+}
+
+export async function profileTarget(endpoint, expectedPid, durationMs = 30000) {
+  if (!Number.isInteger(durationMs) || durationMs < 50 || durationMs > 30000) throw new Error('profile_target_refused');
+  return inspectorSession(endpoint, expectedPid, async (send, markStopped) => {
+    await send('Profiler.enable');
+    await send('Profiler.setSamplingInterval',{interval:1000});
+    await send('Profiler.start');
+    await delay(durationMs);
+    const {profile} = await send('Profiler.stop');
+    markStopped();
+    return summarize(profile);
+  });
+}
+
+// The caller holds the release lock and has verified the target process before
+// entering. Recovery is finite and closes only a PID-identified inspector after
+// this invocation opened it; an inspector found before opening is never owned.
+export async function collectOwnedInspector(expectedPid, { discoverTarget, openTarget, collect = profileTarget }) {
+  if (await discoverTarget()) throw new Error('inspector_already_active');
+  openTarget();
+  let endpoint;
+  let completed = false;
+  let primaryError;
+  try {
+    for (let i=0;i<20 && !endpoint;i++) { await delay(100); endpoint=await discoverTarget(); }
+    if (!endpoint) throw new Error('inspector_open_unknown_no_retry');
+    const sample = await collect(endpoint, expectedPid);
+    completed = true;
+    return sample;
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    if (!completed) {
+      try {
+        // Discovery/connect failure may happen after SIGUSR1 has opened the port.
+        // Reuse its exact endpoint when known; otherwise make a bounded readback.
+        let ownedEndpoint;
+        let discoveryError;
+        for (let i=0;i<3;i++) {
+          try { ownedEndpoint=await discoverTarget(); discoveryError=null; break; }
+          catch (error) { discoveryError=error; await delay(100); }
+        }
+        if (discoveryError) throw new Error('inspector_cleanup_not_confirmed');
+        if (ownedEndpoint) {
+          if (endpoint && ownedEndpoint !== endpoint) throw new Error('inspector_cleanup_not_confirmed');
+          await inspectorSession(ownedEndpoint, expectedPid, async (_send, markStopped) => { markStopped(); });
+          let stillOpen = true;
+          for (let i=0;i<20 && stillOpen;i++) {
+            try { stillOpen=Boolean(await discoverTarget()); } catch { stillOpen=true; }
+            if (stillOpen) await delay(100);
+          }
+          if (stillOpen) throw new Error('inspector_cleanup_not_confirmed');
+        }
+      } catch (cleanupError) {
+        if (!primaryError) throw cleanupError;
+        primaryError.cleanupConfirmed = false;
+      }
+    }
   }
 }
 
@@ -113,12 +168,10 @@ export async function main(expected) {
   const cmd = readFileSync('/proc/1/cmdline','utf8').split('\0').filter(Boolean);
   if (!cmd[0]?.endsWith('node') || cmd[1] !== 'dist/index.js' || cmd.length !== 2) throw new Error('engine_process_refused');
   const before = await health(expected);
-  if (await discover()) throw new Error('inspector_already_active');
-  process.kill(1,'SIGUSR1');
-  let endpoint;
-  for (let i=0;i<20 && !endpoint;i++) { await delay(100); endpoint=await discover(); }
-  if (!endpoint) throw new Error('inspector_open_unknown_no_retry');
-  const sample = await profileTarget(endpoint,1);
+  const sample = await collectOwnedInspector(1, {
+    discoverTarget: discover,
+    openTarget: () => process.kill(1,'SIGUSR1'),
+  });
   let stillOpen = true;
   for (let i=0;i<20 && stillOpen;i++) { stillOpen=Boolean(await discover()); if (stillOpen) await delay(100); }
   if (stillOpen) throw new Error('inspector_cleanup_not_confirmed');
@@ -144,6 +197,6 @@ export function failureReason(error) {
 if ((process.argv[1] === '-' && /\/\[eval\d*\]$/.test(import.meta.url)) || (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)) {
   main(process.argv[2]).then(result=>console.log(JSON.stringify(result))).catch((error)=>{
     // Fail closed without leaking URLs, source, environment, values or error payloads.
-    console.error('CPU profile failed; inspect owning run and inspector state before any retry. reason=' + failureReason(error));process.exitCode=1;
+    console.error('CPU profile failed; inspect owning run and inspector state before any retry. reason=' + failureReason(error) + (error?.cleanupConfirmed === false ? ' cleanup=unknown' : ''));process.exitCode=1;
   });
 }

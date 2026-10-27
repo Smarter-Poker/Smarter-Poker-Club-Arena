@@ -207,13 +207,64 @@ def capture_diagnostics(attestation, observation):
     if not isinstance(owners,dict) or set(owners)!={'classic','lightning'} or any(type(v) is not int or not 0<=v<=10000 for v in owners.values()) or sum(owners.values())!=out['selectedHands']:raise ValueError('capture_source_counts')
     return {**out,'sourceOwnerCounts':dict(owners)}
 
-def summarize(attestation,result):
+def read_evidence(attestation,result,observation,packet):
+    unknown={'status':'unknown','reason':'retained_read_evidence_unavailable'}
+    if packet is None:return dict(unknown),dict(unknown)
+    digest=hashlib.sha256(json.dumps(packet,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    ids=packet.get('horseIds');rows=observation.get('horses')
+    if digest!=attestation.get('packetDigest') or packet.get('sourceSha')!=attestation.get('sourceSha') or not isinstance(ids,list) or len(ids)!=1000 or any(not isinstance(id,str) or re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',id) is None for id in ids) or len(set(ids))!=1000:raise ValueError('read_packet')
+    if rows is None:return dict(unknown),dict(unknown)
+    if not isinstance(rows,list) or len(rows)!=1000 or any(not isinstance(h,dict) or not isinstance(h.get('horseId'),str) for h in rows) or {h['horseId'] for h in rows}!=set(ids):raise ValueError('read_cohort')
+    def count(v,maximum):
+        if type(v) is not int or not 0<=v<=maximum:raise ValueError('read_counts')
+        return v
+    maximum=256*count(attestation.get('selectedHands'),10000)
+    total=count(observation['acceptedDecisions'],maximum) if 'acceptedDecisions' in observation else None
+    for h in rows:
+        if 'acceptedDecisions' in h:count(h['acceptedDecisions'],total if total is not None else maximum)
+    if total is None or any('acceptedDecisions' not in h for h in rows):return dict(unknown),dict(unknown)
+    ns=[count(h.get('acceptedDecisions'),total) for h in rows]
+    if sum(ns)!=total or sum(n>0 for n in ns)!=observation.get('observedHorses'):raise ValueError('read_counts')
+    if any('retainedReceiptCounts' not in h for h in rows) or not any(isinstance(h.get('retainedReceiptCounts'),dict) and set(h['retainedReceiptCounts'])&{'pooledPublicReads','independentPublicReads'} for h in rows):public=dict(unknown)
+    else:
+        pooled=[];independent=[]
+        for h,n in zip(rows,ns):
+            counts=h['retainedReceiptCounts']
+            if not isinstance(counts,dict):raise ValueError('read_counts')
+            a=count(counts.get('pooledPublicReads',0),n);b=count(counts.get('independentPublicReads',0),n)
+            if a+b>n:raise ValueError('read_counts')
+            pooled.append(a);independent.append(b)
+        public={'status':'reported','scope':'selected_accepted_decisions','pooledPublicReadDecisions':sum(pooled),'pooledPublicReadHorses':sum(n>0 for n in pooled),'independentPublicReadDecisions':sum(independent),'independentPublicReadHorses':sum(n>0 for n in independent),'unclassifiedReadDecisions':total-sum(pooled)-sum(independent),'completePopulation':False,'allPhasesVerified':False}
+    top=observation.get('riverLearningEvidence')
+    if public.get('status')=='unknown' or top is None or any('riverLearning' not in h or 'retainedReceiptCounts' not in h for h in rows):return public,dict(unknown)
+    if not isinstance(top,dict) or top.get('scope')!='at_least_one_qualified_observer_context' or top.get('counterMeaning')!='maximum_scoped_opponent_samples_per_accepted_read' or top.get('readBasis')!='original_individual_scoped_basic_counters':raise ValueError('river_schema')
+    fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
+    sums={k:0 for k in fields};horses={v:0 for v in fields.values()};basis_total=0;basis_horses=0
+    for h,n in zip(rows,ns):
+        learning=h['riverLearning']
+        if not isinstance(learning,dict):raise ValueError('river_counts')
+        if any(k not in learning for k in fields) or 'qualifiedReadBasisCounts' not in learning:return public,dict(unknown)
+        values={k:count(learning[k],n) for k in fields};basis=learning['qualifiedReadBasisCounts']
+        if not isinstance(basis,dict) or not set(basis)<={'individual_scoped_basic_component_of_pooled_public_receipt','independent_public_receipt'}:raise ValueError('river_basis')
+        b=count(basis.get('individual_scoped_basic_component_of_pooled_public_receipt',0),n);i=count(basis.get('independent_public_receipt',0),n)
+        if b+i!=values['qualifiedReadDecisions'] or b>h['retainedReceiptCounts'].get('pooledPublicReads',0) or i>h['retainedReceiptCounts'].get('independentPublicReads',0):raise ValueError('river_basis')
+        if values['positiveSampleWithHistoryDecisions']>min(values['positiveSampleDecisions'],values['ownHistoryLoadedDecisions']) or values['positiveSampleDecisions']>values['qualifiedReadDecisions'] or values['ownHistoryLoadedDecisions']>values['qualifiedReadDecisions'] or values['retainedHistoryRiverSampleDecisions']>values['positiveSampleWithHistoryDecisions']:raise ValueError('river_counts')
+        basis_total+=b;basis_horses+=int(b>0)
+        for k,v in fields.items():sums[k]+=values[k];horses[v]+=int(values[k]>0)
+    expected={**horses,'pooledIndividualScopedBasicReadHorses':basis_horses,'pooledIndividualScopedBasicReadDecisions':basis_total}
+    for k,v in expected.items():
+        if k not in top:return public,dict(unknown)
+        if count(top[k],maximum)!=v:raise ValueError('river_totals')
+    return public,{'status':'reported','scope':'selected_accepted_decisions','readBasis':'original_individual_scoped_basic_counters',**sums,**expected,'completePopulation':False,'allContextsVerified':False,'durablePersistenceVerified':False,'strategyApplicationVerified':False,'allPhasesVerified':False}
+
+def summarize(attestation,result,packet=None):
     observation=(result.get('execution') or {}).get('observation') or {}
     count=observation.get('observedHorses')
     if not isinstance(count,int) or isinstance(count,bool) or not 0<=count<=1000:raise ValueError('counts')
     canonical=(attestation.get('authority')=='canonical_database_snapshot' and attestation.get('rosterCount')==1000 and bool(attestation.get('snapshot')) and re.fullmatch('[0-9a-f]{64}',attestation.get('packetDigest','')) is not None and attestation.get('packetDigest')==result.get('packetDigest') and attestation.get('sourceSha')==result.get('sourceSha') and result.get('qualifiedExecution') is True)
+    public,river=read_evidence(attestation,result,observation,packet) if canonical else ({'status':'unknown','reason':'canonical_binding_unverified'},)*2
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
-    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
+    return {'publicReadEvidence':public,'riverLearningEvidence':river,'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
 
 # The old 632-hand observation exhausted 64 MiB after 176 hands. A 64-hand
 # partition is less than half that observed capacity, not a new reader limit:
@@ -253,6 +304,41 @@ def partition_packets(packet,attestation):
     keys=sorted(keys)
     return [{**packet,'handKeys':keys[i:i+FLEET_PARTITION_HANDS]}
             for i in range(0,len(keys),FLEET_PARTITION_HANDS)]
+
+def union_read_evidence(packet,attestation,parts,results):
+    # Validate original evidence against each exact subset before combining.
+    # Decision counts are disjoint by hand; horse populations require set union.
+    unknown={'status':'unknown','reason':'retained_read_evidence_unavailable'}
+    if not results:return dict(unknown),dict(unknown)
+    public_known=True;river_known=True;total=0
+    counts={'pooledPublicReadDecisions':0,'independentPublicReadDecisions':0}
+    public_horses={'pooledPublicReadHorses':set(),'independentPublicReadHorses':set()}
+    fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
+    river_counts={k:0 for k in fields};river_horses={v:set() for v in fields.values()}
+    basis_total=0;basis_horses=set()
+    for part,result in zip(parts,results):
+        o=result['execution']['observation']
+        bound={**attestation,'packetDigest':digest(part),'selectedHands':len(part['handKeys'])}
+        public,river=read_evidence(bound,result,o,part)
+        public_known=public_known and public.get('status')=='reported'
+        river_known=river_known and river.get('status')=='reported'
+        total+=o['acceptedDecisions']
+        if public.get('status')=='reported':
+            for h in o['horses']:
+                for key,decision,horse in [('pooledPublicReads','pooledPublicReadDecisions','pooledPublicReadHorses'),('independentPublicReads','independentPublicReadDecisions','independentPublicReadHorses')]:
+                    n=h['retainedReceiptCounts'].get(key,0);counts[decision]+=n
+                    if n:public_horses[horse].add(h['horseId'])
+        if river.get('status')=='reported':
+            for h in o['horses']:
+                for decision,horse in fields.items():
+                    n=h['riverLearning'][decision];river_counts[decision]+=n
+                    if n:river_horses[horse].add(h['horseId'])
+                n=h['riverLearning']['qualifiedReadBasisCounts'].get('individual_scoped_basic_component_of_pooled_public_receipt',0)
+                basis_total+=n
+                if n:basis_horses.add(h['horseId'])
+    public=({'status':'reported','scope':'selected_accepted_decisions',**counts,**{k:len(v) for k,v in public_horses.items()},'unclassifiedReadDecisions':total-sum(counts.values()),'completePopulation':False,'allPhasesVerified':False} if public_known else dict(unknown))
+    river=({'status':'reported','scope':'selected_accepted_decisions','readBasis':'original_individual_scoped_basic_counters',**river_counts,**{k:len(v) for k,v in river_horses.items()},'pooledIndividualScopedBasicReadHorses':len(basis_horses),'pooledIndividualScopedBasicReadDecisions':basis_total,'completePopulation':False,'allContextsVerified':False,'durablePersistenceVerified':False,'strategyApplicationVerified':False,'allPhasesVerified':False} if public_known and river_known else dict(unknown))
+    return public,river
 
 def bounded_summary(packet,attestation,results):
     parts=partition_packets(packet,attestation)
@@ -317,7 +403,9 @@ def bounded_summary(packet,attestation,results):
         partition_status.append({'packetDigest':digest(part),'selectedHands':len(part['handKeys']),
             'inspectedHands':d['inspectedHands'],'boundReached':d['boundReached'],'captureUnfinished':d['captureUnfinished'],
             'validatedBytes':d['validatedBytes'],'acceptedDecisions':d['acceptedDecisions']})
+    public,river=union_read_evidence(packet,attestation,parts,results)
     summary={'schema':'horse-fleet-bounded-summary-v1','canonicalRosterVerified':True,
+        'publicReadEvidence':public,'riverLearningEvidence':river,
         'packetDigest':digest(packet),'partitionManifestDigest':digest([digest(p) for p in parts]),
         'sourceSha':packet['sourceSha'],'window':packet['window'],
         'plannedPartitions':len(parts),'completedPartitions':len(results),'partitions':partition_status,
@@ -391,7 +479,7 @@ def main():
             # The destination contains only bounded counts/digests. Private
             # per-horse identities remain in the existing ephemeral directory.
             print(json.dumps(result));return 0 if result['completeCanonicalHorseCoverage'] else 2
-        if len(sys.argv)==4 and sys.argv[1]=='--summarize':
+        if len(sys.argv) in (4,5) and sys.argv[1]=='--summarize':
             paths=[Path(p) for p in sys.argv[2:]]
             if any(not p.is_absolute() or p.stat().st_size>2097152 or p.stat().st_mode & 0o077 for p in paths):raise ValueError('private_result')
             result=summarize(*[json.loads(p.read_text()) for p in paths])

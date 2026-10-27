@@ -167,12 +167,14 @@
   overflow: hidden;
 }
 
-/* Glass shine sweep — animated light passing across the surface */
+/* Same eight-second shine path: a half-width strip travels from -100%
+   to 200% of the pot. Transforms use its own width, hence -200% to 400%.
+   Animating left made every live table perform layout/paint continuously. */
 .pot-display__main::before {
   content: '';
   position: absolute;
   top: 0;
-  left: -100%;
+  left: 0;
   width: 50%;
   height: 100%;
   background: linear-gradient(
@@ -192,7 +194,7 @@
   0%,
   85%,
   100% {
-    left: -100%;
+    transform: translateX(-200%);
     opacity: 0;
   }
   5% {
@@ -202,7 +204,7 @@
     opacity: 1;
   }
   45% {
-    left: 200%;
+    transform: translateX(400%);
     opacity: 0;
   }
 }

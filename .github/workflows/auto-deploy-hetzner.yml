@@ -47,6 +47,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /scripts/ci/horse-fleet-packet.py
+            /scripts/ci/horse-public-bootstrap-witness.py
             /server/scripts/phase6d-population.mjs
           persist-credentials: false
       - name: Refuse unprotected source and unavailable local clients
@@ -87,6 +88,12 @@ jobs:
             "$PRIVATE_DIR/key" "$PRIVATE_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
           chmod 0700 "$HSSH"
           echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+      - name: Read one bounded current-container public bootstrap witness
+        if: github.event.client_payload.public_pool_bootstrap == true
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=2s 35s python3 -B scripts/ci/horse-public-bootstrap-witness.py \
+            --source-sha "$FLEET_SOURCE_SHA" --ssh-command "$HSSH"
       - name: Observe the installed CLI without release or maintenance actions
         run: |
           set -euo pipefail

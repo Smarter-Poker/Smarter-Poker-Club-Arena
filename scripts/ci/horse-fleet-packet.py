@@ -36,6 +36,8 @@ def database_environment(environment):
 def query(start,end):
     # Timestamp literals have already passed a closed UTC grammar. No payload,
     # current player flags or cards are selected, and all joins use original keys.
+    # The cash-admission roster is intentionally narrower than the whole fleet.
+    # Verify every unretired registered identity without changing its eligibility.
     return fr"""BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='1500ms';
 SET LOCAL lock_timeout='250ms';
@@ -46,7 +48,8 @@ SELECT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
 \gset
 \if :fleet_time_index_ok
 WITH cohort AS MATERIALIZED (
- SELECT horse_id::text FROM public.ca_horse_active_roster ORDER BY horse_id LIMIT 1001
+ SELECT horse_id::text FROM public.ca_horse_fleet_register
+ WHERE retired_at IS NULL ORDER BY horse_id LIMIT 1001
 ), selected AS MATERIALIZED (
  SELECT id,table_id,hand_number,created_at FROM public.hand_history
  WHERE created_at>='{start}'::timestamptz AND created_at<'{end}'::timestamptz
@@ -106,7 +109,7 @@ def packet_from_rows(rows,sha,start,end):
     if len(set(keys))!=len(keys) or len({h['id'] for h in hands})!=len(hands):raise ValueError('duplicate_coordinate')
     packet={'version':1,'sourceSha':sha,'window':{'startUtc':start,'endUtc':end},'horseIds':ids,'handKeys':keys}
     digest=hashlib.sha256(json.dumps(packet,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-    attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_active_roster','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
+    attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_fleet_register','rosterPredicate':'retired_at IS NULL','cashEligibilityInferred':False,'snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
     return packet,attestation
 
 PHASE_AXES = {
@@ -182,13 +185,64 @@ def capture_diagnostics(attestation, observation):
     out['missingFieldMeaning']='unknown'
     return out
 
-def summarize(attestation,result):
+def read_evidence(attestation,result,observation,packet):
+    unknown={'status':'unknown','reason':'retained_read_evidence_unavailable'}
+    if packet is None:return dict(unknown),dict(unknown)
+    digest=hashlib.sha256(json.dumps(packet,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    ids=packet.get('horseIds');rows=observation.get('horses')
+    if digest!=attestation.get('packetDigest') or packet.get('sourceSha')!=attestation.get('sourceSha') or not isinstance(ids,list) or len(ids)!=1000 or any(not isinstance(id,str) or re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',id) is None for id in ids) or len(set(ids))!=1000:raise ValueError('read_packet')
+    if rows is None:return dict(unknown),dict(unknown)
+    if not isinstance(rows,list) or len(rows)!=1000 or any(not isinstance(h,dict) or not isinstance(h.get('horseId'),str) for h in rows) or {h['horseId'] for h in rows}!=set(ids):raise ValueError('read_cohort')
+    def count(v,maximum):
+        if type(v) is not int or not 0<=v<=maximum:raise ValueError('read_counts')
+        return v
+    maximum=256*count(attestation.get('selectedHands'),10000)
+    total=count(observation['acceptedDecisions'],maximum) if 'acceptedDecisions' in observation else None
+    for h in rows:
+        if 'acceptedDecisions' in h:count(h['acceptedDecisions'],total if total is not None else maximum)
+    if total is None or any('acceptedDecisions' not in h for h in rows):return dict(unknown),dict(unknown)
+    ns=[count(h.get('acceptedDecisions'),total) for h in rows]
+    if sum(ns)!=total or sum(n>0 for n in ns)!=observation.get('observedHorses'):raise ValueError('read_counts')
+    if any('retainedReceiptCounts' not in h for h in rows) or not any(isinstance(h.get('retainedReceiptCounts'),dict) and set(h['retainedReceiptCounts'])&{'pooledPublicReads','independentPublicReads'} for h in rows):public=dict(unknown)
+    else:
+        pooled=[];independent=[]
+        for h,n in zip(rows,ns):
+            counts=h['retainedReceiptCounts']
+            if not isinstance(counts,dict):raise ValueError('read_counts')
+            a=count(counts.get('pooledPublicReads',0),n);b=count(counts.get('independentPublicReads',0),n)
+            if a+b>n:raise ValueError('read_counts')
+            pooled.append(a);independent.append(b)
+        public={'status':'reported','scope':'selected_accepted_decisions','pooledPublicReadDecisions':sum(pooled),'pooledPublicReadHorses':sum(n>0 for n in pooled),'independentPublicReadDecisions':sum(independent),'independentPublicReadHorses':sum(n>0 for n in independent),'unclassifiedReadDecisions':total-sum(pooled)-sum(independent),'completePopulation':False,'allPhasesVerified':False}
+    top=observation.get('riverLearningEvidence')
+    if public.get('status')=='unknown' or top is None or any('riverLearning' not in h or 'retainedReceiptCounts' not in h for h in rows):return public,dict(unknown)
+    if not isinstance(top,dict) or top.get('scope')!='at_least_one_qualified_observer_context' or top.get('counterMeaning')!='maximum_scoped_opponent_samples_per_accepted_read' or top.get('readBasis')!='original_individual_scoped_basic_counters':raise ValueError('river_schema')
+    fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
+    sums={k:0 for k in fields};horses={v:0 for v in fields.values()};basis_total=0;basis_horses=0
+    for h,n in zip(rows,ns):
+        learning=h['riverLearning']
+        if not isinstance(learning,dict):raise ValueError('river_counts')
+        if any(k not in learning for k in fields) or 'qualifiedReadBasisCounts' not in learning:return public,dict(unknown)
+        values={k:count(learning[k],n) for k in fields};basis=learning['qualifiedReadBasisCounts']
+        if not isinstance(basis,dict) or not set(basis)<={'individual_scoped_basic_component_of_pooled_public_receipt','independent_public_receipt'}:raise ValueError('river_basis')
+        b=count(basis.get('individual_scoped_basic_component_of_pooled_public_receipt',0),n);i=count(basis.get('independent_public_receipt',0),n)
+        if b+i!=values['qualifiedReadDecisions'] or b>h['retainedReceiptCounts'].get('pooledPublicReads',0) or i>h['retainedReceiptCounts'].get('independentPublicReads',0):raise ValueError('river_basis')
+        if values['positiveSampleWithHistoryDecisions']>min(values['positiveSampleDecisions'],values['ownHistoryLoadedDecisions']) or values['positiveSampleDecisions']>values['qualifiedReadDecisions'] or values['ownHistoryLoadedDecisions']>values['qualifiedReadDecisions'] or values['retainedHistoryRiverSampleDecisions']>values['positiveSampleWithHistoryDecisions']:raise ValueError('river_counts')
+        basis_total+=b;basis_horses+=int(b>0)
+        for k,v in fields.items():sums[k]+=values[k];horses[v]+=int(values[k]>0)
+    expected={**horses,'pooledIndividualScopedBasicReadHorses':basis_horses,'pooledIndividualScopedBasicReadDecisions':basis_total}
+    for k,v in expected.items():
+        if k not in top:return public,dict(unknown)
+        if count(top[k],maximum)!=v:raise ValueError('river_totals')
+    return public,{'status':'reported','scope':'selected_accepted_decisions','readBasis':'original_individual_scoped_basic_counters',**sums,**expected,'completePopulation':False,'allContextsVerified':False,'durablePersistenceVerified':False,'strategyApplicationVerified':False,'allPhasesVerified':False}
+
+def summarize(attestation,result,packet=None):
     observation=(result.get('execution') or {}).get('observation') or {}
     count=observation.get('observedHorses')
     if not isinstance(count,int) or isinstance(count,bool) or not 0<=count<=1000:raise ValueError('counts')
     canonical=(attestation.get('authority')=='canonical_database_snapshot' and attestation.get('rosterCount')==1000 and bool(attestation.get('snapshot')) and re.fullmatch('[0-9a-f]{64}',attestation.get('packetDigest','')) is not None and attestation.get('packetDigest')==result.get('packetDigest') and attestation.get('sourceSha')==result.get('sourceSha') and result.get('qualifiedExecution') is True)
+    public,river=read_evidence(attestation,result,observation,packet) if canonical else ({'status':'unknown','reason':'canonical_binding_unverified'},)*2
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
-    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
+    return {'publicReadEvidence':public,'riverLearningEvidence':river,'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
 
 def database_failure(stderr):
     # VERBOSITY=verbose supplies a machine SQLSTATE. Never return the message,
@@ -205,7 +259,7 @@ def database_failure(stderr):
 
 def main():
     try:
-        if len(sys.argv)==4 and sys.argv[1]=='--summarize':
+        if len(sys.argv) in (4,5) and sys.argv[1]=='--summarize':
             paths=[Path(p) for p in sys.argv[2:]]
             if any(not p.is_absolute() or p.stat().st_size>2097152 or p.stat().st_mode & 0o077 for p in paths):raise ValueError('private_result')
             result=summarize(*[json.loads(p.read_text()) for p in paths])

@@ -977,8 +977,12 @@ jobs:
           # single-worker process so a waitlist/realtime update cannot
           # invalidate another browser's snapshot. Playwright retries stay off:
           # a release must not hide a broken first attempt behind a warm retry.
-          run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          # This maintained club supplies both real MTTs and clustered cash
+          # games. global-setup joins this same club through the public door.
+          E2E_CLUB_ID=002c2d27-9584-4e52-835a-bb2be148fc81 run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           lobby_rc=$?; [ $lobby_rc -ne 0 ] && rc=$lobby_rc
+          node scripts/ci/lobby-certificate-coverage.mjs e2e-report/lobby.json
+          lobby_coverage_rc=$?; [ $lobby_coverage_rc -ne 0 ] && rc=$lobby_coverage_rc
 
           # The exact Shark Club Players route from the six-phase audit. This
           # is read-only, but gets an isolated real member from global-setup so

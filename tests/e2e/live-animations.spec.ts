@@ -147,10 +147,26 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
        const i=$('info');
        i.style.setProperty('--sp-timer-duration','15.000s');
        i.style.setProperty('--sp-timer-yellow-duration','15.000s');
-       i.style.setProperty('--sp-timer-delay','-0.000s');`
+       i.style.setProperty('--sp-timer-delay','-0.000s');
+       const ring=document.createElement('span');ring.className='seat__timer-ring';
+       const arc=document.createElement('span');arc.className='seat__timer-ring-arc';ring.appendChild(arc);i.appendChild(ring);
+       for(let k=0;k<5;k++){
+         const sector=document.createElement('span');sector.className='seat__timer-sector';
+         sector.style.cssText='--sp-segment-duration:3s;--sp-segment-delay:'+(k*3)+'s;--sp-wipe-x:100px;--sp-counter-x:-100px;clip-path:inset(0)';
+         sector.innerHTML='<span class="seat__timer-wipe" style="width:100px;height:50px"><span class="seat__timer-ink" style="width:100px;height:50px"></span></span>';
+         arc.appendChild(sector);
+       }`
     );
-    expect(b3.spTimerRingShrink, 'the ring must take exactly 15s to empty').toBe(15000);
-    expect(b3.spTimerColorShift, 'the yellow must last exactly 15s').toBe(15000);
+    expect(b3).toHaveProperty('spTimerRingShrink');
+    const clock = await page.evaluate(() => ({
+      duration: [...document.querySelectorAll('.seat__timer-wipe')].reduce(
+        (sum, el) => sum + ((el.getAnimations()[0]?.effect?.getTiming().duration as number) || 0),
+        0
+      ),
+      color: getComputedStyle(document.querySelector('.seat__timer-ink')!).borderTopColor,
+    }));
+    expect(clock.duration, 'the five native wipes must total the exact 15s turn').toBe(15000);
+    expect(clock.color, 'the entire turn remains neon blue').toBe('rgb(0, 229, 255)');
 
     // ── BEAT 4 — a wager: chips slide onto the felt ────────────────────────
     const b4 = await beat(

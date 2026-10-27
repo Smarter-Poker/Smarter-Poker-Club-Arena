@@ -811,6 +811,12 @@ export function detectLeaks(row: {
         if ((overpair || onePairHit) && !v24Owns && commit === 'river') {
           flag('one_pair_river_stackoff');
         }
+        // Retained October 19 audit proposal: name the turn counterpart too.
+        // This is the final single-board showdown shape and commitment street,
+        // never an assertion about equity at the turn or a reason to tune policy.
+        if (!row.multiBoard && (overpair || onePairHit) && !v24Owns && commit === 'turn') {
+          flag('one_pair_turn_stackoff');
+        }
       } else if (ns.cat === CAT_ONE_PAIR + 1 && boardPaired && r1 !== r2 && hits >= 1) {
         flag('board_paired_two_pair_stackoff');
       }

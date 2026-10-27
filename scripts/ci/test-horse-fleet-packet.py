@@ -21,6 +21,7 @@ class NativeFleetPacket(unittest.TestCase):
   subprocess.run([cls.ctl,'-D',str(cls.data),'-l',str(cls.root/'postgres.log'),'-o',f"-h 127.0.0.1 -k '' -p {cls.port}",'-w','start'],check=True,capture_output=True)
   cls.sql("""CREATE SCHEMA smarter_private;
 CREATE TABLE public.ca_horse_active_roster(horse_id uuid PRIMARY KEY);
+CREATE TABLE public.ca_horse_fleet_register(horse_id uuid PRIMARY KEY, retired_at timestamptz);
 CREATE TABLE public.hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,created_at timestamptz);
 CREATE INDEX idx_hand_history_created ON public.hand_history(created_at DESC);
 CREATE TABLE public.hand_atomic_commits(hand_id uuid UNIQUE,table_id uuid,hand_number bigint,post_commit_completed_at timestamptz,post_commit_payload jsonb DEFAULT '{}'::jsonb,PRIMARY KEY(table_id,hand_number));
@@ -28,6 +29,7 @@ CREATE TABLE public.lightning_hand(hand_id uuid PRIMARY KEY,hand_history_id uuid
 CREATE INDEX idx_lightning_hand_hand_history_id ON public.lightning_hand(hand_history_id);
 CREATE TABLE smarter_private.hand_submissions(table_id uuid,hand_number bigint,lease_generation uuid,PRIMARY KEY(table_id,hand_number));
 INSERT INTO public.ca_horse_active_roster SELECT ('10000000-0000-4000-8000-'||lpad(to_hex(i),12,'0'))::uuid FROM generate_series(1,1000)i;
+INSERT INTO public.ca_horse_fleet_register SELECT horse_id,NULL FROM public.ca_horse_active_roster;
 INSERT INTO public.hand_history VALUES('20000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001',1000001,'2026-10-25T19:01:00Z');
 INSERT INTO public.hand_atomic_commits(hand_id,table_id,hand_number,post_commit_completed_at) SELECT id,table_id,hand_number,'2026-10-25T19:01:01Z' FROM public.hand_history;
 INSERT INTO smarter_private.hand_submissions SELECT table_id,hand_number,'40000000-0000-4000-8000-000000000001' FROM public.hand_history;""")
@@ -58,10 +60,10 @@ INSERT INTO smarter_private.hand_submissions SELECT table_id,hand_number,'400000
    with self.assertRaises(ValueError):self.convert(self.rows())
   finally:self.sql('ALTER INDEX public.wrong_index RENAME TO idx_hand_history_created;')
  def test_roster_overflow_and_hand_cap_refuse(self):
-  self.sql("INSERT INTO public.ca_horse_active_roster VALUES('10000000-0000-4000-8000-000000001001');")
+  self.sql("INSERT INTO public.ca_horse_fleet_register VALUES('10000000-0000-4000-8000-000000001001',NULL);")
   try:
    with self.assertRaises(ValueError):self.convert(self.rows())
-  finally:self.sql("DELETE FROM public.ca_horse_active_roster WHERE horse_id='10000000-0000-4000-8000-000000001001';")
+  finally:self.sql("DELETE FROM public.ca_horse_fleet_register WHERE horse_id='10000000-0000-4000-8000-000000001001';")
   self.sql("INSERT INTO public.hand_history SELECT md5(i::text)::uuid,'30000000-0000-4000-8000-000000000001',1000001+i,'2026-10-25T19:01:00Z' FROM generate_series(1,10001)i;")
   try:
    r=self.rows();self.assertEqual(len(r['hands']),10001)
@@ -74,6 +76,19 @@ INSERT INTO smarter_private.hand_submissions SELECT table_id,hand_number,'400000
   self.assertTrue(module.summarize(a,result)['completeCanonicalHorseCoverage'])
   result['packetDigest']='b'*64
   self.assertFalse(module.summarize(a,result)['canonicalRosterVerified'])
+ def test_full_registry_is_independent_of_cash_selection_and_excludes_retired(self):
+  self.sql("DELETE FROM public.ca_horse_active_roster WHERE horse_id > '10000000-0000-4000-8000-0000000001f4'; INSERT INTO public.ca_horse_fleet_register SELECT ('90000000-0000-4000-8000-'||lpad(to_hex(i),12,'0'))::uuid,'2026-10-25T00:00:00Z' FROM generate_series(1,62)i;")
+  try:
+   self.assertEqual(self.sql('SELECT count(*) FROM public.ca_horse_active_roster;').strip(),'500')
+   packet,receipt=self.convert(self.rows())
+   self.assertEqual(len(packet['horseIds']),1000)
+   self.assertTrue(all(id.startswith('10000000-') for id in packet['horseIds']))
+   self.assertEqual(receipt['rosterTable'],'public.ca_horse_fleet_register')
+   self.assertEqual(receipt['rosterPredicate'],'retired_at IS NULL')
+   self.assertFalse(receipt['cashEligibilityInferred'])
+   self.assertFalse(receipt['allPhasesVerified'])
+  finally:
+   self.sql("DELETE FROM public.ca_horse_fleet_register WHERE retired_at IS NOT NULL; INSERT INTO public.ca_horse_active_roster SELECT horse_id FROM public.ca_horse_fleet_register ON CONFLICT DO NOTHING;")
  def test_mixed_lightning_uses_private_original_receipt_not_classic_submission(self):
   self.sql("""INSERT INTO public.hand_history VALUES('20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002',1000002,'2026-10-25T19:01:02Z');
 INSERT INTO public.lightning_hand VALUES('50000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002',1000002,'2026-10-25T19:01:03Z');
@@ -180,6 +195,32 @@ class PacketContracts(unittest.TestCase):
   for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',75497473),('acceptedDecisions',True),('boundReached',1)]:
    bad=dict(o);bad[field]=value
    with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
+ def read_result(self):
+  p,a=self.convert(self.rows());horses=[]
+  for i,id in enumerate(p['horseIds']):
+   n=int(i==0);horses.append({'horseId':id,'acceptedDecisions':n,'retainedReceiptCounts':{'pooledPublicReads':n},'riverLearning':{'qualifiedReadDecisions':n,'qualifiedReadBasisCounts':{'individual_scoped_basic_component_of_pooled_public_receipt':n},'ownHistoryLoadedDecisions':n,'positiveSampleDecisions':n,'positiveSampleWithHistoryDecisions':n,'retainedHistoryRiverSampleDecisions':n}})
+  river={'scope':'at_least_one_qualified_observer_context','counterMeaning':'maximum_scoped_opponent_samples_per_accepted_read','readBasis':'original_individual_scoped_basic_counters','pooledIndividualScopedBasicReadHorses':1,'pooledIndividualScopedBasicReadDecisions':1,'qualifiedReadHorses':1,'ownHistoryLoadedHorses':1,'positiveSampleHorses':1,'positiveSampleWithHistoryHorses':1,'retainedHistoryRiverSampleHorses':1}
+  r={'packetDigest':a['packetDigest'],'sourceSha':a['sourceSha'],'qualifiedExecution':True,'execution':{'observation':{'observedHorses':1,'acceptedDecisions':1,'horses':horses,'riverLearningEvidence':river}}};return p,a,r
+ def test_public_reads_survive_summary_without_private_payload_or_independence_inference(self):
+  p,a,r=self.read_result();r['execution']['observation']['horses'][0]['PRIVATE']=['CARD']
+  out=module.summarize(a,r,p);self.assertEqual(out['publicReadEvidence']['pooledPublicReadDecisions'],1);self.assertEqual(out['publicReadEvidence']['independentPublicReadDecisions'],0)
+  self.assertEqual(out['riverLearningEvidence']['pooledIndividualScopedBasicReadDecisions'],1);self.assertFalse(out['riverLearningEvidence']['allContextsVerified']);self.assertNotIn('10000000-',json.dumps(out));self.assertNotIn('PRIVATE',json.dumps(out));self.assertFalse(out['allPhasesVerified'])
+ def test_read_summary_missing_packet_or_legacy_rows_remains_unknown(self):
+  p,a,r=self.read_result();self.assertEqual(module.summarize(a,r)['publicReadEvidence']['status'],'unknown')
+  legacy=json.loads(json.dumps(r));[h.update(retainedReceiptCounts={'phase7':h['acceptedDecisions']}) for h in legacy['execution']['observation']['horses']];self.assertEqual(module.summarize(a,legacy,p)['publicReadEvidence']['status'],'unknown')
+  del r['execution']['observation']['horses'][0]['riverLearning'];self.assertEqual(module.summarize(a,r,p)['riverLearningEvidence']['status'],'unknown')
+ def test_missing_legacy_core_counts_are_unknown_but_present_bad_counts_refuse(self):
+  for missing in ['global','horse']:
+   p,a,r=self.read_result();o=r['execution']['observation']
+   del (o if missing=='global' else o['horses'][0])['acceptedDecisions']
+   out=module.summarize(a,r,p);self.assertEqual(out['publicReadEvidence']['status'],'unknown');self.assertEqual(out['riverLearningEvidence']['status'],'unknown')
+   o['horses'][1]['acceptedDecisions']=True
+   with self.assertRaises(ValueError):module.summarize(a,r,p)
+ def test_read_summary_refuses_false_counts_duplicate_actor_and_noncanonical_packet(self):
+  mutations=[lambda p,r:r['execution']['observation']['horses'][0]['retainedReceiptCounts'].update(pooledPublicReads=True),lambda p,r:r['execution']['observation']['horses'][1].update(horseId=p['horseIds'][0]),lambda p,r:r['execution']['observation']['riverLearningEvidence'].update(pooledIndividualScopedBasicReadDecisions=2),lambda p,r:r['execution']['observation']['horses'][0]['riverLearning']['qualifiedReadBasisCounts'].update(independent_public_receipt=1),lambda p,r:p['horseIds'].pop()]
+  for mutate in mutations:
+   p,a,r=self.read_result();mutate(p,r)
+   with self.assertRaises(ValueError):module.summarize(a,r,p)
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)

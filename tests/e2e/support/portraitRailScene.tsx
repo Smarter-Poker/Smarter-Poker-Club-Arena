@@ -30,10 +30,16 @@ export function Review() {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 300, h: 650 });
   const [layoutRevision, setLayoutRevision] = useState(0);
+  const [handRevision, setHandRevision] = useState(0);
   useLayoutEffect(() => {
     const advance = () => setLayoutRevision((revision) => revision + 1);
+    const nextHand = () => setHandRevision((revision) => revision + 1);
     document.addEventListener('fixture-runout', advance);
-    return () => document.removeEventListener('fixture-runout', advance);
+    document.addEventListener('fixture-next-hand', nextHand);
+    return () => {
+      document.removeEventListener('fixture-runout', advance);
+      document.removeEventListener('fixture-next-hand', nextHand);
+    };
   }, []);
   const [armed, setArmed] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
   const action = document.documentElement.dataset.action || 'preflop';
@@ -50,7 +56,11 @@ export function Review() {
     ro.observe(ref.current!);
     return () => ro.disconnect();
   }, []);
-  useProtectedCardLayout(ref, JSON.stringify([size, layoutRevision]), 'fixture:4283505');
+  useProtectedCardLayout(
+    ref,
+    JSON.stringify([size, layoutRevision]),
+    `fixture:${4283505 + handRevision}`
+  );
   const jackpot = document.documentElement.dataset.jackpot || 'mini';
   const revealed = document.documentElement.dataset.revealed !== 'false';
   // A tabled PLO6 hand at every seat (Dan 2026-10-22: a player could not see

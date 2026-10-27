@@ -214,7 +214,10 @@
    the existing `.seat--folded .seat__avatar--bust .seat__avatar-img`
    brightness dim — that rule handles colour, this one handles posture. */
 .seat--folded .seat__avatar-wrap {
-  transform: translateY(3px) scale(0.97);
+  /* Shared with crown layout: reserve the final posture, never the current
+     interpolated gesture frame. The animation itself still plays in full. */
+  --sp-avatar-rest-transform: translateY(3px) scale(0.97);
+  transform: var(--sp-avatar-rest-transform);
   transition: transform calc(0.3s * var(--animation-speed, 1)) var(--ease-out, ease-out);
 }
 
@@ -444,8 +447,7 @@
   position: relative;
 }
 
-.seat__avatar--holo::after {
-  content: '';
+.seat__holo {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -472,6 +474,18 @@
      character whose gain is not 1. One composed variable, both rules. */
   transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-effective-scale, 1.45));
 
+  mix-blend-mode: screen;
+}
+
+/* Same 40%-height strip and path as the old background-position sweep.
+   A fixed character mask clips a cached strip moved by the compositor. */
+.seat__holo::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -36%;
+  width: 100%;
+  height: 40%;
   /* — the band itself — */
   /* Tuned against the real vip_ artwork in chromium, not picked on paper. The
      first pass at 0.16/0.34 was invisible: `screen` over a dark dinner jacket
@@ -487,13 +501,6 @@
     transparent 70%
   );
   background-repeat: no-repeat;
-  /* MUST be shorter than the box. `background-position` percentages resolve as
-     (container - image) * percentage, so at `100% 100%` that factor is ZERO and
-     the band cannot move no matter what the keyframe says — the effect renders
-     as nothing at all. Caught in chromium; it is invisible in review because
-     the CSS reads perfectly. 40% also makes the band a band rather than a wash. */
-  background-size: 100% 40%;
-  mix-blend-mode: screen;
   opacity: 0;
 
   animation: spAvatarHolo calc(7s * var(--animation-speed, 1)) linear infinite;
@@ -510,7 +517,7 @@
    off the character at both ends instead of parking it at the edges. */
 @keyframes spAvatarHolo {
   0% {
-    background-position: 0 -60%;
+    transform: translateY(0);
     opacity: 0;
   }
   3% {
@@ -520,21 +527,21 @@
     opacity: 1;
   }
   20% {
-    background-position: 0 260%;
+    transform: translateY(480%);
     opacity: 0;
   }
   100% {
-    background-position: 0 260%;
+    transform: translateY(480%);
     opacity: 0;
   }
 }
 
 /* Nobody home, nobody shimmering. Matches the breathing's state gating so a
    folded or absent seat is uniformly inert rather than half-alive. */
-.seat--folded .seat__avatar--holo::after,
-.seat--sitting_out .seat__avatar--holo::after,
-.seat--away .seat__avatar--holo::after,
-.seat--disconnected .seat__avatar--holo::after {
+.seat--folded .seat__holo::after,
+.seat--sitting_out .seat__holo::after,
+.seat--away .seat__holo::after,
+.seat--disconnected .seat__holo::after {
   animation: none;
   opacity: 0;
 }
@@ -558,7 +565,7 @@
   animation: none;
 }
 
-:root[data-sp-motion='lite'] .seat__avatar--holo::after {
+:root[data-sp-motion='lite'] .seat__avatar--holo .seat__holo::after {
   animation: none;
   opacity: 0;
 }
@@ -588,7 +595,7 @@
   /* The holo sweep is infinite too, so it gets the same treatment — and its
      opacity is reset so a motion-sensitive player sees the plain artwork
      rather than the band frozen mid-sweep across the character's face. */
-  .seat__avatar--holo::after {
+  .seat__holo::after {
     animation: none;
     opacity: 0;
   }

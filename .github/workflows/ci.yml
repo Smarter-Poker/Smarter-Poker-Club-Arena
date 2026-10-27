@@ -1742,6 +1742,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 tests/sql/run-horse-observation-window.py
 
+      - name: Horse river-call evidence survives exact migration and legacy writers
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 tests/sql/run-horse-river-call-persistence.py
+
       - name: Horse hand review publishes its row, rollup and receipt atomically
         if: matrix.shard == 4
         env:
@@ -3087,6 +3093,21 @@ jobs:
           path: artifacts/spin-expiry/
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Certification cleanup reserves a turn without blocking players
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-certification-retention-admission.py
+
+      - name: Retain certification admission concurrency evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-retention-admission-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/certification-retention-admission/
+          retention-days: 7
+          if-no-files-found: error
 
       - name: PKO heads follow exact accepted knockout dependencies
         if: matrix.shard == 4

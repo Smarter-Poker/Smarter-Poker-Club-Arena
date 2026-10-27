@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react';
-import { paintedAvatarTop } from '../components/table/avatarCrownBounds';
+import { avatarRestPose, restingAvatarTop } from '../components/table/avatarCrownBounds';
 import { placeProtectedCardRow, type CardBox } from '../lib/protectedCardPlacement';
 import {
   assignProtectedWagers,
@@ -27,6 +27,7 @@ export function useProtectedCardLayout(
     key: '',
     rows: new WeakMap<HTMLElement, string>(),
     pods: new WeakMap<HTMLElement, string>(),
+    podPoses: new WeakMap<HTMLElement, string>(),
   });
   useLayoutEffect(() => {
     const scaler = root.current;
@@ -49,7 +50,12 @@ export function useProtectedCardLayout(
         scaler.style.getPropertyValue('--sp-tabled-card-w'),
       ].join(':');
       if (settled.current.key !== key) {
-        settled.current = { key, rows: new WeakMap(), pods: new WeakMap() };
+        settled.current = {
+          key,
+          rows: new WeakMap(),
+          pods: new WeakMap(),
+          podPoses: new WeakMap(),
+        };
       }
     };
     refreshGeometry();
@@ -336,6 +342,13 @@ export function useProtectedCardLayout(
         else seat?.style.removeProperty('--sp-wrap-overlap');
       }
       topPods().forEach((pod) => {
+        if (sixMax) {
+          const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
+          const pose = avatar ? avatarRestPose(avatar) : '';
+          // Folded/resting posture is a layout input. Gesture frames are not.
+          if (settled.current.podPoses.get(pod) !== pose) settled.current.pods.delete(pod);
+          settled.current.podPoses.set(pod, pose);
+        }
         const shift = settled.current.pods.get(pod);
         if (shift === undefined) {
           pod.style.removeProperty('translate');
@@ -392,7 +405,7 @@ export function useProtectedCardLayout(
             // the actual art, not its transparent slot or position badge.
             const target = sixMax ? pageBox.top - 2 * scale : chromeBottom + clearance * scale;
             const shift =
-              (target - (sixMax && avatar ? paintedAvatarTop(avatar) : highest)) / scale;
+              (target - (sixMax && avatar ? restingAvatarTop(avatar, scale) : highest)) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.

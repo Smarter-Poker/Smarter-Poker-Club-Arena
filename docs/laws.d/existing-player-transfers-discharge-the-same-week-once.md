@@ -1,4 +1,4 @@
-# Existing player transfers discharge the same week once
+# tests/existing-player-transfers-discharge-the-same-week-once.law.test.ts
 
 Owner instruction: WooWoo and Mikey were already paid and must receive no further personal rakeback. An immutable instruction names actual prior agent sends; the original R2/R3 owners derive the certified obligation, verify completed unreversed expired cashier receipts, allocate only its certified amount, and reimburse the historical payer from the canonical club bank. The prior PLAYER destination remains explicit, including owner-confirmed personal commission. Excess prior credits remain unallocated. Genuine descendant agent funding continues.
 

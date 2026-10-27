@@ -1,0 +1,7 @@
+# Runtime privileges and the payout DDL guard
+
+Scope: actual payout failure from private TEMP REVOKE misclassified as schema DDL. Root owns every production operation; this child only owns source qualification and delivery. No money/source/cache changes elsewhere.
+Canonical policies reread 2026-10-27T17:01:55Z, version2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. Repository instructions, publication route, CLAUDE rule5 and root current checkpoint read. Owned external tree rb-discharge-01a17898, branch codex/temp-privileges-runtime-01a17898 from protected main b2755c044e0ed5ef6d701ec9c278fa002e1367b4.
+Actual event addresses for temp/public GRANT/REVOKE are NULL. Only authoritative event tag classification changes. Original emergency/bootstrap/advisory/audit branches preserved byte-for-byte. No source embedded override or installer change.
+Native PostgreSQL17:16 focused cases PASS, exact old guard fails actual unchanged reserve helper; new guard permits it, private ACL retained, public CREATE/ALTER/DROP refuse at break/freeze, mixed transaction rolls back, metadata/ACL and original audit behavior unchanged. Evidence work/temp-privileges/native.json. Controlled native clock/governance/bootstrap adapters are not production proof.
+Remaining: normal source checks/push/protected merge; root installation/exact recording/live payout proof. No success claim for unpaid wallets.

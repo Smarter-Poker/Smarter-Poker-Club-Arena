@@ -208,7 +208,7 @@ BEGIN
 END $$;
 CREATE TABLE fixture_work(label text,loops bigint);
 INSERT INTO fixture_work VALUES('old',fixture_ra_loops());
-DO $$ BEGIN IF (SELECT loops FROM fixture_work WHERE label='old')<=102 THEN RAISE EXCEPTION 'baseline did not expose per-contributor amplification'; END IF; END $$;
+DO $$ BEGIN IF (SELECT loops FROM fixture_work WHERE label='old')<=100 THEN RAISE EXCEPTION 'baseline did not expose per-contributor amplification'; END IF; END $$;
 BEGIN;
 -- Read each selected rake's attribution group once, then match contributors.
 -- Function-only scratch candidate. No recount, clock, fallback or predicate change.
@@ -256,15 +256,16 @@ BEGIN
       JOIN public.tables t ON t.id = r.table_id AND t.tournament_id IS NULL
      WHERE r.created_at >= v_lo AND r.created_at < v_hi
        AND r.rake_amount > 0 AND r.tournament_id IS NULL AND NOT COALESCE(r.is_tournament, false)
-  ), matched_attributions AS MATERIALIZED (
-    -- rr has one row per rake primary key; preserve every attribution duplicate.
-    SELECT ra.rake_record_id, ra.player_id, ra.club_id
-      FROM rr JOIN public.rake_attributions ra ON ra.rake_record_id = rr.id
   ), contrib AS (
     SELECT rr.id, rr.table_id, rr.created_at, rr.union_id, rr.table_club, e.key::uuid AS uid
       FROM rr CROSS JOIN LATERAL jsonb_each_text(rr.pc) e
      WHERE e.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
        AND (CASE WHEN e.value ~ '^[0-9]+(\.[0-9]+)?$' THEN e.value::numeric ELSE 0 END) > 0
+  ), matched_attributions AS MATERIALIZED (
+    -- Only eligible contributor keys need attribution lookups; preserve all matches.
+    SELECT ra.rake_record_id, ra.player_id, ra.club_id
+      FROM (SELECT DISTINCT id FROM contrib) r
+      JOIN public.rake_attributions ra ON ra.rake_record_id = r.id
   ), clubbed AS (
     SELECT c.id, c.table_id,
            COALESCE(ra.club_id, rc.club, st.club,
@@ -412,15 +413,16 @@ BEGIN
       JOIN public.tables t ON t.id = r.table_id AND t.tournament_id IS NULL
      WHERE r.created_at >= v_lo AND r.created_at < v_hi
        AND r.rake_amount > 0 AND r.tournament_id IS NULL AND NOT COALESCE(r.is_tournament, false)
-  ), matched_attributions AS MATERIALIZED (
-    -- rr has one row per rake primary key; preserve every attribution duplicate.
-    SELECT ra.rake_record_id, ra.player_id, ra.club_id
-      FROM rr JOIN public.rake_attributions ra ON ra.rake_record_id = rr.id
   ), contrib AS (
     SELECT rr.id, rr.table_id, rr.created_at, rr.union_id, rr.table_club, e.key::uuid AS uid
       FROM rr CROSS JOIN LATERAL jsonb_each_text(rr.pc) e
      WHERE e.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
        AND (CASE WHEN e.value ~ '^[0-9]+(\.[0-9]+)?$' THEN e.value::numeric ELSE 0 END) > 0
+  ), matched_attributions AS MATERIALIZED (
+    -- Only eligible contributor keys need attribution lookups; preserve all matches.
+    SELECT ra.rake_record_id, ra.player_id, ra.club_id
+      FROM (SELECT DISTINCT id FROM contrib) r
+      JOIN public.rake_attributions ra ON ra.rake_record_id = r.id
   ), clubbed AS (
     SELECT c.id, c.table_id,
            COALESCE(ra.club_id, rc.club, st.club,
@@ -530,7 +532,7 @@ DO $$ DECLARE a bigint;b bigint; BEGIN
  IF (SELECT result FROM fixture_before_return) IS DISTINCT FROM public.fn_ca_reporting_rollups_from_facts(current_date-1) THEN RAISE EXCEPTION 'return value changed'; END IF;
  IF public.fn_ca_reporting_rollups_from_facts(NULL)->>'skipped'<>'outside_club_data_facts' OR public.fn_ca_reporting_rollups_from_facts(current_date+1)->>'skipped'<>'outside_club_data_facts' THEN RAISE EXCEPTION 'day boundary changed'; END IF;
  SELECT loops INTO a FROM fixture_work WHERE label='old'; SELECT loops INTO b FROM fixture_work WHERE label='new';
- IF b<>102 OR a<>600 THEN RAISE EXCEPTION 'per-rake lookup budget failed: old %, new %',a,b; END IF;
+ IF b<>100 OR a<>600 THEN RAISE EXCEPTION 'per-rake lookup budget failed: old %, new %',a,b; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_reporting_rollups_from_facts(date)'::regprocedure AND proowner='postgres'::regrole AND prosecdef AND proconfig=ARRAY['search_path=public'] AND NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') AND has_function_privilege('service_role',oid,'EXECUTE')) THEN RAISE EXCEPTION 'private owner/ACL/metadata changed'; END IF;
  RAISE NOTICE 'actual indexed rake attribution loops: old %, new %',a,b;
 END $$;

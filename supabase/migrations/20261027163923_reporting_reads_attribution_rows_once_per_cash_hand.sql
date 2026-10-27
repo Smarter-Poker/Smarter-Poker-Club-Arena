@@ -50,15 +50,16 @@ BEGIN
       JOIN public.tables t ON t.id = r.table_id AND t.tournament_id IS NULL
      WHERE r.created_at >= v_lo AND r.created_at < v_hi
        AND r.rake_amount > 0 AND r.tournament_id IS NULL AND NOT COALESCE(r.is_tournament, false)
-  ), matched_attributions AS MATERIALIZED (
-    -- rr has one row per rake primary key; preserve every attribution duplicate.
-    SELECT ra.rake_record_id, ra.player_id, ra.club_id
-      FROM rr JOIN public.rake_attributions ra ON ra.rake_record_id = rr.id
   ), contrib AS (
     SELECT rr.id, rr.table_id, rr.created_at, rr.union_id, rr.table_club, e.key::uuid AS uid
       FROM rr CROSS JOIN LATERAL jsonb_each_text(rr.pc) e
      WHERE e.key ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
        AND (CASE WHEN e.value ~ '^[0-9]+(\.[0-9]+)?$' THEN e.value::numeric ELSE 0 END) > 0
+  ), matched_attributions AS MATERIALIZED (
+    -- Only eligible contributor keys need attribution lookups; preserve all matches.
+    SELECT ra.rake_record_id, ra.player_id, ra.club_id
+      FROM (SELECT DISTINCT id FROM contrib) r
+      JOIN public.rake_attributions ra ON ra.rake_record_id = r.id
   ), clubbed AS (
     SELECT c.id, c.table_id,
            COALESCE(ra.club_id, rc.club, st.club,

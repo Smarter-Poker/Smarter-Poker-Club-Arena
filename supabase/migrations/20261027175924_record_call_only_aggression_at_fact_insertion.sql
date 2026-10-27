@@ -27,8 +27,10 @@ AS $function$
   FROM ordered
  ) SELECT CASE WHEN jsonb_typeof(p_actions) IS DISTINCT FROM 'array' OR
    jsonb_array_length(CASE WHEN jsonb_typeof(p_actions)='array' THEN p_actions ELSE '[]'::jsonb END)=0 OR p_user IS NULL
-   OR EXISTS(SELECT 1 FROM ordered WHERE action IN ('bet','raise','all_in','allin')
-     AND (amount IS NULL OR amount<=0 OR stage IS NULL OR stage='' OR actor IS NULL OR actor=''))
+   OR EXISTS(SELECT 1 FROM ordered WHERE action IS NULL OR action NOT IN
+     ('fold','check','call','bet','raise','all_in','allin','sb','bb','post','blind','post_sb','post_bb','small_blind','big_blind','straddle','kill_blind','ante','post_ante','dead_blind','bring_in')
+     OR stage IS NULL OR stage='' OR actor IS NULL OR actor=''
+     OR (action IN ('bet','raise','all_in','allin') AND (amount IS NULL OR amount<=0)))
   THEN NULL ELSE jsonb_build_object(
    'bets_raises',count(*) FILTER(WHERE actor=p_user::text AND voluntary AND
     (action IN ('bet','raise') OR (action IN ('all_in','allin') AND amount>prior_level))),

@@ -65,3 +65,9 @@ END $$;
 RESET ROLE;
 ROLLBACK;
 SELECT 'PASS: insert-time call counts, checks, all-in calls, unknown history and complete-window availability' result;
+
+DO $$ BEGIN
+ IF public.ca_fact_aggression_counts('[{"action":"mystery","userId":"20000000-0000-0000-0000-000000000001","stage":"flop"}]'::jsonb,'20000000-0000-0000-0000-000000000001') IS NOT NULL
+ OR public.ca_fact_aggression_counts('[{"action":"call","amount":2}]'::jsonb,'20000000-0000-0000-0000-000000000001') IS NOT NULL
+ THEN RAISE EXCEPTION 'Unknown or incomplete actions falsely reported measured'; END IF;
+END $$;

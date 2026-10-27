@@ -33,6 +33,15 @@ describe('committed public tendency frame', () => {
     });
     expect(JSON.stringify(frame)).not.toMatch(/hole_cards|Ah|Ad|rake_paid|opponent_ids|net/);
   });
+  it('does not certify aggression from unknown or incomplete public actions', () => {
+    for (const actions of [
+      [{ action: 'mystery', userId: 'a', stage: 'flop' }],
+      [{ action: 'call', amount: 2 }],
+    ]) {
+      const frame = publicHandStatsFrame({ ...input, actions })!;
+      expect(frame.players).toEqual([{ user_id: 'a', vpip: true, pfr: false, won: true }]);
+    }
+  });
   it('refuses mismatched receipts, duplicate players and unavailable facts', () => {
     expect(publicHandStatsFrame({ ...input, handId: 'different' })).toBeNull();
     expect(publicHandStatsFrame({ ...input, facts: null })).toBeNull();

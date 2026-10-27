@@ -16,6 +16,35 @@ function publicActionCounts(
     const actor = a.userId ?? a.user_id;
     const stage = typeof a.stage === 'string' ? a.stage.toLowerCase() : '';
     const amount = Number(a.amount);
+    if (
+      ![
+        'fold',
+        'check',
+        'call',
+        'bet',
+        'raise',
+        'all_in',
+        'allin',
+        'sb',
+        'bb',
+        'post',
+        'blind',
+        'post_sb',
+        'post_bb',
+        'small_blind',
+        'big_blind',
+        'straddle',
+        'kill_blind',
+        'ante',
+        'post_ante',
+        'dead_blind',
+        'bring_in',
+      ].includes(action) ||
+      typeof actor !== 'string' ||
+      !actor ||
+      !stage
+    )
+      return null;
     if (typeof actor === 'string' && actor && !counts.has(actor))
       counts.set(actor, { aggressive: 0, calls: 0 });
     const mine = typeof actor === 'string' ? counts.get(actor) : undefined;

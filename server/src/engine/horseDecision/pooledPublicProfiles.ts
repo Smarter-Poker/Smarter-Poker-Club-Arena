@@ -12,7 +12,7 @@ import type { FastHorseDecisionRequest, ObserveCompletedHandRequest } from './pr
 
 export interface PooledPublicProfileReceipt {
   version: 1;
-  source: 'accepted_hand_public_profiles';
+  source: 'accepted_hand_public_profiles' | 'saved_and_accepted_public_profiles';
   availableAtMs: number;
   digest: string;
   profiles: number;
@@ -25,12 +25,47 @@ export class PooledPublicProfiles {
   private readonly rows = new Map<string, { profile: DurableOpponentProfile; at: number }>();
   private readonly seen = new Set<string>();
   private lastAt = 0;
+  private bootstrapped = false;
   constructor(
     private readonly now: () => number = Date.now,
     private readonly capacity = 20000
   ) {
     if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 20000)
       throw Error('Invalid public profile capacity');
+  }
+  bootstrap(snapshot: { availableAtMs: number; profiles: DurableOpponentProfile[] }): boolean {
+    if (
+      this.bootstrapped ||
+      this.rows.size ||
+      this.seen.size ||
+      !Number.isSafeInteger(snapshot?.availableAtMs) ||
+      snapshot.availableAtMs < 0 ||
+      !Array.isArray(snapshot.profiles) ||
+      snapshot.profiles.length > this.capacity
+    )
+      return false;
+    const staged = new Map<string, { profile: DurableOpponentProfile; at: number }>();
+    for (const p of snapshot.profiles) {
+      if (!validOpponentProfile(p)) return false;
+      const key = opponentMemoryKey(p.user_id, p.variant, p.mode, p.size);
+      if (staged.has(key)) return false;
+      staged.set(key, {
+        profile: {
+          user_id: p.user_id,
+          variant: p.variant,
+          mode: p.mode,
+          size: p.size,
+          observed_hands: p.observed_hands,
+          initialized: p.initialized,
+          counters: { ...p.counters },
+        },
+        at: snapshot.availableAtMs,
+      });
+    }
+    for (const [key, row] of staged) this.rows.set(key, row);
+    this.lastAt = snapshot.availableAtMs;
+    this.bootstrapped = true;
+    return true;
   }
   observe(hand: ObserveCompletedHandRequest): number {
     const key = horseCompletedHandKey(hand);
@@ -147,7 +182,9 @@ export class PooledPublicProfiles {
       rows,
       receipt: {
         version: 1,
-        source: 'accepted_hand_public_profiles',
+        source: this.bootstrapped
+          ? 'saved_and_accepted_public_profiles'
+          : 'accepted_hand_public_profiles',
         availableAtMs,
         digest: createHash('sha256').update(JSON.stringify(rows)).digest('hex'),
         profiles: rows.length,
@@ -158,5 +195,6 @@ export class PooledPublicProfiles {
     this.rows.clear();
     this.seen.clear();
     this.lastAt = 0;
+    this.bootstrapped = false;
   }
 }

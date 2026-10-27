@@ -83,6 +83,12 @@ export class HorseObserverReads {
       throw Error('Invalid observer memory bounds');
     this.publicProfiles = new PooledPublicProfiles(now);
   }
+  bootstrapPublicProfiles(snapshot: {
+    availableAtMs: number;
+    profiles: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
+  }): boolean {
+    return this.publicProfiles.bootstrap(snapshot);
+  }
   private scope(context: HorseObserverReadContext): import('../HorseMind.js').ReadScope {
     const size = context.dealtCount <= 2 ? 'hu' : context.dealtCount <= 5 ? 'short' : 'full';
     return `${context.variant.startsWith('plo') || context.variant === 'flo8' ? 'omaha' : context.variant === 'short_deck' ? 'sixplus' : 'holdem'}:${size}`;

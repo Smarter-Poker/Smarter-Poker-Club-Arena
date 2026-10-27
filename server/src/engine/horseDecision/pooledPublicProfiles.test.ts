@@ -327,3 +327,56 @@ it.each(['missing', 'empty', 'unchanged', 'invalid'])(
     expect(pool.read(request(other))).toBeNull();
   }
 );
+it('bootstraps saved herd notes for another horse first decision and refuses partial or future batches', () => {
+  const pool = new PooledPublicProfiles(() => 100);
+  const profiles = shared().durableOpponentProfiles!;
+  expect(pool.bootstrap({ availableAtMs: 100, profiles: [profiles[0]!, profiles[0]!] })).toBe(
+    false
+  );
+  expect(pool.read(request(other))).toBeNull();
+  expect(pool.bootstrap({ availableAtMs: 100, profiles })).toBe(true);
+  expect(pool.read(request(other))?.receipt.source).toBe('saved_and_accepted_public_profiles');
+  expect(pool.read({ ...request(other), decisionTimeMs: 99 })).toBeNull();
+  expect(pool.bootstrap({ availableAtMs: 50, profiles })).toBe(false);
+  pool.clear();
+  expect(pool.read(request(other))).toBeNull();
+});
+it('loads saved public notes before the real worker READY and consumes them on its first FAST', async () => {
+  const { workerHarness, requestAt, opponentId } =
+    await import('../../testing/horseRegression/plan/fixture.js');
+  const { HorseLogic } = await import('../HorseLogic.js');
+  const original = requestAt();
+  let consumed = false;
+  const profiles = shared().durableOpponentProfiles!.map((p) => ({ ...p, user_id: opponentId }));
+  const h = workerHarness({
+    publicProfileBootstrap: () => ({ availableAtMs: 100, profiles }),
+    decide: (...args) => {
+      const decision = HorseLogic.decide(...args);
+      HorseMind.setDecisionScope('holdem:hu', 'nlh', 'cash');
+      consumed = HorseMind.opponentRead(opponentId)?.stats.pfr !== undefined;
+      return decision;
+    },
+  });
+  try {
+    await h.fast(original);
+    expect(consumed).toBe(true);
+    expect(h.captures.at(-1)?.observerReads).toMatchObject({
+      version: 3,
+      disposition: 'pooled_public',
+      pooledPublicProfiles: { source: 'saved_and_accepted_public_profiles', availableAtMs: 100 },
+    });
+  } finally {
+    await h.close();
+  }
+});
+
+it('keeps Pineapple herd notes distinct from NLH before the first decision', () => {
+  const pool = new PooledPublicProfiles(() => 100);
+  const profiles = shared().durableOpponentProfiles!.map((p) => ({
+    ...p,
+    variant: 'pineapple' as const,
+  }));
+  expect(pool.bootstrap({ availableAtMs: 100, profiles })).toBe(true);
+  expect(pool.read(request(other, 'cash', 'pineapple'))?.rows[0]?.variant).toBe('pineapple');
+  expect(pool.read(request(other))).toBeNull();
+});

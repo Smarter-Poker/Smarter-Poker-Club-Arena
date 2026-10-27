@@ -86,7 +86,9 @@ export function horseObserverReadsUsedPublicPool(
   if (
     Object.keys(p).length !== 5 ||
     p.version !== 1 ||
-    p.source !== 'accepted_hand_public_profiles' ||
+    !['accepted_hand_public_profiles', 'saved_and_accepted_public_profiles'].includes(
+      p.source as string
+    ) ||
     typeof p.digest !== 'string' ||
     !/^[a-f0-9]{64}$/.test(p.digest) ||
     !Number.isSafeInteger(p.profiles) ||

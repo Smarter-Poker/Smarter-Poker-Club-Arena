@@ -9,6 +9,7 @@ export const MEMORY_VARIANTS = [
   'flh',
   'flo8',
   'short_deck',
+  'pineapple',
 ] as const;
 export type MemoryVariant = (typeof MEMORY_VARIANTS)[number];
 export type MemoryMode = 'cash' | 'tournament';

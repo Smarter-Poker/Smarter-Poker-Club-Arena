@@ -9,8 +9,8 @@
  * The only withdrawal the manager knew was the capacity one, so the table
  * dealt nothing for 3h46m.
  *
- * A park that has not begun and whose movement admission has been refused for
- * UNPROVEN_MOVEMENT_PARK_GRACE_MS is withdrawn through
+ * A park that has not begun, has existed for UNPROVEN_MOVEMENT_PARK_GRACE_MS,
+ * and whose movement admission still refuses is withdrawn through
  * fn_f06_withdraw_unproven_movement_park, its dealer is stopped and
  * readmitted exactly as after the capacity withdrawal, and the refusal is
  * still thrown and reported. Any other refusal never withdraws it.
@@ -38,9 +38,17 @@ afterEach(() => {
 type Admit = 'refuse' | 'refuse_other' | 'prove';
 type Door = 'withdrawn' | 'proven' | 'absent';
 
-function fixture(admit: Admit = 'refuse', door: Door = 'withdrawn') {
+function fixture(
+  admit: Admit = 'refuse',
+  door: Door = 'withdrawn',
+  metadata: { park_created_at?: unknown; generation?: string } = {}
+) {
+  const generation = metadata.generation ?? lease;
   const calls: { name: string; params: any }[] = [];
   const park = {
+    ...(Object.hasOwn(metadata, 'park_created_at')
+      ? { park_created_at: metadata.park_created_at }
+      : {}),
     ok: true,
     reason: null,
     break_id: breakId,
@@ -50,7 +58,7 @@ function fixture(admit: Admit = 'refuse', door: Door = 'withdrawn') {
     state: 'park_requested' as const,
     revision: '1',
     custody_id: custody,
-    custody_generation: lease,
+    custody_generation: generation,
     members: [],
     terminal_handoff_required: false,
   };
@@ -63,7 +71,7 @@ function fixture(admit: Admit = 'refuse', door: Door = 'withdrawn') {
     tournamentRetirementCustody: new TournamentRetirementCustody(),
     maintenanceBreak: { adopt: vi.fn() },
   });
-  const manager: any = new TournamentManager(event, server, lease, performance.now() + 60000);
+  const manager: any = new TournamentManager(event, server, generation, performance.now() + 60000);
   Object.assign(manager, { running: true, eliminationSweepDeadlineAt: 0 });
   manager.tableEngines.set(source, engine);
   const token = {};
@@ -105,7 +113,7 @@ function fixture(admit: Admit = 'refuse', door: Door = 'withdrawn') {
             mode: 'movement_only',
             admission_id: params.p_admission_id,
             tournament_id: event,
-            lease_generation: lease,
+            lease_generation: generation,
             table_id: source,
             lifecycle: '7',
             break_id: breakId,
@@ -139,8 +147,8 @@ function fixture(admit: Admit = 'refuse', door: Door = 'withdrawn') {
           break_id: breakId,
           park_custody_id: park.custody_id,
           park_revision: park.revision,
-          lease_generation: lease,
-          original_generation: lease,
+          lease_generation: generation,
+          original_generation: generation,
           permit_id: id(91),
           hand_number: '46740543',
           roster_size: 5,
@@ -200,7 +208,7 @@ it('the 12135e5b shape: a park refused by its movement proof is withdrawn after 
 });
 
 it('when the database finds the roster proven the park stands, its dealer is untouched, and the refusal still throws', async () => {
-  const f = fixture('refuse', 'proven');
+  const f = fixture('refuse', 'proven', { park_created_at: new Date(0).toISOString() });
   let now = 1_000_000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   await expect(f.admitOnce()).rejects.toThrow(/F06_MOVEMENT_WHOLE_ROSTER_REQUIRED/);
@@ -224,7 +232,7 @@ it('a database without the door withdraws nothing and keeps refusing exactly as 
 });
 
 it('a refusal that is not a named movement refusal is never a reason to withdraw', async () => {
-  const f = fixture('refuse_other');
+  const f = fixture('refuse_other', 'withdrawn', { park_created_at: new Date(0).toISOString() });
   let now = 1_000_000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   await expect(f.admitOnce()).rejects.toThrow(/f06_movement_admission_unproven/);
@@ -235,7 +243,7 @@ it('a refusal that is not a named movement refusal is never a reason to withdraw
 });
 
 it('a park whose roster is proven is admitted as before and never withdrawn', async () => {
-  const f = fixture('prove');
+  const f = fixture('prove', 'withdrawn', { park_created_at: new Date(0).toISOString() });
   await expect(f.admitOnce()).resolves.toBeUndefined();
   expect(f.install).toHaveBeenCalledTimes(1);
   expect(f.start).toHaveBeenCalledTimes(1);
@@ -265,3 +273,62 @@ it('names only the door own F06_MOVEMENT_* 55000 refusals', () => {
   ).toBe(null);
   expect(movementProofRefusal(new Error('f06_movement_owner_changed'))).toBe(null);
 });
+
+it('the original park grace survives a fresh successor manager instead of starting again', async () => {
+  let now = 1_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const park_created_at = new Date(now).toISOString();
+  const first = fixture('refuse', 'withdrawn', { park_created_at });
+  await expect(first.admitOnce()).rejects.toThrow(/F06_MOVEMENT_WHOLE_ROSTER_REQUIRED/);
+  expect(names(first.calls)).not.toContain('fn_f06_withdraw_unproven_movement_park');
+  expect(first.stop).not.toHaveBeenCalled();
+
+  now += TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS;
+  const successor = fixture('refuse', 'withdrawn', { park_created_at, generation: id(30) });
+  await expect(successor.admitOnce()).resolves.toBeUndefined();
+  const withdrawals = successor.calls.filter(
+    (c) => c.name === 'fn_f06_withdraw_unproven_movement_park'
+  );
+  expect(withdrawals).toHaveLength(1);
+  expect(withdrawals[0].params).toEqual({
+    p_tournament_id: event,
+    p_lease_generation: id(30),
+    p_table_id: source,
+    p_lifecycle: '7',
+    p_break_id: breakId,
+    p_park_custody_id: custody,
+    p_park_revision: '1',
+  });
+  expect(names(successor.calls)).not.toContain('fn_f06_request_park');
+  expect(names(successor.calls)).not.toContain('fn_f06_begin_break');
+  expect(successor.stop).toHaveBeenCalledTimes(1);
+  expect(successor.manager.readmitContinuedNoStartTable).toHaveBeenCalledWith(
+    source,
+    successor.engine
+  );
+});
+
+it('a future durable creation time cannot spend the grace through the local fallback', async () => {
+  let now = 1_000_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const f = fixture('refuse', 'withdrawn', {
+    park_created_at: new Date(now + 600_000).toISOString(),
+  });
+  await expect(f.admitOnce()).rejects.toThrow(/F06_MOVEMENT_WHOLE_ROSTER_REQUIRED/);
+  now += TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS;
+  await expect(f.admitOnce()).rejects.toThrow(/F06_MOVEMENT_WHOLE_ROSTER_REQUIRED/);
+  expect(names(f.calls)).not.toContain('fn_f06_withdraw_unproven_movement_park');
+  expect(f.stop).not.toHaveBeenCalled();
+});
+
+it.each(['not-a-time', '2026-02-30T00:00:00Z', '2026-10-27', null, 0])(
+  'invalid durable park age %j cannot reach movement or change the dealer',
+  async (park_created_at) => {
+    const f = fixture('refuse', 'withdrawn', { park_created_at });
+    await expect(f.admitOnce()).rejects.toThrow(/F06 invalid park creation time/);
+    expect(names(f.calls)).not.toContain('fn_f06_admit_parked_movement');
+    expect(names(f.calls)).not.toContain('fn_f06_withdraw_unproven_movement_park');
+    expect(f.stop).not.toHaveBeenCalled();
+    expect(f.start).not.toHaveBeenCalled();
+  }
+);

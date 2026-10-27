@@ -235,6 +235,12 @@ it('counts each component only after its exact signed final controller action', 
   const { acceptedIncrementalComponents } = await import('./FeatureAblationWorker.js');
   const { HORSE_POLICY_ORDER } = await import('../engine/HorsePolicyGraph.js');
   const components = [
+    [
+      'smallPotNearNutRiverValue',
+      'small_pot_near_nut_value_raise',
+      'small_pot_near_nut_value_raise_accepted',
+      'raise',
+    ],
     ['comboDrawPressure', 'combo_draw_pressure_raise', 'combo_draw_pressure_accepted', 'raise'],
     ['v54RiverBluff', 'v54_river_bluff', 'targeted_river_bluff_accepted', 'bet'],
     [

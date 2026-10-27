@@ -48,6 +48,8 @@ export interface FeatureAblationWorkerReceipt {
     riverPositionDefense?: boolean;
     riverBluffCheckRaise?: boolean;
     barrelContinuationOutlook?: boolean;
+    smallPotNearNutRiverValue?: boolean;
+    multiwayRiverBluffCheckRaise?: boolean;
   };
   naturalSamplingKey: string;
   naturalRngBefore: number;
@@ -186,18 +188,41 @@ export function acceptedIncrementalComponents(
       ['raise'],
     ],
   ] as const;
-  return cases.flatMap(([flag, tag, counter, node, actions]) => {
-    if (
-      request.opts?.[flag] !== true ||
-      selected[tag] !== 1 ||
-      !(actions as readonly string[]).includes(issued.action)
-    )
-      return [];
-    const start = graph.transitions.findIndex((t) => t.node === node);
-    return start >= 0 && graph.transitions.slice(start).every((t) => same(t.after, issued))
-      ? [counter]
-      : [];
-  });
+  const separate: string[] = [];
+  const referenceStart = graph.transitions.findIndex((t) => t.node === 'reference');
+  if (
+    request.opts?.smallPotNearNutRiverValue === true &&
+    selected.small_pot_near_nut_value_raise === 1 &&
+    ['raise', 'all_in'].includes(issued.action) &&
+    referenceStart >= 0 &&
+    graph.transitions.slice(referenceStart).every((t) => same(t.after, issued))
+  )
+    separate.push('small_pot_near_nut_value_raise_accepted');
+  const wagerStart = graph.transitions.findIndex((t) => t.node === 'wager_rules');
+  if (
+    request.opts?.riverBluffCheckRaise === true &&
+    request.opts?.multiwayRiverBluffCheckRaise === true &&
+    (request.gameState.dealtSeatIds?.length ?? 0) > 2 &&
+    selected.river_bluff_checkraise_selected === 1 &&
+    issued.action === 'raise' &&
+    wagerStart >= 0 &&
+    graph.transitions.slice(wagerStart).every((t) => same(t.after, issued))
+  )
+    separate.push('multiway_river_bluff_checkraise_accepted');
+  return separate.concat(
+    cases.flatMap(([flag, tag, counter, node, actions]) => {
+      if (
+        request.opts?.[flag] !== true ||
+        selected[tag] !== 1 ||
+        !(actions as readonly string[]).includes(issued.action)
+      )
+        return [];
+      const start = graph.transitions.findIndex((t) => t.node === node);
+      return start >= 0 && graph.transitions.slice(start).every((t) => same(t.after, issued))
+        ? [counter]
+        : [];
+    })
+  );
 }
 const actualFeatureWorkers = new WeakSet<object>();
 export function isActualFeatureAblationWorker(value: object): boolean {
@@ -477,6 +502,12 @@ export function createFeatureAblationWorker(
           decisionKey: request.decisionKey,
           actorSeat: player.seat,
           inputFlags: {
+            ...(request.opts?.smallPotNearNutRiverValue === undefined
+              ? {}
+              : { smallPotNearNutRiverValue: request.opts.smallPotNearNutRiverValue }),
+            ...(request.opts?.multiwayRiverBluffCheckRaise === undefined
+              ? {}
+              : { multiwayRiverBluffCheckRaise: request.opts.multiwayRiverBluffCheckRaise }),
             ...(request.opts?.barrelContinuationOutlook === undefined
               ? {}
               : { barrelContinuationOutlook: request.opts.barrelContinuationOutlook }),

@@ -2,6 +2,7 @@
  * No production receipt, private card, counter snapshot or donor authority is
  * invented. The normal worker observer validates/hydrates these packets.
  */
+import { completedHandActionsForMind } from '../engine/horseDecision/completedHandActions.js';
 import { createHash } from 'node:crypto';
 import type { ActionRecord, Card, HandConfig, HandEvent, SeatPlayer } from '../types.js';
 import { HandController } from '../engine/HandController.js';
@@ -38,6 +39,7 @@ export interface FeatureAblationWarmHand {
   variant: string;
   playedAtMs: number;
   bigBlind: number;
+  riverNodeEvidence?: 'captured' | 'unavailable';
   actions: Array<ActionRecord & { amount: number; userId: string; timestamp: number }>;
   results: Array<{ user_id: string; net: number }>;
 }
@@ -90,6 +92,7 @@ export function buildFeatureWarmRecords(input: {
   hands: number;
   historyVersion: string;
   population: Plo4AblationPopulation;
+  retainPublicNodes?: boolean;
 }): readonly FeatureAblationWarmHand[] {
   if (
     !Number.isInteger(input.hands) ||
@@ -222,7 +225,17 @@ export function buildFeatureWarmRecords(input: {
     )
       throw new Error(`Warm hand ${hand} failed conservation`);
     const playedAtMs = FEATURE_ABLATION_HISTORY_AVAILABLE_AT_MS - (input.hands - hand) * 1000;
+    const projected = input.retainPublicNodes
+      ? completedHandActionsForMind(end.actionHistory, undefined)?.actions
+      : undefined;
+    if (input.retainPublicNodes && !projected)
+      throw Error('Physical public history projection refused');
+    const nodeCount = projected?.filter((a) => a.publicNode).length ?? 0;
+    const captured = input.retainPublicNodes && [2, 4].includes(nodeCount);
     records.push({
+      ...(input.retainPublicNodes
+        ? { riverNodeEvidence: captured ? ('captured' as const) : ('unavailable' as const) }
+        : {}),
       handId: uuid(`${input.historyVersion}:${variant}:${seats}:${seed}:${hand}`),
       tableId: WARM_TABLE,
       handNumber,
@@ -231,7 +244,7 @@ export function buildFeatureWarmRecords(input: {
       variant,
       playedAtMs,
       bigBlind: 2,
-      actions: end.actionHistory.map((a, i) => ({
+      actions: (input.retainPublicNodes ? (projected ?? []) : end.actionHistory).map((a, i) => ({
         seat: a.seat,
         userId: a.userId,
         action: a.action,
@@ -239,6 +252,7 @@ export function buildFeatureWarmRecords(input: {
         stage: a.stage,
         timestamp: playedAtMs - end.actionHistory.length + i,
         ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
+        ...(captured && a.publicNode ? { publicNode: structuredClone(a.publicNode) } : {}),
       })),
       results: end.players.map((p) => ({
         user_id: p.user_id,
@@ -274,6 +288,7 @@ export function makeFeatureAblationOwnHistory(
       format: 'cash',
       playedAtMs: h.playedAtMs,
       bigBlind: h.bigBlind,
+      ...(h.riverNodeEvidence ? { riverNodeEvidence: h.riverNodeEvidence } : {}),
       actions: h.actions.map((a) => ({ ...a })),
       results: h.results.map((r) => ({ ...r })),
     })),

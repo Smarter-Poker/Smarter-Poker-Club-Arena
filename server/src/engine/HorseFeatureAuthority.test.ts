@@ -433,7 +433,7 @@ describe('feature authority connected admission and receipt', () => {
       }
     }
   });
-  it('refuses source drift, omitted closure, unqualified near-nut and stress-only reports', () => {
+  it('refuses source drift and stress-only reports while accepting an exactly bound near-nut fixture', () => {
     const f = fixture();
     expect(f.admit(f.selection, Buffer.from('changed')).status).toBe('refused');
     expect(
@@ -454,7 +454,7 @@ describe('feature authority connected admission and receipt', () => {
         };
         q.compositionDigest = hash(p.flags);
       }).admit().status
-    ).toBe('refused');
+    ).toBe('admitted');
     expect(fixture((q) => (q.schema = 'horse-feature-ablation-assembly-v1')).admit().status).toBe(
       'refused'
     );

@@ -36,6 +36,8 @@ const {
 } = await import('../benchmark/PressureQualificationContract.js');
 const {
   isIncrementalTarget,
+  isSeparateRiverTarget,
+  assertSeparateRiverSeedSeparation,
   incrementalDevelopmentDesign,
   incrementalHistoryVersion,
   ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
@@ -81,6 +83,7 @@ try {
     pairs = Number(args.get('pairs')),
     startPair = Number(args.get('start-pair') ?? 0),
     experiment = args.get('experiment');
+  if (isSeparateRiverTarget(experiment)) assertSeparateRiverSeedSeparation();
   const allowed =
     experiment === 'v24'
       ? PLO6_V24_DEVELOPMENT_DESIGN.developmentSeeds

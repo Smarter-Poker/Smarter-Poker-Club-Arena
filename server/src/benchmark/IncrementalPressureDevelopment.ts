@@ -1,3 +1,9 @@
+import { isPlo4HoldoutSeed } from './Plo4StrengthContract.js';
+import { isOmahaVariantHoldoutSeed } from './OmahaVariantStrengthContract.js';
+import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContract.js';
+import { isJointHoldoutSeed } from './JointStrengthContract.js';
+import { PLO6_V24_DEVELOPMENT_DESIGN } from './Plo6V24Qualification.js';
+import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationContract.js';
 /** Preregistered finite DEVELOPMENT design only. No heldout or activation route.
  * A deliberately excessive river-stab stress workload, not a human calibration. */
 import type { HorseDecision, SeatPlayer } from '../types.js';
@@ -19,7 +25,33 @@ export const INCREMENTAL_FLAGS = Object.freeze({
   river_bluff_checkraise: 'riverBluffCheckRaise',
   barrel_continuation_outlook: 'barrelContinuationOutlook',
 } as const);
-export type IncrementalTarget = keyof typeof INCREMENTAL_FLAGS | 'pressure_package';
+export const SEPARATE_RIVER_FLAGS = Object.freeze({
+  small_pot_near_nut_value_raise: 'smallPotNearNutRiverValue',
+  multiway_river_bluff_checkraise: 'multiwayRiverBluffCheckRaise',
+} as const);
+export type SeparateRiverTarget = keyof typeof SEPARATE_RIVER_FLAGS;
+export type IncrementalTarget =
+  | keyof typeof INCREMENTAL_FLAGS
+  | SeparateRiverTarget
+  | 'pressure_package';
+export const isSeparateRiverTarget = (value: unknown): value is SeparateRiverTarget =>
+  typeof value === 'string' && Object.hasOwn(SEPARATE_RIVER_FLAGS, value);
+/** Fresh prospective DEVELOPMENT coordinates; never reuse conditional near-nut results.
+ * Reserved seeds are declarations only, not authority to execute a heldout. */
+export const SEPARATE_RIVER_DESIGNS = Object.freeze({
+  small_pot_near_nut_value_raise: Object.freeze({
+    version: 'near-nut-physical-development-v1',
+    developmentSeeds: Object.freeze([27701101, 27702203, 27703307]),
+    reservedHoldoutSeeds: Object.freeze([28701109, 28702231, 28703347]),
+    warmSeed: 27707777,
+  }),
+  multiway_river_bluff_checkraise: Object.freeze({
+    version: 'multiway-river-physical-development-v1',
+    developmentSeeds: Object.freeze([27801101, 27802203, 27803307]),
+    reservedHoldoutSeeds: Object.freeze([28801109, 28802231, 28803347]),
+    warmSeed: 27807777,
+  }),
+});
 export const INCREMENTAL_DEVELOPMENT_SEEDS = Object.freeze([27301101, 27302203, 27303307]);
 /** Reserved before development, never authorized to deal by this module. */
 export const INCREMENTAL_RESERVED_HOLDOUT_SEEDS = Object.freeze([28301109, 28302231, 28303347]);
@@ -28,7 +60,9 @@ export const INCREMENTAL_HISTORY_VERSION = 'incremental-public-overstab-warm-v1'
 export function isIncrementalTarget(value: unknown): value is IncrementalTarget {
   return (
     typeof value === 'string' &&
-    (value === 'pressure_package' || Object.hasOwn(INCREMENTAL_FLAGS, value))
+    (value === 'pressure_package' ||
+      Object.hasOwn(INCREMENTAL_FLAGS, value) ||
+      isSeparateRiverTarget(value))
   );
 }
 export function incrementalPressureDecision(
@@ -188,6 +222,20 @@ export const INCREMENTAL_DEVELOPMENT_DESIGN = Object.freeze({
   ],
 });
 export function incrementalDevelopmentDesign(target: IncrementalTarget) {
+  if (isSeparateRiverTarget(target))
+    return {
+      ...INCREMENTAL_DEVELOPMENT_DESIGN,
+      ...SEPARATE_RIVER_DESIGNS[target],
+      targets: { [target]: SEPARATE_RIVER_FLAGS[target] },
+      population:
+        target === 'multiway_river_bluff_checkraise'
+          ? MULTIWAY_RIVER_POPULATION.id
+          : INCREMENTAL_PRESSURE_POPULATION.id,
+      contrasts:
+        target === 'multiway_river_bluff_checkraise'
+          ? 'riverBluffCheckRaise held true in both arms; only multiwayRiverBluffCheckRaise differs'
+          : 'Only smallPotNearNutRiverValue differs; NLH unsupported',
+    };
   if (target !== 'pressure_package' && target !== 'barrel_continuation_outlook')
     return INCREMENTAL_DEVELOPMENT_DESIGN;
   return {
@@ -210,6 +258,7 @@ export function incrementalDevelopmentDesign(target: IncrementalTarget) {
   };
 }
 export function incrementalHistoryVersion(target?: IncrementalTarget) {
+  if (isSeparateRiverTarget(target)) return `${target}-physical-public-node-warm-v1`;
   return target === 'pressure_package'
     ? 'five-flag-pressure-package-warm-v1'
     : target === 'barrel_continuation_outlook'
@@ -223,10 +272,16 @@ export function incrementalDevelopmentProfiles(
   variant: 'nlh' | 'plo4' | 'plo5' | 'plo6'
 ) {
   if (!isIncrementalTarget(target)) throw new Error('Unknown incremental development target');
-  return pressureDevelopmentProfiles(variant).map((p) => ({
-    ...p,
-    id: p.id.replace(/^v53-/, target + '-'),
-  }));
+  if (target === 'small_pot_near_nut_value_raise' && variant === 'nlh')
+    throw Error('Near-nut Omaha only');
+  return pressureDevelopmentProfiles(variant)
+    .filter(
+      (p) => target !== 'multiway_river_bluff_checkraise' || (p.seats > 2 && p.stackBB === 100)
+    )
+    .map((p) => ({
+      ...p,
+      id: p.id.replace(/^v53-/, target + '-'),
+    }));
 }
 export function incrementalDevelopmentSpec(
   target: IncrementalTarget,
@@ -239,9 +294,25 @@ export function incrementalDevelopmentSpec(
   const packageArm = (value: boolean) =>
     Object.fromEntries(PRESSURE_PACKAGE_FLAGS.map((flag) => [flag, value]));
   const candidate =
-    target === 'pressure_package' ? packageArm(true) : { [INCREMENTAL_FLAGS[target]]: true };
+    target === 'pressure_package'
+      ? packageArm(true)
+      : target === 'multiway_river_bluff_checkraise'
+        ? { riverBluffCheckRaise: true, multiwayRiverBluffCheckRaise: true }
+        : {
+            [isSeparateRiverTarget(target)
+              ? SEPARATE_RIVER_FLAGS[target]
+              : INCREMENTAL_FLAGS[target]]: true,
+          };
   const reference =
-    target === 'pressure_package' ? packageArm(false) : { [INCREMENTAL_FLAGS[target]]: false };
+    target === 'pressure_package'
+      ? packageArm(false)
+      : target === 'multiway_river_bluff_checkraise'
+        ? { riverBluffCheckRaise: true, multiwayRiverBluffCheckRaise: false }
+        : {
+            [isSeparateRiverTarget(target)
+              ? SEPARATE_RIVER_FLAGS[target]
+              : INCREMENTAL_FLAGS[target]]: false,
+          };
   return {
     id: `${target}-development-v1`,
     profile,
@@ -249,13 +320,15 @@ export function incrementalDevelopmentSpec(
     candidate,
     reference,
     population:
-      target === 'pressure_package'
-        ? PRESSURE_PACKAGE_POPULATION
-        : target === 'barrel_continuation_outlook'
-          ? BARREL_CONTINUATION_POPULATION
-          : target === 'river_bluff_checkraise'
-            ? INCREMENTAL_CHECKRAISE_POPULATION
-            : INCREMENTAL_PRESSURE_POPULATION,
+      target === 'multiway_river_bluff_checkraise'
+        ? MULTIWAY_RIVER_POPULATION
+        : target === 'pressure_package'
+          ? PRESSURE_PACKAGE_POPULATION
+          : target === 'barrel_continuation_outlook'
+            ? BARREL_CONTINUATION_POPULATION
+            : target === 'river_bluff_checkraise'
+              ? INCREMENTAL_CHECKRAISE_POPULATION
+              : INCREMENTAL_PRESSURE_POPULATION,
   };
 }
 export function buildIncrementalWarmRecords(
@@ -263,20 +336,24 @@ export function buildIncrementalWarmRecords(
   seats: number,
   target?: IncrementalTarget
 ) {
+  if (isSeparateRiverTarget(target)) assertSeparateRiverSeedSeparation();
   return buildFeatureWarmRecords({
     variant,
     seats,
     seed: target ? incrementalDevelopmentDesign(target).warmSeed : INCREMENTAL_WARM_SEED,
     hands: 48,
     historyVersion: incrementalHistoryVersion(target),
+    retainPublicNodes: isSeparateRiverTarget(target),
     population:
-      target === 'pressure_package'
-        ? PRESSURE_PACKAGE_POPULATION
-        : target === 'barrel_continuation_outlook'
-          ? BARREL_CONTINUATION_POPULATION
-          : target === 'river_bluff_checkraise'
-            ? INCREMENTAL_CHECKRAISE_POPULATION
-            : INCREMENTAL_PRESSURE_POPULATION,
+      target === 'multiway_river_bluff_checkraise'
+        ? MULTIWAY_RIVER_POPULATION
+        : target === 'pressure_package'
+          ? PRESSURE_PACKAGE_POPULATION
+          : target === 'barrel_continuation_outlook'
+            ? BARREL_CONTINUATION_POPULATION
+            : target === 'river_bluff_checkraise'
+              ? INCREMENTAL_CHECKRAISE_POPULATION
+              : INCREMENTAL_PRESSURE_POPULATION,
   });
 }
 export function incrementalWarmCoverage(records: readonly FeatureAblationWarmHand[]) {
@@ -308,4 +385,47 @@ export function incrementalWarmCoverage(records: readonly FeatureAblationWarmHan
     opportunityDenominator: 'actual_original_last_to_act_river_actions',
     promotionEligible: false,
   };
+}
+
+/** A declared synthetic stress population. Original seats first enter, then all
+ * but the first two public seats fold on the flop. No hole cards are consulted.
+ * River checks and bets both remain observable; this is not human calibration. */
+export const MULTIWAY_RIVER_POPULATION: Plo4AblationPopulation = Object.freeze({
+  id: 'multiway_original_fold_to_hu_public_stress_v1',
+  decide(player: SeatPlayer, gs: HorseGameStateV2, rng: () => number): HorseDecision {
+    const seats = gs.players.map((p) => p.seat).sort((a, b) => a - b);
+    if (gs.stage === 'flop' && !seats.slice(0, 2).includes(player.seat))
+      return { action: 'fold', thinkTime: 0 };
+    return INCREMENTAL_CHECKRAISE_POPULATION.decide(player, gs, rng);
+  },
+});
+
+/** Run before physical warm/evaluation execution, never after observing outcomes. */
+export function assertSeparateRiverSeedSeparation(): void {
+  const oldReserved = [
+    ...INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+    ...ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+    ...V53_PRESSURE_RESERVED_HOLDOUT_SEEDS,
+    ...PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds,
+    53901101,
+    53902203,
+    53903307,
+  ];
+  const all = Object.values(SEPARATE_RIVER_DESIGNS).flatMap((d) => [
+    ...d.developmentSeeds,
+    d.warmSeed,
+    ...d.reservedHoldoutSeeds,
+  ]);
+  if (
+    new Set(all).size !== all.length ||
+    all.some(
+      (seed) =>
+        isPlo4HoldoutSeed(seed) ||
+        isOmahaVariantHoldoutSeed(seed) ||
+        isRemainingVariantHoldoutSeed(seed) ||
+        isJointHoldoutSeed(seed) ||
+        oldReserved.includes(seed)
+    )
+  )
+    throw Error('Separate river seed collides with an existing reserved family');
 }

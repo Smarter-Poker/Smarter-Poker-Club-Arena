@@ -26,6 +26,7 @@ export const HORSE_FEATURE_FLAGS = [
   'riverBluffCheckRaise',
   'barrelContinuationOutlook',
   'smallPotNearNutRiverValue',
+  'multiwayRiverBluffCheckRaise',
 ] as const;
 export type HorseFeatureFlag = (typeof HORSE_FEATURE_FLAGS)[number];
 export type HorseFeatureFlags = Record<HorseFeatureFlag, boolean>;
@@ -208,7 +209,10 @@ export function admitHorseFeatureAuthority(
         (k) => !HORSE_FEATURE_FLAGS.includes(k as HorseFeatureFlag) || candidate[k] !== true
       ) ||
       hash(Object.keys(candidate).sort()) !== hash(Object.keys(reference).sort()) ||
-      Object.values(reference).some((v) => v !== false) ||
+      Object.entries(reference).some(
+        ([k, v]) =>
+          v !== (plan.target === 'multiway_river_bluff_checkraise' && k === 'riverBluffCheckRaise')
+      ) ||
       q.compositionDigest !== hash(plan.flags)
     )
       return refuse('evidence_mismatch');
@@ -219,9 +223,10 @@ export function admitHorseFeatureAuthority(
       river_bluff_checkraise: ['riverBluffCheckRaise'],
       barrel_continuation_outlook: ['barrelContinuationOutlook'],
       pressure_package: HORSE_FEATURE_FLAGS.slice(0, 5),
+      small_pot_near_nut_value_raise: ['smallPotNearNutRiverValue'],
+      multiway_river_bluff_checkraise: ['riverBluffCheckRaise', 'multiwayRiverBluffCheckRaise'],
     };
-    // Near-nut has no maintained locked qualification schema yet. Refuse it
-    // explicitly; its conditional development runner cannot promote it.
+    // Only an exact maintained target composition may be selected; DEV cannot promote it.
     if (
       !targets[plan.target] ||
       hash([...targets[plan.target]].sort()) !== hash(Object.keys(candidate).sort())

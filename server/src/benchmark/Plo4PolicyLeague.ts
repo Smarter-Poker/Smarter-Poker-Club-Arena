@@ -115,6 +115,8 @@ export type Plo4AblationFlags = Readonly<
     | 'riverPositionDefense'
     | 'riverBluffCheckRaise'
     | 'barrelContinuationOutlook'
+    | 'smallPotNearNutRiverValue'
+    | 'multiwayRiverBluffCheckRaise'
   >
 >;
 /** A maintained current-brain adapter owns admission. The physical league must
@@ -556,6 +558,11 @@ export async function playPlo4PolicyHand(
         format: profile.tournament ? 'sng' : 'cash',
         gameVariant: variant,
         bigBlind: BB,
+        ...(profile.ablation &&
+        ('smallPotNearNutRiverValue' in profile.ablation.heroOpts ||
+          'multiwayRiverBluffCheckRaise' in profile.ablation.heroOpts)
+          ? { smallBlind: config.smallBlind }
+          : {}),
         ante: config.ante,
         straddleActive: profile.straddle,
         ...(!profile.jointPolicy ? { boardCount: 1 } : {}),

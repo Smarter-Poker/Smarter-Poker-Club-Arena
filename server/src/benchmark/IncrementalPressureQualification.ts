@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { FeatureAblationQualificationPlan } from './FeatureAblationQualification.js';
 import {
   isIncrementalTarget,
+  isSeparateRiverTarget,
   incrementalDevelopmentDesign,
   incrementalDevelopmentSpec,
   incrementalDevelopmentProfiles,
@@ -25,10 +26,20 @@ const COUNTERS: Record<Exclude<IncrementalTarget, 'pressure_package'>, string> =
   river_position_defense: 'river_position_defense_accepted',
   river_bluff_checkraise: 'river_bluff_checkraise_accepted',
   barrel_continuation_outlook: 'barrel_continuation_outlook_accepted',
+  small_pot_near_nut_value_raise: 'small_pot_near_nut_value_raise_accepted',
+  multiway_river_bluff_checkraise: 'multiway_river_bluff_checkraise_accepted',
 };
 export function incrementalComponentCoverage(target: IncrementalTarget, seats: number) {
   const targets =
-    target === 'pressure_package' ? (Object.keys(COUNTERS) as (keyof typeof COUNTERS)[]) : [target];
+    target === 'pressure_package'
+      ? ([
+          'combo_draw_pressure',
+          'targeted_river_bluff',
+          'river_position_defense',
+          'river_bluff_checkraise',
+          'barrel_continuation_outlook',
+        ] as (keyof typeof COUNTERS)[])
+      : [target];
   return targets.map((component) => ({
     component,
     applicable: component !== 'river_bluff_checkraise' || seats === 2,
@@ -51,9 +62,11 @@ export function incrementalQualificationRules(target: IncrementalTarget) {
     seeds: design.reservedHoldoutSeeds,
     historyVersion: incrementalHistoryVersion(target),
     shapes:
-      target === 'river_bluff_checkraise'
-        ? ['2:100']
-        : ['2:100', '4:100', '6:40', '6:100', '6:200'],
+      target === 'multiway_river_bluff_checkraise'
+        ? ['4:100', '6:100']
+        : target === 'river_bluff_checkraise'
+          ? ['2:100']
+          : ['2:100', '4:100', '6:40', '6:100', '6:200'],
     validate(plan: FeatureAblationQualificationPlan): string[] {
       const reasons: string[] = [];
       if (
@@ -134,6 +147,8 @@ export function assertIncrementalPlanProvenance(
   return o;
 }
 export function incrementalSeedFamily(target: IncrementalTarget): string {
+  if (isSeparateRiverTarget(target))
+    return target === 'small_pot_near_nut_value_raise' ? '287' : '288';
   return target === 'pressure_package' || target === 'barrel_continuation_outlook' ? '284' : '283';
 }
 const digest = (value: unknown): string => {
@@ -359,6 +374,12 @@ export async function authenticateIncrementalPlan(
   assembling = false
 ) {
   if (!isIncrementalTarget(plan.target)) return;
+  const planPath = isSeparateRiverTarget(plan.target)
+    ? 'server/src/benchmark/SeparateRiverQualificationPlans.json'
+    : INCREMENTAL_PLAN_PATH;
+  const familyPath = isSeparateRiverTarget(plan.target)
+    ? 'server/src/benchmark/SeparateRiverQualificationFamilies.json'
+    : INCREMENTAL_FAMILY_PATH;
   const root = fileURLToPath(new URL('../../../', import.meta.url));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))
@@ -382,19 +403,19 @@ export async function authenticateIncrementalPlan(
   if (git('status', '--porcelain', '--untracked-files=no')) throw Error('Incremental source dirty');
   git('merge-base', '--is-ancestor', head, 'origin/main');
   // Authenticate the most recent registry bytes, not its initially empty introduction.
-  const commit = git('log', '-1', '--format=%H', '--', INCREMENTAL_PLAN_PATH);
+  const commit = git('log', '-1', '--format=%H', '--', planPath);
   const bytes = readFileSync(
-    fileURLToPath(new URL('./IncrementalPressureQualificationPlans.json', import.meta.url)),
+    fileURLToPath(new URL('./' + planPath.split('/').at(-1), import.meta.url)),
     'utf8'
   );
   if (
-    git('show', `${commit}:${INCREMENTAL_PLAN_PATH}`) !== bytes.trim() ||
+    git('show', `${commit}:${planPath}`) !== bytes.trim() ||
     JSON.stringify(JSON.parse(bytes)[plan.target]) !== JSON.stringify(plan)
   )
     throw Error('Incremental plan bytes changed');
   const registry = JSON.parse(bytes);
   const familyBytes = readFileSync(
-    fileURLToPath(new URL('./IncrementalPressureQualificationFamilies.json', import.meta.url)),
+    fileURLToPath(new URL('./' + familyPath.split('/').at(-1), import.meta.url)),
     'utf8'
   );
   const family = validateIncrementalFamily(plan, registry, JSON.parse(familyBytes));
@@ -402,8 +423,8 @@ export async function authenticateIncrementalPlan(
   for (const member of family.members)
     if (validateLockedFeatureAblationPlan(registry[member.target]).length)
       throw Error('Incremental family member plan invalid');
-  const familyCommit = git('log', '-1', '--format=%H', '--', INCREMENTAL_FAMILY_PATH);
-  if (git('show', `${familyCommit}:${INCREMENTAL_FAMILY_PATH}`) !== familyBytes.trim())
+  const familyCommit = git('log', '-1', '--format=%H', '--', familyPath);
+  if (git('show', `${familyCommit}:${familyPath}`) !== familyBytes.trim())
     throw Error('Incremental family bytes changed');
   const get = async (suffix: string) => {
     const response = await fetch(`https://api.github.com/repos/${repo}${suffix}`, {
@@ -430,13 +451,13 @@ export async function authenticateIncrementalPlan(
     '--format=%H',
     '-1001',
     '--',
-    INCREMENTAL_FAMILY_PATH
+    familyPath
   ).split('\n');
   if (familyHistory.length > 1000) throw Error('Incremental family history bound');
   const firstFamilyCommit = assertIncrementalFamilyHistory(
     familyHistory.map((revision) => ({
       commit: revision,
-      family: JSON.parse(git('show', `${revision}:${INCREMENTAL_FAMILY_PATH}`))[
+      family: JSON.parse(git('show', `${revision}:${familyPath}`))[
         incrementalSeedFamily(plan.target as IncrementalTarget)
       ],
     })),
@@ -488,8 +509,8 @@ export async function authenticateIncrementalPlan(
   );
   for (const previous of prior) {
     if (
-      git('show', `${previous.source}:${INCREMENTAL_FAMILY_PATH}`) !== familyBytes.trim() ||
-      git('show', `${previous.source}:${INCREMENTAL_PLAN_PATH}`) !== bytes.trim()
+      git('show', `${previous.source}:${familyPath}`) !== familyBytes.trim() ||
+      git('show', `${previous.source}:${planPath}`) !== bytes.trim()
     )
       throw Error('Incremental original family binding changed');
     // Retain and authenticate original operation identity; failed outcomes are

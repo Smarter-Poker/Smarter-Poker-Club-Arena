@@ -14,8 +14,11 @@ class BootstrapWitness(unittest.TestCase):
   rows=m.parse_logs(self.logs(),'2026-10-27T06:00:00Z');self.assertEqual(len(rows),8);self.assertEqual(rows[7]['profileCount'],24369);self.assertNotIn('PRIVATE',json.dumps(rows));self.assertTrue(rows[0]['bootstrapBeforeServicesReady'])
  def test_partial_duplicate_unavailable_future_and_budget_refuse(self):
   raw=self.logs()
-  for bad in [raw.replace(b'shard 7',b'shard 6'),raw.replace(b'loaded 24369 profiles at 1793080801000',b'unavailable'),raw.replace(b'in 999ms',b'in 5001ms'),raw.replace(b'at 1793080801000',b'at 9999999999999'),raw.replace(b'2026-10-27T06:00:02.000Z',b'2026-10-27T05:59:59.000Z'),b'x'*(m.MAX_BYTES+1)]:
+  for bad in [raw.replace(b'shard 7',b'shard 6'),raw.replace(b'loaded 24369 profiles at 1793080801000',b'unavailable'),raw.replace(b'in 999ms',b'in 120001ms'),raw.replace(b'at 1793080801000',b'at 9999999999999'),raw.replace(b'2026-10-27T06:00:02.000Z',b'2026-10-27T05:59:59.000Z'),b'x'*(m.MAX_BYTES+1)]:
    with self.assertRaises(ValueError):m.parse_logs(bad,'2026-10-27T06:00:00Z')
+ def test_whole_boot_step_can_exceed_database_abort_budget(self):
+  raw=self.logs().replace(b'06:00:01.000Z',b'06:00:06.000Z').replace(b'at 1793080801000',b'at 1793080806000').replace(b'06:00:01.001Z',b'06:00:06.001Z').replace(b'06:00:02.000Z',b'06:00:07.000Z').replace(b'in 999ms (1000ms',b'in 5001ms (6000ms').replace(b'services ready 2000ms',b'services ready 7000ms')
+  rows=m.parse_logs(raw,'2026-10-27T06:00:00Z');self.assertEqual(rows[0]['bootstrapElapsedMs'],5001)
  def test_real_subprocess_output_byte_and_time_bounds(self):
   self.assertEqual(m.bounded([sys.executable,'-c','print("ok")'],16,2),b'ok\n')
   with self.assertRaises(ValueError):m.bounded([sys.executable,'-c','print("x"*100)'],16,2)

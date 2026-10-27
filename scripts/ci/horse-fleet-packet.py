@@ -194,10 +194,13 @@ def read_evidence(attestation,result,observation,packet):
         if type(v) is not int or not 0<=v<=maximum:raise ValueError('read_counts')
         return v
     maximum=256*count(attestation.get('selectedHands'),10000)
-    total=count(observation.get('acceptedDecisions'),maximum)
+    total=count(observation['acceptedDecisions'],maximum) if 'acceptedDecisions' in observation else None
+    for h in rows:
+        if 'acceptedDecisions' in h:count(h['acceptedDecisions'],total if total is not None else maximum)
+    if total is None or any('acceptedDecisions' not in h for h in rows):return dict(unknown),dict(unknown)
     ns=[count(h.get('acceptedDecisions'),total) for h in rows]
     if sum(ns)!=total or sum(n>0 for n in ns)!=observation.get('observedHorses'):raise ValueError('read_counts')
-    if any('retainedReceiptCounts' not in h for h in rows):public=dict(unknown)
+    if any('retainedReceiptCounts' not in h for h in rows) or not any(isinstance(h.get('retainedReceiptCounts'),dict) and set(h['retainedReceiptCounts'])&{'pooledPublicReads','independentPublicReads'} for h in rows):public=dict(unknown)
     else:
         pooled=[];independent=[]
         for h,n in zip(rows,ns):
@@ -208,7 +211,7 @@ def read_evidence(attestation,result,observation,packet):
             pooled.append(a);independent.append(b)
         public={'status':'reported','scope':'selected_accepted_decisions','pooledPublicReadDecisions':sum(pooled),'pooledPublicReadHorses':sum(n>0 for n in pooled),'independentPublicReadDecisions':sum(independent),'independentPublicReadHorses':sum(n>0 for n in independent),'unclassifiedReadDecisions':total-sum(pooled)-sum(independent),'completePopulation':False,'allPhasesVerified':False}
     top=observation.get('riverLearningEvidence')
-    if top is None or any('riverLearning' not in h or 'retainedReceiptCounts' not in h for h in rows):return public,dict(unknown)
+    if public.get('status')=='unknown' or top is None or any('riverLearning' not in h or 'retainedReceiptCounts' not in h for h in rows):return public,dict(unknown)
     if not isinstance(top,dict) or top.get('scope')!='at_least_one_qualified_observer_context' or top.get('counterMeaning')!='maximum_scoped_opponent_samples_per_accepted_read' or top.get('readBasis')!='original_individual_scoped_basic_counters':raise ValueError('river_schema')
     fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
     sums={k:0 for k in fields};horses={v:0 for v in fields.values()};basis_total=0;basis_horses=0

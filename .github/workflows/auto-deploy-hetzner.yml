@@ -88,6 +88,7 @@ jobs:
           chmod 0700 "$HSSH"
           echo "HSSH=$HSSH" >> "$GITHUB_ENV"
       - name: Read one bounded current-container public bootstrap witness
+        if: github.event.client_payload.public_pool_bootstrap == true
         run: |
           set -euo pipefail
           timeout --signal=TERM --kill-after=2s 35s python3 -B scripts/ci/horse-public-bootstrap-witness.py \

@@ -32,7 +32,7 @@ def timestamp(value):
 
 def parse_logs(raw,started):
     if len(raw)>MAX_BYTES:raise ValueError('log_bound')
-    start=timestamp(started);rows={};last=start
+    start=timestamp(started);rows={}
     for line in raw.decode('utf8',errors='strict').splitlines():
         match=re.fullmatch(r'(\S+) \[HorseDecisionWorker\] shard ([0-7]) (.+)',line)
         if not match:continue
@@ -52,7 +52,7 @@ def parse_logs(raw,started):
     for index,row in sorted(rows.items()):
         if set(row)!={'loaded','step','ready'}:raise ValueError('missing_boot_marker')
         loaded,(count,available)=row['loaded'];step,(elapsed,since)=row['step'];ready,(ready_ms,)=row['ready']
-        if not loaded<=step<=ready or not 0<=count<=32768 or not start*1000<=available<=loaded*1000+1000 or not 0<=elapsed<=5000 or not elapsed<=since<=ready_ms<=120000:raise ValueError('boot_bounds_or_order')
+        if not loaded<=step<=ready or not 0<=count<=32768 or not start*1000<=available<=loaded*1000+1000 or not 0<=elapsed<=120000 or not elapsed<=since<=ready_ms<=120000:raise ValueError('boot_bounds_or_order')
         output.append({'shard':index,'status':'loaded','profileCount':count,'availableAtMs':available,'bootstrapElapsedMs':elapsed,'servicesReadyElapsedMs':ready_ms,'bootstrapBeforeServicesReady':True})
     return output
 
@@ -84,7 +84,7 @@ def validate_receipt(result,source):
     for index,row in enumerate(rows):
         if not isinstance(row,dict) or set(row)!={'shard','status','profileCount','availableAtMs','bootstrapElapsedMs','servicesReadyElapsedMs','bootstrapBeforeServicesReady'}:raise ValueError('remote_receipt')
         if row['shard']!=index or type(row['shard']) is not int or row['status']!='loaded' or row['bootstrapBeforeServicesReady'] is not True:raise ValueError('remote_receipt')
-        for key,low,high in [('profileCount',0,32768),('availableAtMs',int(start*1000),int((start+120)*1000)),('bootstrapElapsedMs',0,5000),('servicesReadyElapsedMs',0,120000)]:
+        for key,low,high in [('profileCount',0,32768),('availableAtMs',int(start*1000),int((start+120)*1000)),('bootstrapElapsedMs',0,120000),('servicesReadyElapsedMs',0,120000)]:
             if type(row[key]) is not int or not low<=row[key]<=high:raise ValueError('remote_receipt')
         if row['bootstrapElapsedMs']>row['servicesReadyElapsedMs']:raise ValueError('remote_receipt')
     return result

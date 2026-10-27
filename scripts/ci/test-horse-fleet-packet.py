@@ -192,7 +192,15 @@ class PacketContracts(unittest.TestCase):
   self.assertEqual(out['riverLearningEvidence']['pooledIndividualScopedBasicReadDecisions'],1);self.assertFalse(out['riverLearningEvidence']['allContextsVerified']);self.assertNotIn('10000000-',json.dumps(out));self.assertNotIn('PRIVATE',json.dumps(out));self.assertFalse(out['allPhasesVerified'])
  def test_read_summary_missing_packet_or_legacy_rows_remains_unknown(self):
   p,a,r=self.read_result();self.assertEqual(module.summarize(a,r)['publicReadEvidence']['status'],'unknown')
+  legacy=json.loads(json.dumps(r));[h.update(retainedReceiptCounts={'phase7':h['acceptedDecisions']}) for h in legacy['execution']['observation']['horses']];self.assertEqual(module.summarize(a,legacy,p)['publicReadEvidence']['status'],'unknown')
   del r['execution']['observation']['horses'][0]['riverLearning'];self.assertEqual(module.summarize(a,r,p)['riverLearningEvidence']['status'],'unknown')
+ def test_missing_legacy_core_counts_are_unknown_but_present_bad_counts_refuse(self):
+  for missing in ['global','horse']:
+   p,a,r=self.read_result();o=r['execution']['observation']
+   del (o if missing=='global' else o['horses'][0])['acceptedDecisions']
+   out=module.summarize(a,r,p);self.assertEqual(out['publicReadEvidence']['status'],'unknown');self.assertEqual(out['riverLearningEvidence']['status'],'unknown')
+   o['horses'][1]['acceptedDecisions']=True
+   with self.assertRaises(ValueError):module.summarize(a,r,p)
  def test_read_summary_refuses_false_counts_duplicate_actor_and_noncanonical_packet(self):
   mutations=[lambda p,r:r['execution']['observation']['horses'][0]['retainedReceiptCounts'].update(pooledPublicReads=True),lambda p,r:r['execution']['observation']['horses'][1].update(horseId=p['horseIds'][0]),lambda p,r:r['execution']['observation']['riverLearningEvidence'].update(pooledIndividualScopedBasicReadDecisions=2),lambda p,r:r['execution']['observation']['horses'][0]['riverLearning']['qualifiedReadBasisCounts'].update(independent_public_receipt=1),lambda p,r:p['horseIds'].pop()]
   for mutate in mutations:

@@ -103,6 +103,7 @@ it('retains bounded bootstrap witness contracts in the existing observation rout
     (s: { name?: string }) =>
       s.name === 'Read one bounded current-container public bootstrap witness'
   );
+  expect(step.if).toBe('github.event.client_payload.public_pool_bootstrap == true');
   expect(step.run).toContain('35s python3 -B scripts/ci/horse-public-bootstrap-witness.py');
   expect(step.run).toContain('--source-sha "$FLEET_SOURCE_SHA" --ssh-command "$HSSH"');
   expect(job.steps[0].with['sparse-checkout']).toContain(

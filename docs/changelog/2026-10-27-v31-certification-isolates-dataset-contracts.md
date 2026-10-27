@@ -26,6 +26,12 @@ physically invalid older HU sources and retained development support/quality
 failures. Promotion and live certified Horse usage remain separate acceptance
 criteria.
 
+The required accounting job also exposed an inherited collision between two
+synthetic public-history fixture populations. Their UUID namespaces are now
+distinct, preserving both population sizes and every original assertion. The
+isolated public-history PostgreSQL proof completes all 121 checks; the full
+hosted V31 behavior gate still has to execute on the final PR revision.
+
 If rollback is necessary, use a new reviewed protected migration replacing the
 two exact postimage guards with the recorded original guards; do not replay an
 installed migration or change any immutable dataset identities. The original

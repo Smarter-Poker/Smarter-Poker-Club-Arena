@@ -25,3 +25,7 @@ The two-real-manager regression failed before the runtime correction. Afterward 
 ## Exact activation anchor
 
 PR #8324 protected squash is `f398b67e4ffa1949b71d78fa60b17dc63cf0bba7`. Bind its existing one-use owner window to that actual repair, replacing the earlier minimum base anchor. Two separately owned older queued engine candidates contain the base and omit this repair; their activation must not consume this permission. The original 15:20:34 through 21:20:34 UTC interval, runtime, migration, checks and cutover safeguards are unchanged.
+
+## Required-check binding recovery
+
+The release-input follow-up exposed a stale workflow digest in the original-retirement source binding. Its exact previous-hash bytes were recovered from PR #8296 head `6cc1c1d3767b74cf05fe7cc0c4fdfdc2d36af611`. Protected integration preserved PR #8288's three rakeback-page qualification trigger paths and appended native check; the parsed workflow is otherwise identical. Updated only that workflow digest and recorded this provenance. All other 162 source pins, existing financial boundaries and assertions remain unchanged. The exact three-case law reproduced one failure before correction; afterward it and three connected source-contract files passed all 13 cases on Node 22. This metadata correction does not grant new financial or production qualification.

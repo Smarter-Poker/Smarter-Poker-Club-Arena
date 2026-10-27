@@ -3628,6 +3628,10 @@ export const V54_PROFILE_FACTOR = { folder: 1, neutral: 0.8, unknown: 0.6 } as c
  * lifetime fold-to-aggression read that cuts bluffs is a station and is never
  * bluffed. No read at all is 'unknown' and gets the conservative factor.
  */
+// Private decision identity: only the actual V54 station branch can issue it.
+// Capture before legalization copies the decision; never serialize this intent.
+const v54StationChecks = new WeakSet<HorseDecision>();
+
 function v54OpponentProfile(
   userId: string,
   useMind: boolean,
@@ -3970,6 +3974,7 @@ export class HorseLogic {
       return { decision };
     }).decision;
 
+    const v54StationCheck = v54StationChecks.has(decision);
     const phase6Attribution =
       gs.stage === 'preflop'
         ? createPhase6Attribution(phase6Reference, gs, isTournamentMode(gs), decision)
@@ -3987,16 +3992,18 @@ export class HorseLogic {
     // opponent-blind horse field. A live opponent read as a credible station
     // keeps the reference (which already carries the read). False unless a
     // read is engaged, so every pack sees exactly what it saw before.
-    let readStation = false;
+    let readStation = v54StationCheck;
     if (opts.mind !== false) {
       try {
-        readStation = gs.players.some(
-          (p) =>
-            p.seat !== player.seat &&
-            !p.is_folded &&
-            (!p.is_sitting_out || p.is_all_in) &&
-            isStation(HorseMind.opponentRead(p.user_id))
-        );
+        readStation =
+          readStation ||
+          gs.players.some(
+            (p) =>
+              p.seat !== player.seat &&
+              !p.is_folded &&
+              (!p.is_sitting_out || p.is_all_in) &&
+              isStation(HorseMind.opponentRead(p.user_id))
+          );
       } catch {
         /* reads are best-effort */
       }
@@ -8061,7 +8068,9 @@ export class HorseLogic {
           const shove54 = !vi.isPotLimit && eff54 <= pot * 1.5;
           if (profile54 === 'station') {
             if (tele15) noteFire('v54_river_bluff_skip_station');
-            return { action: 'check', thinkTime: 0 };
+            const stationCheck: HorseDecision = { action: 'check', thinkTime: 0 };
+            v54StationChecks.add(stationCheck);
+            return stationCheck;
           } else if (!story54) {
             if (tele15) noteFire('v54_river_bluff_skip_no_story');
           } else if (!capped54) {

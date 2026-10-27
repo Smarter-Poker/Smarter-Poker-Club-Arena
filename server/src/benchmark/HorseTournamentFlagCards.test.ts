@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import {
   runTournamentLeague,
   tournamentRunCanPromote,
@@ -297,6 +299,16 @@ describe('real PLO whole tournament development path', { timeout: 180000 }, () =
   it.runIf(process.platform === 'linux')(
     'uses the actual isolated Linux compute child for one development pair',
     async () => {
+      // Vitest transforms the parent only. The real child runs source TS and
+      // needs the same explicit tsx registration as the module-worker fixture.
+      const originalExecArgv = process.execArgv;
+      const tsxApi = pathToFileURL(createRequire(import.meta.url).resolve('tsx/esm/api')).href;
+      const bootstrap = `import { register } from ${JSON.stringify(tsxApi)};register();`;
+      process.execArgv = [
+        ...originalExecArgv,
+        '--import',
+        `data:text/javascript,${encodeURIComponent(bootstrap)}`,
+      ];
       const client = new HorseLeagueComputeWorkerClient({
         hydrateSolverStores: false,
         expectedSolverStores: {
@@ -318,7 +330,11 @@ describe('real PLO whole tournament development path', { timeout: 180000 }, () =
         expect(r.complete).toBe(true);
         expect(r.cardPairs).toHaveLength(1);
       } finally {
-        await client.shutdown();
+        try {
+          await client.shutdown();
+        } finally {
+          process.execArgv = originalExecArgv;
+        }
       }
     }
   );

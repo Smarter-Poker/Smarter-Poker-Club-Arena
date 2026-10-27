@@ -51,6 +51,7 @@ const caller={key:anon,jwt:token};
 async function rpc(name,args) {return (await request('/rest/v1/rpc/'+name,{...caller,method:'POST',body:args})).data;}
 let mutationStarted=false;
 const results=[];
+const unexpectedExports=new Set();
 try {
  mutationStarted=true;
  await request('/rest/v1/agents',{method:'POST',body:{id:agentId,user_id:account.id,club_id:club,role:'super_agent',status:'active',commission_rate:0,player_rakeback_rate:0}});
@@ -69,12 +70,27 @@ try {
   assert.equal(dataScreen.scope,'downline');
   assert.deepEqual(dataScreen.rows,[]);
   for(const field of ['games','fee','total_winnings','mtt_winnings','on_felt']) assert.equal(Number(dataScreen.summary[field]),0,'Data leaked another member: '+field);
+  for(const legacyClub of [club,null]) {
+   assert.deepEqual(await rpc('fn_agent_downline_rake',{p_agent_user_id:account.id,p_club_id:legacyClub}),[]);
+   const legacy=await rpc('fn_agent_downline_rake_summary',{p_agent_user_id:account.id,p_club_id:legacyClub});
+   for(const field of ['members','hands','rake_generated','commission_rate','estimated_commission'])
+    assert.equal(Number(legacy[field]),0,'Legacy Data leaked with club '+legacyClub+': '+field);
+  }
   for(const [name,args] of [
    ['ca_club_data_snapshot_v2',{p_club_id:club}],
+   ['fn_agent_downline_rake',{p_agent_user_id:account.id,p_club_id:'fade0000-0000-0000-0000-000000000001'}],
+   ['fn_agent_downline_rake_summary',{p_agent_user_id:account.id,p_club_id:'fade0000-0000-0000-0000-000000000001'}],
+   ['ca_club_game_export_start',{p_club_id:club}],
+   ['ca_club_player_export_start',{p_club_id:club}],
+   ['ca_rake_export_start',{p_scope_type:'club',p_scope_id:club}],
+   ['ca_rake_export_start',{p_scope_type:'union',p_scope_id:'fade0000-0000-0000-0000-000000000001'}],
+   ['ca_rake_export_start_v2',{p_scope_type:'club',p_scope_id:club}],
+   ['ca_rake_export_start_v2',{p_scope_type:'union',p_scope_id:'fade0000-0000-0000-0000-000000000001'}],
    ['ca_rake_snapshot_v2',{p_scope:'club',p_club_id:club}],
    ['ca_rake_snapshot_v2',{p_scope:'union',p_union_id:'fade0000-0000-0000-0000-000000000001'}],
   ]) {
    const denied=await request('/rest/v1/rpc/'+name,{...caller,method:'POST',allowFailure:true,body:args});
+   if(name.includes('export_start') && denied.ok && denied.data?.export_id) unexpectedExports.add(denied.data.export_id);
    assert.equal(denied.status,403,name+' must refuse whole club/union Data');
   }
 
@@ -116,7 +132,7 @@ try {
    const denied=await request('/rest/v1/rpc/'+name,{...caller,method:'POST',allowFailure:true,body:args});
    assert.equal(denied.status,403,name+' must refuse agent access');
   }
-  results.push({role,bankDenied:true,privateColumnsDenied:true,unrelatedMembers:0,assignmentDenied:true,dataDownlineOnly:true});
+  results.push({role,bankDenied:true,privateColumnsDenied:true,unrelatedMembers:0,assignmentDenied:true,dataDownlineOnly:true,legacyMissingClubScoped:true,wholeDataExportsDenied:true});
  }
 } finally {
  if(mutationStarted) {
@@ -129,6 +145,7 @@ try {
   // Deep Stack Society for two hours. A timed-out statement rolled back, so each
   // step below re-reads state and is safe to repeat; only transient failures retry.
   const teardown=(label,operation)=>retryTransient(operation,{label:`agent boundary teardown: ${label}`});
+  for(const exportId of unexpectedExports) await teardown('cancel unexpected owned export',()=>rpc('ca_club_data_export_cancel',{p_export_id:exportId}));
   await teardown('restore admin role',async()=>{
    const current=await member();
    if(current.role!=='admin') {

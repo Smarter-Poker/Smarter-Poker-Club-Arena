@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-horse-call-receipts-and-rebuy-context-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago, Codex chat 01a1789a-6e62-7c92-8ccf-83b892671b74, explicitly answered: \"Activate off-cycle as soon as ready\" for PRs #8191, #8196 and #8197; subsequently: \"complete the task in full\". One certified off-cycle activation of protected main containing actual #8191 squash c5f27b75ea784400980aca7c8856b2710c5bd072, which includes #8196 bc4407e84afbb566c345bd9b06d295b2692e81db and #8197 2b8f43887bd2a5088d0a42667538141881dd0d02. This activates valid whole-stack call-off and PLO6 river-call receipts, all-in-or-fold call legalization, and tournament context during far-from-money rebuy offers. The earlier cash-window anchor 7fdb2223 is already in serving 814862e3 and grants nothing for these pending fixes. Preserve existing operation ownership, exact immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-rolling-hour seal and thaw. Ends once its anchor is serving, or at expiry before the end of October 26 Chicago. No migrations, unrelated strategy changes, second publisher, watcher or direct restart.",
+      "contains": "c5f27b75ea784400980aca7c8856b2710c5bd072",
+      "notBefore": "2026-10-27T02:15:22Z",
+      "notAfter": "2026-10-27T04:59:59Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-horse-all-in-witness-8244-now",
       "ownerOrder": "Dan, directly in Lightning horse reads chat 01a17363-060d-73b2-a909-974ff27f05a9 at 2026-10-25T17:41:05.381Z, original human message: \"FINISH UP ANY AND ALL TASKS THAT ARE STILL LEFT TO DO BEFORE SENDING YOUR SUMMARY REPORT.    reset now. not at 4 am\". The owner repeatedly continued this same unfinished horse delivery. One immediate certified activation of protected main containing PR #8244, merge d4a9397f74b76508fa3830f93a0f88b6885e9c05: preserve original all-in runout obligations through accepted stats and report owner-forced phase authority truthfully. The earlier 7fdb cash window is already consumed by serving 814862e363946b90f103b71246dc69dec24c31d5 and grants nothing for this merge. This entry remains a draft until exact protected migration 20261026181909 has installed history, projector postimage and unchanged ACL readback; it installs no migrations itself. Preserve required checks, immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, full rollback reserve, the existing one-window-per-hour seal and thaw. It ends once its exact protected anchor is serving and expires within six hours. No qualifier, selector, bankroll or seating changes, second publisher, watcher or direct restart. Source/qualification and canonical accepted-use proof remain distinct.",
       "contains": "d4a9397f74b76508fa3830f93a0f88b6885e9c05",

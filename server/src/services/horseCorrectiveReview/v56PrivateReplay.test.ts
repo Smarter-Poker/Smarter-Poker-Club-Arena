@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, statSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
@@ -135,7 +135,7 @@ describe('closed public replay receipt boundary', () => {
 
 describe('private explicit refusal without provider work', () => {
   it('writes only bounded closed refusal and never raw input/error material', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'v56-ingress-'));
+    const dir = mkdtempSync(join(realpathSync(tmpdir()), 'v56-ingress-'));
     try {
       const input = join(dir, 'input.json'),
         output = join(dir, 'output.json');
@@ -156,7 +156,7 @@ describe('private explicit refusal without provider work', () => {
     }
   });
   it('never overwrites an existing private result', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'v56-existing-'));
+    const dir = mkdtempSync(join(realpathSync(tmpdir()), 'v56-existing-'));
     try {
       const input = join(dir, 'input.json'),
         output = join(dir, 'output.json');

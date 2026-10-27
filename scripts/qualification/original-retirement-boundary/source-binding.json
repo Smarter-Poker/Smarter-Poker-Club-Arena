@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "e5df49185b86c4e812352ebce1b2e58dd0c598ca28a04cecd63c89ac9b843c52",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -211,5 +211,12 @@
     "compositeAuthorityContext": "accepted(public.union_pnl_cash_outcomes) and its body hash resolve under sourceguard pg_catalog search_path.",
     "retiredDelivery": "03208 was uninstalled; its exactqualified SQL is an archivefixture, not migration history.",
     "queuedOldProducerBoundary": "Real PG17 original old compiled outer queued behind installer gate resumes through the same-OID atomic common leaf; actual current cutover, original outer bytes and private money-core prosrc preserved, rollback/replay/NULL key and subtransaction cases qualified."
+  },
+  "weeklyFeePreparationWorkflowAudit": {
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "e5df49185b86c4e812352ebce1b2e58dd0c598ca28a04cecd63c89ac9b843c52",
+    "review": "Reviewed additive workflow merge from qualified treasury6cc1c1d376: all original financial/treasury commands and runner retained byte-identical; keep existing qualified player-index native step/paths and add only the qualified original coordinator pre-four fee-preparation native40 step/paths. No financial source/body or monetary assertion changed.",
+    "qualifiedEvidence": "Original whole coordinator40cases with current/older/standalone/DST/freeze/source-failure/deadline and actual original nonfinancial R2/R3 pending-window owner; zero current-week financial calls before04. Player-index original calculator/check/write parity from protected8288 retained.",
+    "boundary": "Workflow enforcement binding only, not cold-week capacity or production installation/payment certificate."
   }
 }

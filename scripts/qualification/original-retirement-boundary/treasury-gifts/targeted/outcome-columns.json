@@ -1,0 +1,10 @@
+[
+  { "name": "table_id", "type": "uuid" },
+  { "name": "hand_number", "type": "bigint" },
+  { "name": "hand_id", "type": "uuid" },
+  { "name": "transaction_id", "type": "xid8" },
+  { "name": "recognized_at", "type": "timestamp with time zone" },
+  { "name": "payload_hash", "type": "text" },
+  { "name": "game_scope", "type": "jsonb" },
+  { "name": "evidence", "type": "jsonb" }
+]

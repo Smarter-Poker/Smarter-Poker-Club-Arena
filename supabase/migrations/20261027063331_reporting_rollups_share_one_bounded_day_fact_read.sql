@@ -41,9 +41,9 @@ BEGIN
   DELETE FROM public.ca_club_tournament_player_daily WHERE stat_date = p_day;
 
   WITH day_facts AS MATERIALIZED (
-    SELECT club_id, game_id, stat_date, kind, user_id, fee, buyins, cashouts, winnings
-      FROM public.ca_club_data_fact
-     WHERE stat_date = p_day
+    SELECT f.club_id, f.game_id, f.stat_date, f.kind, f.user_id, f.fee, f.buyins, f.cashouts, f.winnings
+      FROM public.ca_club_data_fact f
+     WHERE f.stat_date = p_day
   ), rr AS MATERIALIZED (
     SELECT r.id, r.table_id, r.created_at, t.union_id, t.club_id AS table_club,
            CASE WHEN jsonb_typeof(r.player_contributions) = 'object' THEN r.player_contributions ELSE '{}'::jsonb END AS pc
@@ -155,4 +155,97 @@ END;
 $function$;
 REVOKE ALL ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_reporting_rollups_from_facts(date) TO service_role;
+
+-- Function-only follow-up: retain exact day/club coverage and all rollup calls.
+-- A validated FK makes clubs + EXISTS identical to non-null rake club DISTINCT.
+DO $caller_preimage$
+BEGIN
+  IF md5((SELECT prosrc FROM pg_proc WHERE oid = 'public.fn_club_rake_rollup_catchup(integer)'::regprocedure)) <> '44fcd6e3e1afb37db33498a2aac98c05' THEN
+    RAISE EXCEPTION 'club_rake_catchup_preimage_changed';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'public.rake_records'::regclass
+                    AND confrelid = 'public.clubs'::regclass AND contype = 'f'
+                    AND convalidated AND confdeltype = 'n'
+                    AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'public.rake_records'::regclass AND attname = 'club_id')]::smallint[]
+                    AND confkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'public.clubs'::regclass AND attname = 'id')]::smallint[]) THEN
+    RAISE EXCEPTION 'club_rake_catchup_club_fk_unproved';
+  END IF;
+END $caller_preimage$;
+
+CREATE OR REPLACE FUNCTION public.fn_club_rake_rollup_catchup(p_days integer DEFAULT 3)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '600s'
+AS $function$
+DECLARE
+  rec record; d date;
+  v_days int := 0; v_rows int := 0; v_fail int := 0; v_gaps int := 0;
+  v_ctd jsonb;
+BEGIN
+  IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR ( NOT public.fn_is_platform_admin())) THEN
+    RAISE EXCEPTION 'not_authorised';
+  END IF;
+
+  FOR rec IN
+    SELECT DISTINCT club_id FROM union_clubs
+    UNION
+    SELECT c.id AS club_id FROM public.clubs c
+     WHERE EXISTS (SELECT 1 FROM public.rake_records r
+                    WHERE r.club_id = c.id
+                      AND r.created_at >= current_date - GREATEST(p_days,1) - 1)
+  LOOP
+    FOR d IN
+      SELECT gs::date FROM generate_series(
+               current_date - GREATEST(p_days,1), current_date - 1, interval '1 day') gs
+    LOOP
+      IF EXISTS (SELECT 1 FROM club_rake_rollup_complete
+                  WHERE club_id = rec.club_id AND day = d) THEN
+        CONTINUE;
+      END IF;
+      BEGIN
+        v_rows := v_rows + public.fn_club_rake_rollup_day(rec.club_id, d);
+        v_days := v_days + 1;
+      EXCEPTION WHEN OTHERS THEN
+        v_fail := v_fail + 1;
+      END;
+    END LOOP;
+  END LOOP;
+
+  SELECT count(*) INTO v_gaps
+    FROM (SELECT c.id AS cid FROM public.clubs c
+           WHERE EXISTS (SELECT 1 FROM public.rake_records r
+                          WHERE r.club_id = c.id
+                            AND r.created_at >= current_date - GREATEST(p_days,1) - 1)) src
+    CROSS JOIN generate_series(current_date - GREATEST(p_days,1),
+                               current_date - 1, interval '1 day') g
+   WHERE NOT EXISTS (SELECT 1 FROM club_rake_rollup_complete rc
+                      WHERE rc.club_id = src.cid AND rc.day = g::date);
+
+  IF v_gaps > 0 THEN
+    INSERT INTO financial_alerts (severity, source, message, context)
+    VALUES ('warning', 'fn_club_rake_rollup_catchup',
+            'Club rake rollup has uncovered days - the live downline view is falling back to full scans',
+            jsonb_build_object('gap_club_days', v_gaps, 'lookback_days', p_days,
+                               'failures', v_fail, 'ran_at', now()));
+  END IF;
+
+  -- Club Data screen rollup. Additive; never allowed to break the above.
+  BEGIN
+    v_ctd := public.fn_club_table_daily_catchup(2);
+  EXCEPTION WHEN OTHERS THEN
+    v_ctd := jsonb_build_object('success', false, 'error', SQLERRM);
+  END;
+
+  RETURN jsonb_build_object('days_built', v_days, 'rows', v_rows,
+                            'failures', v_fail, 'remaining_gaps', v_gaps,
+                            'club_table_daily', v_ctd,
+                            'ran_at', now());
+END $function$;
+
+REVOKE ALL ON FUNCTION public.fn_club_rake_rollup_catchup(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_club_rake_rollup_catchup(integer) TO service_role;
+
 COMMIT;

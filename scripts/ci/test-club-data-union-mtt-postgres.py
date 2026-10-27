@@ -224,6 +224,7 @@ finally:
 for fixture_name, candidate_name in [
     ("reporting-rollup-cutoffs.sql", "20261027005822_reporting_rollups_read_each_club_cutoff_once.sql"),
     ("reporting-shared-day-facts.sql", "20261027063331_reporting_rollups_share_one_bounded_day_fact_read.sql"),
+    ("reporting-catchup-club-probes.sql", "20261027063331_reporting_rollups_share_one_bounded_day_fact_read.sql"),
 ]:
     subprocess.run([
         sys.executable, "-B", str(ROOT / "scripts/ci/run_launch_reset_accounting_fixture.py"),

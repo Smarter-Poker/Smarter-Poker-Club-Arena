@@ -46,6 +46,29 @@ describe('Stats cache identity', () => {
     clearStatsRangeMemo();
   });
 
+  it('does not reuse results calculated before recorded-opportunity fixes', () => {
+    const id = identity();
+    const oldKey =
+      'ps_stats_v5_scope_' +
+      JSON.stringify([
+        id.contractVersion,
+        id.viewerId,
+        id.targetUserId,
+        id.clubId,
+        id.asset,
+        id.rangeKey,
+        id.rangeDays,
+        id.timezone,
+        id.visibility,
+      ]);
+    localStorage.setItem(
+      oldKey,
+      JSON.stringify({ identity: id, payload: payload(id), cachedAt: Date.now() })
+    );
+    expect(statsCacheStorageKey(id)).not.toBe(oldKey);
+    expect(readStatsPersistentCache(id)).toBeNull();
+  });
+
   it('keys every security and analytical scope dimension', () => {
     const base = identity();
     for (const changed of [

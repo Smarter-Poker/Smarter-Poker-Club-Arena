@@ -10,10 +10,10 @@ VALUES
 TRUNCATE public.ca_hand_player_stat;
 INSERT INTO public.ca_hand_player_stat(hand_id,user_id,created_at,is_cash,tournament_id,game_variant,
  big_blind,seat_position,my_blind,won_amt,is_winner,invested_actions,vpip,pfr,profit,asset,three_bet,three_bet_opp)
-SELECT f.hand_id,f.user_id,f.played_at,true,NULL,f.game_variant,f.big_blind,f.position,0,f.returned,
+SELECT md5(f.hand_id::text||':'||g::text)::uuid,f.user_id,f.played_at,true,NULL,f.game_variant,f.big_blind,f.position,0,f.returned,
  f.returned>0,f.invested,f.vpip,f.pfr,f.net,c.asset,f.three_bet,f.three_bet_opportunity
-FROM public.ca_hand_facts f JOIN public.clubs c ON c.id=f.club_id;
-SELECT public.ca_refresh_stat_distribution(2);
+FROM public.ca_hand_facts f JOIN public.clubs c ON c.id=f.club_id CROSS JOIN generate_series(1,500) g;
+SELECT public.ca_refresh_stat_distribution(1000);
 DO $$ BEGIN
  IF (SELECT p50 FROM public.ca_stat_distribution WHERE cohort='field:chips' AND metric='bb100')<>450
  OR (SELECT p50 FROM public.ca_stat_distribution WHERE cohort='field:diamonds' AND metric='bb100')<>-100
@@ -25,7 +25,7 @@ DO $$ BEGIN
  IF has_function_privilege('authenticated','public.ca_refresh_stat_distribution(integer)','EXECUTE')
  THEN RAISE EXCEPTION 'Snapshot writer exposed to browser'; END IF;
 END $$;
-SELECT public.ca_refresh_stat_distribution(3);
+SELECT public.ca_refresh_stat_distribution(1001);
 DO $$ BEGIN
  IF EXISTS(SELECT 1 FROM public.ca_stat_distribution WHERE cohort IN ('field','field:chips','field:diamonds'))
  THEN RAISE EXCEPTION 'Empty cohort retained stale comparisons'; END IF;

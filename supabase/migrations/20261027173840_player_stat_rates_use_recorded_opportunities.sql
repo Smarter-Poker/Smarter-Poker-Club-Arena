@@ -53,7 +53,7 @@ BEGIN
  IF position('recorded_fact_rates' in d)>0 THEN RAISE EXCEPTION 'Fact rates already installed'; END IF;
  d:=replace(d,'  v_analysis jsonb;','  v_analysis jsonb; v_recorded_fact_rates jsonb;');
  d:=replace(d,'s.tournament_id,s.is_winner,s.vpip,s.pfr,',
-  's.tournament_id,s.is_winner,s.vpip,s.pfr,
+  's.tournament_id,s.is_winner,coalesce(f.vpip,s.vpip) AS vpip,coalesce(f.pfr,s.pfr) AS pfr,
       f.three_bet fact_three_bet,f.three_bet_opportunity,f.cbet_flop,f.cbet_flop_opportunity,
       f.faced_three_bet,f.folded_to_three_bet,f.saw_flop,f.went_to_showdown,f.won_at_showdown,');
  d:=replace(d,'f.tournament_id,(f.net>0),f.vpip,f.pfr,',
@@ -84,6 +84,8 @@ BEGIN
         'hours_played',false))$sql$);
  d:=replace(d,'v_exact_cash FROM source_rows;',
   'v_exact_cash,v_recorded_fact_rates FROM source_rows;');
+ d:=replace(d,'s.is_winner,s.vpip,s.pfr,coalesce(f.net,s.profit) net,',
+  's.is_winner,coalesce(f.vpip,s.vpip) AS vpip,coalesce(f.pfr,s.pfr) AS pfr,coalesce(f.net,s.profit) net,');
  d:=replace(d,$text$'overall',v_overall,'daily',v_daily$text$,
   $text$'overall',v_overall||(v_recorded_fact_rates-'metric_availability'),'daily',v_daily$text$);
  d:=replace(d,$text$'advanced_facts_source','ca_hand_player_stat'$text$,

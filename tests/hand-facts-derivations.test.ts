@@ -290,6 +290,22 @@ describe('derivePosition — from the button, not from action order', () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('deriveFlowFlags', () => {
+  it('does not count a short all-in below the live blind or straddle as a raise', () => {
+    const actions: HandAction[] = [
+      { seat: 2, userId: 'b', action: 'bb', amount: 10, stage: 'preflop', origin: 'forced' },
+      { seat: 3, userId: 'c', action: 'straddle', amount: 20, stage: 'preflop', origin: 'forced' },
+      { seat: 1, userId: 'hero', action: 'all_in', amount: 15, stage: 'preflop' },
+    ];
+    const flags = deriveFlowFlags('hero', actions, {
+      boardLength: 0,
+      returned: 0,
+      nonFoldedCount: 2,
+    });
+    expect(flags.vpip).toBe(true);
+    expect(flags.pfr).toBe(false);
+    expect(flags.three_bet).toBe(false);
+  });
+
   const A = 'user-a';
   const B = 'user-b';
   const C = 'user-c';

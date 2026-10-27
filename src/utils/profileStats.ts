@@ -24,6 +24,8 @@ export interface PokerStats {
   totalProfit: number;
   winRate: number;
   wtsd: number;
+  wtsdMeasured?: boolean;
+  showdownMeasured?: boolean;
   showdownWinRate: number;
   hoursPlayed: number;
   hoursMeasured?: boolean;
@@ -156,6 +158,8 @@ export function profileStatsFromV2(payload: any): PokerStats | null {
     totalProfit: finiteStat(overall.total_profit),
     winRate: totalHands > 0 ? (handsWon / totalHands) * 100 : 0,
     wtsd: finiteStat(overall.wtsd) * 100,
+    wtsdMeasured: payload.quality?.metric_availability?.wtsd === true,
+    showdownMeasured: showdownsTotal > 0,
     showdownWinRate: showdownsTotal > 0 ? (showdownsWon / showdownsTotal) * 100 : 0,
     hoursPlayed: finiteStat(overall.hours_played),
     hoursMeasured: payload.quality?.metric_availability?.hours_played === true,

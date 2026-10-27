@@ -1311,12 +1311,20 @@ export default function ProfilePage() {
                       isVisible={visibleStats.has(5)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.wtsd, 1)}%`}
+                      value={
+                        stats.wtsdMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.wtsd, 1)}%`
+                      }
                       label="WTSD"
                       isVisible={visibleStats.has(13)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.showdownWinRate, 1)}%`}
+                      value={
+                        stats.showdownMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.showdownWinRate, 1)}%`
+                      }
                       label="Won At SD"
                       isVisible={visibleStats.has(14)}
                     />
@@ -1340,7 +1348,11 @@ export default function ProfilePage() {
                   <h3>Financial</h3>
                   <div className={styles.statsGrid}>
                     <StatCard
-                      value={signed(fixedTrunc(stats.bbPer100, 2), stats.bbPer100)}
+                      value={
+                        stats.cashHands > 0
+                          ? signed(fixedTrunc(stats.bbPer100, 2), stats.bbPer100)
+                          : 'Not Yet Measured'
+                      }
                       label="BB/100"
                       positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
                       isVisible={visibleStats.has(6)}

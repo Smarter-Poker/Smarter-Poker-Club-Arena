@@ -11,7 +11,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public
 AS $function$
 DECLARE v_rows integer;
 BEGIN
- IF p_min_hands IS NULL OR p_min_hands<1 OR p_min_hands>1000000 THEN
+ IF p_min_hands IS NULL OR p_min_hands<1000 OR p_min_hands>1000000 THEN
   RAISE EXCEPTION 'Invalid cohort minimum hands' USING ERRCODE='22023';
  END IF;
  -- Delete only the snapshots this same producer owns, in the same transaction.
@@ -75,6 +75,7 @@ BEGIN
   d:=replace(d,'WHERE net>0','WHERE returned>0');
   d:=replace(d,'(f.net>0)','(f.returned>0)');
   IF r.proname='ca_player_stats_overview_v2' THEN
+   d:=replace(d,'s.is_winner,coalesce(f.vpip','coalesce(f.returned>0,s.is_winner) AS is_winner,coalesce(f.vpip');
    d:=replace(d,'s.is_winner,s.vpip','coalesce(f.returned>0,s.is_winner) AS is_winner,s.vpip');
   END IF;
   EXECUTE d;

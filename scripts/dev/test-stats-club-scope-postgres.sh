@@ -51,6 +51,12 @@ PY
 "${psql[@]}" -f "$fixture/cohort-bootstrap.sql" \
  -f "$repo/supabase/migrations/20261027174948_stat_comparisons_use_exact_asset_scoped_cohorts.sql" \
  -f "$fixture/cohort-assertions.sql"
+"${psql[@]}" -f "$fixture/aggression-bootstrap.sql" \
+ -f "$repo/supabase/migrations/20261027175924_record_call_only_aggression_at_fact_insertion.sql" \
+ -f "$fixture/aggression-assertions.sql"
+"${psql[@]}" -f "$fixture/cache-raises-bootstrap.sql" \
+ -f "$repo/supabase/migrations/20261027182146_action_cache_distinguishes_all_in_calls_from_raises.sql" \
+ -f "$fixture/cache-raises-assertions.sql"
 if [[ -n "${STATS_FUNDED_EXPORT:-}" ]]; then
  "${psql[@]}" -Atc "SELECT pg_get_functiondef('public.ca_player_stats_overview_v2_by_club(uuid,integer,text,text,uuid)'::regprocedure)" >"$STATS_FUNDED_EXPORT"
 fi

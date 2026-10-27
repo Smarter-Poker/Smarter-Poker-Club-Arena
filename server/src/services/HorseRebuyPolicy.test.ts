@@ -128,7 +128,7 @@ describe('rebuyDecision asks WHETHER before it asks how much', () => {
     expect(amount).toBeLessThan(400);
   });
 
-  it('legacy sizing is still the fail-open fallback', () => {
+  it('retains the historical minimum fallback when no minimum is supplied', () => {
     expect(legacyRebuyAmount(2)).toBe(200);
     expect(legacyRebuyAmount(0)).toBe(200);
   });

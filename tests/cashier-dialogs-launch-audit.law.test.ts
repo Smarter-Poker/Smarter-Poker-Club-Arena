@@ -110,8 +110,8 @@ describe('D-03 / D-04: nothing from the previous club or the previous claim surv
     );
     expect(src).toContain('const [holderNonce, setHolderNonce] = useState(0);');
     expect(src).toContain('setHolderNonce((n) => n + 1);');
-    expect(src).toContain(
-      '[tab, shownDestination, recipient, clubUuid, isMounted, holderNonce, walletType, personalClaim]'
+    expect(src).toMatch(
+      /\[\s*tab,\s*shownDestination,\s*recipient,\s*clubUuid,\s*isMounted,\s*holderNonce,\s*walletType,\s*personalClaim,?\s*\]/
     );
   });
 });

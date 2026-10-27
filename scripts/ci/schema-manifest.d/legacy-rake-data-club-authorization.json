@@ -1,0 +1,6 @@
+{
+  "_owner": "Data follow-up 01a17a22. PROMISED only, not observed live: migration 20261027002505 installs from protected main through Apply Merged Migration after required checks and merge. Existing live-proof verifies both legacy readers call this private helper.",
+  "tables": [],
+  "functions": ["fn_ca_authorized_agent_data_clubs"],
+  "columns": {}
+}

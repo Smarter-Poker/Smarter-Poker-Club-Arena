@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import {
+  FUNDING_FILE,
+  FUNDING_INDEX,
   CHICAGO_FILE,
   CHICAGO_INDEX,
   recoveryCatalog,
@@ -524,4 +526,22 @@ test('installer binds and verifies backend identity after pool startup replaceme
   const bound = s.indexOf(`SET application_name = 'apply-recorded-migration'`, connected);
   const checked = s.indexOf(`identity.rows[0]?.name !== 'apply-recorded-migration'`, bound);
   assert.ok(connected < bound && bound < checked && checked < s.indexOf('let already;'));
+});
+
+test('funding source cover recovery binds exact bytes, OID, include columns and all original guards', () => {
+  const sql=readFileSync(new URL('../../supabase/migrations/'+FUNDING_FILE,import.meta.url),'utf8');
+  const r=recoveryRequest(FUNDING_FILE,sql,FUNDING_INDEX,'259578496','2026-10-26T18:22:00Z');
+  const funding={...row,oid:r.oid,name:'accounting_cash_club_week_player_cover',table_name:'accounting_cash_rake_sources',attribute_count:4,
+    definition:'CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)'};
+  assert.equal(validateRecoveryCatalog([funding],r),funding);
+  for(const [key,value] of Object.entries({oid:'259578497',owner:'other',table_owner:'other',valid:true,ready:false,live:false,replica_identity:true,unique_index:true,primary_index:true,exclusion_index:true,key_count:3,attribute_count:3,no_predicate:false,no_expression:false,no_constraints:false,no_transients:false,no_builder:false,definition:funding.definition.replace('player_id, id','player_id')}))
+    assert.throws(()=>validateRecoveryCatalog([{...funding,[key]:value}],r));
+  assert.throws(()=>recoveryRequest(FUNDING_FILE,sql+' ',FUNDING_INDEX,r.oid,r.before));
+  assert.throws(()=>recoveryRequest(FUNDING_FILE,sql,FUNDING_INDEX,r.oid,r.before,'259578498'));
+  assert.equal(recoveryStatement(r),'REINDEX INDEX CONCURRENTLY '+FUNDING_INDEX);
+  assert.throws(()=>cleanupStatement(r));
+  assert.ok(recoveryCatalog(r).includes('accounting_cash_club_week_player_cover'));
+  assert.ok(!recoveryCatalog(r).includes('managed_game_contract_versions_game_id_id_idx'));
+  assert.equal(validateRecoveryCatalog([{...funding,oid:'259578499',valid:true}],r,true).valid,true);
+  assert.throws(()=>validateRecoveryCatalog([{...funding,valid:true}],r,true));
 });

@@ -1322,6 +1322,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Active weekly payout outage: original full-hand source cardinality expanded the same effective admission view per bank receipt and prevented bounded preparation. Count the identical unfiltered source set once per hand. Native PostgreSQL17 passed28 parity cases with10000 sources, original drift, metadata, ACL, rollback and replay refusal. Live read-only full window matched every value, ID and fingerprint for38689 cash and6599 tournament sources in18.469s. Exact qualified bytes installed; original forty-source authority remains TRUE. Immediate recording is the next source action. Wallet payment remains unverified."
+    },
+    {
+      "version": "20261027004204",
+      "name": "rakeback_is_paid_before_the_club_books_close",
+      "file": "supabase/migrations/20261027004204_rakeback_is_paid_before_the_club_books_close.sql",
+      "md5": "cc033cfbfa46f7d929388d4461580326",
+      "appliedToProductionAt": "2026-10-27T00:49:07.948Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Maintained installer atomic exact-byte history; live history, reader and forty-source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: all84 earned-fee windows are certified and cash-source refusals are zero, but the later club-book report blocks payout on91 unsupported original flows. Owner explicitly requires union-to-club90percent, agents, players, THEN club settlement and invoicing. Move the SAME P&L guard from fee preparation to after conserved paid rounds and before settled status/ECO/weekly invoices; all fee-source, historical-contract, calculation, funding, authorization, deadline, conservation and original receipt guards remain. Actual-owner native phase tests reproduce old refusal and prove new ordering, refusals, warming progress, replay and atomic legacy rollback using controlled stage contracts. Retained actual original calculator/R3 wallet-ledger/invoice/concurrency regressions passed separately. Production payment still needs full-path rollback proof and exact asserted amounts. Qualified bytes installed through maintained applier and read back with original forty-source authority TRUE; this immediate recording is the next source action. This is not a wallet credit or completed-book claim."
     }
   ]
 }

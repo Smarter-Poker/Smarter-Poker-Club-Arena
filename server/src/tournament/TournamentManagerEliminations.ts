@@ -278,9 +278,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     durableWakeId?: number,
     durableWakeGeneration?: number
   ): boolean {
-    const accepted = super.requestEliminationSweep(reason, durableWakeId);
+    // Retain the generation before the base can admit a scheduler callback,
+    // including a temporary refusal while registration is being established.
     if (
-      accepted &&
       Number.isSafeInteger(durableWakeId) &&
       Number(durableWakeId) > 0 &&
       Number.isSafeInteger(durableWakeGeneration) &&
@@ -293,7 +293,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         Math.max(this.pendingManagerWakeGenerations.get(id) ?? 0, generation)
       );
     }
-    return accepted;
+    return super.requestEliminationSweep(reason, durableWakeId);
   }
   /** One signal per unresolved bounty hand, cleared when its exact row lands. */
   protected bountyEvidenceDeferred = new Set<string>();

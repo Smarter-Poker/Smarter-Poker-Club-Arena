@@ -74,6 +74,12 @@ describe('ALL_IN_RUNOUT carries the CONTESTED pot (uncalled bet returned first)'
 
     // Contested pot: both live players matched 31. The SB's other 249 were
     // never winnable and must be OUT of the event's pot.
+    expect(hc.getAllInRunoutWitness()).toEqual({ street: 'preflop', playerIds: ['u2', 'u3'] });
+    expect(Object.isFrozen(hc.getAllInRunoutWitness())).toBe(true);
+    expect(Object.isFrozen(hc.getAllInRunoutWitness()!.playerIds)).toBe(true);
+    expect(
+      new HandController(mkConfig(), mkPlayers([100, 100]), 1).getAllInRunoutWitness()
+    ).toBeNull();
     expect(runout!.pot).toBe(62);
     expect(st().pot).toBe(62);
 

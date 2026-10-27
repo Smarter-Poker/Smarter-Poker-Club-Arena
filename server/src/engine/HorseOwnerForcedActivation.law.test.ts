@@ -255,6 +255,9 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
         if (!opening) throw new Error('Controlled tournament opening has no actor');
         const selected = opening.state.legalActions?.includes('check') ? 'check' : 'call';
         expect(opening.state.legalActions).toContain(selected);
+        const menu = controller.getAuthoritativeActionState(opening.hero.user_id)!;
+        expect(menu.canAct).toBe(true);
+        expect(menu.legalActions).toContain(selected);
         expect(controller.performAction(opening.hero.seat, selected)).toBe(true);
       }
       expect(controller.getState().stage).toBe('flop');

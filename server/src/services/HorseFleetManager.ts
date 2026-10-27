@@ -3425,7 +3425,6 @@ export class HorseFleetManager {
                not once the host is at its curve. Bypassed entirely when a
                human at this table needs the game rescued. */
             if (
-              !bankrollOnly &&
               !hostAllowsNewBody({
                 hostId: String((table as any).club_id ?? ''),
                 horseId: h.id,

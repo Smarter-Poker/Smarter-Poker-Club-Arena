@@ -222,6 +222,14 @@
       "contains": "a1d1a637371f601921f0620f1d26fa517eb06f29",
       "notBefore": "2026-10-24T02:33:00Z",
       "notAfter": "2026-10-24T06:33:00Z"
+    },
+    {
+      "id": "2026-10-27-tournament-capacity-and-whole-field-addon-8278-extension",
+      "ownerOrder": "Dan, directly in this tournament freeze and horse add-on task: \"KEEP GOING WITH PR #8227. FINISH THE REQUIRED CHECKS, MERGE, PUSH AND PUBLISH TODAY. VERIFY EVERY ELIGIBLE HORSE GETS ITS ADD-ON AND THE TABLES RESUME DEALING. DO NOT STOP AT ANOTHER PENDING STATUS.\" On October 26 at approximately 23:41 America/Chicago, after being told the today-only exception expires at midnight and asked whether to extend off-cycle activation for this repair for up to six more hours while retaining every check and cutover safeguard, Dan explicitly answered: \"Extend off-cycle activation for this repair\". This bounded extension runs October 27 00:00 through 06:00 America/Chicago, exactly six hours, for one certified activation of protected source carrying PR #8278: retained manager wake custody, canonical pending wake admission, continuous captured eligible add-on purchases during the held minute, and the related #8253 causal consolidation and bounded preparation repairs already combined in this PR. Protected anchor c23bc9467a1a1a5668234ca3a3288f4e1f327d64 was independently absent from serving 814862e363946b90f103b71246dc69dec24c31d5 when prepared. Anchor ancestry alone is not completion: independently prove the actual protected #8278 squash is included, every captured eligible horse has its canonical add-on receipt, the full pause is preserved, and tables resume dealing. If another release serves the anchor before this merge, this entry grants nothing. Preserve required checks, exact-SHA immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full 285-second cutover and rollback reserve, rolling one-window-per-hour seal, thaw, forward-only publication and other operations ownership. No migration, unrelated work, second publisher, watcher, timer or direct restart. Ends when its anchor is serving or at the stated expiry.",
+      "contains": "c23bc9467a1a1a5668234ca3a3288f4e1f327d64",
+      "notBefore": "2026-10-27T05:00:00Z",
+      "notAfter": "2026-10-27T11:00:00Z",
+      "migrations": []
     }
   ],
   "databaseWindows": [

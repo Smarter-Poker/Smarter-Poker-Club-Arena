@@ -1,0 +1,6 @@
+# Deferred split receipt payer reuse
+
+Root owns all production reads/writes, installer and money. Child source-only branch codex/payout-receipt-payer-reuse-01a17898, external owned rb-discharge-01a17898. No other source writer.
+Current canonical policies2.9 reader resumed17:19, manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b; current repository AGENTS/PLAYBOOK/CLAUDE/PUBLISHING and parent checkpoint read. Source40/qualified31649 have no split-complete definition/pin. Original source/guard proof lifetimes remain unchanged.
+Actual root proof96821 rolled back at deferred SET CONSTRAINTS after285s; repeated payer plan parsing consumed106.907s. Only TWO split-complete callee names change to existing installed private helper c2. Live receipt predicates and STABLE/owner/ACL unchanged. Exact original helper/validator provenance retained native fixtures, because142050sourcePR8315 may still be unmerged. No production replay.
+Acceptance: exact original R2/R3 and deferred-trigger proof, after-hit financial and source/payer tamper refusals, original metadata preserved, genuine parser-call reduction, normal checks/push/protected integration; root exact install/readback and actual payout proof separately. Existing hourly business rules unchanged.

@@ -68,7 +68,7 @@ jobs:
       - name: Sealed inventory retains the complete original financial proof
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --wallet-jackpot-flow-migration supabase/migrations/20261027003208_weekly_close_reads_original_wallet_jackpot_awards.sql
       - name: Earned windows retain every complete hand cardinality
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

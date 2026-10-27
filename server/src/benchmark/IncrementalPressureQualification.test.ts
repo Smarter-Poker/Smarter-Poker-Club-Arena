@@ -309,6 +309,7 @@ test('joint family locks complete member plans and never reassigns exposed seeds
   const families = {
     '283': {
       schema: 'horse-incremental-crn-family-v1',
+      providerAnchor: { workflowId: 70, baselineRunId: 90, baselineRunNumber: 17 },
       runtimeSourceDigest: a.runtimeSourceDigest,
       members: [
         { target: a.target, planDigest: hash(a) },
@@ -398,4 +399,61 @@ test('only affirmatively unstarted original-operation cells may recover', async 
     assert.throws(() => assertIncrementalUnconsumedRecovery([{ ...job, steps }], 2, 'a'));
   assert.throws(() => assertIncrementalUnconsumedRecovery([], 2, 'a'));
   assert.throws(() => assertIncrementalUnconsumedRecovery([job], 2, 'b'));
+});
+
+test('provider lineage detects deleted runs without assuming numbering starts at one', async () => {
+  const { assertIncrementalProviderLineage, assertIncrementalFamilyHistory } =
+    await import('./IncrementalPressureQualification.js');
+  const anchor = { workflowId: 70, baselineRunId: 90, baselineRunNumber: 17 };
+  const baseline = { id: 90, workflow_id: 70, run_number: 17, created_at: '2026-10-27T15:00:00Z' };
+  const current = { id: 93, workflow_id: 70, run_number: 20, created_at: '2026-10-27T18:00:00Z' };
+  const runs = [
+    baseline,
+    { ...baseline, id: 91, run_number: 18 },
+    { ...baseline, id: 92, run_number: 19 },
+    current,
+  ];
+  assert.doesNotThrow(() =>
+    assertIncrementalProviderLineage(runs, current, anchor, baseline, '2026-10-27T16:00:00Z')
+  );
+  for (const inventory of [
+    runs.filter((r) => r.id !== 91),
+    runs.filter((r) => r.id !== 90),
+    [...runs, { ...baseline, id: 95, run_number: 18 }],
+    runs.map((r) => (r.id === 92 ? { ...r, workflow_id: 71 } : r)),
+  ])
+    assert.throws(() =>
+      assertIncrementalProviderLineage(inventory, current, anchor, baseline, '2026-10-27T16:00:00Z')
+    );
+  assert.throws(() =>
+    assertIncrementalProviderLineage(runs, current, anchor, baseline, baseline.created_at)
+  );
+  assert.throws(() =>
+    assertIncrementalProviderLineage(
+      runs,
+      current,
+      { ...anchor, baselineRunNumber: 18 },
+      baseline,
+      '2026-10-27T16:00:00Z'
+    )
+  );
+  const family = { providerAnchor: anchor };
+  const snapshots = [
+    { commit: 'c'.repeat(40), family },
+    { commit: 'b'.repeat(40), family },
+    { commit: 'a'.repeat(40), family: undefined },
+  ];
+  assert.equal(assertIncrementalFamilyHistory(snapshots, family), 'b'.repeat(40));
+  assert.throws(() =>
+    assertIncrementalFamilyHistory(
+      [
+        snapshots[0],
+        { ...snapshots[1], family: { providerAnchor: { ...anchor, baselineRunId: 91 } } },
+      ],
+      family
+    )
+  );
+  assert.throws(() =>
+    assertIncrementalFamilyHistory([snapshots[0], snapshots[2], snapshots[1]], family)
+  );
 });

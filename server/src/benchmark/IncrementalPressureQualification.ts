@@ -162,8 +162,12 @@ export function validateIncrementalFamily(
   if (
     !family ||
     family.schema !== 'horse-incremental-crn-family-v1' ||
-    Object.keys(family).sort().join(',') !== 'members,runtimeSourceDigest,schema' ||
+    Object.keys(family).sort().join(',') !== 'members,providerAnchor,runtimeSourceDigest,schema' ||
     family.runtimeSourceDigest !== plan.runtimeSourceDigest ||
+    !family.providerAnchor ||
+    Object.keys(family.providerAnchor).sort().join(',') !==
+      'baselineRunId,baselineRunNumber,workflowId' ||
+    Object.values(family.providerAnchor).some((v) => !Number.isSafeInteger(v) || Number(v) <= 0) ||
     !Array.isArray(family.members) ||
     !family.members.length ||
     family.members.length > 4 ||
@@ -186,6 +190,81 @@ export function validateIncrementalFamily(
   if (!family.members.some((m: any) => m.target === plan.target && m.planDigest === digest(plan)))
     throw Error('Incremental family omits target');
   return family;
+}
+/** First-parent protected history cannot reset a consumed family by deleting,
+ * replacing or reintroducing its registration. Snapshots are newest first. */
+export function assertIncrementalFamilyHistory(
+  snapshots: { commit: string; family: unknown }[],
+  family: unknown
+): string {
+  if (!snapshots.length || snapshots.length > 1000 || !snapshots[0].family)
+    throw Error('Incremental family history unavailable');
+  let first = '',
+    absent = false;
+  for (const snapshot of snapshots) {
+    if (!/^[0-9a-f]{40}$/.test(snapshot.commit)) throw Error('Incremental family history unknown');
+    if (snapshot.family === undefined) {
+      absent = true;
+      continue;
+    }
+    if (absent || digest(snapshot.family) !== digest(family))
+      throw Error('Incremental family registration changed');
+    first = snapshot.commit;
+  }
+  if (!first) throw Error('Incremental family introduction unavailable');
+  return first;
+}
+/** A provider-authenticated pre-registration anchor establishes the numbering
+ * baseline. Contiguity catches deleted original runs; numbering need not start
+ * at one. Unknown lineage and inventory truncation always refuse. */
+export function assertIncrementalProviderLineage(
+  runs: any[],
+  operation: any,
+  anchor: any,
+  baseline: any,
+  registeredAt: string
+) {
+  if (
+    !anchor ||
+    !baseline ||
+    !Array.isArray(runs) ||
+    !runs.length ||
+    runs.length > 1000 ||
+    !Number.isSafeInteger(anchor.workflowId) ||
+    anchor.workflowId <= 0 ||
+    !Number.isSafeInteger(anchor.baselineRunId) ||
+    anchor.baselineRunId <= 0 ||
+    !Number.isSafeInteger(anchor.baselineRunNumber) ||
+    anchor.baselineRunNumber <= 0 ||
+    baseline.id !== anchor.baselineRunId ||
+    baseline.workflow_id !== anchor.workflowId ||
+    baseline.run_number !== anchor.baselineRunNumber ||
+    !Number.isFinite(Date.parse(registeredAt)) ||
+    !(Date.parse(baseline.created_at) < Date.parse(registeredAt)) ||
+    operation.workflow_id !== anchor.workflowId ||
+    operation.run_number <= anchor.baselineRunNumber ||
+    !runs.some(
+      (r) =>
+        r.id === baseline.id &&
+        r.run_number === baseline.run_number &&
+        r.created_at === baseline.created_at
+    ) ||
+    !runs.some((r) => r.id === operation.id && r.run_number === operation.run_number) ||
+    new Set(runs.map((r) => r.id)).size !== runs.length ||
+    runs.some(
+      (r) =>
+        r.workflow_id !== anchor.workflowId ||
+        !Number.isSafeInteger(r.run_number) ||
+        r.run_number <= 0
+    )
+  )
+    throw Error('Incremental provider lineage unavailable');
+  const numbered = runs
+    .filter((r) => r.run_number >= anchor.baselineRunNumber)
+    .map((r) => r.run_number)
+    .sort((a, b) => a - b);
+  if (numbered.some((n, i) => n !== anchor.baselineRunNumber + i))
+    throw Error('Incremental provider lineage gap');
 }
 /** Complete provider inventory, never current-run-only. A fresh dispatch is
  * not a recovery. Same-family targets must belong to the original joint plan. */
@@ -297,6 +376,8 @@ export async function authenticateIncrementalPlan(
     process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
   )
     throw Error('Incremental protected provider unavailable');
+  if (git('rev-parse', '--is-shallow-repository') !== 'false')
+    throw Error('Incremental family history is shallow');
   const head = git('rev-parse', 'HEAD');
   if (git('status', '--porcelain', '--untracked-files=no')) throw Error('Incremental source dirty');
   git('merge-base', '--is-ancestor', head, 'origin/main');
@@ -343,6 +424,34 @@ export async function authenticateIncrementalPlan(
     get(`/commits/${commit}/pulls`),
   ]);
   const operation = assertIncrementalPlanProvenance(operationValue, prs, commit, run!);
+  const familyHistory = git(
+    'log',
+    '--first-parent',
+    '--format=%H',
+    '-1001',
+    '--',
+    INCREMENTAL_FAMILY_PATH
+  ).split('\n');
+  if (familyHistory.length > 1000) throw Error('Incremental family history bound');
+  const firstFamilyCommit = assertIncrementalFamilyHistory(
+    familyHistory.map((revision) => ({
+      commit: revision,
+      family: JSON.parse(git('show', `${revision}:${INCREMENTAL_FAMILY_PATH}`))[
+        incrementalSeedFamily(plan.target as IncrementalTarget)
+      ],
+    })),
+    family
+  );
+  const firstFamilyPrs = await get(`/commits/${firstFamilyCommit}/pulls`);
+  assertIncrementalPlanProvenance(operationValue, firstFamilyPrs, firstFamilyCommit, run!);
+  const firstMergedAt = firstFamilyPrs.find(
+    (p: any) =>
+      p.merge_commit_sha === firstFamilyCommit &&
+      p.merged_at &&
+      p.base?.ref === 'main' &&
+      p.base?.repo?.full_name === repo
+  )?.merged_at;
+  const baseline = await get(`/actions/runs/${family.providerAnchor.baselineRunId}`);
   const familyPrs = await get(`/commits/${familyCommit}/pulls`);
   assertIncrementalPlanProvenance(operationValue, familyPrs, familyCommit, run!);
   const controlPaths = [
@@ -355,7 +464,7 @@ export async function authenticateIncrementalPlan(
   let total: number | undefined;
   for (let page = 1; page <= 10; page++) {
     const result = await get(
-      `/actions/workflows/horse-feature-ablation-qualification.yml/runs?per_page=100&page=${page}`
+      `/actions/workflows/${family.providerAnchor.workflowId}/runs?per_page=100&page=${page}`
     );
     if (
       !Array.isArray(result.workflow_runs) ||
@@ -369,8 +478,9 @@ export async function authenticateIncrementalPlan(
     if (runs.length === total) break;
   }
   if (runs.length !== total) throw Error('Incremental inventory page bound');
+  assertIncrementalProviderLineage(runs, operation, family.providerAnchor, baseline, firstMergedAt);
   const prior = assertIncrementalFamilyRuns(
-    runs,
+    runs.filter((r) => r.run_number > family.providerAnchor.baselineRunNumber),
     operation,
     plan.target as IncrementalTarget,
     head,
@@ -420,16 +530,7 @@ export async function authenticateIncrementalPlan(
     if (git('show', `${operation.head_sha}:${path}`) !== git('show', `${head}:${path}`))
       throw Error('Incremental workflow control changed');
   }
-  if (
-    git(
-      'ls-files',
-      '--others',
-      '--exclude-standard',
-      'server/src',
-      'server/scripts',
-      '.github/workflows'
-    )
-  )
+  if (git('ls-files', '--others', 'server/src', 'server/scripts', '.github/workflows'))
     throw Error('Incremental untracked executable source');
   // Full executable source closure prevents a plan from omitting a changed helper.
   const sourceFiles = git('ls-files', 'server/src')
@@ -452,6 +553,8 @@ export async function authenticateIncrementalPlan(
   return {
     protectedPlanCommit: commit,
     protectedFamilyCommit: familyCommit,
+    firstProtectedFamilyCommit: firstFamilyCommit,
+    providerAnchor: family.providerAnchor,
     familyDigest: digest(family),
     providerRunId: String(operation.id),
     priorFamilyRuns: prior.map((p) => ({

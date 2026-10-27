@@ -35,3 +35,5 @@ bounded provider history refuses new-run replay, changed family membership or
 source, and unknown historical partitions. Original-operation recovery permits
 only cells whose earlier evaluation was affirmatively skipped without starting.
 The existing v1 recovery and evidence rules are unchanged.
+
+Provider lineage now requires an immutable protected family anchor naming an authenticated pre-registration workflow run and its actual run number. Full retained first-parent registration history and contiguous provider run numbers from that anchor reject deleted-run gaps, lineage changes and registration resets. Numbering need not start at one. Both registries remain empty; no heldout authority is added.

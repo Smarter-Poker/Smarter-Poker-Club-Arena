@@ -1109,6 +1109,12 @@ it('a durable manager wake continues retained admission before requesting or ack
   expect(await s.admitTournamentManagerWake(wake)).toBe(false);
   expect(sweep).not.toHaveBeenCalled();
   expect(resume).not.toHaveBeenCalled();
+  // A continuation can reuse its exact manager object. Its earlier readiness
+  // cannot authorize new dealers during another business resume.
+  s.tournamentManagersReadyForCapacityWake = new WeakSet([successor]);
+  resume.mockImplementationOnce(async () => {
+    expect(s.tournamentManagersReadyForCapacityWake.has(successor)).toBe(false);
+  });
   unblock();
   expect(await s.admitTournamentManagerWake(wake)).toBe(true);
   expect(resume).toHaveBeenCalledOnce();

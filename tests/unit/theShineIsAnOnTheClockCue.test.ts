@@ -73,7 +73,7 @@ describe('the shine only appears on the seat whose turn it is', () => {
   });
 
   it('the CSS sweep takes its delay from the seat, defaulting to three seconds', () => {
-    const rule = sliceCssRule(CSS, '.seat__avatar--holo::after {');
+    const rule = sliceCssRule(CSS, '.seat__holo::after {');
     expect(rule).toMatch(/animation-delay: var\(--sp-holo-delay, 3s\);/);
     expect(rule).toMatch(/spAvatarHolo/);
   });

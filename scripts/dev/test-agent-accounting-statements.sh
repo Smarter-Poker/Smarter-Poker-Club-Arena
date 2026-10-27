@@ -28,6 +28,14 @@ python3 -B "$root/scripts/ci/test-commission-agent-wallet-postgres.py" --pg-bin 
 python3 -B "$root/scripts/ci/test-existing-transfer-discharge-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 
+# A former standalone zero book verifies the paid foreign original R2 receipts.
+python3 -B "$root/scripts/ci/test-zero-standalone-foreign-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
 # Valid historical role promotion cannot strand the original commission cascade.
 python3 -B "$root/scripts/ci/test-historical-agent-role-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+
+# Deleted-agent reserves reuse only unchanged original payer proofs per request.
+python3 -B "$root/scripts/ci/test-deleted-reserve-reuse-postgres.py" --pg-bin "$pgbin" \
   --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

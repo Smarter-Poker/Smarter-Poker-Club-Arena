@@ -356,35 +356,12 @@ describe('3. the last-five-seconds pulse rests at 0%/100% and flares at 50%', ()
   });
 });
 
-describe('4. the border-linear ring is gated on the construct it uses', () => {
-  const dAt = SEAT_CSS.indexOf('--sp-ring-d:');
-  const gateAt = SEAT_CSS.lastIndexOf('@supports', dAt);
-  const condition = SEAT_CSS.slice(gateAt, SEAT_CSS.indexOf('{', gateAt)).replace(/\s+/g, ' ');
-
-  it('asks for atan2() of container units as a conic-gradient stop, in a var-free declaration', () => {
-    expect(dAt).toBeGreaterThan(-1);
-    expect(gateAt).toBeGreaterThan(-1);
-    expect(condition).toMatch(/\(\s*background:\s*conic-gradient\(/);
-    expect(condition).toMatch(/atan2\([^;]*cqw[^;]*cqh/);
-    expect(condition).toMatch(/clamp\(/);
-    expect(condition).toMatch(/container-type:\s*size/);
-    // A var() would make the test declaration valid at parse time whatever
-    // the engine thinks of the stop - the exact hole being closed.
-    expect(condition).not.toMatch(/var\(/);
-    // The two unrelated questions it used to ask.
-    expect(condition).not.toMatch(/rotate:\s*atan2\(1px, 1px\)/);
-    expect(condition).not.toMatch(/\(width:\s*1cqw\)/);
-  });
-
-  it('a browser that fails the gate keeps the angle-linear ring, declared before it', () => {
-    const arcAt = SEAT_CSS.indexOf('.seat--active .seat__timer-ring-arc {');
-    expect(arcAt).toBeGreaterThan(-1);
-    expect(arcAt).toBeLessThan(gateAt);
-    const arc = sliceCssRule(SEAT_CSS, '.seat--active .seat__timer-ring-arc {');
-    expect(arc).toMatch(/--sp-ring-edge:\s*calc\(100% - var\(--timer-progress, 100%\)\)/);
-    expect(arc).toMatch(/conic-gradient\(/);
-    // ...and that fallback empties at the deadline: the one keyframe drives it.
-    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingShrink \{[^@]*to \{\s*--timer-progress: 0%;/);
+describe('4. the border-linear ring avoids Safari gradient interpolation', () => {
+  it('uses native transforms rather than custom properties and container trig', () => {
+    expect(SEAT_CSS).not.toMatch(/--sp-ring-d:|@property --sp-timer-spent|atan2\(/);
+    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingShrink/);
+    expect(SEAT_CSS).toMatch(/@keyframes spTimerRingCounterWipe/);
+    expect(SEAT_CSS).toMatch(/border: 3px solid #00e5ff/);
   });
 });
 

@@ -199,6 +199,7 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
     sourceRelease:input.sourceRelease,cases,rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
 if (process.argv[1] === '--reference-shape-diagnostic') {
+  let report;
   try {
     let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
     const input=JSON.parse(raw);
@@ -213,9 +214,13 @@ if (process.argv[1] === '--reference-shape-diagnostic') {
     if (input.version===2) {
       const review=await import('/app/dist/services/horseDecisionJournal/review.js');
       const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
-      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation})));
-    } else console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
-  } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
+      report=inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation});
+    } else report=inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB});
+  } catch {report={status:'unknown',reason:'journal_or_runtime_unavailable'};}
+  await new Promise(resolve=>{
+    process.stdout.once('error',()=>process.exit(1));
+    process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
+  });
   process.exit(0);
 }
 '''
@@ -669,6 +674,7 @@ def sanitize_tournament_result(result, value):
 
 
 TOURNAMENT_DIAGNOSTIC_ADAPTER = r'''
+let report;
 try {
   let raw=''; for await (const chunk of process.stdin) { raw+=chunk; if(Buffer.byteLength(raw)>8192)throw Error(); }
   const input=JSON.parse(raw);
@@ -677,8 +683,12 @@ try {
   const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
   const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
   const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
-  console.log(JSON.stringify(inspectTournamentPredicateRecords(input,batch,api)));
-} catch { console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'})); }
+  report=inspectTournamentPredicateRecords(input,batch,api);
+} catch { report={status:'unknown',reason:'journal_or_runtime_unavailable'}; }
+await new Promise(resolve=>{
+  process.stdout.once('error',()=>process.exit(1));
+  process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
+});
 process.exit(0);
 '''
 

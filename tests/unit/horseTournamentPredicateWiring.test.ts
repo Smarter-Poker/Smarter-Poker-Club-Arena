@@ -58,7 +58,7 @@ it('rejects duplicate, foreign, private and oversized metadata without echoing i
     expect(result.stderr).not.toContain('private-sentinel');
   }
 });
-it('embeds only the fixed protected helper source and preserves reference code bytes', () => {
+it('embeds fixed helper source and preserves reviewed validators and intentional flush-only reference bytes', () => {
   const result = spawnSync('python3', ['-B', inspector, '--host-script'], { encoding: 'utf8' });
   expect(result.status, result.stderr).toBe(0);
   const extracted = spawnSync(
@@ -106,7 +106,7 @@ it('embeds only the fixed protected helper source and preserves reference code b
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');
   for (const [key, pin] of Object.entries(pins)) expect(sha(currentFunctions[key]), key).toBe(pin);
   expect(sha(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0])).toBe(
-    'c7d13d3cdc88d534587d93ad1ea7d4260af88f8abcc1e9ab3eb283646ea72c53'
+    '679417485571a7ab4c8659d1b2e30e43ee8b881717918d26cf6f636fea843f21'
   );
 });
 it('keeps unavailable runtime and untrusted child output sanitized unknown', () => {
@@ -208,4 +208,123 @@ it('version2 encodes an exact original full-list ordinal and refuses invalid or 
     encoding: 'utf8',
   });
   expect(legacy.status).toBe(1);
+});
+// Exercise the ACTUAL private Node entrypoint emission under pipe backpressure.
+// Imports/strategy return a fixed safe synthetic report; no production records.
+const PIPE_EMISSION_PY = String.raw`
+import json,os,runpy,subprocess,sys
+m=runpy.run_path(sys.argv[1]); mode=sys.argv[2]; broken=sys.argv[3]=='broken'
+report=json.loads(sys.stdin.read()); expected=json.dumps(report,separators=(',',':')).encode()+b'\n'
+if mode=='tournament': entry=m['TOURNAMENT_DIAGNOSTIC_ADAPTER']
+else:
+ source=m['REFERENCE_DIAGNOSTIC_JS']; entry=source[source.index("if (process.argv[1] === '--reference-shape-diagnostic')"):]
+prefix='const tournamentPredicateInputIsValid=()=>true;const loadInstalledTournamentPredicateApi=async()=>({});const inspectTournamentPredicateRecords=()=>('+json.dumps(report,separators=(',',':'))+');const inspectReferenceRecords=inspectTournamentPredicateRecords;const inspectAcceptedCalloffRecords=inspectTournamentPredicateRecords;\n'
+program="""import vm from 'node:vm';
+process.argv[1]='--reference-shape-diagnostic';
+const context=vm.createContext({process,Buffer,console});
+const source="""+json.dumps(prefix+entry)+""";
+const module=new vm.SourceTextModule(source,{context,importModuleDynamically:async spec=>{
+ const fields=spec.endsWith('ChannelHub.js')?{channelHub:{close(){}}}:spec.endsWith('journalTransport.js')?{exportCanonicalHorseJournalBatch(){return {}}}:spec.endsWith('HorseLogic.js')?{SHORT_STACK_NO_FLAT_BB:10}:{};
+ const child=new vm.SyntheticModule(Object.keys(fields),function(){for(const [k,v]of Object.entries(fields))this.setExport(k,v)},{context});
+ await child.link(()=>{});await child.evaluate();return child;
+}});await module.link(()=>{});await module.evaluate();"""
+r,w=os.pipe();os.set_blocking(w,False);filled=0
+if broken: os.close(r)
+else:
+ while True:
+  try:filled+=os.write(w,b'X'*4096)
+  except BlockingIOError:break
+p=subprocess.Popen(['node','--experimental-vm-modules','--input-type=module','-e',program],stdin=subprocess.PIPE,stdout=w,stderr=subprocess.PIPE)
+os.close(w)
+p.stdin.write(json.dumps({'version':1 if mode=='reference_v1' else 2,'sourceRelease':'a'*40,'cases':[]}).encode());p.stdin.close();p.stdin=None
+# Hold the reader until early process exit or finite backpressure timeout.
+try:p.wait(timeout=0.25)
+except subprocess.TimeoutExpired:pass
+raw=b''
+if not broken:
+ while True:
+  chunk=os.read(r,65536)
+  if not chunk:break
+  raw+=chunk
+ os.close(r)
+_,err=p.communicate(timeout=5)
+actual=raw[filled:] if not broken else b''
+print(json.dumps({'mode':mode,'broken':broken,'exitCode':p.returncode,'expectedBytes':len(expected),'emittedBytes':len(actual),'complete':actual==expected,'rawPrivateDataExported':False,'stderrContainsPayload':expected[:-1] in err}))
+`;
+const emissionReport = {
+  version: 2,
+  status: 'observed',
+  rawRecordsExported: false,
+  replayVerified: false,
+  activationAllowed: false,
+  v56Causality: 'unknown',
+  previousLevelBranch: 'unknown',
+  sourceRelease: 'a'.repeat(40),
+  cases: Array.from({ length: 6 }, (_, i) => ({
+    handKey: String(i).repeat(64),
+    status: 'observed',
+    observation: 'accepted_original_tournament_payout_context',
+    decisionRecordSha256: 'b'.repeat(64),
+    executionRecordSha256: 'c'.repeat(64),
+    acceptedRecordSha256: 'd'.repeat(64),
+    decisionKeySha256: 'e'.repeat(64),
+    actionOrdinal: 4095,
+    payoutTermsDigest: 'f'.repeat(64),
+    contextDigest: 'a'.repeat(64),
+    phase7InputDigest: 'b'.repeat(64),
+    finalizedLadderValidated: true,
+    unitGridAndPoolReserveConserved: true,
+    bubbleProtectionCaptured: true,
+    completeOriginalContextProvenance: true,
+    phase7ReceiptReadFrameBound: true,
+    recordHashesVerified: true,
+    originalHandBound: true,
+    sameTurnExecution: true,
+    intendedActionAccepted: true,
+    handReconciled: true,
+    bubbleProtectionEnabled: false,
+  })),
+};
+it.each(['tournament', 'reference_v1', 'reference_v2'])(
+  'flushes the actual %s Node entrypoint completely and fails closed on pipe errors',
+  (mode) => {
+    for (const broken of [false, true]) {
+      const out = spawnSync(
+        'python3',
+        ['-B', '-c', PIPE_EMISSION_PY, inspector, mode, broken ? 'broken' : 'intact'],
+        { input: JSON.stringify(emissionReport), encoding: 'utf8', timeout: 10000 }
+      );
+      expect(out.status, out.stderr).toBe(0);
+      expect(JSON.parse(out.stdout)).toMatchObject(
+        broken
+          ? {
+              exitCode: 1,
+              emittedBytes: 0,
+              rawPrivateDataExported: false,
+              stderrContainsPayload: false,
+            }
+          : {
+              exitCode: 0,
+              complete: true,
+              expectedBytes: 7052,
+              emittedBytes: 7052,
+              rawPrivateDataExported: false,
+            }
+      );
+    }
+  }
+);
+it('maps either private child pipe failure to the same sanitized unknown result', () => {
+  const out = python(
+    `g=m['reference_diagnostic'].__globals__
+def refused(*a,**k):raise RuntimeError('private-payload-sentinel')
+g['bounded_command']=refused;g['TOURNAMENT_PREDICATE_JS']='fixed-helper'
+print(json.dumps([m['reference_diagnostic'](d),m['tournament_diagnostic'](d)]))`,
+    input
+  );
+  expect(out.status, out.stderr).toBe(0);
+  expect(JSON.parse(out.stdout)).toEqual(
+    Array(2).fill({ status: 'unknown', reason: 'journal_or_runtime_unavailable' })
+  );
+  expect(out.stdout).not.toContain('private-payload-sentinel');
 });

@@ -1,6 +1,8 @@
 /** Entirely synthetic local fixtures. No production records or live qualification. */
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 // @ts-expect-error standalone runtime helper is deliberately plain JavaScript
 import {
   explicitTournamentPredicates,
@@ -237,6 +239,51 @@ it('observes actual finalized payout/provenance validators and actual reconciled
   });
   const result = inspectTournamentPredicateRecords(fixture.input, fixture.batch, api);
   expect(result.status).toBe('observed');
+  const sanitized = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_tournament_result'](d['result'],d['input'])))",
+      resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+    ],
+    { input: JSON.stringify({ result, input: fixture.input }), encoding: 'utf8' }
+  );
+  expect(sanitized.status, sanitized.stderr).toBe(0);
+  expect(JSON.parse(sanitized.stdout)).toEqual(result);
+  for (const mutate of [
+    (r: any) => {
+      r.cases[0].privatePayload = 'private-sentinel';
+    },
+    (r: any) => {
+      r.cases[0].handReconciled = 1;
+    },
+    (r: any) => {
+      r.cases[0].contextDigest = 'bad';
+    },
+    (r: any) => {
+      r.sourceRelease = 'b'.repeat(40);
+    },
+    (r: any) => {
+      r.status = 'unknown';
+    },
+  ]) {
+    const refused = structuredClone(result);
+    mutate(refused);
+    const checked = spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());\ntry: m['sanitize_tournament_result'](d['result'],d['input']);print('accepted')\nexcept Exception: print('refused')",
+        resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+      ],
+      { input: JSON.stringify({ result: refused, input: fixture.input }), encoding: 'utf8' }
+    );
+    expect(checked.status, checked.stderr).toBe(0);
+    expect(checked.stdout.trim()).toBe('refused');
+  }
+
   expect(result.cases[0]).toMatchObject({
     finalizedLadderValidated: true,
     bubbleProtectionCaptured: true,

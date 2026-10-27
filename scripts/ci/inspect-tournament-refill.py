@@ -582,6 +582,112 @@ def merge_bounded_events(target, addition):
     target['events'] = combined[-128:]
 
 
+
+def tournament_cases(raw, expected):
+    """New mode uses original-coordinate v2 custody; legacy reference bytes stay unchanged."""
+    if len(raw) > REFERENCE_CASE_BYTES:
+        raise ValueError('tournament_cases_refused')
+    def unique(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError('tournament_cases_refused')
+            result[key] = item
+        return result
+    value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique)
+    if not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] != 1:
+        raise ValueError('tournament_cases_refused')
+    validated = reference_cases(json.dumps({**value, 'version': 2}).encode('utf-8'), expected)
+    return {**validated, 'version': 1}
+
+
+def sanitize_tournament_result(result, value):
+    reasons = {'input_refused', 'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
+               'record_binding_or_duplicate', 'accepted_hand_missing_or_ambiguous',
+               'matching_decision_ambiguous', 'matching_decision_missing',
+               'accepted_hand_binding_mismatch', 'original_snapshot_binding_mismatch',
+               'execution_missing_or_ambiguous', 'execution_not_intended',
+               'hand_not_reconciled', 'record_or_validator_unavailable', 'journal_or_runtime_unavailable',
+               'runtime_identity_unverified'}
+    fixed = {'version': 1, 'rawRecordsExported': False, 'replayVerified': False,
+             'activationAllowed': False, 'v56Causality': 'unknown', 'previousLevelBranch': 'unknown'}
+    if not isinstance(result, dict) or result.get('status') not in ('unknown', 'observed'):
+        raise ValueError('tournament_result_refused')
+    if set(result) == {'status', 'reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('tournament_result_refused')
+        return result
+    if any(type(result.get(k)) is not type(v) or result[k] != v for k, v in fixed.items()):
+        raise ValueError('tournament_result_refused')
+    if 'cases' not in result:
+        if set(result) != set(fixed) | {'status', 'reason'} or result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('tournament_result_refused')
+        return result
+    if (set(result) != set(fixed) | {'status', 'sourceRelease', 'cases'}
+            or result['sourceRelease'] != value['sourceRelease']
+            or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError('tournament_result_refused')
+    hashes = {'decisionRecordSha256', 'executionRecordSha256', 'acceptedRecordSha256', 'decisionKeySha256',
+              'payoutTermsDigest', 'contextDigest', 'phase7InputDigest'}
+    guards = {'finalizedLadderValidated', 'unitGridAndPoolReserveConserved', 'bubbleProtectionCaptured',
+              'completeOriginalContextProvenance', 'phase7ReceiptReadFrameBound', 'recordHashesVerified',
+              'originalHandBound', 'sameTurnExecution', 'intendedActionAccepted', 'handReconciled'}
+    observed = hashes | guards | {'handKey', 'status', 'observation', 'bubbleProtectionEnabled'}
+    for case, original in zip(result['cases'], value['cases']):
+        if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
+            raise ValueError('tournament_result_refused')
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in reasons:
+                raise ValueError('tournament_result_refused')
+            continue
+        if (set(case) != observed or case['status'] != 'observed'
+                or case['observation'] != 'accepted_original_tournament_payout_context'
+                or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
+                or any(case[k] is not True for k in guards)
+                or type(case['bubbleProtectionEnabled']) is not bool
+                or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])):
+            raise ValueError('tournament_result_refused')
+    if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
+        raise ValueError('tournament_result_refused')
+    return result
+
+
+TOURNAMENT_DIAGNOSTIC_ADAPTER = r'''
+try {
+  let raw=''; for await (const chunk of process.stdin) { raw+=chunk; if(Buffer.byteLength(raw)>8192)throw Error(); }
+  const input=JSON.parse(raw);
+  if(!tournamentPredicateInputIsValid(input,input.sourceRelease))throw Error();
+  const api=await loadInstalledTournamentPredicateApi();
+  const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
+  const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+  const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
+  console.log(JSON.stringify(inspectTournamentPredicateRecords(input,batch,api)));
+} catch { console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'})); }
+process.exit(0);
+'''
+
+
+def tournament_diagnostic(value):
+    try:
+        helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
+        if not isinstance(helper, str) or not helper or len(helper.encode('utf-8')) > 65536:
+            raise ValueError('tournament_helper_unavailable')
+        raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
+                               '-e', helper + '\n' + TOURNAMENT_DIAGNOSTIC_ADAPTER],
+                              input_bytes=json.dumps(value).encode('utf-8'))
+        return sanitize_tournament_result(json.loads(raw), value)
+    except Exception:
+        return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
+
+
+def tournament_host_script():
+    """Protected checkout source only; caller never supplies a path or command."""
+    helper = Path(__file__).with_name('horse-tournament-predicate-proof.mjs').read_text(encoding='utf-8')
+    if not helper or len(helper.encode('utf-8')) > 65536:
+        raise ValueError('tournament_helper_unavailable')
+    return 'TOURNAMENT_PREDICATE_JS = ' + repr(helper) + '\n' + Path(__file__).read_text(encoding='utf-8')
+
+
 def merge_worker_receipt_errors(target, addition):
     target['matchingRecords'] += addition['matchingRecords']
     combined = target['events'] + addition['events']
@@ -989,10 +1095,15 @@ def sanitize_restart_evidence(state, restarts, raw_events):
     return result
 
 
-def main(expected, selected_cases=None):
+def main(expected, selected_cases=None, selected_tournament_cases=None):
     if not re.fullmatch(r'[0-9a-f]{40}', expected):
         raise RuntimeError('expected_sha_refused')
+    if selected_cases is not None and selected_tournament_cases is not None:
+        raise ValueError('case_modes_mutually_exclusive')
+    if selected_tournament_cases is not None:
+        selected_tournament_cases = tournament_cases(json.dumps(selected_tournament_cases).encode('utf-8'), expected)
     before = identity(expected)
+    tournament_observations = tournament_diagnostic(selected_tournament_cases) if selected_tournament_cases is not None else None
     original_cases = reference_diagnostic(selected_cases) if selected_cases is not None else None
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
@@ -1014,23 +1125,40 @@ def main(expected, selected_cases=None):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    if tournament_observations is not None and (not runtime_stable or before['health'] != 'ok' or before['instanceId'] is None):
+        tournament_observations = {'status': 'unknown', 'reason': 'runtime_identity_unverified'}
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'tournamentCases': tournament_observations, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):
     try:
+        if len(argv) == 2 and argv[1] == '--host-script':
+            print(tournament_host_script())
+            return 0
+        if len(argv) == 3 and argv[1] == '--encode-tournament-cases':
+            value = tournament_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
+            print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
+            return 0
         if len(argv) == 3 and argv[1] == '--encode-reference-cases':
             value = reference_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
             print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
             return 0
-        if len(argv) not in (2, 3):
+        if len(argv) not in (2, 3, 4):
             raise RuntimeError('argument_refused')
         selected = None
-        if len(argv) == 3 and argv[2]:
+        if len(argv) >= 3 and argv[2]:
             if len(argv[2]) > 11000:
                 raise ValueError('reference_cases_refused')
             selected = reference_cases(base64.b64decode(argv[2], validate=True), argv[1])
-        main(argv[1], selected)
+        tournament_selected = None
+        if len(argv) == 4 and argv[3]:
+            if len(argv[3]) > 11000 or selected is not None:
+                raise ValueError('tournament_cases_refused')
+            tournament_selected = tournament_cases(base64.b64decode(argv[3], validate=True), argv[1])
+        if tournament_selected is None:
+            main(argv[1], selected)
+        else:
+            main(argv[1], selected, tournament_selected)
         return 0
     except Exception:
         # Never emit subprocess output, exception messages, URLs or log bodies.

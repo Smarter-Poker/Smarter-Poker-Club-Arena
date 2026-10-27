@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { zombieProgressAge } from '../fleetWideZombieVerdict.js';
 
 const TABLE = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const ZOMBIE_MS = 180_000;
@@ -49,7 +50,7 @@ function engineBetweenHands(): any {
 
 /**
  * GameServer's per-table verdict, verbatim (GameServer.ts:
- * `shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000`,
+ * `shouldBeDealing && !parkedOnPurpose && zombieProgressAge(engine) > 180_000`,
  * with `parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong`). A
  * tournament-owned table always "should be dealing". The source pin below
  * fails if the sweep stops reading these inputs this way.
@@ -57,7 +58,7 @@ function engineBetweenHands(): any {
 function sweepCondemns(e: any): boolean {
   const shouldBeDealing = true;
   const parkedOnPurpose = e.isParkedByDesign();
-  return shouldBeDealing && !parkedOnPurpose && e.msSinceProgress() > ZOMBIE_MS;
+  return shouldBeDealing && !parkedOnPurpose && zombieProgressAge(e) > ZOMBIE_MS;
 }
 
 /** Run the dealing loop's hold branch exactly as the loop does, until it ends. */
@@ -164,7 +165,7 @@ describe('the wiring the behaviour above depends on', () => {
       /const parkedOnPurpose = engine\.isParkedByDesign\(\) && !pausedTooLong;/
     );
     expect(GAME_SERVER).toMatch(
-      /shouldBeDealing && !parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/
+      /shouldBeDealing && !parkedOnPurpose && zombieProgressAge\(engine\) > 180_000/
     );
   });
 });

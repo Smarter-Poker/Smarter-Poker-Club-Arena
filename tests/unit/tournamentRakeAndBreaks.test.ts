@@ -197,7 +197,7 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(reaper).toMatch(/engine\.isParkedByDesign\(\)/);
     // The pause check must gate the SAME condition as the staleness check.
     expect(reaper).toMatch(
-      /shouldBeDealing && !parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/
+      /shouldBeDealing && !parkedOnPurpose && zombieProgressAge\(engine\) > 180_000/
     );
   });
 

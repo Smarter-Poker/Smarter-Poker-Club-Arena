@@ -25,7 +25,8 @@ import {
  * Table Studio is now the one selectable-appearance owner, and every launcher
  * mounts that same component. This module remains its one mutation path: emit
  * first so every open felt repaints instantly, write only the columns being
- * changed, and revert the exact optimistic field if persistence fails.
+ * changed, keep interrupted writes pending, and revert only a definitive
+ * ownership or validation refusal.
  *
  * It deliberately does NOT own reading. `useUserThemeSettings` remains the one
  * reader; a writer that also reads is how the two drift apart again.
@@ -219,8 +220,8 @@ function emitAppearance(
  * @param opts.gameType  which bucket to write. 'ALL' is the global default and
  *                       is what every non-per-variant surface should use.
  * @param opts.previous  what to put back if the write fails. Supply it and a
- *                       failed save visibly reverts instead of leaving the
- *                       felt showing something the server never accepted.
+ *                       definitive refusal visibly reverts. An interrupted
+ *                       network request keeps its original intent pending.
  */
 export async function applyTableAppearance(
   patch: AppearancePatch,

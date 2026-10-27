@@ -1070,8 +1070,8 @@ export default function SettingsPage() {
            columns; the two settings with no column (achievements, settlement
            alerts) still live in profiles.settings, written just above.
 
-           It is also no longer fatal: a push-preferences hiccup must not
-           fail the whole settings save. */
+           A push-preferences hiccup now keeps the chosen fields pending;
+           it cannot clear the pending marker before every selected field saves. */
         /* PHANTOM SETTING FIX 2026-08-28: this upsert also wrote
            `live_notifications: settings.handWonNotifications ?? true`, and
            every part of that line was wrong.
@@ -1146,8 +1146,8 @@ export default function SettingsPage() {
         );
       }
 
-      // Commit into the store the live table reads only after the account
-      // merge succeeds. The table store emits every changed key immediately.
+      // The selected fields already applied on the originating interaction.
+      // Acknowledgement updates only this snapshot's cache and sync status.
       hasChangesRef.current = false;
       setHasChanges(false);
 

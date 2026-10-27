@@ -987,5 +987,5 @@ async function documentFontsReady(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-import { registerMobileActionStripCases } from './css/mobileActionStripCases';
+import { registerMobileActionStripCases } from './support/mobileActionStripCases';
 registerMobileActionStripCases();

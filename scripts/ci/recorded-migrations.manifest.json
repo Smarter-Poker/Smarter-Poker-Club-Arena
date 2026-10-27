@@ -1346,6 +1346,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: no wallets paid; original source calculation completes only one two-hour count window in roughly135seconds including original guards. Preserve exact original evidence/incomplete/drifted counts while joining bounded original source and batch keysets once. Native PostgreSQL17 actual original owner and exact reserved installer passed22faults in generic/custom plans, ACL/freeze/preimage/refusal/rollback/replay and metadata preservation. One full read-only production window matched all3durable original counts in17.160seconds with2full hash joins, one read per keyset and no temp spill; no uniform latency claim. No payer, receipt, schedule, financial rule, guard or source-authority pin changed. Qualified bytes installed through maintained applier, exact history/postimage/original40source authority read back. This immediate exact-byte recording is the next source action; actual human/agent wallet payment remains pending original guarded coordinator proof and asserted commit."
+    },
+    {
+      "version": "20261027040245",
+      "name": "rakeback_pages_index_the_player_and_earning_week",
+      "file": "supabase/migrations/20261027040245_rakeback_pages_index_the_player_and_earning_week.sql",
+      "md5": "47e773787a60e1854d9d2fca63e6181b",
+      "appliedToProductionAt": "2026-10-27T04:35:49.997Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Maintained concurrent-preamble installer; exact atomic source history and two VALID READY LIVE index definitions read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8288",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: remaining club calculation pages use a cash player-only access path and tournament nonleading player index. Two matching concurrent indexes preserve all original calculation, source, rate, payer, certificate, fingerprint, guard and cache bytes. Native PostgreSQL17 actual allocation/check/write/certificate/payer qualification passed9cases including independent1727amount oracle, full ordered source fingerprints, partial replay, wrong shapes and real INVALID build refusal; TypeScript/focused laws/normal pre-push passed. Native reads126794to6121blocks with local317.680to273.047ms; no production timing or04AM guarantee. Hosted required checks queued while human wallets remain unpaid, so qualified exact bytes installed through PUBLISHING active-outage exception. Official assigned-project Metrics API proved /data available276379811840bytes at2026-10-27T04:26:35.435Z. Exact full-file history and live index definitions plus original40source authority read back. This recording is the very next source action; human payments and final protected merge/live capacity proof remain separate pending gates."
     }
   ]
 }

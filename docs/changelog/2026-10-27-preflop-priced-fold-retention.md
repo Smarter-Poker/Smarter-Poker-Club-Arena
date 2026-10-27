@@ -1,0 +1,7 @@
+# Preflop price refusals survive recovery
+
+A measured wide-range read could let the generic call-down overwrite V38's Omaha price refusal with a second sample and a lower threshold. V38 now marks its priced refusal through the existing continuation guard; participation-floor and maniac recovery retain it. A non-all-in generic recovery also retains the range decision while another live seat still owes the raise, without inventing that seat's cards or treating it as a caller. Existing all-in and matched-caller population semantics remain.
+
+The same Omaha aggression prior still applies to every opponent. That starting assumption is not measured evidence for V38's maniac-only repricing trigger or for overturning a fold. Actual observed aggressive reads and ordinary variant/all-in price admission remain available.
+
+The controlled PLO5 regression uses only hero cards and public money/action inputs: pot234, call156, stack396.2 and sampled equity.44. Before correction it returned CALL after V38's refusal; afterward it retains FOLD. This proves the source inconsistency, not the unavailable original decision path for hand50200751. Existing strong-hand continuation and junk-hand refusal assertions remain unchanged. Delivery and live activation require the normal protected route and separate proof.

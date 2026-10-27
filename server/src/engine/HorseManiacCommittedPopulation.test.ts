@@ -113,3 +113,47 @@ describe('preflop maniac recovery uses the actual committed population', () => {
     expect(eq).toHaveBeenCalledTimes(3); // at most the two existing bounded confirmations.
   });
 });
+
+it('does not recover a non-all-in flat while another live seat still owes the raise', () => {
+  const { hero, gs } = spot();
+  hero.stack = 400;
+  gs.players[0] = { ...hero, cards: [] };
+  const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValue(0.9);
+  expect(
+    HorseLogic.__testables.maniacCallDown(
+      { action: 'fold', thinkTime: 0 },
+      hero,
+      gs,
+      Eval.variantInfo('nlh'),
+      {}
+    ).action
+  ).toBe('fold');
+  expect(eq).not.toHaveBeenCalled();
+  gs.players[2].is_folded = true;
+  expect(
+    HorseLogic.__testables.maniacCallDown(
+      { action: 'fold', thinkTime: 0 },
+      hero,
+      gs,
+      Eval.variantInfo('nlh'),
+      {}
+    ).action
+  ).toBe('call');
+});
+
+it('a presumed aggressive prior cannot substitute for measured call-down evidence', () => {
+  const { hero, gs } = spot({ is_folded: true });
+  const read = HorseMind.opponentRead('seat-2')!;
+  vi.mocked(HorseMind.opponentRead).mockReturnValue({ ...read, presumed: true });
+  const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValue(0.9);
+  expect(
+    HorseLogic.__testables.maniacCallDown(
+      { action: 'fold', thinkTime: 0 },
+      hero,
+      gs,
+      Eval.variantInfo('nlh'),
+      {}
+    ).action
+  ).toBe('fold');
+  expect(eq).not.toHaveBeenCalled();
+});

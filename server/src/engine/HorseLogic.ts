@@ -2290,7 +2290,12 @@ export function vpipFloorCallDown(
   },
   rand: () => number
 ): HorseDecision {
-  if (gs.stage !== 'preflop' || decision.action !== 'fold' || gs.allInOrFold === true)
+  if (
+    gs.stage !== 'preflop' ||
+    decision.action !== 'fold' ||
+    gs.allInOrFold === true ||
+    decision.continuationGuard === 'preflop_priced_refusal'
+  )
     return decision;
   const floor = Number(gs.vpipFloor ?? 0);
   if (!(floor > 0)) return decision;
@@ -2369,6 +2374,8 @@ function maniacCallDown(
     if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
     return decision;
   }
+  if (decision.action === 'fold' && decision.continuationGuard === 'preflop_priced_refusal')
+    return decision;
   if (decision.action !== 'fold' || opts.mind === false || gs.allInOrFold === true) return decision;
   const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
   if (!(toCall > 0) || !(player.stack > 0)) return decision;
@@ -2409,7 +2416,8 @@ function maniacCallDown(
     // a preflop maniac's do; its preflop range is its (wide) calling range.
     const postflopOnly =
       street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read);
-    const width = postflopOnly ? 1 : maniacRaiseWidth(read);
+    // A shared starting prior is not observed evidence for undoing a fold.
+    const width = postflopOnly ? 1 : read?.presumed ? null : maniacRaiseWidth(read);
     if (width === null) return decision;
     const betRate =
       street === 'preflop'
@@ -2433,6 +2441,15 @@ function maniacCallDown(
             (p) => p.is_all_in || (Number.isFinite(p.bet) && p.bet >= gs.currentBet - 0.005)
           )
         : allLive;
+    // A flat that leaves chips behind is not a terminal heads-up price while
+    // another live seat still owes the raise. Do not invent that seat's call
+    // or cards; retain the earlier range decision until a closed price exists.
+    if (
+      street === 'preflop' &&
+      toCall < player.stack &&
+      allLive.some((p) => !p.is_all_in && p.stack > 0 && p.bet < gs.currentBet - 0.005)
+    )
+      return decision;
     const opponentCards = vi.isOmaha ? vi.holeCount : player.cards.length;
     const deck =
       (vi.isShortDeck ? 36 : 52) - player.cards.length - (gs.communityCards?.length ?? 0);
@@ -4829,13 +4846,17 @@ export class HorseLogic {
     // envelope AND raising at least 35% of hands / re-raising 25%). Null for
     // every horse-like read, so horse-versus-horse play is unchanged.
     let maniacRaiserWidth: number | null = null;
+    let observedManiacRaiser = false;
     let maniacBehindWidth: number | null = null;
     if (opts.mind !== false) {
       try {
         const raiserM =
           lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
-        if (raiserM && raiserM.user_id !== player.user_id)
-          maniacRaiserWidth = maniacRaiseWidth(HorseMind.opponentRead(raiserM.user_id));
+        if (raiserM && raiserM.user_id !== player.user_id) {
+          const read = HorseMind.opponentRead(raiserM.user_id);
+          maniacRaiserWidth = maniacRaiseWidth(read);
+          observedManiacRaiser = read?.presumed !== true && maniacRaiserWidth !== null;
+        }
         if (raises === 0) {
           for (const p of gs.players) {
             if (p.seat === player.seat || p.is_folded || p.is_all_in || p.is_sitting_out) continue;
@@ -5032,8 +5053,7 @@ export class HorseLogic {
       const raiserAllIn38 = raiser38?.is_all_in === true;
       const effCall38 = Math.min(toCall, player.stack);
       const maniacPrice38 =
-        maniacRaiserWidth !== null &&
-        (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
+        observedManiacRaiser && (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
       const variantPrice38 =
         (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
         (raiserAllIn38 || effCall38 >= player.stack * 0.4);
@@ -5237,7 +5257,7 @@ export class HorseLogic {
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
           notePhase6Route('variant_fallback', 'variant_price');
-          return { action: 'fold', thinkTime: 0 };
+          return { action: 'fold', thinkTime: 0, continuationGuard: 'preflop_priced_refusal' };
         } catch {
           if (telemetryOn(opts)) noteFire('v38_preflop_price_unavailable');
           /* No invented opponent/equity: the explicit range fallback decides. */

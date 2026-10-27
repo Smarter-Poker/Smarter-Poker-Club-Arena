@@ -722,6 +722,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V52'
   ),
   flag(
+    'comboDrawPressure',
+    'candidate-only legal heads-up cash flop/turn combo-draw pressure, priced against calling with the continuing-range/rake model; default off pending independent incremental qualification',
+    'Combo draw pressure'
+  ),
+  flag(
     'v53Pressure',
     'read-gated pressure on a credibly aggressive human: wider in-position 3-bets, flop/turn value and semi-bluff raises of a wide bettor, river bluffs into a credible over-folder (league v53_pressure)',
     'V53'
@@ -3208,6 +3213,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic / HorseOpponentExploit pressure on an aggressive human (V53)',
     "a wider 3-bet of a wide opener, a value or semi-bluff raise of a wide bettor, a river bluff into a credible over-folder (scare card or not), or a hold'em solver spot handed to the exploit layer",
     'V53'
+  ),
+  receipt(
+    'combo_draw_pressure_evaluated',
+    'HorseLogic facing flop/turn EV menu',
+    'a physically strong draw against a public wide-bettor read evaluated permitted pressure raises as well as its call; proposal, not accepted-use proof',
+    'Combo draw pressure'
+  ),
+  receipt(
+    'combo_draw_pressure_raise',
+    'HorseLogic facing flop/turn EV menu',
+    'the chosen legal raise has positive modeled EV above calling at the same executed size; returned proposal, not accepted-use proof',
+    'Combo draw pressure'
   ),
   receipt(
     'v46_class_read',

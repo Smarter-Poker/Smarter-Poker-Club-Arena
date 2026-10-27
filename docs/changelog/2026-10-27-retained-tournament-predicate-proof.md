@@ -21,3 +21,7 @@ The regression executes the actual private Node entrypoints with synthetic impor
 ## Blocking native Git fixture cleanup
 
 Current-head CI reached a disposable Git fixture teardown error, `Directory not empty: .git`, after its reservation assertions passed. Actual Git TRACE2 showed commits starting detached automatic maintenance children. The fixture now sets only its own `maintenance.autoDetach=false` and `gc.autoDetach=false` before its first commit, preserving real maintenance while requiring it to finish before cleanup. The real-commit regression failed on the original `--detach` child and passes with a successful matching child-exit event. No cleanup errors are suppressed, no retries or sleeps were added, and production reservation behavior is unchanged. The exact Linux cleanup race was not reproduced locally.
+
+## Real journal component tests use the server runtime
+
+The seven synthetic tests that import the real journal reviewer now run under the maintained server suite and its Node 22 runtime. The client Node 20 suite cannot load the reviewer's native `node:sqlite` dependency. All seven assertions remain enforced by the existing server test discovery; the client-side metadata and wiring tests remain in the client suite. Only test import paths, strict fixture typing and suite placement changed. Runtime code and Node versions are unchanged.

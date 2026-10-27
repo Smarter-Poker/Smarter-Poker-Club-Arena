@@ -3,27 +3,27 @@ import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-// @ts-expect-error standalone runtime helper is deliberately plain JavaScript
 import {
   explicitTournamentPredicates,
   inspectTournamentPredicateRecords,
   tournamentPredicateInputIsValid,
-} from '../../scripts/ci/horse-tournament-predicate-proof.mjs';
-import * as payout from '../../server/src/engine/HorseTournamentPayoutTerms';
-import * as provenance from '../../server/src/engine/HorseTournamentContextProvenance';
-import * as records from '../../server/src/services/horseDecisionJournal/record';
-import * as binding from '../../server/src/engine/HorseDecisionHandBinding';
-import * as review from '../../server/src/services/horseDecisionJournal/review';
-import * as validation from '../../server/src/engine/horseDecision/responseValidation';
-import * as witness from '../../server/src/engine/HorseExecutionWitness';
-import { buildHorseDecisionKey } from '../../server/src/engine/horseDecision/protocol';
-import { remainingReferenceDeck } from '../../server/src/benchmark/RemainingVariantReference';
-import { jointPolicyFixture } from '../../server/src/engine/multiway/JointRangeFixture.test-support';
-import { HorseLogic } from '../../server/src/engine/HorseLogic';
-import { HorseMind } from '../../server/src/engine/HorseMind';
-import { encodeHorseDecisionReads } from '../../server/src/engine/HorseDecisionReadFrame';
-import { seedFastRandom } from '../../server/src/engine/HorseEval';
-import { channelHub } from '../../server/src/hub/ChannelHub';
+  // @ts-expect-error standalone runtime helper is deliberately plain JavaScript
+} from '../../../../scripts/ci/horse-tournament-predicate-proof.mjs';
+import * as payout from '../../engine/HorseTournamentPayoutTerms';
+import * as provenance from '../../engine/HorseTournamentContextProvenance';
+import * as records from '../../services/horseDecisionJournal/record';
+import * as binding from '../../engine/HorseDecisionHandBinding';
+import * as review from '../../services/horseDecisionJournal/review';
+import * as validation from '../../engine/horseDecision/responseValidation';
+import * as witness from '../../engine/HorseExecutionWitness';
+import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol';
+import { remainingReferenceDeck } from '../../benchmark/RemainingVariantReference';
+import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support';
+import { HorseLogic } from '../../engine/HorseLogic';
+import { HorseMind } from '../../engine/HorseMind';
+import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame';
+import { seedFastRandom } from '../../engine/HorseEval';
+import { channelHub } from '../../hub/ChannelHub';
 const api = { ...payout, ...provenance, ...records, ...binding, ...review, ...validation };
 const source = 'a'.repeat(40),
   table = '12345678-abcd-4321-abcd-123456789abc',
@@ -246,7 +246,7 @@ it('observes actual finalized payout/provenance validators and actual reconciled
       '-B',
       '-c',
       "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());print(json.dumps(m['sanitize_tournament_result'](d['result'],d['input'])))",
-      resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+      resolve(__dirname, '../../../../scripts/ci/inspect-tournament-refill.py'),
     ],
     { input: JSON.stringify({ result, input: fixture.input }), encoding: 'utf8' }
   );
@@ -277,7 +277,7 @@ it('observes actual finalized payout/provenance validators and actual reconciled
         '-B',
         '-c',
         "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());\ntry: m['sanitize_tournament_result'](d['result'],d['input']);print('accepted')\nexcept Exception: print('refused')",
-        resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+        resolve(__dirname, '../../../../scripts/ci/inspect-tournament-refill.py'),
       ],
       { input: JSON.stringify({ result: refused, input: fixture.input }), encoding: 'utf8' }
     );
@@ -553,7 +553,7 @@ it('version2 binds an exact original ordinal among multiple real P7 turns; versi
         '-B',
         '-c',
         "import json,runpy,sys; m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());\ntry: print(json.dumps(m['sanitize_tournament_result'](d['result'],d['input'])))\nexcept Exception: print('refused')",
-        resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py'),
+        resolve(__dirname, '../../../../scripts/ci/inspect-tournament-refill.py'),
       ],
       { input: JSON.stringify({ result: value, input: f.input }), encoding: 'utf8' }
     );
@@ -579,8 +579,10 @@ it('version2 refuses out-of-hand ordinals, forged same-turn identity and duplica
   expect(inspectTournamentPredicateRecords(input, f.batch, api).cases[0].reason).toBe(
     'original_action_ordinal_unavailable'
   );
-  const w = structuredClone(f.w);
-  w.identity.requestId++;
+  const w = {
+    ...structuredClone(f.w),
+    identity: { ...f.w.identity, requestId: f.w.identity.requestId + 1 },
+  };
   const wrong = {
     ...f.batch,
     recordsByHand: [

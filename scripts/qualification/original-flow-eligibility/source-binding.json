@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 238718,
-      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+      "bytes": 239046,
+      "sha256": "f74a7046e4a49c8ee9961d6a4cf63dbb534a50c142cd68ce53b2ae9dfbd478f0"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,

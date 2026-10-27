@@ -7,3 +7,5 @@ The action owner now retains the controller acceptance callback as authoritative
 The initial real-controller regressions failed for all three demonstrated cases: accepted-then-throw, accepted-then-false and stale PLO4 authority. After repair, the focused exact-acceptance, feature-authority and classic effect suites pass 228 checks, including withdrawal for each variant gate, fast-fold withdrawal, usable-authority control and exact-once effects. Another 61 host/fold-door checks pass. Root and server TypeScript compilation both pass. Exact commands and logs are retained in the task evidence.
 
 This is a Phase 1 runtime integrity correction. It does not qualify or activate the preserved river model, change fleet seating, or establish live delivery.
+
+The corrective-kernel and catastrophe-guard runtime digests now bind the new acceptance helper. Mutation-sensitive checks fail without these entries and pass after the correction; no qualification plan or protected selection was restamped. Existing execution-witness receipts remain the ledger owner.

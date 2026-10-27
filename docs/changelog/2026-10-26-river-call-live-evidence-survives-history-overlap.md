@@ -54,3 +54,9 @@ synthetic rejection details and initializes each filtered variant's existing
 gate fixture independently. A single diagnostic 100-hand cohort found no
 invalid receipt; this is not a runtime root-cause fix or a passing replacement
 for the failed release. Existing phase and zero-refusal assertions remain.
+
+## Final recovery integration
+
+The final candidate preserves current protected-main controller acceptance and tournament context assertions, keeps the river diagnostic and independent per-variant setup, and incorporates the owned controlled physical-flop qualification from PR #8263 by ordinary merge. This consolidates the two overlapping test changes into #8230 without discarding their source history. It does not change live strategy or deck generation.
+
+The first river activation entry expired while required checks ran. The new bounded entry names the current protected unserved minimum anchor and only the unchanged river-call persistence migration. The existing certified installer must independently validate the actual containing #8230 squash, live identity, original migration preimages, installation history, freeze and rollback reserves. No expired entry is extended and no migration is replayed.

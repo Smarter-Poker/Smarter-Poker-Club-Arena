@@ -182,6 +182,9 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
     refusedAtGate: 0,
     modes: new Map<string, number>(),
     invalidCases: [] as unknown[],
+    stages: new Map<string, number>(),
+    phase8Reasons: new Map<string, number>(),
+    controlledFlopWitnesses: 0,
   };
   const bump = (k: string) => seen.modes.set(k, (seen.modes.get(k) ?? 0) + 1);
   let requestId = 1;
@@ -213,6 +216,28 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
     })) as SeatPlayer[];
     const controller = new HandController(config, players, 1 + (hand % seats));
     controller.start();
+    const controlledFlop = variant === 'nlh' && mode === 'tournament' && hand === 0;
+    if (controlledFlop) {
+      // Guarantee the street this assertion is about. Brain sampling seeds do
+      // not seed the controller's secure deck: six random hands can all end
+      // preflop. Prepare one ordinary heads-up limped pot through the real
+      // controller; every decision from its physical flop onward is still
+      // made by the production worker and accepted without substitution.
+      expect(seats).toBe(2);
+      for (let action = 0; action < 2; action++) {
+        const opening = controllerDecisionState(controller, variant as never, mode, config);
+        expect(opening?.state.stage).toBe('preflop');
+        if (!opening) throw new Error('Controlled tournament opening has no actor');
+        const selected = opening.state.legalActions?.includes('check') ? 'check' : 'call';
+        expect(opening.state.legalActions).toContain(selected);
+        expect(controller.performAction(opening.hero.seat, selected)).toBe(true);
+      }
+      expect(controller.getState().stage).toBe('flop');
+      expect(controller.getState().communityCards).toHaveLength(3);
+      expect(
+        controller.getState().players.filter((p) => !p.is_folded && !p.is_all_in)
+      ).toHaveLength(2);
+    }
     for (let step = 0; step < 80; step++) {
       const live = controller.getState();
       if (live.stage === 'pineapple_discard') {
@@ -223,6 +248,8 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
       }
       const spot = controllerDecisionState(controller, variant as never, mode, config);
       if (!spot) break;
+      seen.stages.set(spot.state.stage, (seen.stages.get(spot.state.stage) ?? 0) + 1);
+      if (controlledFlop && step === 0) expect(spot.state.stage).toBe('flop');
       if (mode === 'tournament') {
         const stacks = Object.fromEntries(
           live.players.map((p) => [p.user_id, p.stack + p.totalInvested])
@@ -368,8 +395,20 @@ async function playHands(variant: string, hands: number, mode: 'cash' | 'tournam
       const r = result as Record<string, any>;
       if (r.phase8Authority) liveHorsePhase8Authority.observeWorker(r.phase8Authority);
       const continuation = decision.tournamentPostflop;
+      if (controlledFlop && step === 0) {
+        expect(r.phase8Authority?.state).toBe('usable');
+        expect(
+          liveHorsePhase8Authority.check(liveHorsePhase8Authority.stamp(r.phase8Authority))
+        ).toBe('usable');
+        expect(continuation?.mode).toBe('candidate');
+        seen.controlledFlopWitnesses++;
+      }
       if (continuation) {
         bump(`tournamentPostflop:${continuation.mode}`);
+        seen.phase8Reasons.set(
+          continuation.reason,
+          (seen.phase8Reasons.get(continuation.reason) ?? 0) + 1
+        );
         if (continuation.applied) {
           expect(continuation.authority).not.toBeNull();
           if (
@@ -466,8 +505,15 @@ describe('production admissions preserve accepted tournament decisions in every 
       expect(seen.invalid, JSON.stringify([...seen.modes])).toBe(0);
       expect(seen.refusedAtGate).toBe(0);
       if (variant === 'nlh') {
-        expect(seen.modes.get('tournamentPostflop:candidate') ?? 0).toBeGreaterThan(0);
-        expect(seen.modes.get('tournamentPostflop:shadow') ?? 0).toBe(0);
+        const coverage = JSON.stringify({
+          stages: [...seen.stages],
+          modes: [...seen.modes],
+          phase8Reasons: [...seen.phase8Reasons],
+        });
+        expect(seen.controlledFlopWitnesses, coverage).toBe(1);
+        expect(seen.stages.get('flop') ?? 0, coverage).toBeGreaterThan(0);
+        expect(seen.modes.get('tournamentPostflop:candidate') ?? 0, coverage).toBeGreaterThan(0);
+        expect(seen.modes.get('tournamentPostflop:shadow') ?? 0, coverage).toBe(0);
       }
     }, 120_000);
 });

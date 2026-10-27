@@ -1,4 +1,4 @@
-# Rakeback pages index the player and earning week
+# tests/rakeback-pages-index-player-week.law.test.ts
 
 Canonical check/write pages select a club, a small player set and an earned week. Cash needs `(club_id, player_id, earned_at)`; tournament fee sources need `(club_id, player_id)` before their existing recognition joins. Preserve the original full allocation query, rates, historical memberships, ordered source arrays, source fingerprints, certificates, payer registration and completed parts byte for byte.
 

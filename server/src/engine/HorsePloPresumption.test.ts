@@ -190,7 +190,7 @@ describe('a known maniac is a maniac at every table size', () => {
 });
 
 describe('PLO: every opponent is an aggressive raiser until proven otherwise', () => {
-  it('a brand-new opponent is a pressure target from the first hand at every PLO size', () => {
+  it('a brand-new opponent retains the common range prior without observed opener pressure', () => {
     for (const variant of ['plo4', 'plo5', 'plo6', 'plo8']) {
       for (const scope of ['omaha:hu', 'omaha:short', 'omaha:full'] as const) {
         HorseMind.setDecisionScope(scope, variant, 'cash', [HUMAN]);
@@ -198,7 +198,7 @@ describe('PLO: every opponent is an aggressive raiser until proven otherwise', (
         expect(read?.presumed, `${variant} ${scope}`).toBe(true);
         expect(maniacRaiseWidth(read)).toBeGreaterThanOrEqual(0.35);
         expect(aggressiveBettorPressure(read)).not.toBeNull();
-        expect(aggressiveOpenerPressure(read, true)).not.toBeNull();
+        expect(aggressiveOpenerPressure(read, true)).toBeNull();
         HorseMind.setDecisionScope(null);
       }
     }

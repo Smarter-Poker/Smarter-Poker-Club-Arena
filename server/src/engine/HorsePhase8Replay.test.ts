@@ -71,7 +71,28 @@ describe('Phase 8 captured public-line reconstruction', () => {
     // hero's stack, so hero's recorded all_in was a call (the excess came
     // back at showdown). The committed river one-pair branch now names that
     // decision `call`; the chips it puts in are identical.
-    if (hand.reviewId === 400340) expect(baseline.action).toBe('call');
+    if (hand.reviewId === 399521) {
+      // The committed-stack branch must respect V21's call-only rule after
+      // hero bets AA and faces a turn raise. Isolate the repair: the same
+      // seed with it disabled still reproduces the historical extra shove.
+      expect(baseline.action).toBe('call');
+      seedFastRandom(hand.reviewId);
+      const prior = HorseLogic.decide(
+        hero,
+        gs,
+        'balanced',
+        {},
+        {
+          phase8Postflop: 'off',
+          mind: false,
+          decisionTimeMs: 0,
+          committedRaiseDiscipline: false,
+        }
+      );
+      expect(prior.action).toBe('all_in');
+      expect(baseline.amount).toBe(Math.min(hero.stack, gs.currentBet - hero.bet));
+      expect(baseline.amount).toBeLessThan(hero.stack);
+    } else if (hand.reviewId === 400340) expect(baseline.action).toBe('call');
     else expect(['all_in', 'bet', 'raise']).toContain(baseline.action);
     // A full table is outside the continuation's work scope: refused by
     // name before eligibility, the baseline action stands.

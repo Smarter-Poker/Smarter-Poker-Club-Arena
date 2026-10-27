@@ -1,0 +1,73 @@
+name: Profile Engine Main Thread (One Bounded Sample)
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/profile-engine-main-thread.mjs'
+      - 'tests/operations/engine-main-profile.test.mjs'
+      - '.github/workflows/profile-engine-main-thread.yml'
+  workflow_dispatch:
+    inputs:
+      expected_engine_sha:
+        description: Exact full currently serving engine image SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: engine-main-thread-profile-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'manual' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/operations/engine-main-profile.test.mjs
+  profile:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      EXPECTED_ENGINE_SHA: ${{ inputs.expected_engine_sha }}
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Collect thirty seconds through the configured pinned SSH boundary
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Expected SHA refused'; exit 1; }
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo '::error::Configured host refused'; exit 1; }
+          [ -n "$SSH_KEY" ] && [ -n "$HOST_KEY" ] || { echo '::error::Configured SSH metadata unavailable'; exit 1; }
+          SSH_DIR="$RUNNER_TEMP/main-profile-ssh-$GITHUB_RUN_ID"
+          install -d -m 0700 "$SSH_DIR"
+          trap 'rm -rf "$SSH_DIR"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
+          printf '%s\n' "$HOST_KEY" > "$SSH_DIR/known_hosts"
+          chmod 0600 "$SSH_DIR/key" "$SSH_DIR/known_hosts"
+          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null
+          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
+          timeout --signal=TERM --kill-after=5s 75s ssh \
+            -i "$SSH_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_DIR/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "root@$HETZNER_HOST" \
+            "test -f /var/lock/club-arena-engine-up.lock && exec 9>/var/lock/club-arena-engine-up.lock && flock -n 9 && test \"\$(docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' club-arena-engine)\" = '$EXPECTED_ENGINE_SHA' && docker exec -i club-arena-engine node --input-type=module - '$EXPECTED_ENGINE_SHA'" \
+            < scripts/ci/profile-engine-main-thread.mjs > "$RUNNER_TEMP/main-thread-profile.json"
+          cat "$RUNNER_TEMP/main-thread-profile.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-main-thread-profile-${{ github.run_id }}
+          path: ${{ runner.temp }}/main-thread-profile.json
+          if-no-files-found: error
+          retention-days: 7

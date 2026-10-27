@@ -1,3 +1,4 @@
+import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import { channelHub } from '../hub/ChannelHub.js';
@@ -1411,21 +1412,44 @@ export abstract class TournamentManagerBase {
     );
   }
 
+  private tournamentLeaseRenewalRefusal: {
+    reason:
+      | 'manager_authority_unavailable'
+      | 'invalid_heartbeat_deadline'
+      | 'heartbeat_deadline_elapsed'
+      | 'dealer_not_owned'
+      | 'dealer_refused';
+    tableId?: string;
+  } | null = null;
+
+  /** Diagnostic only: the exact refused answer, never an extension of authority. */
+  getTournamentLeaseRenewalRefusal() {
+    return this.tournamentLeaseRenewalRefusal ? { ...this.tournamentLeaseRenewalRefusal } : null;
+  }
+
   /**
    * Extend authority only for the same, still-live manager generation. A late
    * response cannot resurrect an expired lifecycle.
    */
   renewTournamentLeaseProof(leaseGeneration: string, proofDeadlineMonotonicMs: number): boolean {
+    this.tournamentLeaseRenewalRefusal = null;
     if (
       !this.tournamentLeaseGeneration ||
       this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
       this.tournamentLeaseAuthorityExpired ||
       this.stopFenceApplied ||
       (!this.running && !this.shutdownDrainFenceApplied && !this.f06RecoveryOwnership) ||
-      !this.hasCurrentTournamentLeaseAuthority() ||
-      !Number.isFinite(proofDeadlineMonotonicMs) ||
-      tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
+      !this.hasCurrentTournamentLeaseAuthority()
     ) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'manager_authority_unavailable' };
+      return false;
+    }
+    if (!Number.isFinite(proofDeadlineMonotonicMs)) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'invalid_heartbeat_deadline' };
+      return false;
+    }
+    if (tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
+      this.tournamentLeaseRenewalRefusal = { reason: 'heartbeat_deadline_elapsed' };
       return false;
     }
     /* The primary and shutdown lifecycle can briefly join the same in-flight
@@ -1475,12 +1499,14 @@ export abstract class TournamentManagerBase {
           this.isReplacingManagedTableEngine(tableId, engine))
       ) {
         if (!this.gameServer.ownsTournamentTableEngine(tableId, engine)) {
+          this.tournamentLeaseRenewalRefusal = { reason: 'dealer_not_owned', tableId };
           this.fenceForTournamentLeaseLoss();
           return false;
         }
         continue;
       }
       if (!engine.renewEngineLeaseProof(authority)) {
+        this.tournamentLeaseRenewalRefusal = { reason: 'dealer_refused', tableId };
         this.fenceForTournamentLeaseLoss();
         return false;
       }
@@ -1940,6 +1966,7 @@ export abstract class TournamentManagerBase {
     // owner and a release here would deal through it.
     if (this.onBreak || this.stageEndPause || this.handForHandActive) return;
     if (this.addOnDrainPending || (this.addOnBreakActive && this.addOnBreakOwnsPause)) return;
+    if (this.mysteryActivationBoundaryPending) return;
     try {
       engine.resumeDealing();
     } catch (err) {
@@ -1952,6 +1979,10 @@ export abstract class TournamentManagerBase {
   /** A replacement inherits every pause authority before it can deal. */
   protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
+    if (this.mysteryActivationBoundaryPending) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      this.mysteryActivationBoundaryEngines.add(engine);
+    }
     if (this.successorDrainRequested) {
       engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
       return;
@@ -2947,6 +2978,9 @@ export abstract class TournamentManagerBase {
     // An adopted cohort satellite holds its qualifier boundary before this
     // registration exists; the fresh entry starts in the general lanes.
     if (this.satelliteQualifierBoundaryPending) this.declareConsolidationOutstanding(true);
+    // A resumed field may already have one player per dealer. Its first
+    // balance admission must not wait for a blind level or the general queue.
+    this.askForConsolidationIfSpread();
   }
 
   /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
@@ -3013,11 +3047,13 @@ export abstract class TournamentManagerBase {
     // A decided field is served from the decided lane (requestDecidedEliminationSweep),
     // never the one-slot consolidation lane: 208 decided Spins marked consolidating
     // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
-    const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
-    if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
+    // A committed wake belongs to this manager even before its scheduler
+    // registration can accept it. Registration admits its own first pass;
+    // retaining the reason here lets that pass serve the original receipt.
+    if (Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
     }
-    return accepted;
+    return tournamentEliminationScheduler.wake(this.tournamentId);
   }
 
   /**
@@ -3061,15 +3097,47 @@ export abstract class TournamentManagerBase {
    * balancer merges them. That is consolidation work, so this manager moves
    * to the lane and asks for one pass; the balance stage then keeps or clears
    * the mark on what it reads. Checked on the held level's own 15 s recheck,
-   * which already runs; it adds no timer and no query.
+   * which already runs; it adds no timer and no query. Also asked at manager
+   * registration and at the hand that removes the last playable pair, so the
+   * first balance pass need not wait for that later clock observation.
    */
-  protected askForConsolidationIfSpread(): void {
-    if (this.consolidationDeclared) return;
+  protected askForConsolidationIfSpread(completed?: {
+    engine: ServerTableEngine;
+    finalStacks: readonly { user_id: string; stack: number }[];
+  }): void {
+    if (this.consolidationDeclared || !this.tableEngines || this.tableEngines.size < 2) return;
+    // A late callback from a retired manager/dealer cannot promote the
+    // successor's scheduler registration. Unknown rosters remain ordinary.
+    if (completed) {
+      try {
+        const tableId = this.tableIdForManagedEngine(completed.engine);
+        if (
+          !tableId ||
+          !this.isRunning() ||
+          this.gameServer.getTableEngine(tableId) !== completed.engine
+        )
+          return;
+      } catch {
+        return; // A scheduling hint cannot prevent the original bust wake.
+      }
+    }
     let loneTables = 0;
     for (const engine of this.tableEngines.values()) {
       let seated: number;
       try {
         seated = engine.getOccupiedSeatNumbers().length;
+        if (completed?.engine === engine) {
+          // Zero-stack players still occupy chairs before elimination. The
+          // complete final stacks say how many opponents can actually deal.
+          const stacks = completed.finalStacks;
+          if (
+            stacks.length < seated ||
+            new Set(stacks.map((player) => player.user_id)).size !== stacks.length ||
+            stacks.some((player) => !Number.isFinite(player.stack) || player.stack < 0)
+          )
+            return;
+          seated = stacks.filter((player) => player.stack > 0).length;
+        }
       } catch {
         return;
       }
@@ -3078,7 +3146,9 @@ export abstract class TournamentManagerBase {
     }
     if (loneTables < 2) return;
     this.declareConsolidationOutstanding(true);
-    if (this.consolidationDeclared) this.requestEliminationSweep('spread_field_cannot_deal');
+    // The hand callback already owes exactly one bust wake immediately below.
+    if (this.consolidationDeclared && !completed)
+      this.requestEliminationSweep('spread_field_cannot_deal');
   }
 
   /** What this manager last told the scheduler about its field being decided. */
@@ -3193,8 +3263,7 @@ export abstract class TournamentManagerBase {
 
   /** Purchases in flight at once while the add-on break holds the field. */
   static readonly ADD_ON_BREAK_CONCURRENCY = 8;
-  /** One held-field pass ends here and the next admission continues it, well
-   *  inside ELIMINATION_SWEEP_STUCK_MS, so a scheduler slot is never held long. */
+  /** Eligibility reads must finish inside this bounded preparation budget. */
   static readonly ADD_ON_BREAK_PASS_MS = 20_000;
 
   /**
@@ -3209,20 +3278,24 @@ export abstract class TournamentManagerBase {
   /**
    * Offer the add-on to every listed horse through a pool of
    * ADD_ON_BREAK_CONCURRENCY requests, until the list is done or the
-   * persisted offer closes or ADD_ON_BREAK_PASS_MS has passed (the next
-   * admission continues from the cursor). Same RPC, same receipts, same retained identity on
+   * persisted offer closes or the existing sweep lifetime ends. The captured
+   * cohort stays on this owner: re-admission can lose most of a one-minute
+   * window to the shared queue. Same RPC, same receipts, same retained identity on
    * an ambiguous reply as the ordinary batch; only the pacing differs. The
    * mutation batch keeps the sweep's work budget from cutting the field short;
    * manager stop, the sweep's abort signal and the freeze still end it.
    */
   protected async offerAddOnsWhileTheFieldIsHeld(
-    horseRows: Array<{ id: string }>
+    horseRows: Array<{ id: string }>,
+    passEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      Date.now() + ELIMINATION_SWEEP_STUCK_MS
+    )
   ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
     const declined = new Map<string, number>();
     let taken = 0;
     let completed = 0;
     let nextIndex = 0;
-    const passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
     const batchWasOpen = this.eliminationMutationBatchIsOpen();
     if (!batchWasOpen) this.openEliminationMutationBatch();
     const mayContinue = () =>
@@ -3323,6 +3396,7 @@ export abstract class TournamentManagerBase {
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
         if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
+        this.askForConsolidationIfSpread({ engine, finalStacks });
         this.bustAwaitsItsStage();
         this.horseRebuyOfferMayHaveOpened();
         this.requestEliminationSweep();
@@ -4340,6 +4414,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.handForHandActive &&
       !addOnBreakStillActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause
     ) {
       for (const engine of this.tableEngines.values()) {
@@ -4770,18 +4845,16 @@ export abstract class TournamentManagerBase {
    * A bust that can cross the threshold now parks every table before its next
    * deal until the sweep has answered. A `hand_in_progress` answer keeps the
    * hold, and each table parking re-drives the sweep; any other answer
-   * releases it. The engine pause carries its own safety budget and the
-   * manager clears its flag on the same budget, so the hold can only ever
-   * cost seconds, never wedge a table.
+   * releases it. The hold belongs to the activation result, never an elapsed
+   * timeout: an expired pause previously allowed a paid knockout to happen
+   * before activation. Hand-for-hand cannot release this overlapping hold.
    */
-  static readonly MYSTERY_ACTIVATION_HOLD_MS = 20_000;
   protected mysteryActivationBoundaryPending = false;
-  /** Players still playing at the last verified sweep count; null = unknown. */
+  /** Conservative survivor hint, reduced at every post-close hand completion. */
   protected mysteryPlayersRemainingHint: number | null = null;
-  private mysteryActivationBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly mysteryActivationBoundaryEngines = new Set<ServerTableEngine>();
 
-  /** Could the busts in this hand open the mystery phase? Pure on cached state. */
+  /** Record this hand's bust hint and decide whether to hold the next deal. */
   protected mysteryActivationMayOpenOnBust(
     finalStacks: ReadonlyArray<{ stack: unknown }>
   ): boolean {
@@ -4793,6 +4866,10 @@ export abstract class TournamentManagerBase {
     // Unknown is not "far away": hold, and let the verified count decide.
     if (hint == null) return true;
     const after = hint - busted;
+    // Hand completions can outrun the asynchronous sweep. Carry every bust
+    // forward once entry is closed, or two tables can cross the paid boundary
+    // while both callbacks still subtract from the same old field count.
+    if (this.prizePoolFinalized) this.mysteryPlayersRemainingHint = after;
     // The bust that leaves one player ends the event; there is nothing to open.
     if (after <= 1) return false;
     const mode = (t.mystery_bounty_activation || 'at_the_money') as MysteryBountyActivationMode;
@@ -4829,43 +4906,19 @@ export abstract class TournamentManagerBase {
   /** Park every table before its next deal until the activation sweep answers. */
   protected holdMysteryActivationBoundary(): void {
     if (!this.running) return;
-    // A break, a stage end or an owning add-on break already parks every
-    // table before its next deal; their release is theirs, not ours.
-    if (
-      this.onBreak ||
-      this.stageEndPause ||
-      this.addOnDrainPending ||
-      (this.addOnBreakActive && this.addOnBreakOwnsPause)
-    )
-      return;
     this.mysteryActivationBoundaryPending = true;
-    if (!this.handForHandActive) {
-      // Hand-for-hand already parks each table after its hand, and the flag
-      // above stops its barrier from resuming them before the sweep answers.
-      for (const engine of this.tableEngines.values()) {
-        engine.pauseAfterHand(TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS, {
-          beforeNextHand: true,
-        });
-        this.mysteryActivationBoundaryEngines.add(engine);
-      }
+    // Mystery owns its pause even when hand-for-hand overlaps it. A clock
+    // expiring must never authorize an ITM hand before the chests are sealed.
+    for (const engine of this.tableEngines.values()) {
+      engine.pauseAfterHand(undefined, { beforeNextHand: true, untilResumed: true });
+      this.mysteryActivationBoundaryEngines.add(engine);
     }
-    if (this.mysteryActivationBoundaryTimer) {
-      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
-    }
-    this.mysteryActivationBoundaryTimer = this.setLifecycleTimeout(() => {
-      this.mysteryActivationBoundaryTimer = null;
-      this.releaseMysteryActivationBoundary();
-    }, TournamentManagerBase.MYSTERY_ACTIVATION_HOLD_MS);
   }
 
   /** Give back exactly the hold armed above, deferring to any other owner. */
   protected releaseMysteryActivationBoundary(): void {
     if (!this.mysteryActivationBoundaryPending) return;
     this.mysteryActivationBoundaryPending = false;
-    if (this.mysteryActivationBoundaryTimer) {
-      this.clearLifecycleTimeout(this.mysteryActivationBoundaryTimer);
-      this.mysteryActivationBoundaryTimer = null;
-    }
     const engines = [...this.mysteryActivationBoundaryEngines];
     this.mysteryActivationBoundaryEngines.clear();
     if (!this.running) return;
@@ -4926,7 +4979,7 @@ export abstract class TournamentManagerBase {
     if (this.mysteryBountyStage !== 'pending') return;
     const t = this.tournamentCache;
     if (!t?.is_mystery_bounty) return;
-    if (this.mysteryBountySeeding) return;
+    if (this.mysteryBountySeeding) return true;
 
     // The bounty pool grows with every late entry, so read it fresh rather
     // than from the cache: the cached row was loaded at start().
@@ -4954,7 +5007,7 @@ export abstract class TournamentManagerBase {
       .eq('id', this.tournamentId)
       .maybeSingle();
     const fresh = freshRow as any;
-    if (!fresh) return;
+    if (!fresh) return true;
 
     if (fresh.mystery_bounty_stage && fresh.mystery_bounty_stage !== 'pending') {
       // Another process (a previous incarnation of this manager, most likely)
@@ -4978,7 +5031,7 @@ export abstract class TournamentManagerBase {
         ),
         'Tournament.mystery_bounty_unit_unknown'
       );
-      return;
+      return true;
     }
     /* MYSTERY CHESTS ARE WHOLE CHIPS (Dan 2026-10-22: "MYSTERY BOUNTIES ARE
        ALWAYS FULL CHIP AMOUNTS, NEVER FRACTIONS"). A chip event's money unit is
@@ -5005,7 +5058,7 @@ export abstract class TournamentManagerBase {
       // upstream started writing fractions of a cent. Seeding an inventory
       // from it would put the event permanently out of balance.
       reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
-      return;
+      return true;
     }
 
     // `payout_structure` is jsonb, and the client reads it back as an array in
@@ -5014,8 +5067,10 @@ export abstract class TournamentManagerBase {
     // with zero paid places, and the default activation mode (at the money)
     // would then never fire for them: the chests would sit unopened for the
     // whole tournament and every knockout would keep paying the flat bounty.
-    const paidPlaces =
-      countPaidPlaces(t?.payout_structure) || countPaidPlaces(fresh.payout_structure);
+    // The finalized durable ladder outranks a nonempty start-time cache.
+    // Refresh the boundary predicate too: it runs synchronously on hand end.
+    const paidPlaces = countPaidPlaces(fresh.payout_structure);
+    if (this.tournamentCache) this.tournamentCache.payout_structure = fresh.payout_structure;
 
     const entryClosed = Boolean(fresh.prize_pool_finalized) || this.prizePoolFinalized;
     const activationMode = (fresh.mystery_bounty_activation ||
@@ -5037,7 +5092,7 @@ export abstract class TournamentManagerBase {
       if (this.mysteryTotalEntries == null) {
         this.mysteryTotalEntries = await this.readMysteryTotalEntries();
       }
-      if (this.mysteryTotalEntries == null) return;
+      if (this.mysteryTotalEntries == null) return true;
       totalEntries = this.mysteryTotalEntries;
     }
 
@@ -5058,8 +5113,12 @@ export abstract class TournamentManagerBase {
         String(fresh.mystery_bounty_regular_pool_percent) !== '' &&
         Number(fresh.mystery_bounty_regular_pool_percent) === 0,
     });
-    // True only for the one transient refusal: the caller keeps the
-    // activation boundary armed so the tables park and the sweep re-asks.
+    // A fresh authoritative count can discover the boundary before a hand
+    // callback did. Arm the same hold here, synchronously, before any funding
+    // or seed await. Otherwise "wait for hands" never asks them to stop.
+    if (decision.activate || decision.reason === 'hand_in_progress') {
+      this.holdMysteryActivationBoundary();
+    }
     if (!decision.activate) return decision.reason === 'hand_in_progress';
 
     /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
@@ -5082,7 +5141,7 @@ export abstract class TournamentManagerBase {
           new Error(`unrecorded head figure is not whole cents: ${String(unrecordedRaw)}`),
         'Tournament.mystery_bounty_unrecorded_heads_unreadable'
       );
-      return;
+      return true;
     }
     /* A BUST ALREADY PLAYED IS NOT A CHEST STILL OWED (2026-10-05). The
        heads above are paid flat from the regular half, so the players they
@@ -5093,7 +5152,7 @@ export abstract class TournamentManagerBase {
        still be knocked out, and the seed is told the same figure, because it
        derives its chest count from it (players - 1). */
     const unrecordedKnockouts = await this.readUnrecordedKnockoutCount();
-    if (unrecordedKnockouts == null) return;
+    if (unrecordedKnockouts == null) return true;
     const chestPlayers = playersRemaining - unrecordedKnockouts;
     // Nobody left who can be knocked out for a chest: nothing to open.
     if (chestPlayers <= 1) return;
@@ -5110,7 +5169,7 @@ export abstract class TournamentManagerBase {
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
-        return;
+        return true;
       }
     }
 
@@ -5149,7 +5208,7 @@ export abstract class TournamentManagerBase {
           ),
           'Tournament.mystery_bounty_seed_failed'
         );
-        return;
+        return true;
       }
       const res = (seeded ?? {}) as { ok?: boolean; reason?: string; pool_cents?: number };
       if (!res.ok) {
@@ -5164,7 +5223,7 @@ export abstract class TournamentManagerBase {
             'Tournament.mystery_bounty_seed_refused'
           );
         }
-        return;
+        return true;
       }
 
       this.mysteryBountyStage = 'active';
@@ -5178,6 +5237,7 @@ export abstract class TournamentManagerBase {
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
+      return true;
     } finally {
       this.mysteryBountySeeding = false;
     }
@@ -11403,6 +11463,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.onBreak &&
       !this.handForHandActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause
     ) {
       for (const engine of this.tableEngines.values()) {
@@ -11473,6 +11534,7 @@ export abstract class TournamentManagerBase {
       !this.successorDrainRequested &&
       !this.onBreak &&
       !this.handForHandActive &&
+      !this.mysteryActivationBoundaryPending &&
       !this.stageEndPause;
     for (const engine of this.tableEngines.values()) {
       try {
@@ -11572,11 +11634,24 @@ export abstract class TournamentManagerBase {
    * disappears again the deploy fails rather than the feature silently dying.
    */
   protected async tryTournamentAddOns(): Promise<void> {
-    if (
-      isMaintenanceFrozen() ||
-      !this.tournamentCache?.add_on_available ||
-      !this.eliminationMutationAllowed()
-    ) {
+    // The held-field pass includes its eligibility reads. A slow snapshot
+    // must not spend the ordinary five-second budget before the pool starts.
+    // Preparation retains its twenty-second bound. Once captured, purchases
+    // stay on this owner until the earlier persisted deadline or existing
+    // sweep lifetime. Lifecycle and maintenance remain authoritative.
+    const heldOperationStartedAt = Date.now();
+    const heldPassEndsAt = heldOperationStartedAt + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const heldPurchaseEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      heldOperationStartedAt + ELIMINATION_SWEEP_STUCK_MS
+    );
+    const addOnWorkAllowed = () =>
+      !isMaintenanceFrozen() &&
+      this.running &&
+      !this.eliminationSweepSignal?.aborted &&
+      (this.eliminationMutationAllowed() ||
+        (Date.now() < heldPassEndsAt && this.addOnBreakHoldsTheField(Date.now())));
+    if (isMaintenanceFrozen() || !this.tournamentCache?.add_on_available || !addOnWorkAllowed()) {
       return;
     }
     let pendingHorseIds: string[] = [];
@@ -11611,7 +11686,7 @@ export abstract class TournamentManagerBase {
         // offer is served ahead of that stage (2026-10-25), so it never
         // reaches a player who no longer holds chips.
         .gt('chips', 0);
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11627,7 +11702,7 @@ export abstract class TournamentManagerBase {
         .select('id')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['waiting', 'running', 'RUNNING', 'active']);
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (tableRowsErr || !tableRows) {
         reportError(
           tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
@@ -11642,7 +11717,7 @@ export abstract class TournamentManagerBase {
           supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
         `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (!seatRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11664,7 +11739,7 @@ export abstract class TournamentManagerBase {
         (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
         `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!addOnWorkAllowed()) return;
       if (!horseRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -11714,7 +11789,7 @@ export abstract class TournamentManagerBase {
       if (this.addOnBreakHoldsTheField(Date.now())) {
         const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
         if (rotated.length === 0) return;
-        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated);
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPurchaseEndsAt);
         completedOffers += served.completed;
         if (served.taken > 0 || served.declined.size > 0) {
           console.log(

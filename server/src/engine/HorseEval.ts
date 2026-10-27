@@ -23,6 +23,7 @@
  */
 
 import type { Card } from '../types.js';
+import { isBoardOnlyRiverHand } from './HorseBoardContact.js';
 import {
   CONTINUATION_POLICY,
   continuationStrength,
@@ -527,7 +528,12 @@ export interface NextCardOutlook {
   madeNow: number;
 }
 
-export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): NextCardOutlook {
+export function nextCardOutlook(
+  hole: Card[],
+  board: Card[],
+  vi: VariantInfo,
+  quality = true
+): NextCardOutlook {
   const out: NextCardOutlook = { good: [], scare: [], madeNow: 0 };
   if (!hole || hole.length < 2 || !board || board.length < 3 || board.length >= 5) return out;
   const known = new Set<string>();
@@ -562,16 +568,41 @@ export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): N
     if (known.has(k)) continue;
     next[board.length] = c;
     const after = cat(next);
-    if (after > out.madeNow) {
+    const suitAfter = (suitN.get(c.suit) || 0) + 1;
+    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
+    // NLH plans must not promote a dirty straight out to clean value merely
+    // because its category improved. The range/equity owner still prices the
+    // hand; this records which continuation cards genuinely helped the plan.
+    const holdem = quality && !vi.isOmaha && !vi.isShortDeck && hole.length === 2;
+    if (holdem && suitAfter >= 3 && !holdsSuit && after < CAT_FLUSH) {
+      out.scare.push(k);
+      continue;
+    }
+    const sharedPair =
+      holdem && after <= 3 && !hole.some((h) => h.rank === c.rank) && (rankN.get(c.rank) || 0) > 0;
+    if (after > out.madeNow && !sharedPair) {
       out.good.push(k);
       continue;
     }
     // a third (or fourth) of a suit hero holds none of, when hero has no flush
-    const suitAfter = (suitN.get(c.suit) || 0) + 1;
-    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
     if (suitAfter >= 3 && !holdsSuit && out.madeNow < CAT_FLUSH) {
       out.scare.push(k);
       continue;
+    }
+    // The documented four-straight scare was missing from the implementation.
+    if (holdem && after < CAT_STRAIGHT) {
+      const ranks = new Set(next.map((card) => RANK_VALUES[card.rank]));
+      if (ranks.has(14)) ranks.add(1);
+      let connected = false;
+      for (let low = 1; low <= 10 && !connected; low++) {
+        let count = 0;
+        for (let rank = low; rank < low + 5; rank++) if (ranks.has(rank)) count++;
+        connected = count >= 4;
+      }
+      if (connected) {
+        out.scare.push(k);
+        continue;
+      }
     }
     // the board pairs under hero's straight or flush: boats are live
     if ((rankN.get(c.rank) || 0) >= 1 && out.madeNow >= CAT_STRAIGHT && out.madeNow <= CAT_FLUSH) {
@@ -673,7 +704,7 @@ export function scoreOmahaLow(hole: Card[], board: Card[]): number {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface OmahaDrawInfo {
-  /** flush draw to the NUT flush (ace of suit, or king when the ace is on board) */
+  /** flush draw holding the highest suited rank that is not already on board */
   nutFlushDraw: boolean;
   /** flush draw that is NOT to the nuts — the classic PLO trap hand */
   dominatedFlushDraw: boolean;
@@ -725,10 +756,11 @@ export function omahaDrawQuality(
       if (n !== 2) continue;
       const heroSuited = hole.filter((c) => c.suit === suit);
       if (heroSuited.length >= 2) {
-        const hasAce = heroSuited.some((c) => c.rank === 'A');
-        const aceOnBoard = board.some((c) => c.suit === suit && c.rank === 'A');
-        const hasKing = heroSuited.some((c) => c.rank === 'K');
-        if (hasAce || (aceOnBoard && hasKing)) nutFlushDraw = true;
+        // Board cards cannot be held by an opponent. In particular Q-high
+        // is the nut draw on A-K of the suit, just as K-high is on A-x.
+        const boardRanks = new Set(board.filter((c) => c.suit === suit).map((c) => c.rank));
+        const highestLive = [...RANKS].reverse().find((rank) => !boardRanks.has(rank));
+        if (heroSuited.some((c) => c.rank === highestLive)) nutFlushDraw = true;
         else dominatedFlushDraw = true;
       }
     }
@@ -1566,14 +1598,20 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
   // ("pair-equivalent connection") so the acceptance logic treats a real
   // draw like real contact.
   const all = hole.concat(board);
-  const cat = Math.floor(scoreHoldem(all, all.length, shortDeck) / 0x100000);
+  const madeScore = scoreHoldem(all, all.length, shortDeck);
+  const cat = Math.floor(madeScore / 0x100000);
   // V13: the hole cards must IMPROVE on what the board already makes. This
   // scored the board's own hand as opponent contact, so on any paired board
   // (~17% of flops) every holding "connected" — 32o on K K 7 returned a pair
   // of kings — and the whole V12 board-contact conditioning became a no-op
   // exactly where reads matter most. A pocket pair stays contact by intent.
-  const boardCat =
-    board.length > 0 ? Math.floor(scoreHoldem(board, board.length, shortDeck) / 0x100000) : 0;
+  const boardScore = board.length > 0 ? scoreHoldem(board, board.length, shortDeck) : 0;
+  const boardCat = Math.floor(boardScore / 0x100000);
+  // A pocket pair is contact only while it contributes. On a complete board,
+  // an unused underpair cannot turn shared two pair, a straight or a full
+  // house into the private value the aggressor sampler is looking for.
+  // Compare the whole score: a pair improving only the kicker still counts.
+  if (isBoardOnlyRiverHand(board.length, madeScore, boardScore)) return 1;
   const isPocketPair = hole.length === 2 && hole[0].rank === hole[1].rank;
   if (cat >= 2 && (cat > boardCat || isPocketPair)) {
     // A pocket pair UNDER every board card is a hidden non-connector — but it

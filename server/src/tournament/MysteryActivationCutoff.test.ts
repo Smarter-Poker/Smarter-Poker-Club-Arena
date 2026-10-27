@@ -50,6 +50,7 @@ function fixture(
     modeValue?: number | null;
     /** tournaments.current_players - the engine drains it to survivors. */
     currentPlayers?: number;
+    paidPlaces?: number;
     /** readMysteryTotalEntries' answer: every entry, rebuys included. */
     totalEntries?: number | null;
     /** readUnrecordedKnockoutCount's answer (busts played, not recorded). */
@@ -67,7 +68,10 @@ function fixture(
     mystery_bounty_activation: options.mode ?? 'at_the_money',
     mystery_bounty_activation_value: options.modeValue ?? null,
     mystery_bounty_top_percent: 30,
-    payout_structure: Array.from({ length: 27 }, (_, i) => ({ place: i + 1, percentage: 1 })),
+    payout_structure: Array.from({ length: options.paidPlaces ?? 27 }, (_, i) => ({
+      place: i + 1,
+      percentage: 1,
+    })),
     current_players: options.currentPlayers ?? 180,
   };
   const query = {
@@ -117,6 +121,7 @@ function fixture(
     mysteryBountySeeding: false,
     prizePoolFinalized: options.memoryFinalized ?? false,
     allTablesBetweenHands: vi.fn(() => options.betweenHands ?? true),
+    holdMysteryActivationBoundary: vi.fn(),
     // Diamond Phase 9: the unit the manager read beside the tournament row;
     // a chip event unless the case says otherwise, null when not read.
     tournamentUnit: vi.fn(() => (options.unit === undefined ? CHIP_UNIT_CENTS : options.unit)),
@@ -133,6 +138,39 @@ function fixture(
 }
 
 describe('mystery activation uses the closed entry pool', () => {
+  it('uses the final 21-place ladder instead of a stale 20-place cache', async () => {
+    const f = fixture({ finalized: true, paidPlaces: 21 });
+    f.subject.tournamentCache.payout_structure = Array.from({ length: 20 }, (_, i) => ({
+      place: i + 1,
+    }));
+    // The durable finalized ladder is the authority, even with nonempty memory.
+    await f.subject.maybeActivateMysteryBounty(21);
+    expect(f.seedCalls()).toHaveLength(1);
+    expect(f.seedCalls()[0]).toEqual([
+      'fn_mystery_bounty_seed',
+      expect.objectContaining({
+        p_players_remaining: 21,
+        p_chests: expect.any(Array),
+      }),
+    ]);
+    expect(f.seedCalls()[0]).toHaveProperty('1.p_chests.length', 20);
+  });
+
+  it('arms the held boundary when a fresh count reaches the money during another hand', async () => {
+    const f = fixture({ finalized: true, betweenHands: false, paidPlaces: 21 });
+    expect(await f.subject.maybeActivateMysteryBounty(21)).toBe(true);
+    expect(f.subject.holdMysteryActivationBoundary).toHaveBeenCalledOnce();
+    expect(f.seedCalls()).toHaveLength(0);
+  });
+
+  it('keeps a held activation unresolved after an unknown seed outcome', async () => {
+    const f = fixture({ finalized: true, response: { data: null, error: { message: 'timeout' } } });
+    expect(await f.subject.maybeActivateMysteryBounty(21)).toBe(true);
+    expect(f.subject.holdMysteryActivationBoundary).toHaveBeenCalledOnce();
+    expect(f.subject.mysteryBountyStage).toBe('pending');
+    expect(f.subject.broadcast).not.toHaveBeenCalled();
+  });
+
   it('does not seed while entry is open even when every table is parked for a break', async () => {
     const f = fixture();
     await f.subject.maybeActivateMysteryBounty(27);

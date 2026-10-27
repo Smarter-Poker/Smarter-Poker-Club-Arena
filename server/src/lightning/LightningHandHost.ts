@@ -1116,6 +1116,7 @@ export class LightningHandHost {
       big_blind: Number(rules.big_blind),
       variant: String(rules.game_variant || 'nlh'),
       fast_fold_available: state ? this.foldAvailable(playerId, state) : false,
+      fold_on_turn: true,
       // LIGHTNING PHASE 13: which of the two controls the Cluster offers at all.
       ...this.foldFlagFields(),
     };
@@ -1595,6 +1596,28 @@ export class LightningHandHost {
     const userId = player.user_id;
     // Every horse still to act that now owes chips takes its first look at
     // this street the moment the fast fold is open to it.
+    const pending = this.pendingFolds.get(userId);
+    if (pending) {
+      // This is the first moment the old hand may expose the private intent.
+      // The player may already be in a different hand; this controller still
+      // owns the old seat, cards, pot and ordered action record.
+      const folded = this.applyAction(
+        userId,
+        'fold',
+        undefined,
+        pending.origin,
+        'fast',
+        pending.onAccepted
+      );
+      if (folded.success) {
+        this.pendingFolds.delete(userId);
+        return;
+      }
+      this.logger.error(
+        `[LightningHost:${this.instanceId}] queued fold rejected for ${userId}`,
+        folded
+      );
+    }
     this.offerHorseEarlyLooks(userId);
     if (this.preActions.hasPreAction(this.timerKey, userId)) {
       // The seat lights up for a readable beat (the engine's 250 ms), then the
@@ -1804,7 +1827,7 @@ export class LightningHandHost {
    * A horse's fold that it was already making, through the SAME door a
    * person's Lightning Fold uses (handlePlayerAction 'fast_fold': the hand
    * context, the operator's fast-fold switch, foldAvailable, then
-   * performImmediateFold off the turn or the turn fold on it), recorded as
+   * private intent off the turn or the ordered turn fold on it), recorded as
    * the horse's own decision ('horse_policy') with fold_type 'fast'. Its
    * receipts settle against the controller record, as every horse action's
    * do. True when the fold landed.
@@ -1818,14 +1841,18 @@ export class LightningHandHost {
       `lightning-hand:${this.handId}`,
       {
         origin: 'horse_policy',
-        onAccepted: (record) => acceptedActions.push({ record, intended: true }),
+        onAccepted: (record) => {
+          acceptedActions.push({ record, intended: true });
+          settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
+            applied: true,
+            acceptedActions,
+          });
+        },
+        onAbandoned: () =>
+          retireHorseExecutionWitness(decision.fast?.decision.executionWitness, 'turn_abandoned'),
       }
     );
     if (!out.success) return false;
-    settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
-      applied: true,
-      acceptedActions,
-    });
     return true;
   }
 
@@ -1869,7 +1896,8 @@ export class LightningHandHost {
     handId?: string
   ): { success: boolean; error?: string; code?: string } {
     if (this.state !== 'dealing' || !this.hc) return { success: false, error: 'No active hand' };
-    if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
+    if (!this.watching.has(userId) || this.pendingFolds.has(userId))
+      return { success: false, error: 'You have left this hand' };
     if (action === 'clear') {
       this.preActions.clearPreAction(this.timerKey, userId);
       return { success: true };
@@ -2283,6 +2311,7 @@ export class LightningHandHost {
     as?: {
       origin: 'horse_policy';
       onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
     }
   ): { success: boolean; error?: string; code?: string } {
     const receivedAt = this.now();
@@ -2328,7 +2357,8 @@ export class LightningHandHost {
       else if (!had) this.foldRequestedAt.delete(userId);
       return out;
     }
-    if (!this.watching.has(userId)) return { success: false, error: 'You have left this hand' };
+    if (!this.watching.has(userId) || this.pendingFolds.has(userId))
+      return { success: false, error: 'You have left this hand' };
     if (
       actionContext !== undefined &&
       (typeof actionContext !== 'string' || actionContext !== playerActionContext(this.hc))
@@ -2355,21 +2385,33 @@ export class LightningHandHost {
     return out;
   }
 
-  /** Validate, commit the fold, then free the player through the original door. */
+  /** Private intent is separate from the hand's ordered fold action. */
+  private pendingFolds = new Map<
+    string,
+    {
+      origin: 'player' | 'horse_policy';
+      onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
+    }
+  >();
+
   private requestFold(
     userId: string,
     type: 'fast',
-    as?: { origin: 'horse_policy'; onAccepted?: (record: Readonly<ActionRecord>) => void }
+    as?: {
+      origin: 'horse_policy';
+      onAccepted?: (record: Readonly<ActionRecord>) => void;
+      onAbandoned?: () => void;
+    }
   ): { success: boolean; error?: string; code?: string } {
     const hc = this.hc!;
     const st = hc.getState();
     const me = st.players.find((p) => p.user_id === userId);
-    if (!me || !this.watching.has(userId))
+    if (!me || !this.watching.has(userId) || this.pendingFolds.has(userId))
       return { success: false, error: 'You have left this hand' };
     if (me.is_folded) return { success: false, error: 'Already folded' };
-    if (me.is_all_in) return { success: false, error: 'Fold is not available' };
-    if (!BETTING_STAGES.has(st.stage)) return { success: false, error: 'Fold is not available' };
-    if (!this.foldAvailable(userId, st)) return { success: false, error: 'Fold is not available' };
+    if (me.is_all_in || !BETTING_STAGES.has(st.stage) || !this.foldAvailable(userId, st))
+      return { success: false, error: 'Fold is not available' };
     if (st.currentPlayerSeat === me.seat)
       return this.applyAction(
         userId,
@@ -2379,41 +2421,20 @@ export class LightningHandHost {
         type,
         as?.onAccepted
       );
-    // Commit the fold in the real hand before releasing its reservation.
-    // A queued fold could otherwise become the last live player and win.
     if (this.actionLock)
       return { success: false, error: 'Action already being processed - try again' };
-    this.foldTypes.set(userId, type);
-    this.actionLock = true;
-    let accepted = false;
-    try {
-      accepted = hc.performImmediateFold(me.seat, as?.origin ?? 'player', as?.onAccepted);
-    } finally {
-      this.actionLock = false;
-    }
-    if (!accepted) {
-      this.foldTypes.delete(userId);
-      return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
-    }
+    this.pendingFolds.set(userId, {
+      origin: as?.origin ?? 'player',
+      onAccepted: as?.onAccepted,
+      onAbandoned: as?.onAbandoned,
+    });
     this.preActions.clearPreAction(this.timerKey, userId);
-    const current = hc.getState();
-    const actor = current.players.find((p) => p.seat === current.currentPlayerSeat);
-    if (
-      !this.isTerminal() &&
-      current.stage === st.stage &&
-      current.currentPlayerSeat === st.currentPlayerSeat &&
-      actor &&
-      this.turnUser === actor.user_id &&
-      this.participants.get(actor.user_id)?.isHorse &&
-      !this.clientControls(actor.user_id)
-    ) {
-      // Refresh the horse's public opponents without extending its live clock.
-      this.scheduleHorse(
-        actor.user_id,
-        playerActionContext(hc),
-        this.turnLookFirst === actor.user_id
-      );
-    }
+    // A priced fold cannot win a walk: the live bettor must still remain.
+    // Its committed exposure is fixed, so the existing reservation door can
+    // release it now without changing the controller or opponents' views.
+    // A free-check seat stays reserved until its turn (or a legitimate walk),
+    // avoiding an early reservation release followed by a pot award.
+    if (st.currentBet > me.bet) this.afterFold(userId, type);
     return { success: true };
   }
 
@@ -2497,8 +2518,8 @@ export class LightningHandHost {
    * After a committed fold, record it and release the player. Historic watch
    * records remain readable, but new player requests never create one.
    */
-  private afterFold(userId: string): void {
-    const type = this.foldTypes.get(userId) ?? 'normal';
+  private afterFold(userId: string, requestedType?: LightningFoldType): void {
+    const type = requestedType ?? this.foldTypes.get(userId) ?? 'normal';
     this.foldTypes.set(userId, type);
     if (this.releasedOrRecorded.has(userId)) return;
     this.releasedOrRecorded.add(userId);
@@ -2825,6 +2846,7 @@ export class LightningHandHost {
         holeCards: this.holeCards,
         players: state.players,
         stacksBefore: new Map(participants.map((p) => [p.playerId, p.stackBefore])),
+        allInRunoutWitness: this.hc?.getAllInRunoutWitness() ?? null,
         winners: this.winners,
         actions: this.actions,
         participants,
@@ -3223,6 +3245,8 @@ export class LightningHandHost {
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
     this.keepaliveTimer = null;
     this.clearTurn();
+    for (const pending of this.pendingFolds.values()) pending.onAbandoned?.();
+    this.pendingFolds.clear();
     for (const p of this.participants.values()) {
       this.recordBank(p.playerId);
       this.timer.cancelTimer(this.timerKey, p.playerId);

@@ -60,6 +60,59 @@ const factsOf = (row: Record<string, unknown>): Facts | undefined =>
   (row._accepted_post_commit_facts as { stats_facts?: Facts } | undefined)?.stats_facts;
 
 describe('LAW: a Lightning hand is a hand in the stats and in the collusion scan', () => {
+  for (const street of ['preflop', 'flop', 'turn', 'river'] as const) {
+    it(`retains the original ${street} runout obligation without an equity broadcast`, async () => {
+      const formed = kit.formedHand(
+        2,
+        12_010 + ['preflop', 'flop', 'turn', 'river'].indexOf(street)
+      );
+      const t = kit.buildHost(formed, [100, 200], { rules: { club_id: CLUB } });
+      await t.host.start();
+      for (let i = 0; i < 30; i++) {
+        const st = t.host.peekState()!;
+        if (st.stage === street) break;
+        const actor = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+        expect(actor).toBeDefined();
+        expect(
+          t.host.handlePlayerAction(actor.user_id, actor.bet < st.currentBet ? 'call' : 'check')
+            .success
+        ).toBe(true);
+        await kit.flush();
+      }
+      expect(t.host.peekState()!.stage).toBe(street);
+      let st = t.host.peekState()!;
+      const shover = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+      expect(t.host.handlePlayerAction(shover.user_id, 'all_in').success).toBe(true);
+      await kit.flush();
+      st = t.host.peekState()!;
+      const caller = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+      expect(t.host.handlePlayerAction(caller.user_id, 'call').success).toBe(true);
+      await kit.flush(40);
+      const payload = factsOf(t.calls.settle[0]!.handRow)!;
+      expect(payload.facts).toHaveLength(2);
+      for (const f of payload.facts) {
+        expect(f.all_in_equity_owed).toBe(street !== 'river');
+        // No new equity computation or invented estimate accompanies the witness.
+        expect(f.all_in_equity).toBeNull();
+        if (street !== 'river') expect(f.all_in_street).toBe(street);
+      }
+    });
+  }
+
+  it('does not invent an obligation when the other player folds', async () => {
+    const formed = kit.formedHand(2, 12_019);
+    const t = kit.buildHost(formed, [100, 200], { rules: { club_id: CLUB } });
+    await t.host.start();
+    const st = t.host.peekState()!;
+    const actor = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+    expect(t.host.handlePlayerAction(actor.user_id, 'fold').success).toBe(true);
+    await kit.flush(40);
+    expect(factsOf(t.calls.settle[0]!.handRow)!.facts.map((f) => f.all_in_equity_owed)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
   it('hands paired daily counts to the accepted projector only when its hand identity was retained', async () => {
     const formed = kit.formedHand(4, 12_050);
     const t = kit.buildHost(formed, [100, 100, 100, 100], {

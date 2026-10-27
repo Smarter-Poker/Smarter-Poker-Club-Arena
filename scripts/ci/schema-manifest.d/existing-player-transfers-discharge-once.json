@@ -1,0 +1,16 @@
+{
+  "_owner": "Existing-transfer discharge34254; qualified source PROMISED, NOT INSTALLED. Protected merge, exact installer and production financial proof remain separate.",
+  "functions": [
+    "smarter_private.apply_existing_rakeback_transfer",
+    "smarter_private.existing_rakeback_transfer_complete",
+    "smarter_private.existing_rakeback_transfer_plan",
+    "smarter_private.existing_rakeback_transfer_player_receipt",
+    "smarter_private.existing_rakeback_transfer_scope_economic_plan",
+    "smarter_private.existing_rakeback_transfer_scope_receipts",
+    "smarter_private.existing_transfer_discharge_guard"
+  ],
+  "tables": [
+    "smarter_private.existing_rakeback_transfer_instructions",
+    "smarter_private.existing_rakeback_transfer_allocations"
+  ]
+}

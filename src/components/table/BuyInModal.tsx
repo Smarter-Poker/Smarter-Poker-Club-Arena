@@ -115,7 +115,7 @@ export function BuyInModal({
   tableName,
   gameType,
   minBuyIn,
-  maxBuyIn,
+  maxBuyIn: tableMaxBuyIn,
   defaultBuyIn,
   accountBalance,
   bigBlind,
@@ -130,6 +130,7 @@ export function BuyInModal({
 }: BuyInModalProps) {
   const rebuyDialogRef = useFocusTrap(isOpen && purchaseKind === 'rebuy', '#buy-in-modal-title');
   // State
+  const maxBuyIn = Math.max(tableMaxBuyIn, cashoutRestriction ?? 0);
   const wholeDiamonds = currency === 'diamonds';
   const gameTypeName = gameTypeLongName(gameType);
   const balanceKnown = accountBalance !== null;
@@ -160,10 +161,8 @@ export function BuyInModal({
   // 60-second kicker visual countdown
   const [timeLeft, setTimeLeft] = useState(60);
 
-  // CHIP CONTINUITY: the server already caps the rejoin floor at max_buy_in
-  // (fn_cash_effective_buyin). Mirror the cap anyway so a stale prop can never
-  // push the slider's minimum above its maximum.
-  const cappedCashoutRestriction = cashoutRestriction ? Math.min(cashoutRestriction, maxBuyIn) : 0;
+  // A returning player must bring the entire stack, even above the normal cap.
+  const cappedCashoutRestriction = cashoutRestriction ?? 0;
   const effectiveMinBuyIn =
     cappedCashoutRestriction > minBuyIn ? cappedCashoutRestriction : minBuyIn;
   const animationFrameRef = useRef<number>(0);
@@ -601,7 +600,10 @@ export function BuyInModal({
             )}
             <div className="buy-in-modal__current-amount">
               {gameTypeName && (
-                <span className="buy-in-modal__game-type sc-ink--gold" data-testid="buy-in-game-type">
+                <span
+                  className="buy-in-modal__game-type sc-ink--gold"
+                  data-testid="buy-in-game-type"
+                >
                   {gameTypeName}
                 </span>
               )}

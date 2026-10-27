@@ -217,6 +217,7 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const cashHalfNative = matches(/^scripts\/qualification\/test-cash-half-top-horses\.py$/);
   const onTimeMaintenance = matches(
     /^scripts\/ci\/(?:test-on-time-maintenance-thaw\.py$|test-multi-day-stage-foundation\.py$|fixtures\/on-time-start\/)/
   );
@@ -386,6 +387,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      cashHalfNative ||
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(
         /^(src\/services\/Club(?:QuickStart|OpeningSetup|WelcomePackage)Service\.ts|scripts\/ci\/test-quick-club-opening\.py|tests\/unit\/clubQuickStart\.test\.ts)$/
@@ -446,6 +448,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      cashHalfNative ||
       matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||

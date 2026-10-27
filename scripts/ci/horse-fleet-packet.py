@@ -63,8 +63,13 @@ WITH cohort AS MATERIALIZED (
  FROM selected h LEFT JOIN public.lightning_hand l ON l.hand_history_id=h.id
  LEFT JOIN public.hand_atomic_commits c
  ON c.hand_id=h.id AND c.table_id=h.table_id AND c.hand_number=h.hand_number
- LEFT JOIN smarter_private.hand_submissions s
- ON s.table_id=h.table_id AND s.hand_number=h.hand_number
+ -- A Lightning receipt owns its original lease; do not probe the classic
+ -- archive for those hands. OFFSET 0 retains the correlated one-time filter.
+ LEFT JOIN LATERAL (
+   SELECT lease_generation FROM smarter_private.hand_submissions
+   WHERE l.hand_id IS NULL AND table_id=h.table_id AND hand_number=h.hand_number
+   OFFSET 0
+ ) s ON true
 )
 SELECT jsonb_build_object('snapshot',pg_current_snapshot()::text,'readAt',statement_timestamp(),
  'timeIndexValid',true,
@@ -104,13 +109,99 @@ def packet_from_rows(rows,sha,start,end):
     attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_active_roster','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
     return packet,attestation
 
+PHASE_AXES = {
+    'capability': {'captured','unobserved'},
+    'eligibility': {'eligible','outside-domain','unknown'},
+    'qualification': {'verified','owner-forced','unknown','refused'},
+    'application': {'accepted','not-selected','shadow','refused','not-applicable','unknown'},
+}
+def phase_summary(observation):
+    """Counts only, bound to the caller's canonical packet/serving-source proof.
+    Older 'verified' owner counts did not distinguish forced admission. Preserve
+    those reported counts, but never infer independent authority provenance.
+    """
+    evidence=observation.get('phaseEvidence')
+    if evidence is None:return {'status':'unknown','reason':'phase_evidence_unavailable'}
+    schema=observation.get('phaseProofSchema')
+    if not isinstance(schema,dict) or schema.get('version')!='horse-fleet-phase-proof-v1' or schema.get('counterUnit')!='selected_accepted_decisions':raise ValueError('phase_schema')
+    # Existing reader bounds: 10,000 selected hand keys, at most 256 records/hand.
+    n=observation.get('acceptedDecisions')
+    if type(n) is not int or not 0<=n<=2560000:raise ValueError('phase_counts')
+    keys={f'phase{i}' for i in range(1,16)}
+    if not isinstance(evidence,dict) or set(evidence)!=keys:raise ValueError('phase_keys')
+    phases={}
+    for key in sorted(keys,key=lambda x:int(x[5:])):
+        row=evidence[key]
+        if not isinstance(row,dict) or set(row)!={'capability','eligibility','qualification','application','reasons'}:raise ValueError('phase_axes')
+        axes={}
+        for axis,allowed in PHASE_AXES.items():
+            counts=row[axis]
+            if not isinstance(counts,dict) or not set(counts)<=allowed or any(type(v) is not int or not 0<=v<=n for v in counts.values()) or sum(counts.values())!=n:raise ValueError('phase_counts')
+            axes[axis]=dict(counts)
+        reasons=row['reasons']
+        if not isinstance(reasons,dict) or any(not isinstance(k,str) or type(v) is not int or not 0<=v<=n for k,v in reasons.items()) or sum(reasons.values())!=n:raise ValueError('phase_reasons')
+        independent=reasons.get('protected_owner_independently_qualified',0)
+        forced=reasons.get('owner_forced_not_independently_qualified',0)
+        if independent>axes['qualification'].get('verified',0) or forced!=axes['qualification'].get('owner-forced',0) or independent+forced>axes['eligibility'].get('eligible',0) or independent+forced>axes['capability'].get('captured',0):raise ValueError('phase_provenance_counts')
+        axes['authorityProvenance']={'independentlyQualified':independent,'ownerForced':forced,'unknown':n-independent-forced}
+        phases[key]=axes
+    return {'status':'reported','schema':'horse-fleet-phase-summary-v1','counterUnit':'selected_accepted_decisions','acceptedDecisions':n,'phases':phases,'allPhasesVerified':False}
+
+# Maintained fleet/reconciler closed literals only; never emit arbitrary keys.
+CAPTURE_GAP_REASONS = frozenset(['accepted_hand_conflict', 'accepted_hand_missing', 'action_origin_unavailable', 'actor_outside_roster', 'binding_unavailable', 'bound_reached', 'capture_outside_window', 'capture_unavailable', 'decision_missing', 'decision_outside_window', 'discard_binding_unavailable', 'discard_capture_conflict', 'discard_decision_missing', 'discard_execution_missing', 'discard_input_mismatch', 'execution_conflict', 'execution_missing', 'fallback_lineage_unavailable', 'hand_bound_reached', 'input_mismatch', 'invalid_records', 'multiple_decisions_for_action', 'plan_receipt_conflict', 'plan_receipt_missing', 'plan_receipt_unbound', 'read_frame_unavailable', 'record_conflict', 'request_lifecycle_missing', 'source_mismatch', 'storage_close_unavailable', 'turn_conflict', 'unmatched_discard_action', 'unmatched_horse_action'])
+def capture_diagnostics(attestation, observation):
+    def count(value, maximum):
+        if type(value) is not int or not 0<=value<=maximum:raise ValueError('capture_counts')
+        return value
+    selected=count(attestation.get('selectedHands'),10000)
+    owners=attestation.get('sourceOwnerCounts')
+    if not isinstance(owners,dict) or set(owners)!={'classic','lightning'} or sum(count(v,10000) for v in owners.values())!=selected:raise ValueError('capture_source_counts')
+    out={'selectedHands':selected,'sourceOwnerCounts':dict(owners),'inspectedHandsIsContinuationCursor':False,'inspectionMayIncludeIncompleteHand':True}
+    fields={'inspectedHands':selected,'remainingHands':selected,'validatedBytes':(64+8)*1024*1024,'acceptedDecisions':256*selected}
+    for key,maximum in fields.items():out[key]=count(observation[key],maximum) if key in observation else None
+    if 'selectedHands' in observation and count(observation['selectedHands'],10000)!=selected:raise ValueError('capture_counts')
+    if out['inspectedHands'] is not None and out['remainingHands'] is not None and out['inspectedHands']+out['remainingHands']!=selected:raise ValueError('capture_counts')
+    for key in ['boundReached','captureUnfinished']:
+        if key in observation and type(observation[key]) is not bool:raise ValueError('capture_counts')
+        out[key]=observation.get(key)
+    # fleet.charge increments before refusal; readFleetHand is bounded to
+    # 8 MiB, so the diagnostic counter can exceed the unchanged 64 MiB budget
+    # by one bounded read. This does not enlarge the observer's read limit.
+    out['validatedBytesLimit']=64*1024*1024
+    if out['validatedBytes'] is not None and out['validatedBytes']>out['validatedBytesLimit'] and (out['boundReached'] is not True or out['captureUnfinished'] is not True):raise ValueError('capture_counts')
+    gaps=observation.get('gaps')
+    out['gaps']=None
+    if gaps is not None:
+        if not isinstance(gaps,dict):raise ValueError('capture_gaps')
+        safe={}
+        for reason,value in gaps.items():
+            number=count(value,256*selected+32)
+            key=reason if reason in CAPTURE_GAP_REASONS else 'other_retained_capture_gap'
+            safe[key]=safe.get(key,0)+number
+        out['gaps']=safe
+    out['missingFieldMeaning']='unknown'
+    return out
+
 def summarize(attestation,result):
     observation=(result.get('execution') or {}).get('observation') or {}
     count=observation.get('observedHorses')
     if not isinstance(count,int) or isinstance(count,bool) or not 0<=count<=1000:raise ValueError('counts')
     canonical=(attestation.get('authority')=='canonical_database_snapshot' and attestation.get('rosterCount')==1000 and bool(attestation.get('snapshot')) and re.fullmatch('[0-9a-f]{64}',attestation.get('packetDigest','')) is not None and attestation.get('packetDigest')==result.get('packetDigest') and attestation.get('sourceSha')==result.get('sourceSha') and result.get('qualifiedExecution') is True)
     complete=canonical and observation.get('completeHorseCoverage') is True and count==1000
-    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False}
+    return {'canonicalRosterVerified':bool(canonical),'packetDigest':attestation.get('packetDigest') if canonical else None,'observedHorses':count,'unobservedHorses':1000-count,'completeCanonicalHorseCoverage':bool(complete),'completePopulation':False,'allPhasesVerified':False,'captureDiagnostics':capture_diagnostics(attestation,observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'},'phaseEvidence':phase_summary(observation) if canonical else {'status':'unknown','reason':'canonical_binding_unverified'}}
+
+def database_failure(stderr):
+    # VERBOSITY=verbose supplies a machine SQLSTATE. Never return the message,
+    # URI, detail, relation, query text or an unrecognized token.
+    match=re.search(r'(?:ERROR|FATAL):\s+([0-9A-Z]{5}):',stderr or '')
+    state=match.group(1) if match else ''
+    if state=='57014':return 'database_statement_cancelled'
+    if state=='55P03':return 'database_lock_unavailable'
+    if state=='42501':return 'database_permission_denied'
+    if state in {'42P01','42703','42883','3F000'}:return 'database_schema_unavailable'
+    if state.startswith('28'):return 'database_authentication_failed'
+    if state.startswith('08'):return 'database_connection_unavailable'
+    return 'database_unavailable_or_bounds'
 
 def main():
     try:
@@ -123,15 +214,16 @@ def main():
         output=Path(sys.argv[1]);attestation_path=Path(sys.argv[2])
         if not output.is_absolute() or not attestation_path.is_absolute() or output.exists() or attestation_path.exists():raise ValueError('private_output')
         env=database_environment(os.environ)
-        result=subprocess.run(['psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1'],input=query(start,end),text=True,capture_output=True,timeout=15,env=env)
-        if result.returncode or len(result.stdout.encode())>4194304:raise ValueError('database_unavailable_or_bounds')
+        result=subprocess.run(['psql','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],input=query(start,end),text=True,capture_output=True,timeout=15,env=env)
+        if result.returncode:raise ValueError(database_failure(result.stderr))
+        if len(result.stdout.encode())>4194304:raise ValueError('database_reply_bound_reached')
         packet,attestation=packet_from_rows(json.loads(result.stdout),sha,start,end)
         for path,value in [(output,packet),(attestation_path,attestation)]:
             fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
             with os.fdopen(fd,'w') as f:json.dump(value,f,separators=(',',':'));f.write('\n')
         print(json.dumps({'canonicalRosterVerified':True,'rosterCount':1000,'selectedHands':len(packet['handKeys']),'packetDigest':attestation['packetDigest'],'sourceSha':sha,'completePopulation':False,'allPhasesVerified':False}))
     except Exception as error:
-        reasons={'source','utc','window','private_output','database_configuration','database_option','snapshot_or_index','canonical_cohort_not_1000','accepted_source_reply_invalid','accepted_source_selection_empty','accepted_source_hand_bound_reached','original_acceptance_unavailable','original_acceptance_pending','lightning_original_lease_unavailable','duplicate_coordinate','counts','private_result','database_unavailable_or_bounds'}
+        reasons={'source','utc','window','private_output','database_configuration','database_option','snapshot_or_index','canonical_cohort_not_1000','accepted_source_reply_invalid','accepted_source_selection_empty','accepted_source_hand_bound_reached','original_acceptance_unavailable','original_acceptance_pending','lightning_original_lease_unavailable','duplicate_coordinate','counts','private_result','database_unavailable_or_bounds','database_statement_cancelled','database_lock_unavailable','database_permission_denied','database_schema_unavailable','database_authentication_failed','database_connection_unavailable','database_reply_bound_reached'}
         reason=str(error) if isinstance(error,ValueError) and str(error) in reasons else 'canonical_packet_input_or_database_unavailable'
         print(json.dumps({'canonicalRosterVerified':False,'status':'unavailable','gap':reason,'counts':error.counts if isinstance(error,PacketGap) else {},'completePopulation':False,'allPhasesVerified':False}))
         return 3

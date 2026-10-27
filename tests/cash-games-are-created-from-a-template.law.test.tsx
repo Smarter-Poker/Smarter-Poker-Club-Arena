@@ -291,24 +291,10 @@ describe('A1.5 - an undealt variant is offered disabled, never saved as NLHE (RO
   });
 });
 
-describe('A1.6 - the two clocks can only be raised', () => {
-  it('the stay clock and rejoin window sliders bottom out at the snapshot floor', () => {
-    const stay = FLOW.slice(
-      FLOW.indexOf('label="Stay Clock"'),
-      FLOW.indexOf('/>', FLOW.indexOf('label="Stay Clock"'))
-    );
-    expect(stay).toMatch(/min=\{snapshot\.stay_clock_min\}/);
-    const rejoin = FLOW.slice(
-      FLOW.indexOf('label="Rejoin Window"'),
-      FLOW.indexOf('/>', FLOW.indexOf('label="Rejoin Window"'))
-    );
-    expect(rejoin).toMatch(/min=\{snapshot\.rejoin_window_min\}/);
-  });
-
-  it('and the refusals are worded as a floor, not a range', () => {
-    const vocab = read('src/config/cashGames.ts');
-    expect(vocab).toContain('The Stay Clock Can Only Be Raised Above 10 Minutes');
-    expect(vocab).toContain('The Rejoin Window Can Only Be Raised Above 120 Minutes');
+describe('Cash return rules are fixed house rules', () => {
+  it('does not offer a minimum stay or configurable return window', () => {
+    expect(FLOW).not.toContain('label="Stay Clock"');
+    expect(FLOW).not.toContain('label="Rejoin Window"');
   });
 });
 

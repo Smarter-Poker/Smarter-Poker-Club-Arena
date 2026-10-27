@@ -307,6 +307,26 @@ describe('gtoFacingDefense - the line itself', () => {
     expect(d).toBeNull();
   });
 
+  it('does not pass a monster to aggression when the exact net award cannot repay the call', () => {
+    loadV30();
+    const d = gtoFacingDefense({
+      street: 'turn',
+      family: 'cash',
+      bettorPosition: 'BTN',
+      stackBB: 80,
+      board: BOARD,
+      heroCards: cards('KhKc'),
+      pot: 100,
+      toCall: 60,
+      callDeductionFraction: 0.8,
+      rakeMarg: 0,
+      rand: mulberry(11),
+    });
+    expect(d).not.toBeNull();
+    expect(d!.action).toBe('fold');
+    expect(d!.potOdds).toBeCloseTo(60 / 32, 10);
+  });
+
   it('nothing to call, nothing to say', () => {
     loadV30();
     expect(

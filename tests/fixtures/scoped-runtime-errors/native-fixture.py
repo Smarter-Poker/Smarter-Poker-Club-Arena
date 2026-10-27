@@ -21,6 +21,65 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_break_refusals_keep_only_named_guards_and_symbolic_codes(self):
+        prefix = '[Tournament:'+EVENT[:8]+'] Break abcdef12 '
+        lines = [prefix+'not begun: source_roster_unread:PRIVATE_SQL_PASSWORD',
+                 prefix+'members not dispatched: source_engine_absent',
+                 prefix+'not retired: members_unresolved:2_of_4',
+                 prefix+'not begun: movement_unproven:F06_MOVEMENT_WHOLE_ROSTER_REQUIRED',
+                 prefix+'not begun: PRIVATE_SECRET',
+                 prefix+'arbitrary: source_engine_absent',
+                 prefix+'not begun: source_engine_absent PRIVATE_SECRET']
+        result = reader.extract(('\n'.join(STAMP+x for x in lines)).encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 4)
+        self.assertEqual(result['records'][0]['breakRefusal'],
+                         {'breakIdPrefix': 'abcdef12', 'stage': 'not begun', 'reason': 'source_roster_unread'})
+        self.assertEqual(result['records'][3]['symbolicErrors'], ['F06_MOVEMENT_WHOLE_ROSTER_REQUIRED'])
+        self.assertNotIn('PRIVATE_', json.dumps(result))
+        self.assertNotIn('2_of_4', json.dumps(result))
+
+    def test_balance_progress_admits_only_three_fixed_selected_transitions(self):
+        prefix = '[Tournament:'+EVENT[:8]+'] '
+        valid = [prefix+'Resumed - 23 tables, level 7',
+                 prefix+'consolidation outstanding - sweeps move to the consolidation lane',
+                 prefix+'consolidation finished - sweeps return to the general lanes']
+        invalid = [valid[0]+' PRIVATE_SECRET', prefix+'Resumed - 999999 tables, level 7',
+                   prefix+'arbitrary PRIVATE_SECRET',
+                   '[Tournament:deadbeef] Resumed - 23 tables, level 7']
+        result = reader.extract(('\n'.join(STAMP+x for x in valid+invalid)).encode(), SCOPES)
+        self.assertEqual(result['matchingRecords'], 3)
+        self.assertEqual(result['records'][0]['resumedBoard'], {'tables': 23, 'level': 7})
+        self.assertEqual([r['context'] for r in result['records']],
+                         ['Tournament.resumed', 'Tournament.consolidation_outstanding', 'Tournament.consolidation_finished'])
+        self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+        ambiguous = SCOPES+[{'tournamentId': '00000000-0000-4000-8000-000000000003', 'tableIds': []}]
+        self.assertEqual(reader.extract((STAMP+valid[0]).encode(), ambiguous)['records'], [])
+
+    def test_unrelated_archive_traffic_cannot_spend_the_selected_record_budget(self):
+        import base64
+        import io
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, path, _ = self.archive_fixture(directory)
+            stamp = window['since']+' '
+            noise = ''.join(stamp+'[Other] unrelated '+str(i)+'\n' for i in range(20001))
+            selected = (stamp+'[Tournament.atomic_move_refused_or_unknown] Error: F06_WHOLE_ROSTER_REQUIRED\n'
+                        +stamp+"  tournamentId: '"+EVENT+"', password: 'PRIVATE_SECRET'\n")
+            with gzip.open(path, 'wb') as out:
+                out.write((noise+selected).encode())
+            encoded = base64.b64encode(json.dumps({'scopes': SCOPES, 'windowStart': window['since']}).encode()).decode()
+            output = io.StringIO()
+            identity = {'version': 'abcdef012345', 'instanceId': 'fixture'}
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.object(reader, 'capture', return_value=b''), patch.object(reader, 'health', return_value=identity), patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(sys, 'stdout', output):
+                reader.main()
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['matchingRecords'], 1)
+            self.assertEqual(result['records'][0]['symbolicErrors'], ['F06_WHOLE_ROSTER_REQUIRED'])
+            self.assertEqual(result['archiveRead']['archives'][0]['retainedPhysicalLines'], 2)
+            self.assertFalse(result['archiveRead']['truncated'])
+            self.assertFalse(result['archiveRead']['fullWindowCoverageProven'])
+            self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
     def test_archive_fallback_recovers_original_window_without_current_identity(self):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
         start = now-datetime.timedelta(hours=1)
@@ -55,6 +114,23 @@ class NativeLogReader(unittest.TestCase):
             self.assertEqual(result['hostEngineBefore'], identity_now)
             self.assertEqual(result['hostEngineAfter'], identity_now)
             self.assertNotIn('PRIVATE_SECRET', output.getvalue())
+
+    def test_selected_archived_records_still_share_the_existing_input_bound(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            window, path, _ = self.archive_fixture(directory)
+            stamp = window['since']+' '
+            first = (stamp+'[Tournament.read] Error: F06_ORIGINAL_CHANGED\n'
+                     +stamp+'  tournamentId: '+EVENT+'\n')
+            second = stamp+'[Tournament.next] Error: F06_OTHER '+EVENT+'\n'
+            with gzip.open(path, 'wb') as out:
+                out.write((first+second).encode())
+            with patch.object(reader, 'ARCHIVE_DIRECTORY', directory), patch.object(reader, 'MAX_PHYSICAL_LINES', 2):
+                sources, metadata = reader.archived_window(window, b'', scopes=SCOPES)
+            self.assertTrue(metadata['truncated'])
+            self.assertEqual(metadata['archives'][0]['status'], 'inputBound')
+            self.assertEqual(sources[0][0], first.encode())
+            self.assertEqual(reader.extract(sources[0][0], SCOPES)['matchingRecords'], 1)
 
     def archive_fixture(self, directory, *, ended_minutes=30, started_hours=2, suffix='abcdef123456-c3ed8648', raw=None):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)

@@ -360,7 +360,11 @@ function DriftIncidentsContent({ actorId }: { actorId?: string }) {
         revokeAccess();
         return;
       }
-      toast.error('Incident action failed');
+      toast.error(
+        'Incident Action Result Could Not Be Confirmed. Check The Timeline Before Trying Again'
+      );
+      setPinned((prev) => new Set(prev).add(incident.id));
+      await loadIncidents();
     }
     if (isCurrent()) setActing(null);
   };

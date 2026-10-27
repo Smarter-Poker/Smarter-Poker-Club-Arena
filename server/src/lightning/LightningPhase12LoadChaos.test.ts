@@ -645,6 +645,9 @@ describe('chaos: every fault the spec names, the required outcome every time', (
   }, 60_000);
 
   it('RPC connection loss (answers lost before AND after commit): settled once or abandoned, never twice', async () => {
+    let before = 0;
+    let after = 0;
+    let recovered = false;
     const r = await run({
       name: 'chaos-connection-loss',
       players: 100,
@@ -653,19 +656,38 @@ describe('chaos: every fault the spec names, the required outcome every time', (
       capMs: 20_000,
       seed: 5004,
       allowReap: true,
+      // Install before the engine starts. A timed storm could miss every
+      // operation on a fast run, or clear before delayed work on a busy host.
+      // One lost pre-commit formation answer and one lost committed settlement
+      // answer guarantee both recovery paths execute without random coverage.
+      configureWorld: (world) => {
+        world.faults = (fn) => {
+          if (fn === 'fn_lightning_match_and_form' && before === 0) {
+            before++;
+            return { kind: 'transport_before' };
+          }
+          if (fn === 'settle' && after === 0) {
+            after++;
+            return { kind: 'transport_after' };
+          }
+          return null;
+        };
+      },
       chaos: async (ctx) => {
-        await waitMs(400);
-        ctx.world.faults = (fn) =>
-          fn === 'fn_lightning_latency_report'
-            ? null
-            : ctx.rnd() < 0.5
-              ? { kind: ctx.rnd() < 0.5 ? 'transport_before' : 'transport_after' }
-              : null;
-        await waitMs(700);
+        recovered = await waitFor(
+          () => before === 1 && after === 1 && ctx.world.counters.settleReplays > 0,
+          20_000
+        );
         ctx.world.faults = null;
       },
     });
     assertRequiredOutcome(r, { allowReap: true, label: 'connection loss' });
+    expect(
+      recovered,
+      'both connection-loss faults executed and the committed settlement replayed'
+    ).toBe(true);
+    expect(before).toBe(1);
+    expect(after).toBe(1);
     expect(r.world.counters.settleReplays + r.world.counters.replayed).toBeGreaterThan(0);
     record('chaos-connection-loss', r);
   }, 60_000);

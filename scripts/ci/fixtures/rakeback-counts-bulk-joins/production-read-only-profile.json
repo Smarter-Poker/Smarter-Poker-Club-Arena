@@ -1,0 +1,111 @@
+{
+  "execution_ms": 17159.895,
+  "actual_nodes": [
+    {
+      "Node Type": "Index Scan",
+      "Relation Name": "accounting_cash_rake_sources",
+      "Index Name": "accounting_cash_rake_sources_rake_record_id_player_id_key",
+      "Actual Rows": 16870,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 61762,
+      "Shared Read Blocks": 4570,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "Hash Join",
+      "Join Type": "Full",
+      "Actual Rows": 16870,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 61762,
+      "Shared Read Blocks": 4570,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "CTE Scan",
+      "CTE Name": "week_sources",
+      "Actual Rows": 16870,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 61762,
+      "Shared Read Blocks": 4570,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "Hash Join",
+      "Join Type": "Full",
+      "Actual Rows": 20093,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 97975,
+      "Shared Read Blocks": 5583,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "CTE Scan",
+      "CTE Name": "incomplete_source_pairs",
+      "Actual Rows": 16870,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 61762,
+      "Shared Read Blocks": 4570,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "CTE Scan",
+      "CTE Name": "week_batches",
+      "Actual Rows": 11532,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 36213,
+      "Shared Read Blocks": 1013,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "Index Scan",
+      "Relation Name": "accounting_cash_rake_sources",
+      "Index Name": "accounting_cash_rake_sources_period",
+      "Actual Rows": 0,
+      "Actual Loops": 0,
+      "Shared Hit Blocks": 0,
+      "Shared Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "CTE Scan",
+      "CTE Name": "incomplete_batch_pairs",
+      "Actual Rows": 0,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 97975,
+      "Shared Read Blocks": 5583,
+      "Temp Written Blocks": 0
+    },
+    {
+      "Node Type": "Index Scan",
+      "Relation Name": "accounting_cash_rake_sources",
+      "Index Name": "accounting_cash_club_week_player_cover",
+      "Actual Rows": 16870,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 7388,
+      "Shared Read Blocks": 159,
+      "Temp Written Blocks": 0
+    }
+  ],
+  "whole_plan_read_blocks": 19838,
+  "whole_plan_hit_blocks": 348937,
+  "observed_at": "2026-10-27T01:57:22.717690Z",
+  "club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+  "week_from": "2026-10-19T07:00:00Z",
+  "week_to": "2026-10-26T07:00:00Z",
+  "window_from": "2026-10-20T17:00:00Z",
+  "window_to": "2026-10-20T19:00:00Z",
+  "original_durable_computed_at": "2026-10-27T01:55:14.714695Z",
+  "original_durable": {
+    "evidence": 0,
+    "incomplete": 0,
+    "drifted": 0
+  },
+  "candidate_actual": {
+    "evidence": 0,
+    "incomplete": 0,
+    "drifted": 0
+  },
+  "closed_week_later_cash_sources": false,
+  "transport": "native psql; EXPLAIN ANALYZE INSERT into pg_temp only; READ ONLY transaction; ROLLBACK",
+  "baseline_limit": "Original incomplete component exceeded18083.686ms; whole original coordinator was~135s including other guards. No uniform or cold-cache speedup claim."
+}

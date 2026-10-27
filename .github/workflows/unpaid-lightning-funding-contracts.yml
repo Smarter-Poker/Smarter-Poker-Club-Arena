@@ -1,0 +1,93 @@
+name: Unpaid Lightning follows original funding
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/**
+      - scripts/ci/fixtures/fees-before-club-books/**
+      - scripts/ci/fixtures/rakeback-player-week-indexes/**
+      - scripts/ci/test-rakeback-player-week-indexes-postgres.py
+      - tests/rakeback-pages-index-player-week.law.test.ts
+      - scripts/ci/fixtures/rakeback-counts-bulk-joins/**
+      - scripts/ci/test-rakeback-counts-bulk-joins-postgres.py
+      - tests/rakeback-counts-read-each-keyset-once.law.test.ts
+      - scripts/ci/test-fees-before-club-books-postgres.py
+      - tests/rakeback-is-paid-before-club-books-close.law.test.ts
+      - scripts/ci/fixtures/earned-plan-window-original.sql
+      - scripts/ci/test-earned-window-cardinality-postgres.py
+      - tests/earned-window-counts-each-hand-once.law.test.ts
+      - scripts/ci/fixtures/unpaid-lightning-funding-contracts.json
+      - scripts/ci/fixtures/unpaid-atomic-cash-contract-columns.json
+      - scripts/qualification/original-retirement-boundary/**
+      - scripts/qualification/original-seven-discharge/**
+      - tests/sealed-inventory-reads-the-sealed-state.law.test.ts
+      - scripts/ci/test-daily-reporting-attribution-change-postgres.py
+      - scripts/ci/fixtures/daily-reporting-original-owners.sql
+      - scripts/ci/test-unpaid-lightning-funding-contracts-postgres.py
+      - .github/workflows/unpaid-lightning-funding-contracts.yml
+      - tests/unpaid-lightning-follows-original-funding.law.test.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unpaid-lightning-funding-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unpaid-lightning-funding-contracts:
+    name: Unpaid Lightning follows original funding
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: Unpaid Lightning follows original funding
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-unpaid-lightning-funding-contracts-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Historical club changes retain exact daily reporting
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-daily-reporting-attribution-change-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Sealed inventory retains the complete original financial proof
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql
+      - name: Earned windows retain every complete hand cardinality
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-earned-window-cardinality-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Earned rakeback precedes guarded club settlement
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-fees-before-club-books-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Rakeback source windows retain every original proof count
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-rakeback-counts-bulk-joins-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Rakeback pages retain exact math with matching player indexes
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-rakeback-player-week-indexes-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/rakeback-player-week-indexes.json"

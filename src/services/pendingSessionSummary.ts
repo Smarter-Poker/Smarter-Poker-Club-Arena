@@ -338,10 +338,19 @@ export function dismissSessionSummary(closeTable?: (tableId: string, seat: numbe
 
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
 export function publishSessionSummary(payload: SessionSummaryPayload, broadcast = true): void {
+  restoreTournamentReports();
   const cashKey = cashCompletionKey(payload);
   if (cashKey && acknowledgedCashCompletions.has(cashKey)) return;
+  // A later seat-left observation is an estimate, never a replacement for the
+  // settled result already received for this exact occupancy in another window.
+  if (
+    cashKey &&
+    cashKey === cashCompletionKey(pending) &&
+    pending?.plPending !== true &&
+    payload.plPending === true
+  )
+    return;
   if (broadcast) broadcastCompletion(payload);
-  restoreTournamentReports();
   const id = tournamentReportKey(payload.tournament);
   if (id && acknowledgedTournamentIds.has(id)) return;
   if (pending?.tournament) {

@@ -44,6 +44,16 @@ it('receives only the authenticated owner completion and does not reopen acknowl
     },
   });
   expect(store.peekSessionSummary()?.closeOccupancyId).toBe('occupancy-two');
+  store.publishSessionSummary({
+    ...payload,
+    closeOccupancyId: 'occupancy-two',
+    sessionStart: 999,
+    profitLoss: -10,
+    plPending: true,
+  });
+  expect(store.peekSessionSummary()?.profitLoss).toBe(3.3);
+  expect(store.peekSessionSummary()?.plPending).not.toBe(true);
+  expect(postMessage).not.toHaveBeenCalled();
   store.clearSessionSummary();
   off();
   vi.unstubAllGlobals();

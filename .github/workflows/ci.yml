@@ -2075,6 +2075,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/test-tournament-table-writers-wait-for-their-lane.py --output "$RUNNER_TEMP/tournament-table-writers-lane"
+      - name: Lightning live indexes become vacuum eligible without historical-table growth
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-live-index-maintenance.py
       - name: Lightning Phase 13 rollout controls pause, close joins, drain to MUST-MOVE with every hand settled, freeze, roll back the matcher and answer a readiness verdict (production bodies, real chain)
         if: matrix.shard == 3
         env:

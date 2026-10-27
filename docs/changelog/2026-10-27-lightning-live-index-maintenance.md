@@ -1,0 +1,7 @@
+# Lightning live indexes use a fixed maintenance threshold
+
+The active-instance partial indexes grew stale while the historical instance table stayed below PostgreSQL's default dead-tuple threshold. An actual current-hand status lookup took 268.415ms and 7,181 buffer hits; a single ordinary online vacuum reduced it to 12.592ms and 767 hits while returning more live rows. No logical game or financial rows changed.
+
+Set only this table's existing PostgreSQL autovacuum vacuum threshold to 1,000 and scale factor to zero. The observed 7,776 dead tuples in 21.6 minutes imply eligibility around three minutes at that rate, instead of the historical table's approximately 139,000 threshold. Worker availability remains PostgreSQL's responsibility; this adds no job or repair loop. Preserve cost/freeze/analyze/insert settings, ACLs, RLS, indexes, constraints, retention and all financial definitions.
+
+The migration refuses a changed configured preimage, uses one transaction and short lock/statement budgets, and asserts its exact option postimage. A socket-only PG17 fixture runs in the existing required accounting shard and verifies defaults missed the incident count, fixed eligibility, unrelated options and catalog/data preservation, concurrent row-writer compatibility, changed-preimage refusal and disabled-autovacuum refusal. Installation and live readback remain separate delivery evidence.

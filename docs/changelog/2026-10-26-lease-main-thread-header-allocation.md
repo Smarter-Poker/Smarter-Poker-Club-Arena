@@ -19,7 +19,8 @@ headers are removed while a stalled body still reaches its independent deadline.
 Focused request, concurrent actor, private-client and manager fence tests pass.
 The source-wiring guard now pins the owned stamp at the same per-attempt boundary.
 
-The existing expiring owner-window carrier records the owner's October26-only
-release-when-ready instruction. It changes no maintenance safeguard or publisher.
+The October26-only release window expired while required checks ran. Its entry
+was removed from this candidate; routine activation uses the existing daily
+maintenance route. No maintenance safeguard or publisher changes.
 Protected merge, exact-image installation and post-release natural/profile proof
 remain separate delivery gates in the existing task checkpoint.

@@ -80,7 +80,9 @@ BEGIN
     AND NOT EXISTS(SELECT 1 FROM public.ca_horse_active_roster a WHERE a.horse_id=t.horse_id)
   ON CONFLICT(horse_id,club_id) DO NOTHING;
   UPDATE public.stable_hand_membership_tags t
-  SET mode='tourney'
+  -- The live tag contract couples tournament-only mode to an absent cash persona,
+  -- no cash-only freeroll flag and one table. Original cash fields are backed up above.
+  SET mode='tourney',persona_cash=NULL,cash_freeroll=false,max_tables=1
   WHERE t.mode IN ('cash','both')
     AND NOT EXISTS(SELECT 1 FROM public.ca_horse_active_roster a WHERE a.horse_id=t.horse_id);
 

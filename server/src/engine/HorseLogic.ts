@@ -5106,7 +5106,7 @@ export class HorseLogic {
               p.seat !== player.seat &&
               p.seat !== lastRaiserSeat
           );
-          let eq38 = simulateEquity(
+          const eq38 = simulateEquity(
             player.cards,
             [],
             inPotPlayers38.length,
@@ -5197,61 +5197,6 @@ export class HorseLogic {
             dominationMargin38 +
             realization38;
           const required38 = exactRake38 === null ? Math.min(0.99, rawRequired38) : rawRequired38;
-          // Confirm a noisy heads-up price at THIS owner's unchanged
-          // threshold. The later recovery must not lower its domination/risk
-          // margins. Reuse the existing recovery's bounded sample ceilings;
-          // simulateEquity retains the governor; the existing worker deadline remains.
-          if (
-            vi.isOmaha &&
-            inPotPlayers38.length === 1 &&
-            (effCall38 >= player.stack || !otherLiveResponder38)
-          ) {
-            const terminal38 = effCall38 >= player.stack;
-            const iterations38 = Math.max(160, Math.floor(vi.iterations * 0.8));
-            let samples38 = equitySampleSizeOfLastCall();
-            const uncertainty38 = () =>
-              2 * Math.sqrt(Math.max(0.01, eq38 * (1 - eq38)) / Math.max(1, samples38));
-            if (eq38 < required38 && required38 - eq38 <= uncertainty38()) {
-              const refined38 = simulateEquity(
-                player.cards,
-                [],
-                inPotPlayers38.length,
-                vi,
-                iterations38 * (terminal38 ? 4 : 1),
-                bands38,
-                false,
-                undefined,
-                undefined,
-                undefined,
-                player.knownDeadCards ?? []
-              );
-              const granted38 = equitySampleSizeOfLastCall();
-              eq38 =
-                (eq38 * samples38 + refined38 * granted38) / Math.max(1, samples38 + granted38);
-              samples38 += granted38;
-            }
-            const boundarySamples38 = Math.ceil(0.25 / (0.01 * 0.01));
-            if (
-              terminal38 &&
-              samples38 < boundarySamples38 &&
-              eq38 < required38 &&
-              required38 - eq38 <= uncertainty38()
-            ) {
-              eq38 = simulateEquity(
-                player.cards,
-                [],
-                inPotPlayers38.length,
-                vi,
-                boundarySamples38,
-                bands38,
-                false,
-                undefined,
-                undefined,
-                undefined,
-                player.knownDeadCards ?? []
-              );
-            }
-          }
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
           if (

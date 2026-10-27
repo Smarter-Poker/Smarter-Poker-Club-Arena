@@ -105,12 +105,12 @@ function pricedSpot(pending: boolean, first = 0.44, later = first, stack = 396.2
 it.each([false, true])('retains a priced Omaha refusal with pending responder=%s', (pending) => {
   const { decision, sampled } = pricedSpot(pending);
   expect(decision.action).toBe('fold');
-  expect(sampled).toHaveBeenCalledTimes(pending ? 1 : 2);
+  expect(sampled).toHaveBeenCalledTimes(1);
 });
-it('confirms noisy terminal equity at the same authoritative price', () => {
-  const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.6, 156);
+it('admits sufficient terminal equity from the original fixed estimate', () => {
+  const { decision, sampled, fires } = pricedSpot(false, 0.6, 0.1, 156);
   expect(['call', 'all_in']).toContain(decision.action);
-  expect(sampled).toHaveBeenCalledTimes(2);
+  expect(sampled).toHaveBeenCalledTimes(1);
   expect(fires.maniac_call_down).toBeUndefined();
 });
 it('does not resample a decisive bad price or lower the final threshold', () => {
@@ -118,9 +118,9 @@ it('does not resample a decisive bad price or lower the final threshold', () => 
   expect(decision.action).toBe('fold');
   expect(sampled).toHaveBeenCalledTimes(1);
 });
-it('retains a borderline refusal after the bounded confirmation', () => {
-  const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.44, 156);
+it('retains a borderline refusal without sampling until it passes', () => {
+  const { decision, sampled, fires } = pricedSpot(false, 0.44, 0.9, 156);
   expect(decision.action).toBe('fold');
-  expect(sampled.mock.calls.length).toBeLessThanOrEqual(3);
+  expect(sampled).toHaveBeenCalledTimes(1);
   expect(fires.maniac_call_down).toBeUndefined();
 });

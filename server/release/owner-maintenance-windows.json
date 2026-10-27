@@ -2,6 +2,14 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-26-cash-half-top-horses-8260-now",
+      "ownerOrder": "Dan, October 26, 2026 America/Chicago: \"cut the cash games being played by 50%\" across \"the entire daily schedule\", \"only allow the top horses play\"; later in this chat: \"don't do any work outside of the scope, finish push and publish\", and \"complete the task in full ... do not claim success until ... verified\". The same-day owner direction covering all authorized work is \"ALL WORK TODAY GETS PUSHED AND PUBLISHED RIGHT AWAY AND NOT WAITING UNTIL 4AM\". One certified activation containing protected PR #8260 squash f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd, which halves the daily cash activity curve, restores its host-cap and safe-exit enforcement, and restricts cash seats to measured top performers. The previous 7fdb2223 window is already served and grants nothing further. This entry expires before October 26 Chicago ends and grants nothing once its anchor is serving. Preserve required checks, immutable exact-SHA staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-hour seal and thaw. The function-only migration installs independently through Apply Merged Migration. No second installer, publisher, watcher, direct restart or unrelated work.",
+      "contains": "f9a08dfa3ec29b28ab776d5d85e1f8062a3168cd",
+      "notBefore": "2026-10-27T03:20:34Z",
+      "notAfter": "2026-10-27T04:59:59Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-26-horse-call-receipts-and-rebuy-context-now",
       "ownerOrder": "Dan, October 26, 2026 America/Chicago, Codex chat 01a1789a-6e62-7c92-8ccf-83b892671b74, explicitly answered: \"Activate off-cycle as soon as ready\" for PRs #8191, #8196 and #8197; subsequently: \"complete the task in full\". One certified off-cycle activation of protected main containing actual #8191 squash c5f27b75ea784400980aca7c8856b2710c5bd072, which includes #8196 bc4407e84afbb566c345bd9b06d295b2692e81db and #8197 2b8f43887bd2a5088d0a42667538141881dd0d02. This activates valid whole-stack call-off and PLO6 river-call receipts, all-in-or-fold call legalization, and tournament context during far-from-money rebuy offers. The earlier cash-window anchor 7fdb2223 is already in serving 814862e3 and grants nothing for these pending fixes. Preserve existing operation ownership, exact immutable staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, certificate, full rollback reserve, one-window-per-rolling-hour seal and thaw. Ends once its anchor is serving, or at expiry before the end of October 26 Chicago. No migrations, unrelated strategy changes, second publisher, watcher or direct restart.",
       "contains": "c5f27b75ea784400980aca7c8856b2710c5bd072",

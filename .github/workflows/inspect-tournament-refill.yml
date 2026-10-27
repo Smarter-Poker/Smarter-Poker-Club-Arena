@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       reference_cases_json:
-        description: Optional exact original metadata for at most six reference-shape cases; no private records or commands
+        description: Optional v1 refusal or v2 accepted-calloff metadata for at most six exact original cases; no private records or commands
         required: false
         type: string
 permissions:

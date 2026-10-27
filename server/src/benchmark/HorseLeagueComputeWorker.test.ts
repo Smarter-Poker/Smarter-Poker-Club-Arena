@@ -14,6 +14,7 @@ import {
   HorseLeagueComputeWorkerClient,
   type HorseLeagueComputeWorkerClientOptions,
 } from './HorseLeagueComputeWorkerClient.js';
+import { runTournamentLeague } from './HorseTournamentLeague.js';
 import { runMatchup } from './HorseLeague.js';
 
 class FakeWorker extends EventEmitter {
@@ -67,6 +68,40 @@ afterEach(async () => {
 });
 
 describe('Horse League compute isolation', () => {
+  it('binds the requested tournament family across actual IPC correlation', async () => {
+    const worker = new FakeWorker();
+    const client = clientFor(worker);
+    worker.message({
+      type: 'READY',
+      solverStores: { charts: 0, postflop: 0, postflopV31: 0, postflopV31Dataset: null },
+    });
+    await client.ready();
+    expect(() =>
+      client.runTournamentLeague({
+        objective: 'spin',
+        pairs: 1,
+        seed: 1,
+        phase8PolicyFamily: 'unknown' as never,
+      })
+    ).toThrow('Unknown tournament policy family');
+    const pending = client.runTournamentLeague({
+      objective: 'spin',
+      pairs: 1,
+      seed: 1,
+      phase8PolicyFamily: 'catastrophe_guard_v1',
+    });
+    const rejected = expect(pending).rejects.toThrow('Tournament result does not match');
+    await Promise.resolve();
+    const command = worker.sent[0];
+    expect(command.type).toBe('RUN_TOURNAMENT');
+    if (command.type !== 'RUN_TOURNAMENT') throw new Error('No tournament command');
+    expect(command.request.phase8PolicyFamily).toBe('catastrophe_guard_v1');
+    const legacy = await runTournamentLeague({ objective: 'spin', pairs: 1, seed: 1 }, () => false);
+    worker.message({ type: 'TOURNAMENT_RESULT', jobId: command.jobId, result: legacy });
+    await rejected;
+    expect(worker.terminateCalls).toBe(1);
+  });
+
   it('will not dispatch analysis until the isolated solver stores are ready', async () => {
     const worker = new FakeWorker();
     const client = clientFor(worker, {

@@ -16,6 +16,7 @@ import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   pairedConfidence99,
+  tournamentPolicyVersion,
   summarizeTournamentPromotion,
   tournamentBaselineRunVerified,
   tournamentLeagueEntrants,
@@ -207,6 +208,132 @@ const hostFile = (file: string) =>
   file.includes('/') ? path.join(runsDir, file) : path.join(runsDir, file.slice(0, -5), file);
 
 describe('phase8-strength-assemble', () => {
+  it(
+    'binds the full baseline closure and new module in the guard digest',
+    async () => {
+      const { stdout } = await exec(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          `
+      import {guardPolicyDigest,GUARD_POLICY_SOURCE_FILES} from './scripts/phase8-strength-assemble.mjs';
+      import {readFileSync} from 'node:fs';
+      import path from 'node:path';
+      const read=p=>readFileSync(path.resolve('..',p));
+      const original=guardPolicyDigest(read);
+      console.log(JSON.stringify({files:GUARD_POLICY_SOURCE_FILES, original, baselineChanged:guardPolicyDigest(p=>p==='server/src/engine/HorseEval.ts'?Buffer.concat([read(p),Buffer.from('changed')]):read(p)), guardChanged:guardPolicyDigest(p=>p==='server/src/engine/HorseTournamentCatastropheGuard.ts'?Buffer.concat([read(p),Buffer.from('changed')]):read(p))}));
+      process.exit(0);
+    `,
+        ],
+        { cwd: process.cwd(), timeout: RUN_TIMEOUT_MS }
+      );
+      const digest = JSON.parse(stdout);
+      expect(digest.files).toContain('server/src/engine/HorseEval.ts');
+      expect(digest.files.length).toBeGreaterThanOrEqual(70);
+      expect(digest.original).not.toBe(digest.baselineChanged);
+      expect(digest.original).not.toBe(digest.guardChanged);
+    },
+    RUN_TIMEOUT_MS
+  );
+  function guardRun(key: string) {
+    const dir = path.join(runsDir, key);
+    const result = readJson(path.join(dir, `${key}.json`));
+    Object.assign(result, {
+      phase8PolicyFamily: 'catastrophe_guard_v1',
+      workKind: 'phase7_candidate_guard',
+      version: tournamentPolicyVersion('catastrophe_guard_v1'),
+    });
+    result.fired = result.completed = result.eligible;
+    result.completionRefusals = {};
+    result.budgetExhaustions = 0;
+    result.completionDiagnostics = Array.from({ length: result.eligible }, () => ({
+      street: 'flop',
+      localPlayers: 6,
+      fieldPlayers: 18,
+      completed: true,
+      reason: 'guard_baseline_retained',
+      latencyMs: 1,
+      workKind: 'phase7_candidate_guard',
+      guardWork: { assessmentCompleted: true, candidateCount: 2 },
+      work: {
+        attempts: 0,
+        candidateCount: 0,
+        candidatesCompleted: 0,
+        outcomeSamples: 0,
+        samplesVisited: 0,
+        rollouts: 0,
+        rolloutCacheHits: 0,
+        estimates: 0,
+        estimateCacheHits: 0,
+        icmMethod: 'unavailable',
+        levelBounds: 0,
+        budgetStop: 'none',
+      },
+    }));
+    write(path.join(dir, `${key}.json`), result);
+    const manifest = readJson(path.join(dir, 'manifest.json'));
+    Object.assign(manifest, {
+      phase8PolicyFamily: result.phase8PolicyFamily,
+      policyVersion: result.version,
+      workKind: result.workKind,
+    });
+    write(path.join(dir, 'manifest.json'), manifest);
+    write(path.join(dir, 'summary.json'), summarizeTournamentPromotion([result]));
+    const baseline = readJson(path.join(dir, 'baseline-verification.json'));
+    Object.assign(baseline, {
+      version: result.version,
+      phase8PolicyFamily: result.phase8PolicyFamily,
+      workKind: result.workKind,
+    });
+    baseline.runs[0].verified = tournamentBaselineRunVerified(result);
+    write(path.join(dir, 'baseline-verification.json'), baseline);
+  }
+  it(
+    'refuses mixed policy families and mismatched guard manifests',
+    async () => {
+      guardRun('mtt-8101101');
+      const mixed = await assemble(`--out=${outDir()}`, '--fixture');
+      expect(mixed.reasons).toContain('identity_mismatch:policy_family');
+      const file = path.join(runsDir, 'mtt-8101101', 'manifest.json');
+      const manifest = readJson(file);
+      manifest.phase8PolicyFamily = 'continuation_v2';
+      write(file, manifest);
+      const mismatch = await assemble(`--out=${outDir()}`, '--fixture');
+      expect(mismatch.reasons.some((r: string) => r.includes('policy_family_mismatch'))).toBe(true);
+    },
+    RUN_TIMEOUT_MS
+  );
+  it(
+    'binds isolated guard family schema without live activation or qualification',
+    async () => {
+      for (const objective of TOURNAMENT_LEAGUE_OBJECTIVES)
+        for (const seed of TOURNAMENT_PROMOTION_SEEDS) guardRun(`${objective}-${seed}`);
+      const outcome = await assemble(`--out=${outDir()}`, '--fixture');
+      expect(outcome.reasons).toEqual([]);
+      const strength = readJson(path.join(outDir(), 'strength.json'));
+      expect(strength.phase8PolicyFamily).toBe('catastrophe_guard_v1');
+      expect(strength.schema).toBe('horse-phase8-guard-strength-v1');
+      expect(strength.activationAllowed).toBe(false);
+      expect(strength.source.policySourceFiles).toContain(
+        'server/src/engine/HorseTournamentCatastropheGuard.ts'
+      );
+      const qualification = readJson(
+        path.join(path.dirname(outDir()), 'phase8-qualification-2026-10-02.json')
+      );
+      expect(qualification).toMatchObject({
+        schema: 'horse-phase8-guard-qualification-v1',
+        qualified: false,
+        isolatedCandidate: true,
+        activationAllowed: false,
+        selection: 'not_selected',
+      });
+    },
+    RUN_TIMEOUT_MS
+  );
+
   it.skipIf(!PRETTIER_AVAILABLE)(
     'writes run files in the repository Prettier shape with host and committed hashes',
     async () => {

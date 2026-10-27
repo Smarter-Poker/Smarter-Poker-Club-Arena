@@ -3,7 +3,10 @@ import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import {
   runTournamentLeague,
   tournamentLeagueBlindLevels,
+  tournamentPolicyVersion,
+  tournamentPolicyFamily,
   tournamentBaselineRunVerified,
+  tournamentRunCanPromote,
   TOURNAMENT_LEAGUE_OBJECTIVES,
   summarizeTournamentPromotion,
   pairedConfidence99,
@@ -44,6 +47,141 @@ describe('Phase 8 paired tournament league', () => {
     }
   });
 
+  it('binds isolated family versions and refuses unknown requests without playing', async () => {
+    const guard = await runTournamentLeague(
+      { objective: 'mtt', pairs: 1, seed: 901823, phase8PolicyFamily: 'catastrophe_guard_v1' },
+      () => false
+    );
+    expect(guard.phase8PolicyFamily).toBe('catastrophe_guard_v1');
+    expect(guard.workKind).toBe('phase7_candidate_guard');
+    expect(guard.version).toBe(tournamentPolicyVersion('catastrophe_guard_v1'));
+    expect(
+      horseLeagueComputeResponseIsValid({ type: 'TOURNAMENT_RESULT', jobId: 1, result: guard })
+    ).toBe(true);
+    expect(tournamentPolicyFamily()).toBe('continuation_v2');
+    await expect(
+      runTournamentLeague(
+        { objective: 'mtt', pairs: 1, seed: 1, phase8PolicyFamily: 'unknown' as never },
+        () => false
+      )
+    ).rejects.toThrow('Unknown tournament policy family');
+    expect(
+      horseLeagueComputeResponseIsValid({
+        type: 'TOURNAMENT_RESULT',
+        jobId: 1,
+        result: { ...guard, version: tournamentPolicyVersion('continuation_v2') },
+      })
+    ).toBe(false);
+    const legacy = await runTournamentLeague({ objective: 'mtt', pairs: 1, seed: 1 }, () => false);
+    const { phase8PolicyFamily, workKind, ...original } = legacy;
+    expect(
+      horseLeagueComputeResponseIsValid({ type: 'TOURNAMENT_RESULT', jobId: 1, result: original })
+    ).toBe(true);
+    expect(summarizeTournamentPromotion([legacy, guard]).reasons).toContain(
+      'mixed_policy_families'
+    );
+  });
+  it('collects only bounded guard assessment work through the real isolated league', async () => {
+    const result = await runTournamentLeague({
+      objective: 'spin',
+      pairs: 1,
+      seed: 901791,
+      phase8PolicyFamily: 'catastrophe_guard_v1',
+      evidenceMode: 'fixture',
+    });
+    expect(result.complete).toBe(true);
+    expect(result.promotionEligible).toBe(false);
+    expect(result.eligible).toBeGreaterThan(0);
+    expect(result.completed).toBe(result.eligible);
+    for (const row of result.completionDiagnostics) {
+      expect(row.workKind).toBe('phase7_candidate_guard');
+      expect(row.guardWork?.assessmentCompleted).toBe(true);
+      expect(row.work.rollouts).toBe(0);
+      expect(row.work.outcomeSamples).toBe(0);
+    }
+    expect(horseLeagueComputeResponseIsValid({ type: 'TOURNAMENT_RESULT', jobId: 1, result })).toBe(
+      true
+    );
+    const row = result.completionDiagnostics[0];
+    const refusedRow = {
+      ...row,
+      completed: false,
+      reason: 'continuation_sample_calibration',
+      guardWork: { ...row.guardWork!, assessmentCompleted: false },
+    };
+    const forged = {
+      ...result,
+      fired: result.fired - 1,
+      completed: result.completed - 1,
+      completionRefusals: { continuation_sample_calibration: 1 },
+      completionDiagnostics: [refusedRow, ...result.completionDiagnostics.slice(1)],
+    };
+    // Synthetic promotion-shaped metadata exercises the gate only, never strength evidence.
+    const promotion = {
+      ...result,
+      evidenceMode: 'promotion' as const,
+      pairs: 1024,
+      requestedPairs: 1024,
+      complete: true,
+      meanDifference: 0.1,
+      standardError: 0.01,
+      confidence99: pairedConfidence99(0.1, 0.01, 1024),
+      candidateReturn: 0.2,
+      baselineReturn: 0.1,
+      candidateFinish: result.candidateFinish.map((_, i) => (i === 0 ? 1024 : 0)),
+      baselineFinish: result.baselineFinish.map((_, i) => (i === 0 ? 1024 : 0)),
+      changed: 1,
+      latencyMs: { p50: 1, p95: 1, p99: 1, max: 1 },
+    };
+    expect(tournamentRunCanPromote(promotion)).toBe(true);
+    const forgedPromotion = {
+      ...promotion,
+      fired: forged.fired,
+      completed: forged.completed,
+      completionRefusals: forged.completionRefusals,
+      completionDiagnostics: forged.completionDiagnostics,
+    };
+    expect([
+      horseLeagueComputeResponseIsValid({ type: 'TOURNAMENT_RESULT', jobId: 1, result: forged }),
+      tournamentBaselineRunVerified(forged),
+      tournamentRunCanPromote(forgedPromotion),
+    ]).toEqual([false, false, false]);
+
+    for (const [candidateCount, accepted] of [
+      [0, false],
+      [1, true],
+      [16, true],
+      [17, false],
+    ] as const) {
+      expect(
+        horseLeagueComputeResponseIsValid({
+          type: 'TOURNAMENT_RESULT',
+          jobId: 1,
+          result: {
+            ...result,
+            completionDiagnostics: [
+              { ...row, guardWork: { ...row.guardWork!, candidateCount } },
+              ...result.completionDiagnostics.slice(1),
+            ],
+          },
+        })
+      ).toBe(accepted);
+    }
+
+    expect(
+      horseLeagueComputeResponseIsValid({
+        type: 'TOURNAMENT_RESULT',
+        jobId: 1,
+        result: {
+          ...result,
+          completionDiagnostics: [
+            { ...row, work: { ...row.work, rollouts: 1 } },
+            ...result.completionDiagnostics.slice(1),
+          ],
+        },
+      })
+    ).toBe(false);
+  }, 30000);
   it('conserves two satellite seats when equal stacks tie for the final award', () => {
     const returns = [50, 25, 25].map((prizePct) =>
       realizedTournamentReturn('satellite', prizePct, 0, 36000, 0)

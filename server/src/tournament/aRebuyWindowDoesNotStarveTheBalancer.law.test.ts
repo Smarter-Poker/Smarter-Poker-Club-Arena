@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * A REBUY WINDOW DOES NOT STARVE THE BALANCER (2026-10-26).
  *
@@ -61,6 +62,7 @@ function transport(answer: (request: Request) => Record<string, unknown>): void 
   const reply = (request: Request) =>
     Promise.resolve({ data: null, count: null, error: null, ...answer(request) });
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [] };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);

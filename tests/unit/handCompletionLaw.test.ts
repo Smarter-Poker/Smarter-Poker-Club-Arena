@@ -96,6 +96,7 @@ describe('every beat is inside the hold', () => {
     const massive = handCompletionHoldMs({ wentToShowdown: true, showdownHands: 9 });
     const capped =
       HAND_COMPLETION.SHOWDOWN_READ_MAX_MS +
+      HAND_COMPLETION.WINNING_CARDS_EXTRA_MS +
       HAND_COMPLETION.BETS_SWEEP_MS +
       HAND_COMPLETION.POT_PUSH_MS +
       HAND_COMPLETION.MUCK_MS +

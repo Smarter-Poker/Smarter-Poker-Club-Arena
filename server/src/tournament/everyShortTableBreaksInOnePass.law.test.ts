@@ -16,6 +16,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TournamentManager } from './TournamentManager.js';
 import { supabase } from '../services/supabase.js';
+import * as freezeState from '../maintenance/freezeState.js';
 import type { BalancerTable } from '../engine/TableBalancer.js';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -79,7 +80,239 @@ function manager(board: BalancerTable[]) {
   return m;
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+function slowPreparation(
+  board: BalancerTable[],
+  afterRead: (read: number, manager: any) => void = () => {},
+  readMs = 1400
+) {
+  vi.useFakeTimers();
+  let reads = 0;
+  const m = manager(board);
+  delete m.eliminationMutationAllowed;
+  delete m.loadBalancerTables;
+  m.liveTournamentTableIdsWithPlayers.mockImplementation(async () => {
+    vi.setSystemTime(Date.now() + 1500);
+    return board.map((t) => t.tableId);
+  });
+  vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
+    const rows =
+      name === 'tables'
+        ? board.map((t) => ({ id: t.tableId, max_players: t.maxSeats }))
+        : name === 'table_seats'
+          ? board.flatMap((t) =>
+              t.players.map((p) => ({
+                table_id: t.tableId,
+                user_id: p.userId,
+                stack: p.stack,
+                seat_number: p.seat,
+              }))
+            )
+          : board.flatMap((t) =>
+              t.players.map((p) => ({ table_id: t.tableId, seat_number: p.seat }))
+            );
+    const query: any = {};
+    for (const method of ['select', 'in', 'is', 'eq']) query[method] = () => query;
+    query.then = (resolve: any, reject: any) => {
+      vi.setSystemTime(Date.now() + readMs);
+      afterRead(++reads, m);
+      return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    };
+    return query;
+  }) as any);
+  m.eliminationSweepDeadlineAt = Date.now() + 5000;
+  return m;
+}
+
+describe('one balance preparation can finish before it yields', () => {
+  it('does not restart the same slow read prefix forever before creating a single park', async () => {
+    vi.useFakeTimers();
+    const board = [table(0, 1), table(1, 1), table(2, 1)];
+    const m = slowPreparation(board);
+    try {
+      for (
+        let admission = 0;
+        admission < 3 && m.requestTournamentBreakPark.mock.calls.length === 0;
+        admission++
+      ) {
+        m.eliminationSweepDeadlineAt = Date.now() + 5000;
+        await m.checkTableBalance();
+      }
+      expect(m.requestTournamentBreakPark).toHaveBeenCalledTimes(1);
+      expect(m.recoverTournamentBreak).not.toHaveBeenCalled();
+      expect(m.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
+      expect(m.eliminationMutationAllowed()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['stop', 'abort', 'freeze'])(
+    'still refuses a fresh park when %s arrives during the read prefix',
+    async (fence) => {
+      const frozen = vi.spyOn(freezeState, 'isMaintenanceFrozen').mockReturnValue(false);
+      const m = slowPreparation([table(0, 1), table(1, 1)], (read, owner) => {
+        if (read !== 3) return;
+        if (fence === 'stop') owner.running = false;
+        if (fence === 'abort') owner.eliminationSweepSignal = AbortSignal.abort();
+        if (fence === 'freeze') frozen.mockReturnValue(true);
+      });
+      await m.checkTableBalance();
+      expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+      expect(m.balancePreparationOpen).toBe(false);
+    }
+  );
+
+  it('a freeze also refuses the preparation while its ordinary budget is still available', async () => {
+    const frozen = vi.spyOn(freezeState, 'isMaintenanceFrozen').mockReturnValue(false);
+    const m = slowPreparation([table(0, 1), table(1, 1)], () => frozen.mockReturnValue(true), 100);
+    await m.checkTableBalance();
+    expect(m.eliminationWorkBudgetExpired()).toBe(false);
+    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('an unreadable board does not become an invented park or leak the preparation window', async () => {
+    const m = slowPreparation([table(0, 1), table(1, 1)], (read) => {
+      if (read === 3) throw new Error('fixture roster unavailable');
+    });
+    await m.checkTableBalance();
+    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('an unproven original admission keeps its original budget and cannot start a late fresh park', async () => {
+    const m = slowPreparation([table(0, 1), table(1, 1)]);
+    m.recoverF06OriginalAdmissions.mockRejectedValue(new Error('fixture original outcome unknown'));
+    await m.checkTableBalance();
+    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('working an existing break does not acquire another over-budget fresh preparation', async () => {
+    const m = slowPreparation([table(0, 1), table(1, 1)]);
+    m.visitTournamentBreakPage.mockImplementation(
+      async (visit: (state: unknown) => Promise<void>) => {
+        await visit({});
+        return true;
+      }
+    );
+    await m.checkTableBalance();
+    expect(m.recoverTournamentBreak).toHaveBeenCalledOnce();
+    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('replays an unknown park before a slow fresh board can starve its original identity', async () => {
+    const board = [table(0, 1), table(1, 1)];
+    const m = slowPreparation(board);
+    const pending = { breakId: id(6000), lifecycle: '1', boundaryId: id(6001) };
+    m.pendingTournamentParkRequests.set(board[0].tableId, pending);
+    delete m.requestTournamentBreakPark;
+    const tableState = vi.fn(() => {
+      throw new Error('an unknown request must retain its original lifecycle');
+    });
+    const requestPark = vi.fn(async () => {
+      vi.setSystemTime(Date.now() + 6000);
+      return {
+        ok: true,
+        reason: null,
+        break_id: pending.breakId,
+        tournament_id: EVENT,
+        source_table_id: board[0].tableId,
+        lifecycle: pending.lifecycle,
+        state: 'park_requested',
+        revision: '0',
+        custody_id: null,
+        custody_generation: null,
+        terminal_handoff_required: false,
+        members: [],
+      };
+    });
+    m.tableBreakRpc = () => ({ tableState, requestPark });
+    requestPark.mockRejectedValueOnce(new Error('fixture reply lost'));
+    await expect(m.checkTableBalance()).rejects.toThrow('fixture reply lost');
+    expect(m.pendingTournamentParkRequests.get(board[0].tableId)).toBe(pending);
+    m.eliminationSweepDeadlineAt = Date.now() + 5000;
+    await m.checkTableBalance();
+    expect(requestPark).toHaveBeenCalledTimes(2);
+    for (const call of requestPark.mock.calls)
+      expect(call).toEqual([
+        pending.breakId,
+        board[0].tableId,
+        pending.lifecycle,
+        pending.boundaryId,
+      ]);
+    expect(tableState).not.toHaveBeenCalled();
+    expect(m.liveTournamentTableIdsWithPlayers).not.toHaveBeenCalled();
+    expect(m.pendingTournamentParkRequests.size).toBe(0);
+    expect(m.eliminationWorkBudgetExpired()).toBe(true);
+  });
+
+  it('stops after the first refused intent when the preparation spent the admission', async () => {
+    const m = slowPreparation([table(0, 1), table(1, 1), table(2, 1)]);
+    m.requestTournamentBreakPark.mockResolvedValue(null);
+    await m.checkTableBalance();
+    expect(m.requestTournamentBreakPark).toHaveBeenCalledTimes(1);
+    expect(m.recoverTournamentBreak).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('fences the source after its durable park and yields before dispatching any members', async () => {
+    const board = [table(0, 1), table(1, 1), table(2, 1)];
+    const m = slowPreparation(board);
+    const order: string[] = [];
+    const request = m.requestTournamentBreakPark.getMockImplementation();
+    m.requestTournamentBreakPark.mockImplementation(async (tableId: string) => {
+      const state = await request(tableId);
+      order.push('durable');
+      return state;
+    });
+    m.gameServer = { ownsTournamentTableEngine: () => true };
+    m.tableEngines = new Map(
+      board.map((t) => [
+        t.tableId,
+        {
+          getCurrentButtonSeat: () => 1,
+          parkForTournamentMove: vi.fn(async () => {
+            order.push('fence');
+            return false;
+          }),
+        },
+      ])
+    );
+    await m.checkTableBalance();
+    expect(order).toEqual(['durable', 'fence']);
+    expect(m.recoverTournamentBreak).not.toHaveBeenCalled();
+    expect(m.balancePreparationOpen).toBe(false);
+  });
+
+  it('a slow gap plan hands one source to its original boundary owner instead of restarting its reads', async () => {
+    const board = [table(0, 9), table(1, 9), table(2, 9), table(3, 1)];
+    const m = slowPreparation(board);
+    m.gameServer = { ownsTournamentTableEngine: () => true };
+    const park = vi.fn(async () => false);
+    m.tableEngines = new Map(
+      board.map((t) => [
+        t.tableId,
+        {
+          getCurrentButtonSeat: () => 1,
+          parkForTournamentMove: park,
+        },
+      ])
+    );
+    m.executePlayerMoves = vi.fn();
+    await m.checkTableBalance();
+    expect(m.requestTournamentBreakPark).not.toHaveBeenCalled();
+    expect(park).toHaveBeenCalledTimes(1);
+    expect(m.executePlayerMoves).not.toHaveBeenCalled();
+    expect(m.eliminationMutationAllowed()).toBe(false);
+  });
+});
 
 describe('every short table breaks in one pass', () => {
   it('the e604d224 shape: 25 players on 17 tables are parked down to the size of the field in one pass', async () => {

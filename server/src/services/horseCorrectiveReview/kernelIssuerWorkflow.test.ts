@@ -11,7 +11,7 @@ describe('qualification service isolation and provider wiring', () => {
       /^\s+(schedule|push|pull_request|workflow_run|repository_dispatch):/m
     );
     expect(workflow).not.toMatch(/^\s+[a-z-]+:\s*write\s*$/m);
-    expect(workflow.match(/if: github\.ref == 'refs\/heads\/main'/g)).toHaveLength(4);
+    expect(workflow.match(/if: github\.ref == 'refs\/heads\/main'/g)).toHaveLength(6);
     const inputs = workflow.slice(
       workflow.indexOf('    inputs:'),
       workflow.indexOf('permissions:')
@@ -46,6 +46,7 @@ describe('qualification service isolation and provider wiring', () => {
     expect(paths).toEqual([
       '${{ env.P14_PRIVATE }}/producer.json',
       '${{ env.P14_PRIVATE }}/qualification.json',
+      '${{ env.P14_PRIVATE }}/sanitized.json',
       '${{ env.P14_PRIVATE }}/identity.json',
     ]);
     expect(workflow).not.toContain(
@@ -53,5 +54,23 @@ describe('qualification service isolation and provider wiring', () => {
     );
     expect(workflow).not.toContain('workflow run');
     expect(workflow).not.toContain('deploy-club-arena-engine');
+  });
+});
+
+describe('private V56 existing-workflow mode', () => {
+  it('separates replay from every signing credential and source raw artifact', () => {
+    const jobs = workflow.slice(
+      workflow.indexOf('  v56-context:'),
+      workflow.indexOf('  signer-identity:')
+    );
+    expect(jobs).not.toContain('HORSE_PHASE14_QUALIFICATION_SIGNING_KEY');
+    expect(jobs).not.toContain('HorseCorrectiveQualification');
+    expect(jobs).not.toContain('DATABASE_URL');
+    expect(jobs).not.toContain('horseCorrectiveKernelIssue.ts');
+    expect(jobs).toContain('architecture: x64');
+    expect(jobs).toContain('needs.v56-context.outputs.source_sha');
+    expect(jobs).toContain('test ! -e "$P14_PRIVATE/identity"');
+    expect(jobs).toContain('horseV56PrivateReplay.ts finalize');
+    expect(jobs).not.toMatch(/path:.*(pending|request|input|records|identity)/);
   });
 });

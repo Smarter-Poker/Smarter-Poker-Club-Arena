@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE SWEEP ASKS INDEPENDENT QUESTIONS TOGETHER (2026-09-11)
@@ -90,6 +91,7 @@ function transport(answer: (request: Request) => Answer): Request[] {
     return new Promise((resolve) => setTimeout(() => resolve(response), TRIP_MS));
   };
   fixture.from.mockImplementation((table: string) => {
+    if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
     const request: Request = { table, columns: null, head: false, filters: [], sentAt: -1 };
     const filter = (column: string, op: string, value: unknown): unknown => {
       request.filters.push([column, op, value]);

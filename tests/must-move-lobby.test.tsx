@@ -333,8 +333,7 @@ describe('the box in the corner', () => {
        Square, and the same square at every width: TableMenu.css paints the
        trigger 40px and TableTabBar.css enlarges it to 44px at <=480px, so this
        does both or "the same size" is only true on a desktop nobody plays on. */
-    expect(css).toMatch(/--mtp-lobby-w: 40px;/);
-    expect(css).toMatch(/--mtp-lobby-w: 44px;/);
+    expect(css).toMatch(/--mtp-lobby-w: var\(--sp-tabbar-control\);/);
     expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?width: var\(--mtp-lobby-w\)/);
     expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?height: var\(--mtp-lobby-w\)/);
 

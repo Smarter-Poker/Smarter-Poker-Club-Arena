@@ -464,7 +464,7 @@ describe('the figure cannot outgrow the pill', () => {
 
   it('the sub-line still ellipsises rather than cutting a glyph, as a last guard', () => {
     const css = read('src/components/table/TableTabBar.css');
-    const rule = sliceCssRule(css, '\n.table-tab-bar__tab-sub {\n  font-size: 0.575rem');
+    const rule = sliceCssRule(css, '\n.table-tab-bar__tab-sub {\n  font-size: 0.75rem');
     expect(rule).toMatch(/white-space:\s*nowrap/);
     expect(rule).toMatch(/overflow:\s*hidden/);
     expect(rule).toMatch(/text-overflow:\s*ellipsis/);

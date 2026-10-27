@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027151555",
+      "name": "original_week_clubs_cover_the_coordinator_club_and_event",
+      "file": "supabase/migrations/20261027151555_original_week_clubs_cover_the_coordinator_club_and_event.sql",
+      "md5": "ca35054040153ac3bb8e9a1ec344cc05",
+      "appliedToProductionAt": "2026-10-27T16:10:45.420Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained concurrent-preamble installer; exact full-file history, VALID READY LIVE index shape and original unchanged selector/metadata/40-source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8331",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original coordinator exhausted its statement before reaching current R2 because historical club discovery used incomplete tournament-source indexes and heap witness reads. Actual isolated source-field profile read roughly1.1GB and spent24.3seconds serially. Exact native original-owner before/after72cases,11installer/refusal cases, actual INVALID concurrent build and MVCC heap fallback passed; whole unchanged query naturally used the matching three-key covering index with zero heap fetches. No function, configuration, source pin, cache identity, financial rule, source row, receipt, journal or budget changed. Exact qualified bytes were installed through the maintained concurrent-preamble route under the PUBLISHING active-outage exception while hosted checks were pending. Root verified exact full-file history/index definition and unchanged original selector metadata/source authority. This is the very next source recording after installation. Actual post-install timing, current R2/R3 payment and no-double wallet verification remain separate proof; this recording does not certify them."
     }
   ]
 }

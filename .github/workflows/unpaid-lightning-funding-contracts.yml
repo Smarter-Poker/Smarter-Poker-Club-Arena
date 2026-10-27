@@ -7,6 +7,11 @@ on:
       - supabase/migrations/**
       - scripts/ci/fixtures/fees-before-club-books/**
       - scripts/ci/fixtures/rakeback-player-week-indexes/**
+      - scripts/ci/fixtures/original-week-clubs/**
+      - scripts/ci/test-original-week-clubs-cover-postgres.py
+      - tests/original-week-clubs-cover-their-source-witness.law.test.ts
+      - scripts/ci/migration-concurrent-preamble.mjs
+      - scripts/ci/apply-recorded-migration.mjs
       - scripts/ci/test-rakeback-player-week-indexes-postgres.py
       - tests/rakeback-pages-index-player-week.law.test.ts
       - scripts/ci/fixtures/rakeback-counts-bulk-joins/**
@@ -99,3 +104,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-rakeback-player-week-indexes-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/rakeback-player-week-indexes.json"
+      - name: Original weekly club witnesses use the matching source cover
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-original-week-clubs-cover-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"

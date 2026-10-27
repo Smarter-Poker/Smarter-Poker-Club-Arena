@@ -646,7 +646,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       },
       secondaryLabel: isCash ? (entry.game ? 'View Game' : 'View Table') : 'Details',
       onSecondary: () => {
-        if (busy) return;
         if (isCash && onViewCashTable) onViewCashTable(entry.id);
         else
           navigate(

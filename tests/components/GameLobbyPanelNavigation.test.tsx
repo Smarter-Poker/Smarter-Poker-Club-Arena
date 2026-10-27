@@ -58,7 +58,8 @@ function Location() {
 function mountDrawer(
   inTab?: InTabLobbyNav,
   selected: LobbyEntry = entry,
-  onViewCashTable?: (id: string) => void
+  onViewCashTable?: (id: string) => void,
+  busy = false
 ) {
   const drawer = (
     <GameLobbyPanel
@@ -68,7 +69,7 @@ function mountDrawer(
       waitlisted={false}
       seated={false}
       registered
-      busy={false}
+      busy={busy}
       onClose={vi.fn()}
       onJoinTable={vi.fn()}
       onViewCashTable={onViewCashTable}
@@ -182,4 +183,10 @@ it('cash Details uses the prepared-entry door instead of navigating an unready f
   fireEvent.click(screen.getByRole('button', { name: 'View Table', exact: true }));
   expect(prepare).toHaveBeenCalledExactlyOnceWith('cash-a');
   expect(screen.getByTestId('route').textContent).toBe('/table/live');
+});
+
+it('preserves tournament Details navigation while an unrelated action is busy', () => {
+  mountDrawer(undefined, entry, undefined, true);
+  fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
+  expect(screen.getByTestId('route')).toHaveTextContent('/tournaments/event-a?club=club-a');
 });

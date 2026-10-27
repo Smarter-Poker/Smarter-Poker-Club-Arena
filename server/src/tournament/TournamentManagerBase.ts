@@ -1,3 +1,4 @@
+import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import { channelHub } from '../hub/ChannelHub.js';
@@ -3046,11 +3047,13 @@ export abstract class TournamentManagerBase {
     // A decided field is served from the decided lane (requestDecidedEliminationSweep),
     // never the one-slot consolidation lane: 208 decided Spins marked consolidating
     // starved every real consolidation on 2026-10-01 (aDecidedFieldDoesNotHoldTheConsolidationLane).
-    const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
-    if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
+    // A committed wake belongs to this manager even before its scheduler
+    // registration can accept it. Registration admits its own first pass;
+    // retaining the reason here lets that pass serve the original receipt.
+    if (Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
       this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
     }
-    return accepted;
+    return tournamentEliminationScheduler.wake(this.tournamentId);
   }
 
   /**
@@ -3260,8 +3263,7 @@ export abstract class TournamentManagerBase {
 
   /** Purchases in flight at once while the add-on break holds the field. */
   static readonly ADD_ON_BREAK_CONCURRENCY = 8;
-  /** One held-field pass ends here and the next admission continues it, well
-   *  inside ELIMINATION_SWEEP_STUCK_MS, so a scheduler slot is never held long. */
+  /** Eligibility reads must finish inside this bounded preparation budget. */
   static readonly ADD_ON_BREAK_PASS_MS = 20_000;
 
   /**
@@ -3276,15 +3278,19 @@ export abstract class TournamentManagerBase {
   /**
    * Offer the add-on to every listed horse through a pool of
    * ADD_ON_BREAK_CONCURRENCY requests, until the list is done or the
-   * persisted offer closes or ADD_ON_BREAK_PASS_MS has passed (the next
-   * admission continues from the cursor). Same RPC, same receipts, same retained identity on
+   * persisted offer closes or the existing sweep lifetime ends. The captured
+   * cohort stays on this owner: re-admission can lose most of a one-minute
+   * window to the shared queue. Same RPC, same receipts, same retained identity on
    * an ambiguous reply as the ordinary batch; only the pacing differs. The
    * mutation batch keeps the sweep's work budget from cutting the field short;
    * manager stop, the sweep's abort signal and the freeze still end it.
    */
   protected async offerAddOnsWhileTheFieldIsHeld(
     horseRows: Array<{ id: string }>,
-    passEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS
+    passEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      Date.now() + ELIMINATION_SWEEP_STUCK_MS
+    )
   ): Promise<{ taken: number; completed: number; declined: Map<string, number> }> {
     const declined = new Map<string, number>();
     let taken = 0;
@@ -11630,9 +11636,15 @@ export abstract class TournamentManagerBase {
   protected async tryTournamentAddOns(): Promise<void> {
     // The held-field pass includes its eligibility reads. A slow snapshot
     // must not spend the ordinary five-second budget before the pool starts.
-    // Keep one bounded deadline across reads and purchases; lifecycle, the
-    // persisted offer deadline and maintenance remain authoritative.
-    const heldPassEndsAt = Date.now() + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    // Preparation retains its twenty-second bound. Once captured, purchases
+    // stay on this owner until the earlier persisted deadline or existing
+    // sweep lifetime. Lifecycle and maintenance remain authoritative.
+    const heldOperationStartedAt = Date.now();
+    const heldPassEndsAt = heldOperationStartedAt + TournamentManagerBase.ADD_ON_BREAK_PASS_MS;
+    const heldPurchaseEndsAt = Math.min(
+      Date.parse(String(this.tournamentCache?.addon_period_ends_at ?? '')),
+      heldOperationStartedAt + ELIMINATION_SWEEP_STUCK_MS
+    );
     const addOnWorkAllowed = () =>
       !isMaintenanceFrozen() &&
       this.running &&
@@ -11777,7 +11789,7 @@ export abstract class TournamentManagerBase {
       if (this.addOnBreakHoldsTheField(Date.now())) {
         const rotated = pendingHorseRows.slice(start).concat(pendingHorseRows.slice(0, start));
         if (rotated.length === 0) return;
-        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPassEndsAt);
+        const served = await this.offerAddOnsWhileTheFieldIsHeld(rotated, heldPurchaseEndsAt);
         completedOffers += served.completed;
         if (served.taken > 0 || served.declined.size > 0) {
           console.log(

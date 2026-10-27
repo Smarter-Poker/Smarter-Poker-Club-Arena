@@ -1406,6 +1406,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027174253",
+      "name": "read_only_receipts_keep_the_original_payer_reader",
+      "file": "supabase/migrations/20261027174253_read_only_receipts_keep_the_original_payer_reader.sql",
+      "md5": "4cd5c595f012d246a8529d45b01a4893",
+      "appliedToProductionAt": "2026-10-27T18:06:36.622Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and split receipt/cache/reserve/validator owners postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active rakeback payout outage follow-up: transaction-local payer reuse must preserve the existing STABLE read-only report contract. A native real R2/R3 commit followed by BEGIN READ ONLY reproduced forbidden TEMP creation; the exact three-line read-only branch now delegates unchanged pure payer validation while every read-write cache byte and fresh financial predicate remains intact. Exact split receipt/cache/reserve/validator function postimages/metadata/runtime ACLs and original source authority were read back. The existing private cache returns the original pure validator output in PostgreSQL READ ONLY transactions; every READWRITE cache byte and split receipt check remains unchanged. No amounts/certificates/source proofs change. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     }
   ]
 }

@@ -1,6 +1,6 @@
 -- Spin 0d4abad2: successor inherited park64ba2068 after original cancelled permit f292eb6f. Accept its exact immutable cancellation witness as well as the older generation-abort witness. Preserve all lease, table, roster, stack and started-hand fences.
 -- Functions only; no schedules, money or player state changes.
--- @live-proof: (SELECT md5(prosrc) = '02f09cb7ea48547dba423294f95b9cc5' FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure)
+-- @live-proof: (SELECT md5(prosrc) = 'a316466d859ca69417a1407a9f1b6627' FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure)
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '10s';
@@ -156,7 +156,12 @@ BEGIN
  RETURN jsonb_build_object('ok',true,'state','continued_never_started','receipt_id',receipt.receipt_id,
  'tournament_id',receipt.tournament_id,'table_id',receipt.table_id,'lifecycle',receipt.lifecycle::text,
  'break_id',receipt.break_id,'park_custody_id',receipt.park->>'custody_id','park_revision',receipt.park->>'revision',
- 'lease_generation',receipt.current_generation,'original_generation',receipt.original_generation,
+ -- The serving manager binds this legacy reply field to the exact park
+ -- custody it supplied. The hand permit's origin stays in the immutable
+ -- receipt and is returned explicitly, rather than confused with park custody.
+ 'lease_generation',receipt.current_generation,'original_generation',receipt.park->>'custody_generation',
+ 'park_custody_generation',receipt.park->>'custody_generation',
+ 'permit_generation',receipt.original_generation,
  'permit_id',receipt.permit_id,'hand_number',receipt.hand_number::text,'credit',0);
 END $function$
 ;
@@ -166,6 +171,6 @@ REVOKE ALL ON FUNCTION public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid
 GRANT EXECUTE ON FUNCTION public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint) TO service_role;
 DO $post$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid = 'public.fn_f06_continue_no_start_last_table(uuid,uuid,uuid,bigint,uuid,uuid,bigint)'::regprocedure)
- IS DISTINCT FROM '02f09cb7ea48547dba423294f95b9cc5' THEN RAISE EXCEPTION 'DIGEST_SPIN_POSTIMAGE_DRIFT'; END IF;
+ IS DISTINCT FROM 'a316466d859ca69417a1407a9f1b6627' THEN RAISE EXCEPTION 'DIGEST_SPIN_POSTIMAGE_DRIFT'; END IF;
 END $post$;
 COMMIT;

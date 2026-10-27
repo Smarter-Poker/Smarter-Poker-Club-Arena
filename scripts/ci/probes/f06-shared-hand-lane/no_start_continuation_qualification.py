@@ -137,6 +137,16 @@ def qualify(root, out, cmd, command, run, probe, require, results):
     patched=predecessor+spin_migration+setup
     result=json.loads(probe('cancelled-spin-exact-successor-continues',patched+spin_call).splitlines()[-1])
     require(result['credit']==0 and result['state']=='continued_never_started','Wrong cancelled Spin result')
+    # The serving RPC consumer binds original_generation to the park's exact
+    # custody generation. A committed disposition must not be rejected as an
+    # identity mismatch merely because the original permit belongs to its predecessor.
+    expected_park=hashlib.md5(b'cancelled-spin-current').hexdigest()
+    expected_permit=hashlib.md5(b'cancelled-spin-old').hexdigest()
+    compact=lambda value:value.replace('-','')
+    require(compact(result['original_generation'])==expected_park,'Serving continuation reply rejects park custody')
+    require(compact(result['park_custody_generation'])==expected_park,'Park reply generation changed')
+    require(compact(result['permit_generation'])==expected_permit,'Original permit origin lost')
+
     replay=probe('cancelled-spin-duplicate-reuses-receipt',patched+spin_call+spin_call).splitlines()[-2:]
     require(json.loads(replay[0])==json.loads(replay[1]),'Cancelled Spin duplicate changed receipt')
     for label,mutation,error in [

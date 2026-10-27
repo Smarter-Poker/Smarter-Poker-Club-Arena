@@ -97,3 +97,26 @@ it('enforces actual native packet execution only after the existing signed Postg
   );
   expect(qualification.jobs['original-operation'].concurrency['cancel-in-progress']).toBe(false);
 });
+
+it('retains bounded bootstrap witness contracts in the existing observation route', () => {
+  const step = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Read one bounded current-container public bootstrap witness'
+  );
+  expect(step.if).toBe('github.event.client_payload.public_pool_bootstrap == true');
+  expect(step.run).toContain('35s python3 -B scripts/ci/horse-public-bootstrap-witness.py');
+  expect(step.run).toContain('--source-sha "$FLEET_SOURCE_SHA" --ssh-command "$HSSH"');
+  expect(job.steps[0].with['sparse-checkout']).toContain(
+    '/scripts/ci/horse-public-bootstrap-witness.py'
+  );
+  expect(
+    job.steps.find(
+      (s: { name?: string }) =>
+        s.name === 'Reconcile canonical cohort and retained capture witnesses'
+    ).run
+  ).toContain('"$PRIVATE_DIR/packet.json"');
+  execFileSync('python3', ['-B', 'scripts/ci/test-horse-public-bootstrap-witness.py'], {
+    cwd: process.cwd(),
+    stdio: 'pipe',
+  });
+});

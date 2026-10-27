@@ -15,6 +15,7 @@ import { render } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import SeatSlot from '../src/components/table/SeatSlot';
+import { timerPerimeterRuns } from '../src/components/table/ActionTimerRing';
 
 const NOW = new Date('2026-08-19T00:00:00Z').getTime();
 
@@ -315,98 +316,25 @@ describe('the ring stylesheet drains linearly and never hides the arc (owner 202
     return CODE.slice(at, CODE.indexOf('}', at) + 1);
   };
 
-  it('the shrink has no easing: linear, and nothing overrides it', () => {
-    // 2026-08-21 to 2026-10-04 this rule carried
-    // `animation-timing-function: linear(0, 0.75 66.6%, 1)`: three quarters of
-    // the arc gone in the first ten seconds.
-    const rule = block('.seat--active .seat__info {');
+  it('the shrink is a native linear transform, never an inherited gradient clock', () => {
+    const rule = block(':is(.seat__timer-wipe, .seat__timer-ink) {').replace(/\s+/g, ' ');
     expect(rule).toMatch(
-      /spTimerRingShrink var\(--sp-timer-duration, 15s\) linear var\(--sp-timer-delay, 0s\) forwards/
+      /spTimerRingShrink var\(--sp-segment-duration, 15s\) linear var\(--sp-segment-delay, 0s\) both/
     );
-    expect(rule).not.toMatch(/animation-timing-function/);
-    expect(rule).not.toMatch(/linear\(|cubic-bezier|steps\(|ease/);
-    // Nowhere in the sheet, either: a later rule could re-time the same node.
-    expect(CODE).not.toMatch(/linear\(0, 0\.75/);
-    for (const m of CODE.matchAll(/([^{}]*)\{[^{}]*animation-timing-function[^{}]*\}/g)) {
-      expect(m[1], 'a rule re-times the countdown ring').not.toMatch(/seat__info|seat__timer-ring/);
-    }
+    expect(CODE).not.toMatch(/@property --(?:timer-progress|sp-timer-spent)|atan2\(|--sp-ring-d:/);
+    const frames = CODE.slice(
+      CODE.indexOf('@keyframes spTimerRingShrink'),
+      CODE.indexOf('@keyframes spTimerRingCounterWipe')
+    ).replace(/\s+/g, ' ');
+    expect(frames).toMatch(/from \{ transform: translate\(0, 0\); \}/);
+    expect(frames).toMatch(
+      /to \{ transform: translate\(var\(--sp-wipe-x, 0px\), var\(--sp-wipe-y, 0px\)\); \}/
+    );
+    expect(frames).not.toMatch(/background|filter|opacity|steps\(|ease/);
   });
 
-  it('the keyframe is a straight line from full to empty', () => {
-    const at = CODE.indexOf('@keyframes spTimerRingShrink');
-    const frames = CODE.slice(at, CODE.indexOf('}\n}', at) + 3);
-    expect(frames.replace(/\s+/g, ' ')).toBe(
-      '@keyframes spTimerRingShrink { from { --timer-progress: 100%; --sp-timer-spent: 0; } to { --timer-progress: 0%; --sp-timer-spent: 1; } }'
-    );
-    expect(CODE).toMatch(
-      /@property --sp-timer-spent \{\s*syntax: '<number>';\s*inherits: true;\s*initial-value: 0;\s*\}/
-    );
-  });
-
-  it('the sweep is linear along the BORDER, not in angle, on every plate shape', () => {
-    // A conic sweep that is linear in angle moves 3.6x to 5.2x faster along
-    // the border at the corners of this plate than at 12 o'clock. The shipped
-    // rule converts "fraction of border spent" to an angle with atan2() over
-    // container units. This evaluates THAT rule's own text, then measures
-    // the border it leaves lit with independent geometry.
-    /* 2026-10-04: the gate was `(width: 1cqw) and (rotate: atan2(1px, 1px))`,
-       two questions about things the rule does not use. It now tests the
-       real construct (atan2 of container units as a conic stop); located here
-       by the block that declares --sp-ring-d so the pin follows the rule,
-       whatever the condition reads. The condition itself is pinned in
-       tests/unit/seatAndEquityFollowups.test.tsx, block 4. */
-    const ringD = CODE.indexOf('--sp-ring-d:');
-    expect(ringD).toBeGreaterThan(-1);
-    const supportsAt = CODE.lastIndexOf('@supports', ringD);
-    expect(supportsAt).toBeGreaterThan(-1);
-    const supports = CODE.slice(supportsAt);
-    const d = supports.match(/--sp-ring-d:\s*([^;]+);/)?.[1];
-    const edge = supports.match(/--sp-ring-edge:\s*([^;]+);/)?.[1];
-    expect(d?.replace(/\s+/g, ' ')).toBe('calc(var(--sp-timer-spent, 0) * (200cqw + 200cqh))');
-    expect(edge).toBeTruthy();
-
-    const toJs = (css: string) =>
-      css
-        .replace(/var\(--sp-ring-d\)/g, 'd')
-        .replace(/var\(--sp-timer-spent, 0\)/g, 'spent')
-        .replace(/(\d+(?:\.\d+)?)cqw/g, '($1 * W / 100)')
-        .replace(/(\d+(?:\.\d+)?)cqh/g, '($1 * H / 100)')
-        .replace(/\b0px\b/g, '0')
-        .replace(/\bcalc\(/g, '(');
-    const edgeDeg = new Function(
-      'spent',
-      'W',
-      'H',
-      `const atan2 = (y, x) => (Math.atan2(y, x) * 180) / Math.PI;
-       const clamp = (lo, v, hi) => Math.max(lo, Math.min(v, hi));
-       const d = ${toJs(d!)};
-       return ${toJs(edge!)};`
-    ) as (spent: number, W: number, H: number) => number;
-
-    /** Border length, clockwise from 12 o'clock, to where a ray at `deg` leaves the box. */
-    const borderAt = (deg: number, W: number, H: number) => {
-      const P = 2 * (W + H);
-      // The five atan2 terms sum to 360 less a few ulps at spent = 1.
-      if (deg >= 360 - 1e-9) return P;
-      const t = (deg * Math.PI) / 180;
-      const dx = Math.sin(t);
-      const dy = -Math.cos(t);
-      const k = Math.min(
-        dx === 0 ? Infinity : W / 2 / Math.abs(dx),
-        dy === 0 ? Infinity : H / 2 / Math.abs(dy)
-      );
-      const x = dx * k;
-      const y = dy * k;
-      const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
-      if (near(y, -H / 2) && x >= -1e-9) return x;
-      if (near(x, W / 2)) return W / 2 + (y + H / 2);
-      if (near(y, H / 2)) return W / 2 + H + (W / 2 - x);
-      if (near(x, -W / 2)) return W / 2 + H + W + (H / 2 - y);
-      return W / 2 + 2 * H + W + (x + W / 2);
-    };
-
-    // Desktop hero plate, desktop villain, three phone breakpoints, a square.
-    for (const [W, H] of [
+  it('spends the BORDER at a constant rate on every plate shape, from top centre clockwise', () => {
+    for (const [w, h] of [
       [102, 50],
       [100, 48],
       [79, 45],
@@ -414,32 +342,29 @@ describe('the ring stylesheet drains linearly and never hides the arc (owner 202
       [58, 40],
       [60, 60],
     ]) {
-      expect(edgeDeg(0, W, H)).toBeCloseTo(0, 6);
-      expect(edgeDeg(1, W, H)).toBeCloseTo(360, 6);
+      const runs = timerPerimeterRuns(w, h),
+        perimeter = 2 * (w + h);
+      expect(runs.map((r) => r.axis)).toEqual(['x', 'y', 'x', 'y', 'x']);
+      expect(runs.map((r) => Math.sign(r.distance))).toEqual([1, 1, -1, -1, 1]);
+      expect(runs.map((r) => r.length * perimeter)).toEqual([w / 2, h, w, h, w / 2]);
+      expect(runs[0].left).toBe(w / 2);
+      expect(runs[0].start).toBe(0);
+      expect(runs[4].start + runs[4].length).toBeCloseTo(1, 10);
       for (let i = 0; i <= 300; i++) {
-        const spent = i / 300;
-        const lit = 1 - borderAt(edgeDeg(spent, W, H), W, H) / (2 * (W + H));
-        expect(lit, `${W}x${H} at ${(spent * 15).toFixed(2)}s`).toBeCloseTo(1 - spent, 5);
+        const elapsed = i / 300;
+        const spent = runs.reduce(
+          (n, r) => n + Math.max(0, Math.min(r.length, elapsed - r.start)),
+          0
+        );
+        expect(1 - spent, `${w}x${h} at ${elapsed * 15}s`).toBeCloseTo(1 - elapsed, 10);
       }
-      // The owner's two reference points, on the border itself.
-      expect(1 - borderAt(edgeDeg(7.5 / 15, W, H), W, H) / (2 * (W + H))).toBeCloseTo(1 / 2, 5);
-      expect(1 - borderAt(edgeDeg(10 / 15, W, H), W, H) / (2 * (W + H))).toBeCloseTo(1 / 3, 5);
     }
   });
 
-  it('clockwise from 12 o clock, neon blue, on a size container, with a no-easing fallback', () => {
-    const ring = block('.seat--active .seat__timer-ring {');
-    expect(ring).toMatch(/container-type:\s*size/);
-    expect(ring).toMatch(/inset:\s*-3px/);
-    const arc = block('.seat--active .seat__timer-ring-arc {');
-    // Fallback for a browser without cq units / CSS trig: linear in angle.
-    expect(arc).toMatch(/--sp-ring-edge:\s*calc\(100% - var\(--timer-progress, 100%\)\)/);
-    // Dark first, neon after the edge = consumed clockwise from 12 o'clock.
-    expect(arc.replace(/\s+/g, ' ')).toContain(
-      'conic-gradient( from 0deg, transparent 0%, transparent var(--sp-ring-edge), var(--timer-color, #00e5ff) var(--sp-ring-edge), var(--timer-color, #00e5ff) 100% )'
-    );
-    expect(arc).not.toMatch(/transition/);
-    // The pseudo-element ring is gone; two rings must never run at once.
+  it('keeps the same neon, frame geometry and decorative-only ring', () => {
+    expect(block('.seat--active .seat__timer-ring {')).toMatch(/inset:\s*-3px/);
+    expect(block('.seat__timer-ink {')).toMatch(/border: 3px solid #00e5ff/);
+    expect(block('.seat__timer-ink {')).toMatch(/border-radius: 10px/);
     expect(CODE).not.toMatch(/\.seat__info::before/);
   });
 

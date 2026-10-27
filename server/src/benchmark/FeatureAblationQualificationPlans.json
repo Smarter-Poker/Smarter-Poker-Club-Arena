@@ -1,0 +1,3382 @@
+{
+  "plo6_v24": {
+    "schema": "horse-feature-ablation-plan-v1",
+    "version": "horse-plo6-v24-published-cash-qualification-v1",
+    "state": "heldout_locked",
+    "target": "plo6_v24",
+    "dealSampler": "sha256-profile-seed-index-v1",
+    "baselineReferenceRevision": "b935999c78011ebfc3acbfe67f299fe80863a39f",
+    "runtimeSourceFiles": {
+      "src/benchmark/FeatureAblationAcceptance.ts": "4eb7fa27666b0d14c2de0942cc9c68a3ab6049ae33eef426bfca06595ae7af91",
+      "src/benchmark/FeatureAblationHistory.ts": "1ece30faf6fe0814f619d07812052b4bee256235352efd6f616f88dfa6a26e1b",
+      "src/benchmark/FeatureAblationLeague.ts": "0b99fa64a502025cdd13c436867c199f03cbe48519c5c09e0d36bbf870d1a1ce",
+      "src/benchmark/FeatureAblationQualification.ts": "ee8bb4f54a6d8e67bfbaf00cb84eb034dad6bd626d88e8c19be2dba7c95bbd2d",
+      "src/benchmark/FeatureAblationStores.ts": "7b157a8fd221d6ffe53c63772e1cb9d8ba8e61838bd3377252cc841ff3069871",
+      "src/benchmark/FeatureAblationWorker.ts": "9878d8c017daae4cb42037786931619e21d8938046e062e64f8128856ad3760a",
+      "src/benchmark/HumanCalibratedPopulation.ts": "d613c38c75baaf1adcbd22f8f9766352d83d37f1348084dc6e6bc2c3adf44dc6",
+      "src/benchmark/JointBoardReference.ts": "ace8ef1909c23e789e8c6482c66709c5b6625389595cdfa11455d87014a04f8b",
+      "src/benchmark/JointStrengthChecks.ts": "f6196f496909983349f4f06398e5a038a63c807b09063b7115208b1d39905cbd",
+      "src/benchmark/JointStrengthContract.ts": "fd1fe9bcb240cf3bba48659d843a912f492d1cb13ff4bd86edecb5d1ed6533e7",
+      "src/benchmark/OmahaReference.ts": "9b6e648559adcb0c43026abe6a467c613c9c07ace329e865d19503db130f0d03",
+      "src/benchmark/OmahaVariantStrengthContract.ts": "50aa3198c2811d2f2a5785d953722dcdfeedc1289c5e01bbe6db699e3944688e",
+      "src/benchmark/Plo4PolicyLeague.ts": "4bdad403aa6b2f89af0bc645d1dce773b90bad215bcbbe396337b9cfeb7ebedd",
+      "src/benchmark/Plo4StrengthContract.ts": "89d7ad27a8e75c78849858b43108d16b15ca2a811d2114c99d22d3f79aa6a458",
+      "src/benchmark/Plo6V24Qualification.ts": "fc7eec4f8fa133e9cc8fe600dfa5edf29a41de1b672f880e9423fdca9504e671",
+      "src/benchmark/PressureQualificationContract.ts": "ff99e9a82bb176d165eaf68840da4aced1b7f9d6fb4c32969330ad8bcd1ecc62",
+      "src/benchmark/RemainingVariantReference.ts": "1343a4b1bc34a360282c45eb1d30468d8a468bd147d9433bce9b90737e38306c",
+      "src/benchmark/RemainingVariantStrengthChecks.ts": "ae91f135a64988f74f8d311d0997028428c3d38f983706274ea4d7922d217fac",
+      "src/benchmark/RemainingVariantStrengthContract.ts": "bb422693783c860e4933426bc2a2f5655dea5d5a0177e675cc4ec4e9ca8bb735",
+      "src/benchmark/RemainingVariantStrengthContractV1.ts": "a771faeb0bce1576432d7d38752fe65a97fb1490b4134421618295f3e6381562",
+      "src/benchmark/V53PressurePopulation.ts": "4583160b9069cb703063c7179599cac560cb0f215f40a688e3651a50c5dc9b93",
+      "src/config/RakeConfig.ts": "135382fb5b996e75305571f4e88c75a5b716354addf55739826df81e8c4ca03a",
+      "src/config/cashBuyIn.ts": "bf22d798561eafd3bb7c941f46e917886010209748677daa30990e9117791060",
+      "src/config/cashRakePolicy.ts": "97f4171b4df71b87e505699fd9d9da9148a72b7014279d594d01a4308b453804",
+      "src/config/handCompletionSpec.ts": "decaff56fa129aab6c6075e1d5089e981c7e51416546d4bdce795d9573c528e1",
+      "src/config/rakeSpec.ts": "4df558d6e3a1d17b9e420d3f6879ed5d00f53dc4486bfce695a2bae04e0d3dea",
+      "src/config/tableSeating.ts": "bc873d344b5d513953abef49f767ae46b9713b8c332538bf724cf35c652967a1",
+      "src/domain/ArenaContext.ts": "4c6376b38dfd8ed28be9d522d78ba55b0785a96e2698744d3e45b4b321a0cae7",
+      "src/domain/DiamondCashBoundary.ts": "f57382d76b2729fe6eb5031f238568b5f9dcc485222b0e9afd0a749a3928eb09",
+      "src/domain/diamondCashFeeSnapshot.ts": "b89f63be2c71852a1921c3bde3d88a33fcea58831d3ffa4f780fa9c13f0da3e2",
+      "src/domain/diamondCashJackpotSchedule.ts": "0a05d0df1d23fe4b5004ce8a498521a7fb8abfb01926e92c4871330171d7a586",
+      "src/domain/diamondCashRakeSchedule.ts": "cd2d6beba456efde6cc8f45b973651a7f7fb831419d5d2a0dc7d5cec9f40c628",
+      "src/engine/AnteMath.ts": "e2c11b957bcc845fde17eafa34dfe8b2eaa22983c3c43dc70bfbd52ac323162f",
+      "src/engine/BettingStructure.ts": "5b285a35f9c63a7f595827db5695050300016e55c78685c0d095c9cb7622c19e",
+      "src/engine/BrainTelemetry.ts": "cb0835085d17abbb07712e0b63d1f64e1572bfa45cff7ddd91f0ba57fb873c1e",
+      "src/engine/CryptoRandom.ts": "7dde524ce6e597afa2872191a6b93eacb1f156f9b6a5d345bc8985f4224c422a",
+      "src/engine/EquityLoadGovernor.ts": "68cc050279019fa595778f8972677ba01bc3afed75ba96fb049aad65f0a355d7",
+      "src/engine/GtoBoardRelativeFeaturesV1.ts": "1a8c66e8fa8f9ebc293bf9edfaf425a6cd3bf437abc31e8b8348f21e3873be49",
+      "src/engine/GtoBoardRelativeFeaturesV2.ts": "9e3afafee5be0d5f8176b06b91349e945996d92b09bc09c782f3ac19f1d79186",
+      "src/engine/GtoCharts.ts": "3e0e7b463586805192cf8b3906b9060290b143b0f60a3f511f1334c2158de209",
+      "src/engine/GtoDecisionContext.ts": "eeeb4f0b3ebdd40ebffb18660dd5b3e44492bc43ec09872dc98ddae6043b316d",
+      "src/engine/GtoFacingDefenseV32.ts": "a88d810408064d209c209fc8cad8295b6ef2f073a1f708318732b94ee7d9617e",
+      "src/engine/GtoPostflop.ts": "7d80fed17c73a04bac1bb7e4ef5143897be0abb5bed2ae13f4d3692e64108825",
+      "src/engine/GtoPostflopV31.ts": "aa7e5d1961a4ee7171f4d6af2d0cb35f421722bee2b4415ac509c606f868370a",
+      "src/engine/HandController.ts": "3710be1f1f756664314f4be1f20a32ea5f8622eda9fdaa7462cec1e4adda728e",
+      "src/engine/HorseBoardContact.ts": "ce48099af6bbeb54dafa546f5eb0657215d3bd51f3bccca5a5b54c15ef2c5266",
+      "src/engine/HorseCallDeductions.ts": "9d23b50bef066b648551dd253097a0ad7d45a3de1a938e529b170937fea62ced",
+      "src/engine/HorseCommittedDecisionTracker.ts": "2596cc7205c684eb3d67b0d43d5a5e7589e207769be04d29e4c2ddf98e482784",
+      "src/engine/HorseContinuation.ts": "288ccbe5ab2911a51ac963f299a4557ee91404e26f835f4efa6ffdfadbd34408",
+      "src/engine/HorseDecisionEffects.ts": "97a7dd5af0db17ea9484b467616501580ec137b7a59d00f0280b2b0f457e418e",
+      "src/engine/HorseDecisionHandBinding.ts": "138e7f132992912af799e0624d80a65def88198873efbdf85b4b545a68d05f8a",
+      "src/engine/HorseDecisionReadFrame.ts": "7488723bf36584b9b885f99b8dc82f6a56dbd01350519bbb990e3187dc3972eb",
+      "src/engine/HorseEvEngine.ts": "b67d170680c9aa4221930f2a510a5f0921e41d6ec3746bdfef87311e71f0b4c9",
+      "src/engine/HorseEval.ts": "539f5d742fa5b314ea22b16b3a114d1dc7e8a65b990e36dd875736b856394779",
+      "src/engine/HorseExecutionWitness.ts": "402488468b59440abb291acaf1668f6d58a9a10d07fcc1ba1ea206a732e03412",
+      "src/engine/HorseFiveCardScore.ts": "8ba4aafe70b5a3b671c50625d26ad8e68e3a9d043ccb7db4e5d97e6e28a78ef0",
+      "src/engine/HorseHandClasses.ts": "d46761e0365469684db4c000b617f2be4eabba58def89630f7735a3a3b5764af",
+      "src/engine/HorseHoldemPremiumAggression.ts": "8277fcc8284b70415b479a152a412f652ebdcf01cf4bdd65086db6c17f46538c",
+      "src/engine/HorseLogic.ts": "39d026619161f1ca7448375990ad84b191a7890ca3955cfdf175fd937a583dd0",
+      "src/engine/HorseMind.ts": "0daf0f03e38e1f7836677193b6a27272fae3214726fc3e31094a77cb56ae9383",
+      "src/engine/HorseMindHandIdentity.ts": "243b7bf33c62ad756b1420f0e60ae08a485a2aadd9024a8838b55a3fbb7a1a96",
+      "src/engine/HorseObservationIdentity.ts": "bf1e9d951337d042252abdf9e75b243b1542ba4c91b44daf7741164cbcd234cc",
+      "src/engine/HorseObservationWindow.ts": "001cfec7978796443a68e0ef778ac85586a86f9b1395fde6339e0285e11cc753",
+      "src/engine/HorseObserverReadContext.ts": "212879a1f8cc32b6882679339fd55709d91efebbc45b11d591485b59707655bf",
+      "src/engine/HorseOmahaImpliedDraw.ts": "9b9b0358353190b1908e4d20ac5680d2fa961e39f3a44e96d02165cb76f17d0e",
+      "src/engine/HorseOpponentExploit.ts": "a183f0d4ba989811bbee11546c48a59510966cf0acf726a25ecab25e827477a3",
+      "src/engine/HorseOpponentMemory.ts": "577fd437e67c676ba77649328fcafbcfcf2a634f312b53621698265587c683e8",
+      "src/engine/HorseOwnerForcedActivation.ts": "32912479329cbc15edcd300dcf539b92b9e6f1d4e845a3a5d53585e5b069092f",
+      "src/engine/HorsePersona.ts": "a462d1eedcb435c49af2d480e20c287f8b91193c43a734f5cf210c54186d4bd4",
+      "src/engine/HorsePhase10Authority.ts": "5077f1322497cd4de36e6cb6496489ef46bf91eb5327185995ad50976aad209a",
+      "src/engine/HorsePhase11Authority.ts": "7db2d5288e1db694d2a7675e67dd9003aad113755c6889e312845bfb2b712abf",
+      "src/engine/HorsePhase11PolicyDigest.ts": "07e74ca10b523498d9eddc9ce0e8b345bb8c0e3d4f00d6079e09bd243d2620aa",
+      "src/engine/HorsePhase12Authority.ts": "e878c70ff7806f49b97f7901d85641a30328a1c5c1a85eab16cd021995c6d339",
+      "src/engine/HorsePhase12PolicyDigest.ts": "9ca74f6c797e30214aafb3747ca54381d46a2f81e1decc546db252794c8a2271",
+      "src/engine/HorsePhase13Authority.ts": "69fdaea41163740d5016752a69303189b5b9b468b2550b54872ea979fa20ed18",
+      "src/engine/HorsePhase13PolicyDigest.ts": "2527ec31ea54c48e3e4d50c50ed82282e6b5b4fee90c1604719e48b8847ae502",
+      "src/engine/HorsePhase14Acceptance.ts": "fe725c07e7dc8e531a1e5fe829fbea18c585da07aa4176d66c1291f15f4704bf",
+      "src/engine/HorsePhase14Authority.ts": "8bf955932aa2b8a7ede4f7c4bbbd93149a3d1c4255e06bdceb9e5ae05a841ed7",
+      "src/engine/HorsePhase14ReleaseSelections.ts": "655204a521a28e75274f8af84898ce8e5e7899247496722b62ca8d33badb976a",
+      "src/engine/HorsePhase6Attribution.ts": "b360e6d4b041f25554fb117d138de06bb8e40ea246d260f9a501dc423fb02c8e",
+      "src/engine/HorsePhase8PolicyDigest.ts": "9d0b15daea0c7cfb742c327df15654be5607ed7e5f0c37a76a9cc1fcc406a1aa",
+      "src/engine/HorsePhase8Safety.ts": "a93bdf8fa1aca447939fce400be1b2672118d56b2d0ab1d3cae5e770c168e799",
+      "src/engine/HorsePlanEffectReceipt.ts": "bc6e96c32794d85a9dc81d3e84bb656f784029a1f14ba1b77385b5e43e52b274",
+      "src/engine/HorsePlanHandIdentity.ts": "1a137a31995a66c27ae989667661156705e27d24a030f4ee151a714e16d30d12",
+      "src/engine/HorsePloPairedBoardFold.ts": "5388f9b0511aaa3827d68144736e74b21b285618dbbe40eee1d59ea56943777d",
+      "src/engine/HorsePolicyGraph.ts": "2a31b70a1f0d5d606e9edf8c50bb2432496a69e9d59c79f5ec93c12871525f46",
+      "src/engine/HorsePolicyLedgerObserver.ts": "fa2e819cf19ec07b62513ef7e4cdf0248e60d7aae6bbd76274f2b2632c29829a",
+      "src/engine/HorsePolicyRegistry.ts": "d28077d5fd202830f94edceb0de5c9c9d126365620bd821b691de21c8dc67f0e",
+      "src/engine/HorsePreflop.ts": "9bca1e23dbf6505e94bad4ddd22c480e53009c0060ec69b56e701c7843a2a149",
+      "src/engine/HorsePublicActionNode.ts": "6174488227da03180bc62d9d34980a7c74872d6b978bd11ab329760c42f7dd25",
+      "src/engine/HorsePublicDeductions.ts": "e6362ff384a3d2c875b18a2d8b3cb5e51a2871b626cf8622f94ab93cb76988a1",
+      "src/engine/HorsePublicTournamentStage.ts": "6c141071246cab952b3341d1d4e3be347f45b4b0806be171705972f08e129c02",
+      "src/engine/HorseQualifiedAuthority.ts": "edb80c0c9bfbde9d82976c1f32ec3fab9e546af1497a28193b94f5442461928d",
+      "src/engine/HorseReferenceDecisionSources.ts": "104478458ea7be9e979f4becc2f6842c5d95167cedf6bfb9b8a12dd1afb08dcd",
+      "src/engine/HorseReviewSignals.ts": "3f2f42caa6fe6f327374b75810680a99a655c0284038deb2e7692c3c9278c34a",
+      "src/engine/HorseRiverCallEvidence.ts": "f49e686f9028bd459d3eb87aa8045fc5f5024a307369bc7897db7d3dbe523539",
+      "src/engine/HorseRiverNuts.ts": "559be8d6b44683df9b04335ca0e6b47d4354cd49c70f321d3755d09455694575",
+      "src/engine/HorseShortAllInCallFloor.ts": "4ca0707e162330b6effcc7706685fd3804dcffbcad9cfd837a3c59c71038325f",
+      "src/engine/HorseTournamentContextProvenance.ts": "21c0fd9f388e12594035f21891cc9f61764144a17237060ad5b5b0d0310094c0",
+      "src/engine/HorseTournamentContinuation.ts": "45bde27287ea6b6c0bb627907dc9f7dcbeade59882498b562c7accf02acc9091",
+      "src/engine/HorseTournamentFutureGame.ts": "028555c3b3f72a9466afad5cab819afd27dd0a9f8a0d5dfa73f4878868a4f74b",
+      "src/engine/HorseTournamentFutureHand.ts": "06c95b3a52aa12ccb057d630a14d1f14cee09e5b9809da7c7b50a369bd036ddd",
+      "src/engine/HorseTournamentPayoutTerms.ts": "574b5a47e277124a3053d6d17bae835030f7adf6fc9690ba08c9a578e2f218c7",
+      "src/engine/HorseTournamentPostflop.ts": "13a4a6bceeb628c93e3110488dfc00fa9c76a13db65b513e1206159599374da8",
+      "src/engine/HorseTournamentPreflop.ts": "137287202405a2b095f71a90481c0271a781779c0e98ad563988a2d3cdbaf917",
+      "src/engine/HorseTournamentShoveDiscipline.ts": "adc3815633adbd259649094547572039e6c0ba39703095150f50b93d4215c54d",
+      "src/engine/HorseTournamentUtility.ts": "7baaf02fc5a2e0519a6d6e697c69fe9d1cd2e8289e9743040c48145f9dbb5524",
+      "src/engine/HorseTournamentUtilityEvidence.ts": "e105af31b6a678c0dd1e7d9bff4436808978135c35df71efa6c1f01a3f05e6a2",
+      "src/engine/HorseVariantProfile.ts": "82e943ee129b7f5b2508f8587c0de96b3b103a0719c76eca29acbf7e2c158e0f",
+      "src/engine/HorseWinnerRead.ts": "e3f72e2023abb65f28d51ccaa409dbfaefffb9657caa377a0df71e55d15fbf4a",
+      "src/engine/IcmModel.ts": "76b73ece97f0133e77e2071a1259a9fbfd97e64af3fa82b75bd7a0ebe6b5319c",
+      "src/engine/KillPot.ts": "c838c23612eb5ceff19dbcb44f31916d18af388c725e5969fd00eb081ab8a0df",
+      "src/engine/OmahaFlushBlocker.ts": "008d5bff47c6b2f6e0ec868d6c742760a4ed29c918369969446784f73281ae73",
+      "src/engine/PokerEngine.ts": "bc8dc7d8d5c88329dc78eb7f4c07550059657d900dab2e23a82b334adc903b3e",
+      "src/engine/ServerTableEngineTurns.ts": "34226893d778a0fc620aeebeb7ee24585d1d6e6667bc5aabbb491bcca8f00dce",
+      "src/engine/StateMachine.ts": "9c8fa5172f17132a1ef950553e879eae10cd4bb73435763bc55379a6b75db9f1",
+      "src/engine/VariantRules.ts": "f7e1d368594fd8954929c5c60e9dfbd4b4820160191f760e8b225ef8cecd4c7b",
+      "src/engine/WinnerUnitScaling.ts": "21bf293aca322c17053d12cad062951fd4514aa6010e3514458bff672f46464d",
+      "src/engine/diamondCashRakeFacts.ts": "1cda33d8135fecd95152e24c8c9db91873646cb94f69c5a75e61ee5fecdead79",
+      "src/engine/horseDecision/client.ts": "655e58ca2c81044cb8a91b9d3ebf202b9c39452e84b671da02f091ab0d11337b",
+      "src/engine/horseDecision/completedHandActions.ts": "a1bf10f8717ee465043cdd387b9865de0d0be97e24912384d660bcb7684e29d5",
+      "src/engine/horseDecision/index.ts": "f020902a5116c78e97bc4815d1de37de1972e486d89b500fc82ad4e94833594f",
+      "src/engine/horseDecision/lane.ts": "cde179f419748c6ae61cd1a7690a384e55dae829d801e6b2978d48c5db00bad3",
+      "src/engine/horseDecision/observerParticipants.ts": "7cc30713be9381c5ba58427a49f0785611f5db6b5819403581757a374834ed7b",
+      "src/engine/horseDecision/observerReads.ts": "0760435862038fb1fd14ab1df6fdfdba81743f2c102e2f1189c18decb0447bfe",
+      "src/engine/horseDecision/ownPublicHistory.ts": "030ec0621e079c977950e02823190e6f94a911d635fff9af9baf1c046a59461d",
+      "src/engine/horseDecision/protocol.ts": "3d1bf8ad661500d8048a0a4cd6e75de32ddfbd36f897b9a26fb131cd3d8b52f3",
+      "src/engine/horseDecision/replay/exactReplay.ts": "8939badabad916e94c9452e530f5cdcb148a188e1cf4f22d2c747c9aa28b1633",
+      "src/engine/horseDecision/replay/qualifiedAuthority.ts": "7ab26832f1a20a474e7e2192faa6b906f46300871f29f151542619a8b3688dae",
+      "src/engine/horseDecision/replay/reconstruct.ts": "c56e6cff2995fb96886ed79fd65d5f822f87c56a4ddfd369b710d9c771c4c006",
+      "src/engine/horseDecision/replay/references.ts": "bce629e274591102c763dd9bc94dc791862c8aa64a842f1d121c945534bcd791",
+      "src/engine/horseDecision/replay/runtimeReplay.ts": "51d3a18c7515d181236c60693452843e49adf41d62e80d5a33b35ce4601522a6",
+      "src/engine/horseDecision/replayState.ts": "b1e3b8f7a3103d6ec388e5961909b5788828bffe9619bddd0cae87a8bff39f9b",
+      "src/engine/horseDecision/responseValidation.ts": "3ccd9df35107cc9cece17e672d0980df0d0a7bbd4c1ad600a59314c1c7ce3226",
+      "src/engine/horseDecision/shard.ts": "f4e8ac4fd783fb45dedfe42ac80db93bd37777454996b56a0064b3c25631b4a7",
+      "src/engine/horseDecision/workerPriority.ts": "466c0fb8aba7c84ce4b3790275fccd80b3502710df0d038dcfd38165d337f510",
+      "src/engine/horseDecision/workerRuntime.ts": "bc1e7b388a955e58c7ff94c23c6128e040de379038e49f2ed771f44d222d7c64",
+      "src/engine/multiway/DealtSeatCensus.ts": "16a8c5b4e2216471a9104b183dcfe7ffdbdd33216c7d1ce0b4cad4f32d221082",
+      "src/engine/multiway/JointActionModel.ts": "f31f525cf355d8dfe451008f0c96c67d6a7f924712f067ddda7cc427d13650b7",
+      "src/engine/multiway/JointActionShared.ts": "f142e03fcc662308f59e2bce880d5fdfaada6e53309b65567f6f38cb18f82446",
+      "src/engine/multiway/JointCardLayout.ts": "ea2ab30181acfc5f951a9788c027ade38adff544b861bb3f8ee63da810143714",
+      "src/engine/multiway/JointDeductions.ts": "2109f2f1c0ede328a0e2c4ada07c8b1401f5952712ca863f19cfdc3d6b2b00be",
+      "src/engine/multiway/JointInputBinding.ts": "7b686bffd9a76f2a88b280152a9365c8a3e7aa94573075df7351c16f95a40f67",
+      "src/engine/multiway/JointLivePolicy.ts": "e8a016fe4758695978aec73d0be21eb6b87d2f3328c898c1c0e17815e2af8833",
+      "src/engine/multiway/JointPotDistribution.ts": "24302f308c69a69611879c4e5575d1e503bd680823fae1217091136973d79591",
+      "src/engine/multiway/JointRangeSampler.ts": "0717bc90d73f2b279365c094a81d6239874ebac831ee97b7c171a897afda3d76",
+      "src/engine/multiway/JointResponseCalibration.ts": "1ceb3a54b9e16603120fb76ca015b9b503f85e6cc7712c75031afe57d189fb96",
+      "src/engine/multiway/JointResponseOrder.ts": "b60235d8c3d07c81bedee78a1184d763036df8317d209d9c9751ce0e3cabf97e",
+      "src/engine/multiway/JointResponseTree.ts": "4ada55cb755e635841351fd1cd251eaf484c4a1079766fdc652b18639e5e3d75",
+      "src/engine/multiway/JointSampleAcquisition.ts": "41ed68b8220e507ca616e494f097a03bf7d0cc7d8f5b75c1af52173956218681",
+      "src/engine/multiway/JointStreetBetting.ts": "2d41229be5d9ff5bf2d1244507cef27d1b926dcb6ea2a60ce432a485d5f2628b",
+      "src/engine/omaha/OmahaCardFacts.ts": "5f71cd66d59f989203d0f64f9c72a3a8feff3614a5a15e8889198a592459e728",
+      "src/engine/omaha/OmahaVariantActionEconomics.ts": "fa152836ac986b3a125223e0dac19cdbdfc10b13b4bc572226c33b767537965c",
+      "src/engine/omaha/OmahaVariantEquity.ts": "f8c165cc413562d1a5652c44a7fa7fa1d6b138f266f3c7950873b22d830fe4d7",
+      "src/engine/omaha/OmahaVariantLivePolicy.ts": "87d8458b52af087d59e55cb19a3b5239a7523209470fa77e2e9271ff534d8d8d",
+      "src/engine/omaha/OmahaVariantPolicyPack.ts": "702d3763fcac8230faa3e67538557d16e9f75b195a8583e32b7d0d7af4db3e04",
+      "src/engine/omaha/OmahaVariantSampler.ts": "70fe1b7fd46f4eb5f7793b993a6c552db900d56d727bee49e3d1cd810e770dae",
+      "src/engine/pineappleDiscardChoice.ts": "d1b2e13904c4ff8b4e33b3eae6a4b727c1838feab6eb9b332ba5013f09041ee5",
+      "src/engine/plo4/Plo4LivePolicy.ts": "2a687cdb9aa915f171f440b7bb5c1f8e96632d41325c8df6aac5482fd1fab9ce",
+      "src/engine/plo4/Plo4PolicyPack.ts": "769ac33614269db3dc0354c75645281b46acbe514b199d4713e52a0b8f1058d8",
+      "src/engine/remainingVariants/RemainingVariantActionEconomics.ts": "253a31d0ea7a6f6f46e2e48432c0c97c3d6c8939d2be1376e55dc1044ae50c56",
+      "src/engine/remainingVariants/RemainingVariantLivePolicy.ts": "b11c5927e001248f190969f1b7d45b568f98d3a795baeecd410b921c6efee3db",
+      "src/engine/remainingVariants/RemainingVariantPolicyPack.ts": "6bbf2a8aa97e8b5c4873eab32c1892ee2e235c77a9e140f6dc0e13fbf3555e60",
+      "src/engine/remainingVariants/RemainingVariantSampler.ts": "d246b9f7de8a8fef6d93ec078c0048bc9a3d0299c77624cb4433706965e02856",
+      "src/gto/GtoChartCorpus.ts": "0b4c15ce33b4462d403a1f5dc916af401e96df1234aed5092104fdb379d014c4",
+      "src/gto/SolverPolicyArtifactLoader.ts": "7d190729093bd0e15f347cf4e7e8d33a82562f0a3e5c7c13904003a3a54d3d4b",
+      "src/gto/SolverPolicyContract.ts": "945e03df35e4f0f155346aea3875324d95962a2826c8cf98c9510292e01f463c",
+      "src/gto/SolverStoreIdentity.ts": "0b01057ff28cd11e563c3fe0589a98aebb7e74be09fa8de14370a9f80fbc0b9a",
+      "src/hub/ChannelHub.ts": "36be4fadb7a452b099199394a965ae0edd111bf17f19adde17d0f333453ef466",
+      "src/lightning/LightningFoldTiming.ts": "0368489b0d5b1b553de795b64812cfe961167a249a02b93f62cf01e5c0c2299a",
+      "src/lightning/LightningHandHost.ts": "56a8f9ea2cd0050af36ec39e2071083a00380ad9a0d5e3891b6a5c4b2184db72",
+      "src/lightning/RateLimitedLog.ts": "9362b6f4c0b0d8999729de4b16dd171222ec70f89bfeba5e6dd0207981d5e813",
+      "src/lightning/rpcErrors.ts": "1bd2c8a1d683fea049019497556b1ac0e9284216bb9206ec2a7538119a6766d3",
+      "src/maintenance/freezeState.ts": "a62aafecc405a0a2f8996edae559d4907de35a70a3cc50905d898cde3a8d7670",
+      "src/observability/Metrics.ts": "5d5675d3a325d8b434abb8569d213d9fcc327a6b77a92b13b7b290bce00757e7",
+      "src/observability/Tracing.ts": "b9b4b204623a9e7a3f359daa7ac8d936f8b2e35e6d208f986a6ad867d176c1e7",
+      "src/observability/engineInstruments.ts": "bb9fdbd9564522c94e9b7ed5c4e39a485d0183b6b1c9968d88aa778a922d90f1",
+      "src/observability/processMemory.ts": "bc13d4a0b1391bfe04fd2868b219622fce02d24daa660eb6517648c4664f8971",
+      "src/releaseIdentity.ts": "4a8e9a026beb3f9d09ce7c0c83fbe2e889b3930dabe2053be40761c6a0c09af1",
+      "src/scripts/featureAblationQualify.ts": "a0ec9d233b0ec27aadc3bc8424879ecfbcaee48a838cc22b34c60e3db752c04d",
+      "src/services/AdaptiveRefreshLoop.ts": "ea7fd98b81266a317ea5f82271c76ab39f27b53168d724ba84c2dbf9b74044f4",
+      "src/services/BrainTelemetryFlush.ts": "6ffccb850635d278ee315475448594d85d20217dcffa2524887635e9fc97f57d",
+      "src/services/GtoChartLoader.ts": "69dbea5987339e7e1efc1fa06d5ec72a4dd51a1e9ae8bfc344f5c56bfe5eeb3a",
+      "src/services/GtoPostflopLoader.ts": "9ef70e7b7691714b5722b83f5073106de68f2b820e132b6c038fc1c383e9dea9",
+      "src/services/GtoPostflopV31Loader.ts": "ecc4d9d9b7872a4fe289a5fdf90339202fc6eb804a570906967456038a52c49b",
+      "src/services/HorseBankroll.ts": "14837b9f97cea2bf6745ae238221148198c7c320485b03c7b131f4de93e3d2fb",
+      "src/services/HorseBehavior.ts": "96f885d1fe4c32ec43688ce8fba14284fe4526f1dd954b546b5e67ffdf7ec3cd",
+      "src/services/HorseBrainTelemetryPublisher.ts": "fefed8c2e9f0d0f5ceebd977cc57f7a6beed91bfcfcdfa860fd7c99d64b0128b",
+      "src/services/HorseDailyRollupContract.ts": "bd211f64a07fc7de9e8bb15acb31520f462bf9739dc2f9594df1b99ff6e5e664",
+      "src/services/HorseDailyRollupFacts.ts": "3db4a1a3930b4bf75b38c667611774d7726d2b22db1c9cf40b3a83299968a646",
+      "src/services/HorseDecisionJournal.ts": "a99afe9898acce1bd5208caa3a568f62c4134b42c56a61808fec72c8e2b10c26",
+      "src/services/HorseExploitHydrator.ts": "c173a0ef6de47283b5c30273d307144068978ee799fa632917df064f82b52568",
+      "src/services/HorseHandReview.ts": "85f6c1b113a328bd68e42ee09a1c253827ffac473f2c0d35afaab4940c241eef",
+      "src/services/HorseMindHydrator.ts": "c4e341a06c46d1beffa494c35fa0e76f4e80daec3aaa01d30b3f02892345b148",
+      "src/services/HorseMindPersistence.ts": "50f0d8f6881c681d3d6c69d653c519b76fa91c54c2f26679e28554855878b264",
+      "src/services/HorseOpponentMemory.ts": "8f8829ecfbcdc1215b6cb049da83d1ccee979970a1ff0ea2c599ddfd0c4c5af3",
+      "src/services/HorseOwnPublicHistory.ts": "f7ac132b66d152b61597b263dec2c02a7eff694877f84dd407bf38fff68ab3fd",
+      "src/services/HorsePlayStats.ts": "8e10af0663e6da463227a8586bfd1c01eafacc6aeea30f60eb7ff12100fd5a06",
+      "src/services/HorseTopUpStyle.ts": "9c28c21ff230473384660240a27ee2893c6677733402802c019f22ced81da314",
+      "src/services/TournamentBrainContext.ts": "baefcc65ad6d85d18b1e2cc26b0aa846ce297ca2c0f31760c210820a75e7b75c",
+      "src/services/cashAccountingBatchBudget.ts": "55d3f9871c7ca12bcaa6b433073f53a2780127abfca41375eb3389ccf3be4775",
+      "src/services/cashTablePlayEligibility.ts": "668fead95c74c8af2577d9582095ff1354b23d6bb28f8d04abe8af534e546f35",
+      "src/services/errorReporter.ts": "d34d2a1bd7b10e428e25d8ec5cc5d2573559aed4f40aeed2aafc576f4803f839",
+      "src/services/financialAlerts.ts": "4311729e7b02e221032d988c32bbf416b2601b4e000925df56d02d1124f77fff",
+      "src/services/financialPush.ts": "f77b5dbca7d279377975b8b2388cffec711d4aff66ed0956c7743ffbcabab19b",
+      "src/services/horseAcceptedRoster/acceptance.ts": "9e3efe886149883cc988c6cedc66cdef0ed6f86130b2bcb4860bf988d4d87dac",
+      "src/services/horseAcceptedRoster/schema.ts": "f06aec2b5b51a7065fbaaef0c6c62b613475676b03d4a5bafca31a5a58724326",
+      "src/services/horseCorrectiveReview/authority.ts": "283f2fd5e554d02c212031ed065b813f999622ca194ab0cc3386559b7ab5ac5a",
+      "src/services/horseCorrectiveReview/candidateCatalog.ts": "89e634cb302330b65135a546ec9c0d3b5d4beedd8cd50671804a47106c02fd20",
+      "src/services/horseCorrectiveReview/closedHeadsUpTournamentRiverReference.ts": "50db080118bcc6215a097d2e667dadc7a83ed474c1a221591f803dab3bd2313c",
+      "src/services/horseCorrectiveReview/domain.ts": "6028a2cebe7756500848db814a026682a49734a854b13e64871bf416fccb6464",
+      "src/services/horseCorrectiveReview/eligibility.ts": "960e2bde9335b3836608dc39f9c57bce3f1bef51f770f929b636eb28751c0ca8",
+      "src/services/horseCorrectiveReview/kernelAdmission.ts": "44138bd878fd1164117afd7784087474ac6d178c07740b015a739eb5e2aa18b6",
+      "src/services/horseCorrectiveReview/kernelApproval.ts": "047a80ceab0e6fbd8bd00e57bcaf3d380fccfad9a5d503fb8a547c63669af297",
+      "src/services/horseCorrectiveReview/kernelCatalog.ts": "e1cf4cffd89f64ebb0155715b60f68ba671a6bb2da8d42825fffb947595ebcef",
+      "src/services/horseCorrectiveReview/kernelComposition.ts": "9c0967b536f57f72189e80827f2df155e2182b024de24728b46f828e2ed38cb6",
+      "src/services/horseCorrectiveReview/kernelDefinition.ts": "b4946ff48c96a8a2372f27c4cee6072b6b510c0cd313ff7e4fdd361a958108c7",
+      "src/services/horseCorrectiveReview/kernelEligibility.ts": "a6aefff8df2fb938b3b9358092e0d029694b5f2488b6641130f611a3e10741f1",
+      "src/services/horseCorrectiveReview/kernelGenerationLedger.ts": "2f1665beaa863c8c4f54eb3caf46f4c943dde6794ea3193da03967b731c47abb",
+      "src/services/horseCorrectiveReview/kernelGenerationLedgerRules.d.mts": "80497e6562456f64a87896545d5a8e206ebd5c610c60f3b446424f49038ced45",
+      "src/services/horseCorrectiveReview/kernelGenerationLedgerRules.mjs": "33f34e9a3b5353009b0fa0d943f6d25c7627dc4744a7b5bd089872199d0a2bfb",
+      "src/services/horseCorrectiveReview/kernelModel.ts": "6e23a48841d79e37016ab8135e15c797c2cac3a7aa9d27624fd67545b89478b1",
+      "src/services/horseCorrectiveReview/kernelObjective.ts": "4dc46c548463b2e6ea0e1060e43924609873467280654e27e94f6bb202f9c779",
+      "src/services/horseCorrectiveReview/kernelOriginalInput.ts": "7273232f71aed021cd5529a475eef9cdcdb1a488394fbfaf4b40f19fa9a98f94",
+      "src/services/horseCorrectiveReview/kernelPolicyDigest.ts": "be7fb2c81e2a87368dc2e16a607eea1e1eab54a83c2606ada81a45d1bef21e5f",
+      "src/services/horseCorrectiveReview/kernelReceipt.ts": "b6207de9f9755f59167d6b45f459c4e3c74ddec5fb934ef3a0837b1704653aae",
+      "src/services/horseCorrectiveReview/kernelTournamentApproval.ts": "799b8e5231f271b1109a3c1bd245ebba285adb2eb718bc5fd445f890cd8bba23",
+      "src/services/horseCorrectiveReview/kernelTournamentCatalog.ts": "b146f073f953fbd31ec263ac10214ccf1870e11dd5c42d45bc8c092477cbec17",
+      "src/services/horseCorrectiveReview/kernelTournamentDefinition.ts": "27355644a92d300b45ba89edcbaedbc5fd30abb1daba32f5f163c4afdf461b46",
+      "src/services/horseCorrectiveReview/kernelTournamentEligibility.ts": "a3b4126d155016f545524bfd5ff638842984b107523a30476c1fe2d33740363b",
+      "src/services/horseCorrectiveReview/liveKernel.ts": "ed9f6dccc14ca5f0ea77018c9d0665a72475a3d8454cd3db11c94cd729c6cf63",
+      "src/services/horseCorrectiveReview/originalAction.ts": "ee0666e1745b63d28e181b096e3cd472fcec73b697c4c7720a49c1ba7eb84b38",
+      "src/services/horseCorrectiveReview/pairedHoldoutMeasurement.ts": "7f394739fce5435a6d01c108d63b5a2eefed350107b175119b02c3d5a8a009aa",
+      "src/services/horseCorrectiveReview/review.ts": "fd69945cd9e2ef8b306415d04baed1b30aaa7aeb419482f8f1913dc3d397c01b",
+      "src/services/horseCorrectiveReview/riverDecisionModel.ts": "bdd022d829c7cea32fc87cec438ca75e98982ee1ebef9765493efdf8f6c09fc9",
+      "src/services/horseCorrectiveReview/riverKernel.ts": "5900dee58cb78614bd0ac5a9b601550f7581a3c07cacbe3bf66f49b332530700",
+      "src/services/horseCorrectiveReview/riverReference.ts": "6c8fb365db88512ad599a45d6c9f73f554f055702cec44f4f7f8c955df49b1b2",
+      "src/services/horseCorrectiveReview/tournamentAcceptedFunding.ts": "e11ab8c19b80e095c7a6f77a97f2e07d5e49c3afa34344a2a67c2cae90439623",
+      "src/services/horseCorrectiveReview/tournamentAcceptedUtility.ts": "3e400acc5d4d76387c31507a0fa4e132bf4efee7b85220e9988fff93cf7bff1e",
+      "src/services/horseCorrectiveReview/tournamentIndependentReview.ts": "aea6bdcd5c0a1b936ad59f413862453adfa8d9a9aac6dbe9b09568f284936be3",
+      "src/services/horseCorrectiveReview/tournamentModelHoldout.ts": "a92f224eb65ec743d035a69f55e65abb2393f54877f016c2e3accbf85e5475e0",
+      "src/services/horseCorrectiveReview/tournamentRiverKernel.ts": "ff0753388565cfc75384fbef12aacf2996d9a62c923046707869f35bbb17c242",
+      "src/services/horseCorrectiveReview/tournamentRiverReference.ts": "66b7c6a14023cb14122f42bdaea19a3992f72a3968de35e5dfc792c476e9e674",
+      "src/services/horseDecisionJournal/config.ts": "2820eb099d2b0eb24052c62c7fb76c98fd9fb12f1241a01382eafd8e58ce2b2e",
+      "src/services/horseDecisionJournal/discard.ts": "dab4a72710475f0a0ae649a490b75c97f5016edf354db7ff23c03ab231696b0e",
+      "src/services/horseDecisionJournal/effects.ts": "e96e9ca7452e757ec23feda180f4dff83164eb216185b03e4b6557daf596d30c",
+      "src/services/horseDecisionJournal/lifecycle.ts": "6e5ffe2313f3e47930092c62c158fbde08be4469849686bbd3974f1a6d634f23",
+      "src/services/horseDecisionJournal/record.ts": "12ab232af9906fba0417f85ea7c83454a3158d367d0a353823a9b73a53a6adc7",
+      "src/services/horseDecisionJournal/review.ts": "2f456428e18fa86835c5c8c16e901411116c1f368bb6e13e95ce46d2c50b7ae4",
+      "src/services/onDemandTableWake.ts": "3bd21fb24afb00eba45210e2afe4cf2b414a5ad36a29f92388c78724c2ec6f53",
+      "src/services/operatorCashClose.ts": "0ccf8539cb576564ca7e43acfe2d410feeae0fd31805bf50dc67b8dedc480a8b",
+      "src/services/rakeAllocation.ts": "d00f50d180ce862c7e4175e2ef357efcb08e906b4513cf0f587e9870c9e8f8e0",
+      "src/services/supabase.ts": "809403f895a7e31207f92537d2aa1452ec3e8852f37b65259ee780166dbf9cf7",
+      "src/services/supabase/arenaPlayerName.ts": "dc179e9055f815ebaea4147da33c14eaed04dc938e8d5f1ec7e40bbd8492202b",
+      "src/services/supabase/bbj.ts": "993bc079ee5a6102cf41840a03c22bf8e25f7fa0e4ce70455e33175d18901e49",
+      "src/services/supabase/cashSessions.ts": "bc168601d0ba1d15e898b78043535fdc16e9425ede8cb977c764fa63e8e2d884",
+      "src/services/supabase/client.ts": "2a1e917e9282590854e40d753068f30d79210edf8dfc713f7f01d0f57222441a",
+      "src/services/supabase/dataActorContext.ts": "adfcb782154fd1991068464792a076161b9af2c0d7918dd1c4767d2e470aaf18",
+      "src/services/supabase/handFacts.ts": "29bfed1e885905324d8bf6ca62f8b52bf91877b789d61647dba87d09261db159",
+      "src/services/supabase/handHistory.ts": "9adcfa29ffd989fa0ae7cbab03bf939f1c771ca19c56899e82fb4ecc709c4488",
+      "src/services/supabase/handProjection.ts": "ebdbdb8f4f07712223075c606ea11dbeb0a7fb99fcd59952db3c25e28774436f",
+      "src/services/supabase/pagination.ts": "d5f9665e43bc6522a314b09cf50ebb405ec26ac6f3aa3325312f89d4ca20019d",
+      "src/services/supabase/rake.ts": "2b71b410bbe92cbdd838e677d31061a17475fe1326b126faa4e3a3bd28dd8e1f",
+      "src/services/supabase/realtimeCallbackContext.ts": "2e13f72c717e5821309031cb887ba24fd42fbf4307e4c0504e1ce5f9b9551c44",
+      "src/services/supabase/seatMoves.ts": "d885796826b1ee2b46c93f76c9ee81ba01c81accd10fc2eda10fac501a05c7bb",
+      "src/services/supabase/seats.ts": "b5c953c618a181b4c163f461fbfdb8bafeaa2233ab198fb5e517f084a9c79fd7",
+      "src/services/supabase/snapshots.ts": "c587f74160afd8126c4d251b025ac36a347ef939ed9b3dfcecb9a02823b23fe4",
+      "src/services/supabase/tableAvatar.ts": "697f64533ab1727bf358a1962e69ab0d00de5cd0f6e8c1f5aae7f5a780a256c5",
+      "src/services/supabase/tables.ts": "1b1253004d6d4545c28ac3ac47fc6f7d906fa4254fd680cf672066716397af59",
+      "src/services/supabase/tournamentManagerFence.ts": "a93b2f2f58e6cf1a0acc4d0a00a221034a8299292f558ceb9338579f7f6f2b98",
+      "src/services/supabase/wallets.ts": "803fbf06f5887cc421e26caa78d206652f0c96630722d0e51b4175f6d875dc80",
+      "src/tournament/payoutMath.ts": "511137bb456eb55de98c20abf985f60e7b9d0f40f912d6b670e5a5d39d994094",
+      "src/tournament/tournamentUnit.ts": "3e54fa0e9382f42df1fb46431d48d988b6de2ed3c0edc365164c31ed0a14af39",
+      "src/types.ts": "ad53fec448d3495cb1c9cdadf1aadb9952c90f89b32d6ca09575f7fd5e1e2a95"
+    },
+    "runtimeSourceDigest": "5a919fa064c9dab7ad13427809533bf7bf5ee999f6e0b080f633c583f06ae070",
+    "policyDigests": {
+      "phase8": "d757f4946db34a4e3d1e4c8e382cf709587549fd4069dd5094f9bdd4616a8b26",
+      "phase10": "0b00ea8550faf2514cf3b88218639d932fdb0f35dde98c1e38fe3a524d4d3d06",
+      "phase11.plo5": "3d12ac4548588d3d8dfefbf62870e0f31d5ad8a526f3f1e6e582539eae3de5b5",
+      "phase11.plo6": "1b5abe483452613a3f6454c35931d44d6a3ccb773965dfeb80cf2aaf5fbbdc6e",
+      "phase11.plo8": "c0d680108d109dc3805362a61cb298a4c13352cfe040ecd0a81cedc50d109aed",
+      "phase12.short_deck": "a703577feb609a91b8290fd935513ab7ae5dad341c46f574db07c1e7bd9f4d56",
+      "phase12.pineapple": "7e88e68dc7d39f4251a4379a1dbf0a807613705705eccb316202c292c740f713",
+      "phase12.flh": "73b215fc8f2bb0f7d27d3d70528b90eb25d508439994578e3a90a2fb576d6895",
+      "phase12.flo8": "7378ec935caec274de8ae3c5f4ccb5c1524a54dc9e33b5346a98d9f8effcb38b",
+      "phase13.nlh": "92a3535b5bb21a4002119560a5980fd39f52e07a800ccf69b45ad784769eac8e",
+      "phase13.plo4": "d86b8e77282eba3b5e39deb56b55e14b3525bc8851a1775395d9d0b13de7f859",
+      "phase13.plo5": "9264c6aaf7a1d1029b9edad2145b51f46af2fb3983ce23ae33166794a742d0b0",
+      "phase13.plo6": "e7ab854939e26f9646bb38cdcf9684978bc618078aba98aae6f9ba2d914f90b2",
+      "phase14.nlh-cash.admission": "ccdfdaa7c7453971eefd417292eb9e3d82754db3de8c9ca9629fa238a517aed6",
+      "phase14.nlh-mtt.admission": "bdd7438c6579f12e62704a7997336e87e7f2f82b5d91dd98bdbbb713520e0863",
+      "phase14.nlh-sng.admission": "43879491bf858366920a1b3dc076269c246241df746539be08a8ec42789f6133",
+      "phase14.nlh-spin.admission": "5514f6f64ccbd03120c355faf01393fef55c068bc12aad8d1e1d26230372172c",
+      "phase14.nlh-hu_sng.admission": "6e37f9b587ca121cce5e861ab5c5b096890cb4ac2d2d35c4c90a091899b85d5e",
+      "phase14.short_deck-cash.admission": "6d2b60e3dfc4bd84ba7ac5e4f59b42988070194028f7d50a84716ad2eae838e9",
+      "phase14.flh-cash.admission": "23f6c3464de013fc1fc992b4b59142b67b0f3aaebafc2e3f5f8e2190983a7145",
+      "phase14.pineapple-cash.admission": "f56a3be6ac8d108b88f888cc1cf8ca0f0e80c3ce559c71f007119cae346560f6",
+      "phase14.plo4-cash.admission": "b24698927aa58823410e19eca6bbc1fbd2b4cc482a30be67efb5e51c151bb95e",
+      "phase14.plo5-cash.admission": "a7f9b684ff24c227a219a43702938c5e2ac6d1a6e394ec4ba646a2b63d05b67d",
+      "phase14.plo6-cash.admission": "cdb79e01341cef8927df0d1f0785053c9559b9475c195833abddbe7c89766871",
+      "phase14.plo8-cash.admission": "3f5d49b35e748944433830ab37cad6b85f2e24618cec9ab3c39618b7224650d9",
+      "phase14.flo8-cash.admission": "33ec6c4ba138e27c2857d3f74972234bfd1c2caa8455b366b498cde834a18145"
+    },
+    "policyDigestsDigest": "11330eea49ba967de683d494b47289c973e475ae5b092a827fd4d3766c249445",
+    "dependencyDigest": "b9b88b0154db80a8a77a8de040834b41c53851465c793569acf2b5a7d6a80b74",
+    "storeInputsDigest": "6c1f9584009ddca56c38ee784f11644e9ae1388f6199fbf1d864d22e7bc0a92c",
+    "admissionDigest": "fed20d2f1e5f71d5b7933471b6534b67ed34da14a002f8852251c0018289d6c1",
+    "historyDigest": "e4a76885e97de18f51aae0a9cc2a970476de2c1541742e429980b50555ecb7fd",
+    "maxAttempts": 3,
+    "pooledPublicProfiles": {
+      "kind": "empty_for_local_simulation",
+      "bootstrap": null,
+      "profiles": 0
+    },
+    "flags": {
+      "candidate": {
+        "v24PloDefense": true
+      },
+      "reference": {
+        "v24PloDefense": false
+      }
+    },
+    "population": "current_horse_production_styles",
+    "clock": {
+      "policyDateMs": 1792972800000,
+      "publicHistoryAvailableAtMs": 1792969200000,
+      "warmSeed": 24307777
+    },
+    "profiles": [
+      {
+        "id": "plo6-v24-two-dealt-100bb",
+        "variant": "plo6",
+        "seats": 2,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seats": 4,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 40,
+        "weight": 1
+      },
+      {
+        "id": "plo6-v24-six-dealt-100bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 200,
+        "weight": 1
+      }
+    ],
+    "heldoutSeeds": [25304119, 25305233, 25306349],
+    "matrix": [
+      {
+        "key": "plo6-v24-two-dealt-100bb-s25304119-k00",
+        "profileId": "plo6-v24-two-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 32256
+      },
+      {
+        "key": "plo6-v24-two-dealt-100bb-s25305233-k00",
+        "profileId": "plo6-v24-two-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 32256
+      },
+      {
+        "key": "plo6-v24-two-dealt-100bb-s25306349-k00",
+        "profileId": "plo6-v24-two-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 32256
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25304119-k00",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25304119-k01",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 1,
+        "firstPair": 22464,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25305233-k00",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25305233-k01",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 1,
+        "firstPair": 22464,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25306349-k00",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-four-dealt-100bb-s25306349-k01",
+        "profileId": "plo6-v24-four-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 1,
+        "firstPair": 22464,
+        "pairs": 22464
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k00",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k01",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 1,
+        "firstPair": 30528,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k02",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 2,
+        "firstPair": 61056,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k03",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 3,
+        "firstPair": 91584,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k04",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 4,
+        "firstPair": 122112,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k05",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 5,
+        "firstPair": 152640,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25304119-k06",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 6,
+        "firstPair": 183168,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k00",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k01",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 1,
+        "firstPair": 30528,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k02",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 2,
+        "firstPair": 61056,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k03",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 3,
+        "firstPair": 91584,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k04",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 4,
+        "firstPair": 122112,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k05",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 5,
+        "firstPair": 152640,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25305233-k06",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 6,
+        "firstPair": 183168,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k00",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k01",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 1,
+        "firstPair": 30528,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k02",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 2,
+        "firstPair": 61056,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k03",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 3,
+        "firstPair": 91584,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k04",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 4,
+        "firstPair": 122112,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k05",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 5,
+        "firstPair": 152640,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-40bb-s25306349-k06",
+        "profileId": "plo6-v24-six-dealt-40bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 6,
+        "firstPair": 183168,
+        "pairs": 30528
+      },
+      {
+        "key": "plo6-v24-six-dealt-100bb-s25304119-k00",
+        "profileId": "plo6-v24-six-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 33408
+      },
+      {
+        "key": "plo6-v24-six-dealt-100bb-s25305233-k00",
+        "profileId": "plo6-v24-six-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 33408
+      },
+      {
+        "key": "plo6-v24-six-dealt-100bb-s25306349-k00",
+        "profileId": "plo6-v24-six-dealt-100bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 33408
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25304119-k00",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25304119-k01",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 1,
+        "firstPair": 28800,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25304119-k02",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25304119,
+        "shard": 2,
+        "firstPair": 57600,
+        "pairs": 28224
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25305233-k00",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25305233-k01",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 1,
+        "firstPair": 28800,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25305233-k02",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25305233,
+        "shard": 2,
+        "firstPair": 57600,
+        "pairs": 28224
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25306349-k00",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25306349-k01",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 1,
+        "firstPair": 28800,
+        "pairs": 28800
+      },
+      {
+        "key": "plo6-v24-six-dealt-200bb-s25306349-k02",
+        "profileId": "plo6-v24-six-dealt-200bb",
+        "variant": "plo6",
+        "seed": 25306349,
+        "shard": 2,
+        "firstPair": 57600,
+        "pairs": 28224
+      }
+    ],
+    "interval": {
+      "method": "two-sided 99% normal (Wald) interval on the stratified mean: T +/- z * sqrt(sum w_p^2 s_p^2 / n_p), z = Phi^-1(0.995), s_p^2 the unbiased within-profile variance",
+      "z": 2.5758293035489004,
+      "edgeworthCoverageErrorMax": 0.001,
+      "minimumPairsPerProfileInCell": 10000
+    },
+    "thresholds": {
+      "primaryLowerBoundAboveBb100": 0,
+      "eachSeedPointEstimateAboveBb100": 0,
+      "everyCriticalCellLowerBoundAtLeastBb100": -10
+    },
+    "criticalCells": ["profile", "relative_position", "depth"],
+    "coverage": {
+      "opportunityDenominator": "not_measured",
+      "byProfile": {
+        "plo6-v24-two-dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {}
+        },
+        "plo6-v24-four-dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {}
+        },
+        "plo6-v24-six-dealt-40bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {}
+        },
+        "plo6-v24-six-dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {}
+        },
+        "plo6-v24-six-dealt-200bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {}
+        }
+      }
+    }
+  },
+  "v53_pressure": {
+    "schema": "horse-feature-ablation-plan-v1",
+    "version": "horse-v53-pressure-published-cash-qualification-v1",
+    "state": "heldout_locked",
+    "target": "v53_pressure",
+    "dealSampler": "sha256-profile-seed-index-v1",
+    "baselineReferenceRevision": "b935999c78011ebfc3acbfe67f299fe80863a39f",
+    "runtimeSourceFiles": {
+      "src/benchmark/FeatureAblationAcceptance.ts": "4eb7fa27666b0d14c2de0942cc9c68a3ab6049ae33eef426bfca06595ae7af91",
+      "src/benchmark/FeatureAblationHistory.ts": "1ece30faf6fe0814f619d07812052b4bee256235352efd6f616f88dfa6a26e1b",
+      "src/benchmark/FeatureAblationLeague.ts": "0b99fa64a502025cdd13c436867c199f03cbe48519c5c09e0d36bbf870d1a1ce",
+      "src/benchmark/FeatureAblationQualification.ts": "ee8bb4f54a6d8e67bfbaf00cb84eb034dad6bd626d88e8c19be2dba7c95bbd2d",
+      "src/benchmark/FeatureAblationStores.ts": "7b157a8fd221d6ffe53c63772e1cb9d8ba8e61838bd3377252cc841ff3069871",
+      "src/benchmark/FeatureAblationWorker.ts": "9878d8c017daae4cb42037786931619e21d8938046e062e64f8128856ad3760a",
+      "src/benchmark/HumanCalibratedPopulation.ts": "d613c38c75baaf1adcbd22f8f9766352d83d37f1348084dc6e6bc2c3adf44dc6",
+      "src/benchmark/JointBoardReference.ts": "ace8ef1909c23e789e8c6482c66709c5b6625389595cdfa11455d87014a04f8b",
+      "src/benchmark/JointStrengthChecks.ts": "f6196f496909983349f4f06398e5a038a63c807b09063b7115208b1d39905cbd",
+      "src/benchmark/JointStrengthContract.ts": "fd1fe9bcb240cf3bba48659d843a912f492d1cb13ff4bd86edecb5d1ed6533e7",
+      "src/benchmark/OmahaReference.ts": "9b6e648559adcb0c43026abe6a467c613c9c07ace329e865d19503db130f0d03",
+      "src/benchmark/OmahaVariantStrengthContract.ts": "50aa3198c2811d2f2a5785d953722dcdfeedc1289c5e01bbe6db699e3944688e",
+      "src/benchmark/Plo4PolicyLeague.ts": "4bdad403aa6b2f89af0bc645d1dce773b90bad215bcbbe396337b9cfeb7ebedd",
+      "src/benchmark/Plo4StrengthContract.ts": "89d7ad27a8e75c78849858b43108d16b15ca2a811d2114c99d22d3f79aa6a458",
+      "src/benchmark/Plo6V24Qualification.ts": "fc7eec4f8fa133e9cc8fe600dfa5edf29a41de1b672f880e9423fdca9504e671",
+      "src/benchmark/PressureQualificationContract.ts": "ff99e9a82bb176d165eaf68840da4aced1b7f9d6fb4c32969330ad8bcd1ecc62",
+      "src/benchmark/RemainingVariantReference.ts": "1343a4b1bc34a360282c45eb1d30468d8a468bd147d9433bce9b90737e38306c",
+      "src/benchmark/RemainingVariantStrengthChecks.ts": "ae91f135a64988f74f8d311d0997028428c3d38f983706274ea4d7922d217fac",
+      "src/benchmark/RemainingVariantStrengthContract.ts": "bb422693783c860e4933426bc2a2f5655dea5d5a0177e675cc4ec4e9ca8bb735",
+      "src/benchmark/RemainingVariantStrengthContractV1.ts": "a771faeb0bce1576432d7d38752fe65a97fb1490b4134421618295f3e6381562",
+      "src/benchmark/V53PressurePopulation.ts": "4583160b9069cb703063c7179599cac560cb0f215f40a688e3651a50c5dc9b93",
+      "src/config/RakeConfig.ts": "135382fb5b996e75305571f4e88c75a5b716354addf55739826df81e8c4ca03a",
+      "src/config/cashBuyIn.ts": "bf22d798561eafd3bb7c941f46e917886010209748677daa30990e9117791060",
+      "src/config/cashRakePolicy.ts": "97f4171b4df71b87e505699fd9d9da9148a72b7014279d594d01a4308b453804",
+      "src/config/handCompletionSpec.ts": "decaff56fa129aab6c6075e1d5089e981c7e51416546d4bdce795d9573c528e1",
+      "src/config/rakeSpec.ts": "4df558d6e3a1d17b9e420d3f6879ed5d00f53dc4486bfce695a2bae04e0d3dea",
+      "src/config/tableSeating.ts": "bc873d344b5d513953abef49f767ae46b9713b8c332538bf724cf35c652967a1",
+      "src/domain/ArenaContext.ts": "4c6376b38dfd8ed28be9d522d78ba55b0785a96e2698744d3e45b4b321a0cae7",
+      "src/domain/DiamondCashBoundary.ts": "f57382d76b2729fe6eb5031f238568b5f9dcc485222b0e9afd0a749a3928eb09",
+      "src/domain/diamondCashFeeSnapshot.ts": "b89f63be2c71852a1921c3bde3d88a33fcea58831d3ffa4f780fa9c13f0da3e2",
+      "src/domain/diamondCashJackpotSchedule.ts": "0a05d0df1d23fe4b5004ce8a498521a7fb8abfb01926e92c4871330171d7a586",
+      "src/domain/diamondCashRakeSchedule.ts": "cd2d6beba456efde6cc8f45b973651a7f7fb831419d5d2a0dc7d5cec9f40c628",
+      "src/engine/AnteMath.ts": "e2c11b957bcc845fde17eafa34dfe8b2eaa22983c3c43dc70bfbd52ac323162f",
+      "src/engine/BettingStructure.ts": "5b285a35f9c63a7f595827db5695050300016e55c78685c0d095c9cb7622c19e",
+      "src/engine/BrainTelemetry.ts": "cb0835085d17abbb07712e0b63d1f64e1572bfa45cff7ddd91f0ba57fb873c1e",
+      "src/engine/CryptoRandom.ts": "7dde524ce6e597afa2872191a6b93eacb1f156f9b6a5d345bc8985f4224c422a",
+      "src/engine/EquityLoadGovernor.ts": "68cc050279019fa595778f8972677ba01bc3afed75ba96fb049aad65f0a355d7",
+      "src/engine/GtoBoardRelativeFeaturesV1.ts": "1a8c66e8fa8f9ebc293bf9edfaf425a6cd3bf437abc31e8b8348f21e3873be49",
+      "src/engine/GtoBoardRelativeFeaturesV2.ts": "9e3afafee5be0d5f8176b06b91349e945996d92b09bc09c782f3ac19f1d79186",
+      "src/engine/GtoCharts.ts": "3e0e7b463586805192cf8b3906b9060290b143b0f60a3f511f1334c2158de209",
+      "src/engine/GtoDecisionContext.ts": "eeeb4f0b3ebdd40ebffb18660dd5b3e44492bc43ec09872dc98ddae6043b316d",
+      "src/engine/GtoFacingDefenseV32.ts": "a88d810408064d209c209fc8cad8295b6ef2f073a1f708318732b94ee7d9617e",
+      "src/engine/GtoPostflop.ts": "7d80fed17c73a04bac1bb7e4ef5143897be0abb5bed2ae13f4d3692e64108825",
+      "src/engine/GtoPostflopV31.ts": "aa7e5d1961a4ee7171f4d6af2d0cb35f421722bee2b4415ac509c606f868370a",
+      "src/engine/HandController.ts": "3710be1f1f756664314f4be1f20a32ea5f8622eda9fdaa7462cec1e4adda728e",
+      "src/engine/HorseBoardContact.ts": "ce48099af6bbeb54dafa546f5eb0657215d3bd51f3bccca5a5b54c15ef2c5266",
+      "src/engine/HorseCallDeductions.ts": "9d23b50bef066b648551dd253097a0ad7d45a3de1a938e529b170937fea62ced",
+      "src/engine/HorseCommittedDecisionTracker.ts": "2596cc7205c684eb3d67b0d43d5a5e7589e207769be04d29e4c2ddf98e482784",
+      "src/engine/HorseContinuation.ts": "288ccbe5ab2911a51ac963f299a4557ee91404e26f835f4efa6ffdfadbd34408",
+      "src/engine/HorseDecisionEffects.ts": "97a7dd5af0db17ea9484b467616501580ec137b7a59d00f0280b2b0f457e418e",
+      "src/engine/HorseDecisionHandBinding.ts": "138e7f132992912af799e0624d80a65def88198873efbdf85b4b545a68d05f8a",
+      "src/engine/HorseDecisionReadFrame.ts": "7488723bf36584b9b885f99b8dc82f6a56dbd01350519bbb990e3187dc3972eb",
+      "src/engine/HorseEvEngine.ts": "b67d170680c9aa4221930f2a510a5f0921e41d6ec3746bdfef87311e71f0b4c9",
+      "src/engine/HorseEval.ts": "539f5d742fa5b314ea22b16b3a114d1dc7e8a65b990e36dd875736b856394779",
+      "src/engine/HorseExecutionWitness.ts": "402488468b59440abb291acaf1668f6d58a9a10d07fcc1ba1ea206a732e03412",
+      "src/engine/HorseFiveCardScore.ts": "8ba4aafe70b5a3b671c50625d26ad8e68e3a9d043ccb7db4e5d97e6e28a78ef0",
+      "src/engine/HorseHandClasses.ts": "d46761e0365469684db4c000b617f2be4eabba58def89630f7735a3a3b5764af",
+      "src/engine/HorseHoldemPremiumAggression.ts": "8277fcc8284b70415b479a152a412f652ebdcf01cf4bdd65086db6c17f46538c",
+      "src/engine/HorseLogic.ts": "39d026619161f1ca7448375990ad84b191a7890ca3955cfdf175fd937a583dd0",
+      "src/engine/HorseMind.ts": "0daf0f03e38e1f7836677193b6a27272fae3214726fc3e31094a77cb56ae9383",
+      "src/engine/HorseMindHandIdentity.ts": "243b7bf33c62ad756b1420f0e60ae08a485a2aadd9024a8838b55a3fbb7a1a96",
+      "src/engine/HorseObservationIdentity.ts": "bf1e9d951337d042252abdf9e75b243b1542ba4c91b44daf7741164cbcd234cc",
+      "src/engine/HorseObservationWindow.ts": "001cfec7978796443a68e0ef778ac85586a86f9b1395fde6339e0285e11cc753",
+      "src/engine/HorseObserverReadContext.ts": "212879a1f8cc32b6882679339fd55709d91efebbc45b11d591485b59707655bf",
+      "src/engine/HorseOmahaImpliedDraw.ts": "9b9b0358353190b1908e4d20ac5680d2fa961e39f3a44e96d02165cb76f17d0e",
+      "src/engine/HorseOpponentExploit.ts": "a183f0d4ba989811bbee11546c48a59510966cf0acf726a25ecab25e827477a3",
+      "src/engine/HorseOpponentMemory.ts": "577fd437e67c676ba77649328fcafbcfcf2a634f312b53621698265587c683e8",
+      "src/engine/HorseOwnerForcedActivation.ts": "32912479329cbc15edcd300dcf539b92b9e6f1d4e845a3a5d53585e5b069092f",
+      "src/engine/HorsePersona.ts": "a462d1eedcb435c49af2d480e20c287f8b91193c43a734f5cf210c54186d4bd4",
+      "src/engine/HorsePhase10Authority.ts": "5077f1322497cd4de36e6cb6496489ef46bf91eb5327185995ad50976aad209a",
+      "src/engine/HorsePhase11Authority.ts": "7db2d5288e1db694d2a7675e67dd9003aad113755c6889e312845bfb2b712abf",
+      "src/engine/HorsePhase11PolicyDigest.ts": "07e74ca10b523498d9eddc9ce0e8b345bb8c0e3d4f00d6079e09bd243d2620aa",
+      "src/engine/HorsePhase12Authority.ts": "e878c70ff7806f49b97f7901d85641a30328a1c5c1a85eab16cd021995c6d339",
+      "src/engine/HorsePhase12PolicyDigest.ts": "9ca74f6c797e30214aafb3747ca54381d46a2f81e1decc546db252794c8a2271",
+      "src/engine/HorsePhase13Authority.ts": "69fdaea41163740d5016752a69303189b5b9b468b2550b54872ea979fa20ed18",
+      "src/engine/HorsePhase13PolicyDigest.ts": "2527ec31ea54c48e3e4d50c50ed82282e6b5b4fee90c1604719e48b8847ae502",
+      "src/engine/HorsePhase14Acceptance.ts": "fe725c07e7dc8e531a1e5fe829fbea18c585da07aa4176d66c1291f15f4704bf",
+      "src/engine/HorsePhase14Authority.ts": "8bf955932aa2b8a7ede4f7c4bbbd93149a3d1c4255e06bdceb9e5ae05a841ed7",
+      "src/engine/HorsePhase14ReleaseSelections.ts": "655204a521a28e75274f8af84898ce8e5e7899247496722b62ca8d33badb976a",
+      "src/engine/HorsePhase6Attribution.ts": "b360e6d4b041f25554fb117d138de06bb8e40ea246d260f9a501dc423fb02c8e",
+      "src/engine/HorsePhase8PolicyDigest.ts": "9d0b15daea0c7cfb742c327df15654be5607ed7e5f0c37a76a9cc1fcc406a1aa",
+      "src/engine/HorsePhase8Safety.ts": "a93bdf8fa1aca447939fce400be1b2672118d56b2d0ab1d3cae5e770c168e799",
+      "src/engine/HorsePlanEffectReceipt.ts": "bc6e96c32794d85a9dc81d3e84bb656f784029a1f14ba1b77385b5e43e52b274",
+      "src/engine/HorsePlanHandIdentity.ts": "1a137a31995a66c27ae989667661156705e27d24a030f4ee151a714e16d30d12",
+      "src/engine/HorsePloPairedBoardFold.ts": "5388f9b0511aaa3827d68144736e74b21b285618dbbe40eee1d59ea56943777d",
+      "src/engine/HorsePolicyGraph.ts": "2a31b70a1f0d5d606e9edf8c50bb2432496a69e9d59c79f5ec93c12871525f46",
+      "src/engine/HorsePolicyLedgerObserver.ts": "fa2e819cf19ec07b62513ef7e4cdf0248e60d7aae6bbd76274f2b2632c29829a",
+      "src/engine/HorsePolicyRegistry.ts": "d28077d5fd202830f94edceb0de5c9c9d126365620bd821b691de21c8dc67f0e",
+      "src/engine/HorsePreflop.ts": "9bca1e23dbf6505e94bad4ddd22c480e53009c0060ec69b56e701c7843a2a149",
+      "src/engine/HorsePublicActionNode.ts": "6174488227da03180bc62d9d34980a7c74872d6b978bd11ab329760c42f7dd25",
+      "src/engine/HorsePublicDeductions.ts": "e6362ff384a3d2c875b18a2d8b3cb5e51a2871b626cf8622f94ab93cb76988a1",
+      "src/engine/HorsePublicTournamentStage.ts": "6c141071246cab952b3341d1d4e3be347f45b4b0806be171705972f08e129c02",
+      "src/engine/HorseQualifiedAuthority.ts": "edb80c0c9bfbde9d82976c1f32ec3fab9e546af1497a28193b94f5442461928d",
+      "src/engine/HorseReferenceDecisionSources.ts": "104478458ea7be9e979f4becc2f6842c5d95167cedf6bfb9b8a12dd1afb08dcd",
+      "src/engine/HorseReviewSignals.ts": "3f2f42caa6fe6f327374b75810680a99a655c0284038deb2e7692c3c9278c34a",
+      "src/engine/HorseRiverCallEvidence.ts": "f49e686f9028bd459d3eb87aa8045fc5f5024a307369bc7897db7d3dbe523539",
+      "src/engine/HorseRiverNuts.ts": "559be8d6b44683df9b04335ca0e6b47d4354cd49c70f321d3755d09455694575",
+      "src/engine/HorseShortAllInCallFloor.ts": "4ca0707e162330b6effcc7706685fd3804dcffbcad9cfd837a3c59c71038325f",
+      "src/engine/HorseTournamentContextProvenance.ts": "21c0fd9f388e12594035f21891cc9f61764144a17237060ad5b5b0d0310094c0",
+      "src/engine/HorseTournamentContinuation.ts": "45bde27287ea6b6c0bb627907dc9f7dcbeade59882498b562c7accf02acc9091",
+      "src/engine/HorseTournamentFutureGame.ts": "028555c3b3f72a9466afad5cab819afd27dd0a9f8a0d5dfa73f4878868a4f74b",
+      "src/engine/HorseTournamentFutureHand.ts": "06c95b3a52aa12ccb057d630a14d1f14cee09e5b9809da7c7b50a369bd036ddd",
+      "src/engine/HorseTournamentPayoutTerms.ts": "574b5a47e277124a3053d6d17bae835030f7adf6fc9690ba08c9a578e2f218c7",
+      "src/engine/HorseTournamentPostflop.ts": "13a4a6bceeb628c93e3110488dfc00fa9c76a13db65b513e1206159599374da8",
+      "src/engine/HorseTournamentPreflop.ts": "137287202405a2b095f71a90481c0271a781779c0e98ad563988a2d3cdbaf917",
+      "src/engine/HorseTournamentShoveDiscipline.ts": "adc3815633adbd259649094547572039e6c0ba39703095150f50b93d4215c54d",
+      "src/engine/HorseTournamentUtility.ts": "7baaf02fc5a2e0519a6d6e697c69fe9d1cd2e8289e9743040c48145f9dbb5524",
+      "src/engine/HorseTournamentUtilityEvidence.ts": "e105af31b6a678c0dd1e7d9bff4436808978135c35df71efa6c1f01a3f05e6a2",
+      "src/engine/HorseVariantProfile.ts": "82e943ee129b7f5b2508f8587c0de96b3b103a0719c76eca29acbf7e2c158e0f",
+      "src/engine/HorseWinnerRead.ts": "e3f72e2023abb65f28d51ccaa409dbfaefffb9657caa377a0df71e55d15fbf4a",
+      "src/engine/IcmModel.ts": "76b73ece97f0133e77e2071a1259a9fbfd97e64af3fa82b75bd7a0ebe6b5319c",
+      "src/engine/KillPot.ts": "c838c23612eb5ceff19dbcb44f31916d18af388c725e5969fd00eb081ab8a0df",
+      "src/engine/OmahaFlushBlocker.ts": "008d5bff47c6b2f6e0ec868d6c742760a4ed29c918369969446784f73281ae73",
+      "src/engine/PokerEngine.ts": "bc8dc7d8d5c88329dc78eb7f4c07550059657d900dab2e23a82b334adc903b3e",
+      "src/engine/ServerTableEngineTurns.ts": "34226893d778a0fc620aeebeb7ee24585d1d6e6667bc5aabbb491bcca8f00dce",
+      "src/engine/StateMachine.ts": "9c8fa5172f17132a1ef950553e879eae10cd4bb73435763bc55379a6b75db9f1",
+      "src/engine/VariantRules.ts": "f7e1d368594fd8954929c5c60e9dfbd4b4820160191f760e8b225ef8cecd4c7b",
+      "src/engine/WinnerUnitScaling.ts": "21bf293aca322c17053d12cad062951fd4514aa6010e3514458bff672f46464d",
+      "src/engine/diamondCashRakeFacts.ts": "1cda33d8135fecd95152e24c8c9db91873646cb94f69c5a75e61ee5fecdead79",
+      "src/engine/horseDecision/client.ts": "655e58ca2c81044cb8a91b9d3ebf202b9c39452e84b671da02f091ab0d11337b",
+      "src/engine/horseDecision/completedHandActions.ts": "a1bf10f8717ee465043cdd387b9865de0d0be97e24912384d660bcb7684e29d5",
+      "src/engine/horseDecision/index.ts": "f020902a5116c78e97bc4815d1de37de1972e486d89b500fc82ad4e94833594f",
+      "src/engine/horseDecision/lane.ts": "cde179f419748c6ae61cd1a7690a384e55dae829d801e6b2978d48c5db00bad3",
+      "src/engine/horseDecision/observerParticipants.ts": "7cc30713be9381c5ba58427a49f0785611f5db6b5819403581757a374834ed7b",
+      "src/engine/horseDecision/observerReads.ts": "0760435862038fb1fd14ab1df6fdfdba81743f2c102e2f1189c18decb0447bfe",
+      "src/engine/horseDecision/ownPublicHistory.ts": "030ec0621e079c977950e02823190e6f94a911d635fff9af9baf1c046a59461d",
+      "src/engine/horseDecision/protocol.ts": "3d1bf8ad661500d8048a0a4cd6e75de32ddfbd36f897b9a26fb131cd3d8b52f3",
+      "src/engine/horseDecision/replay/exactReplay.ts": "8939badabad916e94c9452e530f5cdcb148a188e1cf4f22d2c747c9aa28b1633",
+      "src/engine/horseDecision/replay/qualifiedAuthority.ts": "7ab26832f1a20a474e7e2192faa6b906f46300871f29f151542619a8b3688dae",
+      "src/engine/horseDecision/replay/reconstruct.ts": "c56e6cff2995fb96886ed79fd65d5f822f87c56a4ddfd369b710d9c771c4c006",
+      "src/engine/horseDecision/replay/references.ts": "bce629e274591102c763dd9bc94dc791862c8aa64a842f1d121c945534bcd791",
+      "src/engine/horseDecision/replay/runtimeReplay.ts": "51d3a18c7515d181236c60693452843e49adf41d62e80d5a33b35ce4601522a6",
+      "src/engine/horseDecision/replayState.ts": "b1e3b8f7a3103d6ec388e5961909b5788828bffe9619bddd0cae87a8bff39f9b",
+      "src/engine/horseDecision/responseValidation.ts": "3ccd9df35107cc9cece17e672d0980df0d0a7bbd4c1ad600a59314c1c7ce3226",
+      "src/engine/horseDecision/shard.ts": "f4e8ac4fd783fb45dedfe42ac80db93bd37777454996b56a0064b3c25631b4a7",
+      "src/engine/horseDecision/workerPriority.ts": "466c0fb8aba7c84ce4b3790275fccd80b3502710df0d038dcfd38165d337f510",
+      "src/engine/horseDecision/workerRuntime.ts": "bc1e7b388a955e58c7ff94c23c6128e040de379038e49f2ed771f44d222d7c64",
+      "src/engine/multiway/DealtSeatCensus.ts": "16a8c5b4e2216471a9104b183dcfe7ffdbdd33216c7d1ce0b4cad4f32d221082",
+      "src/engine/multiway/JointActionModel.ts": "f31f525cf355d8dfe451008f0c96c67d6a7f924712f067ddda7cc427d13650b7",
+      "src/engine/multiway/JointActionShared.ts": "f142e03fcc662308f59e2bce880d5fdfaada6e53309b65567f6f38cb18f82446",
+      "src/engine/multiway/JointCardLayout.ts": "ea2ab30181acfc5f951a9788c027ade38adff544b861bb3f8ee63da810143714",
+      "src/engine/multiway/JointDeductions.ts": "2109f2f1c0ede328a0e2c4ada07c8b1401f5952712ca863f19cfdc3d6b2b00be",
+      "src/engine/multiway/JointInputBinding.ts": "7b686bffd9a76f2a88b280152a9365c8a3e7aa94573075df7351c16f95a40f67",
+      "src/engine/multiway/JointLivePolicy.ts": "e8a016fe4758695978aec73d0be21eb6b87d2f3328c898c1c0e17815e2af8833",
+      "src/engine/multiway/JointPotDistribution.ts": "24302f308c69a69611879c4e5575d1e503bd680823fae1217091136973d79591",
+      "src/engine/multiway/JointRangeSampler.ts": "0717bc90d73f2b279365c094a81d6239874ebac831ee97b7c171a897afda3d76",
+      "src/engine/multiway/JointResponseCalibration.ts": "1ceb3a54b9e16603120fb76ca015b9b503f85e6cc7712c75031afe57d189fb96",
+      "src/engine/multiway/JointResponseOrder.ts": "b60235d8c3d07c81bedee78a1184d763036df8317d209d9c9751ce0e3cabf97e",
+      "src/engine/multiway/JointResponseTree.ts": "4ada55cb755e635841351fd1cd251eaf484c4a1079766fdc652b18639e5e3d75",
+      "src/engine/multiway/JointSampleAcquisition.ts": "41ed68b8220e507ca616e494f097a03bf7d0cc7d8f5b75c1af52173956218681",
+      "src/engine/multiway/JointStreetBetting.ts": "2d41229be5d9ff5bf2d1244507cef27d1b926dcb6ea2a60ce432a485d5f2628b",
+      "src/engine/omaha/OmahaCardFacts.ts": "5f71cd66d59f989203d0f64f9c72a3a8feff3614a5a15e8889198a592459e728",
+      "src/engine/omaha/OmahaVariantActionEconomics.ts": "fa152836ac986b3a125223e0dac19cdbdfc10b13b4bc572226c33b767537965c",
+      "src/engine/omaha/OmahaVariantEquity.ts": "f8c165cc413562d1a5652c44a7fa7fa1d6b138f266f3c7950873b22d830fe4d7",
+      "src/engine/omaha/OmahaVariantLivePolicy.ts": "87d8458b52af087d59e55cb19a3b5239a7523209470fa77e2e9271ff534d8d8d",
+      "src/engine/omaha/OmahaVariantPolicyPack.ts": "702d3763fcac8230faa3e67538557d16e9f75b195a8583e32b7d0d7af4db3e04",
+      "src/engine/omaha/OmahaVariantSampler.ts": "70fe1b7fd46f4eb5f7793b993a6c552db900d56d727bee49e3d1cd810e770dae",
+      "src/engine/pineappleDiscardChoice.ts": "d1b2e13904c4ff8b4e33b3eae6a4b727c1838feab6eb9b332ba5013f09041ee5",
+      "src/engine/plo4/Plo4LivePolicy.ts": "2a687cdb9aa915f171f440b7bb5c1f8e96632d41325c8df6aac5482fd1fab9ce",
+      "src/engine/plo4/Plo4PolicyPack.ts": "769ac33614269db3dc0354c75645281b46acbe514b199d4713e52a0b8f1058d8",
+      "src/engine/remainingVariants/RemainingVariantActionEconomics.ts": "253a31d0ea7a6f6f46e2e48432c0c97c3d6c8939d2be1376e55dc1044ae50c56",
+      "src/engine/remainingVariants/RemainingVariantLivePolicy.ts": "b11c5927e001248f190969f1b7d45b568f98d3a795baeecd410b921c6efee3db",
+      "src/engine/remainingVariants/RemainingVariantPolicyPack.ts": "6bbf2a8aa97e8b5c4873eab32c1892ee2e235c77a9e140f6dc0e13fbf3555e60",
+      "src/engine/remainingVariants/RemainingVariantSampler.ts": "d246b9f7de8a8fef6d93ec078c0048bc9a3d0299c77624cb4433706965e02856",
+      "src/gto/GtoChartCorpus.ts": "0b4c15ce33b4462d403a1f5dc916af401e96df1234aed5092104fdb379d014c4",
+      "src/gto/SolverPolicyArtifactLoader.ts": "7d190729093bd0e15f347cf4e7e8d33a82562f0a3e5c7c13904003a3a54d3d4b",
+      "src/gto/SolverPolicyContract.ts": "945e03df35e4f0f155346aea3875324d95962a2826c8cf98c9510292e01f463c",
+      "src/gto/SolverStoreIdentity.ts": "0b01057ff28cd11e563c3fe0589a98aebb7e74be09fa8de14370a9f80fbc0b9a",
+      "src/hub/ChannelHub.ts": "36be4fadb7a452b099199394a965ae0edd111bf17f19adde17d0f333453ef466",
+      "src/lightning/LightningFoldTiming.ts": "0368489b0d5b1b553de795b64812cfe961167a249a02b93f62cf01e5c0c2299a",
+      "src/lightning/LightningHandHost.ts": "56a8f9ea2cd0050af36ec39e2071083a00380ad9a0d5e3891b6a5c4b2184db72",
+      "src/lightning/RateLimitedLog.ts": "9362b6f4c0b0d8999729de4b16dd171222ec70f89bfeba5e6dd0207981d5e813",
+      "src/lightning/rpcErrors.ts": "1bd2c8a1d683fea049019497556b1ac0e9284216bb9206ec2a7538119a6766d3",
+      "src/maintenance/freezeState.ts": "a62aafecc405a0a2f8996edae559d4907de35a70a3cc50905d898cde3a8d7670",
+      "src/observability/Metrics.ts": "5d5675d3a325d8b434abb8569d213d9fcc327a6b77a92b13b7b290bce00757e7",
+      "src/observability/Tracing.ts": "b9b4b204623a9e7a3f359daa7ac8d936f8b2e35e6d208f986a6ad867d176c1e7",
+      "src/observability/engineInstruments.ts": "bb9fdbd9564522c94e9b7ed5c4e39a485d0183b6b1c9968d88aa778a922d90f1",
+      "src/observability/processMemory.ts": "bc13d4a0b1391bfe04fd2868b219622fce02d24daa660eb6517648c4664f8971",
+      "src/releaseIdentity.ts": "4a8e9a026beb3f9d09ce7c0c83fbe2e889b3930dabe2053be40761c6a0c09af1",
+      "src/scripts/featureAblationQualify.ts": "a0ec9d233b0ec27aadc3bc8424879ecfbcaee48a838cc22b34c60e3db752c04d",
+      "src/services/AdaptiveRefreshLoop.ts": "ea7fd98b81266a317ea5f82271c76ab39f27b53168d724ba84c2dbf9b74044f4",
+      "src/services/BrainTelemetryFlush.ts": "6ffccb850635d278ee315475448594d85d20217dcffa2524887635e9fc97f57d",
+      "src/services/GtoChartLoader.ts": "69dbea5987339e7e1efc1fa06d5ec72a4dd51a1e9ae8bfc344f5c56bfe5eeb3a",
+      "src/services/GtoPostflopLoader.ts": "9ef70e7b7691714b5722b83f5073106de68f2b820e132b6c038fc1c383e9dea9",
+      "src/services/GtoPostflopV31Loader.ts": "ecc4d9d9b7872a4fe289a5fdf90339202fc6eb804a570906967456038a52c49b",
+      "src/services/HorseBankroll.ts": "14837b9f97cea2bf6745ae238221148198c7c320485b03c7b131f4de93e3d2fb",
+      "src/services/HorseBehavior.ts": "96f885d1fe4c32ec43688ce8fba14284fe4526f1dd954b546b5e67ffdf7ec3cd",
+      "src/services/HorseBrainTelemetryPublisher.ts": "fefed8c2e9f0d0f5ceebd977cc57f7a6beed91bfcfcdfa860fd7c99d64b0128b",
+      "src/services/HorseDailyRollupContract.ts": "bd211f64a07fc7de9e8bb15acb31520f462bf9739dc2f9594df1b99ff6e5e664",
+      "src/services/HorseDailyRollupFacts.ts": "3db4a1a3930b4bf75b38c667611774d7726d2b22db1c9cf40b3a83299968a646",
+      "src/services/HorseDecisionJournal.ts": "a99afe9898acce1bd5208caa3a568f62c4134b42c56a61808fec72c8e2b10c26",
+      "src/services/HorseExploitHydrator.ts": "c173a0ef6de47283b5c30273d307144068978ee799fa632917df064f82b52568",
+      "src/services/HorseHandReview.ts": "85f6c1b113a328bd68e42ee09a1c253827ffac473f2c0d35afaab4940c241eef",
+      "src/services/HorseMindHydrator.ts": "c4e341a06c46d1beffa494c35fa0e76f4e80daec3aaa01d30b3f02892345b148",
+      "src/services/HorseMindPersistence.ts": "50f0d8f6881c681d3d6c69d653c519b76fa91c54c2f26679e28554855878b264",
+      "src/services/HorseOpponentMemory.ts": "8f8829ecfbcdc1215b6cb049da83d1ccee979970a1ff0ea2c599ddfd0c4c5af3",
+      "src/services/HorseOwnPublicHistory.ts": "f7ac132b66d152b61597b263dec2c02a7eff694877f84dd407bf38fff68ab3fd",
+      "src/services/HorsePlayStats.ts": "8e10af0663e6da463227a8586bfd1c01eafacc6aeea30f60eb7ff12100fd5a06",
+      "src/services/HorseTopUpStyle.ts": "9c28c21ff230473384660240a27ee2893c6677733402802c019f22ced81da314",
+      "src/services/TournamentBrainContext.ts": "baefcc65ad6d85d18b1e2cc26b0aa846ce297ca2c0f31760c210820a75e7b75c",
+      "src/services/cashAccountingBatchBudget.ts": "55d3f9871c7ca12bcaa6b433073f53a2780127abfca41375eb3389ccf3be4775",
+      "src/services/cashTablePlayEligibility.ts": "668fead95c74c8af2577d9582095ff1354b23d6bb28f8d04abe8af534e546f35",
+      "src/services/errorReporter.ts": "d34d2a1bd7b10e428e25d8ec5cc5d2573559aed4f40aeed2aafc576f4803f839",
+      "src/services/financialAlerts.ts": "4311729e7b02e221032d988c32bbf416b2601b4e000925df56d02d1124f77fff",
+      "src/services/financialPush.ts": "f77b5dbca7d279377975b8b2388cffec711d4aff66ed0956c7743ffbcabab19b",
+      "src/services/horseAcceptedRoster/acceptance.ts": "9e3efe886149883cc988c6cedc66cdef0ed6f86130b2bcb4860bf988d4d87dac",
+      "src/services/horseAcceptedRoster/schema.ts": "f06aec2b5b51a7065fbaaef0c6c62b613475676b03d4a5bafca31a5a58724326",
+      "src/services/horseCorrectiveReview/authority.ts": "283f2fd5e554d02c212031ed065b813f999622ca194ab0cc3386559b7ab5ac5a",
+      "src/services/horseCorrectiveReview/candidateCatalog.ts": "89e634cb302330b65135a546ec9c0d3b5d4beedd8cd50671804a47106c02fd20",
+      "src/services/horseCorrectiveReview/closedHeadsUpTournamentRiverReference.ts": "50db080118bcc6215a097d2e667dadc7a83ed474c1a221591f803dab3bd2313c",
+      "src/services/horseCorrectiveReview/domain.ts": "6028a2cebe7756500848db814a026682a49734a854b13e64871bf416fccb6464",
+      "src/services/horseCorrectiveReview/eligibility.ts": "960e2bde9335b3836608dc39f9c57bce3f1bef51f770f929b636eb28751c0ca8",
+      "src/services/horseCorrectiveReview/kernelAdmission.ts": "44138bd878fd1164117afd7784087474ac6d178c07740b015a739eb5e2aa18b6",
+      "src/services/horseCorrectiveReview/kernelApproval.ts": "047a80ceab0e6fbd8bd00e57bcaf3d380fccfad9a5d503fb8a547c63669af297",
+      "src/services/horseCorrectiveReview/kernelCatalog.ts": "e1cf4cffd89f64ebb0155715b60f68ba671a6bb2da8d42825fffb947595ebcef",
+      "src/services/horseCorrectiveReview/kernelComposition.ts": "9c0967b536f57f72189e80827f2df155e2182b024de24728b46f828e2ed38cb6",
+      "src/services/horseCorrectiveReview/kernelDefinition.ts": "b4946ff48c96a8a2372f27c4cee6072b6b510c0cd313ff7e4fdd361a958108c7",
+      "src/services/horseCorrectiveReview/kernelEligibility.ts": "a6aefff8df2fb938b3b9358092e0d029694b5f2488b6641130f611a3e10741f1",
+      "src/services/horseCorrectiveReview/kernelGenerationLedger.ts": "2f1665beaa863c8c4f54eb3caf46f4c943dde6794ea3193da03967b731c47abb",
+      "src/services/horseCorrectiveReview/kernelGenerationLedgerRules.d.mts": "80497e6562456f64a87896545d5a8e206ebd5c610c60f3b446424f49038ced45",
+      "src/services/horseCorrectiveReview/kernelGenerationLedgerRules.mjs": "33f34e9a3b5353009b0fa0d943f6d25c7627dc4744a7b5bd089872199d0a2bfb",
+      "src/services/horseCorrectiveReview/kernelModel.ts": "6e23a48841d79e37016ab8135e15c797c2cac3a7aa9d27624fd67545b89478b1",
+      "src/services/horseCorrectiveReview/kernelObjective.ts": "4dc46c548463b2e6ea0e1060e43924609873467280654e27e94f6bb202f9c779",
+      "src/services/horseCorrectiveReview/kernelOriginalInput.ts": "7273232f71aed021cd5529a475eef9cdcdb1a488394fbfaf4b40f19fa9a98f94",
+      "src/services/horseCorrectiveReview/kernelPolicyDigest.ts": "be7fb2c81e2a87368dc2e16a607eea1e1eab54a83c2606ada81a45d1bef21e5f",
+      "src/services/horseCorrectiveReview/kernelReceipt.ts": "b6207de9f9755f59167d6b45f459c4e3c74ddec5fb934ef3a0837b1704653aae",
+      "src/services/horseCorrectiveReview/kernelTournamentApproval.ts": "799b8e5231f271b1109a3c1bd245ebba285adb2eb718bc5fd445f890cd8bba23",
+      "src/services/horseCorrectiveReview/kernelTournamentCatalog.ts": "b146f073f953fbd31ec263ac10214ccf1870e11dd5c42d45bc8c092477cbec17",
+      "src/services/horseCorrectiveReview/kernelTournamentDefinition.ts": "27355644a92d300b45ba89edcbaedbc5fd30abb1daba32f5f163c4afdf461b46",
+      "src/services/horseCorrectiveReview/kernelTournamentEligibility.ts": "a3b4126d155016f545524bfd5ff638842984b107523a30476c1fe2d33740363b",
+      "src/services/horseCorrectiveReview/liveKernel.ts": "ed9f6dccc14ca5f0ea77018c9d0665a72475a3d8454cd3db11c94cd729c6cf63",
+      "src/services/horseCorrectiveReview/originalAction.ts": "ee0666e1745b63d28e181b096e3cd472fcec73b697c4c7720a49c1ba7eb84b38",
+      "src/services/horseCorrectiveReview/pairedHoldoutMeasurement.ts": "7f394739fce5435a6d01c108d63b5a2eefed350107b175119b02c3d5a8a009aa",
+      "src/services/horseCorrectiveReview/review.ts": "fd69945cd9e2ef8b306415d04baed1b30aaa7aeb419482f8f1913dc3d397c01b",
+      "src/services/horseCorrectiveReview/riverDecisionModel.ts": "bdd022d829c7cea32fc87cec438ca75e98982ee1ebef9765493efdf8f6c09fc9",
+      "src/services/horseCorrectiveReview/riverKernel.ts": "5900dee58cb78614bd0ac5a9b601550f7581a3c07cacbe3bf66f49b332530700",
+      "src/services/horseCorrectiveReview/riverReference.ts": "6c8fb365db88512ad599a45d6c9f73f554f055702cec44f4f7f8c955df49b1b2",
+      "src/services/horseCorrectiveReview/tournamentAcceptedFunding.ts": "e11ab8c19b80e095c7a6f77a97f2e07d5e49c3afa34344a2a67c2cae90439623",
+      "src/services/horseCorrectiveReview/tournamentAcceptedUtility.ts": "3e400acc5d4d76387c31507a0fa4e132bf4efee7b85220e9988fff93cf7bff1e",
+      "src/services/horseCorrectiveReview/tournamentIndependentReview.ts": "aea6bdcd5c0a1b936ad59f413862453adfa8d9a9aac6dbe9b09568f284936be3",
+      "src/services/horseCorrectiveReview/tournamentModelHoldout.ts": "a92f224eb65ec743d035a69f55e65abb2393f54877f016c2e3accbf85e5475e0",
+      "src/services/horseCorrectiveReview/tournamentRiverKernel.ts": "ff0753388565cfc75384fbef12aacf2996d9a62c923046707869f35bbb17c242",
+      "src/services/horseCorrectiveReview/tournamentRiverReference.ts": "66b7c6a14023cb14122f42bdaea19a3992f72a3968de35e5dfc792c476e9e674",
+      "src/services/horseDecisionJournal/config.ts": "2820eb099d2b0eb24052c62c7fb76c98fd9fb12f1241a01382eafd8e58ce2b2e",
+      "src/services/horseDecisionJournal/discard.ts": "dab4a72710475f0a0ae649a490b75c97f5016edf354db7ff23c03ab231696b0e",
+      "src/services/horseDecisionJournal/effects.ts": "e96e9ca7452e757ec23feda180f4dff83164eb216185b03e4b6557daf596d30c",
+      "src/services/horseDecisionJournal/lifecycle.ts": "6e5ffe2313f3e47930092c62c158fbde08be4469849686bbd3974f1a6d634f23",
+      "src/services/horseDecisionJournal/record.ts": "12ab232af9906fba0417f85ea7c83454a3158d367d0a353823a9b73a53a6adc7",
+      "src/services/horseDecisionJournal/review.ts": "2f456428e18fa86835c5c8c16e901411116c1f368bb6e13e95ce46d2c50b7ae4",
+      "src/services/onDemandTableWake.ts": "3bd21fb24afb00eba45210e2afe4cf2b414a5ad36a29f92388c78724c2ec6f53",
+      "src/services/operatorCashClose.ts": "0ccf8539cb576564ca7e43acfe2d410feeae0fd31805bf50dc67b8dedc480a8b",
+      "src/services/rakeAllocation.ts": "d00f50d180ce862c7e4175e2ef357efcb08e906b4513cf0f587e9870c9e8f8e0",
+      "src/services/supabase.ts": "809403f895a7e31207f92537d2aa1452ec3e8852f37b65259ee780166dbf9cf7",
+      "src/services/supabase/arenaPlayerName.ts": "dc179e9055f815ebaea4147da33c14eaed04dc938e8d5f1ec7e40bbd8492202b",
+      "src/services/supabase/bbj.ts": "993bc079ee5a6102cf41840a03c22bf8e25f7fa0e4ce70455e33175d18901e49",
+      "src/services/supabase/cashSessions.ts": "bc168601d0ba1d15e898b78043535fdc16e9425ede8cb977c764fa63e8e2d884",
+      "src/services/supabase/client.ts": "2a1e917e9282590854e40d753068f30d79210edf8dfc713f7f01d0f57222441a",
+      "src/services/supabase/dataActorContext.ts": "adfcb782154fd1991068464792a076161b9af2c0d7918dd1c4767d2e470aaf18",
+      "src/services/supabase/handFacts.ts": "29bfed1e885905324d8bf6ca62f8b52bf91877b789d61647dba87d09261db159",
+      "src/services/supabase/handHistory.ts": "9adcfa29ffd989fa0ae7cbab03bf939f1c771ca19c56899e82fb4ecc709c4488",
+      "src/services/supabase/handProjection.ts": "ebdbdb8f4f07712223075c606ea11dbeb0a7fb99fcd59952db3c25e28774436f",
+      "src/services/supabase/pagination.ts": "d5f9665e43bc6522a314b09cf50ebb405ec26ac6f3aa3325312f89d4ca20019d",
+      "src/services/supabase/rake.ts": "2b71b410bbe92cbdd838e677d31061a17475fe1326b126faa4e3a3bd28dd8e1f",
+      "src/services/supabase/realtimeCallbackContext.ts": "2e13f72c717e5821309031cb887ba24fd42fbf4307e4c0504e1ce5f9b9551c44",
+      "src/services/supabase/seatMoves.ts": "d885796826b1ee2b46c93f76c9ee81ba01c81accd10fc2eda10fac501a05c7bb",
+      "src/services/supabase/seats.ts": "b5c953c618a181b4c163f461fbfdb8bafeaa2233ab198fb5e517f084a9c79fd7",
+      "src/services/supabase/snapshots.ts": "c587f74160afd8126c4d251b025ac36a347ef939ed9b3dfcecb9a02823b23fe4",
+      "src/services/supabase/tableAvatar.ts": "697f64533ab1727bf358a1962e69ab0d00de5cd0f6e8c1f5aae7f5a780a256c5",
+      "src/services/supabase/tables.ts": "1b1253004d6d4545c28ac3ac47fc6f7d906fa4254fd680cf672066716397af59",
+      "src/services/supabase/tournamentManagerFence.ts": "a93b2f2f58e6cf1a0acc4d0a00a221034a8299292f558ceb9338579f7f6f2b98",
+      "src/services/supabase/wallets.ts": "803fbf06f5887cc421e26caa78d206652f0c96630722d0e51b4175f6d875dc80",
+      "src/tournament/payoutMath.ts": "511137bb456eb55de98c20abf985f60e7b9d0f40f912d6b670e5a5d39d994094",
+      "src/tournament/tournamentUnit.ts": "3e54fa0e9382f42df1fb46431d48d988b6de2ed3c0edc365164c31ed0a14af39",
+      "src/types.ts": "ad53fec448d3495cb1c9cdadf1aadb9952c90f89b32d6ca09575f7fd5e1e2a95"
+    },
+    "runtimeSourceDigest": "5a919fa064c9dab7ad13427809533bf7bf5ee999f6e0b080f633c583f06ae070",
+    "policyDigests": {
+      "phase8": "d757f4946db34a4e3d1e4c8e382cf709587549fd4069dd5094f9bdd4616a8b26",
+      "phase10": "0b00ea8550faf2514cf3b88218639d932fdb0f35dde98c1e38fe3a524d4d3d06",
+      "phase11.plo5": "3d12ac4548588d3d8dfefbf62870e0f31d5ad8a526f3f1e6e582539eae3de5b5",
+      "phase11.plo6": "1b5abe483452613a3f6454c35931d44d6a3ccb773965dfeb80cf2aaf5fbbdc6e",
+      "phase11.plo8": "c0d680108d109dc3805362a61cb298a4c13352cfe040ecd0a81cedc50d109aed",
+      "phase12.short_deck": "a703577feb609a91b8290fd935513ab7ae5dad341c46f574db07c1e7bd9f4d56",
+      "phase12.pineapple": "7e88e68dc7d39f4251a4379a1dbf0a807613705705eccb316202c292c740f713",
+      "phase12.flh": "73b215fc8f2bb0f7d27d3d70528b90eb25d508439994578e3a90a2fb576d6895",
+      "phase12.flo8": "7378ec935caec274de8ae3c5f4ccb5c1524a54dc9e33b5346a98d9f8effcb38b",
+      "phase13.nlh": "92a3535b5bb21a4002119560a5980fd39f52e07a800ccf69b45ad784769eac8e",
+      "phase13.plo4": "d86b8e77282eba3b5e39deb56b55e14b3525bc8851a1775395d9d0b13de7f859",
+      "phase13.plo5": "9264c6aaf7a1d1029b9edad2145b51f46af2fb3983ce23ae33166794a742d0b0",
+      "phase13.plo6": "e7ab854939e26f9646bb38cdcf9684978bc618078aba98aae6f9ba2d914f90b2",
+      "phase14.nlh-cash.admission": "ccdfdaa7c7453971eefd417292eb9e3d82754db3de8c9ca9629fa238a517aed6",
+      "phase14.nlh-mtt.admission": "bdd7438c6579f12e62704a7997336e87e7f2f82b5d91dd98bdbbb713520e0863",
+      "phase14.nlh-sng.admission": "43879491bf858366920a1b3dc076269c246241df746539be08a8ec42789f6133",
+      "phase14.nlh-spin.admission": "5514f6f64ccbd03120c355faf01393fef55c068bc12aad8d1e1d26230372172c",
+      "phase14.nlh-hu_sng.admission": "6e37f9b587ca121cce5e861ab5c5b096890cb4ac2d2d35c4c90a091899b85d5e",
+      "phase14.short_deck-cash.admission": "6d2b60e3dfc4bd84ba7ac5e4f59b42988070194028f7d50a84716ad2eae838e9",
+      "phase14.flh-cash.admission": "23f6c3464de013fc1fc992b4b59142b67b0f3aaebafc2e3f5f8e2190983a7145",
+      "phase14.pineapple-cash.admission": "f56a3be6ac8d108b88f888cc1cf8ca0f0e80c3ce559c71f007119cae346560f6",
+      "phase14.plo4-cash.admission": "b24698927aa58823410e19eca6bbc1fbd2b4cc482a30be67efb5e51c151bb95e",
+      "phase14.plo5-cash.admission": "a7f9b684ff24c227a219a43702938c5e2ac6d1a6e394ec4ba646a2b63d05b67d",
+      "phase14.plo6-cash.admission": "cdb79e01341cef8927df0d1f0785053c9559b9475c195833abddbe7c89766871",
+      "phase14.plo8-cash.admission": "3f5d49b35e748944433830ab37cad6b85f2e24618cec9ab3c39618b7224650d9",
+      "phase14.flo8-cash.admission": "33ec6c4ba138e27c2857d3f74972234bfd1c2caa8455b366b498cde834a18145"
+    },
+    "policyDigestsDigest": "11330eea49ba967de683d494b47289c973e475ae5b092a827fd4d3766c249445",
+    "dependencyDigest": "b9b88b0154db80a8a77a8de040834b41c53851465c793569acf2b5a7d6a80b74",
+    "storeInputsDigest": "6c1f9584009ddca56c38ee784f11644e9ae1388f6199fbf1d864d22e7bc0a92c",
+    "admissionDigest": "fed20d2f1e5f71d5b7933471b6534b67ed34da14a002f8852251c0018289d6c1",
+    "historyDigest": "4d2b5b462bfb505a9aa4e1383f2ebeee2cc0f5b940d019611400f4976f263c2d",
+    "maxAttempts": 3,
+    "pooledPublicProfiles": {
+      "kind": "empty_for_local_simulation",
+      "bootstrap": null,
+      "profiles": 0
+    },
+    "flags": {
+      "candidate": {
+        "v53Pressure": true
+      },
+      "reference": {
+        "v53Pressure": false
+      }
+    },
+    "population": "v53_pressure_stress_v1",
+    "clock": {
+      "policyDateMs": 1792972800000,
+      "publicHistoryAvailableAtMs": 1792969200000,
+      "warmSeed": 24307777
+    },
+    "profiles": [
+      {
+        "id": "v53-nlh-6max-2dealt-100bb",
+        "variant": "nlh",
+        "seats": 2,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seats": 4,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-nlh-6max-6dealt-40bb",
+        "variant": "nlh",
+        "seats": 6,
+        "stackBB": 40,
+        "weight": 1
+      },
+      {
+        "id": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seats": 6,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seats": 6,
+        "stackBB": 200,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seats": 2,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo4-6max-4dealt-100bb",
+        "variant": "plo4",
+        "seats": 4,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo4-6max-6dealt-40bb",
+        "variant": "plo4",
+        "seats": 6,
+        "stackBB": 40,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seats": 6,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seats": 6,
+        "stackBB": 200,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seats": 2,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seats": 4,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seats": 6,
+        "stackBB": 40,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seats": 6,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seats": 6,
+        "stackBB": 200,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seats": 2,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seats": 4,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo6-6max-6dealt-40bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 40,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 100,
+        "weight": 1
+      },
+      {
+        "id": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seats": 6,
+        "stackBB": 200,
+        "weight": 1
+      }
+    ],
+    "heldoutSeeds": [25301109, 25302231, 25303347],
+    "matrix": [
+      {
+        "key": "v53-nlh-6max-2dealt-100bb-s25301109-k00",
+        "profileId": "v53-nlh-6max-2dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38016
+      },
+      {
+        "key": "v53-nlh-6max-2dealt-100bb-s25302231-k00",
+        "profileId": "v53-nlh-6max-2dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38016
+      },
+      {
+        "key": "v53-nlh-6max-2dealt-100bb-s25303347-k00",
+        "profileId": "v53-nlh-6max-2dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38016
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25301109-k00",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25301109-k01",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 67392,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25301109-k02",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 134784,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25302231-k00",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25302231-k01",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 67392,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25302231-k02",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 134784,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25303347-k00",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25303347-k01",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 67392,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-4dealt-100bb-s25303347-k02",
+        "profileId": "v53-nlh-6max-4dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 134784,
+        "pairs": 67392
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-40bb-s25301109-k00",
+        "profileId": "v53-nlh-6max-6dealt-40bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 63936
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-40bb-s25302231-k00",
+        "profileId": "v53-nlh-6max-6dealt-40bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 63936
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-40bb-s25303347-k00",
+        "profileId": "v53-nlh-6max-6dealt-40bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 63936
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25301109-k00",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 97344
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25301109-k01",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 97344,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25301109-k02",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 194112,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25301109-k03",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 290880,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25302231-k00",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 97344
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25302231-k01",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 97344,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25302231-k02",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 194112,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25302231-k03",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 290880,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25303347-k00",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 97344
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25303347-k01",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 97344,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25303347-k02",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 194112,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-100bb-s25303347-k03",
+        "profileId": "v53-nlh-6max-6dealt-100bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 290880,
+        "pairs": 96768
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k00",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k01",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 122688,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k02",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 245376,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k03",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 368064,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k04",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 4,
+        "firstPair": 490752,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k05",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 5,
+        "firstPair": 613440,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k06",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 6,
+        "firstPair": 736128,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k07",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 7,
+        "firstPair": 858816,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k08",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 8,
+        "firstPair": 981504,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25301109-k09",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25301109,
+        "shard": 9,
+        "firstPair": 1104192,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k00",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k01",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 122688,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k02",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 245376,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k03",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 368064,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k04",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 4,
+        "firstPair": 490752,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k05",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 5,
+        "firstPair": 613440,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k06",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 6,
+        "firstPair": 736128,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k07",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 7,
+        "firstPair": 858816,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k08",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 8,
+        "firstPair": 981504,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25302231-k09",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25302231,
+        "shard": 9,
+        "firstPair": 1104192,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k00",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k01",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 122688,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k02",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 245376,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k03",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 368064,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k04",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 4,
+        "firstPair": 490752,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k05",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 5,
+        "firstPair": 613440,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k06",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 6,
+        "firstPair": 736128,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k07",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 7,
+        "firstPair": 858816,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k08",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 8,
+        "firstPair": 981504,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-nlh-6max-6dealt-200bb-s25303347-k09",
+        "profileId": "v53-nlh-6max-6dealt-200bb",
+        "variant": "nlh",
+        "seed": 25303347,
+        "shard": 9,
+        "firstPair": 1104192,
+        "pairs": 122688
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 62208
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 62208,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 62208
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 62208,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 62208
+      },
+      {
+        "key": "v53-plo4-6max-2dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo4-6max-2dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 62208,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo4-6max-4dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo4-6max-4dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 81792
+      },
+      {
+        "key": "v53-plo4-6max-4dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo4-6max-4dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 81792
+      },
+      {
+        "key": "v53-plo4-6max-4dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo4-6max-4dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 81792
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-40bb-s25301109-k00",
+        "profileId": "v53-plo4-6max-6dealt-40bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 29376
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-40bb-s25302231-k00",
+        "profileId": "v53-plo4-6max-6dealt-40bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 29376
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-40bb-s25303347-k00",
+        "profileId": "v53-plo4-6max-6dealt-40bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 29376
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 78912,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25301109-k02",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 157824,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25301109-k03",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 236736,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 78912,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25302231-k02",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 157824,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25302231-k03",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 236736,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 78912,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25303347-k02",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 157824,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-100bb-s25303347-k03",
+        "profileId": "v53-plo4-6max-6dealt-100bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 236736,
+        "pairs": 78912
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k00",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k01",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 75456,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k02",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 150912,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k03",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 226368,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k04",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 4,
+        "firstPair": 301248,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k05",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 5,
+        "firstPair": 376128,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25301109-k06",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25301109,
+        "shard": 6,
+        "firstPair": 451008,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k00",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k01",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 75456,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k02",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 150912,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k03",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 226368,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k04",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 4,
+        "firstPair": 301248,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k05",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 5,
+        "firstPair": 376128,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25302231-k06",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25302231,
+        "shard": 6,
+        "firstPair": 451008,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k00",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k01",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 75456,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k02",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 150912,
+        "pairs": 75456
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k03",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 226368,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k04",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 4,
+        "firstPair": 301248,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k05",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 5,
+        "firstPair": 376128,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo4-6max-6dealt-200bb-s25303347-k06",
+        "profileId": "v53-plo4-6max-6dealt-200bb",
+        "variant": "plo4",
+        "seed": 25303347,
+        "shard": 6,
+        "firstPair": 451008,
+        "pairs": 74880
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 52992
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 52992,
+        "pairs": 52416
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 52992
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 52992,
+        "pairs": 52416
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 52992
+      },
+      {
+        "key": "v53-plo5-6max-2dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo5-6max-2dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 52992,
+        "pairs": 52416
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 41472,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 41472,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-4dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo5-6max-4dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 41472,
+        "pairs": 41472
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25301109-k00",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25301109-k01",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 61632,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25301109-k02",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 123264,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25301109-k03",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 184896,
+        "pairs": 61056
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25302231-k00",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25302231-k01",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 61632,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25302231-k02",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 123264,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25302231-k03",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 184896,
+        "pairs": 61056
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25303347-k00",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25303347-k01",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 61632,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25303347-k02",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 123264,
+        "pairs": 61632
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-40bb-s25303347-k03",
+        "profileId": "v53-plo5-6max-6dealt-40bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 184896,
+        "pairs": 61056
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 59328
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 59328,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k02",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 118080,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k03",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 176832,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k04",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 4,
+        "firstPair": 235584,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k05",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 5,
+        "firstPair": 294336,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25301109-k06",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 6,
+        "firstPair": 353088,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 59328
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 59328,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k02",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 118080,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k03",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 176832,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k04",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 4,
+        "firstPair": 235584,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k05",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 5,
+        "firstPair": 294336,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25302231-k06",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 6,
+        "firstPair": 353088,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 59328
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 59328,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k02",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 118080,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k03",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 176832,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k04",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 4,
+        "firstPair": 235584,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k05",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 5,
+        "firstPair": 294336,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-100bb-s25303347-k06",
+        "profileId": "v53-plo5-6max-6dealt-100bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 6,
+        "firstPair": 353088,
+        "pairs": 58752
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k00",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k01",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 65088,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k02",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 130176,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k03",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 194688,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k04",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 4,
+        "firstPair": 259200,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k05",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 5,
+        "firstPair": 323712,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k06",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 6,
+        "firstPair": 388224,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k07",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 7,
+        "firstPair": 452736,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k08",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 8,
+        "firstPair": 517248,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25301109-k09",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25301109,
+        "shard": 9,
+        "firstPair": 581760,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k00",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k01",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 65088,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k02",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 130176,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k03",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 194688,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k04",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 4,
+        "firstPair": 259200,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k05",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 5,
+        "firstPair": 323712,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k06",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 6,
+        "firstPair": 388224,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k07",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 7,
+        "firstPair": 452736,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k08",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 8,
+        "firstPair": 517248,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25302231-k09",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25302231,
+        "shard": 9,
+        "firstPair": 581760,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k00",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k01",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 65088,
+        "pairs": 65088
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k02",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 130176,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k03",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 194688,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k04",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 4,
+        "firstPair": 259200,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k05",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 5,
+        "firstPair": 323712,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k06",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 6,
+        "firstPair": 388224,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k07",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 7,
+        "firstPair": 452736,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k08",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 8,
+        "firstPair": 517248,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo5-6max-6dealt-200bb-s25303347-k09",
+        "profileId": "v53-plo5-6max-6dealt-200bb",
+        "variant": "plo5",
+        "seed": 25303347,
+        "shard": 9,
+        "firstPair": 581760,
+        "pairs": 64512
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 47808,
+        "pairs": 47232
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 47808,
+        "pairs": 47232
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-2dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo6-6max-2dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 47808,
+        "pairs": 47232
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 38592,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 38592,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-4dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo6-6max-4dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 38592,
+        "pairs": 38592
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-40bb-s25301109-k00",
+        "profileId": "v53-plo6-6max-6dealt-40bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65664
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-40bb-s25302231-k00",
+        "profileId": "v53-plo6-6max-6dealt-40bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65664
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-40bb-s25303347-k00",
+        "profileId": "v53-plo6-6max-6dealt-40bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 65664
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25301109-k00",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 50688
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25301109-k01",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 50688,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25301109-k02",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 100800,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25302231-k00",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 50688
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25302231-k01",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 50688,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25302231-k02",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 100800,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25303347-k00",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 50688
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25303347-k01",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 50688,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-100bb-s25303347-k02",
+        "profileId": "v53-plo6-6max-6dealt-100bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 100800,
+        "pairs": 50112
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25301109-k00",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25301109-k01",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 1,
+        "firstPair": 48384,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25301109-k02",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 2,
+        "firstPair": 96768,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25301109-k03",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25301109,
+        "shard": 3,
+        "firstPair": 144576,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25302231-k00",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25302231-k01",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 1,
+        "firstPair": 48384,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25302231-k02",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 2,
+        "firstPair": 96768,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25302231-k03",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25302231,
+        "shard": 3,
+        "firstPair": 144576,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25303347-k00",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 0,
+        "firstPair": 0,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25303347-k01",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 1,
+        "firstPair": 48384,
+        "pairs": 48384
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25303347-k02",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 2,
+        "firstPair": 96768,
+        "pairs": 47808
+      },
+      {
+        "key": "v53-plo6-6max-6dealt-200bb-s25303347-k03",
+        "profileId": "v53-plo6-6max-6dealt-200bb",
+        "variant": "plo6",
+        "seed": 25303347,
+        "shard": 3,
+        "firstPair": 144576,
+        "pairs": 47808
+      }
+    ],
+    "interval": {
+      "method": "two-sided 99% normal (Wald) interval on the stratified mean: T +/- z * sqrt(sum w_p^2 s_p^2 / n_p), z = Phi^-1(0.995), s_p^2 the unbiased within-profile variance",
+      "z": 2.5758293035489004,
+      "edgeworthCoverageErrorMax": 0.001,
+      "minimumPairsPerProfileInCell": 10000
+    },
+    "thresholds": {
+      "primaryLowerBoundAboveBb100": 0,
+      "eachSeedPointEstimateAboveBb100": 0,
+      "everyCriticalCellLowerBoundAtLeastBb100": -10
+    },
+    "criticalCells": ["profile", "relative_position", "depth"],
+    "coverage": {
+      "opportunityDenominator": "not_measured",
+      "byProfile": {
+        "v53-nlh-6max-2dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-nlh-6max-4dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_three_bet_priced": 1
+          }
+        },
+        "v53-nlh-6max-6dealt-40bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-nlh-6max-6dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-nlh-6max-6dealt-200bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo4-6max-2dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo4-6max-4dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo4-6max-6dealt-40bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo4-6max-6dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo4-6max-6dealt-200bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo5-6max-2dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo5-6max-4dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo5-6max-6dealt-40bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo5-6max-6dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo5-6max-6dealt-200bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo6-6max-2dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo6-6max-4dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo6-6max-6dealt-40bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo6-6max-6dealt-100bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        },
+        "v53-plo6-6max-6dealt-200bb": {
+          "candidateHeroDecisionsMinimum": 1,
+          "referenceHeroDecisionsMinimum": 1,
+          "acceptedHeroContrastsMinimum": 1,
+          "evaluationCounterMinimums": {
+            "v53_pressure_preflop": 1
+          }
+        }
+      }
+    }
+  }
+}

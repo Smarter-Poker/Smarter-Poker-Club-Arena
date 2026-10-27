@@ -1,0 +1,49 @@
+{
+  "schema": "horse-feature-ablation-frozen-stores-v1",
+  "version": "2026-10-27-mcp-current-v1",
+  "purpose": "Offline qualification input only; not included in engine Docker context",
+  "maxUncompressedBytes": 67108864,
+  "maxCompressedBytes": 8388608,
+  "files": [
+    {
+      "file": "chart-store.json.gz",
+      "gzipBytes": 18939,
+      "sha256": "a78cee58487dddb315224e7a743f8872e4ed3424b4fe10153dff27a2927cf4cd",
+      "uncompressedBytes": 472022,
+      "uncompressedSha256": "61cfcc4f0db74bd336483587dff8bbfd8c94053254f224ded53b45fe6fc0ba94",
+      "store": "chart_store",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 240,
+        "digest": "2c8a2d9f448e5dd22f4433faeb40f70ac6a111d6c7e7bacae89e4fbf106a5dbf",
+        "revision": "2026-07-19T15:11:48.555537+00:00"
+      }
+    },
+    {
+      "file": "postflop-store.json.gz",
+      "gzipBytes": 6577667,
+      "sha256": "c8c62bf88c3b06aed84b274dc59404eec72316ba0f7a447f943f431682ee476e",
+      "uncompressedBytes": 39754706,
+      "uncompressedSha256": "1bb5acd8a609035e900e7a191958eca44aef6955d0e5b9db92eb75990964f5ec",
+      "store": "solver_store:postflop",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 7747,
+        "digest": "dff78313b437357d3657fe256fc3b3b82cd4740afffe9125e530dfcc79f57c1d",
+        "revision": "2026-09-03T18:18:13.594197+00:00"
+      }
+    }
+  ],
+  "provenance": {
+    "file": "capture-receipt.json",
+    "sha256": "bc52444b98e836df762ba263ea10b715fa393b4ff8db7645adbd694d0d601ac2"
+  },
+  "boundaries": {
+    "file": "capture-boundaries.json",
+    "sha256": "03afe729b46df43700dbd76c65cc0b003f3da3c3e5afc430db51d2b8e21177e6"
+  },
+  "v31": {
+    "rows": 0,
+    "dataset": null
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema": "horse-feature-ablation-store-boundary-v1",
+  "source": "Actual configured Supabase execute_sql read responses retained during fresh row capture",
+  "before": {
+    "read_at": "2026-10-27 02:34:35.299368+00",
+    "chart_count": 240,
+    "chart_latest": "2026-07-19 15:11:48.555537+00",
+    "postflop_count": 7747,
+    "postflop_latest": "2026-09-03 18:18:13.594197+00",
+    "active_v31_cells": 0
+  },
+  "after": {
+    "read_at": "2026-10-27 02:40:02.537725+00",
+    "chart_count": 240,
+    "chart_latest": "2026-07-19 15:11:48.555537+00",
+    "postflop_count": 7747,
+    "postflop_latest": "2026-09-03 18:18:13.594197+00",
+    "active_v31_cells": 0
+  }
+}

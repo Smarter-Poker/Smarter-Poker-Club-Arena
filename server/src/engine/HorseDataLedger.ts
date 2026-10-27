@@ -721,6 +721,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Combo draw pressure'
   ),
   flag(
+    'riverPositionDefense',
+    'candidate-only priced HU cash river defense against a credible wide entrant whose own public conditional last-to-act betting rate is excessive; default off pending independent qualification',
+    'River position defense'
+  ),
+  flag(
     'v53Pressure',
     'read-gated pressure on a credibly aggressive human: wider in-position 3-bets, flop/turn value and semi-bluff raises of a wide bettor, river bluffs into a credible over-folder (league v53_pressure)',
     'V53'
@@ -958,6 +963,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'riverCallSDWeak',
     '... shown as one pair or worse (a light river call)',
     'HorseMind.riverCallLightTendency -> HorseLogic river bluff/thin-value read'
+  ),
+  mind(
+    'riverLastToActOpps',
+    'own public observer-window last-to-act river opportunities, reconstructed from original accepted history; no pooled persistence claim',
+    'HorseMind.riverLastToActRead / candidate riverPositionDefense'
+  ),
+  mind(
+    'riverLastToActBets',
+    'bets among those same last-to-act river opportunities, not a bluff count',
+    'HorseMind.riverLastToActRead / candidate riverPositionDefense'
   ),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
@@ -1642,6 +1657,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (maniac pressure)',
     "a maniac raised or is still to act: its shoves and re-raises priced by equity, opens capped to what continues, no bluff raises (Dan: 'NOT RAISE A HAND WITH THE INTENTION OF FOLDING')",
     'OPPX'
+  ),
+  receipt(
+    'river_position_defense_evaluated',
+    'HorseLogic.maniacCallDown',
+    'conditional public river rate admitted the existing range/price recovery; evaluation, not a bluff verdict or accepted-use proof',
+    'River position defense'
+  ),
+  receipt(
+    'river_position_defense_call',
+    'HorseLogic.maniacCallDown',
+    'the original fold became a priced call under the conditional river candidate; proposal only until authoritative action acceptance',
+    'River position defense'
   ),
   receipt(
     'maniac_call_down_checked',

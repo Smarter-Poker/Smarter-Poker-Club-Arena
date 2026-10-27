@@ -29,7 +29,8 @@ export interface HorseDecisionReadFrame {
     | 'horse-decision-reads-v3'
     | 'horse-decision-reads-v4'
     | 'horse-decision-reads-v5'
-    | 'horse-decision-reads-v6';
+    | 'horse-decision-reads-v6'
+    | 'horse-decision-reads-v7';
   readonly bytes: number;
   readonly sha256: string;
   readonly json: string;
@@ -49,7 +50,12 @@ const WINNER_VERSION = 'horse-decision-reads-v5';
  * frame always carries winnerReads; a view without winner evidence travels as
  * an empty list, which a sandbox reads exactly like an absent one. */
 const RIVER_CALL_VERSION = 'horse-decision-reads-v6';
-const winnered = (version: unknown) => version === WINNER_VERSION || version === RIVER_CALL_VERSION;
+/** V7 appends the conditional public river opportunities to the sidecar only.
+ * Zero/absent new evidence preserves exact predecessor bytes. */
+const RIVER_POSITION_VERSION = 'horse-decision-reads-v7';
+const rivered = (version: unknown) =>
+  version === RIVER_CALL_VERSION || version === RIVER_POSITION_VERSION;
+const winnered = (version: unknown) => version === WINNER_VERSION || rivered(version);
 const exploited = (version: unknown) => version === EXPLOIT_VERSION || winnered(version);
 const windowed = (version: unknown) => version === WINDOW_VERSION || exploited(version);
 const FIELDS = [
@@ -89,9 +95,20 @@ const RIVER_CALL_FIELDS = [
   'riverCallSDWeak',
 ] as const satisfies readonly (keyof OpponentStats)[];
 // A new consumed statistic must be considered explicitly in this codec.
+const RIVER_POSITION_FIELDS = [
+  'riverLastToActOpps',
+  'riverLastToActBets',
+] as const satisfies readonly (keyof OpponentStats)[];
+const riverFields = (version: unknown) =>
+  version === RIVER_POSITION_VERSION
+    ? [...RIVER_CALL_FIELDS, ...RIVER_POSITION_FIELDS]
+    : RIVER_CALL_FIELDS;
 const completeFields: Exclude<
   keyof OpponentStats,
-  (typeof FIELDS)[number] | (typeof RIVER_CALL_FIELDS)[number] | 'sourceWindow'
+  | (typeof FIELDS)[number]
+  | (typeof RIVER_CALL_FIELDS)[number]
+  | (typeof RIVER_POSITION_FIELDS)[number]
+  | 'sourceWindow'
 > extends never
   ? true
   : false = true;
@@ -105,7 +122,8 @@ type Body = {
     | typeof WINDOW_VERSION
     | typeof EXPLOIT_VERSION
     | typeof WINNER_VERSION
-    | typeof RIVER_CALL_VERSION;
+    | typeof RIVER_CALL_VERSION
+    | typeof RIVER_POSITION_VERSION;
   winnerReads?: Rows<HorseWinnerReadRow>;
   riverCalls?: Rows<number[]>;
   scopedRiverCalls?: Rows<number[]>;
@@ -210,7 +228,7 @@ function validateBody(
       ...(windowed(value.version) ? ['statsWindows', 'scopedWindows'] : []),
       ...(exploited(value.version) ? ['exploit'] : []),
       ...(winnered(value.version) ? ['winnerReads'] : []),
-      ...(value.version === RIVER_CALL_VERSION ? ['riverCalls', 'scopedRiverCalls'] : []),
+      ...(rivered(value.version) ? ['riverCalls', 'scopedRiverCalls'] : []),
       ...(planContext === undefined ? [] : ['planContext']),
       'actors',
       'handKey',
@@ -272,11 +290,16 @@ function validateBody(
     )
       return fail();
   }
-  if (value.version === RIVER_CALL_VERSION) {
+  if (rivered(value.version)) {
     const aligned = (rows: unknown, statRows: Rows<number[]>, allowed: ReadonlySet<string>) =>
-      validRows(rows, allowed, (v) => numbers(v, RIVER_CALL_FIELDS.length)) &&
+      validRows(rows, allowed, (v) => numbers(v, riverFields(value.version).length)) &&
       (rows as Rows<number[]>).length === statRows.length &&
-      (rows as Rows<number[]>).every(([id], i) => id === statRows[i][0]);
+      (rows as Rows<number[]>).every(
+        ([id, v], i) =>
+          id === statRows[i][0] &&
+          (value.version !== RIVER_POSITION_VERSION ||
+            (Number.isSafeInteger(v[2]) && Number.isSafeInteger(v[3]) && v[3] <= v[2]))
+      );
     if (
       !aligned(value.riverCalls, value.stats as Rows<number[]>, b.stats) ||
       !aligned(value.scopedRiverCalls, value.scoped as Rows<number[]>, b.scoped)
@@ -318,6 +341,7 @@ export function encodeHorseDecisionReads(
           // A row carries both river-call counters or neither (a view built
           // before they existed); never one alone.
           ...(Object.hasOwn(row, RIVER_CALL_FIELDS[0]) ? RIVER_CALL_FIELDS : []),
+          ...(Object.hasOwn(row, RIVER_POSITION_FIELDS[0]) ? RIVER_POSITION_FIELDS : []),
           ...(Object.hasOwn(row, 'sourceWindow') ? ['sourceWindow'] : []),
         ])
       )
@@ -325,7 +349,12 @@ export function encodeHorseDecisionReads(
       return [id, FIELDS.map((f) => row[f])];
     });
   const riverCallRows = (map: Map<string, OpponentStats>): Rows<number[]> =>
-    [...map].map(([id, row]) => [id, RIVER_CALL_FIELDS.map((f) => row[f] ?? 0)]);
+    [...map].map(([id, row]) => [
+      id,
+      (hasRiverPosition ? [...RIVER_CALL_FIELDS, ...RIVER_POSITION_FIELDS] : RIVER_CALL_FIELDS).map(
+        (f) => row[f] ?? 0
+      ),
+    ]);
   // Do not alter predecessor bytes for metadata-absent historical views.
   const boundedStats = bounded(view.stats, b.stats.size);
   const boundedScoped = bounded(view.scoped, b.scoped.size);
@@ -339,11 +368,18 @@ export function encodeHorseDecisionReads(
   const hasWinner = view.winnerReads !== undefined;
   if (hasWinner && (!(view.winnerReads!.seen instanceof Set) || view.winnerReads!.seen.size !== 0))
     return fail();
-  const hasRiverCalls = [boundedStats, boundedScoped].some((rows) =>
+  const hasRiverPosition = [boundedStats, boundedScoped].some((rows) =>
     rows.some(
-      ([, row]) => object(row) && RIVER_CALL_FIELDS.some((f) => finite(row[f]) && row[f] > 0)
+      ([, row]) => object(row) && RIVER_POSITION_FIELDS.some((f) => finite(row[f]) && row[f] > 0)
     )
   );
+  const hasRiverCalls =
+    hasRiverPosition ||
+    [boundedStats, boundedScoped].some((rows) =>
+      rows.some(
+        ([, row]) => object(row) && RIVER_CALL_FIELDS.some((f) => finite(row[f]) && row[f] > 0)
+      )
+    );
   const hasWindows =
     hasRiverCalls ||
     hasWinner ||
@@ -354,17 +390,19 @@ export function encodeHorseDecisionReads(
   const windows = (map: Map<string, OpponentStats>): Rows<HorseObservationWindow> =>
     [...map].map(([id, row]) => [id, normalizeHorseObservationWindow(row.sourceWindow)]);
   const body: Body = {
-    version: hasRiverCalls
-      ? RIVER_CALL_VERSION
-      : hasWinner
-        ? WINNER_VERSION
-        : hasExploit
-          ? EXPLOIT_VERSION
-          : hasWindows
-            ? WINDOW_VERSION
-            : planContext === undefined
-              ? VERSION
-              : ALLOCATED_VERSION,
+    version: hasRiverPosition
+      ? RIVER_POSITION_VERSION
+      : hasRiverCalls
+        ? RIVER_CALL_VERSION
+        : hasWinner
+          ? WINNER_VERSION
+          : hasExploit
+            ? EXPLOIT_VERSION
+            : hasWindows
+              ? WINDOW_VERSION
+              : planContext === undefined
+                ? VERSION
+                : ALLOCATED_VERSION,
     ...(hasWindows
       ? { statsWindows: windows(view.stats), scopedWindows: windows(view.scoped) }
       : {}),
@@ -452,6 +490,14 @@ export function decodeHorseDecisionReads(
           ...Object.fromEntries(FIELDS.map((f, i) => [f, values[i]])),
           // v1-v5 frames predate the river-call counters: no sample, read as 0.
           ...Object.fromEntries(RIVER_CALL_FIELDS.map((f, j) => [f, riverCalls?.[i][1][j] ?? 0])),
+          ...Object.fromEntries(
+            RIVER_POSITION_FIELDS.map((f, j) => [
+              f,
+              body.version === RIVER_POSITION_VERSION
+                ? (riverCalls?.[i][1][j + RIVER_CALL_FIELDS.length] ?? 0)
+                : 0,
+            ])
+          ),
           ...(windows ? { sourceWindow: normalizeHorseObservationWindow(windows[i][1]) } : {}),
         } as unknown as OpponentStats,
       ])

@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8337",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 rolled back at16:50 because its unchanged private temporary payer-proof table REVOKE was mistaken for a schema migration. Native PG17 actual event and original reserve helper reproduced the failure and passed the exact command-tag correction while CREATE ALTER DROP and maintenance/audit authorities stayed intact. Installed once through maintained route outside the DDL window, with no override in any financial session. Exact guard function postimages/metadata/runtime ACLs and original source authority were read back. Only authoritative GRANT/REVOKE event tags classify as non-schema permission churn; all public DDL/advisory/audit branches and private TEMP ACLs remain unchanged. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027142050",
+      "name": "deleted_reserves_reuse_unchanged_payer_proofs",
+      "file": "supabase/migrations/20261027142050_deleted_reserves_reuse_unchanged_payer_proofs.sql",
+      "md5": "e098d99bde7c0dc6c3c8f44483f3cc08",
+      "appliedToProductionAt": "2026-10-27T14:43:53.426Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and all3 owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     }
   ]
 }

@@ -76,6 +76,13 @@ These forecasts do not substitute for actual held-out trust or effect gates.
 
 Final sizing uses fresh pilots on protected b935999c78011ebfc3acbfe67f299fe80863a39f.
 Earlier proposed 43d attempts remain retained and are excluded from final sizing.
+Before any held-out deal, the source binding was refreshed to protected
+857b756726fecd4948938ed8cf537dbb5f128e2c. The
+[source rebind receipt](evidence/feature-ablation/source-rebind-2026-10-27.json)
+records all eleven changed inputs, their path equivalence for this controlled
+physical simulation, and the genuinely new source-derived admission keys.
+Original store/history inputs and the blind dispersion, allocation, seeds and
+gates are retained; the historical pilots are not relabeled as new-source runs.
 The locked JSON plans bind actual default admissions, the maintained policy
 source closure and frozen store/history inputs; protected merge remains required
 before held-outs. The named local simulation has empty pooled

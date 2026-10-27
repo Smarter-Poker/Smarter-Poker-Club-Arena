@@ -56,9 +56,16 @@ Held-out intervals still must independently pass their actual trust and effect
 gates; the forecast grants no qualification.
 
 Final pilot source is protected b935999c78011ebfc3acbfe67f299fe80863a39f,
-which contains the assigned receipt correction. Unmerged public-pool and River
-EV features are outside this dependency. Final plans bind this maintained
-decision source/default admissions and require protected merge before held-outs. Public reads are conditioned on the fixed local
+which contains the assigned receipt correction. Before any held-out deal,
+the source binding was refreshed to protected
+857b756726fecd4948938ed8cf537dbb5f128e2c. The
+[source rebind receipt](evidence/feature-ablation/source-rebind-2026-10-27.json)
+records the eleven changed inputs, path equivalence for the valid-first-load
+controlled public history, and genuinely new derived admission keys. Historical
+pilots retain their original source identity; their marginal dispersion and
+blind allocations are reused without changing seeds or gates. Final plans bind
+the refreshed maintained decision source/default admissions and require protected
+merge before held-outs. Public reads are conditioned on the fixed local
 48-hand own-history window and an empty pooled public-profile input. This does
 not certify an active live pooled cache or every mutable fleet input. Actual
 pressure evaluation counters and accepted final hero contrasts provide coverage;

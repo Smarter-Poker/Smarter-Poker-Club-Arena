@@ -171,7 +171,9 @@ def main():
             # its horizon, without fetching the observer's other contexts' heap.
             # Include a wide private canary to expose scattered heap work, never
             # include it in the index or reader projection.
-            run(f"INSERT INTO ca_hand_facts SELECT ('00000000-0000-0000-0004-'||lpad(n::text,12,'0'))::uuid,'{uid(1)}','{uid(100)}',NULL,'2026-10-25T01:15:00Z'::timestamptz+n*interval '0.01 second','plo6',1,'BTN',6,0,to_jsonb(repeat('secret_private_canary',32)) FROM generate_series(1,100000) n; ANALYZE ca_hand_facts;")
+            # Family 4 belongs to the earlier v3 replay population. Keep this
+            # separate sparse-context population disjoint so both proofs run.
+            run(f"INSERT INTO ca_hand_facts SELECT ('00000000-0000-0000-0005-'||lpad(n::text,12,'0'))::uuid,'{uid(1)}','{uid(100)}',NULL,'2026-10-25T01:15:00Z'::timestamptz+n*interval '0.01 second','plo6',1,'BTN',6,0,to_jsonb(repeat('secret_private_canary',32)) FROM generate_series(1,100000) n; ANALYZE ca_hand_facts;")
             sparse_before=read(variant='plo5')
             empty_before=read(variant='plo8')
             def candidates_plan(variant):

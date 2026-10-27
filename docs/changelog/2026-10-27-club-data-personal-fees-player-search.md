@@ -9,3 +9,5 @@ The search field also searches the server-paged roster by player name. Matching 
 Validation: 70 focused client tests, application TypeScript, native PostgreSQL fail-before/pass-after reporting qualification including actual standing-share/redemption reader, date boundaries, filtered/empty games, operator scope, player denial, rollback/replay refusal and ACL preservation. Protected integration, installation and live publication are tracked separately in the task checkpoint.
 
 Delivery qualification also exposed accounting shard 1 reaching its 40-minute cap during cleanup. The unchanged weekly recompute proof and its retained artifact move together to shard 2 (observed 18m39s plus roughly 13m), preserving every suite, financial deadline, and the 40-minute job limit. The existing CI wiring regression pins that execution/evidence pairing.
+
+Required accounting qualification also revealed two newer history-reader fixture populations sharing a synthetic hand-ID namespace. The sparse-context population now uses its own namespace; both proofs and all 121 native PostgreSQL checks execute together, with no production source or assertion changed.

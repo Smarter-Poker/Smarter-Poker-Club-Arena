@@ -21,3 +21,17 @@ The October 27 Sunrise Bounty park `d569d659-f9ff-4849-a4eb-f9fb047b98a1` existe
 ## Verification and delivery
 
 The two-real-manager regression failed before the runtime correction. Afterward 46 focused cases and server TypeScript compilation passed, including old-contract compatibility, malformed/future timestamps, proven movement and unrelated refusal guards. Native PostgreSQL 17 qualification passed all 139 existing movement assertions, four exact-age/custody/admission/replay checks, atomic drift refusal and both stock concurrency cases; metadata installation left business/private rows unchanged and cleanup was confirmed. The existing CI runner enforces these assertions. Both compilers, 320 installer-contract cases and 19 maintenance-window cases passed. Exact protected installation/publication/live proof remain pending in the existing task checkpoint. No production test writes were made.
+
+## Exact activation anchor
+
+PR #8324 protected squash is `f398b67e4ffa1949b71d78fa60b17dc63cf0bba7`. Bind its existing one-use owner window to that actual repair, replacing the earlier minimum base anchor. Two separately owned older queued engine candidates contain the base and omit this repair; their activation must not consume this permission. The original 15:20:34 through 21:20:34 UTC interval, runtime, migration, checks and cutover safeguards are unchanged.
+
+## Required-check binding recovery
+
+The release-input follow-up exposed a stale workflow digest in the original-retirement source binding. Its exact previous-hash bytes were recovered from PR #8296 head `6cc1c1d3767b74cf05fe7cc0c4fdfdc2d36af611`. Protected integration preserved PR #8288's three rakeback-page qualification trigger paths and appended native check; the parsed workflow is otherwise identical. Updated only that workflow digest and recorded this provenance. All other 162 source pins, existing financial boundaries and assertions remain unchanged. The exact three-case law reproduced one failure before correction; afterward it and three connected source-contract files passed all 13 cases on Node 22. This metadata correction does not grant new financial or production qualification.
+
+Protected main independently corrected the same workflow pin in #8347/#8348 while this follow-up was checking. Integration retains main's complete binding and qualification audit unchanged, resolving the audit-metadata conflict without a second binding edit. The activation permission still names exact repair `f398b67e` and keeps its original expiry.
+
+## Required native-fixture admission recovery
+
+PG17 accounting shard 4 exposed a synthetic history fixture collision: the 100,000 sparse-context facts added by #8322 reused the `0004` UUID namespace already occupied by #8317's 20,000 paired histories/facts. The unchanged native runner reproduced the exact duplicate primary key before correction. Changed only the sparse-only fixture namespace to disjoint `0005`, retaining every assertion, cardinality and production reader byte. The same runner then passed all 121 checks, including reader compatibility, private-card exclusion, horizon equivalence, sparse index access and generic-plan safeguards. No production data or runtime changed, and no actual qualification pin binds this script. Both disposable clusters and sockets were removed.

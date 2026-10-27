@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/**
+      - scripts/ci/fixtures/fees-before-club-books/**
+      - scripts/ci/test-fees-before-club-books-postgres.py
+      - tests/rakeback-is-paid-before-club-books-close.law.test.ts
       - scripts/ci/fixtures/earned-plan-window-original.sql
       - scripts/ci/test-earned-window-cardinality-postgres.py
       - tests/earned-window-counts-each-hand-once.law.test.ts
@@ -70,3 +73,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-earned-window-cardinality-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Earned rakeback precedes guarded club settlement
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-fees-before-club-books-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"

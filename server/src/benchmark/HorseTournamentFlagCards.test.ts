@@ -63,25 +63,28 @@ describe('PLO tournament flag qualification custody', () => {
   });
   it('refuses reserved seeds through generic and forged-admission execution before any deal', async () => {
     for (const seed of TOURNAMENT_FLAG_HOLDOUT_SEEDS) {
-      await expect(runTournamentLeague({ objective: 'sng', seed, pairs: 1 })).rejects.toThrow(
-        'Reserved'
-      );
       await expect(
-        runTournamentLeague({
-          objective: 'sng',
-          seed,
-          pairs: 64,
-          firstPair: 0,
-          flagCard: 'plo4_v53_icm_sng',
-          opponentPopulation: TOURNAMENT_FLAG_DESIGN.field,
-          flagQualification: {
-            sourceSha: 'a'.repeat(40),
-            planDigest: 'b'.repeat(64),
-            providerRunId: 1,
-            providerJobId: 1,
-            runAttempt: 1,
+        runTournamentLeague({ objective: 'sng', seed, pairs: 1 }, () => false)
+      ).rejects.toThrow('Reserved');
+      await expect(
+        runTournamentLeague(
+          {
+            objective: 'sng',
+            seed,
+            pairs: 64,
+            firstPair: 0,
+            flagCard: 'plo4_v53_icm_sng',
+            opponentPopulation: TOURNAMENT_FLAG_DESIGN.field,
+            flagQualification: {
+              sourceSha: 'a'.repeat(40),
+              planDigest: 'b'.repeat(64),
+              providerRunId: 1,
+              providerJobId: 1,
+              runAttempt: 1,
+            },
           },
-        })
+          () => false
+        )
       ).rejects.toThrow();
     }
   });

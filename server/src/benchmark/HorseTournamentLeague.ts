@@ -551,8 +551,9 @@ async function playTournament(
     };
     const controller = new HandController(config, tablePlayers, dealerSeat);
     // Replace methods only on this isolated controller's deck instance. No
-    // production shuffle, prototype, flag or live object is changed. Every
-    // original seat retains identical holes and board even after paths diverge.
+    // production shuffle, prototype, flag or live object is changed. NLH keeps
+    // original entrant holes across divergent arms; Omaha keeps table-slot draws
+    // under the same per-hand seed, not entrant holes after membership changes.
     const full = cardsFor((seed ^ Math.imul(hand + 1, 2654435761)) >>> 0);
     // Preserve the NLH entrant assignment exactly. Omaha uses six table slots:
     // eighteen PLO6 entrants cannot each reserve six cards from one deck.

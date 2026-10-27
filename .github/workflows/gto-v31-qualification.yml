@@ -1,0 +1,79 @@
+name: Explicit V31 Offline Qualification
+run-name: V31 qualification ${{ inputs.operation || 'admission contracts' }} ${{ inputs.dataset }}
+
+# One owner-dispatched operation. Never scheduled, never an engine publisher.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/gto-v31-qualification.yml
+      - scripts/ci/gto-v31-qualification.mjs
+      - scripts/ci/gto-v31-qualification.test.mjs
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Exact sealed V31 dataset UUID
+        required: true
+        type: string
+      operation:
+        description: Evaluate first; promote only after reviewing all eight receipts
+        required: true
+        default: evaluate
+        type: choice
+        options: [evaluate, promote]
+
+permissions:
+  contents: read
+concurrency:
+  group: gto-v31-qualification-${{ inputs.dataset }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: V31 qualification admission contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/ci/gto-v31-qualification.test.mjs
+  qualify:
+    needs: contract
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'Smarter-Poker/Smarter-Poker-Club-Arena'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve the healthy serving source
+        id: context
+        run: node control/scripts/ci/gto-v31-qualification.mjs resolve
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.context.outputs.source_sha }}
+          path: runtime
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install only the locked evaluator dependencies
+        working-directory: runtime/server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run the existing source-pinned evaluator once
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node control/scripts/ci/gto-v31-qualification.mjs run
+      - name: Retain metadata-only operation receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gto-v31-operation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gto-v31-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
+          if-no-files-found: warn
+          retention-days: 7

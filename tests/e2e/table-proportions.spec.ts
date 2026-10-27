@@ -2192,7 +2192,7 @@ test('painted coverage rejects opaque avatar pixels through rotation and clippin
         context.fillStyle = '#ff0000';
         context.fillRect(x, y, width, height);
         const image = document.querySelector<HTMLImageElement>('.seat__avatar-img')!;
-        image.src = canvas.toDataURL();
+        image.src = `${canvas.toDataURL()}#/avatars/table/vip_wolf.webp`;
         await image.decode();
       },
       { x, y, width, height }
@@ -2201,6 +2201,9 @@ test('painted coverage rejects opaque avatar pixels through rotation and clippin
   expect(await covered(), 'Transparent canvas is not a player').toBe(false);
   await paint(70, 25, 5, 5);
   expect(await covered(), 'Real opaque coverage is still refused').toBe(true);
+  expect(await page.locator('.seat__avatar-img').getAttribute('src')).toMatch(
+    /\/avatars\/table\/vip_wolf\.webp$/
+  );
   const staleMetadata = await page.evaluate(readMobileTableLayout, { 'vip_wolf.webp': 0.95 });
   expect(
     staleMetadata.violations.some((value) => value.startsWith('Player Or Bet Covers Board')),

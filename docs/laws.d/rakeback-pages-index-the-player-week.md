@@ -1,0 +1,7 @@
+# tests/rakeback-pages-index-player-week.law.test.ts
+
+Canonical check/write pages select a club, a small player set and an earned week. Cash needs `(club_id, player_id, earned_at)`; tournament fee sources need `(club_id, player_id)` before their existing recognition joins. Preserve the original full allocation query, rates, historical memberships, ordered source arrays, source fingerprints, certificates, payer registration and completed parts byte for byte.
+
+Migration 20261027040245 uses the existing concurrent-preamble installer: each index builds alone, then one guarded assertion/history transaction. Require exact key order/types/default opclasses, normal nonunique btree shape, postgres ownership and VALID/READY/LIVE. A matching name alone cannot qualify an invalid or incompatible index. After interruption inspect the exact operation/catalogue before any continuation; a successful first build remains usable when the second has not completed. No financial writes, query rewrite or cache reset supplies the speedup.
+
+The focused native PG17 test exercises the unchanged allocation/check/write/certificate/payer owners, natural plans, complete ordered fingerprints, replay, partial installation and a real failed concurrent build. Local query timings do not establish production build duration, free disk, next-Monday capacity or wallet payment. Production installation still needs the maintained installer and exact readback.

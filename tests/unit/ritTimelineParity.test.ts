@@ -48,8 +48,8 @@ describe('run-it-multiple-times timeline parity', () => {
     );
     expect(t.firstRibbonAt).toBe(t.riversDoneAt + H.RIT_RIBBON_MS);
     expect(t.doneAt).toBe(t.firstRibbonAt + 3 * H.RIT_RESULT_RUN_MS);
-    // Dan's hand: preflop all-in, 3 runs, at 1x = 25.5s to the last ribbon.
-    expect(t.doneAt).toBe(25_500);
+    // Dan's hand: preflop all-in, 3 runs, at 1x = 30s to the last ribbon.
+    expect(t.doneAt).toBe(30_000);
   });
 
   it('a faster preference shortens the reveal; a slower one is clamped by the client', () => {

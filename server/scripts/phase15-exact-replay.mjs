@@ -10,6 +10,11 @@
  *   node scripts/phase15-exact-replay.mjs --child --running-source <sha> [--store-snapshot <json>]...
  *        (stdin: {"record": <decision record>, "execution": <execution record> | null})
  *
+ *   node scripts/phase15-exact-replay.mjs --v56-cases [--store-snapshot <json>]...
+ *        [--node <node executable>] [--esbuild-binary <esbuild executable>]
+ *        (private stdin: {"version":1,"cases":[{"decisionSha256":<hash>,"records":[...]}]})
+ *        One fresh bounded offline child per explicit case; sanitized output only.
+ *
  * The batch mode selects the newest N decision records (at or after --since,
  * before --until)
  * in the read-only copy, joins each to the execution record of the same turn,
@@ -35,7 +40,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -47,6 +52,8 @@ const SHA = /^[0-9a-f]{40}$/;
 function parseArgs(argv) {
   const out = {
     child: false,
+    v56Cases: false,
+    v56Child: false,
     runningSource: null,
     journal: null,
     limit: 200,
@@ -64,7 +71,9 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
-    if (a === '--child') out.child = true;
+    if (a === '--v56-cases') out.v56Cases = true;
+    else if (a === '--v56-child') out.v56Child = true;
+    else if (a === '--child') out.child = true;
     else if (a === '--running-source') out.runningSource = next();
     else if (a === '--limit') out.limit = Number(next());
     else if (a === '--since') out.since = next();
@@ -98,9 +107,14 @@ export function exactReplayChildEnv(env = process.env, esbuildBinary = null) {
   };
 }
 
-async function readStdin() {
+async function readStdin(maxBytes = Infinity) {
   const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    bytes += chunk.length;
+    if (bytes > maxBytes) throw new Error('v56_input_bounds');
+    chunks.push(chunk);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -141,6 +155,19 @@ async function child(args) {
   const { currentReplaySolverStores } = await import(
     src('engine/horseDecision/replay/references.ts')
   );
+  await hydrateReplayStores(args.storeSnapshots, src);
+  const verdict = await exactReplayHorseDecisionRecord(input.record, {
+    runningSource: args.runningSource,
+    stores: currentReplaySolverStores(),
+    execution: input.execution === undefined ? undefined : input.execution,
+    planReceipt: input.planReceipt === undefined ? undefined : input.planReceipt,
+  });
+  process.stdout.write(
+    `${JSON.stringify({ ...verdict, isolation: { pid: process.pid, networkAttempts: attempts } })}\n`
+  );
+}
+
+async function hydrateReplayStores(storeSnapshots, src) {
   const { sameSolverStoreIdentity, isSolverStoreIdentity } = await import(
     src('gto/SolverStoreIdentity.ts')
   );
@@ -148,7 +175,7 @@ async function child(args) {
   const { replaceGtoPostflop, gtoPostflopStoreIdentity } = await import(
     src('engine/GtoPostflop.ts')
   );
-  for (const file of args.storeSnapshots) {
+  for (const file of storeSnapshots) {
     const snap = JSON.parse(readFileSync(file, 'utf8'));
     if (snap.version !== 'phase6c-store-snapshot-v1' || !isSolverStoreIdentity(snap.identity))
       throw new Error(`${file} is not a store snapshot`);
@@ -166,15 +193,6 @@ async function child(args) {
     )
       throw new Error(`${file} does not hold the identity it declares`);
   }
-  const verdict = await exactReplayHorseDecisionRecord(input.record, {
-    runningSource: args.runningSource,
-    stores: currentReplaySolverStores(),
-    execution: input.execution === undefined ? undefined : input.execution,
-    planReceipt: input.planReceipt === undefined ? undefined : input.planReceipt,
-  });
-  process.stdout.write(
-    `${JSON.stringify({ ...verdict, isolation: { pid: process.pid, networkAttempts: attempts } })}\n`
-  );
 }
 
 /** Replay one record in a fresh process; resolves to its verdict or a named failure. */
@@ -431,14 +449,327 @@ async function batch(args) {
   );
 }
 
+const V56_BATCH_BYTES = 32 * 1024 * 1024;
+const V56_HAND_BYTES = 8 * 1024 * 1024;
+const V56_OUTPUT_BYTES = 64 * 1024;
+const V56_DEADLINE_MS = 30_000;
+const v56Failure = (reason) => ({
+  version: 'horse-v56-private-process-v1',
+  status: 'unavailable',
+  reason,
+});
+const v56Object = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Git cannot take an inherited alternative index/worktree/object store or
+ * injected config as proof of the physical checkout that executes this file. */
+export function v56GitEnv(environment = process.env) {
+  const env = { ...environment };
+  const advertised = execFileSync('git', ['rev-parse', '--local-env-vars'], {
+    cwd: repoRoot,
+    env: { PATH: environment.PATH ?? '/usr/bin:/bin' },
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+    .trim()
+    .split('\n');
+  for (const key of Object.keys(env))
+    if (
+      advertised.includes(key) ||
+      key === 'GIT_CONFIG_PARAMETERS' ||
+      key === 'GIT_CONFIG_COUNT' ||
+      key.startsWith('GIT_CONFIG_KEY_') ||
+      key.startsWith('GIT_CONFIG_VALUE_') ||
+      ['GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM'].includes(key)
+    )
+      delete env[key];
+  return env;
+}
+export function v56ExecutingSource(root = repoRoot, environment = process.env) {
+  const env = v56GitEnv(environment);
+  const git = (argv) =>
+    execFileSync('git', argv, {
+      cwd: root,
+      env,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  if (realpathSync(git(['rev-parse', '--show-toplevel'])) !== realpathSync(root))
+    throw Error('v56_source_unavailable');
+  const source = git(['rev-parse', 'HEAD']);
+  if (!SHA.test(source) || git(['status', '--porcelain', '--untracked-files=normal']))
+    throw Error('v56_source_unavailable');
+  return source;
+}
+export function v56CasesAreBounded(input) {
+  try {
+    return (
+      v56Object(input) &&
+      Object.keys(input).sort().join(',') === 'cases,version' &&
+      input.version === 1 &&
+      Array.isArray(input.cases) &&
+      input.cases.length >= 1 &&
+      input.cases.length <= 6 &&
+      new Set(input.cases.map((c) => c.decisionSha256)).size === input.cases.length &&
+      Buffer.byteLength(JSON.stringify(input)) <= V56_BATCH_BYTES &&
+      input.cases.every(
+        (c) =>
+          v56Object(c) &&
+          Object.keys(c).sort().join(',') === 'decisionSha256,records' &&
+          /^[a-f0-9]{64}$/.test(c.decisionSha256) &&
+          Array.isArray(c.records) &&
+          c.records.length <= 256 &&
+          Buffer.byteLength(JSON.stringify(c.records)) <= V56_HAND_BYTES
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+function v56FlagsAreClosed(argv, args) {
+  const values = new Set(['--store-snapshot', '--node', '--esbuild-binary', '--running-source']);
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    if (flag === '--v56-cases' || flag === '--v56-child') continue;
+    if (!values.has(flag) || typeof argv[++i] !== 'string' || argv[i].startsWith('--'))
+      return false;
+    if (flag === '--running-source' && !args.v56Child) return false;
+  }
+  return args.v56Cases && !args.child && (!args.v56Child || SHA.test(String(args.runningSource)));
+}
+
+/** Fresh child, bounded input/output/deadline. No child's raw stderr escapes. */
+export function replayV56InFreshProcess(
+  { caseInput, runningSource, storeSnapshots = [], node = process.execPath, esbuildBinary = null },
+  dependencies = {}
+) {
+  return new Promise((resolvePromise) => {
+    if (
+      !v56CasesAreBounded({ version: 1, cases: [caseInput] }) ||
+      !SHA.test(String(runningSource))
+    ) {
+      resolvePromise(v56Failure('input_bounds'));
+      return;
+    }
+    const argv = [
+      fileURLToPath(import.meta.url),
+      '--v56-cases',
+      '--v56-child',
+      '--running-source',
+      runningSource,
+    ];
+    for (const file of storeSnapshots) argv.push('--store-snapshot', file);
+    const proc = (dependencies.spawn ?? spawn)(node, argv, {
+      cwd: serverRoot,
+      env: exactReplayChildEnv(process.env, esbuildBinary),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let bytes = 0,
+      stderrBytes = 0,
+      stdout = '',
+      settled = false;
+    let timer;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(value);
+    };
+    const refuse = (reason) => {
+      proc.kill('SIGKILL');
+      finish(v56Failure(reason));
+    };
+    timer = setTimeout(() => refuse('child_deadline'), dependencies.deadlineMs ?? V56_DEADLINE_MS);
+    proc.stdout.on('data', (data) => {
+      bytes += data.length;
+      if (bytes > V56_OUTPUT_BYTES) refuse('child_output_bounds');
+      else stdout += data;
+    });
+    proc.stderr.on('data', (data) => {
+      stderrBytes += data.length;
+      if (stderrBytes > V56_OUTPUT_BYTES) refuse('child_output_bounds');
+    });
+    proc.on('error', () => finish(v56Failure('child_unavailable')));
+    proc.stdin.on('error', () => refuse('child_unavailable'));
+    proc.on('close', (code) => {
+      if (settled) return;
+      try {
+        const value = JSON.parse(stdout.trim());
+        if (
+          code !== 0 ||
+          !v56Object(value) ||
+          Object.keys(value).sort().join(',') !== 'isolation,result,status,version' ||
+          value.version !== 'horse-v56-private-process-v1' ||
+          value.status !== 'computed' ||
+          !v56SanitizedResult(value.result) ||
+          (value.result.decisionSha256 !== null &&
+            value.result.decisionSha256 !== caseInput.decisionSha256) ||
+          !v56Object(value.isolation) ||
+          Object.keys(value.isolation).sort().join(',') !== 'networkAttempts,pid' ||
+          !Number.isSafeInteger(value.isolation.pid) ||
+          value.isolation.pid <= 0 ||
+          value.isolation.pid !== proc.pid ||
+          !v56Object(value.isolation.networkAttempts) ||
+          Object.keys(value.isolation.networkAttempts).sort().join(',') !== 'fetch,socket' ||
+          value.isolation.networkAttempts.fetch !== 0 ||
+          value.isolation.networkAttempts.socket !== 0
+        )
+          throw Error();
+        finish(value);
+      } catch {
+        finish(v56Failure('child_unavailable'));
+      }
+    });
+    proc.stdin.end(JSON.stringify({ version: 1, cases: [caseInput] }));
+  });
+}
+function v56SanitizedResult(value) {
+  const hashes = ['decisionSha256', 'readFrameSha256', 'onActionSha256', 'offActionSha256'];
+  const booleans = [
+    'originalExact',
+    'originalAccepted',
+    'v56Observed',
+    'offComputed',
+    'sameAdmissions',
+    'actionChanged',
+    'offAccepted',
+    'activationAllowed',
+  ];
+  const reasons = [
+    'bounds',
+    'busy',
+    'invalid_records',
+    'case_unbound',
+    'unsupported_deep',
+    'outside_domain',
+    'original_v56_off',
+    'pins_missing',
+    'hand_not_reconciled',
+    'execution_unbound',
+    'baseline_not_exact',
+    'baseline_not_accepted',
+    'v56_witness_unavailable',
+    'v56_not_observed',
+    'off_arm_unavailable',
+    'admission_changed',
+    'original_mutated',
+    'executed_no_difference',
+    'causal_application_observed',
+  ];
+  return (
+    v56Object(value) &&
+    Object.keys(value).sort().join(',') ===
+      [...hashes, ...booleans, 'version', 'reason'].sort().join(',') &&
+    value.version === 'horse-v56-private-counterfactual-v1' &&
+    reasons.includes(value.reason) &&
+    hashes.every((key) => value[key] === null || /^[a-f0-9]{64}$/.test(value[key])) &&
+    booleans.every((key) => typeof value[key] === 'boolean') &&
+    value.offAccepted === false &&
+    value.activationAllowed === false
+  );
+}
+async function v56Mode(args, argv) {
+  if (!v56FlagsAreClosed(argv, args)) return v56Failure('arguments');
+  let input;
+  try {
+    input = JSON.parse(await readStdin(V56_BATCH_BYTES));
+  } catch {
+    return v56Failure('input_bounds');
+  }
+  if (!v56CasesAreBounded(input)) return v56Failure('input_bounds');
+  let source;
+  try {
+    source = v56ExecutingSource();
+  } catch {
+    return v56Failure('source_unavailable');
+  }
+  if (args.v56Child) {
+    if (source !== args.runningSource || input.cases.length !== 1)
+      return v56Failure('source_unavailable');
+    const attempts = await refuseNetwork();
+    const { register } = await import('tsx/esm/api');
+    register();
+    const src = (p) => pathToFileURL(join(serverRoot, 'src', p)).href;
+    await hydrateReplayStores(args.storeSnapshots, src);
+    const { verifyV56CounterfactualCases } = await import(
+      src('engine/horseDecision/replay/v56Counterfactual.ts')
+    );
+    const { currentReplaySolverStores } = await import(
+      src('engine/horseDecision/replay/references.ts')
+    );
+    const [result] = await verifyV56CounterfactualCases(input.cases, {
+      runningSource: source,
+      stores: currentReplaySolverStores(),
+    });
+    if (!v56SanitizedResult(result)) return v56Failure('child_unavailable');
+    return {
+      version: 'horse-v56-private-process-v1',
+      status: 'computed',
+      result,
+      isolation: { pid: process.pid, networkAttempts: attempts },
+    };
+  }
+  const results = [];
+  for (const caseInput of input.cases)
+    results.push(
+      await replayV56InFreshProcess({
+        caseInput,
+        runningSource: source,
+        storeSnapshots: args.storeSnapshots,
+        node: args.node,
+        esbuildBinary: args.esbuildBinary,
+      })
+    );
+  try {
+    if (v56ExecutingSource() !== source) return v56Failure('source_unavailable');
+  } catch {
+    return v56Failure('source_unavailable');
+  }
+  return {
+    version: 'horse-v56-private-process-batch-v1',
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+    results,
+  };
+}
+
+/** Exit only after the pipe acknowledges the entire sanitized receipt. */
+export function writeV56Output(
+  value,
+  exitCode,
+  output = process.stdout,
+  finish = (code) => process.exit(code)
+) {
+  output.write(JSON.stringify(value) + '\n', (error) => finish(error ? 1 : exitCode));
+}
+
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const args = parseArgs(process.argv.slice(2));
-  (args.child ? child(args) : batch(args)).then(
-    () => process.exit(0),
-    (error) => {
-      process.stderr.write(`${error?.stack ?? error}\n`);
-      process.exit(1);
-    }
-  );
+  const argv = process.argv.slice(2);
+  if (argv.includes('--v56-cases') || argv.includes('--v56-child')) {
+    Promise.resolve()
+      .then(() => v56Mode(parseArgs(argv), argv))
+      .then(
+        (result) => {
+          writeV56Output(
+            result,
+            result.status === 'unavailable' ||
+              result.results?.some((row) => row.status !== 'computed')
+              ? 1
+              : 0
+          );
+        },
+        () => {
+          writeV56Output(v56Failure('unavailable'), 1);
+        }
+      );
+  } else {
+    const args = parseArgs(argv);
+    (args.child ? child(args) : batch(args)).then(
+      () => process.exit(0),
+      (error) => {
+        process.stderr.write(`${error?.stack ?? error}\n`);
+        process.exit(1);
+      }
+    );
+  }
 }

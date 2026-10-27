@@ -12,6 +12,7 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[2]
 MIGRATION=ROOT/'supabase/migrations/20261025214230_horse_own_public_history_read.sql'
+V2_MIGRATION=ROOT/'supabase/migrations/20261027041304_horse_own_public_history_context_before_horizon.sql'
 PG=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin'))
 BASE=Path(os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or tempfile.gettempdir())
 if sys.platform=='darwin' and not str(BASE).startswith('/Volumes/SmarterWork/agent-work/'):
@@ -35,8 +36,9 @@ def main():
         def check(name,condition):
             if not condition: raise AssertionError(name)
             checks.append(name)
-        def read(actor=1,variant='nlh',fmt='cash',count=2,before='2026-10-25T02:00:00Z',role='service_role',claim='service_role',ok=True):
-            sql=f"SET ROLE {role}; SET request.jwt.claim.role='{claim}'; SELECT public.fn_horse_own_public_history_read('{uid(actor)}','{variant}','{fmt}',{count},'{before}');"
+        def read(actor=1,variant='nlh',fmt='cash',count=2,before='2026-10-25T02:00:00Z',role='service_role',claim='service_role',ok=True,legacy=False):
+            function='fn_horse_own_public_history_read' if legacy else 'fn_horse_own_public_history_read_v2'
+            sql=f"SET ROLE {role}; SET request.jwt.claim.role='{claim}'; SELECT public.{function}('{uid(actor)}','{variant}','{fmt}',{count},'{before}');"
             r=run(sql,ok)
             return (json.loads(r) if r else None) if ok else r
         def hand(n,variant='nlh',tournament=None,position='BTN',count=2,end='2026-10-25T01:00:00Z',observer=1,extra_actions=None):
@@ -55,6 +57,9 @@ def main():
             for actor in [1,2,3]:
                 run(f"INSERT INTO profiles VALUES ('{uid(actor)}',true,'active','available'); INSERT INTO ca_horse_fleet_register VALUES ('{uid(actor)}',NULL);")
             run(MIGRATION.read_text())
+            legacy_md5=run("SELECT md5(pg_get_functiondef('public.fn_horse_own_public_history_read(uuid,text,text,integer,timestamptz)'::regprocedure));")
+            run(V2_MIGRATION.read_text())
+            check('old serving engines retain their exact reader',legacy_md5==run("SELECT md5(pg_get_functiondef('public.fn_horse_own_public_history_read(uuid,text,text,integer,timestamptz)'::regprocedure));"))
             hand(1)
             p=read()
             check('one original observer hand restored',len(p['window']['hands'])==1)
@@ -78,6 +83,20 @@ def main():
                 hand(n,tournament=n)
                 if fmt: check('persisted '+fmt+' remains separate',len(read(fmt=fmt)['window']['hands'])==1)
             check('cash never imports tournament results',len(read()['window']['hands'])==1)
+            # One valid older PLO5 observation must survive >512 newer
+            # other-variant/size/format facts from the same original observer.
+            run(f"INSERT INTO hand_history SELECT ('00000000-0000-0000-0003-'||lpad(n::text,12,'0'))::uuid,'{uid(100)}',3000000+n,'plo6',NULL,2,'2026-10-25T01:05:00Z'::timestamptz+n*interval '1 second','[]'::jsonb,'[]'::jsonb,'[]'::jsonb FROM generate_series(1,600) n; INSERT INTO ca_hand_facts SELECT id,'{uid(1)}',table_id,NULL,ended_at,'plo6',1,'BTN',6,0,'[]'::jsonb FROM hand_history WHERE hand_number>3000000;")
+            check('original reader reproduces context starvation',read(variant='plo5',legacy=True)['window']['hands']==[])
+            check('requested variant survives newer other-context traffic',len(read(variant='plo5')['window']['hands'])==1)
+            run("UPDATE hand_history SET game_variant='nlh' WHERE hand_number>3000000; UPDATE ca_hand_facts SET game_variant='nlh' WHERE hand_id IN(SELECT id FROM hand_history WHERE hand_number>3000000);")
+            check('original reader reproduces dealt-count starvation',read(count=2,legacy=True)['window']['hands']==[])
+            check('requested dealt count survives newer same-variant traffic',len(read(count=2)['window']['hands'])==1)
+            run(f"UPDATE hand_history SET tournament_id='{uid(10)}' WHERE hand_number>3000000; UPDATE ca_hand_facts SET tournament_id='{uid(10)}',players_dealt=2 WHERE hand_id IN(SELECT id FROM hand_history WHERE hand_number>3000000);")
+            check('original reader reproduces tournament-format starvation',read(fmt='sng',legacy=True)['window']['hands']==[])
+            check('requested format survives newer same-variant same-size traffic',len(read(fmt='sng')['window']['hands'])==1)
+            check('requested cash survives newer tournaments of the same variant and size',len(read()['window']['hands'])==1)
+            run("DELETE FROM ca_hand_facts WHERE hand_id IN(SELECT id FROM hand_history WHERE hand_number>3000000); DELETE FROM hand_history WHERE hand_number>3000000;")
+
             check('past cutoff excludes later public hands',read(before='2026-10-25T00:59:59Z')['window']['hands']==[])
             for role in ['anon','authenticated']:
                 check(role+' cannot invoke even with forged service claim','permission denied' in read(role=role,claim='service_role',ok=False))

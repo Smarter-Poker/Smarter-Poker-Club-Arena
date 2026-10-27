@@ -39,6 +39,9 @@ export interface CanonicalJournalExport {
 export interface AuthenticatedHorseJournalBatch extends Omit<CanonicalJournalExport, 'status'> {
   status: 'authenticated_journal_batch';
   batchDigest: string;
+  /** Authenticated same-container coordinate; absent for legacy wire headers. */
+  instanceId?: string;
+  containerId?: string;
   qualified: false;
   activationAllowed: false;
 }
@@ -209,8 +212,18 @@ export function createAuthenticatedHorseJournalReader(
       const stdout = await run(args, JSON.stringify({ version: 1, handKeys: requested }) + '\n');
       if (Buffer.byteLength(stdout) > JOURNAL_EXPORT_MAX_BYTES) return no('journal_export_bounds');
       const boundary = stdout.indexOf('\n');
-      const imageSource = stdout.slice(0, boundary).trim();
-      if (boundary < 0 || !SHA.test(imageSource)) return no('journal_image_identity_unknown');
+      const header = stdout.slice(0, boundary).trim().split(' ');
+      const imageSource = header[0]!;
+      const containerId = header.length >= 2 ? header[1] : undefined;
+      const instanceId = header.length === 3 ? header[2] : undefined;
+      if (
+        boundary < 0 ||
+        !SHA.test(imageSource) ||
+        header.length > 3 ||
+        (containerId !== undefined && !HASH.test(containerId)) ||
+        (instanceId !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(instanceId))
+      )
+        return no('journal_image_identity_unknown');
       const raw: unknown = JSON.parse(stdout.slice(boundary + 1));
       if (
         !object(raw) ||
@@ -273,6 +286,8 @@ export function createAuthenticatedHorseJournalReader(
         ...body,
         status: 'authenticated_journal_batch' as const,
         batchDigest: commitment.digest('hex'),
+        ...(instanceId === undefined ? {} : { instanceId }),
+        ...(containerId === undefined ? {} : { containerId }),
         qualified: false as const,
         activationAllowed: false as const,
       });

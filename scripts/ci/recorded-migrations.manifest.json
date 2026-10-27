@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027150929",
+      "name": "horse_public_history_context_cover",
+      "file": "supabase/migrations/20261027150929_horse_public_history_context_cover.sql",
+      "md5": "67407be09aa0540658e287e53879532b",
+      "appliedToProductionAt": "2026-10-27T16:48:30.521Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained concurrent-preamble and session-bound atomic exact-file history; fn_ca_migration_text body, MD5 and byte count read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8322",
+      "refusedBy": [],
+      "liveVerdict": "Active Club Arena production outage: context-specific independent history reads were disk-bound and competing with games and pages. Exact committed covering index installed under the PUBLISHING active-outage exception while required hosted checks were queued. Native PostgreSQL17 passed104 cases including original privacy, context, retirement and access boundaries plus sparse-context custom/generic index-only plans and shape refusal. Production index is VALID READY LIVE; exact source history and helper body/MD5/bytes match; unchanged reader definition2b66063e989c88fa1a9e9f8d13e35965 and service-role-only ACL read back. Actual full-query plan uses the cover in2279.669ms with13473hits/1545reads. No engine replacement, financial write, private cards, shared observer reads or role-timeout change. This exact-byte recording is the next source action. Protected recording merge and clean-window gameplay verification remain pending; initial authenticated page recovery and independent populated history RPCs are measured separately."
     }
   ]
 }

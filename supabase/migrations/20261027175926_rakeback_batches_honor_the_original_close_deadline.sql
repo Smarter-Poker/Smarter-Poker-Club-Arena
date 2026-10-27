@@ -1,3 +1,4 @@
+-- @live-proof: md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure))='60570d34b4704fe81ff2de7fc43ad770'
 -- R3 retains the original close deadline instead of starting another90seconds.
 -- Only the batch stop changes; every financial/deferred/postlude guard remains.
 BEGIN;

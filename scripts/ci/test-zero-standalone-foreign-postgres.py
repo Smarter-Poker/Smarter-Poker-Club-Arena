@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """An empty former-standalone book independently validates a paid Union book.
 
-Exact52225 rollback/install/postimages/ACL/replay, actual main/v3 and original
+Exact142512 rollback/install/postimages/ACL/replay, actual main/v3 and original
 cached/direct financial owners, source-effective funding admissions, genuine84
 window proofs and actual foreign CS/ledger/invoice/discharge receipts. No paid
 receipt is manufactured. OriginalR3 foreign-period exclusion and direct C3 /
 coordinator predicates are exercised. Full inventory/launch/source40 boundaries
 are explicit controlled fixture adapters, not production certification.
 """
-import argparse, concurrent.futures, json, os, shutil, socket, subprocess, sys, tempfile, time
+import argparse, concurrent.futures, hashlib, json, os, shutil, socket, subprocess, sys, tempfile, time
 from pathlib import Path
 from decimal import Decimal
 
@@ -97,22 +97,25 @@ try:
     # launch controls above. Actual effective source/window/entitlement and
     # every foreign financial owner/receipt remain real, not fabricated.
     q("CREATE FUNCTION fn_accounting_union_earned_plan(uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE plpgsql AS $$BEGIN IF NOT EXISTS(SELECT FROM unions WHERE id=$1)OR $2 IS DISTINCT FROM '2026-10-05 07:00Z'::timestamptz OR $3 IS DISTINCT FROM '2026-10-12 07:00Z'::timestamptz OR NOT(SELECT sealed FROM dr_controls)THEN RAISE EXCEPTION 'native_original_inventory_boundary_refused';END IF;RETURN jsonb_build_object('fixture_boundary','unchanged_full_inventory');END$$;")
-    q("CREATE FUNCTION zero_seed()RETURNS void LANGUAGE plpgsql AS $$BEGIN PERFORM ed_seed();INSERT INTO unions(id,name,owner_id,slug)VALUES(caw_u('union'),'Foreign original union',caw_u('O'),'foreign-original-union');INSERT INTO union_clubs(union_id,club_id)VALUES(caw_u('union'),caw_u('club'));UPDATE accounting_cash_rake_sources SET union_id=caw_u('union'),coordinator_union_id=caw_u('union'),contract=contract||jsonb_build_object('union_id',caw_u('union'),'coordinator_union_id',caw_u('union'));UPDATE accounting_rakeback_period_calculations SET coordinator_union_id=caw_u('union');END$$;")
+    q("CREATE FUNCTION zero_seed()RETURNS void LANGUAGE plpgsql AS $$BEGIN PERFORM ed_seed();INSERT INTO unions(id,name,owner_id,slug)VALUES(caw_u('union'),'Foreign original union',caw_u('O'),'foreign-original-union');INSERT INTO union_clubs(union_id,club_id)VALUES(caw_u('union'),caw_u('club'));UPDATE accounting_cash_rake_sources SET union_id=caw_u('union'),coordinator_union_id=caw_u('union'),contract=contract||jsonb_build_object('union_id',caw_u('union'),'coordinator_union_id',caw_u('union'));UPDATE accounting_rakeback_period_calculations SET coordinator_union_id=caw_u('union');UPDATE accounting_cash_rake_sources SET contract=jsonb_set(contract,'{tiers,1,role}','\"agent\"')WHERE id=caw_u('s1');END$$;")
     U2=R2.replace("'club',caw_u('club')","'union',caw_u('union')")
     U3=R3.replace("'club',caw_u('club')","'union',caw_u('union')")
     def windows(kind,identifier):return "SET LOCAL app.weekly_accounting_chunked='on';SET LOCAL app.weekly_accounting_scope_deadline='2099-01-01';INSERT INTO accounting_close_partials SELECT 'round2_"+kind+"_window',caw_u('"+identifier+"'),'2026-10-05 07:00Z','2026-10-12 07:00Z',w.window_start,w.window_end,p.value,p.cash_ids,p.cash_md5,p.fee_ids,p.fee_md5,clock_timestamp()FROM fn_accounting_close_windows('2026-10-05 07:00Z','2026-10-12 07:00Z')w CROSS JOIN LATERAL fn_settle_accounting_commission_window("+("caw_u('union'),NULL"if kind=='union'else"NULL,caw_u('club')")+",ARRAY[caw_u('club')],w.window_start,w.window_end)p;"
-    def zcase(name,body,refusal=None):
+    def zcase(name,body,refusal=None,foreign_call=None):
         body=body.replace('CLUB_EXPECTED','1'if 'v3-direct'in name else'0')
         before=q("SELECT caw_money()||':'||(SELECT count(*)FROM smarter_private.existing_rakeback_transfer_allocations)").stdout.strip()
-        text='BEGIN;SELECT zero_seed();'+windows('union','union')+'SELECT '+U2+';SELECT '+U3+';'+body+('SET CONSTRAINTS ALL IMMEDIATE;'if not refusal else'')+'ROLLBACK;'
+        text='BEGIN;SELECT zero_seed();'+windows('union','union')+'SELECT '+(foreign_call or U2)+';SELECT '+U3+';'+body+('SET CONSTRAINTS ALL IMMEDIATE;'if not refusal else'')+'ROLLBACK;'
         ans=q(text,check=False)
         if refusal:assert ans.returncode and refusal in ans.stderr,(name,ans.stdout[-1000:],ans.stderr[-6000:])
         else:assert not ans.returncode,(name,ans.stdout[-1000:],ans.stderr[-6000:])
         assert q("SELECT caw_money()||':'||(SELECT count(*)FROM smarter_private.existing_rakeback_transfer_allocations)").stdout.strip()==before
         results.append({'case':name,'passed':True,'expected_refusal':refusal});print('PASS',name,flush=True)
+    role_migration=R/'supabase/migrations/20261027070115_historical_agent_roles_keep_their_earned_commission.sql'
+    load(role_migration)
+    results.append({'case':'exact-installed70115-role-owner-prerequisite','passed':True})
     # Reproduce the actual old false legacy refusal after the other scope paid.
     zcase('preimage-refuses-proven-zero-standalone-after-canonical-foreign-payment','SELECT '+R2+';','legacy_commission_payment_requires_reconciliation')
-    zero_migration=R/'supabase/migrations/20261027052225_zero_standalone_validates_paid_union_receipts.sql'
+    zero_migration=R/'supabase/migrations/20261027142512_zero_books_keep_historical_agent_roles.sql'
     zero_sql=zero_migration.read_text()
     q(zero_sql.replace('COMMIT;','ROLLBACK;'))
     assert q("SELECT to_regprocedure('smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)')IS NULL").stdout.strip()=='t'
@@ -120,13 +123,15 @@ try:
     again=q(zero_sql,check=False)
     assert again.returncode and 'zero_standalone_original_owner_preimage_changed'in again.stderr
     assert q("SELECT NOT has_function_privilege('service_role','smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)','EXECUTE')AND NOT has_function_privilege('authenticated','smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)','EXECUTE')AND NOT has_function_privilege('anon','smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)','EXECUTE')").stdout.strip()=='t'
-    results.append({'case':'exact52225-migration-rollback-install-postimages-acl-replay-refusal','passed':True})
+    results.append({'case':'exact142512-migration-rollback-install-postimages-acl-replay-refusal','passed':True})
     for label,call in [('main-direct',R2),('v3-direct',R2V3),('main-cached',R2)]:
         zcase('original-'+label+'-zero-book-preserves-paid-foreign-wallets',
           (windows('club','club')if label=='main-cached'else'')+"CREATE TEMP TABLE zero_before AS SELECT caw_money()m;CREATE TEMP TABLE zero_balances AS SELECT caw_balances()b;SELECT "+call+";SELECT caw_assert((SELECT count(*)=0 FROM pg_temp._routed_nodes),'ownnodesrestored');SELECT caw_assert((SELECT count(*)=0 FROM pg_temp._routed_edges),'ownedgesrestored');SELECT caw_assert((SELECT count(*)=CLUB_EXPECTED FROM pg_temp._routed_clubs),'ownclubsrestored');SELECT caw_assert((SELECT result->>'sources'='0'AND result->>'amount'='0'AND result->>'own_commission_amount'='0'FROM accounting_routed_settlement_runs WHERE scope_kind='club'AND scope_id=caw_u('club')AND round_no=2),'actualoriginalzeroreceipt');SELECT caw_assert(caw_balances()=(SELECT b FROM zero_balances),'zeroownnoWalletmovement');SELECT "+call+";SELECT caw_assert(caw_balances()=(SELECT b FROM zero_balances),'replaynoWalletmovement');"+
           ("SELECT caw_assert((SELECT count(*)=84 AND bool_and((value->>'sources')::bigint=0)FROM pg_temp._close_r2_windows),'all84ownwindowsrestored');"if label=='main-cached'else("SELECT caw_assert((SELECT count(*)=84 FROM pg_temp._close_r2_windows),'originalv3windowstaterestored');"if label=='v3-direct'else"SELECT caw_assert((SELECT count(*)=0 FROM pg_temp._close_r2_windows),'ownemptywindowstaterestored');")).replace('CLUB_EXPECTED','1'if label=='v3-direct'else'0'))
     zcase('original-zero-R2-then-original-zero-R3-do-not-repay-Union-periods',
       "CREATE TEMP TABLE zero_wallets AS SELECT caw_balances()b;CREATE TEMP TABLE zero_payouts AS SELECT count(*)n FROM rakeback_period_payouts;SELECT "+R2+";SELECT "+R3+";SELECT "+R3+";SELECT caw_assert(caw_balances()=(SELECT b FROM zero_wallets),'zeroR3noUnionrepaid');SELECT caw_assert((SELECT count(*)=(SELECT n FROM zero_payouts)FROM rakeback_period_payouts),'noDuplicatePlayerReceipt');SELECT caw_assert((SELECT result->>'amount'='0'AND result->>'payees'='0'FROM accounting_routed_settlement_runs WHERE scope_kind='club'AND scope_id=caw_u('club')AND round_no=3),'originalzeroR3receipt');")
+    zcase('historical-promotion-foreign-v3-R2-R3-then-zero-R2-R3',
+      'SELECT '+R2+';SELECT '+R3+';SELECT '+R2+';SELECT '+R3+';',foreign_call=U2.replace('commission_stage(','commission_stage_v3('))
     negatives=[
       ('missing-foreign-original-window',"DELETE FROM accounting_close_partials WHERE kind='round2_union_window'AND window_start='2026-10-05 07:00Z';",'zero_standalone_current_original_foreign_windows_required'),
       ('expired-foreign-original-windows',"UPDATE accounting_close_partials SET computed_at=clock_timestamp()-fn_accounting_close_proof_lifetime()-interval '1 second'WHERE kind='round2_union_window';",'zero_standalone_current_original_foreign_windows_required'),
@@ -178,8 +183,8 @@ try:
         results.append({'case':'concurrent-original-zero-'+label+'-one-real-receipt-one-replay-no-money','passed':True})
     metadata=json.loads(q("SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'md5',md5(pg_get_functiondef(p.oid)),'owner',pg_get_userbyid(p.proowner),'proconfig',p.proconfig,'acl',p.proacl::text,'volatility',p.provolatile)ORDER BY p.oid::regprocedure::text)FROM pg_proc p WHERE p.oid=ANY(ARRAY['public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)'::regprocedure,'public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz)'::regprocedure,'smarter_private.zero_standalone_foreign_commissions_proven(uuid,timestamptz,timestamptz)'::regprocedure])").stdout)
     if A.output:
-        A.output.parent.mkdir(parents=True,exist_ok=True);A.output.with_suffix('.postimages.json').write_text(json.dumps(metadata,indent=2));A.output.write_text(json.dumps({'status':'passed','cases':results,'full_inventory_boundary':'controlled native adapter','actual_effective_source_and_original_financial_owners':True,'production_own_basis':'unknown'},indent=2)+'\n')
-    print(json.dumps({'status':'passed','cases':results,'actual_main_v3_foreign_paid_original':True,'actual_effective_payable_views':True,'production_own_basis':'unknown'}),flush=True)
+        A.output.parent.mkdir(parents=True,exist_ok=True);A.output.with_suffix('.postimages.json').write_text(json.dumps(metadata,indent=2));A.output.write_text(json.dumps({'status':'passed','cases':results,'full_inventory_boundary':'controlled native adapter','actual_effective_source_and_original_financial_owners':True,'production_own_basis':'unknown','migration':str(zero_migration.relative_to(R)),'migration_sha256':hashlib.sha256(zero_sql.encode()).hexdigest(),'historical_role_prerequisite_sha256':hashlib.sha256(role_migration.read_bytes()).hexdigest(),'same_agent_historical_promotion_in_every_foreign_payment':True},indent=2)+'\n')
+    print(json.dumps({'status':'passed','cases':results,'actual_main_v3_foreign_paid_original':True,'same_agent_historical_promotion_in_every_foreign_payment':True,'actual_effective_payable_views':True,'production_own_basis':'unknown'}),flush=True)
 finally:
     if started:subprocess.run([str(A.pg_bin/'pg_ctl'),'-D',str(D),'-m','immediate','stop'],env=E,capture_output=True)
     shutil.rmtree(W,ignore_errors=True)

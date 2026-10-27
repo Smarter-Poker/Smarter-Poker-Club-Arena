@@ -29,7 +29,19 @@ permissions:
   issues: write
 
 concurrency:
-  group: production-integrity-audit
+  # GitHub keeps only one pending run per group even with cancellation false.
+  # A bounded explicit observation owns its request; a later scheduled audit
+  # must not replace it before its read starts. Ordinary audits stay serialized.
+  group: >-
+    production-integrity-audit${{ github.event_name == 'repository_dispatch' &&
+    github.event.action == 'audit-production-integrity' &&
+    (github.event.client_payload.billing_endpoint_observation != null ||
+    github.event.client_payload.release_recovery_observation != null ||
+    github.event.client_payload.operator_hold_image != null ||
+    github.event.client_payload.operator_hold_provenance != null ||
+    github.event.client_payload.tournament_log_observation != null ||
+    github.event.client_payload.tournament_diagnostic != null) &&
+    format('-request-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 
 jobs:

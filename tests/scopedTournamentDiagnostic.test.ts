@@ -35,6 +35,67 @@ const fetcher = () =>
     .mockResolvedValueOnce(response(health));
 
 describe('bounded original-owner tournament observation', () => {
+  it('keeps each explicit observation out of the scheduled audit pending slot', () => {
+    const workflow = readFileSync('.github/workflows/production-integrity-audit.yml', 'utf8');
+    const concurrency = workflow.slice(
+      workflow.indexOf('\nconcurrency:'),
+      workflow.indexOf('\njobs:')
+    );
+    expect(concurrency).toContain('cancel-in-progress: false');
+    const group = concurrency
+      .match(/group: >-\n([\s\S]*?)\n {2}cancel-in-progress:/)?.[1]
+      .trim()
+      .replace(/\s+/g, ' ');
+    expect(group).toBeDefined();
+    const expression = group!.match(/^production-integrity-audit\$\{\{ (.*) \}\}$/)?.[1];
+    expect(expression).toBeDefined();
+    // Execute the maintained group's boolean/string expression against event
+    // fixtures. These are the same &&/||/!=/format operations used by Actions.
+    const evaluate = new Function('github', 'format', `return ${expression};`);
+    const key = (
+      name: string,
+      run: number,
+      payload: Record<string, unknown> = {},
+      action = 'audit-production-integrity'
+    ) =>
+      'production-integrity-audit' +
+      evaluate(
+        { event_name: name, run_id: run, event: { action, client_payload: payload } },
+        (template: string, value: number) => template.replace('{0}', String(value))
+      );
+    const ordinary = key('schedule', 1);
+    expect(ordinary).toBe('production-integrity-audit');
+    expect(key('schedule', 2)).toBe(ordinary);
+    expect(key('repository_dispatch', 3)).toBe(ordinary);
+    expect(key('repository_dispatch', 4, { unknown: [] })).toBe(ordinary);
+    expect(key('repository_dispatch', 5, { tournament_diagnostic: null })).toBe(ordinary);
+    expect(key('schedule', 6, { tournament_diagnostic: [] })).toBe(ordinary);
+    expect(key('repository_dispatch', 7, { tournament_diagnostic: [] }, 'other-event')).toBe(
+      ordinary
+    );
+    const selectors = [
+      'billing_endpoint_observation',
+      'release_recovery_observation',
+      'operator_hold_image',
+      'operator_hold_provenance',
+      'tournament_log_observation',
+      'tournament_diagnostic',
+    ];
+    for (const selector of selectors) {
+      const first = key('repository_dispatch', 10, { [selector]: [] });
+      const second = key('repository_dispatch', 11, { [selector]: [] });
+      expect(first).not.toBe(ordinary);
+      expect(second).not.toBe(first);
+      // GitHub's single pending slot is keyed by this value. A later
+      // scheduled audit or another explicit request cannot replace this one.
+      const pending = new Map([[first, 'requested observation']]);
+      pending.set(ordinary, 'scheduled audit');
+      pending.set(second, 'second observation');
+      expect(pending.get(first)).toBe('requested observation');
+      expect(key('repository_dispatch', 10, { [selector]: [] })).toBe(first);
+    }
+  });
+
   it('reads actual local HTTP framing and refuses an authenticated redirect without following it', async () => {
     const requests: { path: string; authorized: boolean }[] = [];
     let redirect = false;

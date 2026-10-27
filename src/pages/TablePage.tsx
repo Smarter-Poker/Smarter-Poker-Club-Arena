@@ -8710,10 +8710,6 @@ function LiveTablePage({
      same game while this page was open was invisible until the server refused
      the buy-in, and a floor that had expired kept the slider's minimum high. */
   useEffect(() => {
-    if (tableState.arenaAsset !== 'chips') {
-      setCashoutMinBuyIn(0);
-      return;
-    }
     if (!showBuyInModal || !tableId || !userId || userId === 'guest') return;
     let live = true;
     void (async () => {
@@ -16214,7 +16210,7 @@ function LiveTablePage({
              regardless of what the slider showed.
              The error is reported, never discarded: a failed read looking like
              "no floor" is the one outcome this rule exists to prevent. */
-          if (arenaIdentity.asset === 'chips') {
+          {
             const { data: effectiveBuyIn, error: floorErr } = await supabase.rpc(
               'fn_cash_effective_buyin',
               { p_table_id: table.id }
@@ -16228,8 +16224,6 @@ function LiveTablePage({
             ) {
               setCashoutMinBuyIn(floorMin);
             }
-          } else {
-            setCashoutMinBuyIn(0);
           }
         }
 

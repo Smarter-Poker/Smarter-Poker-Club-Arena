@@ -1,50 +1,24 @@
 /**
- * CHIP CONTINUITY - the engine's side of the stay clock (Operation Table
- * Stakes, Slice 0; OPORD 1.3 section 6).
- *
- * THE RULE, in the words a player is allowed to read (section 6.1):
- *   Chips on the table stay on the table until you leave. If you are ahead of
- *   the money you put in, you remain seated for 10 minutes before you can
- *   leave. If you return to the same game in this club within 2 hours, you
- *   buy in for at least the stack you left with.
- *
- * WHERE THE TRUTH IS. The database (cash_player_session) owns the baseline,
- * the remaining time and whether the clock is running; the engine restarts at
- * :55 of every hour and must not own a clock. This module is a MIRROR: it
- * keeps the last row the database returned per player and derives the live
- * countdown from that row's `stay_last_tick_at`, exactly as the database
- * does. Every transition the engine can see - a hand settled, a sit-out, a
- * disconnect, an add-on - is reported through `evaluate`, and the row the
- * database answers with replaces the mirror.
- *
- * WHAT IT NEVER DOES. It never decides a leave on its own authority. A leave
- * the mirror thinks is allowed still goes through atomic_seat_cashout_locked
- * with p_leave_mode = 'voluntary', where the database checks again under the
- * seat lock. The mirror exists so the engine can answer POST /leave
- * synchronously with the right label and so the broadcast can carry the
- * countdown; the RPC is what makes a forged or stale leave impossible.
- *
- * NO FORBIDDEN WORDS. Nothing in this file may reach a client string except
- * the label produced by leaveLabel(). Internal names only.
+ * Cash-session compatibility mirror. Owner direction 2026-10-26 removes the
+ * minimum stay. Legacy clocks never lock a leave or appear in seat payloads.
+ * The database still owns atomic cashout and the full-stack two-hour return
+ * requirement. Session transitions continue for financial/session accounting.
  */
 
 import type { CashSessionEntry, CashSessionRow } from '../services/supabase/cashSessions.js';
 
-export const STAY_CLOCK_DEFAULT_MS = 600_000;
+export const STAY_CLOCK_DEFAULT_MS = 0;
 
 /** The remaining stay clock as of `nowMs`, derived the way the database derives it. */
 export function stayRemainingMs(
   row: Pick<CashSessionRow, 'stay_remaining_ms' | 'stay_running' | 'stay_last_tick_at'>,
   nowMs: number
 ): number {
-  const base = Math.max(0, Math.floor(row.stay_remaining_ms || 0));
-  if (!row.stay_running) return base;
-  const tick = Date.parse(row.stay_last_tick_at);
-  if (!Number.isFinite(tick)) return base;
-  return Math.max(0, base - Math.max(0, nowMs - tick));
+  // Legacy wire fields remain readable, but no longer impose a stay.
+  return 0;
 }
 
-/** I5: in profit AND time remaining, whether or not the clock is currently ticking. */
+/** Cash leaves have no minimum stay, including legacy persisted sessions. */
 export function isLeaveLocked(
   row: Pick<
     CashSessionRow,
@@ -53,7 +27,9 @@ export function isLeaveLocked(
   stackNow: number,
   nowMs: number
 ): boolean {
-  return stackNow > row.baseline && stayRemainingMs(row, nowMs) > 0;
+  // Owner direction 2026-10-26: cash leaves have no minimum stay.
+  // Ignore old persisted/mirrored clocks during the rolling deployment.
+  return false;
 }
 
 /** "Leave Available In M:SS" - the only copy the leave control shows while locked. */

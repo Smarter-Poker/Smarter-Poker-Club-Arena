@@ -64,6 +64,9 @@ const TIMERS: ReadonlyArray<readonly [string, string]> = [
   ['schema-manifest-refresh.yml', '20 5 * * *'],
   ['schema-manifest-refresh.yml', '40 * * * *'],
   ['secrets-expiry.yml', '13 9 * * 1'],
+  // Owner accepted the six-phase plan's weekly horse-versus-human scoreboard.
+  // Read-only, once weekly: at most 56 bounded windows / 90 seconds, no release authority.
+  ['horse-human-scoreboard.yml', '0 14 * * 1'],
   ['telemetry-exposure.yml', '10 6,18 * * *'],
 ];
 
@@ -137,8 +140,8 @@ describe('no workflow gains a new timer', () => {
 
   it('the surface is the size it was measured at', () => {
     expect(found).toHaveLength(TIMERS.length);
-    expect(TIMERS).toHaveLength(13);
-    expect(new Set(TIMERS.map(([f]) => f)).size).toBe(10);
+    expect(TIMERS).toHaveLength(14);
+    expect(new Set(TIMERS.map(([f]) => f)).size).toBe(11);
   });
 
   it('schema-manifest-refresh keeps the two that three other laws bound it to', () => {

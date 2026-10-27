@@ -29,11 +29,12 @@ function fixture() {
     is_active: true,
     membership_lifecycle_status: 'active',
     invited_by: REPLACEMENT_OWNER,
-    agent_id: null,
+    agent_id: REPLACEMENT_OWNER as string | null,
     player_rakeback_pct: 0,
     player_rakeback_explicit: false,
   });
   const a = {
+    referralAgent: vi.fn(async (): Promise<string | null> => REPLACEMENT_OWNER),
     plan: vi.fn(async () => ({
       batch: 'patterned-retirement-20261006',
       completed_replacements: 62,
@@ -143,6 +144,65 @@ describe('finite original DSS boarding', () => {
     const { a, members, member } = fixture();
     members.set(rows[0].horseId, { ...member(rows[0].horseId), agent_id: 'another-agent' });
     await expect(boardReplacementHorses(true, a)).rejects.toThrow('scope changed');
+    expect(a.join).not.toHaveBeenCalled();
+  });
+  it('resumes the original owner-as-agent receipt without repeating its accepted join', async () => {
+    const { a, members, receipts, member } = fixture();
+    a.referralAgent.mockResolvedValue(REPLACEMENT_OWNER);
+    const m = { ...member(rows[0].horseId), agent_id: REPLACEMENT_OWNER };
+    members.set(rows[0].horseId, m);
+    receipts.set(boardingRequest(rows[0]), {
+      success: true,
+      club: { id: REPLACEMENT_BOARD },
+      status: 'active',
+      membership: m,
+    });
+    const join = a.join.getMockImplementation()!;
+    a.join.mockImplementation(async (r, key) => {
+      const receipt = await join(r, key);
+      receipt.membership.agent_id = REPLACEMENT_OWNER;
+      return receipt;
+    });
+    const original = JSON.stringify({ member: m, receipt: receipts.get(boardingRequest(rows[0])) });
+    expect(await boardReplacementHorses(true, a)).toMatchObject({ boarded: 62, members: 496 });
+    expect(
+      JSON.stringify({
+        member: members.get(rows[0].horseId),
+        receipt: receipts.get(boardingRequest(rows[0])),
+      })
+    ).toBe(original);
+    expect(a.join).toHaveBeenCalledTimes(61);
+    expect(a.join.mock.calls.every(([r]) => r.horseId !== rows[0].horseId)).toBe(true);
+  });
+  it('refuses a receipt that disagrees with the actual original owner placement', async () => {
+    const { a, members, receipts, member } = fixture();
+    const m = member(rows[0].horseId);
+    members.set(rows[0].horseId, m);
+    receipts.set(boardingRequest(rows[0]), {
+      success: true,
+      club: { id: REPLACEMENT_BOARD },
+      status: 'active',
+      membership: { ...m, agent_id: null },
+    });
+    const original = JSON.stringify(m);
+    await expect(boardReplacementHorses(true, a)).rejects.toThrow('scope changed');
+    expect(a.join).not.toHaveBeenCalled();
+    expect(JSON.stringify(m)).toBe(original);
+  });
+  it('stops on authority drift before another join and retains accepted records', async () => {
+    const { a, members } = fixture();
+    a.referralAgent
+      .mockResolvedValueOnce(REPLACEMENT_OWNER)
+      .mockResolvedValueOnce(REPLACEMENT_OWNER)
+      .mockResolvedValue(null);
+    await expect(boardReplacementHorses(true, a)).rejects.toThrow('authority changed');
+    expect(members.size).toBe(1);
+    expect(a.join).toHaveBeenCalledTimes(1);
+  });
+  it('refuses arbitrary referral agents before a subject session', async () => {
+    const { a } = fixture();
+    a.referralAgent.mockResolvedValue('another-agent');
+    await expect(boardReplacementHorses(true, a)).rejects.toThrow('authority unavailable');
     expect(a.join).not.toHaveBeenCalled();
   });
   it('refuses insufficient current capacity before first join', async () => {

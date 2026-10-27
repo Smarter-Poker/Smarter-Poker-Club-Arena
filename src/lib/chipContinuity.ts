@@ -1,15 +1,4 @@
-/**
- * CHIP CONTINUITY - client copy (Operation Table Stakes, Slice 0).
- *
- * The server owns the stay clock (cash_player_session in Postgres, mirrored
- * by the engine). The client renders what the engine sends: a remaining time
- * as of the engine's clock, and whether it is counting. These helpers turn
- * that into the one label the leave control is allowed to show.
- *
- * The leave control says "Leave Available In M:SS". The felt also prints
- * "Your Time Clock Has Started" with this same server-projected countdown
- * below VPIP (owner direction 2026-10-15); neither display owns the lock.
- */
+/** Legacy leave-clock wire compatibility after the minimum stay was removed. */
 
 export interface HeroLeaveClock {
   locked: boolean;
@@ -21,14 +10,13 @@ export interface HeroLeaveClock {
 
 /** Remaining stay time now, counting down only while the clock is running. */
 export function heroLeaveRemainingMs(clock: HeroLeaveClock | null, serverNowMs: number): number {
-  if (!clock) return 0;
-  if (!clock.running) return Math.max(0, clock.remainingMs);
-  return Math.max(0, clock.remainingMs - Math.max(0, serverNowMs - clock.at));
+  // The minimum-stay rule was removed on 2026-10-26, including old snapshots.
+  return 0;
 }
 
 /** Locked iff the engine said so AND time actually remains. */
 export function heroLeaveIsLocked(clock: HeroLeaveClock | null, serverNowMs: number): boolean {
-  return !!clock?.locked && heroLeaveRemainingMs(clock, serverNowMs) > 0;
+  return false;
 }
 
 export function leaveAvailableLabel(remainingMs: number): string {

@@ -10424,7 +10424,21 @@ export class GameServer {
     // Queue admission is not completion. Leave the row pending until the
     // manager finishes a full reason-aware sweep; a crash, lifecycle abort or
     // cooperative budget yield must be replayed by the next manager.
-    return manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
+    const accepted = manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
+    if (row.reason === 'late_registration') {
+      const owner = manager;
+      const lifecycle = this.lifecycleGeneration;
+      // A full sweep may already be awaiting an unrelated bust transaction.
+      // The committed capacity receipt only needs its dealer, not another
+      // money/seat writer or permission to release that existing operation.
+      await owner.admitCommittedCapacityTablesForWake(
+        () =>
+          this.running &&
+          this.lifecycleGeneration === lifecycle &&
+          this.tournamentEngines.get(tournamentId) === owner
+      );
+    }
+    return accepted;
   }
 
   /** Acknowledge durable action wakes only after their full sweep completed. */

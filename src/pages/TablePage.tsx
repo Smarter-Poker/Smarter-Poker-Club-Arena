@@ -157,6 +157,8 @@ import {
 } from '../services/EngineStateClient';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
+import { tableHudControl } from '../components/table/tableHudControl';
+import { ClusterWaitlistCallToAction } from '../components/table/ClusterWaitlistCallToAction';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
 import { viewerMaySqueeze } from '../presentation/cardPresentation/squeezeEligibility';
 import { useHeldValue } from '../hooks/useHeldValue';
@@ -366,6 +368,7 @@ import { useTableTournament } from '../hooks/useTableTournament';
 import { useTableAnimations } from '../hooks/useTableAnimations';
 import { useTableSound } from '../hooks/useTableSound';
 import { useTableSession } from '../hooks/useTableSession';
+import { useLeaveTableNextHand } from '../hooks/useLeaveTableNextHand';
 import { tableService } from '../services/TableService';
 import { peekWarmSeats, warmSeatsPromise, type WarmSeat } from '../services/tableWarmup';
 import { WalletService } from '../services/WalletService';
@@ -2677,6 +2680,19 @@ function LiveTablePage({
 
   // Seat-exit state precedes every snapshot and removal consumer.
   const leftSeatPendingRef = useRef(false);
+  const leaveRequestActiveRef = useRef(false);
+  const reportedSeatExitsRef = useRef(new Set<string>());
+  const presentRemoteSeatExitRef = useRef<() => void>(() => {});
+  const [appliedExitSnapshot, setAppliedExitSnapshot] = useState<{
+    snapshot: typeof engineSnapshot;
+    tableId: typeof tableId;
+    userId: typeof userId;
+  } | null>(null);
+  const [ownSeatIdentity, setOwnSeatIdentity] = useState<{
+    tableId: string;
+    userId: string;
+    occupancyId: string;
+  } | null>(null);
   const [pendingSeat, setPendingSeat] = useState<number | null>(null);
   const pendingSeatStackRef = useRef<number>(0);
 
@@ -2760,6 +2776,7 @@ function LiveTablePage({
       }
       heroSeatRef.current = 0;
     }
+    setAppliedExitSnapshot({ snapshot: engineSnapshot, tableId, userId });
     setTableIsAnonymous(mapped.isAnonymous);
     /* Identity resolution BEFORE the card/status merge below: the engine owns
        the hand, the database owns the face, and a face the database has
@@ -3133,7 +3150,7 @@ function LiveTablePage({
     // `lightningExitTick` changes only when a Lightning exit hold ends, and
     // re-applies the LATEST snapshot, which is the one the hold was keeping.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);
+  }, [engineSnapshot, USE_ENGINE_WS, userId, tableId, lightningExitTick]);
 
   /* AN ACTION WHOSE ANSWER WAS LOST IS CHECKED BEFORE THE BAR COMES BACK
      (2026-10-05). submitAction gives up with ACTION_NOT_DELIVERED when no
@@ -5683,6 +5700,9 @@ function LiveTablePage({
         break;
       case 'LEAVE_TABLE':
         setShowLeaveConfirm(true);
+        break;
+      case 'LEAVE_TABLE_NEXT_HAND':
+        void requestLeaveAtNextHand();
         break;
       case 'FORCE_LEAVE_TABLE':
         handleForceLeaveTable();
@@ -9266,15 +9286,11 @@ function LiveTablePage({
    * the expiry timer force-clears — because a button that outlives its offer is
    * a button that lies.
    *
-   * THE OTHER HALF OF DAN'S NOTE ("appears late") IS NOT FIXED HERE, ON
-   * PURPOSE. It was written against the old render site in TableModalsLayer,
-   * which #1327 deleted on 2026-08-26: Rabbit Hunt now lives in the bottom-left
-   * HUD slot it shares with the time-bank tile, and the two are kept mutually
-   * exclusive by `!tableState.isHandInProgress` — an invariant pinned by
-   * tests/all-in-cannot-leave-and-the-hud-slot.test.ts. Dropping that gate to
-   * make the button appear a snapshot earlier would put two controls in one
-   * slot. The minimum-visible floor below buys back the click window from the
-   * other end; widening the gate needs Dan's call on the slot, not a merge.
+   * Owner update 2026-10-27: show the accepted offer as soon as the final
+   * action completes. `tableHudControl` uses the existing authoritative
+   * handSettling event rather than waiting for the result-hold snapshot to
+   * become hand-free. One decision still owns the shared slot, and a real
+   * next-hand decision takes priority over any retained older offer.
    */
   const rabbitShownAtRef = useRef(0);
   const rabbitFloorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -9881,6 +9897,9 @@ function LiveTablePage({
      `hand_history_saved` can land straight into it. See lib/handHistoryLive. */
   const handHistoryFetchedAtRef = useRef<number | null>(null);
   const handHistoryTableRef = useRef<string | null>(null);
+  const handHistoryViewerRef = useRef<string | null>(null);
+  const handHistoryScopeRef = useRef('');
+  handHistoryScopeRef.current = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}`;
   const handHistoryStateRef = useRef<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   handHistoryStateRef.current = handHistoryState;
   /* Saved-hand ids that arrived WHILE the page fetch was in flight. The fetch
@@ -9924,6 +9943,14 @@ function LiveTablePage({
   // cache. Both openers hydrate now.
   useEffect(() => {
     if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
+    if (handHistoryViewerRef.current !== userId) {
+      handHistoryViewerRef.current = userId;
+      handHistoryFetchedAtRef.current = null;
+      handHistoryTableRef.current = null;
+      handHistoryStateRef.current = 'idle';
+      pendingSavedIdsRef.current = [];
+      setHandHistory([]);
+    }
     /* INSTANT REOPEN (Phase 1). Fetch on the first open for this table, after
        a failure, or when the list is stale enough that an event may have been
        missed; otherwise the list on screen is the record plus every hand the
@@ -9934,6 +9961,7 @@ function LiveTablePage({
         fetchedAt: handHistoryFetchedAtRef.current,
         fetchedTableId: handHistoryTableRef.current,
         tableId,
+        handCount: handHistory.length,
         now: Date.now(),
       })
     ) {
@@ -9947,6 +9975,7 @@ function LiveTablePage({
         // HandHistoryService.getPlayerHands for what the missing tableId did.
         handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
           tableId,
+          lightningPoolSessionId: lightningRoom?.poolSessionId,
           throwOnError: true,
         }),
       commit: (hands) => {
@@ -9973,7 +10002,7 @@ function LiveTablePage({
     /* `tableId` IS a dependency: a TablePage instance in the multi-table
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
-  }, [showHandHistory, showHandDetail, userId, tableId]);
+  }, [showHandHistory, showHandDetail, userId, tableId, lightningRoom?.poolSessionId, lastHandId]);
 
   /**
    * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
@@ -9995,8 +10024,25 @@ function LiveTablePage({
       if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId)
         return;
       try {
+        const savedScope = `${userId}:${tableId}:${lightningRoom?.poolSessionId ?? ''}`;
         const row = await handHistoryService.getHand(savedId);
-        if (!row || row.table_id !== tableId) return;
+        if (
+          handHistoryScopeRef.current !== savedScope ||
+          handHistoryViewerRef.current !== userId ||
+          handHistoryTableRef.current !== tableId
+        )
+          return;
+        const readStateAfterAwait = () => handHistoryStateRef.current;
+        const stateAfterAwait = readStateAfterAwait();
+        if (stateAfterAwait === 'loading') {
+          if (!pendingSavedIdsRef.current.includes(savedId))
+            pendingSavedIdsRef.current.push(savedId);
+          return;
+        }
+        if (stateAfterAwait !== 'ready') return;
+        // Lightning's authenticated room announces a physical hand, whereas
+        // this page's tableId is the player's pool session, not a tables row.
+        if (!row || (!lightningRoom?.poolSessionId && row.table_id !== tableId)) return;
         const record = adaptServiceHandToPanel(row, userId);
         setHandHistory((prev) => prependHand(prev, record));
         handHistoryFetchedAtRef.current = Date.now();
@@ -10004,7 +10050,7 @@ function LiveTablePage({
         reportError(e, 'TablePage.takeSavedHand');
       }
     },
-    [userId, tableId]
+    [userId, tableId, lightningRoom?.poolSessionId]
   );
   const takeSavedHandRef = useRef(takeSavedHand);
   takeSavedHandRef.current = takeSavedHand;
@@ -10016,7 +10062,11 @@ function LiveTablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 1, { tableId });
+        const hands = await handHistoryService.getPlayerHands(userId, 1, {
+          tableId,
+          lightningPoolSessionId: lightningRoom?.poolSessionId,
+          throwOnError: true,
+        });
         if (!cancelled && hands && hands.length > 0 && hands[0]?.id) {
           setLastHandId(hands[0].id);
         }
@@ -10027,7 +10077,7 @@ function LiveTablePage({
     return () => {
       cancelled = true;
     };
-  }, [showHandReplay, replaySubjectId, lastHandId, userId]);
+  }, [showHandReplay, replaySubjectId, lastHandId, userId, tableId, lightningRoom?.poolSessionId]);
 
   /* The per-table hand cache is gone (see `handHistory` above). Keys written
      by earlier builds are removed once so they stop taking storage; nothing
@@ -11116,6 +11166,8 @@ function LiveTablePage({
   };
   const stopLightningForLeave = useLightningLeaveStop(lightningRoom, userId);
   const handleLeaveTable = async () => {
+    if (leaveRequestActiveRef.current) return;
+    leaveNextHand.cancelQueuedLeave();
     setLeaveNotice(null);
     leaveNavigatedRef.current = false;
     if (!(await stopLightningForLeave())) {
@@ -11221,6 +11273,7 @@ function LiveTablePage({
     showLobbyNow();
 
     try {
+      leaveRequestActiveRef.current = true;
       const leaveTableId = lightningLeave ? lightningLeave.anchorTableId : tableId;
       const result = lightningLeave
         ? await tableService.leaveTable(leaveTableId, lightningLeave.seatNumber, userId, {
@@ -11229,6 +11282,7 @@ function LiveTablePage({
           })
         : await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
+        applySeatRemoved(undefined, { announce: false });
         /* A leave during a live Lightning hand is queued: the hand finishes,
            then the anchor seat cashes out. Say so, once, over the lobby. */
         if (lightningLeave && result.deferred) {
@@ -11291,6 +11345,8 @@ function LiveTablePage({
            the table card, whose counters only saw this room's hands. */
         if (lightningLeave && lightningSummaryRoom && tableId) {
           openLightningSessionSummary({
+            closeTableId: tableId,
+            closeSeat: seatAtLeave,
             poolSessionId: tableId,
             clusterId: lightningSummaryRoom.clusterId,
             name: lightningSummaryRoom.meta?.name ?? null,
@@ -11300,6 +11356,9 @@ function LiveTablePage({
           });
         } else
           publishSessionSummary({
+            closeTableId: tableId,
+            closeSeat: seatAtLeave,
+            closeOccupancyId: result.occupancyId,
             arenaAsset: tableState.arenaAsset,
             diamondRecap:
               tableState.arenaAsset === 'diamonds' &&
@@ -11343,6 +11402,7 @@ function LiveTablePage({
               ? {
                   tableId: leaveTableId,
                   userId,
+                  requireOccupancy: true,
                   sinceMs: Date.now(),
                   occupancyId: result.occupancyId,
                 }
@@ -11354,11 +11414,7 @@ function LiveTablePage({
         // destination (club lobby vs an in-page lobby tab vs '/') and the last
         // one silently won. Emitting them here, before navigating, keeps the
         // order deterministic.
-        masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtLeave });
-        masterBus.emit('TABLE_MENU_ACTION', {
-          tableId: tableId ?? '',
-          action: 'CLOSE_TABLE_TAB',
-        });
+        // The app-root result card owns closing this table after acknowledgement.
         showLobbyNow();
 
         // The client-side "Session Complete" notification that sat here is gone
@@ -11413,11 +11469,123 @@ function LiveTablePage({
     } catch (error) {
       reportError(error, 'TablePage.Exception');
       goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+    } finally {
+      leaveRequestActiveRef.current = false;
     }
   };
 
+  const leaveNextHand = useLeaveTableNextHand({
+    userId: userId === 'guest' ? '' : (userId ?? ''),
+    tableId: tableId ?? '',
+    occupancyId:
+      lightningRoom?.poolSessionId ||
+      (ownSeatIdentity?.tableId === tableId && ownSeatIdentity?.userId === userId
+        ? ownSeatIdentity.occupancyId
+        : ''),
+    seated: !leftSeatPendingRef.current && (tableState.heroSeat > 0 || !!lightningRoom),
+    ready:
+      !!engineSnapshot &&
+      appliedExitSnapshot?.snapshot === engineSnapshot &&
+      appliedExitSnapshot.tableId === tableId &&
+      appliedExitSnapshot.userId === userId,
+    handLive: tableState.isHandInProgress && !handSettling,
+    completionVersion:
+      lastHandId ||
+      (engineSnapshot && !tableState.isHandInProgress && (tableState.handNumber ?? 0) > 0
+        ? `idle:${tableState.handNumber}`
+        : ''),
+    setSitOut: () => setSitOut(tableId ?? '', true),
+    onLeave: handleLeaveTable,
+  });
+  const requestLeaveAtNextHand = async () => {
+    if (heroLeaveLocked) {
+      toast.info(leaveAvailableLabel(heroLeaveMs));
+      return;
+    }
+    const queued = await leaveNextHand.requestLeaveNextHand();
+    if (queued) toast.info('You Will Leave The Table After This Hand.');
+    else toast.warning(leaveNextHand.getError() || 'Could Not Queue Your Leave. Please Try Again.');
+  };
+
+  // Presentation is keyed by occupancy, independently of the roster exit latch.
+  // A roster read can observe leave_pending before the websocket seat_left.
+  const presentRemoteSeatExit = () => {
+    if (
+      !tableId ||
+      !userId ||
+      leaveRequestActiveRef.current ||
+      leaveNavigatedRef.current ||
+      tableStateRef.current.isTournament
+    )
+      return;
+    const remoteSessionSeat = Math.max(heroSeatRef.current, tableStateRef.current.heroSeat);
+    const remoteSessionStack = tableStateRef.current.players.find((p) => p?.id === userId)?.stack;
+    if (remoteSessionSeat <= 0 && totalBuyInRef.current <= 0) return;
+    const occupancyId =
+      ownSeatIdentity?.tableId === tableId && ownSeatIdentity.userId === userId
+        ? ownSeatIdentity.occupancyId
+        : String(sessionStartRef.current);
+    const key = `${userId}:${tableId}:${occupancyId}`;
+    if (reportedSeatExitsRef.current.has(key)) return;
+    reportedSeatExitsRef.current.add(key);
+    // Another window requested the financial leave. This window
+    // only presents its result; it must never cash the seat out again.
+    leaveNextHand.cancelQueuedLeave();
+    masterBus.emit('SESSION_ENDED', { tableId, userId });
+    if (lightningRoom) {
+      openLightningSessionSummary({
+        poolSessionId: lightningRoom.poolSessionId,
+        clusterId: lightningRoom.clusterId,
+        name: lightningRoom.meta?.name ?? null,
+        closeTableId: tableId,
+        closeSeat: remoteSessionSeat,
+      });
+    } else {
+      publishSessionSummary({
+        closeTableId: tableId,
+        closeSeat: remoteSessionSeat,
+        closeOccupancyId:
+          ownSeatIdentity?.tableId === tableId && ownSeatIdentity.userId === userId
+            ? ownSeatIdentity.occupancyId
+            : undefined,
+        arenaAsset: tableStateRef.current.arenaAsset,
+        duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+        handsPlayed: handsPlayedRef.current,
+        handsWon: handsWonRef.current,
+        totalRebuys: totalRebuysRef.current,
+        profitLoss: (remoteSessionStack ?? 0) - totalBuyInRef.current,
+        biggestPot: biggestPotRef.current,
+        peakStack: peakStackRef.current,
+        tableName: tableStateRef.current.tableName,
+        vpipPercent:
+          handsPlayedRef.current > 0
+            ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+            : 0,
+        totalBuyIn: totalBuyInRef.current,
+        sessionStart: sessionStartRef.current,
+        sessionEnd: Date.now(),
+        // seat_left is an accepted exit, not a cashout receipt.
+        plPending: true,
+        pendingCashout: {
+          tableId,
+          userId,
+          requireOccupancy: true,
+          sinceMs: Date.now(),
+          occupancyId:
+            ownSeatIdentity?.tableId === tableId && ownSeatIdentity.userId === userId
+              ? ownSeatIdentity.occupancyId
+              : undefined,
+        },
+      });
+    }
+    showLobbyNow();
+  };
+  presentRemoteSeatExitRef.current = presentRemoteSeatExit;
+
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
+    if (leaveRequestActiveRef.current) return;
+    leaveNextHand.cancelQueuedLeave();
     const forceSummaryRoom = lightningRoomRef.current;
     leaveNavigatedRef.current = false;
     if (!(await stopLightningForLeave())) {
@@ -11473,7 +11641,7 @@ function LiveTablePage({
        * captures them: `leaveTable` zeroes the seat, so reading the stack
        * afterwards reads nothing and books the entire buy-in as a loss.
        */
-      const forceHeroSeat = tableState.heroSeat;
+      const forceHeroSeat = forceLiveSeat;
       const forceStackAtLeave = tableState.players[forceHeroSeat - 1]?.stack || 0;
       /* A SPECTATOR GETS NO CARD. Closing a tab with heroSeat 0 never sat
          down, so there is no session to report — and a card reading "0 hands,
@@ -11498,6 +11666,7 @@ function LiveTablePage({
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
       const forceTableId = forceLightning ? forceLightning.anchorTableId : tableId;
+      leaveRequestActiveRef.current = true;
       const forced = forceLightning
         ? await tableService.leaveTable(forceTableId, forceLightning.seatNumber, userId, {
             seatNumber: forceLightning.seatNumber,
@@ -11531,6 +11700,7 @@ function LiveTablePage({
       // The old guard showed "your chips are still in your seat" to people
       // with no seat and made the table impossible to close while watching.
       heroSeatRef.current = 0; // FIX 132: Clear on force leave
+      applySeatRemoved(undefined, { announce: false });
 
       /* The results card. Same payload, same host and the same deferred-cashout
          reconciliation as `handleLeaveTable` — one card, two doors, so the tab
@@ -11561,6 +11731,8 @@ function LiveTablePage({
         /* LIGHTNING PHASE 8: the same Lightning summary from this door. */
         if (forceLightning && forceSummaryRoom && tableId) {
           openLightningSessionSummary({
+            closeTableId: tableId,
+            closeSeat: forceHeroSeat,
             poolSessionId: tableId,
             clusterId: forceSummaryRoom.clusterId,
             name: forceSummaryRoom.meta?.name ?? null,
@@ -11570,6 +11742,9 @@ function LiveTablePage({
           });
         } else
           publishSessionSummary({
+            closeTableId: tableId,
+            closeSeat: forceHeroSeat,
+            closeOccupancyId: forced.occupancyId,
             arenaAsset: tableState.arenaAsset,
             diamondRecap:
               tableState.arenaAsset === 'diamonds' &&
@@ -11603,6 +11778,7 @@ function LiveTablePage({
               ? {
                   tableId: forceTableId,
                   userId,
+                  requireOccupancy: true,
                   sinceMs: Date.now(),
                   occupancyId: forced.occupancyId,
                 }
@@ -11610,13 +11786,14 @@ function LiveTablePage({
           });
       }
 
-      masterBus.emit('TABLE_LEFT', { tableId, seat: forceHeroSeat });
+      if (!forceHadSession) masterBus.emit('TABLE_LEFT', { tableId, seat: forceHeroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
       playerStatusService.clearPlayingAt(userId);
     } catch (e) {
       reportError(e, 'TablePage.handleForceLeaveTable');
-      // Fallback: forcefully close tab to prevent freeze
-      masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+      goToLobbyKeepingSeat(seatCopy(tableState.arenaAsset).couldNotCashOutYet);
+    } finally {
+      leaveRequestActiveRef.current = false;
     }
   };
 
@@ -12348,6 +12525,7 @@ function LiveTablePage({
       if (eventType === 'hand_history_saved') {
         const savedId = handState.hand_id as string | undefined;
         if (savedId) {
+          handHistoryFetchedAtRef.current = null;
           setLastHandId(savedId);
           // Phase 1: the Previous Hand list takes the hand as it lands.
           void takeSavedHandRef.current(savedId);
@@ -16216,12 +16394,20 @@ function LiveTablePage({
         const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
-            'seat_number, user_id, stack, status, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
+            'seat_number, user_id, occupancy_id, stack, status, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
           )
           .eq('table_id', table.id)
           .is('left_at', null);
 
         if (!isMounted) return;
+        const restoredOwnSeat = existingSeats?.find((seat) => seat.user_id === userId);
+        if (restoredOwnSeat?.occupancy_id && userId) {
+          setOwnSeatIdentity({
+            tableId: table.id,
+            userId,
+            occupancyId: restoredOwnSeat.occupancy_id,
+          });
+        }
         // ROUND 9 (2026-08-29): a failed restore read rendered an EMPTY felt
         // on a mid-session reload - every seat blank until the next engine
         // snapshot arrived to repair it. The snapshot is still the authority
@@ -20948,6 +21134,7 @@ function LiveTablePage({
             /* No reason means the player left of their own accord, so the seat
                clears without a word. A reason means something happened TO them
                and they are told what. */
+            if (!reason) presentRemoteSeatExitRef.current();
             applySeatRemoved(reason, { announce: Boolean(reason) });
           }
 
@@ -21900,6 +22087,9 @@ function LiveTablePage({
   }, [tableId, userId]);
   useEffect(() => {
     if (autoBuyInFiredRef.current) return;
+    // A deep-link invitation was consumed by the seat we have now left.
+    // It cannot become another buy-in invitation in a second window.
+    if (leftSeatPendingRef.current) return;
     let wantsBuyIn = openBuyInOnArrival || acceptedChair > 0;
     try {
       wantsBuyIn ||=
@@ -22910,7 +23100,7 @@ function LiveTablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out, sit_out_at, leave_pending, stack')
+          .select('user_id, occupancy_id, is_sitting_out, sit_out_at, leave_pending, stack')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (cancelled) return;
@@ -22918,6 +23108,7 @@ function LiveTablePage({
         if (!data) return;
         const rows = data as Array<{
           user_id: string;
+          occupancy_id?: string;
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
           leave_pending: boolean | null;
@@ -22931,7 +23122,14 @@ function LiveTablePage({
            full "You Are Sitting Out / I'm Back" bar with a five-minute eviction
            countdown, on a seat they already left (Dan 2026-09-05). */
         const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
-        if (heroRow?.leave_pending) leftSeatPendingRef.current = true;
+        if (heroRow?.occupancy_id && userId) {
+          setOwnSeatIdentity({ tableId, userId, occupancyId: heroRow.occupancy_id });
+        }
+        if (heroRow?.leave_pending) {
+          presentRemoteSeatExitRef.current();
+          leftSeatPendingRef.current = true;
+          applySeatRemoved(undefined, { announce: false });
+        }
         /* THE HERO'S OWN STACK, FROM THE ROW (Dan 2026-10-12). A seated hero
            who is not in the current hand's player list (sitting out, or
            waiting to be dealt in) is drawn from a placeholder, and that
@@ -23038,6 +23236,7 @@ function LiveTablePage({
                disappearing is our own completed leave, and "You Were Removed
                From The Table" is simply untrue (Dan 2026-09-05). A real
                eviction never sets that latch, so it still speaks. */
+            if (leftSeatPendingRef.current) presentRemoteSeatExitRef.current();
             applySeatRemoved(evictionReasonRef.current, {
               announce: !leftSeatPendingRef.current,
             });
@@ -23292,11 +23491,13 @@ function LiveTablePage({
    * player's preference would change everybody's pace and leak, from rhythm
    * alone, that the deck still had cards in it (CLAUDE.md 10.5).
    */
-  const hudSlotControl: 'timebank' | 'rabbit' | null = heroPromptedToAct
-    ? 'timebank'
-    : !tableState.isHandInProgress && isRabbitAvailable && v8Settings.rabbit_hunt_button
-      ? 'rabbit'
-      : null;
+  const hudSlotControl: 'timebank' | 'rabbit' | null = tableHudControl({
+    heroPromptedToAct,
+    handSettling,
+    handInProgress: tableState.isHandInProgress,
+    rabbitAvailable: isRabbitAvailable,
+    rabbitEnabled: v8Settings.rabbit_hunt_button,
+  });
 
   /**
    * Phase 1.3 PR-C+D: thin wrapper around submitAction that routes server-side
@@ -25987,6 +26188,14 @@ function LiveTablePage({
                         onClick: () => void handleSitOut(),
                       },
                       {
+                        id: 'leave-next-hand',
+                        label: 'Leave Table Next Hand',
+                        icon: <LeaveTableIcon />,
+                        badge: leaveNextHand.queued ? 'ON' : undefined,
+                        disabled: leaveNextHand.pending,
+                        onClick: () => void requestLeaveAtNextHand(),
+                      },
+                      {
                         id: 'standup-bb',
                         label: 'Stand Up Next Big Blind',
                         icon: <SitOutIcon />,
@@ -28608,11 +28817,22 @@ function LiveTablePage({
                  the queue printed into it (WaitlistCallToAction). It sits
                  outside the label span, whose one-line ellipsis would clip
                  the shell's shadow. */
-              <WaitlistCallToAction
-                onClick={handleOpenWaitlist}
-                waitingCount={waitListPlayers.length}
-                position={heroWaitlistPosition}
-              />
+              tableState.clusterId ? (
+                <ClusterWaitlistCallToAction
+                  gameId={tableState.clusterId}
+                  onClick={handleOpenWaitlist}
+                  refreshKey={
+                    clusterRefreshKey + (tableState.handNumber ?? 0) + Number(showMustMoveLobby)
+                  }
+                  enabled={isVisible}
+                />
+              ) : (
+                <WaitlistCallToAction
+                  onClick={handleOpenWaitlist}
+                  waitingCount={waitListPlayers.length}
+                  position={heroWaitlistPosition}
+                />
+              )
             ) : (
               <span className="spectator-footer-bar__label">
                 <>
@@ -29613,7 +29833,7 @@ function LiveTablePage({
           setShowHandDetail(false);
           setHandDetailFocusId(null);
         }}
-        hands={handHistory}
+        hands={handHistoryViewerRef.current === userId ? handHistory : []}
         heroId={userId || ''}
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
@@ -30512,7 +30732,7 @@ function LiveTablePage({
         onDismissTournamentWinner={handleDismissTournamentWinner}
         // Hand History
         showHandHistory={showHandHistory}
-        handHistory={handHistory}
+        handHistory={handHistoryViewerRef.current === userId ? handHistory : []}
         handHistoryState={handHistoryState}
         handHistoryViewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         onCloseHandHistory={handleCloseHandHistory}

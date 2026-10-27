@@ -59,12 +59,14 @@ export function correctiveKernelReceiptIsValid(decision: HorseDecision): boolean
     return false;
   if (
     !object(v.baselineAuthorities) ||
+    (Object.hasOwn(v.baselineAuthorities, 'phase8') &&
+      Object.hasOwn(v.baselineAuthorities, 'phase8_guard')) ||
     Object.keys(v.baselineAuthorities).length > (tournament ? 5 : 4) ||
     Object.entries(v.baselineAuthorities).some(
       ([owner, r]) =>
         !(
           tournament
-            ? ['phase8', 'phase10', 'phase11', 'phase12', 'phase13']
+            ? ['phase8', 'phase8_guard', 'phase10', 'phase11', 'phase12', 'phase13']
             : ['phase10', 'phase11', 'phase12', 'phase13']
         ).includes(owner) ||
         !horseAuthorityReceiptIsWellFormed(r) ||

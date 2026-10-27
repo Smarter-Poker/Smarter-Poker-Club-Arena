@@ -13,6 +13,8 @@ export interface LightningSummaryRequest {
   clusterId: string;
   /** The Cluster's name for the header, when known. */
   name: string | null;
+  /** Original anchor occupancy followed by the existing queued-cashout watcher. */
+  cashout?: { tableId: string; occupancyId: string };
 }
 
 let current: LightningSummaryRequest | null = null;

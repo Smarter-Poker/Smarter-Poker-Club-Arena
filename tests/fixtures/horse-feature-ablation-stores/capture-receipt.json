@@ -1,0 +1,94 @@
+{
+  "schema": "horse-feature-ablation-store-export-v1",
+  "route": "Configured Supabase execute_sql read-only exact loader columns; literal JSON payload streamed through static Python stdin to owned external SSD; maintained phase6c-store-snapshot --from-rows production validation",
+  "exporter_script_executed": false,
+  "metadata_note": "Maintained phase6c --from-rows hardcodes fetchedVia to its host exporter name. This receipt records actual MCP route; no SSH, environment-file or credentials read.",
+  "raw_rows": [
+    {
+      "path": "chart_store.json",
+      "bytes": 471748,
+      "sha256": "ba037bc325eebfd5e816660d15433ac4d9ed84fa3e7c4f876821b0625a5d2882",
+      "store": "chart_store",
+      "rows": 240,
+      "fetchedFrom": "2026-10-27 02:34:35.299368+00",
+      "fetchedTo": "2026-10-27 02:40:02.537725+00",
+      "boundary": null
+    },
+    {
+      "path": "solver_store-postflop.json",
+      "bytes": 39754499,
+      "sha256": "750a9ec7065678ef0d53a4e6ee360190714dbfe3820dd831c0a2255090813fd2",
+      "store": "solver_store:postflop",
+      "rows": 7747,
+      "fetchedFrom": "2026-10-27 02:34:35.299368+00",
+      "fetchedTo": "2026-10-27 02:40:02.537725+00",
+      "boundary": {
+        "before": {
+          "count": 7747,
+          "latestBuiltAt": "2026-09-03T18:18:13.594197+00:00"
+        },
+        "after": {
+          "count": 7747,
+          "latestBuiltAt": "2026-09-03T18:18:13.594197+00:00"
+        }
+      }
+    }
+  ],
+  "validated_snapshots": [
+    {
+      "store": "chart_store",
+      "file": "phase6c-store-chart-store-2c8a2d9f448e.json",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 240,
+        "digest": "2c8a2d9f448e5dd22f4433faeb40f70ac6a111d6c7e7bacae89e4fbf106a5dbf",
+        "revision": "2026-07-19T15:11:48.555537+00:00"
+      },
+      "source": {
+        "table": "memory_charts_gold",
+        "fetchedRows": 240,
+        "fetchedVia": "scripts/phase6c-store-export-rows.mjs (the loader queries)"
+      },
+      "fetchedFrom": "2026-10-27 02:34:35.299368+00",
+      "fetchedTo": "2026-10-27 02:40:02.537725+00"
+    },
+    {
+      "store": "solver_store:postflop",
+      "file": "phase6c-store-solver-store-postflop-dff78313b437.json",
+      "identity": {
+        "version": "solver-store-identity-v1",
+        "rows": 7747,
+        "digest": "dff78313b437357d3657fe256fc3b3b82cd4740afffe9125e530dfcc79f57c1d",
+        "revision": "2026-09-03T18:18:13.594197+00:00"
+      },
+      "source": {
+        "table": "gto_postflop_compact",
+        "fetchedRows": 7747,
+        "boundary": {
+          "count": 7747,
+          "latestBuiltAt": "2026-09-03T18:18:13.594197+00:00"
+        },
+        "fetchedVia": "scripts/phase6c-store-export-rows.mjs (the loader queries)"
+      },
+      "fetchedFrom": "2026-10-27 02:34:35.299368+00",
+      "fetchedTo": "2026-10-27 02:40:02.537725+00"
+    }
+  ],
+  "source_hashes": {
+    "server/scripts/phase6c-store-snapshot.mjs": "7a68c4c8ee29df8df3f3d7c481aefc9ff892d61011a8e4d31a368e7b22217e2d",
+    "server/scripts/phase6c-store-export-rows.mjs": "a3ead63723042ad36fe2a46f23c5b73d77002a5e8fc56e4ae23c3b97523b3806",
+    "server/src/services/GtoChartLoader.ts": "69dbea5987339e7e1efc1fa06d5ec72a4dd51a1e9ae8bfc344f5c56bfe5eeb3a",
+    "server/src/services/GtoPostflopLoader.ts": "9ef70e7b7691714b5722b83f5073106de68f2b820e132b6c038fc1c383e9dea9",
+    "server/src/services/GtoPostflopV31Loader.ts": "ecc4d9d9b7872a4fe289a5fdf90339202fc6eb804a570906967456038a52c49b",
+    "server/src/engine/GtoCharts.ts": "3e0e7b463586805192cf8b3906b9060290b143b0f60a3f511f1334c2158de209",
+    "server/src/engine/GtoPostflop.ts": "7d80fed17c73a04bac1bb7e4ef5143897be0abb5bed2ae13f4d3692e64108825",
+    "server/src/engine/GtoPostflopV31.ts": "aa7e5d1961a4ee7171f4d6af2d0cb35f421722bee2b4415ac509c606f868370a"
+  },
+  "protected_source": "f819953d8881f6200e1ac5ee758e27abcb058691",
+  "v31": {
+    "active_rows": 0,
+    "dataset": null,
+    "source": "read-only fn_gto_v31_active_cells(0,500) before and after export; matching current public health"
+  },
+  "historical_content_match": "Fresh production-module content digests equal Sep27 snapshots; this is recomputation from fresh rows, not an assumed count match."
+}

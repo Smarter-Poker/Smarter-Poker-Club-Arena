@@ -1,0 +1,5 @@
+{
+  "_owner": "woowoo-read-freshness-01a17b7a / PR8286",
+  "_comment": "Source declaration only, NOT INSTALLED. Install protected migration 20261027041304_horse_own_public_history_context_before_horizon.sql before activating its dependent engine. The v1 function remains unchanged for old engines.",
+  "functions": ["fn_horse_own_public_history_read_v2"]
+}

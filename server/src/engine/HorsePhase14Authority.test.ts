@@ -126,7 +126,7 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
     }
   });
 
-  it('routes functional admission only through its worker, main, replay and read-only proof owners', () => {
+  it('routes functional admission only through its worker, main, replay and explicit offline proof owners', () => {
     const root = fileURLToPath(new URL('../', import.meta.url));
     const importers = (readdirSync(root, { recursive: true, encoding: 'utf8' }) as string[])
       .filter((f) => f.endsWith('.ts') && !f.includes('.test') && !f.includes('test-support'))
@@ -136,13 +136,35 @@ describe('P14.4 null proof: no corrective candidate can be admitted today', () =
         )
       );
     expect(importers.sort()).toEqual([
+      'benchmark/FeatureAblationAcceptance.ts',
       'engine/HorsePhase14Acceptance.ts',
       'engine/horseDecision/client.ts',
       'engine/horseDecision/replay/qualifiedAuthority.ts',
       'engine/horseDecision/workerRuntime.ts',
+      'scripts/featureAblationDevelop.ts',
+      'scripts/featureAblationQualify.ts',
       'services/horseDecisionJournal/phaseProof.ts',
     ]);
-    // This fifth owner verifies retained evidence through the existing offline
+    // The isolated physical benchmark mirrors real FAST receipts through the
+    // original main gate; its CLIs only enumerate domains for default admission
+    // identity checks. None may create an authority or change a selection.
+    const acceptance = readFileSync(`${root}benchmark/FeatureAblationAcceptance.ts`, 'utf8');
+    expect(acceptance).toMatch(
+      /import\s*\{\s*liveHorsePhase14Authorities\s*\}\s*from\s*['"][^'"]*HorsePhase14Authority\.js['"]/
+    );
+    expect(acceptance).toContain('recheckHorsePhase14BeforeAcceptance(d)');
+    for (const file of ['scripts/featureAblationDevelop.ts', 'scripts/featureAblationQualify.ts']) {
+      const cli = readFileSync(`${root}${file}`, 'utf8');
+      expect(cli, file).toMatch(
+        /const\s*\{\s*HORSE_PHASE14_DOMAINS\s*\}\s*=\s*await\s+import\(['"][^'"]*HorsePhase14Authority\.js['"]\)/
+      );
+      expect(cli, file).toContain('deps.admitPhase14Attachment?.(d)');
+      expect(cli + acceptance, file).not.toMatch(
+        /\b(?:admitHorsePhase14QualifiedAuthority|createCorrectiveKernelEvaluator|PHASE14_PROTECTED_RELEASE_SELECTIONS)\b|new\s+(?:HorseQualifiedAuthorityHolder|HorsePhase8AuthorityGate)\s*\(/
+      );
+      expect(cli + acceptance, file).not.toMatch(/activationAllowed\s*(?::|=)\s*true/);
+    }
+    // This read-only owner verifies retained evidence through the existing offline
     // admission path. Domain names are its only direct live-authority import;
     // it cannot mint an evaluator, mutate a live gate or submit an action.
     const observer = readFileSync(`${root}services/horseDecisionJournal/phaseProof.ts`, 'utf8');

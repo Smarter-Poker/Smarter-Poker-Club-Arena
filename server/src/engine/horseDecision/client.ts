@@ -1,3 +1,4 @@
+import { liveHorsePhase8GuardAuthority } from '../HorseTournamentCatastropheGuardAuthority.js';
 import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
 import {
   CORRECTIVE_DOMAINS,
@@ -595,6 +596,7 @@ export class LiveHorseDecisionWorkerClient {
 
   /** Epoch of this client's worker Phase 8 authority, once it has reported. */
   private phase8WorkerEpoch: string | null = null;
+  private phase8GuardWorkerEpoch: string | null = null;
   /** P10.3: epoch of this client's worker Phase 10 authority. */
   private phase10WorkerEpoch: string | null = null;
   /** P11.3: epoch of this client's worker Phase 11 holders (one per worker). */
@@ -893,6 +895,11 @@ export class LiveHorseDecisionWorkerClient {
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
     // Effect acceptance rechecks authority for a selected Phase 8 candidate.
     // Effects issued beside a withdrawn selection retire instead of applying.
+    const guard = result.decision.tournamentCatastropheGuard;
+    if (guard?.applied && liveHorsePhase8GuardAuthority.check(guard.authority) !== 'usable') {
+      this.retireDecisionEffects(result, 'decision_finalized');
+      return Promise.reject(new Error('Horse plan commit refused: guard authority'));
+    }
     const phase8 = result.decision.tournamentPostflop;
     if (phase8?.applied) {
       const verdict = liveHorsePhase8Authority.check(phase8.authority);
@@ -1393,6 +1400,10 @@ export class LiveHorseDecisionWorkerClient {
         this.fail(new Error('live horse decision worker returned invalid governor'));
         return;
       }
+      if (message.phase8GuardAuthority) {
+        this.phase8GuardWorkerEpoch = message.phase8GuardAuthority.epoch;
+        liveHorsePhase8GuardAuthority.observeWorker(message.phase8GuardAuthority);
+      }
       this.readyAt = Date.now();
       clearTimeout(this.readyTimer);
       this.solverStores = structuredClone(message.solverStores);
@@ -1833,6 +1844,23 @@ export class LiveHorseDecisionWorkerClient {
         this.phase8WorkerEpoch = message.phase8Authority.epoch;
         liveHorsePhase8Authority.observeWorker(message.phase8Authority);
       }
+      const returnedGuard = message.decision.tournamentCatastropheGuard;
+      if (
+        returnedGuard &&
+        (!message.phase8GuardAuthority ||
+          horseJournalJson(returnedGuard.authority) !==
+            horseJournalJson(message.phase8GuardAuthority))
+      ) {
+        this.refuseDecision(active, message, new Error('horse guard authority was not mirrored'));
+        return;
+      }
+      if (message.phase8GuardAuthority) {
+        this.phase8GuardWorkerEpoch = message.phase8GuardAuthority.epoch;
+        liveHorsePhase8GuardAuthority.observeWorker(message.phase8GuardAuthority);
+      }
+      const guardLedger = message.decision.tournamentCatastropheGuard;
+      if (guardLedger?.authority)
+        guardLedger.authority = liveHorsePhase8GuardAuthority.stamp(guardLedger.authority);
       const phase8Ledger = message.decision.tournamentPostflop;
       if (phase8Ledger?.authority)
         phase8Ledger.authority = liveHorsePhase8Authority.stamp(phase8Ledger.authority);
@@ -1910,6 +1938,7 @@ export class LiveHorseDecisionWorkerClient {
         const variant = correctiveDomain.variant;
         const mirrors = {
           phase8: message.phase8Authority,
+          phase8_guard: message.phase8GuardAuthority,
           phase10: message.phase10Authority,
           phase11:
             message.phase11Authority?.[
@@ -1936,19 +1965,23 @@ export class LiveHorseDecisionWorkerClient {
             return;
           }
           const gate =
-            owner === 'phase8'
-              ? liveHorsePhase8Authority
-              : owner === 'phase10'
-                ? liveHorsePhase10Authority
-                : owner === 'phase11'
-                  ? liveHorsePhase11Authorities[variant as keyof typeof liveHorsePhase11Authorities]
-                  : owner === 'phase12'
-                    ? liveHorsePhase12Authorities[
-                        variant as keyof typeof liveHorsePhase12Authorities
+            owner === 'phase8_guard'
+              ? liveHorsePhase8GuardAuthority
+              : owner === 'phase8'
+                ? liveHorsePhase8Authority
+                : owner === 'phase10'
+                  ? liveHorsePhase10Authority
+                  : owner === 'phase11'
+                    ? liveHorsePhase11Authorities[
+                        variant as keyof typeof liveHorsePhase11Authorities
                       ]
-                    : liveHorsePhase13Authorities[
-                        variant as keyof typeof liveHorsePhase13Authorities
-                      ];
+                    : owner === 'phase12'
+                      ? liveHorsePhase12Authorities[
+                          variant as keyof typeof liveHorsePhase12Authorities
+                        ]
+                      : liveHorsePhase13Authorities[
+                          variant as keyof typeof liveHorsePhase13Authorities
+                        ];
           if (!gate) {
             this.refuseDecision(
               active,
@@ -2057,6 +2090,7 @@ export class LiveHorseDecisionWorkerClient {
     if (this.phase === 'failed' || this.phase === 'stopped') return;
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
@@ -2213,6 +2247,7 @@ export class LiveHorseDecisionWorkerClient {
 
   private terminateWorker(): Promise<void> {
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
+    liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);

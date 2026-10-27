@@ -1042,6 +1042,7 @@ export interface HorseDecision {
   remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;
   jointPolicy?: import('./engine/multiway/JointLivePolicy.js').JointPolicyReceipt;
   tournamentPostflop?: import('./engine/HorseTournamentPostflop.js').HorseTournamentPostflopLedger;
+  tournamentCatastropheGuard?: import('./engine/HorseTournamentCatastropheGuard.js').HorseTournamentCatastropheGuardLedger;
   action: ActionType;
   amount?: number;
   thinkTime: number;

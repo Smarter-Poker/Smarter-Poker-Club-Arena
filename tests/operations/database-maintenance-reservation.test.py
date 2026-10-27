@@ -31,6 +31,11 @@ class DatabaseReservation(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / 'repo'; self.repo.mkdir()
         self.git('init', '-q', '--initial-branch=main')
+        # These disposable repositories must have no writer after a Git command
+        # returns: modern fetch detaches automatic maintenance, racing cleanup.
+        # Disable only automatic fixture work (including older Git's auto-GC).
+        self.git('config', 'maintenance.auto', 'false')
+        self.git('config', 'gc.auto', '0')
         self.git('config', 'user.name', 'Native Fixture')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'core.hooksPath', str(self.root / 'no-hooks'))
@@ -297,6 +302,15 @@ class ControllerLifecycle(unittest.TestCase):
         for k,v in self.saved.items():setattr(controller,k,v)
         os.environ.clear();os.environ.update(self.environment)
         DatabaseReservation.tearDown(self)
+
+    def test_fixture_fetch_does_not_launch_automatic_maintenance(self):
+        # Fetch is real in the controller. A detached Git child can outlive
+        # check_output and recreate .git entries during TemporaryDirectory cleanup.
+        environment = os.environ.copy()
+        environment['GIT_TRACE'] = '1'
+        result = subprocess.run(['git', '-C', str(self.repo), 'fetch', '--no-tags', 'origin', 'main'],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        self.assertNotRegex(result.stderr.decode(), r'(?:maintenance run|gc --auto)')
 
     def test_complete_same_instance_and_terminal_receipt(self):
         controller.remote()

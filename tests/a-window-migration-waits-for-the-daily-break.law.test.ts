@@ -401,6 +401,20 @@ describe('explicit database-only owner-window continuation', () => {
 });
 
 describe('database-only windows cannot displace engine admission', () => {
+  it('keeps the one-off continuation clear of the daily announcement and installed files', () => {
+    const doc = JSON.parse(read('server/release/owner-maintenance-windows.json'));
+    const id = '2026-10-27-lightning-dwell-database-continuation';
+    const windows = doc.databaseWindows.filter((w: { id: string }) => w.id === id);
+    expect(windows).toHaveLength(1);
+    expect(doc.windows.some((w: { id: string }) => w.id === id)).toBe(false);
+    const window = windows[0];
+    expect(window.migrations).toEqual([
+      '20261026110858_a_lightning_game_stays_in_its_mode_long_enough_to_play_it.sql',
+    ]);
+    const end = Date.parse(window.notAfter);
+    expect(end - Date.parse(window.notBefore)).toBe(3 * 60 * 60 * 1000);
+    expect(Date.parse('2026-10-27T08:58:00Z') - (end - 420000)).toBeGreaterThan(3600000);
+  });
   it('keeps its reviewed entry outside both engine consumers', () => {
     const doc = JSON.parse(read('server/release/owner-maintenance-windows.json'));
     const id = '2026-10-26-lightning-dwell-database-only';

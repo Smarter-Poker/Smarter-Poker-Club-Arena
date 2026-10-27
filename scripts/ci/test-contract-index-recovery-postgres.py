@@ -154,9 +154,25 @@ try:
  q("SET statement_timeout='30s'; "+cs+';')
  api('catalog',index=cash_index,oid=coid,rows=rows(cq),recovered=True)
  assert q('SELECT jsonb_agg(t) FROM public.ca_hand_facts t')==cash_rows
+ migration=root/'supabase/migrations/20261026161532_unpaid_lightning_earnings_follow_the_original_funding_club.sql'
+ funding_index='public.accounting_cash_club_week_player_cover'
+ q("CREATE TABLE public.accounting_cash_rake_sources(club_id uuid,earned_at timestamptz,player_id uuid,id uuid); INSERT INTO public.accounting_cash_rake_sources SELECT md5((n%3)::text)::uuid,now(),md5((n%20)::text)::uuid,md5(n::text)::uuid FROM generate_series(1,2000)n;")
+ funding_rows=q('SELECT jsonb_agg(t ORDER BY id) FROM public.accounting_cash_rake_sources t')
+ hold=child("BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT * FROM public.accounting_cash_rake_sources LIMIT 1;\n")
+ wait("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND state='idle in transaction' AND query LIKE '%SELECT * FROM public.accounting_cash_rake_sources LIMIT 1%')")
+ b=child("SET lock_timeout='1s'; CREATE INDEX CONCURRENTLY accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources(club_id,earned_at) INCLUDE(player_id,id);\n")
+ assert finish(b,'funding-interrupted-build')[0]!=0
+ fq=api('queries',index=funding_index)['catalog'];fr=rows(fq);foid=fr[0]['oid']
+ api('catalog',index=funding_index,oid=foid,rows=fr,recovered=False)
+ send(hold,'ROLLBACK;\n');assert finish(hold,'funding-snapshot-release')[0]==0
+ assert api('snapshots',index=funding_index,oid=foid,rows=rows(snapshot_sql))['accepted'] is True
+ fs=api('statement',index=funding_index,oid=foid)
+ q("SET statement_timeout='30s'; "+fs+';')
+ api('catalog',index=funding_index,oid=foid,rows=rows(fq),recovered=True)
+ assert q('SELECT jsonb_agg(t ORDER BY id) FROM public.accounting_cash_rake_sources t')==funding_rows
  migration=original_migration
  passed=True
- (output/'RESULT.json').write_text(json.dumps({'passed':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'short_snapshot_admitted':True,'old_snapshot_refused':True,'old_transaction_without_snapshot_refused':True,'prepared_transaction_refused':True,'max_snapshot_age_seconds':60,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
+ (output/'RESULT.json').write_text(json.dumps({'passed':True,'funding_cover_invalid_reindex_and_rows_preserved':True,'old_oid':oid,'replacement_oid':after[0]['oid'],'short_snapshot_admitted':True,'old_snapshot_refused':True,'old_transaction_without_snapshot_refused':True,'prepared_transaction_refused':True,'max_snapshot_age_seconds':60,'interrupted_reindex_transient_oid':transient_oid,'exact_transient_removed':True,'cutoff':observed,'original_rows_unchanged':True,'no_transients':after[0]['no_transients'],'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'module_sha256':hashlib.sha256(module.read_bytes()).hexdigest()},indent=2)+'\n')
 finally:
  for p in children:
   if p.poll() is None:

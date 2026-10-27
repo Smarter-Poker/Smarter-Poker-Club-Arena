@@ -24,6 +24,13 @@ describe('explicit bounded original runtime error observation', () => {
     expect(job).not.toMatch(/actions: write|deploy-club|workflow_dispatch|schedule:/);
     const source = readFileSync('scripts/ci/read-scoped-runtime-errors.py', 'utf8');
     expect(source).toContain('StrictHostKeyChecking=yes');
+    expect(source).toContain('job="engine_game_server"');
+    for (const config of [
+      'infra/monitoring/prometheus.yml',
+      'infra/monitoring/engine-01/prometheus.yml',
+    ]) {
+      expect(readFileSync(config, 'utf8')).toContain('- job_name: engine_game_server');
+    }
     expect(source).toContain('GlobalKnownHostsFile=/dev/null');
     expect(source).toContain(
       "'docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine'"

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.parse
 from pathlib import Path
 
 UUID = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
@@ -73,6 +74,22 @@ CONNECT_TIMEOUT = 10
 # Both host identity reads surround capture; the outer transport owns their
 # complete budget plus connection setup and a finite transfer allowance.
 TRANSPORT_TIMEOUT = 2 * HEALTH_TIMEOUT + CAPTURE_TIMEOUT + CONNECT_TIMEOUT + 5
+LEASE_METRICS_TIMEOUT = 5
+LEASE_METRIC_NAMES = frozenset({
+    'poker_lease_heartbeat_outcomes_total', 'poker_lease_renewal_passes_total',
+    'poker_lease_renewal_loop_running', 'poker_lease_renewal_loop_relaunches_total',
+    'poker_lease_renewal_outstanding_total', 'poker_lease_heartbeat_session_enabled',
+    'poker_lease_heartbeat_session_connected', 'poker_lease_heartbeat_statements_total',
+    'poker_lease_heartbeat_session_disconnects_total', 'poker_event_loop_delay_p50_ms',
+    'poker_event_loop_delay_p99_ms', 'poker_fleet_table_stall_max_ms',
+})
+LEASE_METRIC_LABELS = {
+    'scope': {'table', 'tournament'},
+    'state': {'kept', 'busy', 'taken', 'stale', 'missing', 'malformed'},
+    'transport': {'dedicated', 'shared'},
+    'outcome': {'completed', 'threw', 'abandoned'},
+    'half': {'cash', 'tournament'},
+}
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
@@ -100,6 +117,84 @@ def log_command(window):
 def window_description(window):
     return ({**window, 'durationMinutes': 15, 'maximumPhysicalLines': 20000}
             if window else 'last 15 minutes; last 20000 physical lines')
+
+
+def lease_metrics_requested(value, window):
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Lease metrics require an explicit completed incident window')
+    return True
+
+
+def extract_lease_metrics(value, window):
+    """A fixed fleet-only matrix, never arbitrary series, labels or provider errors."""
+    data = value.get('data') if isinstance(value, dict) else None
+    if not isinstance(value, dict) or value.get('status') != 'success' or not isinstance(data, dict) or data.get('resultType') != 'matrix':
+        raise ValueError('Metrics response unavailable')
+    rows = data.get('result')
+    if not isinstance(rows, list) or len(rows) > 64:
+        raise ValueError('Metrics series bound refused')
+    start, end = [datetime.datetime.fromisoformat(window[k].replace('Z', '+00:00')).timestamp()
+                  for k in ('since', 'until')]
+    series, unknown = [], 0
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('metric'), dict):
+            raise ValueError('Metrics series refused')
+        metric = row['metric']
+        name = metric.get('__name__')
+        if not isinstance(name, str) or name not in LEASE_METRIC_NAMES or set(metric)-{'__name__', 'job', 'instance'}-set(LEASE_METRIC_LABELS):
+            raise ValueError('Metrics identity refused')
+        labels = {k: v for k, v in metric.items() if k in LEASE_METRIC_LABELS}
+        if any(not isinstance(v, str) or v not in LEASE_METRIC_LABELS[k] for k, v in labels.items()):
+            raise ValueError('Metrics labels refused')
+        points = row.get('values')
+        if not isinstance(points, list) or not 1 <= len(points) <= 61:
+            raise ValueError('Metrics sample bound refused')
+        clean, previous = [], start-1
+        for point in points:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError('Metrics sample refused')
+            stamp, reading = point
+            if type(stamp) not in (int, float) or not math.isfinite(stamp) or not start <= stamp <= end or stamp <= previous:
+                raise ValueError('Metrics timestamp refused')
+            if not isinstance(reading, str) or len(reading) > 40:
+                raise ValueError('Metrics value refused')
+            numeric = float(reading)
+            if not math.isfinite(numeric):
+                numeric = None
+                unknown += 1
+            elif numeric < 0:
+                raise ValueError('Metrics value refused')
+            clean.append([stamp, numeric])
+            previous = stamp
+        series.append({'name': name, 'labels': labels, 'values': clean})
+    missing = sorted(LEASE_METRIC_NAMES-{row['name'] for row in series})
+    return {'status': ('partial' if missing else 'observed') if series else 'no_series',
+            'series': series, 'missingMetrics': missing,
+            'unknownSamples': unknown,
+            'sampleTimes': 'evaluation times; Prometheus lookback may reuse an older scrape'}
+
+
+def read_lease_metrics(window):
+    # One fixed localhost GET, no auth material, arbitrary PromQL or redirects.
+    query = '{job="engine_game_server",__name__=~"'+'|'.join(sorted(LEASE_METRIC_NAMES))+'"}'
+    params = urllib.parse.urlencode({'query': query, 'start': window['since'],
+                                    'end': window['until'], 'step': '15s'})
+    try:
+        with urllib.request.build_opener(NoRedirect).open(
+                'http://127.0.0.1:9090/api/v1/query_range?'+params,
+                timeout=LEASE_METRICS_TIMEOUT) as response:
+            if response.status != 200:
+                raise ValueError('Metrics unavailable')
+            body = response.read(262145)
+        if len(body) > 262144:
+            raise ValueError('Metrics response bound refused')
+        return extract_lease_metrics(json.loads(body), window)
+    except Exception:
+        # The original log evidence remains usable; an absent metric is UNKNOWN.
+        return {'status': 'unavailable', 'reason': 'transport_or_response_refused',
+                'series': [], 'unknownSamples': 0}
 
 
 def mux_timing_requested(value, window):
@@ -605,11 +700,12 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
-            scopes, window, mux_timing, fold_timing = selection(request), None, False, False
-        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming'}:
+            scopes, window, mux_timing, fold_timing, lease_metrics = selection(request), None, False, False, False
+        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming', 'leaseIncidentMetrics'}:
             scopes, window = selection(request['scopes']), log_window(request['windowStart'])
             mux_timing = mux_timing_requested(request.get('muxTiming'), window)
             fold_timing = lightning_fold_timing_requested(request.get('lightningFoldTiming'), window)
+            lease_metrics = lease_metrics_requested(request.get('leaseIncidentMetrics'), window)
         else:
             raise ValueError('Invalid observation request')
         before = health('http://127.0.0.1:8080')
@@ -625,12 +721,15 @@ def main():
             scopes=None if mux_timing or fold_timing else scopes)
         current_raw = raw
         raw += b''.join(source for source, _identity in archives)
+        metric_evidence = read_lease_metrics(window) if lease_metrics else None
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
         extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
         if fold_timing:
             extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
+        if lease_metrics:
+            extra['leaseIncidentMetrics'] = metric_evidence
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
@@ -647,6 +746,7 @@ def main():
     window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
     mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
     fold_timing = lightning_fold_timing_requested(event.get('client_payload', {}).get('lightningFoldTiming'), window)
+    lease_metrics = lease_metrics_requested(event.get('client_payload', {}).get('leaseIncidentMetrics'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -666,6 +766,8 @@ def main():
             request['muxTiming'] = True
         if fold_timing:
             request['lightningFoldTiming'] = True
+        if lease_metrics:
+            request['leaseIncidentMetrics'] = True
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
@@ -673,7 +775,8 @@ def main():
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
                 'root@'+host, "python3 - --remote '"+encoded+"'"]
-        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=TRANSPORT_TIMEOUT)
+        reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True,
+                               timeout=TRANSPORT_TIMEOUT+(LEASE_METRICS_TIMEOUT if lease_metrics else 0))
         if reply.returncode or len(reply.stdout) > 262144:
             raise RuntimeError('Scoped transport unavailable')
         result = json.loads(reply.stdout)
@@ -685,6 +788,8 @@ def main():
             raise RuntimeError('Anonymous timing observation differs')
         if ('lightningFoldTimings' in result) != fold_timing:
             raise RuntimeError('Lightning timing observation differs')
+        if ('leaseIncidentMetrics' in result) != lease_metrics:
+            raise RuntimeError('Lease metric observation differs')
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')

@@ -1514,6 +1514,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Active weekly book closure outage: first original2hour flow window timed out240seconds. Original whole/window return lookup now selects candidates by the same original seat-event/refund occupancy keys, retaining every original predicate/math/helper. Only the advance whole-reader pin and those3 guard65 pins evolve. Exact qualified source installed; history/all4 postimages/actual before-metadata and source65 TRUE verified. Native245/84BBJ/7treasury/original key variants/READONLY and normal prechecks qualified. No payments, witness admissions, paid earning math or existing receipts changed. Actual installed window timing, original advance progress and all-books completion require separate live observations."
+    },
+    {
+      "version": "20261027192602",
+      "name": "whole_hand_rakeback_reads_the_original_attribution_cover",
+      "file": "supabase/migrations/20261027192602_whole_hand_rakeback_reads_the_original_attribution_cover.sql",
+      "md5": "07cc7a7666c596812731efd98a7c8530",
+      "appliedToProductionAt": "2026-10-27T19:35:38.252Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation and full-file history/index/source readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: Lightning full counts90s and all-club whole-hand attribution phase30s timed out after86197 selected keys. Exact native-qualified nonpartial six-column record-leading index installed through maintained CCI route. Full-file history, complete index metadata, unchanged cc867 original counts body, unchanged original Scope72ab and live65 source authority read back. No functions, earning rows, rate, paid proofs, source pins, ACLs or budgets changed. Native73/bags/catalog/MVCC and local prechecks passed. Actual post-install timing, original Lightning preparation/payment and global closure remain separate unverified work; no new payment or 4AM guarantee claimed."
     }
   ]
 }

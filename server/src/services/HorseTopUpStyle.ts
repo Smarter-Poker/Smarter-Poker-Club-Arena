@@ -149,7 +149,7 @@ export function cappedAutoTopUp(args: {
   });
   const cents = Math.min(allowed, wallet) * 100;
   const capped = Math.floor(cents + Number.EPSILON * Math.max(1, Math.abs(cents))) / 100;
-  return capped > 0 ? capped : 0;
+  return capped >= wanted ? wanted : 0;
 }
 
 /**

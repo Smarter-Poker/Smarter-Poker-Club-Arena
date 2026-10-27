@@ -14,6 +14,7 @@ import {
   v56ExecutingSource,
   v56CasesAreBounded,
   replayV56InFreshProcess,
+  writeV56Output,
 } from '../../../../scripts/phase15-exact-replay.mjs';
 const script = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -190,6 +191,33 @@ describe('existing P15 private V56 adapter boundary', () => {
     expect(value.outcome).toBe('non_replayable:record');
     expect(value).not.toHaveProperty('v56PressureRangeFires');
     expect(value.isolation.networkAttempts).toEqual({ fetch: 0, socket: 0 });
+  });
+  it('does not exit before a receipt larger than one pipe write is acknowledged', () => {
+    const exits = [];
+    let callback;
+    let line;
+    writeV56Output(
+      { results: [wire(), wire()] },
+      0,
+      {
+        write: (value, done) => {
+          line = value;
+          callback = done;
+        },
+      },
+      (code) => exits.push(code)
+    );
+    expect(Buffer.byteLength(line)).toBeGreaterThan(512);
+    expect(exits).toEqual([]);
+    callback();
+    expect(exits).toEqual([0]);
+    writeV56Output(
+      { status: 'unavailable' },
+      0,
+      { write: (_value, done) => done(Error('synthetic pipe error')) },
+      (code) => exits.push(code)
+    );
+    expect(exits).toEqual([0, 1]);
   });
   it('actual CLI emits only closed errors for malformed/forbidden input', () => {
     for (const [args, input, reason] of [

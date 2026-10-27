@@ -1,0 +1,5 @@
+# Prior owner-confirmed transfers discharge current rakeback once
+
+The original R2/R3 stages can recognize immutable owner-confirmed actual agent sends, allocate only the current certified obligation and reimburse the actual historical payer from the canonical club bank. WooWoo and Mikey receive no duplicate personal credit. Receipts keep the real prior PLAYER destination, actual ledger/transaction/cashier IDs and separate reimbursement leg. Their excess original transfers remain unallocated; descendant agent funding remains real.
+
+The migration changes no source earning, rate, certificate or proof producer and adds no hot-public-table trigger or repair schedule. Native PostgreSQL17 qualification covers the exact installer and original main/cached/v3 R2→R3 with financial conservation, invoice refusal, replay/concurrency and strict private completion. Positive direct-player liability on a commission subject fails closed pending a net discharge path; current complete whole-club certificates must establish that the specific subject has none. Production installation and actual payout verification are separate gates.

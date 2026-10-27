@@ -41,3 +41,21 @@ arriving after an empty snapshot, an aborted ordinary admission, durable termina
 status, unknown reads, lifecycle/lease/owner changes and the existing pause
 preparation. Provider publication and prompt natural dealing on the new runtime
 remain separate acceptance requirements.
+
+A direct wake also requires GameServer's exact-manager startup readiness edge.
+Readiness clears immediately before every production start, resume and stage
+resume, including retained mixed-game continuation. It becomes ready only after
+the existing lifecycle and synchronized-break hold finish, before the existing
+wake drain. Early wakes remain durable and that drain redelivers their original
+cause; the direct path never awaits its enclosing admission operation. Every
+awaited authority check revalidates readiness. Connected regressions reproduce
+the premature start before this guard and cover all three public lifecycle
+methods, restored add-on/global holds, stop, failed initialization, replacement
+and readiness lost during a receipt read. The add-on purchase source is unchanged.
+
+The owner explicitly authorized one certified activation of this #8327 repair
+on October 27, 2026, 10:45 AM–4:45 PM America/Chicago (15:45–21:45 UTC).
+The appended engine window preserves all earlier entries and database windows,
+requires the actual protected repair squash to be included, and retains notice,
+drain, database freeze, certificate, rollback reserve and thaw. It installs no
+migration and grants no second activation or extension of an expired exception.

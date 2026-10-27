@@ -2129,6 +2129,8 @@ export class GameServer {
    * reveal hold, before its first deal).
    */
   private tournamentManagerAdmittedAtMs: WeakMap<TournamentManager, number> = new WeakMap();
+  /** Startup and every restored hold must finish before a direct dealer handoff. */
+  private tournamentManagersReadyForCapacityWake = new WeakSet<TournamentManager>();
   /** Re-entrancy guard for the event-driven managerless bounty-outbox drain. */
   private bountyRecoverySweepInFlight = false;
   /** A committed outbox event arrived while the current bounded drain was active. */
@@ -3320,6 +3322,7 @@ export class GameServer {
           manager.finishMixedF06RecoveryAdmission(completion);
           this.mixedF06AdmissionContinuations.delete(tournamentId);
           try {
+            this.tournamentManagersReadyForCapacityWake?.delete(manager);
             await manager.resume();
             await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
           } catch (error) {
@@ -3338,6 +3341,7 @@ export class GameServer {
         await continueAdmission();
         return;
       }
+      this.tournamentManagersReadyForCapacityWake?.delete(manager);
       if (mode === 'resume') await manager.resume();
       else if (mode === 'stage_resume') await manager.resumeStage();
       else await manager.start();
@@ -3396,6 +3400,11 @@ export class GameServer {
     // Admitted and running: the streak's stability clock starts here, not at
     // the lease grant that cleared the attempt count.
     this.tournamentManagerRestartBackoff.recordReady(tournamentId);
+    // running=true precedes start/resume I/O. This exact-owner edge follows
+    // both that lifecycle and the post-start synchronized-break hold. An
+    // earlier wake remains durable and is redelivered by the drain below;
+    // never await the enclosing admission operation from inside that drain.
+    (this.tournamentManagersReadyForCapacityWake ??= new WeakSet()).add(manager);
     await this.drainTournamentManagerWakes(tournamentId);
   }
   /**
@@ -10425,7 +10434,10 @@ export class GameServer {
     // manager finishes a full reason-aware sweep; a crash, lifecycle abort or
     // cooperative budget yield must be replayed by the next manager.
     const accepted = manager.requestEliminationSweep(String(row.reason ?? ''), id, generation);
-    if (row.reason === 'late_registration') {
+    if (
+      row.reason === 'late_registration' &&
+      this.tournamentManagersReadyForCapacityWake?.has(manager)
+    ) {
       const owner = manager;
       const lifecycle = this.lifecycleGeneration;
       // A full sweep may already be awaiting an unrelated bust transaction.
@@ -10435,7 +10447,8 @@ export class GameServer {
         () =>
           this.running &&
           this.lifecycleGeneration === lifecycle &&
-          this.tournamentEngines.get(tournamentId) === owner
+          this.tournamentEngines.get(tournamentId) === owner &&
+          this.tournamentManagersReadyForCapacityWake?.has(owner) === true
       );
     }
     return accepted;

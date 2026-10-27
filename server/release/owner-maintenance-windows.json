@@ -238,6 +238,14 @@
       "notBefore": "2026-10-27T05:00:00Z",
       "notAfter": "2026-10-27T11:00:00Z",
       "migrations": []
+    },
+    {
+      "id": "2026-10-27-causal-capacity-admission-8327-one-activation",
+      "ownerOrder": "Dan, directly in this tournament freeze and horse add-on repair chat on October 27, 2026 America/Chicago, answered the exact question: \"The locally tested follow-up `5ff1a062` fixes the remaining capacity stall. The previous exception expired at 6:00 AM Chicago and was consumed by the published release. Authorize one certified activation of this repair on October 27, 10:45 AM–4:45 PM Chicago, after all required checks pass, preserving notice, drain, database freeze, certificate, rollback reserve and thaw?\" with \"Authorize one certified activation in that six-hour window\". This is one certified activation of the remaining causal capacity-admission repair in PR #8327, including startup/resume readiness, after every required check passes. The fixed interval is October 27 10:45 AM through 4:45 PM Chicago (15:45–21:45 UTC), exactly six hours; no extension is inferred. The previous 00:00–06:00 Chicago exception expired and its anchor was consumed by serving bf0e33aee46a342f977cba6bc7c10da3b2b2a03b; it grants no further activation. Protected base be0807d4619bf994f72cdc0f0fe52c169c23635a was freshly proved absent from that serving engine before this entry was prepared. This anchor alone is not the fix: independently prove the actual protected #8327 squash is included before activation. This entry grants nothing once its anchor is serving. Preserve the existing owning stage-engine-release.yml and auto-deploy-hetzner.yml transaction, immutable exact-SHA build and staging, two-minute last-hand notice, hand-boundary drain, durable database freeze, maintenance certificate, full 285-second cutover/proof/rollback reserve, rolling-hour seal and completed v3 thaw. No migrations, unrelated work, second publisher, watcher, timer or direct restart.",
+      "contains": "be0807d4619bf994f72cdc0f0fe52c169c23635a",
+      "notBefore": "2026-10-27T15:45:00Z",
+      "notAfter": "2026-10-27T21:45:00Z",
+      "migrations": []
     }
   ],
   "databaseWindows": [

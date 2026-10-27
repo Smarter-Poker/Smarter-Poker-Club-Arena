@@ -35,17 +35,19 @@ function query(result: unknown) {
   value.maybeSingle = vi.fn(async () => result);
   return value;
 }
-function fixture() {
+function fixture(ready = true) {
   const game: any = Object.assign(Object.create(GameServer.prototype), {
     running: true,
     lifecycleGeneration: 1,
     tournamentEngines: new Map(),
     acknowledgeTournamentManagerWakes: vi.fn(),
+    tournamentManagersReadyForCapacityWake: new WeakSet(),
   });
   const manager: any = new TournamentManager(EVENT, game, LEASE, performance.now() + 60_000);
   manager.lifecycleEpoch.begin();
   manager.running = true;
   game.tournamentEngines.set(EVENT, manager);
+  if (ready) game.tournamentManagersReadyForCapacityWake.add(manager);
   const engine = { setHub: vi.fn() };
   vi.spyOn(manager, 'createManagedTableEngine').mockReturnValue(engine);
   vi.spyOn(manager, 'wireEliminationWake').mockImplementation(() => {});
@@ -90,6 +92,109 @@ afterEach(() => {
 });
 
 describe('committed capacity wakes do not wait for an unrelated full sweep', () => {
+  it.each([
+    ['start', 'startLifecycle'],
+    ['resume', 'resumeLifecycle'],
+    ['resumeStage', 'resumeStageLifecycle'],
+  ])(
+    'retains a wake through real %s startup and the final break hold, then drains it',
+    async (mode, inner) => {
+      const { game, manager, engine } = fixture(false);
+      const load = deferred<void>();
+      const hold = deferred<void>();
+      vi.spyOn(manager, 'armTournamentLeaseExpiryTimer').mockImplementation(() => {});
+      vi.spyOn(manager, inner).mockImplementation(async () => {
+        await load.promise;
+        manager.addOnBreakActive = true;
+        manager.addOnBreakOwnsPause = true;
+        manager.addOnBreakEndsAtMs = Date.now() + 60_000;
+      });
+      manager.prepareManagedTableEngineForPlay.mockRestore();
+      Object.assign(engine, { pauseAfterHand: vi.fn(), holdDealingUntil: vi.fn() });
+      vi.spyOn(manager, 'holdManagedTableUntilBookedStart').mockImplementation(() => {});
+      vi.spyOn(game, 'holdIfBreakIsRunning').mockImplementation(async () => {
+        await hold.promise;
+        manager.onBreak = true;
+      });
+      vi.spyOn(game, 'drainTournamentManagerWakes').mockImplementation(async () => {
+        await game.admitTournamentManagerWake(wake);
+      });
+      const startup = manager[mode]();
+      expect(manager.isRunning()).toBe(true);
+      expect(manager.lifecycleOperation).not.toBeNull();
+      await game.admitTournamentManagerWake(wake);
+      expect(manager.startManagedTableEngine).not.toHaveBeenCalled();
+      expect(manager.lifecycleJobs.size).toBe(0);
+      load.resolve();
+      await startup;
+      const finish = game.finishTournamentManagerAdmission(EVENT, manager, 1);
+      await vi.waitFor(() => expect(game.holdIfBreakIsRunning).toHaveBeenCalledOnce());
+      await game.admitTournamentManagerWake(wake);
+      expect(manager.startManagedTableEngine).not.toHaveBeenCalled();
+      hold.resolve();
+      await finish;
+      expect(game.drainTournamentManagerWakes).toHaveBeenCalledWith(EVENT);
+      expect(manager.startManagedTableEngine).toHaveBeenCalledOnce();
+      expect((engine as any).pauseAfterHand.mock.invocationCallOrder[0]).toBeLessThan(
+        manager.startManagedTableEngine.mock.invocationCallOrder[0]
+      );
+      expect((engine as any).holdDealingUntil).toHaveBeenCalledWith(manager.addOnBreakEndsAtMs);
+      expect(game.acknowledgeTournamentManagerWakes).not.toHaveBeenCalled();
+    }
+  );
+
+  it('never tracks a startup waiter that could deadlock the real stop drain', async () => {
+    const { game, manager } = fixture(false);
+    const load = deferred<void>();
+    vi.spyOn(manager, 'armTournamentLeaseExpiryTimer').mockImplementation(() => {});
+    vi.spyOn(manager, 'resumeLifecycle').mockImplementation(async () => {
+      await load.promise;
+    });
+    vi.spyOn(manager, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(true);
+    const startup = manager.resume();
+    await game.admitTournamentManagerWake(wake);
+    expect(manager.lifecycleJobs.size).toBe(0);
+    const stopped = manager.stop();
+    load.resolve();
+    await Promise.all([startup, stopped]);
+    expect(manager.isRunning()).toBe(false);
+    expect(manager.startManagedTableEngine).not.toHaveBeenCalled();
+    expect(game.tournamentManagersReadyForCapacityWake.has(manager)).toBe(false);
+  });
+
+  it('keeps a failed initialization unready and preserves its durable cause', async () => {
+    const { game, manager } = fixture(false);
+    const load = deferred<void>();
+    vi.spyOn(manager, 'armTournamentLeaseExpiryTimer').mockImplementation(() => {});
+    vi.spyOn(manager, 'resumeLifecycle').mockImplementation(async () => {
+      await load.promise;
+      manager.running = false;
+      throw new Error('initialization refused');
+    });
+    const startup = manager.resume().catch((error: Error) => error.message);
+    await game.admitTournamentManagerWake(wake);
+    load.resolve();
+    expect(await startup).toBe('initialization refused');
+    await game.admitTournamentManagerWake(wake);
+    expect(manager.startManagedTableEngine).not.toHaveBeenCalled();
+    expect(manager.pendingManagerWakes.get(wake.id)).toBe('late_registration');
+    expect(game.tournamentManagersReadyForCapacityWake.has(manager)).toBe(false);
+  });
+
+  it('does not mark a manager replaced during the post-start break hold ready', async () => {
+    const { game, manager } = fixture(false);
+    const hold = deferred<void>();
+    vi.spyOn(game, 'holdIfBreakIsRunning').mockReturnValue(hold.promise);
+    vi.spyOn(game, 'stopTournamentManagerIfOwned').mockResolvedValue(false);
+    vi.spyOn(game, 'drainTournamentManagerWakes').mockResolvedValue(undefined);
+    const finish = game.finishTournamentManagerAdmission(EVENT, manager, 1);
+    game.tournamentEngines.set(EVENT, {});
+    hold.resolve();
+    await finish;
+    expect(game.tournamentManagersReadyForCapacityWake.has(manager)).toBe(false);
+    expect(game.drainTournamentManagerWakes).not.toHaveBeenCalled();
+  });
+
   it('binds the new public entry to the exact production manager data authority', async () => {
     const { game, manager } = fixture();
     const start = manager.startManagedTableEngine;
@@ -154,6 +259,7 @@ describe('committed capacity wakes do not wait for an unrelated full sweep', () 
 
   it.each([
     'replacement',
+    'readiness',
     'stop',
     'lifecycle',
     'lease-expiry',
@@ -171,6 +277,7 @@ describe('committed capacity wakes do not wait for an unrelated full sweep', () 
     const handoff = game.admitTournamentManagerWake(wake);
     await vi.waitFor(() => expect(receipt.limit).toHaveBeenCalledOnce());
     if (change === 'replacement') game.tournamentEngines.set(EVENT, {});
+    if (change === 'readiness') game.tournamentManagersReadyForCapacityWake.delete(manager);
     if (change === 'stop') manager.running = false;
     if (change === 'lifecycle') manager.lifecycleEpoch.abort();
     if (change === 'lease-expiry') {

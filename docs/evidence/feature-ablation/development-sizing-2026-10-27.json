@@ -1,0 +1,4058 @@
+{
+  "schema": "horse-feature-blind-sizing-b935-v5",
+  "createdAt": "2026-10-27T04:39:43.479371+00:00",
+  "sourceRevision": "b935999c78011ebfc3acbfe67f299fe80863a39f",
+  "frozenInputSha256": "6b04b2660813f763c9a7d54e7433a81ddbd956db4ca4cb7b7064a7a7805bcc9a",
+  "notLockedPlan": true,
+  "onlyFreshB935Inputs": true,
+  "positionMapping": "Actual maintained positionForOffset invocation",
+  "positionMap": {
+    "2": ["button", "big_blind"],
+    "4": ["button", "small_blind", "big_blind", "cutoff"],
+    "6": ["button", "small_blind", "big_blind", "early", "middle", "cutoff"]
+  },
+  "method": "Same reviewed finite width/minN and direct14aggregate absolute-thirdmomenttriangle Edgeworth allocation; increaseonlyimplicatedprofiles;3seeds576blocks;no means/sign/cancellation",
+  "independencePrerequisite": "Currentpilotshareprofiledecks; validWITHIN-profile marginalSD/kurtosisplanningONLY. Prospectiveheldout MUSTbind newprofile-separated SHA256(profile.id,seed,pairIndex) streamsource+regression;commonrandomnumberswithinpairedarmsretained. No pooledpilotstrengthclaim.",
+  "timing": "durationMs measuredperformance.now elapsed; forecastsareSERIALrunnerhours at observedMacelapsedrate, NOTmeasuredCPUusage. Provider speedunknown.",
+  "confidenceForecastNotCertificate": "Actualheldout finitevariance/min10000/Edgeworth.001/99percentpositiveprimary/seedreplication/nonregressiongates remainrequired; kurtosisdiagnosticnotnewgate",
+  "experiments": [
+    {
+      "experiment": "v53-nlh",
+      "profiles": [
+        {
+          "profile": "v53-nlh-6max-2dealt-100bb",
+          "seats": 2,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-nlh-v53-nlh-6max-2dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "f78061a5cffd0fad9a7f5714b78a9c1986621636a33e3da89647c463b5061a81",
+              "manifestSha256": "585137f895c3d269b752192e87a6e860cddc9b9364de6033462a41b6f26a4805",
+              "rawPairsSha256": "1dd510d5554a80069e5cd46acbcae9d7e52e01e5f58645b07081e0282df3754a",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "f78061a5cffd0fad9a7f5714b78a9c1986621636a33e3da89647c463b5061a81",
+          "rawPairsSha256": "1dd510d5554a80069e5cd46acbcae9d7e52e01e5f58645b07081e0282df3754a",
+          "total": {
+            "n": 576,
+            "sd": 9.284696152081306,
+            "kurtosis": 73.40523330676363,
+            "absSkewness": 3.7541920576020584
+          },
+          "positions": {
+            "button": {
+              "n": 288,
+              "sd": 10.680176794579872,
+              "kurtosis": 61.3758338100331,
+              "absSkewness": 1.7167112049164373
+            },
+            "big_blind": {
+              "n": 288,
+              "sd": 7.626588261357451,
+              "kurtosis": 86.37617075069186,
+              "absSkewness": 9.05364281974089
+            }
+          },
+          "candidateHeroActionContrastPairs": 41,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 125,
+            "v53_pressure_solver_handoff": 549,
+            "v53_pressure_four_bet": 33,
+            "v53_pressure_value_raise": 9,
+            "v53_pressure_semibluff_raise": 8
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 13607,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-nlh-6max-4dealt-100bb",
+          "seats": 4,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-nlh-v53-nlh-6max-4dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "4dc40d9055a8c3e444fdbfc448433d0c80fc043c902482c290aaecd3d609c426",
+              "manifestSha256": "51dbd6be27f2eb1c5cf9fe724894b2901f0074542f0b20f3f626818e0a0ee252",
+              "rawPairsSha256": "83593506055a2b39050698b2e03644935660060cd8bc42fc5d3f924772ceeab4",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "4dc40d9055a8c3e444fdbfc448433d0c80fc043c902482c290aaecd3d609c426",
+          "rawPairsSha256": "83593506055a2b39050698b2e03644935660060cd8bc42fc5d3f924772ceeab4",
+          "total": {
+            "n": 576,
+            "sd": 4.362298369854227,
+            "kurtosis": 318.4072521890881,
+            "absSkewness": 14.592024795825814
+          },
+          "positions": {
+            "button": {
+              "n": 144,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 144,
+              "sd": 7.571079065997262,
+              "kurtosis": 135.88863810185958,
+              "absSkewness": 11.43912483584008
+            },
+            "big_blind": {
+              "n": 144,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "cutoff": {
+              "n": 144,
+              "sd": 4.352101774462955,
+              "kurtosis": 30.25127530737699,
+              "absSkewness": 1.7227220571692519
+            }
+          },
+          "candidateHeroActionContrastPairs": 10,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 8,
+            "v53_pressure_solver_handoff": 65,
+            "v53_pressure_four_bet": 9,
+            "v53_pressure_value_raise": 3
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 24191,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-nlh-6max-6dealt-40bb",
+          "seats": 6,
+          "depth": 40,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-nlh-v53-nlh-6max-6dealt-40bb-pilot576-b935-v5",
+              "developmentSha256": "6f0b096a460c063e44eb5a33303ed52ae319e2b5a1c23781a6f8129e7fa7822b",
+              "manifestSha256": "45381df6676a77780b61f17930af809ce348615005e7992e6c36e70f33dde4f7",
+              "rawPairsSha256": "54a958c1df8958119968de6092965cb47eccd9d4cb843d2595bc3a6c8209d266",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "6f0b096a460c063e44eb5a33303ed52ae319e2b5a1c23781a6f8129e7fa7822b",
+          "rawPairsSha256": "54a958c1df8958119968de6092965cb47eccd9d4cb843d2595bc3a6c8209d266",
+          "total": {
+            "n": 576,
+            "sd": 1.5356890536710932,
+            "kurtosis": 169.0667725453436,
+            "absSkewness": 12.714894702310552
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 3.2256820304244975,
+              "kurtosis": 38.617815330784865,
+              "absSkewness": 5.999803217482352
+            },
+            "middle": {
+              "n": 96,
+              "sd": 1.9079703554282446,
+              "kurtosis": 90.71892698504864,
+              "absSkewness": 9.35815696687043
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 14,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_four_bet": 12,
+            "v53_pressure_preflop": 62,
+            "v53_pressure_three_bet_priced": 5,
+            "v53_pressure_solver_handoff": 55
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 25438,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-nlh-6max-6dealt-100bb",
+          "seats": 6,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-nlh-v53-nlh-6max-6dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "6f41a3e7e496005492fbbafb19a3ad9164106ca96702602d66a14a8353fac421",
+              "manifestSha256": "687f34cf1f6d695da3c964f8c6ed078070005333f992f89593267b7513a3f882",
+              "rawPairsSha256": "b0af3b071582731a20506154aca005caab1269fe2e3fd94dfff7d13784060fc2",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "6f41a3e7e496005492fbbafb19a3ad9164106ca96702602d66a14a8353fac421",
+          "rawPairsSha256": "b0af3b071582731a20506154aca005caab1269fe2e3fd94dfff7d13784060fc2",
+          "total": {
+            "n": 576,
+            "sd": 7.741801620873304,
+            "kurtosis": 107.41427801382895,
+            "absSkewness": 2.656852940678655
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.867527617235709,
+              "kurtosis": 94.01052631578946,
+              "absSkewness": 9.644196509600448
+            },
+            "early": {
+              "n": 96,
+              "sd": 17.236900314619806,
+              "kurtosis": 22.13531832162721,
+              "absSkewness": 0.41656586634445164
+            },
+            "middle": {
+              "n": 96,
+              "sd": 8.01861868491295,
+              "kurtosis": 93.82055367223225,
+              "absSkewness": 9.628932140168082
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 15,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_four_bet": 12,
+            "v53_pressure_preflop": 62,
+            "v53_pressure_three_bet_priced": 8,
+            "v53_pressure_solver_handoff": 74,
+            "v53_pressure_semibluff_raise": 1,
+            "v53_pressure_value_raise": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 16906,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-nlh-6max-6dealt-200bb",
+          "seats": 6,
+          "depth": 200,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-nlh-v53-nlh-6max-6dealt-200bb-pilot576-b935-v5",
+              "developmentSha256": "dc4b91945c05a5b19ce64baafaa44546e6582b564fa455b8e60722e46e9ba387",
+              "manifestSha256": "55745c436e4b3b7aae715f1a829465dad6bb62f9263df004b5c692207866dc33",
+              "rawPairsSha256": "f3ef9916c802a134c14f7a6cb57d07969d47ab2b88f77ee5a221d138eec79668",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "dc4b91945c05a5b19ce64baafaa44546e6582b564fa455b8e60722e46e9ba387",
+          "rawPairsSha256": "f3ef9916c802a134c14f7a6cb57d07969d47ab2b88f77ee5a221d138eec79668",
+          "total": {
+            "n": 576,
+            "sd": 25.901943299389387,
+            "kurtosis": 132.11523265448113,
+            "absSkewness": 1.4255683183456629
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 26.816809579845003,
+              "kurtosis": 94.01052631578946,
+              "absSkewness": 9.644196509600446
+            },
+            "early": {
+              "n": 96,
+              "sd": 54.93899681662476,
+              "kurtosis": 33.130205326072264,
+              "absSkewness": 2.3350824646775696
+            },
+            "middle": {
+              "n": 96,
+              "sd": 17.763318915774406,
+              "kurtosis": 93.97176914705189,
+              "absSkewness": 9.641120109620358
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 15,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_four_bet": 12,
+            "v53_pressure_preflop": 62,
+            "v53_pressure_solver_handoff": 91,
+            "v53_pressure_three_bet_priced": 8,
+            "v53_pressure_value_raise": 4,
+            "v53_pressure_semibluff_raise": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 17151,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        }
+      ],
+      "criticalCells": [
+        {
+          "cell": "profile:v53-nlh-6max-2dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 8.498106794687448,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00038130078160662957,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 9.284696152081306,
+              "kurtosis": 73.40523330676363,
+              "absoluteSkewness": 3.7541920576020584,
+              "plannedConditionalPairs": 114048,
+              "pilotProjectedVarianceRseDiagnostic": 0.025196553600958665
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-nlh-6max-4dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 1.7313635301393089,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006426657826454829,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 4.362298369854227,
+              "kurtosis": 318.4072521890881,
+              "absoluteSkewness": 14.592024795825814,
+              "plannedConditionalPairs": 606528,
+              "pilotProjectedVarianceRseDiagnostic": 0.02287615315071669
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-nlh-6max-6dealt-40bb",
+          "plannedHalfWidthBb100At1point2Sd": 1.0838476886891684,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.000995805350126033,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 1.5356890536710932,
+              "kurtosis": 169.0667725453436,
+              "absoluteSkewness": 12.714894702310552,
+              "plannedConditionalPairs": 191808,
+              "pilotProjectedVarianceRseDiagnostic": 0.02960108102200553
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-nlh-6max-6dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 2.2190187046814573,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 8.450514690435098e-5,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 7.741801620873304,
+              "kurtosis": 107.41427801382895,
+              "absoluteSkewness": 2.656852940678655,
+              "plannedConditionalPairs": 1162944,
+              "pilotProjectedVarianceRseDiagnostic": 0.009565783563104701
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-nlh-6max-6dealt-200bb",
+          "plannedHalfWidthBb100At1point2Sd": 4.173198121176436,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 2.5487157932757067e-5,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 25.901943299389387,
+              "kurtosis": 132.11523265448113,
+              "absoluteSkewness": 1.4255683183456629,
+              "plannedConditionalPairs": 3680640,
+              "pilotProjectedVarianceRseDiagnostic": 0.005968495959089848
+            }
+          ]
+        },
+        {
+          "cell": "position:button",
+          "plannedHalfWidthBb100At1point2Sd": 2.76489042259273,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0002459401990061543,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 10.680176794579872,
+              "kurtosis": 61.3758338100331,
+              "absoluteSkewness": 1.7167112049164373,
+              "plannedConditionalPairs": 57024.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03253888985090389
+            },
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 151632.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:small_blind",
+          "plannedHalfWidthBb100At1point2Sd": 1.502452270258955,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009997345237021953,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 7.571079065997262,
+              "kurtosis": 135.88863810185958,
+              "absoluteSkewness": 11.43912483584008,
+              "plannedConditionalPairs": 151632.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02982581043613097
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:big_blind",
+          "plannedHalfWidthBb100At1point2Sd": 2.8971041780735676,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0005731628204084287,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 7.626588261357451,
+              "kurtosis": 86.37617075069186,
+              "absoluteSkewness": 9.05364281974089,
+              "plannedConditionalPairs": 57024.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03869363201130411
+            },
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 151632.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.867527617235709,
+              "kurtosis": 94.01052631578946,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.021905959225523443
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 26.816809579845003,
+              "kurtosis": 94.01052631578946,
+              "absoluteSkewness": 9.644196509600446,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.012313457205217681
+            }
+          ]
+        },
+        {
+          "cell": "position:cutoff",
+          "plannedHalfWidthBb100At1point2Sd": 0.8636582889229937,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00015055913280177842,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 4.352101774462955,
+              "kurtosis": 30.25127530737699,
+              "absoluteSkewness": 1.7227220571692519,
+              "plannedConditionalPairs": 151632.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.013889191665117845
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:early",
+          "plannedHalfWidthBb100At1point2Sd": 8.482982414507754,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 7.781250396906797e-5,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 3.2256820304244975,
+              "kurtosis": 38.617815330784865,
+              "absoluteSkewness": 5.999803217482352,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03430354883316851
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 17.236900314619806,
+              "kurtosis": 22.13531832162721,
+              "absoluteSkewness": 0.41656586634445164,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.010442407107380803
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 54.93899681662476,
+              "kurtosis": 33.130205326072264,
+              "absoluteSkewness": 2.3350824646775696,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.007237202171829898
+            }
+          ]
+        },
+        {
+          "cell": "position:middle",
+          "plannedHalfWidthBb100At1point2Sd": 3.1923339018738077,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00038624360093153244,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 1.9079703554282446,
+              "kurtosis": 90.71892698504864,
+              "absoluteSkewness": 9.35815696687043,
+              "plannedConditionalPairs": 31968.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.052976626839334004
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 8.01861868491295,
+              "kurtosis": 93.82055367223225,
+              "absoluteSkewness": 9.628932140168082,
+              "plannedConditionalPairs": 193824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.021883576489455044
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 17.763318915774406,
+              "kurtosis": 93.97176914705189,
+              "absoluteSkewness": 9.641120109620358,
+              "plannedConditionalPairs": 613440.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.012310891450117514
+            }
+          ]
+        },
+        {
+          "cell": "depth:40",
+          "plannedHalfWidthBb100At1point2Sd": 1.0838476886891684,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.000995805350126033,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 1.5356890536710932,
+              "kurtosis": 169.0667725453436,
+              "absoluteSkewness": 12.714894702310552,
+              "plannedConditionalPairs": 191808,
+              "pilotProjectedVarianceRseDiagnostic": 0.02960108102200553
+            }
+          ]
+        },
+        {
+          "cell": "depth:100",
+          "plannedHalfWidthBb100At1point2Sd": 2.9840219462094293,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003321216192400869,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 9.284696152081306,
+              "kurtosis": 73.40523330676363,
+              "absoluteSkewness": 3.7541920576020584,
+              "plannedConditionalPairs": 114048,
+              "pilotProjectedVarianceRseDiagnostic": 0.025196553600958665
+            },
+            {
+              "profile": "v53-nlh-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 4.362298369854227,
+              "kurtosis": 318.4072521890881,
+              "absoluteSkewness": 14.592024795825814,
+              "plannedConditionalPairs": 606528,
+              "pilotProjectedVarianceRseDiagnostic": 0.02287615315071669
+            },
+            {
+              "profile": "v53-nlh-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 7.741801620873304,
+              "kurtosis": 107.41427801382895,
+              "absoluteSkewness": 2.656852940678655,
+              "plannedConditionalPairs": 1162944,
+              "pilotProjectedVarianceRseDiagnostic": 0.009565783563104701
+            }
+          ]
+        },
+        {
+          "cell": "depth:200",
+          "plannedHalfWidthBb100At1point2Sd": 4.173198121176436,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 2.5487157932757067e-5,
+          "groups": [
+            {
+              "profile": "v53-nlh-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 25.901943299389387,
+              "kurtosis": 132.11523265448113,
+              "absoluteSkewness": 1.4255683183456629,
+              "plannedConditionalPairs": 3680640,
+              "pilotProjectedVarianceRseDiagnostic": 0.005968495959089848
+            }
+          ]
+        }
+      ],
+      "criticalCellsCount": 14,
+      "proposedPairsPerSeed": {
+        "v53-nlh-6max-2dealt-100bb": 38016,
+        "v53-nlh-6max-4dealt-100bb": 202176,
+        "v53-nlh-6max-6dealt-40bb": 63936,
+        "v53-nlh-6max-6dealt-100bb": 387648,
+        "v53-nlh-6max-6dealt-200bb": 1226880
+      },
+      "proposedTotalPairs": 5755968,
+      "estimatedSerialRunnerHoursAtObservedElapsedRate": 50.10174083333333,
+      "aggregateTrustAllocationSteps": [
+        {
+          "cell": "position:small_blind",
+          "beforeAbsoluteCoverageError": 0.0038232493835774124,
+          "profilesIncreased": ["v53-nlh-6max-4dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 6.5920475
+        },
+        {
+          "cell": "profile:v53-nlh-6max-6dealt-40bb",
+          "beforeAbsoluteCoverageError": 0.001033754307736644,
+          "profilesIncreased": ["v53-nlh-6max-6dealt-40bb"],
+          "incrementalEstimatedSerialRunnerHours": 0.16958666666666666
+        }
+      ],
+      "incrementalPairsForAggregateTrust": 578880,
+      "maximumProjectedHalfWidthBb100": 8.498106794687448,
+      "maximumPilotProjectedEdgeworthAbsoluteUpperBound": 0.0009997345237021953
+    },
+    {
+      "experiment": "v53-plo4",
+      "profiles": [
+        {
+          "profile": "v53-plo4-6max-2dealt-100bb",
+          "seats": 2,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo4-v53-plo4-6max-2dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "85574c7b839e9d51e449e911a7b40435ef70ea862dfe7f6a66242b3678f2f8f2",
+              "manifestSha256": "7bf9d02c80f009c3e9b612d9f3f8657a6521536801b6da8c27f051382a12a072",
+              "rawPairsSha256": "9d78fdac4397e21dab1ebeb3c31ed34ceea32c2cc83ea32351c1d85e1020d248",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "85574c7b839e9d51e449e911a7b40435ef70ea862dfe7f6a66242b3678f2f8f2",
+          "rawPairsSha256": "9d78fdac4397e21dab1ebeb3c31ed34ceea32c2cc83ea32351c1d85e1020d248",
+          "total": {
+            "n": 576,
+            "sd": 16.759504730009606,
+            "kurtosis": 34.22379855928598,
+            "absSkewness": 1.7975226815426686
+          },
+          "positions": {
+            "button": {
+              "n": 288,
+              "sd": 18.61178506854086,
+              "kurtosis": 36.400924185309215,
+              "absSkewness": 3.2558536728806637
+            },
+            "big_blind": {
+              "n": 288,
+              "sd": 14.621852619655394,
+              "kurtosis": 20.38928011190665,
+              "absSkewness": 1.4304436889563616
+            }
+          },
+          "candidateHeroActionContrastPairs": 103,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 91,
+            "v53_pressure_preflop": 245,
+            "v53_pressure_value_raise": 20,
+            "v53_pressure_four_bet": 38,
+            "v53_pressure_barrel": 50,
+            "v53_pressure_semibluff_raise": 4
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 23190,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo4-6max-4dealt-100bb",
+          "seats": 4,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo4-v53-plo4-6max-4dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "ed33030382d8443c50eb9fcccc228e8d06fbea8cfd093df694597756c0ae06c2",
+              "manifestSha256": "d83c930637058c5b7a3d3df9b43bd246e1bc7f601ab3c7d3d361a4686a37618c",
+              "rawPairsSha256": "8ab83eef18ffc8addba577a055a13966892944141f1029015a1507d802e19c0e",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "ed33030382d8443c50eb9fcccc228e8d06fbea8cfd093df694597756c0ae06c2",
+          "rawPairsSha256": "8ab83eef18ffc8addba577a055a13966892944141f1029015a1507d802e19c0e",
+          "total": {
+            "n": 576,
+            "sd": 10.183506162445605,
+            "kurtosis": 66.34955653118786,
+            "absSkewness": 1.1933072296774438
+          },
+          "positions": {
+            "button": {
+              "n": 144,
+              "sd": 10.521489259711764,
+              "kurtosis": 31.634203477294754,
+              "absSkewness": 0.45386285152089983
+            },
+            "small_blind": {
+              "n": 144,
+              "sd": 5.522813946523786,
+              "kurtosis": 130.9204271033124,
+              "absSkewness": 11.2463429359039
+            },
+            "big_blind": {
+              "n": 144,
+              "sd": 14.081681066095825,
+              "kurtosis": 50.861064199964005,
+              "absSkewness": 2.4321617275040133
+            },
+            "cutoff": {
+              "n": 144,
+              "sd": 8.75435367518368,
+              "kurtosis": 59.4993907479047,
+              "absSkewness": 4.747277280721497
+            }
+          },
+          "candidateHeroActionContrastPairs": 29,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 177,
+            "v53_pressure_barrel": 15,
+            "v53_pressure_three_bet_priced": 38,
+            "v53_pressure_value_raise": 8,
+            "v53_pressure_four_bet": 14,
+            "v53_pressure_semibluff_raise": 2
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 25520,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo4-6max-6dealt-40bb",
+          "seats": 6,
+          "depth": 40,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo4-v53-plo4-6max-6dealt-40bb-pilot576-b935-v5",
+              "developmentSha256": "85cf30317b7d8c0fe3a679adaef86dbb3df2795cbd0f6f5c148e94062ed1c051",
+              "manifestSha256": "99cfdfb667402117c5c2b626e41bc37efa6dc4cc5bc55fb5825ff4992cc63833",
+              "rawPairsSha256": "6fa4a666e04c2443cfee0a59579db42cf3018cfe9b6cbbf81865134869c4997a",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "85cf30317b7d8c0fe3a679adaef86dbb3df2795cbd0f6f5c148e94062ed1c051",
+          "rawPairsSha256": "6fa4a666e04c2443cfee0a59579db42cf3018cfe9b6cbbf81865134869c4997a",
+          "total": {
+            "n": 576,
+            "sd": 3.2922284135877176,
+            "kurtosis": 203.42404834747458,
+            "absSkewness": 1.6613876625192279
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 3.72526565048275,
+              "kurtosis": 94.01052631578952,
+              "absSkewness": 9.64419650960045
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 1.2255391760077785,
+              "kurtosis": 59.45668834061064,
+              "absSkewness": 5.820407213877066
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 7.075566723783989,
+              "kurtosis": 50.393467276249964,
+              "absSkewness": 2.411576693179422
+            }
+          },
+          "candidateHeroActionContrastPairs": 11,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 9,
+            "v53_pressure_preflop": 107,
+            "v53_pressure_four_bet": 4,
+            "v53_pressure_barrel": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 22820,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo4-6max-6dealt-100bb",
+          "seats": 6,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo4-v53-plo4-6max-6dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "d003512e19f84c269303da571a136efa2eec66c4de19b2c670273f1df2cc63dd",
+              "manifestSha256": "5c282b1e594741b33fdbf44c57a5baca13e8de2e7d14165b20bb5e507e7c31f6",
+              "rawPairsSha256": "87a8f1ff530659398596688fdea7f275d37d0b97b801c7d884323ee2a235bb0b",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "d003512e19f84c269303da571a136efa2eec66c4de19b2c670273f1df2cc63dd",
+          "rawPairsSha256": "87a8f1ff530659398596688fdea7f275d37d0b97b801c7d884323ee2a235bb0b",
+          "total": {
+            "n": 576,
+            "sd": 12.317765947639257,
+            "kurtosis": 129.48317167818257,
+            "absSkewness": 8.121901064990452
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 9.848990007440696,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.64419650960045
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 4.592793267718459,
+              "kurtosis": 94.01052631578946,
+              "absSkewness": 9.644196509600448
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 19.569169243185083,
+              "kurtosis": 53.65301039130635,
+              "absSkewness": 6.923755679220139
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 20.337907410814843,
+              "kurtosis": 53.128793139491044,
+              "absSkewness": 3.4057155533718446
+            }
+          },
+          "candidateHeroActionContrastPairs": 12,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 9,
+            "v53_pressure_preflop": 107,
+            "v53_pressure_four_bet": 5,
+            "v53_pressure_barrel": 2,
+            "v53_pressure_value_raise": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 25945,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo4-6max-6dealt-200bb",
+          "seats": 6,
+          "depth": 200,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo4-v53-plo4-6max-6dealt-200bb-pilot576-b935-v5",
+              "developmentSha256": "1039f8991fef73843ad0b8baede7c2fc69d031d21a84a17f044551aadeab6b9d",
+              "manifestSha256": "af703eb5a238c5ce52ceb860b7db792c68ec6f8dbf5685efba5b7b33bc396729",
+              "rawPairsSha256": "e14a20c82640fedd3ca6240c7435f9c248810593974d6df5e8d82f8358e95910",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "1039f8991fef73843ad0b8baede7c2fc69d031d21a84a17f044551aadeab6b9d",
+          "rawPairsSha256": "e14a20c82640fedd3ca6240c7435f9c248810593974d6df5e8d82f8358e95910",
+          "total": {
+            "n": 576,
+            "sd": 18.969267564332426,
+            "kurtosis": 144.74294183896686,
+            "absSkewness": 6.783734191538353
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 3.7732348246122536,
+              "kurtosis": 94.01052631578949,
+              "absSkewness": 9.64419650960045
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 4.592793267718459,
+              "kurtosis": 94.01052631578946,
+              "absSkewness": 9.644196509600448
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 33.36007968286899,
+              "kurtosis": 49.379780566995045,
+              "absSkewness": 6.873083627297987
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 31.79067728220655,
+              "kurtosis": 48.07925721035177,
+              "absSkewness": 0.4476959409680709
+            }
+          },
+          "candidateHeroActionContrastPairs": 13,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 12,
+            "v53_pressure_preflop": 107,
+            "v53_pressure_four_bet": 5,
+            "v53_pressure_semibluff_raise": 1,
+            "v53_pressure_value_raise": 3,
+            "v53_pressure_barrel": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 27113,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        }
+      ],
+      "criticalCells": [
+        {
+          "cell": "profile:v53-plo4-6max-2dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 8.499011306379211,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00010115289711053048,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 16.759504730009606,
+              "kurtosis": 34.22379855928598,
+              "absoluteSkewness": 1.7975226815426686,
+              "plannedConditionalPairs": 371520,
+              "pilotProjectedVarianceRseDiagnostic": 0.009456567860945769
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo4-6max-4dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 6.35447411451038,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 8.262876778901587e-5,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 10.183506162445605,
+              "kurtosis": 66.34955653118786,
+              "absoluteSkewness": 1.1933072296774438,
+              "plannedConditionalPairs": 245376,
+              "pilotProjectedVarianceRseDiagnostic": 0.016319441097857164
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo4-6max-6dealt-40bb",
+          "plannedHalfWidthBb100At1point2Sd": 3.427925125584259,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00019195926117913825,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.2922284135877176,
+              "kurtosis": 203.42404834747458,
+              "absoluteSkewness": 1.6613876625192279,
+              "plannedConditionalPairs": 88128,
+              "pilotProjectedVarianceRseDiagnostic": 0.047926321413836626
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo4-6max-6dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 3.912624094336301,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00028627972568897355,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 12.317765947639257,
+              "kurtosis": 129.48317167818257,
+              "absoluteSkewness": 8.121901064990452,
+              "plannedConditionalPairs": 946944,
+              "pilotProjectedVarianceRseDiagnostic": 0.0116482578592896
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo4-6max-6dealt-200bb",
+          "plannedHalfWidthBb100At1point2Sd": 4.668115899788684,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0001852493148825472,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 18.969267564332426,
+              "kurtosis": 144.74294183896686,
+              "absoluteSkewness": 6.783734191538353,
+              "plannedConditionalPairs": 1577664,
+              "pilotProjectedVarianceRseDiagnostic": 0.009545221407773271
+            }
+          ]
+        },
+        {
+          "cell": "position:button",
+          "plannedHalfWidthBb100At1point2Sd": 4.4933190170480355,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00030367140823556865,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 18.61178506854086,
+              "kurtosis": 36.400924185309215,
+              "absoluteSkewness": 3.2558536728806637,
+              "plannedConditionalPairs": 185760.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.013804834320265361
+            },
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 10.521489259711764,
+              "kurtosis": 31.634203477294754,
+              "absoluteSkewness": 0.45386285152089983,
+              "plannedConditionalPairs": 61344.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.022346898207627523
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 3.72526565048275,
+              "kurtosis": 94.01052631578952,
+              "absoluteSkewness": 9.64419650960045,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.07957647898304254
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 9.848990007440696,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.64419650960045,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02427613409944754
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 3.7732348246122536,
+              "kurtosis": 94.01052631578949,
+              "absoluteSkewness": 9.64419650960045,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.018807644980696026
+            }
+          ]
+        },
+        {
+          "cell": "position:small_blind",
+          "plannedHalfWidthBb100At1point2Sd": 2.0606404574662323,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009946265405116285,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 5.522813946523786,
+              "kurtosis": 130.9204271033124,
+              "absoluteSkewness": 11.2463429359039,
+              "plannedConditionalPairs": 61344.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0460206421386953
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 4.592793267718459,
+              "kurtosis": 94.01052631578946,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.024276134099447535
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 4.592793267718459,
+              "kurtosis": 94.01052631578946,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.018807644980696023
+            }
+          ]
+        },
+        {
+          "cell": "position:big_blind",
+          "plannedHalfWidthBb100At1point2Sd": 4.092938767777115,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00022690668123755164,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 14.621852619655394,
+              "kurtosis": 20.38928011190665,
+              "absoluteSkewness": 1.4304436889563616,
+              "plannedConditionalPairs": 185760.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.010216561207704911
+            },
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 14.081681066095825,
+              "kurtosis": 50.861064199964005,
+              "absoluteSkewness": 2.4321617275040133,
+              "plannedConditionalPairs": 61344.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.028509836465672
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:cutoff",
+          "plannedHalfWidthBb100At1point2Sd": 8.149557098274771,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00017804043687460338,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 8.75435367518368,
+              "kurtosis": 59.4993907479047,
+              "absoluteSkewness": 4.747277280721497,
+              "plannedConditionalPairs": 61344.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.030880877026434404
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 7.075566723783989,
+              "kurtosis": 50.393467276249964,
+              "absoluteSkewness": 2.411576693179422,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.05799004219948511
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 20.337907410814843,
+              "kurtosis": 53.128793139491044,
+              "absoluteSkewness": 3.4057155533718446,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.018174074839482367
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 31.79067728220655,
+              "kurtosis": 48.07925721035177,
+              "absoluteSkewness": 0.4476959409680709,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.013380833552601671
+            }
+          ]
+        },
+        {
+          "cell": "position:early",
+          "plannedHalfWidthBb100At1point2Sd": 0.0,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:middle",
+          "plannedHalfWidthBb100At1point2Sd": 8.472027277569822,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003546135252886834,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 1.2255391760077785,
+              "kurtosis": 59.45668834061064,
+              "absoluteSkewness": 5.820407213877066,
+              "plannedConditionalPairs": 14688.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.06308640391321814
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 19.569169243185083,
+              "kurtosis": 53.65301039130635,
+              "absoluteSkewness": 6.923755679220139,
+              "plannedConditionalPairs": 157824.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.018265227261429387
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 33.36007968286899,
+              "kurtosis": 49.379780566995045,
+              "absoluteSkewness": 6.873083627297987,
+              "plannedConditionalPairs": 262944.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.013564391450916096
+            }
+          ]
+        },
+        {
+          "cell": "depth:40",
+          "plannedHalfWidthBb100At1point2Sd": 3.427925125584259,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00019195926117913825,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.2922284135877176,
+              "kurtosis": 203.42404834747458,
+              "absoluteSkewness": 1.6613876625192279,
+              "plannedConditionalPairs": 88128,
+              "pilotProjectedVarianceRseDiagnostic": 0.047926321413836626
+            }
+          ]
+        },
+        {
+          "cell": "depth:100",
+          "plannedHalfWidthBb100At1point2Sd": 3.770074590501789,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 6.942674342385791e-5,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 16.759504730009606,
+              "kurtosis": 34.22379855928598,
+              "absoluteSkewness": 1.7975226815426686,
+              "plannedConditionalPairs": 371520,
+              "pilotProjectedVarianceRseDiagnostic": 0.009456567860945769
+            },
+            {
+              "profile": "v53-plo4-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 10.183506162445605,
+              "kurtosis": 66.34955653118786,
+              "absoluteSkewness": 1.1933072296774438,
+              "plannedConditionalPairs": 245376,
+              "pilotProjectedVarianceRseDiagnostic": 0.016319441097857164
+            },
+            {
+              "profile": "v53-plo4-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 12.317765947639257,
+              "kurtosis": 129.48317167818257,
+              "absoluteSkewness": 8.121901064990452,
+              "plannedConditionalPairs": 946944,
+              "pilotProjectedVarianceRseDiagnostic": 0.0116482578592896
+            }
+          ]
+        },
+        {
+          "cell": "depth:200",
+          "plannedHalfWidthBb100At1point2Sd": 4.668115899788684,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0001852493148825472,
+          "groups": [
+            {
+              "profile": "v53-plo4-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 18.969267564332426,
+              "kurtosis": 144.74294183896686,
+              "absoluteSkewness": 6.783734191538353,
+              "plannedConditionalPairs": 1577664,
+              "pilotProjectedVarianceRseDiagnostic": 0.009545221407773271
+            }
+          ]
+        }
+      ],
+      "criticalCellsCount": 14,
+      "proposedPairsPerSeed": {
+        "v53-plo4-6max-2dealt-100bb": 123840,
+        "v53-plo4-6max-4dealt-100bb": 81792,
+        "v53-plo4-6max-6dealt-40bb": 29376,
+        "v53-plo4-6max-6dealt-100bb": 315648,
+        "v53-plo4-6max-6dealt-200bb": 525888
+      },
+      "proposedTotalPairs": 3229632,
+      "estimatedSerialRunnerHoursAtObservedElapsedRate": 40.6212825,
+      "aggregateTrustAllocationSteps": [
+        {
+          "cell": "position:small_blind",
+          "beforeAbsoluteCoverageError": 0.0015343844289621858,
+          "profilesIncreased": ["v53-plo4-6max-4dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 1.3185333333333333
+        }
+      ],
+      "incrementalPairsForAggregateTrust": 107136,
+      "maximumProjectedHalfWidthBb100": 8.499011306379211,
+      "maximumPilotProjectedEdgeworthAbsoluteUpperBound": 0.0009946265405116285
+    },
+    {
+      "experiment": "v53-plo5",
+      "profiles": [
+        {
+          "profile": "v53-plo5-6max-2dealt-100bb",
+          "seats": 2,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo5-v53-plo5-6max-2dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "d3a284b41d39442d77541ab5d93931004600ad535bc7608a8759eeba811029ca",
+              "manifestSha256": "e599a16b68abda7a701ad303877a2d7b301d528024a6689c388a5f590e934664",
+              "rawPairsSha256": "d6a663f86ead640650de4c276f6ff40898f3d94e7bfaf93a62fb296fa4f24a05",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "d3a284b41d39442d77541ab5d93931004600ad535bc7608a8759eeba811029ca",
+          "rawPairsSha256": "d6a663f86ead640650de4c276f6ff40898f3d94e7bfaf93a62fb296fa4f24a05",
+          "total": {
+            "n": 576,
+            "sd": 15.457208157180819,
+            "kurtosis": 25.985310939414493,
+            "absSkewness": 1.7246291252568764
+          },
+          "positions": {
+            "button": {
+              "n": 288,
+              "sd": 16.294931026498485,
+              "kurtosis": 26.90516720044267,
+              "absSkewness": 1.0257855546196635
+            },
+            "big_blind": {
+              "n": 288,
+              "sd": 14.587860431546307,
+              "kurtosis": 23.694571273912725,
+              "absSkewness": 2.7058400791502013
+            }
+          },
+          "candidateHeroActionContrastPairs": 77,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 105,
+            "v53_pressure_value_raise": 35,
+            "v53_pressure_preflop": 231,
+            "v53_pressure_four_bet": 35,
+            "v53_pressure_barrel": 20,
+            "v53_pressure_semibluff_raise": 2
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 31883,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo5-6max-4dealt-100bb",
+          "seats": 4,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo5-v53-plo5-6max-4dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "c9dc25958113dbaee0219f1e8800e84dbab124d510a8a65e99d995bdb1534c2a",
+              "manifestSha256": "66f0767c25c64d945a8e0bd65816777e0235b61a523a015c8fc7730449870323",
+              "rawPairsSha256": "e7d2d04de5ae5ca591e7f926fda0b0baba5cc5e2faf391c889b0f38727424110",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "c9dc25958113dbaee0219f1e8800e84dbab124d510a8a65e99d995bdb1534c2a",
+          "rawPairsSha256": "e7d2d04de5ae5ca591e7f926fda0b0baba5cc5e2faf391c889b0f38727424110",
+          "total": {
+            "n": 576,
+            "sd": 11.964924297755147,
+            "kurtosis": 64.07915845084915,
+            "absSkewness": 3.6722144868738056
+          },
+          "positions": {
+            "button": {
+              "n": 144,
+              "sd": 13.975908942115506,
+              "kurtosis": 52.3124770451211,
+              "absSkewness": 0.6138589564788839
+            },
+            "small_blind": {
+              "n": 144,
+              "sd": 12.781346356519515,
+              "kurtosis": 62.856432123735615,
+              "absSkewness": 7.307339061723831
+            },
+            "big_blind": {
+              "n": 144,
+              "sd": 9.38955213711838,
+              "kurtosis": 123.67000190574247,
+              "absSkewness": 10.841827771548987
+            },
+            "cutoff": {
+              "n": 144,
+              "sd": 11.259371853084412,
+              "kurtosis": 39.30716413568626,
+              "absSkewness": 0.21678977990325024
+            }
+          },
+          "candidateHeroActionContrastPairs": 35,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 51,
+            "v53_pressure_preflop": 124,
+            "v53_pressure_four_bet": 14,
+            "v53_pressure_barrel": 14,
+            "v53_pressure_value_raise": 8,
+            "v53_pressure_semibluff_raise": 4
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 32670,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo5-6max-6dealt-40bb",
+          "seats": 6,
+          "depth": 40,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo5-v53-plo5-6max-6dealt-40bb-pilot576-b935-v5",
+              "developmentSha256": "b060fcb920e4bfd04f48b2eda69ff13edbe1dfe7b9be83956120879f041a4916",
+              "manifestSha256": "7d0587eb60e679aa5f30a742415adb3ee318abd6a3fdbf2ceacab6a356f35f06",
+              "rawPairsSha256": "ab2766781eff61eade744d2fa2afc80302bbaa5ac4eb381f04f48a3f2d70cf9d",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "b060fcb920e4bfd04f48b2eda69ff13edbe1dfe7b9be83956120879f041a4916",
+          "rawPairsSha256": "ab2766781eff61eade744d2fa2afc80302bbaa5ac4eb381f04f48a3f2d70cf9d",
+          "total": {
+            "n": 576,
+            "sd": 4.95670976874601,
+            "kurtosis": 268.81350845595705,
+            "absSkewness": 15.562442372350786
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 2.628098369861118,
+              "kurtosis": 94.01052631578943,
+              "absSkewness": 9.644196509600448
+            },
+            "middle": {
+              "n": 96,
+              "sd": 11.80732447187806,
+              "kurtosis": 47.45347532113973,
+              "absSkewness": 6.756202543752633
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 9,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 95,
+            "v53_pressure_three_bet_priced": 20,
+            "v53_pressure_barrel": 3,
+            "v53_pressure_four_bet": 3
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 28083,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo5-6max-6dealt-100bb",
+          "seats": 6,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo5-v53-plo5-6max-6dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "20f4dc8a82273c7c3259ab063dd703295aaa897907dba04f21f21a9b792247ea",
+              "manifestSha256": "480608f63e4ad5b5363a65eb9df774dc229bd7c477c86bb7f40fc1719c86e737",
+              "rawPairsSha256": "51b42c36616e076a14e8f7bd5cecab65a5a8146e48568d5e8246d363aecbac98",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "20f4dc8a82273c7c3259ab063dd703295aaa897907dba04f21f21a9b792247ea",
+          "rawPairsSha256": "51b42c36616e076a14e8f7bd5cecab65a5a8146e48568d5e8246d363aecbac98",
+          "total": {
+            "n": 576,
+            "sd": 9.481874718686042,
+            "kurtosis": 427.0980793276085,
+            "absSkewness": 17.489119195363113
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 8.751822726819062,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "middle": {
+              "n": 96,
+              "sd": 21.48731842947076,
+              "kurtosis": 92.39846797708195,
+              "absSkewness": 9.521662824663007
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 9,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 95,
+            "v53_pressure_three_bet_priced": 23,
+            "v53_pressure_barrel": 4,
+            "v53_pressure_semibluff_raise": 1,
+            "v53_pressure_four_bet": 3,
+            "v53_pressure_value_raise": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 33075,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo5-6max-6dealt-200bb",
+          "seats": 6,
+          "depth": 200,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo5-v53-plo5-6max-6dealt-200bb-pilot576-b935-v5",
+              "developmentSha256": "882946856e91bc7e86857fd45094f2c40af66d104eec50fa9b4d4dcfa2fdcd03",
+              "manifestSha256": "27f07d238d4adebf1f9959fbc8415185f8390471c2cf7d3dd69676c5869df92b",
+              "rawPairsSha256": "bf84709ca544a02e43ffcaf94a7ce64befbc3a11c3f9ec77ac7bf49da79e41e6",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "882946856e91bc7e86857fd45094f2c40af66d104eec50fa9b4d4dcfa2fdcd03",
+          "rawPairsSha256": "bf84709ca544a02e43ffcaf94a7ce64befbc3a11c3f9ec77ac7bf49da79e41e6",
+          "total": {
+            "n": 576,
+            "sd": 15.70530902497537,
+            "kurtosis": 295.454344986587,
+            "absSkewness": 10.7087417201677
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 18.95802998841564,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "middle": {
+              "n": 96,
+              "sd": 33.27543510822955,
+              "kurtosis": 75.30322338359521,
+              "absSkewness": 8.362085979879158
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 2.599520989528648,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            }
+          },
+          "candidateHeroActionContrastPairs": 10,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_value_raise": 4,
+            "v53_pressure_preflop": 95,
+            "v53_pressure_three_bet_priced": 25,
+            "v53_pressure_barrel": 4,
+            "v53_pressure_semibluff_raise": 1,
+            "v53_pressure_four_bet": 4
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 32209,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        }
+      ],
+      "criticalCells": [
+        {
+          "cell": "profile:v53-plo5-6max-2dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 8.496341639615915,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00010519457611924466,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 15.457208157180819,
+              "kurtosis": 25.985310939414493,
+              "absoluteSkewness": 1.7246291252568764,
+              "plannedConditionalPairs": 316224,
+              "pilotProjectedVarianceRseDiagnostic": 0.008888837470574775
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo5-6max-4dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 7.4140441122896,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00025250499300552863,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 11.964924297755147,
+              "kurtosis": 64.07915845084915,
+              "absoluteSkewness": 3.6722144868738056,
+              "plannedConditionalPairs": 248832,
+              "pilotProjectedVarianceRseDiagnostic": 0.015921714431263008
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo5-6max-6dealt-40bb",
+          "plannedHalfWidthBb100At1point2Sd": 1.7836350965211927,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006214225309682148,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 4.95670976874601,
+              "kurtosis": 268.81350845595705,
+              "absoluteSkewness": 15.562442372350786,
+              "plannedConditionalPairs": 737856,
+              "pilotProjectedVarianceRseDiagnostic": 0.019051555177279893
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo5-6max-6dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 2.6367420695284145,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0005396821990428642,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 9.481874718686042,
+              "kurtosis": 427.0980793276085,
+              "absoluteSkewness": 17.489119195363113,
+              "plannedConditionalPairs": 1235520,
+              "pilotProjectedVarianceRseDiagnostic": 0.01857076944634392
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo5-6max-6dealt-200bb",
+          "plannedHalfWidthBb100At1point2Sd": 3.486394391770091,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00026379416952103943,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 15.70530902497537,
+              "kurtosis": 295.454344986587,
+              "absoluteSkewness": 10.7087417201677,
+              "plannedConditionalPairs": 1938816,
+              "pilotProjectedVarianceRseDiagnostic": 0.012323687754528289
+            }
+          ]
+        },
+        {
+          "cell": "position:button",
+          "plannedHalfWidthBb100At1point2Sd": 4.291580333484282,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 6.220335297031465e-5,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 16.294931026498485,
+              "kurtosis": 26.90516720044267,
+              "absoluteSkewness": 1.0257855546196635,
+              "plannedConditionalPairs": 158112.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.012800023994154372
+            },
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 13.975908942115506,
+              "kurtosis": 52.3124770451211,
+              "absoluteSkewness": 0.6138589564788839,
+              "plannedConditionalPairs": 62208.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02872026022796009
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:small_blind",
+          "plannedHalfWidthBb100At1point2Sd": 3.959969296231433,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009970649774141392,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 12.781346356519515,
+              "kurtosis": 62.856432123735615,
+              "absoluteSkewness": 7.307339061723831,
+              "plannedConditionalPairs": 62208.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03153329209295337
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:big_blind",
+          "plannedHalfWidthBb100At1point2Sd": 3.249609332372291,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006225455178120296,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 14.587860431546307,
+              "kurtosis": 23.694571273912725,
+              "absoluteSkewness": 2.7058400791502013,
+              "plannedConditionalPairs": 158112.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.011980600188483664
+            },
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 9.38955213711838,
+              "kurtosis": 123.67000190574247,
+              "absoluteSkewness": 10.841827771548987,
+              "plannedConditionalPairs": 62208.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.04440645111923916
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:cutoff",
+          "plannedHalfWidthBb100At1point2Sd": 3.506277793790298,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 2.9718756552478057e-5,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 11.259371853084412,
+              "kurtosis": 39.30716413568626,
+              "absoluteSkewness": 0.21678977990325024,
+              "plannedConditionalPairs": 62208.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02481514869081839
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 2.599520989528648,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.016965762324241844
+            }
+          ]
+        },
+        {
+          "cell": "position:early",
+          "plannedHalfWidthBb100At1point2Sd": 4.043803416699009,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0004442618772128607,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 2.628098369861118,
+              "kurtosis": 94.01052631578943,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.027501467551826076
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 8.751822726819062,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.021252830872706647
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 18.95802998841564,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.016965762324241844
+            }
+          ]
+        },
+        {
+          "cell": "position:middle",
+          "plannedHalfWidthBb100At1point2Sd": 8.497835955713226,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003568409565975532,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 11.80732447187806,
+              "kurtosis": 47.45347532113973,
+              "absoluteSkewness": 6.756202543752633,
+              "plannedConditionalPairs": 122976.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.01943564347426687
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 21.48731842947076,
+              "kurtosis": 92.39846797708195,
+              "absoluteSkewness": 9.521662824663007,
+              "plannedConditionalPairs": 205920.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.021067848821556465
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 33.27543510822955,
+              "kurtosis": 75.30322338359521,
+              "absoluteSkewness": 8.362085979879158,
+              "plannedConditionalPairs": 323136.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.015163908489929752
+            }
+          ]
+        },
+        {
+          "cell": "depth:40",
+          "plannedHalfWidthBb100At1point2Sd": 1.7836350965211927,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006214225309682148,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 4.95670976874601,
+              "kurtosis": 268.81350845595705,
+              "absoluteSkewness": 15.562442372350786,
+              "plannedConditionalPairs": 737856,
+              "pilotProjectedVarianceRseDiagnostic": 0.019051555177279893
+            }
+          ]
+        },
+        {
+          "cell": "depth:100",
+          "plannedHalfWidthBb100At1point2Sd": 3.8601709820690058,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00011417413153237959,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 15.457208157180819,
+              "kurtosis": 25.985310939414493,
+              "absoluteSkewness": 1.7246291252568764,
+              "plannedConditionalPairs": 316224,
+              "pilotProjectedVarianceRseDiagnostic": 0.008888837470574775
+            },
+            {
+              "profile": "v53-plo5-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 11.964924297755147,
+              "kurtosis": 64.07915845084915,
+              "absoluteSkewness": 3.6722144868738056,
+              "plannedConditionalPairs": 248832,
+              "pilotProjectedVarianceRseDiagnostic": 0.015921714431263008
+            },
+            {
+              "profile": "v53-plo5-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 9.481874718686042,
+              "kurtosis": 427.0980793276085,
+              "absoluteSkewness": 17.489119195363113,
+              "plannedConditionalPairs": 1235520,
+              "pilotProjectedVarianceRseDiagnostic": 0.01857076944634392
+            }
+          ]
+        },
+        {
+          "cell": "depth:200",
+          "plannedHalfWidthBb100At1point2Sd": 3.486394391770091,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00026379416952103943,
+          "groups": [
+            {
+              "profile": "v53-plo5-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 15.70530902497537,
+              "kurtosis": 295.454344986587,
+              "absoluteSkewness": 10.7087417201677,
+              "plannedConditionalPairs": 1938816,
+              "pilotProjectedVarianceRseDiagnostic": 0.012323687754528289
+            }
+          ]
+        }
+      ],
+      "criticalCellsCount": 14,
+      "proposedPairsPerSeed": {
+        "v53-plo5-6max-2dealt-100bb": 105408,
+        "v53-plo5-6max-4dealt-100bb": 82944,
+        "v53-plo5-6max-6dealt-40bb": 245952,
+        "v53-plo5-6max-6dealt-100bb": 411840,
+        "v53-plo5-6max-6dealt-200bb": 646272
+      },
+      "proposedTotalPairs": 4477248,
+      "estimatedSerialRunnerHoursAtObservedElapsedRate": 68.5980275,
+      "aggregateTrustAllocationSteps": [
+        {
+          "cell": "position:small_blind",
+          "beforeAbsoluteCoverageError": 0.0011407969860136595,
+          "profilesIncreased": ["v53-plo5-6max-4dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 0.92565
+        }
+      ],
+      "incrementalPairsForAggregateTrust": 58752,
+      "maximumProjectedHalfWidthBb100": 8.497835955713226,
+      "maximumPilotProjectedEdgeworthAbsoluteUpperBound": 0.0009970649774141392
+    },
+    {
+      "experiment": "v53-plo6",
+      "profiles": [
+        {
+          "profile": "v53-plo6-6max-2dealt-100bb",
+          "seats": 2,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo6-v53-plo6-6max-2dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "bc7b29065f4a265780423b5f81c02f3b7189ebde7971b9beeda26587c0688810",
+              "manifestSha256": "f5b580904a1e717fa191cde8ce24330a2e5043d28a99f224699c80fe6f679dce",
+              "rawPairsSha256": "08bc6fe430ab520f95d7bc73582548240c636ccd3a75bebb35f092d3a73a07bd",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "bc7b29065f4a265780423b5f81c02f3b7189ebde7971b9beeda26587c0688810",
+          "rawPairsSha256": "08bc6fe430ab520f95d7bc73582548240c636ccd3a75bebb35f092d3a73a07bd",
+          "total": {
+            "n": 576,
+            "sd": 14.674902251665563,
+            "kurtosis": 29.40914400658961,
+            "absSkewness": 0.6920305796844313
+          },
+          "positions": {
+            "button": {
+              "n": 288,
+              "sd": 15.206929360192992,
+              "kurtosis": 25.631631610591075,
+              "absSkewness": 0.053605082293155554
+            },
+            "big_blind": {
+              "n": 288,
+              "sd": 14.146164024544623,
+              "kurtosis": 34.20866956041798,
+              "absSkewness": 1.4755313447318044
+            }
+          },
+          "candidateHeroActionContrastPairs": 62,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_three_bet_priced": 112,
+            "v53_pressure_value_raise": 43,
+            "v53_pressure_preflop": 211,
+            "v53_pressure_semibluff_raise": 7,
+            "v53_pressure_four_bet": 19,
+            "v53_pressure_barrel": 21
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 28702,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo6-6max-4dealt-100bb",
+          "seats": 4,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo6-v53-plo6-6max-4dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "4dbd58cc61a6671f7125fa8eed36e81a6964e25fc14d8049aa2d69cc8d782255",
+              "manifestSha256": "371dc0e302e1f8ffe088ee786bac0c12967616dea4131ffca4873541f2497e78",
+              "rawPairsSha256": "71416a8677eeb69029d24ca84404f2b3479cd470fc58b85bf7ebd1c5e81d829e",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "4dbd58cc61a6671f7125fa8eed36e81a6964e25fc14d8049aa2d69cc8d782255",
+          "rawPairsSha256": "71416a8677eeb69029d24ca84404f2b3479cd470fc58b85bf7ebd1c5e81d829e",
+          "total": {
+            "n": 576,
+            "sd": 13.203556824993877,
+            "kurtosis": 60.1984981180681,
+            "absSkewness": 1.9318468461077134
+          },
+          "positions": {
+            "button": {
+              "n": 144,
+              "sd": 5.778438656830385,
+              "kurtosis": 57.27166154812489,
+              "absSkewness": 6.240824413764004
+            },
+            "small_blind": {
+              "n": 144,
+              "sd": 12.491770741784258,
+              "kurtosis": 28.45941303219712,
+              "absSkewness": 0.4404211236599911
+            },
+            "big_blind": {
+              "n": 144,
+              "sd": 8.085110191410829,
+              "kurtosis": 75.52226565373302,
+              "absSkewness": 8.368612408042274
+            },
+            "cutoff": {
+              "n": 144,
+              "sd": 21.106191647810977,
+              "kurtosis": 31.69869893555555,
+              "absSkewness": 1.1631501420587582
+            }
+          },
+          "candidateHeroActionContrastPairs": 30,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 124,
+            "v53_pressure_four_bet": 13,
+            "v53_pressure_value_raise": 20,
+            "v53_pressure_three_bet_priced": 55,
+            "v53_pressure_semibluff_raise": 2
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 41205,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo6-6max-6dealt-40bb",
+          "seats": 6,
+          "depth": 40,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo6-v53-plo6-6max-6dealt-40bb-pilot576-b935-v5",
+              "developmentSha256": "be45aea9124d3e65d45f2ed120305cf28e507bdded3c87ba5029c383813a094e",
+              "manifestSha256": "489d5c2eaa27ff560d35f112ad9578791f35e792d2700a47bcdbbecc695a5012",
+              "rawPairsSha256": "fcdd2d79fd69456f84ea0caf6a969bb82b317b29f1baea4f98a2f557a5d0c05d",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "be45aea9124d3e65d45f2ed120305cf28e507bdded3c87ba5029c383813a094e",
+          "rawPairsSha256": "fcdd2d79fd69456f84ea0caf6a969bb82b317b29f1baea4f98a2f557a5d0c05d",
+          "total": {
+            "n": 576,
+            "sd": 3.9162279086652627,
+            "kurtosis": 200.0512780976428,
+            "absSkewness": 9.756993375282283
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 7.7698176162297194,
+              "kurtosis": 63.66655497662,
+              "absSkewness": 5.878056624436766
+            },
+            "middle": {
+              "n": 96,
+              "sd": 5.597931948966793,
+              "kurtosis": 53.178098486334996,
+              "absSkewness": 4.29804065281489
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.9626665952884262,
+              "kurtosis": 66.56167288948804,
+              "absSkewness": 6.3780878931881375
+            }
+          },
+          "candidateHeroActionContrastPairs": 11,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 96,
+            "v53_pressure_three_bet_priced": 21,
+            "v53_pressure_four_bet": 4,
+            "v53_pressure_barrel": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 31404,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo6-6max-6dealt-100bb",
+          "seats": 6,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo6-v53-plo6-6max-6dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "8c94df51c3c84acbf96d358699094706eed600d45f38cdfa8f9809cc5e40b7c3",
+              "manifestSha256": "9584d38303ee2a2fd71c967733a34ac8004a294df831b35d417bb1b5e67487f2",
+              "rawPairsSha256": "9d8cac6178290ac1041aad67ada44fd9afc7f605e0cb67259f3b0f668a2f5023",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "8c94df51c3c84acbf96d358699094706eed600d45f38cdfa8f9809cc5e40b7c3",
+          "rawPairsSha256": "9d8cac6178290ac1041aad67ada44fd9afc7f605e0cb67259f3b0f668a2f5023",
+          "total": {
+            "n": 576,
+            "sd": 5.84279501742446,
+            "kurtosis": 254.211379868548,
+            "absSkewness": 15.573079944580467
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "early": {
+              "n": 96,
+              "sd": 3.5211415052508186,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "middle": {
+              "n": 96,
+              "sd": 13.757283435798463,
+              "kurtosis": 46.529551695494646,
+              "absSkewness": 6.7043763980237285
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.9850722433209675,
+              "kurtosis": 61.40849538212564,
+              "absSkewness": 5.921556840206906
+            }
+          },
+          "candidateHeroActionContrastPairs": 13,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 96,
+            "v53_pressure_three_bet_priced": 24,
+            "v53_pressure_value_raise": 6,
+            "v53_pressure_four_bet": 4
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 35872,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "v53-plo6-6max-6dealt-200bb",
+          "seats": 6,
+          "depth": 200,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-v53-plo6-v53-plo6-6max-6dealt-200bb-pilot576-b935-v5",
+              "developmentSha256": "92d95172909b500d4f00393c89fb3a6b15a3cfee54d854ecd23811d179039c7d",
+              "manifestSha256": "316703d7ca936b566c20dc291f72e72ade4650e30c30e16e1862e1919afa8c7e",
+              "rawPairsSha256": "aa1cdfad0519869ca66f23bea1315ba33137ad9fa5d97a3f11f2f3f0966ec788",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "92d95172909b500d4f00393c89fb3a6b15a3cfee54d854ecd23811d179039c7d",
+          "rawPairsSha256": "aa1cdfad0519869ca66f23bea1315ba33137ad9fa5d97a3f11f2f3f0966ec788",
+          "total": {
+            "n": 576,
+            "sd": 11.141566890765453,
+            "kurtosis": 177.97060196996884,
+            "absSkewness": 3.330326144502797
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 4.210060495408587,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "early": {
+              "n": 96,
+              "sd": 18.62632825241375,
+              "kurtosis": 94.01052631578949,
+              "absSkewness": 9.64419650960045
+            },
+            "middle": {
+              "n": 96,
+              "sd": 17.895305093096347,
+              "kurtosis": 41.57188673281129,
+              "absSkewness": 6.201859234823066
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 7.160647574361591,
+              "kurtosis": 55.19813587865626,
+              "absSkewness": 7.2014874216060445
+            }
+          },
+          "candidateHeroActionContrastPairs": 17,
+          "candidatePressureEvaluationFires": {
+            "v53_pressure_preflop": 96,
+            "v53_pressure_value_raise": 7,
+            "v53_pressure_three_bet_priced": 26,
+            "v53_pressure_four_bet": 4,
+            "v53_pressure_semibluff_raise": 1
+          },
+          "referencePressureEvaluationFires": {},
+          "durationMs": 37280,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        }
+      ],
+      "criticalCells": [
+        {
+          "cell": "profile:v53-plo6-6max-2dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 8.49492798597753,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 4.445355423613069e-5,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 14.674902251665563,
+              "kurtosis": 29.40914400658961,
+              "absoluteSkewness": 0.6920305796844313,
+              "plannedConditionalPairs": 285120,
+              "pilotProjectedVarianceRseDiagnostic": 0.009981946386887614
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo6-6max-4dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 8.4813502078686,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00013770302183403567,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 13.203556824993877,
+              "kurtosis": 60.1984981180681,
+              "absoluteSkewness": 1.9318468461077134,
+              "plannedConditionalPairs": 231552,
+              "pilotProjectedVarianceRseDiagnostic": 0.015989359828369153
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo6-6max-6dealt-40bb",
+          "plannedHalfWidthBb100At1point2Sd": 2.727356999291291,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0007540267637249494,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.9162279086652627,
+              "kurtosis": 200.0512780976428,
+              "absoluteSkewness": 9.756993375282283,
+              "plannedConditionalPairs": 196992,
+              "pilotProjectedVarianceRseDiagnostic": 0.03178763301702572
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo6-6max-6dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 2.684086212078148,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0007938657110108986,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 5.84279501742446,
+              "kurtosis": 254.211379868548,
+              "absoluteSkewness": 15.573079944580467,
+              "plannedConditionalPairs": 452736,
+              "pilotProjectedVarianceRseDiagnostic": 0.02364934382107424
+            }
+          ]
+        },
+        {
+          "cell": "profile:v53-plo6-6max-6dealt-200bb",
+          "plannedHalfWidthBb100At1point2Sd": 4.533143791872585,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0001503615209563916,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 11.141566890765453,
+              "kurtosis": 177.97060196996884,
+              "absoluteSkewness": 3.330326144502797,
+              "plannedConditionalPairs": 577152,
+              "pilotProjectedVarianceRseDiagnostic": 0.017510778785443534
+            }
+          ]
+        },
+        {
+          "cell": "position:button",
+          "plannedHalfWidthBb100At1point2Sd": 2.9022525565324018,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00012136164801882171,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 15.206929360192992,
+              "kurtosis": 25.631631610591075,
+              "absoluteSkewness": 0.053605082293155554,
+              "plannedConditionalPairs": 142560.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.013144611266570952
+            },
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 5.778438656830385,
+              "kurtosis": 57.27166154812489,
+              "absoluteSkewness": 6.240824413764004,
+              "plannedConditionalPairs": 57888.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.031178168285766198
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.05322520972858146
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03510905672364223
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.3061862178478973,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.031095430492722745
+            }
+          ]
+        },
+        {
+          "cell": "position:small_blind",
+          "plannedHalfWidthBb100At1point2Sd": 4.012065982740523,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 6.229614749781128e-5,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 12.491770741784258,
+              "kurtosis": 28.45941303219712,
+              "absoluteSkewness": 0.4404211236599911,
+              "plannedConditionalPairs": 57888.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02177967286136608
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:big_blind",
+          "plannedHalfWidthBb100At1point2Sd": 3.222479308863875,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003853603065675723,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-2dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 14.146164024544623,
+              "kurtosis": 34.20866956041798,
+              "absoluteSkewness": 1.4755313447318044,
+              "plannedConditionalPairs": 142560.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.015262542807995492
+            },
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 8.085110191410829,
+              "kurtosis": 75.52226565373302,
+              "absoluteSkewness": 8.368612408042274,
+              "plannedConditionalPairs": 57888.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03587969580987487
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 4.210060495408587,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.031095430492722745
+            }
+          ]
+        },
+        {
+          "cell": "position:cutoff",
+          "plannedHalfWidthBb100At1point2Sd": 7.0271438814186515,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0001608376859916028,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 21.106191647810977,
+              "kurtosis": 31.69869893555555,
+              "absoluteSkewness": 1.1631501420587582,
+              "plannedConditionalPairs": 57888.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.023028503281148752
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.9626665952884262,
+              "kurtosis": 66.56167288948804,
+              "absoluteSkewness": 6.3780878931881375,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0446865003294339
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.9850722433209675,
+              "kurtosis": 61.40849538212564,
+              "absoluteSkewness": 5.921556840206906,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.028294506255856302
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 7.160647574361591,
+              "kurtosis": 55.19813587865626,
+              "absoluteSkewness": 7.2014874216060445,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.023736828796619595
+            }
+          ]
+        },
+        {
+          "cell": "position:early",
+          "plannedHalfWidthBb100At1point2Sd": 7.71705134916726,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0007547377000081924,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 7.7698176162297194,
+              "kurtosis": 63.66655497662,
+              "absoluteSkewness": 5.878056624436766,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.04368871193685098
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 3.5211415052508186,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03510905672364223
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 18.62632825241375,
+              "kurtosis": 94.01052631578949,
+              "absoluteSkewness": 9.64419650960045,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03109543049272275
+            }
+          ]
+        },
+        {
+          "cell": "position:middle",
+          "plannedHalfWidthBb100At1point2Sd": 8.491277454842576,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.00046005224289455903,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 5.597931948966793,
+              "kurtosis": 53.178098486334996,
+              "absoluteSkewness": 4.29804065281489,
+              "plannedConditionalPairs": 32832.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03986533835846207
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 13.757283435798463,
+              "kurtosis": 46.529551695494646,
+              "absoluteSkewness": 6.7043763980237285,
+              "plannedConditionalPairs": 75456.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02456404008942607
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 17.895305093096347,
+              "kurtosis": 41.57188673281129,
+              "absoluteSkewness": 6.201859234823066,
+              "plannedConditionalPairs": 96192.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.020537289490442076
+            }
+          ]
+        },
+        {
+          "cell": "depth:40",
+          "plannedHalfWidthBb100At1point2Sd": 2.727356999291291,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0007540267637249494,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.9162279086652627,
+              "kurtosis": 200.0512780976428,
+              "absoluteSkewness": 9.756993375282283,
+              "plannedConditionalPairs": 196992,
+              "pilotProjectedVarianceRseDiagnostic": 0.03178763301702572
+            }
+          ]
+        },
+        {
+          "cell": "depth:100",
+          "plannedHalfWidthBb100At1point2Sd": 4.100154761704124,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 6.803242701932921e-5,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-2dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 14.674902251665563,
+              "kurtosis": 29.40914400658961,
+              "absoluteSkewness": 0.6920305796844313,
+              "plannedConditionalPairs": 285120,
+              "pilotProjectedVarianceRseDiagnostic": 0.009981946386887614
+            },
+            {
+              "profile": "v53-plo6-6max-4dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 13.203556824993877,
+              "kurtosis": 60.1984981180681,
+              "absoluteSkewness": 1.9318468461077134,
+              "plannedConditionalPairs": 231552,
+              "pilotProjectedVarianceRseDiagnostic": 0.015989359828369153
+            },
+            {
+              "profile": "v53-plo6-6max-6dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 5.84279501742446,
+              "kurtosis": 254.211379868548,
+              "absoluteSkewness": 15.573079944580467,
+              "plannedConditionalPairs": 452736,
+              "pilotProjectedVarianceRseDiagnostic": 0.02364934382107424
+            }
+          ]
+        },
+        {
+          "cell": "depth:200",
+          "plannedHalfWidthBb100At1point2Sd": 4.533143791872585,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0001503615209563916,
+          "groups": [
+            {
+              "profile": "v53-plo6-6max-6dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 11.141566890765453,
+              "kurtosis": 177.97060196996884,
+              "absoluteSkewness": 3.330326144502797,
+              "plannedConditionalPairs": 577152,
+              "pilotProjectedVarianceRseDiagnostic": 0.017510778785443534
+            }
+          ]
+        }
+      ],
+      "criticalCellsCount": 14,
+      "proposedPairsPerSeed": {
+        "v53-plo6-6max-2dealt-100bb": 95040,
+        "v53-plo6-6max-4dealt-100bb": 77184,
+        "v53-plo6-6max-6dealt-40bb": 65664,
+        "v53-plo6-6max-6dealt-100bb": 150912,
+        "v53-plo6-6max-6dealt-200bb": 192384
+      },
+      "proposedTotalPairs": 1743552,
+      "estimatedSerialRunnerHoursAtObservedElapsedRate": 29.739449999999998,
+      "aggregateTrustAllocationSteps": [],
+      "incrementalPairsForAggregateTrust": 0,
+      "maximumProjectedHalfWidthBb100": 8.49492798597753,
+      "maximumPilotProjectedEdgeworthAbsoluteUpperBound": 0.0007938657110108986
+    },
+    {
+      "experiment": "plo6-v24",
+      "profiles": [
+        {
+          "profile": "plo6-v24-two-dealt-100bb",
+          "seats": 2,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-plo6-v24-two-dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "830e4261facd9d444cd7b85ac08ef022c5344c30fbdca8ce020a018c987d4241",
+              "manifestSha256": "63d4fa2111c2553d0fdda1187bb1b4bfb07f66a2e3e6c1b2cb42b7d55e00a3ad",
+              "rawPairsSha256": "103708ec43db91f0f1bfd3bfb33f6a3238c85076b1b4795d652af91e68d94ecb",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "830e4261facd9d444cd7b85ac08ef022c5344c30fbdca8ce020a018c987d4241",
+          "rawPairsSha256": "103708ec43db91f0f1bfd3bfb33f6a3238c85076b1b4795d652af91e68d94ecb",
+          "total": {
+            "n": 576,
+            "sd": 2.538396604152477,
+            "kurtosis": 121.87383668675069,
+            "absSkewness": 9.052388341627228
+          },
+          "positions": {
+            "button": {
+              "n": 288,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "big_blind": {
+              "n": 288,
+              "sd": 3.5929580724929853,
+              "kurtosis": 60.915713881132255,
+              "absSkewness": 6.398513666495325
+            }
+          },
+          "candidateHeroActionContrastPairs": 37,
+          "candidatePressureEvaluationFires": {},
+          "referencePressureEvaluationFires": {},
+          "durationMs": 35429,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "plo6-v24-four-dealt-100bb",
+          "seats": 4,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-plo6-v24-four-dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "a70997274e4791b3e806868e020c2bc6d3b72da54115f0ef248d3ffca9cd1202",
+              "manifestSha256": "c3653c5c64f3dd7d691088365db80dbe8ce8ca1df56598533a010325e084e89d",
+              "rawPairsSha256": "707187ee5ce4c5cd7e32e70cbbfd450e693e970afc55688c4b276e9dda993b3c",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "a70997274e4791b3e806868e020c2bc6d3b72da54115f0ef248d3ffca9cd1202",
+          "rawPairsSha256": "707187ee5ce4c5cd7e32e70cbbfd450e693e970afc55688c4b276e9dda993b3c",
+          "total": {
+            "n": 576,
+            "sd": 1.144925463789172,
+            "kurtosis": 226.52719914101195,
+            "absSkewness": 10.646831613380806
+          },
+          "positions": {
+            "button": {
+              "n": 144,
+              "sd": 0.2916666666666667,
+              "kurtosis": 142.00699300699299,
+              "absSkewness": 11.874636542100689
+            },
+            "small_blind": {
+              "n": 144,
+              "sd": 1.782944836013523,
+              "kurtosis": 132.86384175367206,
+              "absSkewness": 11.231504949395683
+            },
+            "big_blind": {
+              "n": 144,
+              "sd": 1.413104495866925,
+              "kurtosis": 52.676505520409954,
+              "absSkewness": 0.09766266755023606
+            },
+            "cutoff": {
+              "n": 144,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 10,
+          "candidatePressureEvaluationFires": {},
+          "referencePressureEvaluationFires": {},
+          "durationMs": 74297,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "plo6-v24-six-dealt-40bb",
+          "seats": 6,
+          "depth": 40,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-plo6-v24-six-dealt-40bb-pilot576-b935-v5",
+              "developmentSha256": "415f2e6a7d5c0db3ac1e462f8f6e319b32a6c166402e959486500fe4b1eb0a9b",
+              "manifestSha256": "8dca0e70916868deaf06f90e27bb9ad67b297962138f28addfc4a2e97a9888c9",
+              "rawPairsSha256": "bde12f03358fee0cc97c7b2dde66a9dd6b04ed5868a9f73f5f52e0991a1e9ce5",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "415f2e6a7d5c0db3ac1e462f8f6e319b32a6c166402e959486500fe4b1eb0a9b",
+          "rawPairsSha256": "bde12f03358fee0cc97c7b2dde66a9dd6b04ed5868a9f73f5f52e0991a1e9ce5",
+          "total": {
+            "n": 576,
+            "sd": 2.482233075004711,
+            "kurtosis": 165.26232248528757,
+            "absSkewness": 7.7809636211874125
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 0.3572172541558802,
+              "kurtosis": 94.01052631578945,
+              "absSkewness": 9.644196509600448
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 5.10378847506885,
+              "kurtosis": 46.059025021465395,
+              "absSkewness": 6.481871769710224
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.580864449567995,
+              "kurtosis": 50.19335979136271,
+              "absSkewness": 6.941753912171638
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 2.5005207790911608,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.64419650960045
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 1.9821503364125415,
+              "kurtosis": 50.529432499053044,
+              "absSkewness": 4.2733358291693495
+            }
+          },
+          "candidateHeroActionContrastPairs": 14,
+          "candidatePressureEvaluationFires": {},
+          "referencePressureEvaluationFires": {},
+          "durationMs": 62888,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "plo6-v24-six-dealt-100bb",
+          "seats": 6,
+          "depth": 100,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-plo6-v24-six-dealt-100bb-pilot576-b935-v5",
+              "developmentSha256": "9ed5a773653ceaed7150f7a9f74e53d7c7e60cfcb7f00daf0ad94702789673b4",
+              "manifestSha256": "7394e32c9dd2a101a4c31fdd4c05a45d0aae9cc1eb0943c5f37e2879b4bf776b",
+              "rawPairsSha256": "8d4f32720b214dc4371ecb41844405ba1f1ad6250738bfc2c3a967b47b1852bd",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "9ed5a773653ceaed7150f7a9f74e53d7c7e60cfcb7f00daf0ad94702789673b4",
+          "rawPairsSha256": "8d4f32720b214dc4371ecb41844405ba1f1ad6250738bfc2c3a967b47b1852bd",
+          "total": {
+            "n": 576,
+            "sd": 3.169813687014818,
+            "kurtosis": 248.58506499954993,
+            "absSkewness": 9.200996829718234
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 4.608698749828053,
+              "kurtosis": 54.77386523014497,
+              "absSkewness": 4.041355813982375
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 6.211821991665597,
+              "kurtosis": 81.85526169991724,
+              "absSkewness": 8.788973738825174
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.580864449567995,
+              "kurtosis": 50.19335979136271,
+              "absSkewness": 6.941753912171638
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 9,
+          "candidatePressureEvaluationFires": {},
+          "referencePressureEvaluationFires": {},
+          "durationMs": 62938,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        },
+        {
+          "profile": "plo6-v24-six-dealt-200bb",
+          "seats": 6,
+          "depth": 200,
+          "sources": [
+            {
+              "artifactDirectory": "ablation-plo6-v24-six-dealt-200bb-pilot576-b935-v5",
+              "developmentSha256": "5162f6fdf2ee92285fe422f9a635e34c63c5d5ce1965833df8cde9eb611bbafc",
+              "manifestSha256": "18041065ca64b73a2d2125456664717a85fb3cac3263bbb92d29445ae0dd7216",
+              "rawPairsSha256": "ed65ceacee6f653f045dda310a6e697039b44a660e3239c75f7842e49fe81639",
+              "firstPair": 0,
+              "pairs": 576,
+              "complete": true
+            }
+          ],
+          "developmentJsonSha256": "5162f6fdf2ee92285fe422f9a635e34c63c5d5ce1965833df8cde9eb611bbafc",
+          "rawPairsSha256": "ed65ceacee6f653f045dda310a6e697039b44a660e3239c75f7842e49fe81639",
+          "total": {
+            "n": 576,
+            "sd": 6.014228537172744,
+            "kurtosis": 368.79587845441773,
+            "absSkewness": 14.744411934183058
+          },
+          "positions": {
+            "button": {
+              "n": 96,
+              "sd": 2.861649015466309,
+              "kurtosis": 85.65026390620471,
+              "absSkewness": 9.02896912473819
+            },
+            "small_blind": {
+              "n": 96,
+              "sd": 14.499772192705334,
+              "kurtosis": 65.6959696457081,
+              "absSkewness": 6.373728476265525
+            },
+            "big_blind": {
+              "n": 96,
+              "sd": 0.3470110468942835,
+              "kurtosis": 94.01052631578948,
+              "absSkewness": 9.644196509600448
+            },
+            "early": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "middle": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            },
+            "cutoff": {
+              "n": 96,
+              "sd": 0.0,
+              "kurtosis": null,
+              "absSkewness": null
+            }
+          },
+          "candidateHeroActionContrastPairs": 10,
+          "candidatePressureEvaluationFires": {},
+          "referencePressureEvaluationFires": {},
+          "durationMs": 64874,
+          "exactPowerSumsRetainedInSourceArtifacts": true
+        }
+      ],
+      "criticalCells": [
+        {
+          "cell": "profile:plo6-v24-two-dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 2.522272013834504,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009981420219564753,
+          "groups": [
+            {
+              "profile": "plo6-v24-two-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 2.538396604152477,
+              "kurtosis": 121.87383668675069,
+              "absoluteSkewness": 9.052388341627228,
+              "plannedConditionalPairs": 96768,
+              "pilotProjectedVarianceRseDiagnostic": 0.0353427444997806
+            }
+          ]
+        },
+        {
+          "cell": "profile:plo6-v24-four-dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 0.963954132798071,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009947094888624619,
+          "groups": [
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 1.144925463789172,
+              "kurtosis": 226.52719914101195,
+              "absoluteSkewness": 10.646831613380806,
+              "plannedConditionalPairs": 134784,
+              "pilotProjectedVarianceRseDiagnostic": 0.04090536693343934
+            }
+          ]
+        },
+        {
+          "cell": "profile:plo6-v24-six-dealt-40bb",
+          "plannedHalfWidthBb100At1point2Sd": 0.9582571312402164,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003333263193217952,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 2.482233075004711,
+              "kurtosis": 165.26232248528757,
+              "absoluteSkewness": 7.7809636211874125,
+              "plannedConditionalPairs": 641088,
+              "pilotProjectedVarianceRseDiagnostic": 0.016007007764644216
+            }
+          ]
+        },
+        {
+          "cell": "profile:plo6-v24-six-dealt-100bb",
+          "plannedHalfWidthBb100At1point2Sd": 3.0948969720621746,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009968827039517542,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.169813687014818,
+              "kurtosis": 248.58506499954993,
+              "absoluteSkewness": 9.200996829718234,
+              "plannedConditionalPairs": 100224,
+              "pilotProjectedVarianceRseDiagnostic": 0.04970228505413799
+            }
+          ]
+        },
+        {
+          "cell": "profile:plo6-v24-six-dealt-200bb",
+          "plannedHalfWidthBb100At1point2Sd": 3.6636438578824366,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009966840272273164,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 6.014228537172744,
+              "kurtosis": 368.79587845441773,
+              "absoluteSkewness": 14.744411934183058,
+              "plannedConditionalPairs": 257472,
+              "pilotProjectedVarianceRseDiagnostic": 0.037795354732904664
+            }
+          ]
+        },
+        {
+          "cell": "position:button",
+          "plannedHalfWidthBb100At1point2Sd": 2.3670727574905444,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009244939349441297,
+          "groups": [
+            {
+              "profile": "plo6-v24-two-dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 48384.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 0.2916666666666667,
+              "kurtosis": 142.00699300699299,
+              "absoluteSkewness": 11.874636542100689,
+              "plannedConditionalPairs": 33696.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.06468910624465103
+            },
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.3572172541558802,
+              "kurtosis": 94.01052631578945,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.029504132671112012
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 4.608698749828053,
+              "kurtosis": 54.77386523014497,
+              "absoluteSkewness": 4.041355813982375,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.05673817814385962
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 2.861649015466309,
+              "kurtosis": 85.65026390620471,
+              "absoluteSkewness": 9.02896912473819,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.044414500281428265
+            }
+          ]
+        },
+        {
+          "cell": "position:small_blind",
+          "plannedHalfWidthBb100At1point2Sd": 6.713390260374935,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009413850706057016,
+          "groups": [
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 1.782944836013523,
+              "kurtosis": 132.86384175367206,
+              "absoluteSkewness": 11.231504949395683,
+              "plannedConditionalPairs": 33696.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.06255667936931546
+            },
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 5.10378847506885,
+              "kurtosis": 46.059025021465395,
+              "absoluteSkewness": 6.481871769710224,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02053561418879526
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 6.211821991665597,
+              "kurtosis": 81.85526169991724,
+              "absoluteSkewness": 8.788973738825174,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.06957350819370907
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 14.499772192705334,
+              "kurtosis": 65.6959696457081,
+              "absoluteSkewness": 6.373728476265525,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03882837676530491
+            }
+          ]
+        },
+        {
+          "cell": "position:big_blind",
+          "plannedHalfWidthBb100At1point2Sd": 1.160230165250685,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006840131625360642,
+          "groups": [
+            {
+              "profile": "plo6-v24-two-dealt-100bb",
+              "pilotPairs": 288,
+              "standardDeviationBb": 3.5929580724929853,
+              "kurtosis": 60.915713881132255,
+              "absoluteSkewness": 6.398513666495325,
+              "plannedConditionalPairs": 48384.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03519001762526588
+            },
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 1.413104495866925,
+              "kurtosis": 52.676505520409954,
+              "absoluteSkewness": 0.09766266755023606,
+              "plannedConditionalPairs": 33696.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.03916132651371964
+            },
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.580864449567995,
+              "kurtosis": 50.19335979136271,
+              "absoluteSkewness": 6.941753912171638,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02145705150860603
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.580864449567995,
+              "kurtosis": 50.19335979136271,
+              "absoluteSkewness": 6.941753912171638,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.05426789821599664
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.3470110468942835,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.644196509600448,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.04655610863070517
+            }
+          ]
+        },
+        {
+          "cell": "position:cutoff",
+          "plannedHalfWidthBb100At1point2Sd": 0.468588607999419,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0004425775575137397,
+          "groups": [
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 144,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 33696.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 1.9821503364125415,
+              "kurtosis": 50.529432499053044,
+              "absoluteSkewness": 4.2733358291693495,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0215302204821225
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:early",
+          "plannedHalfWidthBb100At1point2Sd": 0.0,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "position:middle",
+          "plannedHalfWidthBb100At1point2Sd": 0.7881780573506628,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009988227244548602,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 2.5005207790911608,
+              "kurtosis": 94.01052631578948,
+              "absoluteSkewness": 9.64419650960045,
+              "plannedConditionalPairs": 106848.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.02950413267111202
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 16704.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            },
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 96,
+              "standardDeviationBb": 0.0,
+              "kurtosis": null,
+              "absoluteSkewness": null,
+              "plannedConditionalPairs": 42912.0,
+              "pilotProjectedVarianceRseDiagnostic": 0.0
+            }
+          ]
+        },
+        {
+          "cell": "depth:40",
+          "plannedHalfWidthBb100At1point2Sd": 0.9582571312402164,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0003333263193217952,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-40bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 2.482233075004711,
+              "kurtosis": 165.26232248528757,
+              "absoluteSkewness": 7.7809636211874125,
+              "plannedConditionalPairs": 641088,
+              "pilotProjectedVarianceRseDiagnostic": 0.016007007764644216
+            }
+          ]
+        },
+        {
+          "cell": "depth:100",
+          "plannedHalfWidthBb100At1point2Sd": 1.3690812389494749,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0006705333001317885,
+          "groups": [
+            {
+              "profile": "plo6-v24-two-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 2.538396604152477,
+              "kurtosis": 121.87383668675069,
+              "absoluteSkewness": 9.052388341627228,
+              "plannedConditionalPairs": 96768,
+              "pilotProjectedVarianceRseDiagnostic": 0.0353427444997806
+            },
+            {
+              "profile": "plo6-v24-four-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 1.144925463789172,
+              "kurtosis": 226.52719914101195,
+              "absoluteSkewness": 10.646831613380806,
+              "plannedConditionalPairs": 134784,
+              "pilotProjectedVarianceRseDiagnostic": 0.04090536693343934
+            },
+            {
+              "profile": "plo6-v24-six-dealt-100bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 3.169813687014818,
+              "kurtosis": 248.58506499954993,
+              "absoluteSkewness": 9.200996829718234,
+              "plannedConditionalPairs": 100224,
+              "pilotProjectedVarianceRseDiagnostic": 0.04970228505413799
+            }
+          ]
+        },
+        {
+          "cell": "depth:200",
+          "plannedHalfWidthBb100At1point2Sd": 3.6636438578824366,
+          "pilotProjectedEdgeworthAbsoluteUpperBound": 0.0009966840272273164,
+          "groups": [
+            {
+              "profile": "plo6-v24-six-dealt-200bb",
+              "pilotPairs": 576,
+              "standardDeviationBb": 6.014228537172744,
+              "kurtosis": 368.79587845441773,
+              "absoluteSkewness": 14.744411934183058,
+              "plannedConditionalPairs": 257472,
+              "pilotProjectedVarianceRseDiagnostic": 0.037795354732904664
+            }
+          ]
+        }
+      ],
+      "criticalCellsCount": 14,
+      "proposedPairsPerSeed": {
+        "plo6-v24-two-dealt-100bb": 32256,
+        "plo6-v24-four-dealt-100bb": 44928,
+        "plo6-v24-six-dealt-40bb": 213696,
+        "plo6-v24-six-dealt-100bb": 33408,
+        "plo6-v24-six-dealt-200bb": 85824
+      },
+      "proposedTotalPairs": 1230336,
+      "estimatedSerialRunnerHoursAtObservedElapsedRate": 37.02272333333333,
+      "aggregateTrustAllocationSteps": [
+        {
+          "cell": "position:middle",
+          "beforeAbsoluteCoverageError": 0.0030419030874735166,
+          "profilesIncreased": ["plo6-v24-six-dealt-40bb"],
+          "incrementalEstimatedSerialRunnerHours": 17.346606666666666
+        },
+        {
+          "cell": "profile:plo6-v24-two-dealt-100bb",
+          "beforeAbsoluteCoverageError": 0.0021562332081614803,
+          "profilesIncreased": ["plo6-v24-two-dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 1.2990633333333332
+        },
+        {
+          "cell": "profile:plo6-v24-four-dealt-100bb",
+          "beforeAbsoluteCoverageError": 0.0017932380331420917,
+          "profilesIncreased": ["plo6-v24-four-dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 3.343365
+        },
+        {
+          "cell": "profile:plo6-v24-six-dealt-200bb",
+          "beforeAbsoluteCoverageError": 0.0011599901193520387,
+          "profilesIncreased": ["plo6-v24-six-dealt-200bb"],
+          "incrementalEstimatedSerialRunnerHours": 2.108405
+        },
+        {
+          "cell": "profile:plo6-v24-six-dealt-100bb",
+          "beforeAbsoluteCoverageError": 0.0010958154999380347,
+          "profilesIncreased": ["plo6-v24-six-dealt-100bb"],
+          "incrementalEstimatedSerialRunnerHours": 0.5244833333333333
+        }
+      ],
+      "incrementalPairsForAggregateTrust": 825984,
+      "maximumProjectedHalfWidthBb100": 6.713390260374935,
+      "maximumPilotProjectedEdgeworthAbsoluteUpperBound": 0.0009988227244548602
+    }
+  ],
+  "costBalanced255JobBudgetDiagnostic": {
+    "matrixJobs": 255,
+    "profiles": [
+      {
+        "experiment": "v53-nlh",
+        "profile": "v53-nlh-6max-2dealt-100bb",
+        "blocks": 66,
+        "msPerPair": 23.62326388888889,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 38016,
+        "longestShardHoursAtObservedElapsedRate": 0.24946166666666666
+      },
+      {
+        "experiment": "v53-nlh",
+        "profile": "v53-nlh-6max-4dealt-100bb",
+        "blocks": 351,
+        "msPerPair": 41.998263888888886,
+        "shardsPerSeed": 3,
+        "maximumPairsPerShard": 67392,
+        "longestShardHoursAtObservedElapsedRate": 0.7862075
+      },
+      {
+        "experiment": "v53-nlh",
+        "profile": "v53-nlh-6max-6dealt-40bb",
+        "blocks": 111,
+        "msPerPair": 44.16319444444444,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 63936,
+        "longestShardHoursAtObservedElapsedRate": 0.7843383333333334
+      },
+      {
+        "experiment": "v53-nlh",
+        "profile": "v53-nlh-6max-6dealt-100bb",
+        "blocks": 673,
+        "msPerPair": 29.350694444444443,
+        "shardsPerSeed": 4,
+        "maximumPairsPerShard": 97344,
+        "longestShardHoursAtObservedElapsedRate": 0.7936427777777778
+      },
+      {
+        "experiment": "v53-nlh",
+        "profile": "v53-nlh-6max-6dealt-200bb",
+        "blocks": 2130,
+        "msPerPair": 29.776041666666668,
+        "shardsPerSeed": 10,
+        "maximumPairsPerShard": 122688,
+        "longestShardHoursAtObservedElapsedRate": 1.0147675
+      },
+      {
+        "experiment": "v53-plo4",
+        "profile": "v53-plo4-6max-2dealt-100bb",
+        "blocks": 215,
+        "msPerPair": 40.260416666666664,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 62208,
+        "longestShardHoursAtObservedElapsedRate": 0.6957
+      },
+      {
+        "experiment": "v53-plo4",
+        "profile": "v53-plo4-6max-4dealt-100bb",
+        "blocks": 142,
+        "msPerPair": 44.30555555555556,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 81792,
+        "longestShardHoursAtObservedElapsedRate": 1.0066222222222223
+      },
+      {
+        "experiment": "v53-plo4",
+        "profile": "v53-plo4-6max-6dealt-40bb",
+        "blocks": 51,
+        "msPerPair": 39.61805555555556,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 29376,
+        "longestShardHoursAtObservedElapsedRate": 0.3232833333333333
+      },
+      {
+        "experiment": "v53-plo4",
+        "profile": "v53-plo4-6max-6dealt-100bb",
+        "blocks": 548,
+        "msPerPair": 45.04340277777778,
+        "shardsPerSeed": 4,
+        "maximumPairsPerShard": 78912,
+        "longestShardHoursAtObservedElapsedRate": 0.9873513888888888
+      },
+      {
+        "experiment": "v53-plo4",
+        "profile": "v53-plo4-6max-6dealt-200bb",
+        "blocks": 913,
+        "msPerPair": 47.07118055555556,
+        "shardsPerSeed": 7,
+        "maximumPairsPerShard": 75456,
+        "longestShardHoursAtObservedElapsedRate": 0.9866119444444444
+      },
+      {
+        "experiment": "v53-plo5",
+        "profile": "v53-plo5-6max-2dealt-100bb",
+        "blocks": 183,
+        "msPerPair": 55.35243055555556,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 52992,
+        "longestShardHoursAtObservedElapsedRate": 0.8147877777777778
+      },
+      {
+        "experiment": "v53-plo5",
+        "profile": "v53-plo5-6max-4dealt-100bb",
+        "blocks": 144,
+        "msPerPair": 56.71875,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 41472,
+        "longestShardHoursAtObservedElapsedRate": 0.6534
+      },
+      {
+        "experiment": "v53-plo5",
+        "profile": "v53-plo5-6max-6dealt-40bb",
+        "blocks": 427,
+        "msPerPair": 48.755208333333336,
+        "shardsPerSeed": 4,
+        "maximumPairsPerShard": 61632,
+        "longestShardHoursAtObservedElapsedRate": 0.8346891666666667
+      },
+      {
+        "experiment": "v53-plo5",
+        "profile": "v53-plo5-6max-6dealt-100bb",
+        "blocks": 715,
+        "msPerPair": 57.421875,
+        "shardsPerSeed": 7,
+        "maximumPairsPerShard": 59328,
+        "longestShardHoursAtObservedElapsedRate": 0.9463125
+      },
+      {
+        "experiment": "v53-plo5",
+        "profile": "v53-plo5-6max-6dealt-200bb",
+        "blocks": 1122,
+        "msPerPair": 55.91840277777778,
+        "shardsPerSeed": 10,
+        "maximumPairsPerShard": 65088,
+        "longestShardHoursAtObservedElapsedRate": 1.0110047222222223
+      },
+      {
+        "experiment": "v53-plo6",
+        "profile": "v53-plo6-6max-2dealt-100bb",
+        "blocks": 165,
+        "msPerPair": 49.829861111111114,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 47808,
+        "longestShardHoursAtObservedElapsedRate": 0.6617405555555556
+      },
+      {
+        "experiment": "v53-plo6",
+        "profile": "v53-plo6-6max-4dealt-100bb",
+        "blocks": 134,
+        "msPerPair": 71.53645833333333,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 38592,
+        "longestShardHoursAtObservedElapsedRate": 0.7668708333333333
+      },
+      {
+        "experiment": "v53-plo6",
+        "profile": "v53-plo6-6max-6dealt-40bb",
+        "blocks": 114,
+        "msPerPair": 54.520833333333336,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 65664,
+        "longestShardHoursAtObservedElapsedRate": 0.99446
+      },
+      {
+        "experiment": "v53-plo6",
+        "profile": "v53-plo6-6max-6dealt-100bb",
+        "blocks": 262,
+        "msPerPair": 62.27777777777778,
+        "shardsPerSeed": 3,
+        "maximumPairsPerShard": 50688,
+        "longestShardHoursAtObservedElapsedRate": 0.8768711111111112
+      },
+      {
+        "experiment": "v53-plo6",
+        "profile": "v53-plo6-6max-6dealt-200bb",
+        "blocks": 334,
+        "msPerPair": 64.72222222222223,
+        "shardsPerSeed": 4,
+        "maximumPairsPerShard": 48384,
+        "longestShardHoursAtObservedElapsedRate": 0.8698666666666668
+      },
+      {
+        "experiment": "plo6-v24",
+        "profile": "plo6-v24-two-dealt-100bb",
+        "blocks": 56,
+        "msPerPair": 61.50868055555556,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 32256,
+        "longestShardHoursAtObservedElapsedRate": 0.5511177777777778
+      },
+      {
+        "experiment": "plo6-v24",
+        "profile": "plo6-v24-four-dealt-100bb",
+        "blocks": 78,
+        "msPerPair": 128.98784722222223,
+        "shardsPerSeed": 2,
+        "maximumPairsPerShard": 22464,
+        "longestShardHoursAtObservedElapsedRate": 0.8048841666666666
+      },
+      {
+        "experiment": "plo6-v24",
+        "profile": "plo6-v24-six-dealt-40bb",
+        "blocks": 371,
+        "msPerPair": 109.18055555555556,
+        "shardsPerSeed": 7,
+        "maximumPairsPerShard": 30528,
+        "longestShardHoursAtObservedElapsedRate": 0.9258511111111111
+      },
+      {
+        "experiment": "plo6-v24",
+        "profile": "plo6-v24-six-dealt-100bb",
+        "blocks": 58,
+        "msPerPair": 109.26736111111111,
+        "shardsPerSeed": 1,
+        "maximumPairsPerShard": 33408,
+        "longestShardHoursAtObservedElapsedRate": 1.0140011111111111
+      },
+      {
+        "experiment": "plo6-v24",
+        "profile": "plo6-v24-six-dealt-200bb",
+        "blocks": 149,
+        "msPerPair": 112.62847222222223,
+        "shardsPerSeed": 3,
+        "maximumPairsPerShard": 28800,
+        "longestShardHoursAtObservedElapsedRate": 0.9010277777777778
+      }
+    ],
+    "longestShardHoursAtObservedElapsedRate": 1.0147675,
+    "providerSpeedNotMeasured": true
+  },
+  "heldoutsDealt": false,
+  "noMeanEvOrSignedSkewEmitted": true,
+  "scope": "Actualprotectedb935 withinprofile marginal development sizing only; no pooledstrength or heldout qualification. Future heldouts use preregistered independent profile SHA256 domains.",
+  "sourceSizingSha256": "a72f5a074632fd4a919fce268f2123bf8e742feb7c2ccd4c39f46d04bf7c4b9f"
+}

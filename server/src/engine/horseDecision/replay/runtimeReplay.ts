@@ -141,7 +141,12 @@ export async function replayThroughWorkerRuntime(
     prepareOriginalReads: (player, gameState, opts) =>
       HorseLogic.prepareOriginalReads(player, gameState, { ...opts, observeMind: false }),
     decide: (player, gameState, style, mods, opts) => {
-      admission = horseDecisionReplayAdmission(opts);
+      admission = horseDecisionReplayAdmission({
+        ...opts,
+        ...(opts?.phase8PolicyFamily === 'catastrophe_guard_v1'
+          ? { phase8CatastropheGuard: opts.phase8Postflop }
+          : {}),
+      });
       v56WitnessCaptured = opts?.telemetry === true;
       corrective = horseCorrectiveReplayState(gameState, opts?.phase14, opts?.phase14Corrective);
       return HorseLogic.decide(player, gameState, style, mods, {

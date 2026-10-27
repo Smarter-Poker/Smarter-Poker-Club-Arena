@@ -1,0 +1,122 @@
+{
+  "schema": "horse-feature-ablation-source-rebind-v1",
+  "observedAt": "2026-10-27T14:24:34.552934+00:00",
+  "pilotSourceRevision": "b935999c78011ebfc3acbfe67f299fe80863a39f",
+  "refreshedProtectedBaseline": "857b756726fecd4948938ed8cf537dbb5f128e2c",
+  "scope": "Source-derived path equivalence for retained within-profile marginal DEV dispersion only; no pooled pilot strength, direct live-cache identity or held-out result claimed.",
+  "heldoutDeals": 0,
+  "retainedDesign": [
+    "original blind dispersion and conditional position/depth moments",
+    "unchanged N, three reserved seeds, complete matrix, coverage minima and original statistical/trust gates",
+    "profile-separated prospective SHA256 deal sampler and paired-arm CRN"
+  ],
+  "runtimeSourceFiles": 274,
+  "changedRuntimeInputs": [
+    {
+      "file": "src/config/handCompletionSpec.ts",
+      "previousSha256": "decaff56fa129aab6c6075e1d5089e981c7e51416546d4bdce795d9573c528e1",
+      "refreshedSha256": "e58906054fee61c1bc527235752cc9dd06ac7898952d7d7b8d16dd1e0624c786"
+    },
+    {
+      "file": "src/engine/HorsePersona.ts",
+      "previousSha256": "a462d1eedcb435c49af2d480e20c287f8b91193c43a734f5cf210c54186d4bd4",
+      "refreshedSha256": "dc65358118a9a52feacbd9e0f09f8051593a7dced0ce85b865a685442a98948d"
+    },
+    {
+      "file": "src/engine/horseDecision/observerReads.ts",
+      "previousSha256": "0760435862038fb1fd14ab1df6fdfdba81743f2c102e2f1189c18decb0447bfe",
+      "refreshedSha256": "fb994ca6a70b07d9047c5d2e8c5f084ffe8aa40666cb18e961fcd0ff7b5890fb"
+    },
+    {
+      "file": "src/engine/horseDecision/ownPublicHistory.ts",
+      "previousSha256": "030ec0621e079c977950e02823190e6f94a911d635fff9af9baf1c046a59461d",
+      "refreshedSha256": "207ab0e089bc5d1653d7491ed9ddbfb0dbacf8cf9ada3a7beba18fdd225bdac5"
+    },
+    {
+      "file": "src/engine/horseDecision/replay/exactReplay.ts",
+      "previousSha256": "8939badabad916e94c9452e530f5cdcb148a188e1cf4f22d2c747c9aa28b1633",
+      "refreshedSha256": "85286e138d9b7fe89b5e2bf259bb57b712d7e423e4c22a3f368f07c8a68e5e73"
+    },
+    {
+      "file": "src/engine/horseDecision/replay/runtimeReplay.ts",
+      "previousSha256": "51d3a18c7515d181236c60693452843e49adf41d62e80d5a33b35ce4601522a6",
+      "refreshedSha256": "0c0aac233b45201eaa8d639f63cea5630d2f5575c078d79d0ded235a807cdfdb"
+    },
+    {
+      "file": "src/services/HorseBehavior.ts",
+      "previousSha256": "96f885d1fe4c32ec43688ce8fba14284fe4526f1dd954b546b5e67ffdf7ec3cd",
+      "refreshedSha256": "9a6cc1daf9cdb0cc5ffb1cd9d283593ba6cd81d50737b3cbfc2305a3fbbb1c83"
+    },
+    {
+      "file": "src/services/HorseOwnPublicHistory.ts",
+      "previousSha256": "f7ac132b66d152b61597b263dec2c02a7eff694877f84dd407bf38fff68ab3fd",
+      "refreshedSha256": "40ed067b01896a635413dbc22a38eb401694ce71c6b7a1d97d940b190184d8fe"
+    },
+    {
+      "file": "src/services/HorseTopUpStyle.ts",
+      "previousSha256": "9c28c21ff230473384660240a27ee2893c6677733402802c019f22ced81da314",
+      "refreshedSha256": "8956cad09b0da25597aad8e9f0de642f73966af3dfeeabca88a8359da3189df3"
+    },
+    {
+      "file": "src/services/supabase/client.ts",
+      "previousSha256": "2a1e917e9282590854e40d753068f30d79210edf8dfc713f7f01d0f57222441a",
+      "refreshedSha256": "7c77b6f37655643767462d844417621035a7f9d9f21fda0dd3ee4864c9a41cbe"
+    },
+    {
+      "file": "src/services/supabase/dataActorContext.ts",
+      "previousSha256": "adfcb782154fd1991068464792a076161b9af2c0d7918dd1c4767d2e470aaf18",
+      "refreshedSha256": "8c12497fb6a9fe970d5462c6c361105bb3f0fc60d276af119e44746d05c64fea"
+    }
+  ],
+  "sourcePathEquivalence": {
+    "observerReads": "Valid immutable own history arrives on first request in a fresh per-physical-arm runtime. Empty starting sandbox and chronologically ordered public records yield the same observations; unavailable-load recovery and pending-tail cap branches are not entered by a qualifying successful run.",
+    "ownPublicHistory": "Only unavailable-cache retry changed. Packets are constructed directly with original constructor/validator; no cache or RPC is used.",
+    "HorseOwnPublicHistory": "RPC v2 and live definition identity changed; offline supplied local packet does not call this service. No claim about current live database history corpus.",
+    "replay": "Additional V56 replay witness/counterfactual branches are not invoked by this normal-runtime physical simulation.",
+    "HorsePersona": "Changed source text is a comment about cash buy-in; decision persona implementation unchanged.",
+    "HorseBehaviorAndTopUp": "Cash purchase sizing and top-up helpers are outside the fixed-stack physical hand path and never called by this experiment.",
+    "supabaseHeaders": "Changed header collection ownership is inside database fetch; offline qualifier makes no production database/network requests.",
+    "handCompletion": "Only winning-card display and RIT result hold constants changed. HandController reads unchanged DISCARD_SETTLE_MS, and the four qualified variants do not take the Pineapple discard branch. No host display hold is used."
+  },
+  "originalDefaultAdmissionDelta": {
+    "allStatusAndNonDigestFieldsIdentical": true,
+    "changedLeafCounts": {
+      "authorityKey": 26,
+      "policyDigest": 39,
+      "catalogDigest": 13,
+      "correctivePolicyDigest": 13
+    },
+    "oldDigest": "fed20d2f1e5f71d5b7933471b6534b67ed34da14a002f8852251c0018289d6c1",
+    "newDigest": "6a42c0bb36ffc8c2ac6aca0c849b8beec5ec9372d6b42e39733193deb4558772",
+    "reason": "Maintained source-derived policy/catalog digests and authority keys are recomputed from changed source bytes; they are new keys, not old keys relabeled."
+  },
+  "unchangedIdentity": [
+    "frozen store loader identity",
+    "server dependency lock",
+    "fixed warm/empty history digests",
+    "controlled local empty pooled-public input"
+  ],
+  "captureReceipts": [
+    {
+      "artifact": "ablation-b935-final-local-baseline-inputs.json",
+      "sha256": "9713c8124a2db64cea739b149ede3d2fa91dae92ad87885536238008991649fe"
+    },
+    {
+      "artifact": "ablation-main-857b-local-baseline-inputs.json",
+      "sha256": "3cf624a62acc73d7b557158ab6709a8bdfe485e2f84d96829b18bdb059d02c41"
+    },
+    {
+      "artifact": "ablation-main-857b-admission-delta.json",
+      "sha256": "9cb8a409a3941219a362ca4724fa41e005add828f1f8760c82c64e1d405794fb"
+    }
+  ],
+  "liveBindingLimit": "Derived from protected source and fixed local inputs, not direct observed runtime catalog or cached-store identity. Current live behavior and receipt errors remain separately owned and cannot be inferred from this qualification.",
+  "connectedAcceptance": {
+    "suite": "server/src/benchmark/FeatureAblationWorker.test.ts",
+    "passed": 4,
+    "failed": 0,
+    "artifact": "ablation-main-857b-worker-acceptance.log",
+    "sha256": "15d91a14af32f1ade24a1e3a8d88476a3dc2c573fdd781d30b427626f2480f28",
+    "scope": "Actual worker/main receipt acceptance and loaded-history continuation after COMMIT with refreshed source-derived authorities; no pilot or held-out rerun."
+  }
+}

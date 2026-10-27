@@ -1,3 +1,4 @@
+import { PHASE8_GUARD_PROTECTED_RELEASE_SELECTION } from '../../engine/HorseTournamentCatastropheGuardSelection.js';
 /** Exact running policy composition for the original-state corrective kernel.
  * Protected baseline selections are bound separately, so selecting another
  * qualified owner invalidates an earlier corrective composition. */
@@ -126,7 +127,12 @@ export function correctiveKernelBaselineSelectionsDigest(): string {
     .update('horse-phase14-baseline-selections-v1\0')
     .update(
       horseJournalJson({
-        phase8: PHASE8_PROTECTED_RELEASE_SELECTION,
+        phase8: PHASE8_GUARD_PROTECTED_RELEASE_SELECTION
+          ? null
+          : PHASE8_PROTECTED_RELEASE_SELECTION,
+        ...(PHASE8_GUARD_PROTECTED_RELEASE_SELECTION
+          ? { phase8_guard: PHASE8_GUARD_PROTECTED_RELEASE_SELECTION }
+          : {}),
         phase10: PHASE10_PROTECTED_RELEASE_SELECTION,
         phase11: PHASE11_PROTECTED_RELEASE_SELECTIONS,
         phase12: PHASE12_PROTECTED_RELEASE_SELECTIONS,

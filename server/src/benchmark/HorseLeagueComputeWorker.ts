@@ -16,7 +16,7 @@ import {
 } from './HorseLeagueProcessPriority.js';
 
 import { runMatchup } from './HorseLeague.js';
-import { runTournamentLeague } from './HorseTournamentLeague.js';
+import { runTournamentLeague, tournamentPolicyFamily } from './HorseTournamentLeague.js';
 import { scoreSolverAgreement } from './HorseSolverAgreement.js';
 import { scoreGtoV31Agreement } from './HorseSolverAgreementV31.js';
 import { gtoChartCount } from '../engine/GtoCharts.js';
@@ -102,6 +102,7 @@ if (runtimeAvailable) {
     try {
       await ready;
       if (message.type === 'RUN_TOURNAMENT') {
+        tournamentPolicyFamily(message.request.phase8PolicyFamily);
         if (process.env.EQUITY_GOVERNOR !== 'off')
           throw new Error('Tournament evidence requires a fixed equity sample budget');
         if (

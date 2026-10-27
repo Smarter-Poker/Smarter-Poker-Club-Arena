@@ -10,6 +10,9 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { HorseLeagueComputeWorkerClient } from '../benchmark/HorseLeagueComputeWorkerClient.js';
 import {
+  tournamentPolicyFamily,
+  tournamentPolicyVersion,
+  tournamentPolicyWorkKind,
   TOURNAMENT_LEAGUE_OBJECTIVES,
   TOURNAMENT_PROMOTION_PAIRS,
   TOURNAMENT_PROMOTION_SEEDS,
@@ -27,6 +30,10 @@ import { loadGtoPostflopV31 } from '../services/GtoPostflopV31Loader.js';
 const outputArg = process.argv.find((v) => v.startsWith('--output='))?.slice('--output='.length);
 if (!outputArg) throw new Error('--output is required; use a new evidence directory');
 const output = resolve(outputArg);
+const familyArg = process.argv
+  .find((v) => v.startsWith('--policy-family='))
+  ?.slice('--policy-family='.length);
+const family = tournamentPolicyFamily(familyArg);
 const promotion = process.argv.includes('--promotion');
 const hydrate = promotion || process.argv.includes('--hydrate');
 const objectiveArg = process.argv
@@ -82,6 +89,9 @@ const stores = {
   postflopV31Dataset: gtoPostflopV31Dataset(),
 };
 const manifest = {
+  phase8PolicyFamily: family,
+  policyVersion: tournamentPolicyVersion(family),
+  workKind: tournamentPolicyWorkKind(family),
   mode: promotion ? 'promotion' : 'fixture',
   head,
   dirty: Boolean(dirty),
@@ -122,6 +132,7 @@ try {
       const result = await client.runTournamentLeague(
         {
           objective,
+          phase8PolicyFamily: family,
           seed,
           pairs: manifest.pairs,
           evidenceMode: promotion ? 'promotion' : 'fixture',
@@ -160,6 +171,8 @@ try {
     runs.every(tournamentBaselineRunVerified);
   await write('baseline-verification.json', {
     version: runs[0]?.version,
+    phase8PolicyFamily: family,
+    workKind: tournamentPolicyWorkKind(family),
     complete: baselineVerified,
     scope: 'software_baseline_not_strength_promotion',
     sourceUnchanged,

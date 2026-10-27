@@ -58,7 +58,7 @@ vi.mock('../../src/lib/supabase', () => ({
 
 const CLUB = '11111111-2222-3333-4444-555555555555';
 const OTHER = '99999999-8888-7777-6666-555555555555';
-const LABELS = ['Diamond Spins', 'Players', 'Cashier', 'Market', 'Data', 'Stats'];
+const LABELS = ['Diamond Spins', 'Players', 'Cashier', 'Game Lobby', 'Data', 'Stats'];
 
 function seedClubs(ids: string[] = [CLUB], last: string | null = CLUB, userId = authState.userId) {
   writeCachedQuickLinkClubs(
@@ -94,7 +94,11 @@ describe('activeTabForPath', () => {
     [`/clubs/${CLUB}/settings`, null],
     [`/clubs/${CLUB}/members`, 'players'],
     [`/clubs/${CLUB}/cashier`, 'cashier'],
-    ['/marketplace', 'marketplace'],
+    ['/marketplace', null],
+    [`/clubs/${CLUB}`, 'game-lobby'],
+    [`/clubs/${CLUB}/`, 'game-lobby'],
+    [`/clubs/${CLUB}/lobby`, 'game-lobby'],
+    ['/clubs', null],
     [`/clubs/${CLUB}/dashboard`, 'data'],
     [`/clubs/${CLUB}/data`, 'data'],
     ['/stats', 'stats'],
@@ -132,9 +136,12 @@ describe('ClubBottomNav approved footer contract', () => {
 
   it('keeps the current control and marks it with aria-current', async () => {
     seedClubs();
-    await renderAt('/marketplace');
+    await renderAt(`/clubs/${CLUB}`);
 
-    expect(screen.getByRole('link', { name: 'Market' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Game Lobby' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
     expect(labels()).toEqual(LABELS);
   });
 
@@ -153,10 +160,32 @@ describe('ClubBottomNav approved footer contract', () => {
       `/clubs/${CLUB}/wheel`,
       `/clubs/${CLUB}/members`,
       `/clubs/${CLUB}/cashier`,
-      `/marketplace?club=${CLUB}`,
+      `/clubs/${CLUB}`,
       `/clubs/${CLUB}/data`,
       `/stats?club=${CLUB}`,
     ]);
+  });
+
+  it.each(['kings-club', 'deep-stack-society'])(
+    'opens the running games for route club %s, ahead of stale cache',
+    async (slug) => {
+      seedClubs([OTHER], OTHER);
+      await renderAt(`/clubs/${slug}/members`);
+      expect(screen.getByRole('link', { name: 'Game Lobby' })).toHaveAttribute(
+        'href',
+        `/clubs/${slug}`
+      );
+      expect(screen.queryByRole('link', { name: 'Market' })).not.toBeInTheDocument();
+    }
+  );
+
+  it('keeps the query-scoped club when returning from Stats', async () => {
+    seedClubs([OTHER], OTHER);
+    await renderAt('/stats?club=kings-club');
+    expect(screen.getByRole('link', { name: 'Game Lobby' })).toHaveAttribute(
+      'href',
+      '/clubs/kings-club'
+    );
   });
 
   it('resolves the last valid club from the lobby cache', async () => {
@@ -203,7 +232,7 @@ describe('ClubBottomNav approved footer contract', () => {
   it('uses real top-level fallbacks when no club can be resolved', async () => {
     await renderAt('/stats');
 
-    expect(hrefs()).toEqual(['/clubs', '/players', '/cashier', '/marketplace', '/stats']);
+    expect(hrefs()).toEqual(['/clubs', '/players', '/cashier', '/clubs', '/stats']);
     expect(hrefs().some((href) => href?.includes('/clubs//'))).toBe(false);
   });
 
@@ -212,8 +241,8 @@ describe('ClubBottomNav approved footer contract', () => {
 
     const artwork = screen
       .getAllByRole('presentation')
-      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v3.webp');
-    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v3.webp');
+      .find((img) => img.getAttribute('src') === '/images/club-footer/club-arena-footer-v4.webp');
+    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v4.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
   });
@@ -228,12 +257,12 @@ describe('ClubBottomNav approved footer contract', () => {
       scopeState.scope = null;
       await renderAt(`/clubs/${CLUB}/members`, CLUB);
 
-      expect(labels()).toEqual(['Diamond Spins', 'Players', 'Cashier', 'Market', 'Stats']);
+      expect(labels()).toEqual(['Diamond Spins', 'Players', 'Cashier', 'Game Lobby', 'Stats']);
       expect(hrefs().some((href) => href?.endsWith('/data'))).toBe(false);
       const art = screen
         .getAllByRole('presentation')
         .find((img) => img.getAttribute('src')?.includes('club-arena-footer'));
-      expect(art).toHaveAttribute('src', '/images/club-footer/club-arena-footer-player-v1.webp');
+      expect(art).toHaveAttribute('src', '/images/club-footer/club-arena-footer-player-v2.webp');
       expect(document.querySelector('[data-footer-doors]')).toHaveAttribute(
         'data-footer-doors',
         'member'

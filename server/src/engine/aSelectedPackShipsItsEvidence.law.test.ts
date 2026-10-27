@@ -42,6 +42,8 @@ import {
   admitHorsePhase14ReleaseAuthority,
   PHASE14_PROTECTED_RELEASE_SELECTIONS,
 } from './HorsePhase14Authority.js';
+import { admitHorsePhase8GuardAuthority } from './HorseTournamentCatastropheGuardAuthority.js';
+import { PHASE8_GUARD_PROTECTED_RELEASE_SELECTION } from './HorseTournamentCatastropheGuardSelection.js';
 
 const serverRoot = fileURLToPath(new URL('../../', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -65,6 +67,16 @@ const committed: readonly CommittedSelection[] = [
       admitHorsePhase8ReleaseAuthority(
         NOW,
         PHASE8_PROTECTED_RELEASE_SELECTION,
+        releaseEvidenceReader
+      ),
+  },
+  {
+    name: 'phase8 catastrophe guard',
+    selection: PHASE8_GUARD_PROTECTED_RELEASE_SELECTION,
+    admit: () =>
+      admitHorsePhase8GuardAuthority(
+        NOW,
+        PHASE8_GUARD_PROTECTED_RELEASE_SELECTION,
         releaseEvidenceReader
       ),
   },

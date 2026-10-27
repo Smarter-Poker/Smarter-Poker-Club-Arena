@@ -19,7 +19,7 @@
  * result drives `aria-current` while all six approved controls remain present.
  */
 
-export type TabKey = 'diamond-spins' | 'players' | 'cashier' | 'marketplace' | 'data' | 'stats';
+export type TabKey = 'diamond-spins' | 'players' | 'cashier' | 'game-lobby' | 'data' | 'stats';
 
 /**
  * Path segments that mean "you are already on this tab's page", by tab.
@@ -43,13 +43,15 @@ export const TAB_SEGMENTS: Record<TabKey, readonly string[]> = {
   ],
   players: ['members', 'players'],
   cashier: ['cashier', 'cashier-classic'],
-  marketplace: ['marketplace'],
+  'game-lobby': ['lobby'],
   data: ['dashboard', 'dashboard-full', 'data'],
   stats: ['stats'],
 };
 
 /** The tab representing the page currently open, or null for anything else. */
 export function activeTabForPath(pathname: string): TabKey | null {
+  // The club root is the canonical running-games lobby; sub-pages are not.
+  if (/^\/clubs\/[^/]+\/?$/.test(pathname)) return 'game-lobby';
   const segments = new Set(pathname.split('/').filter(Boolean));
   for (const [key, owned] of Object.entries(TAB_SEGMENTS) as Array<[TabKey, readonly string[]]>) {
     if (owned.some((s) => segments.has(s))) return key;

@@ -1,3 +1,8 @@
+import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';
+registerInitialTableReadinessCases();
+
+import { registerMobileAvatarPaintCases } from './support/mobileAvatarPaintCases';
+registerMobileAvatarPaintCases();
 import { registerPlayerActionAudioCases } from './audio/playerActionAudioCases';
 import { registerLeaderboardLoadingLayoutCases } from './css/leaderboardLoadingLayoutCases';
 
@@ -987,5 +992,5 @@ async function documentFontsReady(page: Page) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-import { registerMobileActionStripCases } from './css/mobileActionStripCases';
+import { registerMobileActionStripCases } from './support/mobileActionStripCases';
 registerMobileActionStripCases();

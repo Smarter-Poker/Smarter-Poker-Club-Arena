@@ -14,7 +14,8 @@ cases=[]
 hashes={42309154:'dcc2248b35d55e8c3239044f5e5e2869',42346932:'4a806deeace376da57411d584cc90491',42399949:'2d6149ab417c6ade798d2aae7a7f7af1',42407664:'6463819644005aba4cc1817b20f9f21d',42586570:'ca1904c2f019f5ec7864b113c2119db6',42607253:'d4e0d142973bc8f8226ece46950e13c0',42626673:'503edc03d357862da655c3867b51240c'}
 def call(e=42309154,h=None):return "SELECT smarter_private.original_erased_cash_base_discharge("+str(e)+",'"+(h or hashes[e])+"');"
 def run(name,sql,error=None):
- r=subprocess.run(cmd,input=sql,text=True,capture_output=True,timeout=20);(args.output/(name+'.sql')).write_text(sql);(args.output/(name+'.log')).write_text(r.stdout+r.stderr)
+ source=args.output/(name+'.sql');source.write_text(sql)
+ r=subprocess.run(cmd+['-f',str(source)],text=True,capture_output=True,timeout=20);(args.output/(name+'.log')).write_text(r.stdout+r.stderr)
  ok=(r.returncode!=0 and error in r.stderr) if error else r.returncode==0;cases.append({'case':name,'passed':ok,'expected_error':error})
  if not ok:raise RuntimeError(name+': '+r.stderr[-2000:])
  return r.stdout

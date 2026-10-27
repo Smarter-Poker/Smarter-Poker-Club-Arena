@@ -324,7 +324,7 @@
   align-items: center;
   --mtp-profit-width: 100px;
   --mtp-profit-font: 0.8125rem;
-  --mtp-profit-height: 36px;
+  --mtp-profit-height: var(--sp-tabbar-control);
   gap: 0;
   padding: 0;
   /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
@@ -355,24 +355,24 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* Static reserve: 49px tab bar plus the 1px wrapper border; on phones
-   44px with no separator border. Tracker visibility never resizes the felt. */
+/* Static reserve: shared control and padding band plus both black borders;
+   phones omit both separator borders. Tracker visibility never resizes the felt. */
 .multi-table-page {
-  --sp-tabbar-h: calc(50px + var(--sp-tabbar-safe-top));
+  --sp-tabbar-h: calc(var(--sp-tabbar-band) + 2px + var(--sp-tabbar-safe-top));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
     border-bottom: 0;
     --mtp-profit-width: 52px;
     --mtp-profit-font: 0.8125rem;
-    --mtp-profit-height: 44px;
+    --mtp-profit-height: var(--sp-tabbar-control);
   }
   .multi-table-page__tab-bar-wrapper > .multi-table-page__pnl-chip {
     /* Keep a signed cents total legible inside the compact phone pill. */
     padding-inline: 1px;
   }
   .multi-table-page {
-    --sp-tabbar-h: calc(44px + var(--sp-tabbar-safe-top));
+    --sp-tabbar-h: calc(var(--sp-tabbar-band) + var(--sp-tabbar-safe-top));
   }
 }
 
@@ -563,14 +563,18 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 .multi-table-page__tab-bar-wrapper,
 .mtp-lobby-btn {
   --mtp-edge: 6px;
-  --mtp-lobby-w: 40px;
+  --mtp-lobby-w: var(--sp-tabbar-control);
 }
 
 .mtp-lobby-btn {
   position: relative;
   top: auto;
   right: auto;
-  margin: var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) var(--mtp-edge) 0;
+  margin: calc(
+      var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) + var(--sp-tabbar-pad-top) -
+        var(--sp-tabbar-pad-bottom)
+    )
+    var(--mtp-edge) 0;
   z-index: 210;
   display: flex;
   align-items: center;
@@ -652,10 +656,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-height: 44px;
   }
 
-  /* Lobby and hamburger keep the same 44px mobile touch size. */
+  /* Lobby and hamburger share the same control dimension at every width. */
   .multi-table-page__tab-bar-wrapper,
   .mtp-lobby-btn {
-    --mtp-lobby-w: 44px;
+    --mtp-lobby-w: var(--sp-tabbar-control);
   }
 
   .mtp-lobby-btn {
@@ -1229,7 +1233,10 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   width: var(--mtp-profit-width);
   max-width: var(--mtp-profit-width);
   height: var(--mtp-profit-height);
-  margin-top: var(--sp-tabbar-inset, var(--sp-tabbar-safe-top));
+  margin-top: calc(
+    var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)) + var(--sp-tabbar-pad-top) -
+      var(--sp-tabbar-pad-bottom)
+  );
   margin-left: auto;
   line-height: 1;
   overflow: hidden;

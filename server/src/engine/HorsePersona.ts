@@ -53,8 +53,8 @@ export interface HorsePersonaV2 {
  * WHAT IS DELIBERATELY NOT HERE (2026-09-05).
  *
  * `preferredDepthBB` was drafted and removed in the same session. The buy-in
- * is chosen by HorseFleetManager.seatHorse through HorseBehavior.buyInBBFor,
- * which is given a horse id and nothing else - reading a persona there means
+ * is now the table maximum by owner instruction (October 26);
+ * persona does not override cash entry size - reading a persona there means
  * a database read inside the seating path for a field no horse has authored
  * yet. A registered field with no reader is precisely the dead data this
  * estate's ledger exists to prevent, so it waits for the seating path to

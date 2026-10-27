@@ -1,3 +1,4 @@
+import { emptyManagerWakeInbox } from './__fixtures__/emptyManagerWakeInbox.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  A FIELD THAT CANNOT DEAL IS NOT WAITING BEHIND ONE THAT CAN (2026-09-29)
@@ -25,7 +26,8 @@ vi.mock('../services/errorReporter.js', () => ({ reportError: fixture.reportErro
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
-    from: () => {
+    from: (table: string) => {
+      if (table === 'tournament_manager_wakes') return emptyManagerWakeInbox();
       throw new Error('no database in this fixture');
     },
     rpc: () => {
@@ -382,6 +384,34 @@ describe('the balance stage declares the lane', () => {
     expect(manager.requestEliminationSweep).toHaveBeenCalled();
   });
 
+  it('an acknowledged park continuation keeps the balance cursor even before its budget is spent', async () => {
+    const setConsolidating = vi
+      .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+      .mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const manager = balanceManager(async () => ({ kind: 'park-continuation' }));
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(5);
+    expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, true);
+  });
+
+  it('a completed slow board advances instead of occupying the consolidation lane forever', async () => {
+    const setConsolidating = vi
+      .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+      .mockReturnValue(true);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    let spent = false;
+    const manager = balanceManager(async () => {
+      spent = true;
+      return { kind: 'planning-complete' };
+    });
+    manager.consolidationDeclared = true;
+    manager.eliminationWorkBudgetExpired = () => spent;
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.eliminationSweepCursor.nextStage).toBe(6);
+    expect(setConsolidating).toHaveBeenLastCalledWith(tournamentId, false);
+  });
+
   it('a field that is already balanced never touches the lane', async () => {
     const setConsolidating = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating');
     const manager = balanceManager(async () => undefined);
@@ -445,5 +475,155 @@ describe('a held level on a spread field asks for its balance pass', () => {
       source.indexOf('deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;')
     );
     expect(held).toContain('this.askForConsolidationIfSpread();');
+  });
+});
+
+describe('the hand that leaves a field unable to deal asks for consolidation', () => {
+  const id = '00000000-0000-4000-8000-0000000000cc';
+  function fixtureFor(seats = [2, 1]) {
+    let completed: (id: string, stacks: { user_id: string; stack: number }[]) => void;
+    const engines = seats.map((count) => ({
+      getOccupiedSeatNumbers: () => Array.from({ length: count }, (_, i) => i + 1),
+      onHandComplete: (callback: typeof completed) => {
+        completed = callback;
+      },
+      onPauseReady: vi.fn(),
+      onRestartRequired: vi.fn(),
+    }));
+    const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    Object.assign(manager, {
+      tournamentId: id,
+      tableEngines: new Map(engines.map((engine, i) => [`table-${i}`, engine])),
+      gameServer: { getTableEngine: (tableId: string) => manager.tableEngines.get(tableId) },
+      running: true,
+      consolidationDeclared: false,
+      fieldDecidedDeclared: false,
+      bustAwaitingSinceMs: 0,
+      isRunning: () => manager.running,
+      isCohortSatellite: () => false,
+      mysteryActivationMayOpenOnBust: () => false,
+      bustAwaitsItsStage: vi.fn(),
+      horseRebuyOfferMayHaveOpened: vi.fn(),
+      requestEliminationSweep: vi.fn(),
+    });
+    manager.wireEliminationWake(engines[0]);
+    return {
+      manager,
+      engines,
+      complete: (
+        stacks = [
+          { user_id: 'winner', stack: 20 },
+          { user_id: 'loser', stack: 0 },
+        ]
+      ) => completed!('table-0', stacks),
+    };
+  }
+
+  it('uses the consolidation slot before its first balance pass while every general slot is occupied', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const h = held();
+    vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockImplementation((id, value) =>
+      scheduler.setConsolidating(id, value)
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { manager, complete } = fixtureFor();
+    manager.requestEliminationSweep.mockImplementation(() => scheduler.wake(id));
+    try {
+      scheduler.register({ tournamentId: 'busy', run: h.run('busy') });
+      for (let i = 0; i < 200; i++)
+        scheduler.register({ tournamentId: `peer-${i}`, run: h.run(`peer-${i}`) });
+      scheduler.register({ tournamentId: id, run: h.run(id) });
+      await flush();
+      expect(h.started).toEqual(['busy']);
+      complete();
+      await flush();
+      expect(h.started).toEqual(['busy', id]);
+      expect(scheduler.snapshot()).toMatchObject({ consolidationRunning: 1, running: 2 });
+      expect(manager.bustAwaitsItsStage).toHaveBeenCalledOnce();
+      expect(manager.requestEliminationSweep).toHaveBeenCalledOnce();
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  it('admits an adopted spread field at registration without waiting for a blind level', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const h = held();
+    vi.spyOn(tournamentEliminationScheduler, 'register').mockImplementation((options) =>
+      scheduler.register(options)
+    );
+    vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockImplementation((id, value) =>
+      scheduler.setConsolidating(id, value)
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { manager } = fixtureFor([1, 1]);
+    Object.assign(manager, {
+      lifecycleEpoch: { current: () => 1 },
+      lifecycleIsCurrent: () => true,
+      managerLifecycleDiagnostics: { instanceId: 'fixture-manager' },
+      schedulerDiagnosticIds: new WeakMap(),
+      eliminationSchedulerJobs: new Set(),
+      recordManagerDiagnostic: vi.fn(),
+    });
+    manager.requestEliminationSweep.mockImplementation(() => scheduler.wake(id));
+    try {
+      scheduler.register({ tournamentId: 'busy', run: h.run('busy') });
+      for (let i = 0; i < 200; i++)
+        scheduler.register({ tournamentId: `peer-${i}`, run: h.run(`peer-${i}`) });
+      await flush();
+      manager.registerEliminationScheduler(h.run(id));
+      await flush();
+      expect(h.started).toEqual(['busy', id]);
+      expect(scheduler.snapshot()).toMatchObject({ consolidationRunning: 1, running: 2 });
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  it.each([[2, 2], [3, 1], [2]])(
+    'does not claim consolidation for a field with seats %j',
+    (...seats) => {
+      const mark = vi
+        .spyOn(tournamentEliminationScheduler, 'setConsolidating')
+        .mockReturnValue(true);
+      const { complete } = fixtureFor(seats);
+      complete();
+      expect(mark).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not classify a partial or invalid completion as a spread field', () => {
+    const mark = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockReturnValue(true);
+    for (const stacks of [
+      [{ user_id: 'loser', stack: 0 }],
+      [
+        { user_id: 'winner', stack: NaN },
+        { user_id: 'loser', stack: 0 },
+      ],
+    ]) {
+      const { manager, complete } = fixtureFor();
+      complete(stacks);
+      expect(manager.requestEliminationSweep).toHaveBeenCalled();
+    }
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it('does not promote a stopped manager or a replaced dealer from a late callback', () => {
+    const mark = vi.spyOn(tournamentEliminationScheduler, 'setConsolidating').mockReturnValue(true);
+    const stopped = fixtureFor();
+    stopped.manager.running = false;
+    stopped.complete();
+    const replaced = fixtureFor();
+    replaced.manager.gameServer.getTableEngine = () => ({});
+    replaced.complete();
+    expect(mark).not.toHaveBeenCalled();
   });
 });

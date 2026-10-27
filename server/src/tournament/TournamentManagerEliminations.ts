@@ -73,11 +73,11 @@ import {
 } from './horseTournamentRebuyTiming.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
-/** A verified close and exact engine retirement, never an attempted move. */
-export interface TournamentBalanceProgress {
-  kind: 'table-retired';
-  tableId: string;
-}
+/** Distinguish a receipted retirement, completed planning and an unfinished pass. */
+export type TournamentBalanceProgress =
+  | { kind: 'table-retired'; tableId: string }
+  | { kind: 'planning-complete' }
+  | { kind: 'park-continuation' };
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -278,9 +278,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     durableWakeId?: number,
     durableWakeGeneration?: number
   ): boolean {
-    const accepted = super.requestEliminationSweep(reason, durableWakeId);
+    // Retain the generation before the base can admit a scheduler callback,
+    // including a temporary refusal while registration is being established.
     if (
-      accepted &&
       Number.isSafeInteger(durableWakeId) &&
       Number(durableWakeId) > 0 &&
       Number.isSafeInteger(durableWakeGeneration) &&
@@ -293,7 +293,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         Math.max(this.pendingManagerWakeGenerations.get(id) ?? 0, generation)
       );
     }
-    return accepted;
+    return super.requestEliminationSweep(reason, durableWakeId);
   }
   /** One signal per unresolved bounty hand, cleared when its exact row lands. */
   protected bountyEvidenceDeferred = new Set<string>();
@@ -476,12 +476,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let completedWholeSweep = false;
     /** This pass recorded the bust that left at most one player standing. */
     let lastBustRecordedThisPass = false;
-    const durableWakes = new Map(this.pendingManagerWakes);
-    const durableWakeIds = [...durableWakes.keys()];
-    const durableWakeReceipts: TournamentManagerWakeReceipt[] = durableWakeIds.map((id) => ({
-      id,
-      generation: this.pendingManagerWakeGenerations.get(id) ?? 1,
-    }));
+    const durableWakes = new Map<number, string>();
+    const durableWakeReceipts: TournamentManagerWakeReceipt[] = [];
     const acknowledgeCapturedWakes = async (): Promise<void> => {
       if (durableWakeReceipts.length === 0) return;
       const acknowledgement = await this.gameServer.acknowledgeTournamentManagerWakes(
@@ -606,6 +602,68 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.noteEliminationSweepStep('resumeCommittedTerminalCleanup');
       if (await this.resumeCommittedTerminalCleanup()) return;
       if (sweepStopped()) return;
+
+      // Realtime is a delivery hint, not custody of committed work. Read the
+      // original event's pending receipts in its existing business admission,
+      // before taking the exact-generation snapshot. No new scheduler exists.
+      if (!isMaintenanceFrozen()) {
+        try {
+          const { data, error } = await supabase
+            .from('tournament_manager_wakes')
+            .select('id, reason, generation')
+            .eq('tournament_id', this.tournamentId)
+            .is('consumed_at', null)
+            .order('id', { ascending: true })
+            .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+          if (error) throw error;
+          const reasons = new Set([
+            'rebuy',
+            'reentry',
+            'addon',
+            'late_registration',
+            'deal_vote',
+            'bounty_settled',
+          ]);
+          if (
+            !Array.isArray(data) ||
+            data.some(
+              (row) =>
+                !Number.isSafeInteger(row.id) ||
+                row.id <= 0 ||
+                !Number.isSafeInteger(row.generation) ||
+                row.generation <= 0 ||
+                !reasons.has(row.reason)
+            )
+          )
+            throw new Error('Pending manager wake read has an invalid receipt');
+          if (sweepStopped()) return;
+          if (!isMaintenanceFrozen()) {
+            for (const row of data) {
+              this.pendingManagerWakes.set(row.id, row.reason);
+              this.pendingManagerWakeGenerations.set(
+                row.id,
+                Math.max(this.pendingManagerWakeGenerations.get(row.id) ?? 0, row.generation)
+              );
+              if (row.reason === 'deal_vote') this.forceFinalTableDealCheck = true;
+            }
+          }
+        } catch (err) {
+          // UNKNOWN is not an empty inbox. Keep known receipts and allow the
+          // existing terminal-authority path to run; retry this causal failure.
+          reportError(err, 'Tournament.manager_wake_admission_read_unknown');
+          if (!sweepStopped()) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          }
+        }
+      }
+      if (sweepStopped()) return;
+      for (const [id, reason] of this.pendingManagerWakes) durableWakes.set(id, reason);
+      durableWakeReceipts.push(
+        ...[...durableWakes.keys()].map((id) => ({
+          id,
+          generation: this.pendingManagerWakeGenerations.get(id) ?? 1,
+        }))
+      );
 
       /*
        * AN OPEN ADD-ON WINDOW IS SERVED BEFORE THE STAGES A BUST REWINDS
@@ -1901,7 +1959,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.
-            if (this.eliminationWorkBudgetExpired()) {
+            if (
+              progress?.kind === 'park-continuation' ||
+              (this.eliminationWorkBudgetExpired() && progress?.kind !== 'planning-complete')
+            ) {
               this.declareConsolidationOutstanding(true);
               return;
             }

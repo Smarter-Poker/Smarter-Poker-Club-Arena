@@ -31,13 +31,15 @@ class DatabaseReservation(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / 'repo'; self.repo.mkdir()
         self.git('init', '-q', '--initial-branch=main')
-        # Preserve protected main's isolation for ordinary disposable fixtures.
+        # These disposable repositories must have no writer after a Git command
+        # returns: modern fetch detaches automatic maintenance, racing cleanup.
+        # Disable only automatic fixture work (including older Git's auto-GC).
         self.git('config', 'maintenance.auto', 'false')
         self.git('config', 'gc.auto', '0')
         self.git('config', 'user.name', 'Native Fixture')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'core.hooksPath', str(self.root / 'no-hooks'))
-        # A commit's maintenance must finish before this disposable .git is removed.
+        # Explicitly opted-in maintenance must finish before fixture cleanup.
         self.git('config', 'maintenance.autoDetach', 'false')
         self.git('config', 'gc.autoDetach', 'false')
         (self.repo / 'served.txt').write_text('served\n')

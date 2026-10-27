@@ -32,6 +32,8 @@ import { useButtonImage } from '../../hooks/useButtonImage';
  */
 export interface PreviousHandCardProps {
   handNumber: number | null;
+  /** Signed-in viewers can review saved hands before a hand completes in this session. */
+  canReviewHistory?: boolean;
   /** @deprecated Accepted and ignored — the card shows an icon, not a result. */
   result?: number;
   /** @deprecated Accepted and ignored. */
@@ -45,10 +47,14 @@ export interface PreviousHandCardProps {
   onShareHand?: () => void;
 }
 
-export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
+export function PreviousHandCard({
+  handNumber,
+  canReviewHistory = false,
+  onTap,
+}: PreviousHandCardProps) {
   const prevHandIcon = useButtonImage('icon-prevhand');
-  // Don't show if no hand has been played yet
-  if (handNumber == null) return null;
+  // A refresh clears the in-session number, not the viewer's saved hands.
+  if (handNumber == null && !canReviewHistory) return null;
 
   return (
     <div className="prev-hand-card-wrapper">
@@ -63,7 +69,11 @@ export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
         }}
         role="button"
         tabIndex={0}
-        aria-label={`Previous Hand #${handNumber} - Open Hand History`}
+        aria-label={
+          handNumber == null
+            ? 'Previous Hand - Open Hand History'
+            : `Previous Hand #${handNumber} - Open Hand History`
+        }
         title="Open Hand History"
       >
         <div className="prev-hand-card__icon">

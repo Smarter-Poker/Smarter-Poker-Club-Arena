@@ -74,6 +74,8 @@ export const HORSE_EXACT_REPLAY_COMPARED = [
 export interface HorseExactReplayOptions {
   /** Full git SHA of the source this process runs. A record made by any other source is refused. */
   runningSource: string;
+  /** Private local feature observation; never enables a counterfactual arm. */
+  captureV56PressureWitness?: boolean;
   /** Solver stores loaded into this process; defaults to the module stores. */
   stores?: ReplaySolverStores;
   /** Per recorded release, its commit time (for count-only store pins, as in Phase 6C). */
@@ -145,6 +147,7 @@ export interface HorseExactReplayVerdict {
   replayVerified: boolean;
   /** True when the original receipt shows a wall-clock work budget bound a non-shadow owner. */
   wallClockBudgetBound: boolean | null;
+  v56PressureRangeFires?: number | null;
   original: { action: string; amount: number | null; rngAfter: number; effects: number } | null;
   replayed: { action: string; amount: number | null; rngAfter: number; effects: number } | null;
   context: {
@@ -459,6 +462,7 @@ export async function exactReplayHorseDecisionRecord(
     outcome = await withFrozenHorseReplayClock(input.request.decisionTimeMs, () =>
       replayThroughWorkerRuntime(input, {
         phase8SafetyDisabledReason: state.phase8SafetyDisabledReason,
+        captureV56PressureWitness: options.captureV56PressureWitness,
       })
     );
   } catch (error) {
@@ -466,6 +470,8 @@ export async function exactReplayHorseDecisionRecord(
       return finish(`non_replayable:authority:${error.reason}`);
     throw error;
   }
+  if (options.captureV56PressureWitness)
+    verdict.v56PressureRangeFires = outcome.v56PressureRangeFires ?? null;
   // An optional owner this process cannot admit the way the worker did is a
   // missing input (its authority state), never a substitution.
   for (const option of HORSE_OPTIONAL_OWNER_OPTIONS)

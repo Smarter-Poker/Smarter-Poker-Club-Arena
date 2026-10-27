@@ -327,3 +327,61 @@ it('bounds a long failed-load tail and explicitly caps recovered evidence while 
   expect(bank.receipt(recovered)).toMatchObject({ version: 2, historyCapped: true });
   HorseMind.reset();
 });
+
+it('reconstructs only this observer conditional river read after a fresh worker and refuses duplicate history', () => {
+  const source = window(),
+    base = source.hands[0];
+  source.hands = Array.from({ length: 12 }, (_, i) => ({
+    ...base,
+    handId: `55555555-5555-4555-8555-${String(i + 1).padStart(12, '0')}`,
+    handNumber: 1000001 + i,
+    position: 'BB',
+    playedAtMs: 100 + i,
+    actions: [
+      {
+        seat: 1,
+        userId: heroId,
+        action: 'check',
+        amount: 0,
+        stage: 'river',
+        timestamp: 10 + i * 2,
+        isFullRaise: false,
+      },
+      {
+        seat: 2,
+        userId: opponentId,
+        action: 'bet',
+        amount: 10,
+        stage: 'river',
+        timestamp: 11 + i * 2,
+        isFullRaise: true,
+      },
+    ],
+  }));
+  const packet = makeOwnPublicHistoryPacket(source, 200);
+  expect(packet).not.toBeNull();
+  for (let restart = 0; restart < 2; restart++) {
+    const bank = new HorseObserverReads();
+    const req = {
+      ...decisionRequest(),
+      ownPublicHistory: packet!,
+      ownPublicHistoryState: 'available' as const,
+    };
+    for (let replay = 0; replay < 2; replay++)
+      bank.run(req, () => {
+        expect(HorseMind.getStats(opponentId)).toMatchObject({
+          riverLastToActOpps: 12,
+          riverLastToActBets: 12,
+        });
+        expect(HorseMind.riverLastToActRead(opponentId)).toMatchObject({
+          opportunities: 12,
+          bets: 12,
+          rate: 1,
+        });
+      });
+    bank.run(
+      { ...decisionRequest(), gameState: { ...decisionRequest().gameState, gameVariant: 'plo5' } },
+      () => expect(HorseMind.riverLastToActRead(opponentId)).toBeNull()
+    );
+  }
+});

@@ -95,11 +95,16 @@ export class HorseObserverReads {
       const actions = completedHandActionsForMind(hand.actions, scope);
       const parts = hand.handKey.split(':');
       if (actions)
-        HorseMind.observe(actions.actions, [], {
-          version: 1,
-          tableId: parts[0]!,
-          handNumber: Number(parts[1]),
-        });
+        HorseMind.observe(
+          actions.actions,
+          [],
+          {
+            version: 1,
+            tableId: parts[0]!,
+            handNumber: Number(parts[1]),
+          },
+          entry.context.dealtCount
+        );
       HorseMind.observeHandComplete(
         hand.handKey,
         hand.actions,

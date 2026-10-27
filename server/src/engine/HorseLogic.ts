@@ -1,3 +1,4 @@
+import { riverPositionIncrements } from './HorseRiverPositionRead.js';
 import {
   runCorrectiveKernelEvaluator,
   type CorrectiveKernelEvaluator,
@@ -2061,6 +2062,9 @@ export interface HorseDecideOpts {
    *  to ablate (default: enabled; league matchups v53_pressure, plo4/plo5/
    *  plo6_v53_pressure). */
   v53Pressure?: boolean;
+  /** Candidate-only conditional river defense; default off until paired
+   * current-brain qualification and protected adoption. */
+  riverPositionDefense?: boolean;
   /** V58 (2026-10-25): PLO6 river nut discipline on a paired board. Facing a
    *  river bet, a hand one random hand beats 15%+ of the time folds (unless
    *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
@@ -2403,20 +2407,46 @@ function maniacCallDown(
     }
     if (!aggressorId) return decision;
     const read = HorseMind.opponentRead(aggressorId);
+    const conditionalRiver =
+      opts.riverPositionDefense === true &&
+      street === 'river' &&
+      !isTournamentMode(gs) &&
+      !gs.bombPot &&
+      ['nlh', 'plo4', 'plo5', 'plo6'].includes(gs.gameVariant) &&
+      gs.players.filter(
+        (p) => p.seat !== player.seat && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+      ).length === 1 &&
+      read?.stats.vpip.engaged === 'high' &&
+      hist.filter(
+        (a) =>
+          a.stage === 'river' &&
+          (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+      ).length === 1 &&
+      riverPositionIncrements(hist, gs.dealtSeatIds?.length).get(aggressorId)?.bets === 1
+        ? HorseMind.riverLastToActRead(aggressorId)
+        : null;
+    // A conservative frequency bound can admit the existing priced range
+    // recovery; it never proves air and never forces a call. Unknown or a
+    // lower bound below the declared candidate gate retains the reference.
+    const riverPressure =
+      conditionalRiver && conditionalRiver.lower99 >= 0.65 ? conditionalRiver : null;
     // 2026-10-22 POSTFLOP-ONLY AGGRESSOR: a player who limps or calls
     // preflop and then pots every street has no maniac RAISING width, so it
     // was never priced here. Its postflop bets carry as little information as
     // a preflop maniac's do; its preflop range is its (wide) calling range.
     const postflopOnly =
-      street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read);
+      !!riverPressure ||
+      (street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read));
     const width = postflopOnly ? 1 : maniacRaiseWidth(read);
     if (width === null) return decision;
     const betRate =
       street === 'preflop'
         ? 1
-        : read!.stats.betCheckedTo.engaged === 'high'
-          ? Math.max(0, Math.min(1, read!.stats.betCheckedTo.mean))
-          : 0;
+        : riverPressure
+          ? riverPressure.lower99
+          : read!.stats.betCheckedTo.engaged === 'high'
+            ? Math.max(0, Math.min(1, read!.stats.betCheckedTo.mean))
+            : 0;
     // A wide preflop raiser that does NOT bet postflop far more than horses
     // do is a preflop maniac only; its postflop bets keep their meaning.
     if (street !== 'preflop' && betRate < 0.55) return decision;
@@ -2604,10 +2634,14 @@ function maniacCallDown(
     }
     if (telemetryOn(opts)) {
       noteFire('maniac_call_down_checked');
+      if (riverPressure) noteFire('river_position_defense_evaluated');
       if (postflopOnly) noteFire('postflop_maniac_call_down_checked');
     }
     if (!(eq >= required)) return decision;
-    if (telemetryOn(opts)) noteFire('maniac_call_down');
+    if (telemetryOn(opts)) {
+      noteFire('maniac_call_down');
+      if (riverPressure) noteFire('river_position_defense_call');
+    }
     return allInCall
       ? { ...decision, action: 'all_in', amount: undefined }
       : { ...decision, action: 'call', amount: Math.round(call * 100) / 100 };

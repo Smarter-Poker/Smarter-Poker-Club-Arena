@@ -45,6 +45,7 @@ with tempfile.TemporaryDirectory(prefix='lw-',dir=a.scratch)as tmp:
   for f in catalog['owners']:
    q('REVOKE ALL ON FUNCTION '+f['signature']+' FROM PUBLIC,anon,authenticated,service_role;')
    assert q('SELECT md5(pg_get_functiondef('+lit(f['signature'])+'::regprocedure));')==f['md5'],f
+  q('REVOKE ALL ON FUNCTION public.fn_union_pnl_week_hand_lines(uuid,timestamptz,timestamptz,boolean) FROM PUBLIC,anon,authenticated,service_role;')
   q("CREATE TABLE install_control(frozen boolean);INSERT INTO install_control VALUES(false);CREATE FUNCTION fn_platform_frozen()RETURNS boolean LANGUAGE sql STABLE AS $$SELECT frozen FROM install_control$$;")
   # Full original companion hand readers/append guards execute. Source65's
   # unrelated financial dependencies are controlled ONLY in this native fixture.

@@ -197,29 +197,36 @@ it('accepts only the original exact commit/retire ACK and successful disposition
   ).toThrow('refused');
 });
 
-it('retains loaded public history after accepted plans on the exact failed PLO6 pilot pair', async () => {
+it('retains loaded public history after accepted plans on the exact failed PLO6 physical deal', async () => {
   const wallClock = Date.now;
   const { hydrateFrozenFeatureAblationStores } = await import('./FeatureAblationStores.js');
-  const { runFeatureAblationDevelopment } = await import('./FeatureAblationLeague.js');
-  const { plo6V24DevelopmentSpec } = await import('./Plo6V24Qualification.js');
+  const { plo6V24DevelopmentProfile } = await import('./Plo6V24Qualification.js');
   await hydrateFrozenFeatureAblationStores();
+  let applied = 0;
   const brain = createFeatureAblationWorker(
     () => {},
-    () => {},
+    (disposition, count) => {
+      if (disposition === 'applied_volatile') applied += count;
+    },
     false,
     emptyHistory
   );
-  const result = await runFeatureAblationDevelopment(
-    plo6V24DevelopmentSpec('plo6-v24-two-dealt-100bb', brain),
-    { seed: 24304111, startPair: 1, pairs: 1 }
-  );
-  expect(result.refusalReason).toBeNull();
-  expect(result.protocolErrors).toBe(0);
-  expect(result.complete).toBe(true);
-  expect(result.pairs).toBe(1);
-  expect(
-    (result.candidatePlanDispositions.applied_volatile ?? 0) +
-      (result.referencePlanDispositions.applied_volatile ?? 0)
-  ).toBeGreaterThan(0);
+  const profile = plo6V24DevelopmentProfile('plo6-v24-two-dealt-100bb');
+  // Original failing physical deal, pinned independently of experiment sampler.
+  // Previously derived from seed24304111/index1 under the old unsalted sampler.
+  for (const flag of [true, false]) {
+    const hand = await playPlo4PolicyHand(
+      { ...profile, ablation: { brain, heroOpts: { v24PloDefense: flag } } },
+      1025256077,
+      1,
+      2,
+      'off',
+      () => true,
+      true
+    );
+    expect(hand.complete).toBe(true);
+    expect(hand.illegalActions).toBe(0);
+  }
+  expect(applied).toBeGreaterThan(0);
   expect(Date.now).toBe(wallClock);
 }, 60000);

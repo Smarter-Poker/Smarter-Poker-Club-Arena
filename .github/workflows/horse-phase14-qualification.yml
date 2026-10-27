@@ -15,6 +15,11 @@ on:
         options:
           - qualification
           - signer-identity
+          - v56-private-replay
+      replay_request:
+        description: Metadata-only JSON sourceRelease and 1..6 handKey/decisionSha256 pairs (no raw journals)
+        required: false
+        type: string
       plan_commit:
         description: Protected plan commit, not an engine-source override
         required: false
@@ -265,6 +270,160 @@ jobs:
         if: always()
         run: |
           if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-phase14-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
+
+  v56-context:
+    name: Authenticate private V56 replay source and runtime
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'v56-private-replay'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.probe.outputs.source_sha }}
+      node_version: ${{ steps.probe.outputs.node_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Configure pinned private reader
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          READER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-v56-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          test -n "$SSH_KEY" && test -n "$HOST_KEY" && test -n "$READER_HOST"
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          printf '%s\n' "$HOST_KEY" > "$P14_PRIVATE/known_hosts"
+          chmod 0600 "$P14_PRIVATE/identity" "$P14_PRIVATE/known_hosts"
+          ssh-keygen -l -f "$P14_PRIVATE/known_hosts" >/dev/null
+          {
+            echo "P14_PRIVATE=$P14_PRIVATE"
+            echo "HORSE_REVIEW_SSH_KEY_PATH=$P14_PRIVATE/identity"
+            echo "HORSE_REVIEW_SSH_KNOWN_HOSTS_PATH=$P14_PRIVATE/known_hosts"
+            echo "HORSE_REVIEW_SSH_HOST=$READER_HOST"
+          } >> "$GITHUB_ENV"
+      - name: Write bounded metadata-only request privately
+        env:
+          REPLAY_REQUEST: ${{ inputs.replay_request }}
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          if(Buffer.byteLength(process.env.REPLAY_REQUEST??'')>16000)throw Error('metadata bounds');
+          const r=JSON.parse(process.env.REPLAY_REQUEST);
+          writeFileSync(process.env.P14_PRIVATE+'/request.json',JSON.stringify({...r,providerRunId:process.env.GITHUB_RUN_ID}),{mode:0o600});
+          JS
+      - name: Authenticate protected exact source without replaying policy
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: server
+        run: |
+          set -euo pipefail
+          node --import tsx src/scripts/horseV56PrivateReplay.ts context "$P14_PRIVATE/request.json" "$P14_PRIVATE/context.json"
+          node --input-type=module <<'JS'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const v=JSON.parse(readFileSync(process.env.P14_PRIVATE+'/context.json','utf8'));
+          if(v.status!=='v56_replay_context'||!/^[a-f0-9]{40}$/.test(v.sourceRelease)||!/^v22\.\d+\.\d+$/.test(v.runtime.node)||v.runtime.arch!=='x64')throw Error('runtime unavailable');
+          appendFileSync(process.env.GITHUB_OUTPUT,'source_sha='+v.sourceRelease+'\nnode_version='+v.runtime.node+'\n');
+          JS
+      - name: Remove only this job private custody
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-v56-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
+
+  v56-replay:
+    name: Privately replay original V56 accepted cases offline
+    needs: v56-context
+    if: github.ref == 'refs/heads/main' && inputs.operation == 'v56-private-replay'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.v56-context.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.v56-context.outputs.node_version }}
+          architecture: x64
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: server
+      - name: Configure pinned private reader
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          READER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          P14_PRIVATE="$RUNNER_TEMP/horse-v56-$GITHUB_RUN_ID-$GITHUB_JOB"
+          mkdir "$P14_PRIVATE"
+          test -n "$SSH_KEY" && test -n "$HOST_KEY" && test -n "$READER_HOST"
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          printf '%s\n' "$HOST_KEY" > "$P14_PRIVATE/known_hosts"
+          chmod 0600 "$P14_PRIVATE/identity" "$P14_PRIVATE/known_hosts"
+          ssh-keygen -l -f "$P14_PRIVATE/known_hosts" >/dev/null
+          {
+            echo "P14_PRIVATE=$P14_PRIVATE"
+            echo "HORSE_REVIEW_SSH_KEY_PATH=$P14_PRIVATE/identity"
+            echo "HORSE_REVIEW_SSH_KNOWN_HOSTS_PATH=$P14_PRIVATE/known_hosts"
+            echo "HORSE_REVIEW_SSH_HOST=$READER_HOST"
+          } >> "$GITHUB_ENV"
+      - name: Write bounded metadata-only request privately
+        env:
+          REPLAY_REQUEST: ${{ inputs.replay_request }}
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          if(Buffer.byteLength(process.env.REPLAY_REQUEST??'')>16000)throw Error('metadata bounds');
+          const r=JSON.parse(process.env.REPLAY_REQUEST);
+          writeFileSync(process.env.P14_PRIVATE+'/request.json',JSON.stringify({...r,providerRunId:process.env.GITHUB_RUN_ID}),{mode:0o600});
+          JS
+      - name: Acquire private custody and remove SSH identity before offline replay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: server
+        run: node --import tsx src/scripts/horseV56PrivateReplay.ts replay "$P14_PRIVATE/request.json" "$P14_PRIVATE/pending.json"
+      - name: Reacquire same pinned identity only after offline children exit
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test ! -e "$P14_PRIVATE/identity"
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$P14_PRIVATE/identity"
+          chmod 0600 "$P14_PRIVATE/identity"
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const request=JSON.parse(readFileSync(process.env.P14_PRIVATE+'/request.json','utf8'));
+          const pending=JSON.parse(readFileSync(process.env.P14_PRIVATE+'/pending.json','utf8'));
+          writeFileSync(process.env.P14_PRIVATE+'/post-input.json',JSON.stringify({request,pending}),{mode:0o600});
+          JS
+      - name: Bind post-replay canonical source and instance without policy execution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: server
+        run: node --import tsx src/scripts/horseV56PrivateReplay.ts finalize "$P14_PRIVATE/post-input.json" "$P14_PRIVATE/sanitized.json"
+      - name: Retain sanitized replay receipt only
+        uses: actions/upload-artifact@v4
+        with:
+          name: v56-private-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.P14_PRIVATE }}/sanitized.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove only this job private custody
+        if: always()
+        run: |
+          if [ "${P14_PRIVATE:-}" = "$RUNNER_TEMP/horse-v56-$GITHUB_RUN_ID-$GITHUB_JOB" ]; then rm -rf -- "$P14_PRIVATE"; fi
 
   signer-identity:
     name: Verify purpose-only canonical signing identity

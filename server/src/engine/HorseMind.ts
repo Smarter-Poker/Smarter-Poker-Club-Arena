@@ -1,3 +1,4 @@
+import { riverPositionIncrements } from './HorseRiverPositionRead.js';
 import {
   MEMORY_VARIANTS,
   memoryVariant,
@@ -149,6 +150,10 @@ export interface OpponentStats {
   riverBetOpps: number;
   /** ... and folded to it */
   riverBetFolds: number;
+  /** Public observer-window river opportunities when all remaining actors checked.
+   * Rebuilt from the horse own accepted history, never a pooled donor. */
+  riverLastToActOpps: number;
+  riverLastToActBets: number;
   /** V7 recency window (exponentially decayed) — detects counter-adaptation */
   rHands: number;
   rFolds: number;
@@ -211,6 +216,8 @@ const freshStats = (): OpponentStats => ({
   bigBetSDStrong: 0,
   riverBetOpps: 0,
   riverBetFolds: 0,
+  riverLastToActOpps: 0,
+  riverLastToActBets: 0,
   rHands: 0,
   rFolds: 0,
   rFacedAggr: 0,
@@ -417,6 +424,8 @@ const SCOPED_FIELDS = [
   'bigBetSDStrong',
   'riverBetOpps',
   'riverBetFolds',
+  'riverLastToActOpps',
+  'riverLastToActBets',
   'checks',
   'postAggr',
   'postPassive',
@@ -497,7 +506,8 @@ export class HorseMind {
   static observe(
     history: ActionRecord[] | undefined,
     _players: SeatPlayer[],
-    identity?: HorseMindHandIdentity | null
+    identity?: HorseMindHandIdentity | null,
+    originalDealtCount?: number
   ): void {
     if (!history || history.length === 0) return;
 
@@ -735,6 +745,35 @@ export class HorseMind {
       }
 
       if (preflop && isAggr) preflopRaises++;
+    }
+    // Separate original-hand dedupe: a legacy observer may already have seen
+    // the action prefix without the original participant-count metadata.
+    const riverKey = identifiedHand ? `${identifiedHand}|river-last-to-act` : null;
+    if (riverKey && !this.handFlags.has(riverKey)) {
+      const increments = riverPositionIncrements(history, originalDealtCount);
+      if (increments.size) {
+        for (const [id, inc] of increments) {
+          const row = this.stats.get(id);
+          const action = history.find((a) => a.stage === 'river' && a.userId === id);
+          if (!row || !action) continue;
+          const before = { ...row };
+          row.riverLastToActOpps = (row.riverLastToActOpps ?? 0) + inc.opportunities;
+          row.riverLastToActBets = (row.riverLastToActBets ?? 0) + inc.bets;
+          row.sourceWindow = observeHorseObservationWindow(
+            before.sourceWindow,
+            action.timestamp,
+            hasContributions(before)
+          );
+          this.dirty.add(id);
+          this.applyScopedDelta(
+            id,
+            before,
+            row,
+            observeHorseObservationWindow(undefined, action.timestamp, false)
+          );
+        }
+        this.handFlags.add(riverKey);
+      }
     }
   }
 
@@ -1059,7 +1098,10 @@ export class HorseMind {
       if (this.scoped.size >= MAX_TRACKED_PLAYERS * 4 && !existing) continue;
       const next = freshStats();
       for (const f of SCOPED_FIELDS) {
-        next[f] = Math.max(existing ? existing[f] : 0, num((r as Record<string, unknown>)[f]));
+        next[f] = Math.max(
+          existing ? (existing[f] ?? 0) : 0,
+          num((r as Record<string, unknown>)[f])
+        );
       }
       next.sourceWindow = importedWindow(r, existing);
       this.scoped.set(key, next);
@@ -1156,6 +1198,8 @@ export class HorseMind {
         bigBetSDStrong: num(r.bigBetSDStrong),
         riverBetOpps: keep(existing?.riverBetOpps, num(r.riverBetOpps)),
         riverBetFolds: keep(existing?.riverBetFolds, num(r.riverBetFolds)),
+        riverLastToActOpps: keep(existing?.riverLastToActOpps, num(r.riverLastToActOpps)),
+        riverLastToActBets: keep(existing?.riverLastToActBets, num(r.riverLastToActBets)),
         rHands: keep(existing?.rHands, num(r.rHands)),
         rFolds: keep(existing?.rFolds, num(r.rFolds)),
         rFacedAggr: keep(existing?.rFacedAggr, num(r.rFacedAggr)),
@@ -2104,6 +2148,26 @@ export class HorseMind {
 
   /** V23: fold-to-river-bet frequency (0..1), or null below an
    *  8-opportunity sample. Memory-only — see the OpponentStats note. */
+  /** Conditional public frequency; unknown stays unknown. A high rate alone
+   * is not proof of a bluff and never forces a call. The consumer must price
+   * the acting holding against a qualified public-range model. */
+  static riverLastToActRead(
+    id: string
+  ): { opportunities: number; bets: number; rate: number; lower99: number } | null {
+    const s = this.readStats(id),
+      n = s?.riverLastToActOpps ?? 0,
+      bets = s?.riverLastToActBets ?? 0;
+    if (!Number.isSafeInteger(n) || n < 8 || !Number.isSafeInteger(bets) || bets < 0 || bets > n)
+      return null;
+    const rate = bets / n,
+      z = 2.3263478740408408,
+      z2 = z * z;
+    const lower99 =
+      (rate + z2 / (2 * n) - z * Math.sqrt((rate * (1 - rate)) / n + z2 / (4 * n * n))) /
+      (1 + z2 / n);
+    return { opportunities: n, bets, rate, lower99: Math.max(0, lower99) };
+  }
+
   static riverFoldRate(id: string): number | null {
     const s = this.readStats(id);
     if (!s || s.riverBetOpps < 8) return null;

@@ -89,6 +89,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the original public observation time windows that qualify individual read history and cutoff coverage',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
+    'src/engine/HorseRiverPositionRead.ts':
+      'the original public-action last-to-act river opportunity, check-back and confidence evidence consumed by conditional river defense',
     'src/engine/HorseRiverCallEvidence.ts':
       'the public river-call category eligibility and confidence boundary used by the reference opponent read',
     'src/engine/HorseObserverReadContext.ts':

@@ -33,7 +33,8 @@ const BRIDGE = read('src/lib/settingsBridge.ts');
 
 /** The upsert body, isolated so the assertions cannot match a comment. */
 function upsertBody(): string {
-  const start = SETTINGS.indexOf("from('user_notification_preferences').upsert(");
+  const normalized = SETTINGS.replace(/\)\s*\.upsert\(/g, ').upsert(');
+  const start = normalized.indexOf("from('user_notification_preferences').upsert(");
   expect(start, 'the notification preferences upsert has moved or gone').toBeGreaterThan(-1);
   // Anchored past `from(` on purpose: sliceCall binds the FIRST paren after the
   // anchor, and `from(` would hand back that call instead of the upsert.
@@ -43,7 +44,7 @@ function upsertBody(): string {
   );
   const mappingEnd = SETTINGS.indexOf('const notificationPatch', mappingStart);
   const mapping = SETTINGS.slice(mappingStart, mappingEnd);
-  return mapping + sliceCall(SETTINGS, "user_notification_preferences').upsert(");
+  return mapping + sliceCall(normalized, "user_notification_preferences').upsert(");
 }
 
 describe('the notifications section writes only its own switches', () => {

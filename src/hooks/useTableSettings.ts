@@ -973,6 +973,9 @@ export function useTableSettings() {
       // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck
       // value arriving through the bulk path is a user action too.
       ...('autoMuck' in updates ? { autoMuckExplicit: true } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, 'fourColorDeck')
+        ? { fourColorDeckExplicit: true }
+        : {}),
     }));
     // Broadcast each change for cross-tab sync
     for (const [key, value] of Object.entries(updates)) {

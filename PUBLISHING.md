@@ -58,6 +58,21 @@ If the assigned change includes monitoring, use its existing **deploy-monitoring
 
 **A migration reaches production only from protected main (owner instruction, October 25, 2026).** When the autopilot merges a pull request, `dispatch-merged-migrations.sh` sends every migration it added to Apply Merged Migration on its own; after any other merge, dispatch it yourself (repository_dispatch apply-merged-migration, payload {migration}). The applier sends the merged bytes once, in one transaction, records the file's own version and answers ALREADY-APPLIED for a version production holds. Never apply a migration from an unmerged branch, a local file or the Supabase MCP apply_migration, which also stamps the apply time as the version. On October 24 and 25 three migrations were applied from pull requests that were still open (#7968, #7983, #8019), so production ran SQL that main had never seen until it was recorded by hand in #8109. A fix that is urgent merges first; the dispatcher installs it minutes after the merge. The one exception is an active production outage that cannot wait for required checks: the agent that applies directly commits the byte-exact recording to main (scripts/ci/recorded-migrations.manifest.json) as its very next step and names the outage in that pull request.
 
+## Production Alerts native event consumer
+
+The receive-only component under `tools/production-alerts-native-wakeup/` uses
+protected main, locked dependencies and the existing OpenClaw gateway's supported
+`plugins install --link` route. Keep source and durable state on the external SSD.
+Install its migration through Apply Merged Migration before enabling the private
+channel. Preserve existing gateway services and loopback binding; use only a
+public Supabase client key from the configured key tool. This component cannot
+publish games or initiate, advance, retry or certify any release.
+
+Follow its README for exact installation/readback requirements. Completion needs
+the actual private subscription, native queue receipt, complete original inbox
+read and database acknowledgement from an automatic committed event. A producer
+receipt, manual queue test or plugin listing alone is not delivery proof.
+
 ## Concurrent deliveries and completion
 
 Continue other authorized work while provider jobs run. Keep the exact pending run/revision and inspect the result afterward; do not create a watcher, scheduler or repair loop. A provider may serialize a shared production resource or publish a newer protected revision containing several agents' changes. Record the actual selected revision and prove it contains your merged change; do not force an older revision over a newer release merely to obtain a matching number.

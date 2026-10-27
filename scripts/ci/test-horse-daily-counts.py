@@ -5,6 +5,7 @@ hands only; the captured preimage/types contain no player data.
 """
 import concurrent.futures
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -69,6 +70,8 @@ def main():
         def run(sql, ok=True):
             r = command([PG/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',sock,
                          '-p','55497','-U','postgres','-d','postgres'],sql)
+            if ok is None:
+                return r
             if (r.returncode == 0) != ok:
                 raise AssertionError(r.stderr or r.stdout)
             return r.stdout.strip() if ok else r.stderr
@@ -204,6 +207,10 @@ def main():
             run("UPDATE hand_atomic_commits SET post_commit_payload="+literal(dict(accepted_hand_facts=dict(stats_facts=d)))+" WHERE hand_id='"+uid('witness-turn')+"';")
             check('changed original witness cannot replace accepted hash','source_hash_conflict' in project('witness-turn',False))
             check('installed witness migration cannot replay','all_in_witness_projector_preimage_changed' in run(WITNESS_MIGRATION.read_text(),False))
+            spec=importlib.util.spec_from_file_location('booking_cap',ROOT/'scripts/ci/horse-booking-cap-native.py')
+            booking_cap=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(booking_cap)
+            booking_cap.verify(ROOT,run,check,uid,ROOT/'supabase/migrations/20261026230116_late_tournament_registration_obeys_the_four_game_cap.sql')
         finally:
             command([PG/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
 

@@ -158,6 +158,7 @@ try:
     # and refusal of the whole report/union for every agent rank.
     # Setup and authenticated assertions use separate connections. Bind their
     # shared reporting date once in Chicago, including across local midnight.
+    # UTC CURRENT_DATE can be tomorrow for Chicago and be clamped by the reader.
     report_day = date.fromisoformat(q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date::text")).isoformat()
     boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text().replace("@REPORT_DAY@", report_day)
     setup, checks = boundary.split("-- AFTER MIGRATION", 1)

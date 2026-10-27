@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027192602",
+      "name": "whole_hand_rakeback_reads_the_original_attribution_cover",
+      "file": "supabase/migrations/20261027192602_whole_hand_rakeback_reads_the_original_attribution_cover.sql",
+      "md5": "07cc7a7666c596812731efd98a7c8530",
+      "appliedToProductionAt": "2026-10-27T19:35:38.252Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation and full-file history/index/source readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: Lightning full counts90s and all-club whole-hand attribution phase30s timed out after86197 selected keys. Exact native-qualified nonpartial six-column record-leading index installed through maintained CCI route. Full-file history, complete index metadata, unchanged cc867 original counts body, unchanged original Scope72ab and live65 source authority read back. No functions, earning rows, rate, paid proofs, source pins, ACLs or budgets changed. Native73/bags/catalog/MVCC and local prechecks passed. Actual post-install timing, original Lightning preparation/payment and global closure remain separate unverified work; no new payment or 4AM guarantee claimed."
     }
   ]
 }

@@ -218,5 +218,9 @@
     "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
     "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
     "qualificationEvidence": "Existing Unpaid Lightning qualification run 40465468742 job 122059675777 passed the sealed inventory, original treasury gifts and old queued treasury entry steps; this pin correction does not claim production accounting closure."
+  },
+  "wholeHandCoverIntegrationWorkflowAudit": {
+    "reviewed": "2026-10-27",
+    "reason": "Current main adds only existing qualified player-index paths/native step to unpaid workflow; original finite245 commands unchanged. Same reviewed9ed-to74d5 correction as8336, no financial function/fixture pin changed."
   }
 }

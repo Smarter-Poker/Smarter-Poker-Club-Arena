@@ -25,6 +25,7 @@ const ended = { data: { id: 'A', on_break: false, break_ends_at: null }, error: 
 afterEach(() => {
   cleanup();
   db.reads.length = 0;
+  vi.useRealTimers();
 });
 function mount() {
   // The production hook must recover on socket continuity, without a timer.
@@ -156,5 +157,33 @@ it('retires the first A read across A -> B -> A', async () => {
   rerender({ id: 'A', status: 'connected' });
   await answer(2, ended);
   await answer(0, { data: { id: 'A', on_break: true, break_ends_at: null }, error: null });
+  expect(result.current.tournamentBreak.active).toBe(false);
+});
+
+it('reads once at the original deadline when the end broadcast is lost on a connected socket', async () => {
+  vi.useFakeTimers();
+  const { result } = mount();
+  await answer(0, ended);
+  act(() => result.current.setTournamentBreak({ ...active, breakEndsAtMs: Date.now() + 1000 }));
+  await act(async () => {
+    vi.advanceTimersByTime(1000);
+  });
+  expect(db.reads).toHaveLength(2);
+  await answer(1, ended);
+  expect(result.current.tournamentBreak.active).toBe(false);
+  await act(async () => {
+    vi.advanceTimersByTime(60000);
+  });
+  expect(db.reads).toHaveLength(2);
+});
+it('recovers a lost end when a backgrounded player returns', async () => {
+  const { result } = mount();
+  await answer(0, ended);
+  act(() =>
+    result.current.setTournamentBreak({ ...active, phase: 'last_hand', breakEndsAtMs: null })
+  );
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(db.reads).toHaveLength(2);
+  await answer(1, ended);
   expect(result.current.tournamentBreak.active).toBe(false);
 });

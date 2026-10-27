@@ -1300,7 +1300,12 @@ async function observeTournamentBoard(
             // Observe the mounted table, felt and cleared Connecting status
             // together while the wire waits run. Serial assertions after the
             // snapshot charged their own transport time to an already-ready UI.
-            await waitForInitialTableReadiness(page, navigationStartedAt, CONNECT_DEADLINE_MS);
+            await waitForInitialTableReadiness(
+              page,
+              navigationStartedAt,
+              CONNECT_DEADLINE_MS,
+              protocolReady
+            );
           })(),
         ]);
       })(),

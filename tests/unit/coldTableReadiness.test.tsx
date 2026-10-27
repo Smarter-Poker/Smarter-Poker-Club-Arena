@@ -9,7 +9,7 @@ import {
 } from '../e2e/support/liveTableRealtime';
 import {
   remainingInitialTableReadinessMs,
-  observeInitialTableReadiness,
+  readInitialTableReadiness,
   waitForInitialTableReadiness,
 } from '../e2e/support/initialTableReadiness';
 
@@ -207,88 +207,114 @@ describe('cold navigation readiness is distinct from established table continuit
   });
 });
 
-describe('one atomic browser readiness observation owns the navigation deadline', () => {
+describe('bounded browser readiness history owns the original navigation deadline', () => {
   const startedAt = 1_000;
   const deadline = 13_000;
-  function showTable(withFelt = true, withBanner = false) {
-    render(
-      <div className="table-page" style={{ visibility: 'visible' }}>
-        {withFelt && <div className="table-surface" style={{ visibility: 'visible' }} />}
-        {withBanner && (
-          <div data-testid="table-connection-banner" style={{ visibility: 'visible' }} />
-        )}
-      </div>
-    );
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
-      width: 320,
-      height: 568,
-    } as DOMRect);
+  type HistoryWindow = Window & {
+    __spInitialTableReadiness?: {
+      startedAt: number;
+      deadline: number;
+      stopped: boolean;
+      samples: { observedAt: number; ready: boolean }[];
+      stop: () => void;
+    };
+  };
+  function history(samples: { observedAt: number; ready: boolean }[], stopped = true) {
+    (window as HistoryWindow).__spInitialTableReadiness = {
+      startedAt,
+      deadline,
+      stopped,
+      samples,
+      stop: vi.fn(),
+    };
   }
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    delete (window as HistoryWindow).__spInitialTableReadiness;
+    vi.restoreAllMocks();
+  });
 
-  it('accepts all three UI facts recorded before the deadline even when proof delivery is later', async () => {
-    showTable();
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(12_999);
+  it('accepts UI readiness after the wire before the deadline even when proof delivery is later', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000);
     const dispose = vi.fn();
     const transport = {
-      waitForFunction: vi.fn(async (observe, args) => {
-        const recorded = observe(args);
-        // The browser has already observed readiness. Inspector transport and
-        // subsequent assertions are not additional player loading time.
-        clock.mockReturnValue(14_000);
+      evaluate: vi.fn(async (fn, args) => {
+        if (args && typeof args === 'object') history([{ observedAt: 12_999, ready: true }]);
+        else fn(args);
+      }),
+      isClosed: () => false,
+      waitForFunction: vi.fn(async (read, args) => {
+        vi.spyOn(Date, 'now').mockReturnValue(14_000);
+        const recorded = read(args);
         return { jsonValue: async () => recorded, dispose };
       }),
     } as unknown as Page;
-    await expect(waitForInitialTableReadiness(transport, startedAt, 12_000)).resolves.toEqual({
-      kind: 'ready',
-      observedAt: 12_999,
-    });
+    await expect(
+      waitForInitialTableReadiness(transport, startedAt, 12_000, Promise.resolve([{ at: 12_990 }]))
+    ).resolves.toEqual({ kind: 'ready', observedAt: 12_999 });
     expect(dispose).toHaveBeenCalledOnce();
+    expect((window as HistoryWindow).__spInitialTableReadiness).toBeUndefined();
+  });
+
+  it('does not accept an early banner grace interval followed by Connecting before wire readiness', () => {
+    history([
+      { observedAt: 1_500, ready: true },
+      { observedAt: 12_995, ready: false },
+    ]);
+    vi.spyOn(Date, 'now').mockReturnValue(14_000);
+    expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toEqual({
+      kind: 'expired',
+      observedAt: 14_000,
+    });
   });
 
   it.each([13_000, 13_001])(
     'rejects UI readiness first observed at or after the deadline: %s',
     (now) => {
-      showTable();
-      vi.spyOn(Date, 'now').mockReturnValue(now);
-      expect(observeInitialTableReadiness({ startedAt, deadline })).toEqual({
+      history([{ observedAt: now, ready: true }]);
+      vi.spyOn(Date, 'now').mockReturnValue(14_000);
+      expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toEqual({
         kind: 'expired',
-        observedAt: now,
+        observedAt: 14_000,
       });
     }
   );
 
-  it('still requires both mounted table and visible felt with no Connecting banner', () => {
+  it('keeps waiting when the mounted table, felt or cleared banner is not yet ready', () => {
+    history([{ observedAt: 12_995, ready: false }], false);
     vi.spyOn(Date, 'now').mockReturnValue(12_999);
-    expect(observeInitialTableReadiness({ startedAt, deadline })).toBe(false);
-    showTable(false);
-    expect(observeInitialTableReadiness({ startedAt, deadline })).toBe(false);
-    cleanup();
-    showTable(true, true);
-    expect(observeInitialTableReadiness({ startedAt, deadline })).toBe(false);
+    expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toBe(false);
   });
 
   it('counts document and chunk startup against the original budget', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(deadline);
-    const waitForFunction = vi.fn();
+    const evaluate = vi.fn();
     await expect(
-      waitForInitialTableReadiness({ waitForFunction } as unknown as Page, startedAt, 12_000)
+      waitForInitialTableReadiness({ evaluate } as unknown as Page, startedAt, 12_000)
     ).rejects.toThrow('navigation deadline');
-    expect(waitForFunction).not.toHaveBeenCalled();
+    expect(evaluate).not.toHaveBeenCalled();
   });
 
-  it('rejects an expired browser observation and disposes its proof', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(12_999);
-    const dispose = vi.fn();
+  it('stops and removes its sampler when required protocol frames fail', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000);
+    const stop = vi.fn();
     const transport = {
-      waitForFunction: async () => ({
-        jsonValue: async () => ({ kind: 'expired', observedAt: deadline }),
-        dispose,
+      evaluate: vi.fn(async (fn, args) => {
+        if (args && typeof args === 'object') {
+          history([]);
+          (window as HistoryWindow).__spInitialTableReadiness!.stop = stop;
+        } else fn(args);
       }),
+      isClosed: () => false,
     } as unknown as Page;
-    await expect(waitForInitialTableReadiness(transport, startedAt, 12_000)).rejects.toThrow(
-      'navigation deadline'
-    );
-    expect(dispose).toHaveBeenCalledOnce();
+    await expect(
+      waitForInitialTableReadiness(
+        transport,
+        startedAt,
+        12_000,
+        Promise.reject(new Error('Missing SNAPSHOT'))
+      )
+    ).rejects.toThrow('Missing SNAPSHOT');
+    expect(stop).toHaveBeenCalledOnce();
+    expect((window as HistoryWindow).__spInitialTableReadiness).toBeUndefined();
   });
 });

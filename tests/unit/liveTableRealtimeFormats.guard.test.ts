@@ -143,9 +143,7 @@ describe('the production realtime certificate covers every live-game lane', () =
     );
     const initial = tournament.indexOf('await whileInitialTableConnects(');
     const navigation = tournament.indexOf('page.goto(`table/${candidate.id}`');
-    const budget = tournament.indexOf(
-      'waitForInitialTableReadiness(page, navigationStartedAt, CONNECT_DEADLINE_MS)'
-    );
+    const budget = tournament.indexOf('waitForInitialTableReadiness(');
     const continuity = tournament.indexOf('await whileConnectionBannerStaysHidden(');
     expect(initial).toBeGreaterThan(-1);
     expect(navigation).toBeGreaterThan(initial);
@@ -154,6 +152,7 @@ describe('the production realtime certificate covers every live-game lane', () =
     const initialBlock = tournament.slice(initial, continuity);
     expect(initialBlock).toContain('protocolReady,');
     expect(initialBlock).toContain('(async () => {');
+    expect(initialBlock).toMatch(/waitForInitialTableReadiness\([\s\S]*?protocolReady/);
     expect(initialBlock).not.toContain('await expect(page.locator');
     expect(spec).toContain('const CONNECT_DEADLINE_MS = 12_000');
     expect(tournament.slice(0, initial)).toContain("type: 'SUBSCRIBED'");

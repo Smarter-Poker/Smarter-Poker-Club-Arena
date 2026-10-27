@@ -59,6 +59,7 @@ export function useLightningSessionSummary(
         })
         .catch((err: unknown) => {
           if (!live || request !== generation) return;
+          setSummary(null);
           setFailed(true);
           reportError(err, 'LightningSession.summary_read_failed', { poolSessionId });
         });

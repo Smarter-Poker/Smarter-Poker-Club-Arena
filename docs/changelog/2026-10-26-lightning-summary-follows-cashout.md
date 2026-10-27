@@ -4,4 +4,4 @@ Leaving during a live hand can queue the cash-out until settlement. The Lightnin
 
 The summary now carries the original anchor occupancy and refreshes on its matching existing `SEAT_CASHED_OUT` event. Duplicate events coalesce, unrelated occupancies do not refresh it, and stale responses cannot replace the final result or a different session. Both leave doors capture the original summary context before leaving.
 
-This changes the summary consumer only. The existing cash-out transaction and watcher remain unchanged; no new polling or financial command is added. Two regressions fail against the original hook and all 23 focused session-app tests pass with the correction.
+This changes the summary consumer only. The existing cash-out transaction and watcher remain unchanged; no new polling or financial command is added. Two refresh regressions fail against the original hook. A further regression pins that a failed final refresh removes unfinished statistics and shows the existing error state. All 24 focused session-app tests pass with the corrections.

@@ -497,10 +497,14 @@ function LobbyProbe() {
 describe('the session summary', () => {
   const target = { tableId: CLUSTER, occupancyId: HH };
   function SummaryProbe({ pool = POOL }: { pool?: string }) {
-    const { summary } = useLightningSessionSummary(pool, target);
+    const { summary, failed } = useLightningSessionSummary(pool, target);
     return (
       <div data-testid="summary-probe">
-        {summary ? `${summary.ended}:${summary.hands}:${summary.currentStack}` : 'loading'}
+        {summary
+          ? `${summary.ended}:${summary.hands}:${summary.currentStack}`
+          : failed
+            ? 'failed'
+            : 'loading'}
       </div>
     );
   }
@@ -534,6 +538,20 @@ describe('the session summary', () => {
     expect(screen.getByTestId('summary-probe').textContent).toBe('true:99:478.5');
     act(() => masterBus.emit('SEAT_CASHED_OUT', target));
     expect(callsTo('fn_lightning_session_summary')).toHaveLength(2);
+  });
+
+  it('clears unfinished numbers when the final cashout summary read fails', async () => {
+    rpc
+      .mockImplementationOnce(() =>
+        Promise.resolve({ data: { ...STATS, ended: false }, error: null })
+      )
+      .mockImplementationOnce(() => Promise.reject(new Error('summary unavailable')));
+    render(<SummaryProbe />);
+    await waitFor(() =>
+      expect(screen.getByTestId('summary-probe').textContent).toContain('false:')
+    );
+    act(() => masterBus.emit('SEAT_CASHED_OUT', target));
+    await waitFor(() => expect(screen.getByTestId('summary-probe').textContent).toBe('failed'));
   });
 
   it('a stale initial response cannot overwrite the settled summary', async () => {

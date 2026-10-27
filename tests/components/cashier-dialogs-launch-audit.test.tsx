@@ -327,6 +327,29 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
   });
 });
 
+describe('promo account balances survive role resolution', () => {
+  it('re-reads both balances when the viewer role changes while the promo cashier stays open', async () => {
+    fx.balances.mockResolvedValue({ ...snapshot(), promoPot: 3000, promoFloat: 0, hasFloat: true });
+    const { view } = await openCashier({ walletType: 'promo_wallet' });
+    const figure = () => document.querySelector('.cbc-bank strong')?.textContent;
+    await waitFor(() => expect(figure()).toBe('3,000.00'));
+    fireEvent.click(screen.getByRole('radio', { name: 'My Promo Float 0.00' }));
+    await waitFor(() => expect(figure()).toBe('0.00'));
+    view.rerender(
+      <WalletCashierModal
+        isOpen
+        onClose={() => {}}
+        clubId={CLUB}
+        role="co_owner"
+        walletType="promo_wallet"
+      />
+    );
+    await waitFor(() => expect(figure()).toBe('3,000.00'));
+    expect(fx.balances).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('radio', { name: 'My Promo Float 0.00' })).toBeTruthy();
+  });
+});
+
 describe('D-04: the holder figure follows the roster after a claim', () => {
   it('re-reads the chosen player from the refreshed members', async () => {
     let claimed = false;

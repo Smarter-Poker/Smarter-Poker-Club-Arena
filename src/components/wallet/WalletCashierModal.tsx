@@ -572,7 +572,9 @@ export default function WalletCashierModal({
   // still authorize and lock the actual balance inside their transaction.
   const loadClub = useVisibleRead({
     manualOnly: true,
-    scopeKey: `${clubId}:${user?.id}:${walletType}`,
+    // Role resolution also resets the promo accounts below. It must own a new
+    // read, even when both roles can use this cashier.
+    scopeKey: `${clubId}:${user?.id}:${walletType}:${role}`,
     enabled: isOpen && allowed && Boolean(clubId && user?.id),
     read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
     onReset: () => {

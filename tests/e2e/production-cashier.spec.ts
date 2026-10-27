@@ -970,5 +970,41 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'claim-promo-return-wallets-393');
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
+    // Read the club's actual promo figure through the same maintained identity.
+    // Opening and switching accounts submits no chip movement.
+    await page.goto(`clubs/${clubId}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    const openPromo = page.getByRole('button', { name: 'Open Promo Wallet', exact: true });
+    await expect(openPromo).toBeVisible({ timeout: 60_000 });
+    const promoRead = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_club_money_panel') &&
+        response.request().postDataJSON()?.p_club_id === clubId
+    );
+    await openPromo.click();
+    const promoResponse = await promoRead;
+    expect(promoResponse.status()).toBe(200);
+    const money = await promoResponse.json();
+    expect(money.authorized).toBe(true);
+    expect(money.club_promo_wallet).not.toBeNull();
+    const expectedPromo = Number(money.club_promo_wallet);
+    expect(Number.isFinite(expectedPromo)).toBe(true);
+    const promoDialog = page.getByRole('dialog', { name: 'Promo Wallet Cashier', exact: true });
+    const promoFigure = promoDialog.locator('.cbc-bank strong');
+    const printedPromo = expectedPromo.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    await expect(promoFigure).toHaveText(printedPromo, { timeout: 30_000 });
+    const ownPromo = promoDialog.getByRole('radio').filter({ hasText: 'My Promo Float' });
+    if (await ownPromo.count()) {
+      const ownFigure = await ownPromo.locator('strong').innerText();
+      await ownPromo.click();
+      await expect(promoFigure).toHaveText(ownFigure);
+      await promoDialog.getByRole('radio').filter({ hasText: 'Club Promo Wallet' }).click();
+      await expect(promoFigure).toHaveText(printedPromo);
+    }
+    await attachCashierScreenshot(page, testInfo, 'live-promo-account-balances-393');
+    await page.keyboard.press('Escape');
+    await expect(promoDialog).toBeHidden();
   });
 });

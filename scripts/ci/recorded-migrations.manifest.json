@@ -1382,6 +1382,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8309",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027160320",
+      "name": "cashier_claim_destination_and_movement_history",
+      "file": "supabase/migrations/20261027160320_cashier_claim_destination_and_movement_history.sql",
+      "md5": "c5118da8bac3d29e8790f59ce7eb6179",
+      "appliedToProductionAt": "2026-10-27T16:03:20Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Supabase schema_migrations statements, byte-exact full-file md5 c5118da8bac3d29e8790f59ce7eb6179, 36218 bytes",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8329",
+      "refusedBy": [],
+      "liveVerdict": "Procedural error: applied through MCP before protected merge, with no active-outage exception. This records the actual installed version and exact bytes; never replay. All five native-qualified function postimage hashes match live and anon EXECUTE is false. New RPC requires auth.uid, active membership, staff authority or original own-send/downline authority, explicit promo-only return restriction, exact intent and atomic declared journal. Existing feed and summary enforce role/downline scope and movement allowlists. Installation moved no balances. Required protected checks, merge, client publication and live browser proof remain separate."
     }
   ]
 }

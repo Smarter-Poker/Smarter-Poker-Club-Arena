@@ -9,21 +9,21 @@ import {
   tournamentPredicateInputIsValid,
   // @ts-expect-error standalone runtime helper is deliberately plain JavaScript
 } from '../../../../scripts/ci/horse-tournament-predicate-proof.mjs';
-import * as payout from '../../engine/HorseTournamentPayoutTerms';
-import * as provenance from '../../engine/HorseTournamentContextProvenance';
-import * as records from '../../services/horseDecisionJournal/record';
-import * as binding from '../../engine/HorseDecisionHandBinding';
-import * as review from '../../services/horseDecisionJournal/review';
-import * as validation from '../../engine/horseDecision/responseValidation';
-import * as witness from '../../engine/HorseExecutionWitness';
-import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol';
-import { remainingReferenceDeck } from '../../benchmark/RemainingVariantReference';
-import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support';
-import { HorseLogic } from '../../engine/HorseLogic';
-import { HorseMind } from '../../engine/HorseMind';
-import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame';
-import { seedFastRandom } from '../../engine/HorseEval';
-import { channelHub } from '../../hub/ChannelHub';
+import * as payout from '../../engine/HorseTournamentPayoutTerms.js';
+import * as provenance from '../../engine/HorseTournamentContextProvenance.js';
+import * as records from '../../services/horseDecisionJournal/record.js';
+import * as binding from '../../engine/HorseDecisionHandBinding.js';
+import * as review from '../../services/horseDecisionJournal/review.js';
+import * as validation from '../../engine/horseDecision/responseValidation.js';
+import * as witness from '../../engine/HorseExecutionWitness.js';
+import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol.js';
+import { remainingReferenceDeck } from '../../benchmark/RemainingVariantReference.js';
+import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support.js';
+import { HorseLogic } from '../../engine/HorseLogic.js';
+import { HorseMind } from '../../engine/HorseMind.js';
+import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
+import { seedFastRandom } from '../../engine/HorseEval.js';
+import { channelHub } from '../../hub/ChannelHub.js';
 const api = { ...payout, ...provenance, ...records, ...binding, ...review, ...validation };
 const source = 'a'.repeat(40),
   table = '12345678-abcd-4321-abcd-123456789abc',

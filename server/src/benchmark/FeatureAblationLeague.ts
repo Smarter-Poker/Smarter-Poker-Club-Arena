@@ -22,6 +22,7 @@ import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContrac
 import { isJointHoldoutSeed } from './JointStrengthContract.js';
 import { PLO6_V24_DEVELOPMENT_DESIGN } from './Plo6V24Qualification.js';
 import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationContract.js';
+import { INCREMENTAL_RESERVED_HOLDOUT_SEEDS } from './IncrementalPressureDevelopment.js';
 
 export interface FeatureAblationSpec {
   id: string;
@@ -124,7 +125,13 @@ export function assertAblationArms(spec: FeatureAblationSpec): void {
   const keys = [...new Set([...Object.keys(spec.candidate), ...Object.keys(spec.reference)])];
   if (
     keys.length !== 1 ||
-    !['v24PloDefense', 'v53Pressure'].includes(keys[0]) ||
+    ![
+      'v24PloDefense',
+      'v53Pressure',
+      'comboDrawPressure',
+      'v54RiverBluff',
+      'riverPositionDefense',
+    ].includes(keys[0]) ||
     Object.values(spec.candidate).some((v) => typeof v !== 'boolean') ||
     Object.values(spec.reference).some((v) => typeof v !== 'boolean') ||
     Object.keys(spec.candidate).length !== 1 ||
@@ -188,6 +195,7 @@ export async function runFeatureAblationDevelopment(
     isJointHoldoutSeed(seed) ||
     (PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds as readonly number[]).includes(seed) ||
     (V53_PRESSURE_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (INCREMENTAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     request.reservedSeeds?.includes(seed)
   )
     throw new Error('Development never deals a held-out or invalid seed');
@@ -226,6 +234,11 @@ export async function runFeatureAblationContract(
     assertProtectedFeatureAblationSource,
     featureQualificationCanonical: canonical,
   } = await import('./FeatureAblationQualification.js');
+  if (
+    !Object.hasOwn(spec.candidate, 'v24PloDefense') &&
+    !Object.hasOwn(spec.candidate, 'v53Pressure')
+  )
+    throw new Error('Incremental candidate has no protected locked heldout plan');
   const target = Object.hasOwn(spec.candidate, 'v24PloDefense') ? 'plo6_v24' : 'v53_pressure';
   const plan = qualificationPlan(target);
   const cell = plan.matrix.find((c) => c.key === request.cellKey);

@@ -39,7 +39,13 @@ export interface FeatureAblationWorkerReceipt {
   observerReads: HorseObserverReadReceipt | null;
   decisionKey: string;
   actorSeat: number;
-  inputFlags: { v24PloDefense?: boolean; v53Pressure?: boolean };
+  inputFlags: {
+    v24PloDefense?: boolean;
+    v53Pressure?: boolean;
+    comboDrawPressure?: boolean;
+    v54RiverBluff?: boolean;
+    riverPositionDefense?: boolean;
+  };
   naturalSamplingKey: string;
   naturalRngBefore: number;
   controlledRngBefore: number;
@@ -344,6 +350,15 @@ export function createFeatureAblationWorker(
           inputFlags: {
             v24PloDefense: request.opts?.v24PloDefense,
             v53Pressure: request.opts?.v53Pressure,
+            ...(request.opts?.comboDrawPressure === undefined
+              ? {}
+              : { comboDrawPressure: request.opts.comboDrawPressure }),
+            ...(request.opts?.v54RiverBluff === undefined
+              ? {}
+              : { v54RiverBluff: request.opts.v54RiverBluff }),
+            ...(request.opts?.riverPositionDefense === undefined
+              ? {}
+              : { riverPositionDefense: request.opts.riverPositionDefense }),
           },
           naturalSamplingKey: validatedHorsePolicySamplingKey(request),
           naturalRngBefore: result.rngBefore,

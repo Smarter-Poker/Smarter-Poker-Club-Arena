@@ -356,5 +356,12 @@
         "combined": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
       }
     ]
+  },
+  "protectedWorkflowQualificationAudit": {
+    "reason": "Publication exposed a stale workflow pin after protected PR #8296. Reviewed its additive treasury-seat-gift input and original-hand/queued-entry native qualification steps, preserving the indexed rakeback qualification from PR #8288. No workflow, financial source, fixture, assertion or production status is changed by this binding correction.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "qualificationEvidence": "Existing Unpaid Lightning qualification run 40465468742 job 122059675777 passed the sealed inventory, original treasury gifts and old queued treasury entry steps; this pin correction does not claim production accounting closure."
   }
 }

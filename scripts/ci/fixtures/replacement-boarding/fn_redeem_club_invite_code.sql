@@ -168,7 +168,17 @@ BEGIN
   v_prev_invited := v_member.invited_by;
 
   UPDATE club_members
-     SET agent_id   = coalesce(agent_id, v_effective_agent),
+     SET agent_id   = CASE
+                        -- An owner placement nobody chose (made at join, Dan
+                        -- 2026-10-25) yields to the first invite, as no upline did.
+                        WHEN agent_id IS NULL
+                          OR (agent_id = (SELECT c.owner_id FROM clubs c WHERE c.id = p_club_id)
+                              AND invited_by IS NULL)
+                        THEN coalesce(v_effective_agent,
+                                      (SELECT c.owner_id FROM clubs c
+                                        WHERE c.id = p_club_id AND c.owner_id <> p_user_id))
+                        ELSE agent_id
+                      END,
          invited_by = coalesce(invited_by, v_inviter.id),
          status     = v_new_status,
          updated_at = now()
@@ -199,7 +209,9 @@ BEGIN
   v_changed := (v_prev_invited IS NULL AND v_member.invited_by IS NOT NULL
                 AND (v_prev_status = 'pending' OR v_member.created_at > now() - interval '1 hour'))
                OR (v_prev_status = 'pending' AND v_member.status <> 'pending')
-               OR (v_prev_agent IS NULL AND v_member.agent_id IS NOT NULL)
+               OR (v_member.agent_id IS DISTINCT FROM v_prev_agent
+                   AND v_member.agent_id IS DISTINCT FROM
+                       (SELECT c.owner_id FROM clubs c WHERE c.id = p_club_id))
                OR v_attr.id IS NOT NULL;
   SELECT code INTO v_link_code FROM club_invite_links
    WHERE club_id = p_club_id AND inviter_id = v_inviter.id;

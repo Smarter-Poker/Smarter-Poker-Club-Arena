@@ -392,6 +392,7 @@ import {
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
+import { horseEntryCapRefusalContext } from './horseEntryCapRefusalContext.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 
 /**
@@ -7486,6 +7487,7 @@ export class TournamentRecurringService {
           failures.set('entry_refusal_backoff', (failures.get('entry_refusal_backoff') || 0) + 1);
           continue;
         }
+        const attemptedAt = new Date().toISOString();
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           {
@@ -7499,6 +7501,13 @@ export class TournamentRecurringService {
         );
 
         if (regError) {
+          const capRefusal = horseEntryCapRefusalContext(
+            regError,
+            tournamentId,
+            horse.id,
+            attemptedAt
+          );
+          if (capRefusal) console.warn(capRefusal);
           failures.set(regError.message, (failures.get(regError.message) || 0) + 1);
           this.horseEntryBackoff.refused(tournamentId, horse.id);
           // The database did not answer: every further call would be one more

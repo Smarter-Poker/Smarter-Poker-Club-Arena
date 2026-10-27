@@ -1,0 +1,9 @@
+# PLO6 river discipline can reduce a raise to the call
+
+The full engine check for horse PR #8191 rejected one PLO6 worker decision against the newly merged phase activation. A bounded local replay captured two synthetic decisions where the existing V58 river-nut rule reduced a raise to a call. The graph recorded the call correctly, but `policyGraphIsValid` admitted only aggression or the existing fold exceptions in the final `wager_rules` node. It refused that legitimate call, so a live caller could replace it with the safety fold.
+
+The integrated validator preserves the newer protected-main PLO6 river call check: when request context is available it requires one river board, six hole cards, a legal call below the stack, and the exact rounded amount owed, following a raise or all-in. Retained context-free receipts still require the sized positive call and PLO6 transition. This covers both the paired V58 and unpaired V59 rule. Other games, checks, a bet-to-call transition, and unsized or zero calls remain refused. Graph order, predecessor equality, final-action binding, phase ownership and the authoritative action gate remain intact; no strategy or qualification selection changes.
+
+A retained synthetic canonical worker request deterministically reproduces the failure with its original decision key and sampling seed. The new regression fails on the previous validator at both the public shape and the actual worker receipt, while the negative controls pass. It passes after the repair. The original owner activation assertion remains unchanged.
+
+During conflict recovery, the newer protected-main validator and refusal classifier were retained byte for byte. The older broad PLO6 call exception from this branch was removed; this integration adds only the remaining Phase 6 whole-stack call-off acceptance and its regressions.

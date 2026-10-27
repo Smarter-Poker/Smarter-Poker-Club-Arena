@@ -12,14 +12,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: var(--sp-tabbar-pad-bottom) 12px;
   /* THE NOTCH IS PAID ONCE, BY WHOEVER TOUCHES y = 0.
      `--sp-tabbar-inset` is set to 0px by TournamentStartingTicker while the
      ticker is the topmost strip (no global header, i.e. /table/*): it has paid
      the inset itself, and paying it again here is the ~47px double band that
      has been fixed once already in this same relationship. With no ticker up
      the property is absent and the fallback is the real inset. */
-  padding-top: calc(6px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
+  padding-top: calc(var(--sp-tabbar-pad-top) + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
   /* Dan 2026-08-30: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
      SAME COLOR. (INCLUDING THE ACTION TAB AREA.)"
 
@@ -35,7 +35,7 @@
      viewport to size the felt. Removing it would have silently changed that
      height; colouring it removes the seam without touching the number. */
   border-bottom: 1px solid #000;
-  min-height: 48px;
+  min-height: var(--sp-tabbar-band);
   -webkit-tap-highlight-color: transparent;
   z-index: 200;
   position: relative;
@@ -55,13 +55,26 @@
    It is on :root because `.table-container` is not a descendant of this bar
    and cannot see a property declared on it.
 
-   The value is this rule's own SUM, not its min-height: 36px pill + 6px top
-   pad + 6px bottom pad + 1px border = 49, which is above the 48px floor. If a
-   pill height, a pad or the border moves, change this in the same commit and
-   re-do the sum. */
+   Shared dimensions own both the rendered controls and the felt reserve.
+   October 26: enlarging only <=480px left wider phones/table windows tiny.
+   Keep the control size and deliberate lower placement at EVERY width. */
 :root {
+  --sp-tabbar-control: 52px;
+  --sp-tabbar-pad-top: 16px;
+  --sp-tabbar-pad-bottom: 8px;
+  --sp-tabbar-band: calc(
+    var(--sp-tabbar-control) + var(--sp-tabbar-pad-top) + var(--sp-tabbar-pad-bottom)
+  );
   --sp-tabbar-safe-top: env(safe-area-inset-top, 0px);
-  --sp-tabbar-h: calc(49px + var(--sp-tabbar-safe-top));
+  --sp-tabbar-h: calc(var(--sp-tabbar-band) + 1px + var(--sp-tabbar-safe-top));
+}
+
+/* Menu artwork and its actual target grow together, at every breakpoint. */
+.table-tab-bar__menu-container .table-menu__trigger {
+  width: var(--sp-tabbar-control);
+  height: var(--sp-tabbar-control);
+  min-width: var(--sp-tabbar-control);
+  min-height: var(--sp-tabbar-control);
 }
 
 /* The white sheen that used to run along this bar's bottom edge is gone with
@@ -121,7 +134,7 @@
   gap: 6px;
   min-width: 100px;
   max-width: 160px;
-  height: 36px;
+  height: var(--sp-tabbar-control);
   padding: 0 14px;
   border: 1.5px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
@@ -418,8 +431,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--sp-tabbar-control);
+  height: var(--sp-tabbar-control);
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -478,33 +491,33 @@
   z-index: 300;
 }
 
-/* Mobile controls share a 44px touch height (owner correction October 26).
-   At 375px, allow 44px Lobby + 52px tracker + 8px padding + 44px menu +
-   2px menu margin + 4px gap + 6px pill gaps + 8px rounding slack = 168px.
-   Four inactive pills cap at 51.75px; the active label may use 55px. Wider
+/* Mobile controls share the same 52px height as wider table windows.
+   At 375px, allow 52px Lobby + 52px tracker + 8px padding + 52px menu +
+   1px menu margin + 4px gap + 6px pill gaps + 8px rounding slack = 183px.
+   Four inactive pills cap at 48px; the active label may use 55px. Wider
    card previews and very narrow phones use the existing horizontal scroller. */
 
 @media (max-width: 480px) {
   .table-tab-bar {
     /* Horizontal padding here is width the four pills do not get. */
-    padding: 0 4px;
+    padding: var(--sp-tabbar-pad-bottom) 4px;
     /* SAME RULE AS THE BASE, AND IT HAS TO BE. 2026-08-30 audit: the base rule
        was moved to `var(--sp-tabbar-inset, env(...))` so the notch is paid once
        by whichever strip touches y=0 - and THIS override was left on the raw
        env(), so the double-inset it fixed survived below 480px. 375px is the
        design width, so the fix applied everywhere except the screens that have
        a notch in the first place. */
-    padding-top: calc(0px + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
+    padding-top: calc(var(--sp-tabbar-pad-top) + var(--sp-tabbar-inset, var(--sp-tabbar-safe-top)));
     gap: 4px;
-    /* Spend the former padding on the 44px controls, keeping the table canvas stable. */
-    min-height: 44px;
+    /* Reserve the full shared band, including the deliberate lower placement. */
+    min-height: var(--sp-tabbar-control);
     border-bottom: 0;
   }
 
-  /* The 44px controls fill this band. The two black separator borders and
-     vertical padding are absent on phones, so the table keeps its prior reserve. */
+  /* The shared controls and padding fill this band. The two black separator
+     borders are absent on phones; the static reserve follows the same tokens. */
   :root {
-    --sp-tabbar-h: calc(44px + var(--sp-tabbar-safe-top));
+    --sp-tabbar-h: calc(var(--sp-tabbar-band) + var(--sp-tabbar-safe-top));
   }
 
   .table-tab-bar__tabs {
@@ -513,27 +526,34 @@
 
   /* Enlarge the real trigger and its approved artwork together. */
   .table-tab-bar__menu-container .table-menu__trigger {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--sp-tabbar-control);
+    height: var(--sp-tabbar-control);
+    min-width: var(--sp-tabbar-control);
+    min-height: var(--sp-tabbar-control);
     border-radius: 8px;
   }
 
   .table-tab-bar__menu-container {
-    margin-right: 2px;
+    margin-right: 1px;
   }
 
   .table-tab-bar__tab {
     /* The width budget above keeps four ordinary tabs reachable. */
     min-width: 44px;
-    max-width: calc((100vw - 168px) / 4);
-    height: 44px;
+    max-width: calc((100vw - 183px) / 4);
+    height: var(--sp-tabbar-control);
     padding: 0 3px;
     gap: 2px;
     border-width: 1px;
     font-size: 0.75rem;
     border-radius: 17px;
+  }
+
+  /* Font metrics vary across Safari platforms. Label pills may share the
+     available strip down to their 44px target floor; card previews keep the
+     base non-shrinking rule so every private card remains whole. */
+  .table-tab-bar__tab:not(.table-tab-bar__tab--cards) {
+    flex-shrink: 1;
   }
 
   /* No close-button reserve remains; keep the active label legible. */
@@ -543,7 +563,7 @@
 
   .table-tab-bar__tab-sub {
     /* A secondary line remains smaller than the 12px game label. */
-    font-size: 0.5625rem;
+    font-size: 0.6875rem;
     letter-spacing: 0;
   }
 
@@ -629,8 +649,8 @@
   }
 
   .table-tab-bar__add {
-    width: 44px;
-    height: 44px;
+    width: var(--sp-tabbar-control);
+    height: var(--sp-tabbar-control);
     font-size: 1.1rem;
   }
 
@@ -666,7 +686,7 @@
      190 = the 168 above + 22 for the chip. Both moved together on 2026-09-07
      (148 was 154); they are one budget stated twice and must never disagree. */
   .table-tab-bar__offline ~ .table-tab-bar__tabs .table-tab-bar__tab {
-    max-width: calc((100vw - 190px) / 4);
+    max-width: calc((100vw - 205px) / 4);
   }
 }
 
@@ -694,7 +714,7 @@
 
 /* Same source-order trap as __tab-sub above (2026-08-28). The <=480px block
    earlier in this file shrinks the chip to `3px 5px` + `4px` margin, and the
-   four-tab width reserve is computed from that: `calc((100vw - 190px) / 4)`,
+   four-tab width reserve is computed from that: `calc((100vw - 205px) / 4)`,
    where the 190 is 168 + 22 and the comment states the 22 outright — "even
    shrunk to its dot the offline chip is 18px plus a 4px margin". The base
    rule was winning at ~28px + 8px, overrunning the reserve by 14px, and the
@@ -759,7 +779,7 @@
 }
 
 .table-tab-bar__tab-sub {
-  font-size: 0.575rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.45);
   letter-spacing: 0.02em;
@@ -782,7 +802,7 @@
    base, so the phone value is the one that survives. */
 @media (max-width: 480px) {
   .table-tab-bar__tab-sub {
-    font-size: 0.5625rem;
+    font-size: 0.6875rem;
     letter-spacing: 0;
   }
 }
@@ -937,7 +957,7 @@
 .table-tab-bar__tab-label .table-tab-bar__tab-name {
   font-weight: 800;
   letter-spacing: 0.02em;
-  font-size: 0.8125rem;
+  font-size: 1rem;
   line-height: 1.15;
 }
 
@@ -948,7 +968,7 @@
      symmetric 13px close-control reserve is taken — which is the tighter of
      the two and therefore the one that sets this size. */
   .table-tab-bar__tab-label .table-tab-bar__tab-name {
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     letter-spacing: 0;
   }
 }
@@ -978,7 +998,7 @@
 
 @media (max-width: 480px) {
   .table-tab-bar__tab-label .table-tab-bar__tab-name--event {
-    font-size: 0.5625rem;
+    font-size: 0.6875rem;
   }
 }
 
@@ -1061,5 +1081,24 @@
 @media (max-width: 480px) and (display-mode: standalone) and (orientation: portrait) {
   :root {
     --sp-tabbar-safe-top: max(60px, env(safe-area-inset-top, 0px));
+  }
+}
+
+/* Short occupied phones need the same large controls without squeezing the
+   player/card lanes. Keep an 8px lower inset and use the former bottom air. */
+@media (max-width: 375px) and (max-height: 700px) and (orientation: portrait) {
+  :root {
+    --sp-tabbar-pad-top: 8px;
+    --sp-tabbar-pad-bottom: 0px;
+  }
+}
+
+/* The smallest short phone retains its existing accessible 44px band: even
+   four extra pixels crowd its six-seat dealer/board lane. Standard phone and
+   wider table views use the enlarged controls and lower insets above. */
+@media (max-width: 340px) and (max-height: 650px) and (orientation: portrait) {
+  :root {
+    --sp-tabbar-control: 44px;
+    --sp-tabbar-pad-top: 0px;
   }
 }

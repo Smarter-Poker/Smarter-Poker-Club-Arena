@@ -121,7 +121,8 @@ describe('the four-table limit is enforced in the database', () => {
  */
 describe('a booking counts, and is claimed atomically', () => {
   it('creates a BEFORE trigger on tournament_players', () => {
-    const sql = bookingRule();
+    // Function-only replacements preserve the original trigger installation.
+    const sql = enforcementInstall();
     expect(sql).toMatch(/CREATE TRIGGER trg_enforce_booking_game_cap/);
     expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF status ON public\.tournament_players/);
   });
@@ -129,7 +130,15 @@ describe('a booking counts, and is claimed atomically', () => {
   it('scopes the trigger to status, so the 5s chip sync never pays for it', () => {
     // `BEFORE INSERT OR UPDATE` unqualified would fire on every chips write
     // for every live entrant every five seconds.
-    expect(bookingRule()).not.toMatch(/BEFORE INSERT OR UPDATE ON public\.tournament_players/);
+    expect(enforcementInstall()).not.toMatch(
+      /BEFORE INSERT OR UPDATE ON public\.tournament_players/
+    );
+  });
+
+  it('checks new RUNNING late entries before the paid chair is honoured', () => {
+    expect(code(bookingRule())).toMatch(
+      /v_tstatus NOT IN \('ANNOUNCED', 'REGISTERING', 'RUNNING'\)/
+    );
   });
 
   it('refuses at four, not at five', () => {

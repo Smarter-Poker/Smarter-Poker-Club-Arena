@@ -859,7 +859,7 @@ describe('HorseLogic V2 - performance budget', () => {
 import { HorseMind } from './HorseMind.js';
 import { decidePreflopV7 } from './HorsePreflop.js';
 import { simulateEquity, omahaDrawQuality, variantInfo, type HiLoSplit } from './HorseEval.js';
-import { buyInBBFor, isActiveNow } from '../services/HorseBehavior.js';
+import { horseMaximumBuyIn, isActiveNow } from '../services/HorseBehavior.js';
 import type { ActionRecord } from '../types.js';
 
 describe('HorseMind V3 - opponent intelligence', () => {
@@ -1934,14 +1934,9 @@ describe('HorseLogic V8 - O8 quarter brake + NLH raise bluffs', () => {
 });
 
 describe('HorseBehavior V8 - join/leave personality helpers', () => {
-  it('buy-in profiles stay inside 40-200bb with real spread', () => {
-    const bbs = Array.from({ length: 400 }, (_, i) => buyInBBFor(`h-${i}-uuid`));
-    expect(Math.min(...bbs)).toBeGreaterThanOrEqual(40);
-    expect(Math.max(...bbs)).toBeLessThanOrEqual(200);
-    const short = bbs.filter((b) => b <= 60).length;
-    const deep = bbs.filter((b) => b >= 140).length;
-    expect(short).toBeGreaterThan(20); // short-stackers exist
-    expect(deep).toBeGreaterThan(40); // deep buyers exist
+  it('cash entries always choose the legal maximum', () => {
+    expect(horseMaximumBuyIn(200, 400)).toBe(400);
+    expect(horseMaximumBuyIn(200, 550.25)).toBe(550.25);
   });
 
   it('activity windows are deterministic and cover every hour', () => {

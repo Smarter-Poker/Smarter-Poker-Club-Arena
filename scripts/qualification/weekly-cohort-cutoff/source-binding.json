@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 239115,
-      "sha256": "d042f9205e32557d0f992301ce690fdac444a7ec10694dc2dc9173cc09dbab9a"
+      "bytes": 239346,
+      "sha256": "d4763691771f3b3433574b72e0ee61a74d80197f661c4be0da1d521292f19ce0"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -391,6 +391,21 @@
     "originalBranchWorkflowPin": {
       "bytes": 237557,
       "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
+    }
+  },
+  "cashHalfInputBinding20261026": {
+    "reason": "The reviewed cash-capacity change adds one native Accounting2 step and its exact runner routing. Update current enforcement source identity only; preserve historical receipts, qualification verdicts and financial fixtures/assertions. Not an execution or production certificate.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 238487,
+          "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+        },
+        "current": {
+          "bytes": 238718,
+          "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+        }
+      }
     }
   }
 }

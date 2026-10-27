@@ -89,9 +89,11 @@ describe('the league windows sit in the quietest hours (13:00 and 16:00 UTC)', (
 });
 
 describe('runLeague stands down while the lane is busy', () => {
+  const upserts: Array<Record<string, unknown>> = [];
   beforeEach(() => {
     fromMock.mockReset();
     rpcMock.mockReset();
+    upserts.length = 0;
     rpcMock.mockResolvedValue({ error: null });
     fromMock.mockImplementation(() => {
       const query = {
@@ -100,7 +102,10 @@ describe('runLeague stands down while the lane is busy', () => {
       };
       return {
         select: vi.fn(() => query),
-        upsert: vi.fn(async () => ({ error: null })),
+        upsert: vi.fn(async (row: Record<string, unknown>) => {
+          upserts.push(row);
+          return { error: null };
+        }),
       };
     });
   });
@@ -139,6 +144,51 @@ describe('runLeague stands down while the lane is busy', () => {
       shutdown: vi.fn(async () => undefined),
     } as unknown as HorseLeagueCompute;
   }
+
+  it.each([
+    { inert: true, bb100: 0, stderr: 0, divergentPairs: 0 },
+    // Zero variance is also inert even when the paired edge is nonzero.
+    { inert: true, bb100: 2, stderr: 0, divergentPairs: 1 },
+    // Rounded storage zeros must not override the worker's actual verdict.
+    { inert: false, bb100: 0.001, stderr: 0.001, divergentPairs: 1 },
+  ])('persists the worker measurement verdict with its raw result: %j', async (verdict) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-17T13:30:00Z'));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const c = compute();
+    const original = vi.mocked(c.runMatchup).getMockImplementation()!;
+    vi.mocked(c.runMatchup).mockImplementation(async (...args) => ({
+      ...(await original(...args)),
+      ...verdict,
+    }));
+    let calm = 2; // boot and one worker result, then stop without another simulation
+    const results = await runLeague(
+      '2026-10-17',
+      () => true,
+      () => c,
+      () => calm-- > 0
+    );
+    expect(results).toHaveLength(1);
+    expect(upserts).toHaveLength(1);
+    const row = upserts[0];
+    expect(row).toMatchObject({
+      matchup: results[0].matchup,
+      hands: 2,
+      bb100: Math.round(verdict.bb100 * 100) / 100,
+      stderr: Math.round(verdict.stderr * 100) / 100,
+      illegal_actions: 0,
+      status: verdict.inert ? 'inert' : 'measured',
+    });
+    if (verdict.inert) {
+      expect(row.refusal_reason).toEqual(expect.stringContaining('not a measurement'));
+      expect(row.refusal_reason).toEqual(expect.stringContaining(String(verdict.divergentPairs)));
+    } else {
+      // Explicit null clears an earlier inert reason on an upsert of this key.
+      expect(row.refusal_reason).toBeNull();
+    }
+  });
 
   it('runs no matchup while a decision waits', async () => {
     const c = compute();

@@ -32,24 +32,29 @@ def reference_cases(raw, expected):
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
     uuid = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     if (not isinstance(value, dict) or set(value) != {'version', 'sourceRelease', 'cases'}
-            or type(value['version']) is not int or value['version'] != 1
+            or type(value['version']) is not int or value['version'] not in (1, 2)
             or value['sourceRelease'] != expected
             or not re.fullmatch(r'[0-9a-f]{40}', expected)
             or not isinstance(value['cases'], list) or not 1 <= len(value['cases']) <= 6):
         raise ValueError('reference_cases_refused')
+    positive = value['version'] == 2
     seen = set()
     for case in value['cases']:
         if (not isinstance(case, dict) or set(case) != {
-                'handKey', 'tableId', 'errorAt', 'handId', 'handNumber', 'leaseGeneration'}
+                'handKey', 'tableId', 'decisionRecordSha256' if positive else 'errorAt', 'handId', 'handNumber', 'leaseGeneration'}
                 or not all(isinstance(case[k], str) and re.fullmatch(uuid, case[k])
                            for k in ('tableId', 'handId', 'leaseGeneration'))
                 or type(case['handNumber']) is not int or not 1 <= case['handNumber'] <= 9007199254740991
-                or not isinstance(case['errorAt'], str)
-                or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', case['errorAt'])
+                or (positive and case['decisionRecordSha256'] is not None
+                    and (not isinstance(case['decisionRecordSha256'], str)
+                        or not re.fullmatch(r'[0-9a-f]{64}', case['decisionRecordSha256'])))
+                or (not positive and (not isinstance(case['errorAt'], str)
+                    or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', case['errorAt'])))
                 or not isinstance(case['handKey'], str)
                 or not re.fullmatch(r'[0-9a-f]{64}', case['handKey'])):
             raise ValueError('reference_cases_refused')
-        datetime.datetime.fromisoformat(case['errorAt'].replace('Z', '+00:00'))
+        if not positive:
+            datetime.datetime.fromisoformat(case['errorAt'].replace('Z', '+00:00'))
         coordinate = case['tableId'] + ':' + str(case['handNumber']) + ':' + case['leaseGeneration']
         if hashlib.sha256(coordinate.encode('utf-8')).hexdigest() != case['handKey'] or case['handKey'] in seen:
             raise ValueError('reference_cases_refused')
@@ -125,6 +130,74 @@ export function inspectReferenceRecords(input, batch, api) {
   return {status:cases.every(c=>c.status==='observed')?'observed':'unknown',sourceRelease:input.sourceRelease,cases,
     rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
+// Version 2 observes one explicitly named successful decision. The original
+// reconciler owns the complete capture/execution/read-frame join, not this report.
+export function inspectAcceptedCalloffRecords(input, batch, api) {
+  const unknown = (c, reason) => ({handKey:c.handKey,status:'unknown',reason});
+  if (!batch || batch.sourceRelease !== input.sourceRelease || batch.status !== 'canonical_journal_export'
+      || !Array.isArray(batch.recordsByHand) || batch.recordsByHand.length !== input.cases.length)
+    return {status:'unknown',reason:'journal_source_or_shape_mismatch',sourceRelease:input.sourceRelease};
+  const cases=input.cases.map((c,index)=>{
+    try {
+      const entry=batch.recordsByHand[index], coordinate=`${c.tableId}:${c.handNumber}:${c.leaseGeneration}`;
+      if (!entry || entry.handKey!==c.handKey || !Array.isArray(entry.records)
+          || !entry.records.length || entry.records.length>256) return unknown(c,'journal_missing_or_bounds');
+      const seen=new Set(), decisions=[], executions=[], accepted=[];
+      for (const r of entry.records) {
+        api.validateHorseJournalRecord(r);
+        if (r.handKey!==c.handKey || r.sourceRelease!==input.sourceRelease || seen.has(r.eventId))
+          return unknown(c,'record_binding_or_duplicate');
+        seen.add(r.eventId);
+        if (r.kind==='decision' && (c.decisionRecordSha256===null || r.sha256===c.decisionRecordSha256)) {
+          const d=JSON.parse(r.body), p=d.snapshot?.player, g=d.snapshot?.gameState, ref=d.decision?.tournamentPreflopAttribution;
+          if (c.decisionRecordSha256!==null || (d.decision?.action==='all_in' && ref?.route==='variant_price'
+              && ref.referenceProposal?.action==='all_in' && ref.referenceProposal.amount===null
+              && Number.isFinite(p?.stack) && p.stack>0 && Number.isFinite(g?.currentBet)
+              && Number.isFinite(p.bet) && g.currentBet-p.bet>=p.stack)) decisions.push(r);
+        }
+        if (r.kind==='execution') executions.push(r);
+        if (r.kind==='accepted_hand') accepted.push(r);
+      }
+      if (accepted.length!==1) return unknown(c,'accepted_hand_missing_or_ambiguous');
+      if (decisions.length!==1) return unknown(c,decisions.length?'matching_decision_ambiguous':'matching_decision_missing');
+      const r=decisions[0], body=JSON.parse(r.body), s=body.snapshot, p=s.player, g=s.gameState;
+      const hand=JSON.parse(accepted[0].body), anchor=api.anchorHorseDecisionHand(s);
+      if (hand.committedHandId!==c.handId || api.horseCompletedHandKey(hand)!==coordinate
+          || accepted[0].turnKey!==c.handKey) return unknown(c,'accepted_hand_binding_mismatch');
+      if (anchor.status!=='anchored' || api.horseHandAnchorKey(anchor)!==coordinate)
+        return unknown(c,'original_snapshot_binding_mismatch');
+      const ref=body.decision.tournamentPreflopAttribution;
+      const toCall=Math.max(0,g.currentBet-p.bet);
+      if (body.decision.action!=='all_in' || !ref || ref.route!=='variant_price' || ref.referenceProposal?.action!=='all_in'
+          || ref.referenceProposal.amount!==null || !Number.isFinite(p.stack) || !(p.stack>0)
+          || !Number.isFinite(toCall) || !(toCall>=p.stack)) return unknown(c,'calloff_shape_not_observed');
+      if (api.horsePhase6AttributionMismatch(body.decision,s)!==null
+          || !api.horseDecisionReceiptIsValid(body.decision,g.gameVariant,{player:p,gameState:g}))
+        return unknown(c,'calloff_receipt_refused');
+      const sameTurn=executions.filter(e=>e.turnKey===r.turnKey && e.producerId===r.producerId);
+      if (sameTurn.length!==1) return unknown(c,'calloff_execution_missing_or_ambiguous');
+      const e=sameTurn[0], w=JSON.parse(e.body);
+      if (r.sequence>=e.sequence || w.executionStatus!=='intended' || w.retirementReason!==null
+          || w.policyFallback==='brain_exception' || w.selected?.action!=='all_in'
+          || w.executedAction!=='all_in' || w.acceptedActions?.length!==1
+          || w.acceptedActions[0].intended!==true || w.acceptedActions[0].record.action!=='all_in'
+          || api.bindHorseDecisionToCommittedHand(w,hand).status!=='bound')
+        return unknown(c,'calloff_execution_not_intended');
+      const review=api.reconcileHorseJournalHand(entry.records,c.handKey);
+      if (review.status!=='reconciled' || review.gaps.length || !(review.matchedActions>0)
+          || review.matchedActions!==review.acceptedHorseActions)
+        return unknown(c,'calloff_hand_not_reconciled');
+      return {handKey:c.handKey,status:'observed',sourceRelease:r.sourceRelease,
+        observation:'accepted_variant_price_whole_stack_calloff',decisionRecordSha256:r.sha256,
+        executionRecordSha256:e.sha256,acceptedRecordSha256:accepted[0].sha256,
+        decisionKeySha256:hash(s.decisionKey),guards:{recordHashVerified:true,originalHandBound:true,
+          exactDecisionBound:true,positiveStackCalloff:true,receiptValid:true,sameTurnExecution:true,
+          intendedAllInAccepted:true,handReconciled:true}};
+    } catch {return unknown(c,'record_or_validator_unavailable');}
+  });
+  return {version:2,status:cases.every(c=>c.status==='observed')?'observed':'unknown',
+    sourceRelease:input.sourceRelease,cases,rawRecordsExported:false,replayVerified:false,activationAllowed:false};
+}
 if (process.argv[1] === '--reference-shape-diagnostic') {
   try {
     let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
@@ -137,14 +210,66 @@ if (process.argv[1] === '--reference-shape-diagnostic') {
     // Match the existing private export CLI: this finite child owns no lobby timer.
     const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
     const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
-    console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
+    if (input.version===2) {
+      const review=await import('/app/dist/services/horseDecisionJournal/review.js');
+      const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
+      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation})));
+    } else console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
   } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
   process.exit(0);
 }
 '''
 
 
+def sanitize_positive_calloff_result(result, value):
+    reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
+               'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
+               'original_snapshot_binding_mismatch', 'accepted_hand_missing_or_ambiguous',
+               'matching_decision_ambiguous', 'matching_decision_missing',
+               'record_or_validator_unavailable', 'journal_or_runtime_unavailable',
+               'calloff_shape_not_observed', 'calloff_receipt_refused',
+               'calloff_execution_missing_or_ambiguous', 'calloff_execution_not_intended',
+               'calloff_hand_not_reconciled'}
+    if not isinstance(result, dict) or result.get('status') not in ('unknown', 'observed'):
+        raise ValueError()
+    if 'cases' not in result:
+        if (not set(result) <= {'status', 'reason', 'sourceRelease'} or result.get('status') != 'unknown'
+                or result.get('reason') not in reasons
+                or ('sourceRelease' in result and result['sourceRelease'] != value['sourceRelease'])):
+            raise ValueError()
+        return result
+    if (set(result) != {'version', 'status', 'sourceRelease', 'cases', 'rawRecordsExported', 'replayVerified', 'activationAllowed'}
+            or type(result['version']) is not int or result['version'] != 2
+            or result['sourceRelease'] != value['sourceRelease']
+            or any(result[k] is not False for k in ('rawRecordsExported', 'replayVerified', 'activationAllowed'))
+            or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError()
+    hashes = {'decisionRecordSha256', 'executionRecordSha256', 'acceptedRecordSha256', 'decisionKeySha256'}
+    guard_keys = {'recordHashVerified', 'originalHandBound', 'exactDecisionBound', 'positiveStackCalloff',
+                  'receiptValid', 'sameTurnExecution', 'intendedAllInAccepted', 'handReconciled'}
+    for case, original in zip(result['cases'], value['cases']):
+        if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
+            raise ValueError()
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in reasons:
+                raise ValueError()
+            continue
+        if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes
+                or case['status'] != 'observed' or case['sourceRelease'] != value['sourceRelease']
+                or case['observation'] != 'accepted_variant_price_whole_stack_calloff'
+                or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])
+                or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
+                or not isinstance(case['guards'], dict) or set(case['guards']) != guard_keys
+                or any(v is not True for v in case['guards'].values())):
+            raise ValueError()
+    if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
+        raise ValueError()
+    return result
+
+
 def sanitize_reference_result(result, value):
+    if value['version'] == 2:
+        return sanitize_positive_calloff_result(result, value)
     unknown_reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                        'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
                        'original_snapshot_binding_mismatch', 'accepted_hand_missing_or_ambiguous',
@@ -366,6 +491,97 @@ def worker_receipt_errors(raw):
     return result
 
 
+def tournament_yields(raw):
+    """Only the original successful tournament-departure event, never nearby text.
+
+    Prefixes are the reporter's actual eight hex characters, not full IDs.
+    A pending hand-boundary leave is not a completed cashout receipt.
+    """
+    result = {'matchingRecords': 0, 'events': [], 'eventsTruncated': False,
+              'cashoutCompletionProven': False}
+    expression = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) '
+        r'\[SessionRotator\] horse=([0-9a-f]{8}) leaving table=([0-9a-f]{8}) '
+        r'for a tournament in ([0-9]{1,3}) min '
+        r'\((certain|hazard_fired), ([1-9][0-9]{0,2}) over four games\)$')
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        match = expression.fullmatch(line)
+        if not match:
+            continue
+        try:
+            datetime.datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+        except ValueError:
+            continue
+        result['matchingRecords'] += 1
+        if len(result['events']) == 128:
+            result['events'].pop(0)
+            result['eventsTruncated'] = True
+        result['events'].append({'timestamp': match.group(1),
+            'horseIdPrefix': match.group(2), 'tableIdPrefix': match.group(3),
+            'minutesToStart': int(match.group(4)), 'reason': match.group(5),
+            'excess': int(match.group(6))})
+    return result
+
+
+def booking_cap_refusals(raw):
+    """Typed original caller failures, not generic 23514 or nearby tournament text."""
+    result = {'matchingRecords': 0, 'events': [], 'eventsTruncated': False,
+              'runningEntryProven': False}
+    uuid = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+    expression = re.compile(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z) '
+        r'\[TournamentRecurring\] horse_entry_cap_refused (\{[^\r\n]*\})$')
+
+    def unique_object(pairs):
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError('duplicate field')
+        return value
+
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        match = expression.fullmatch(line)
+        if not match:
+            continue
+        try:
+            value = json.loads(match.group(2), object_pairs_hook=unique_object)
+            if (set(value) != {'version', 'tournamentId', 'horseId', 'sqlstate', 'load', 'attemptedAt'} or
+                    type(value['version']) is not int or value['version'] != 1 or
+                    value['sqlstate'] != '23514' or type(value['load']) is not int or
+                    not 4 <= value['load'] <= 2147483647 or
+                    not all(isinstance(value[k], str) and uuid.fullmatch(value[k])
+                            for k in ('tournamentId', 'horseId')) or
+                    not isinstance(value['attemptedAt'], str) or
+                    not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z', value['attemptedAt'])):
+                continue
+            logged = datetime.datetime.fromisoformat(match.group(1).replace('Z', '+00:00'))
+            attempted = datetime.datetime.fromisoformat(value['attemptedAt'].replace('Z', '+00:00'))
+            if attempted > logged:
+                continue
+        except (ValueError, TypeError, KeyError):
+            continue
+        result['matchingRecords'] += 1
+        if len(result['events']) == 128:
+            result['events'].pop(0)
+            result['eventsTruncated'] = True
+        result['events'].append({'timestamp': match.group(1),
+            'attemptedAt': value['attemptedAt'], 'horseIdPrefix': value['horseId'][:8],
+            'tournamentIdPrefix': value['tournamentId'][:8], 'sqlstate': '23514',
+            'load': value['load']})
+    return result
+
+
+def merge_bounded_events(target, addition):
+    target['matchingRecords'] += addition['matchingRecords']
+    combined = target['events'] + addition['events']
+    target['eventsTruncated'] = (target['eventsTruncated'] or
+                                addition['eventsTruncated'] or len(combined) > 128)
+    target['events'] = combined[-128:]
+
+
 def merge_worker_receipt_errors(target, addition):
     target['matchingRecords'] += addition['matchingRecords']
     combined = target['events'] + addition['events']
@@ -560,6 +776,8 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     deadline = time.monotonic() + seconds
     signals = {}
     worker_errors = worker_receipt_errors('')
+    yields = tournament_yields('')
+    cap_refusals = booking_cap_refusals('')
     block = []
     pending = b''
     dropping = False
@@ -587,6 +805,10 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 flush_block()
             return
         line = raw.decode('utf-8', errors='replace')
+        if '[SessionRotator] horse=' in line:
+            merge_bounded_events(yields, tournament_yields(line))
+        if '[TournamentRecurring] horse_entry_cap_refused ' in line:
+            merge_bounded_events(cap_refusals, booking_cap_refusals(line))
         stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
         if stamp:
             try:
@@ -637,6 +859,8 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
         if block:
             flush_block()
         return {'signals': signals, 'workerReceiptErrors': worker_errors,
+                'tournamentYields': yields,
+                'bookingCapRefusals': cap_refusals,
                 'coverage': {'status': outcome,
                 'bytesRead': total, 'recordsRead': records,
                 'oldestTimestamp': oldest + 'Z' if oldest else None,
@@ -790,7 +1014,7 @@ def main(expected, selected_cases=None):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

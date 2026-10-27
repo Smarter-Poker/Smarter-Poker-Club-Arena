@@ -194,6 +194,9 @@ export async function readNaturalMultiRunHistory(
 export async function installNaturalMultiRunWitness(page: Page) {
   await page.addInitScript(() => {
     const hands: Record<string, any> = {};
+    const confirmations: Record<string, any[]> = {};
+    let finalBanner: { node: Element; text: string; hand: number; entry: any } | null = null;
+    let activeResultKey: string | null = null;
     const flights = new Map<string, any>();
     const active = new Map<string, { chip: HTMLElement; id: string }>();
     const targets = new Map<
@@ -268,6 +271,26 @@ export async function installNaturalMultiRunWitness(page: Page) {
       );
       const lanes = Array.from(table?.querySelectorAll('.community-area__run') ?? []);
       const now = Date.now();
+      // Measure the actual rendered confirmation, including removal and any
+      // repeat. The observer never drives a consent response or a hand.
+      const banner = table?.querySelector('.rit-felt-banner') ?? null;
+      const bannerText = banner?.textContent?.trim() ?? '';
+      const isFinal =
+        /^(?:Players Have Accepted Running It|Mandatory Run It) (?:Twice|3 Times)/.test(bannerText);
+      if (
+        finalBanner &&
+        (finalBanner.node !== banner ||
+          finalBanner.text !== bannerText ||
+          finalBanner.hand !== hand)
+      ) {
+        finalBanner.entry.hiddenAt = now;
+        finalBanner = null;
+      }
+      if (banner && isFinal && hand > 0 && !finalBanner) {
+        const entry = { text: bannerText, shownAt: now, hiddenAt: null };
+        (confirmations[String(hand)] ??= []).push(entry);
+        finalBanner = { node: banner, text: bannerText, hand, entry };
+      }
       const key =
         hand > 0 && (lanes.length === 2 || lanes.length === 3) ? `${hand}:${lanes.length}` : null;
       // The next hand has been dealt: every board of the last one must have
@@ -278,8 +301,18 @@ export async function installNaturalMultiRunWitness(page: Page) {
           if (record.hand === currentHand) finalize(`${record.hand}:${record.runs}`);
         currentHand = hand;
       }
+      if (activeResultKey && activeResultKey !== key) {
+        hands[activeResultKey].resultEndedAt ??= now;
+      }
+      activeResultKey = key;
       if (key) {
-        const record = (hands[key] ??= { hand, runs: lanes.length, firstAt: now, lanes: [] });
+        const record = (hands[key] ??= {
+          hand,
+          runs: lanes.length,
+          firstAt: now,
+          resultEndedAt: null,
+          lanes: [],
+        });
         lanes.forEach((lane, index) => {
           const witness = (record.lanes[index] ??= { pendingAt: null, winnerAt: null });
           const count = lane.querySelectorAll('.community-cards__card').length;
@@ -350,6 +383,7 @@ export async function installNaturalMultiRunWitness(page: Page) {
     (window as any).__naturalMultiRunWitness = {
       read: () => ({
         hands: Object.values(hands),
+        confirmations,
         flights: Array.from(flights.values()).filter((f) => f.landedAt),
         unlandedFlights: Array.from(flights.values()).filter((f) => !f.landedAt),
         violations: [...violations],
@@ -399,6 +433,45 @@ export function completedNaturalRuns(packets: NaturalRunPacket[], witness: any) 
       flights.some((flight: any) => flight.recipient === recipient && flight.distance <= 2)
     );
   });
+}
+
+/** Foreground, default-speed natural proof of the two requested timing changes. */
+export function naturalMultiRunTiming(packet: NaturalRunPacket, witness: any) {
+  const hand = witness.hands.find(
+    (item: any) => item.hand === packet.hand && item.runs === packet.runs
+  );
+  const confirmations = witness.confirmations?.[String(packet.hand)] ?? [];
+  const violations: string[] = [];
+  if (confirmations.length > 1) violations.push('Run Confirmation Repeated');
+  const confirmation = confirmations[0];
+  const confirmationMs =
+    confirmation?.hiddenAt == null ? null : confirmation.hiddenAt - confirmation.shownAt;
+  if (confirmationMs !== null && (confirmationMs < 1400 || confirmationMs > 1900)) {
+    violations.push('Run Confirmation Did Not Clear At 1500ms');
+  }
+  const winnerAt = (hand?.lanes ?? []).map((lane: any) => lane.winnerAt);
+  const complete =
+    winnerAt.length === packet.runs && winnerAt.every((at: any) => typeof at === 'number');
+  const resultGapsMs = complete
+    ? winnerAt.slice(1).map((at: number, index: number) => at - winnerAt[index])
+    : [];
+  if (resultGapsMs.some((ms: number) => ms < 4000 || ms > 4700)) {
+    violations.push('Winning Card Result Did Not Receive Its Additional 1500ms');
+  }
+  const lastResultMs =
+    complete && hand?.resultEndedAt != null
+      ? hand.resultEndedAt - winnerAt[winnerAt.length - 1]
+      : null;
+  if (lastResultMs !== null && lastResultMs < 4000)
+    violations.push('Final Winning Cards Cleared Early');
+  return {
+    ready:
+      confirmations.length === 1 && confirmationMs !== null && complete && lastResultMs !== null,
+    violations,
+    confirmationMs,
+    resultGapsMs,
+    lastResultMs,
+  };
 }
 
 /** Use the immutable deployment identity; version is only a display label. */

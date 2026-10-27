@@ -106,6 +106,16 @@ export function scoreboardWindows(since, through, userId) {
   return windows;
 }
 
+/** One read-only snapshot binds every partition to the same current roster. */
+export function scoreboardReportSQL(since, through, userId) {
+  const statements = scoreboardWindows(since, through, userId).map((w) =>
+    scoreboardSQL(w.since, w.through, userId)
+      .replace(/^BEGIN READ ONLY;\n/, '')
+      .replace(/\nCOMMIT;\n$/, '')
+  );
+  return `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;\n${statements.join('\n')}\nCOMMIT;\n`;
+}
+
 export function mergeScoreboards(reports, since, through, userId) {
   const windows = scoreboardWindows(since, through, userId);
   userId = userId?.toLowerCase();
@@ -273,6 +283,12 @@ export function runScoreboard(args) {
       output:
         'Usage: node scripts/horse-human-scoreboard.mjs --sql|--sql-windows|--run <since-UTC> <through-UTC> [player-UUID]\n',
     };
+  // Only finite stage codes leave this boundary. Neither provider stderr nor
+  // exception text is safe to publish: either may contain connection details.
+  let reason = 'invalid_input',
+    partition = 0,
+    completedPartitions = 0,
+    sqlstate = null;
   try {
     const windows = scoreboardWindows(args[1], args[2], args[3]);
     if (args[0] === '--sql') return { code: 0, output: scoreboardSQL(args[1], args[2], args[3]) };
@@ -284,21 +300,35 @@ export function runScoreboard(args) {
             windows.map((w) => ({ ...w, sql: scoreboardSQL(w.since, w.through, args[3]) }))
           ) + '\n',
       };
-    const reports = [],
-      deadline = Date.now() + 90000;
+    const deadline = Date.now() + 90000;
+    reason = 'connection_configuration';
     const connectionEnvironment = scoreboardConnectionEnvironment(process.env);
-    for (const w of windows) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) throw Error('Report deadline exceeded');
-      const result = spawnSync('psql', ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], {
+    reason = 'query_failed';
+    const result = spawnSync(
+      'psql',
+      ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose'],
+      {
         env: connectionEnvironment,
-        input: scoreboardSQL(w.since, w.through, args[3]),
+        input: scoreboardReportSQL(args[1], args[2], args[3]),
         encoding: 'utf8',
-        timeout: Math.min(10000, remaining),
+        timeout: Math.max(1, deadline - Date.now()),
         maxBuffer: 8 * 1024 * 1024,
-      });
-      if (result.error || result.status !== 0) throw Error('Query failed');
-      const report = JSON.parse(result.stdout.trim());
+      }
+    );
+    const lines = result.stdout?.trim().split(/\r?\n/).filter(Boolean) ?? [];
+    completedPartitions = Math.min(lines.length, windows.length);
+    partition = Math.min(completedPartitions + 1, windows.length);
+    if (result.error || result.status !== 0) {
+      if (result.error?.code === 'ETIMEDOUT') reason = 'report_deadline';
+      else if (result.error?.code === 'ENOENT') reason = 'query_client_missing';
+      const state = result.stderr?.match(/(?:ERROR|FATAL):\s+([0-9A-Z]{5}):/)?.[1];
+      if (['57014', '42P01', '42501', '28P01', '53300', '57P01', '08006', '08001'].includes(state))
+        sqlstate = state;
+      throw Error('Query failed');
+    }
+    reason = 'query_response';
+    const reports = lines.map((line) => JSON.parse(line));
+    for (const [index, report] of reports.entries()) {
       if (report.status === 'incomplete_row_limit')
         return {
           code: 2,
@@ -307,18 +337,25 @@ export function runScoreboard(args) {
               status: 'incomplete_row_limit',
               since: args[1],
               through: args[2],
-              failedWindow: w,
+              failedWindow: windows[index],
               scores: [],
             }) + '\n',
         };
-      reports.push(report);
     }
+    reason = 'receipt_validation';
     const report = mergeScoreboards(reports, args[1], args[2], args[3]);
     return { code: 0, output: JSON.stringify(report) + '\n' };
   } catch {
     return {
       code: 3,
-      output: 'Scoreboard unavailable; invalid window, failed query or incomplete receipts.\n',
+      output:
+        JSON.stringify({
+          status: 'unavailable',
+          reason,
+          sqlstate,
+          partition,
+          completed_partitions: completedPartitions,
+        }) + '\n',
     };
   }
 }

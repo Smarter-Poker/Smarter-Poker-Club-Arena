@@ -92,6 +92,7 @@ function manager(extra: Record<string, unknown> = {}) {
 function oneBustOutOf(playing: number) {
   const from = vi
     .spyOn(supabase, 'from')
+    .mockReturnValueOnce(answer({ data: [], error: null }) as never)
     .mockReturnValueOnce(answer({ data: [{ user_id: 'loser', chips: 0 }], error: null }) as never)
     .mockReturnValueOnce(answer({ count: playing, error: null }) as never)
     .mockReturnValueOnce(answer({ data: [], count: 0, error: null }) as never)
@@ -130,6 +131,7 @@ describe('a decided field runs from its last bust to its finish in one admission
     vi.useFakeTimers();
     vi.spyOn(supabase, 'from')
       .mockReturnValueOnce(answer({ data: [], error: null }) as never)
+      .mockReturnValueOnce(answer({ data: [], error: null }) as never)
       .mockReturnValueOnce(answer({ count: 1, error: null }) as never)
       .mockReturnValueOnce(answer({ data: { user_id: 'winner' }, error: null }) as never);
     const m = manager({ fieldDecidedDeclared: true });
@@ -158,7 +160,7 @@ describe('a decided field runs from its last bust to its finish in one admission
     expect(m.finishTournament).not.toHaveBeenCalled();
     expect(m.requestEliminationSweep).toHaveBeenCalledOnce();
     expect(m.eliminationSweepCursor.nextStage).toBe(2);
-    // Five bust-stage reads; the finish stage never asked for its count.
-    expect(from).toHaveBeenCalledTimes(5);
+    // One canonical inbox read plus five bust-stage reads; no finish-stage count.
+    expect(from).toHaveBeenCalledTimes(6);
   });
 });

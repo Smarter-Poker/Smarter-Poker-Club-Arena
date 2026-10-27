@@ -333,7 +333,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     fx.rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_club_cashier_members')
         return { data: [member(PLAYER, claimed ? 500 : 1000, 'player')], error: null };
-      if (name === 'fn_club_bank_claim_back') {
+      if (name === 'fn_club_wallet_claim_back') {
         claimed = true;
         return { data: { success: true }, error: null };
       }

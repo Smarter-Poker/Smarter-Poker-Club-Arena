@@ -137,6 +137,11 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { useFitText } from '../components/lobby/game-cards/useFitText';
+import {
+  claimReturnWallets,
+  CLAIM_DESTINATION_LABELS,
+  type ClaimDestination,
+} from '../components/wallet/claimReturnWallets';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips, formatWalletChips } from '../utils/format';
 import {
@@ -453,13 +458,11 @@ type HistoryKind = 'all' | 'cashout' | 'transfer' | 'game';
 type HistoryRange = 'all' | 'today' | '7d' | '30d';
 
 const HISTORY_KINDS: ReadonlyArray<readonly [HistoryKind, string]> = [
-  ['all', 'All'],
+  ['all', 'Chip Movements'],
   ['cashout', 'Cash-Outs'],
   ['transfer', 'Transfers'],
-  ['game', 'Games'],
 ];
 const HISTORY_RANGES: ReadonlyArray<readonly [HistoryRange, string]> = [
-  ['all', 'All Time'],
   ['today', 'Today'],
   ['7d', '7 Days'],
   ['30d', '30 Days'],
@@ -597,7 +600,7 @@ function CashierTradeWorkspace() {
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
   const [recordQuery, setRecordQuery] = useState('');
-  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out' | 'managed'>('all');
+  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsLoadingMore, setRecordsLoadingMore] = useState(false);
   /** The search the server runs: a name or an invoice number, debounced. */
@@ -611,7 +614,7 @@ function CashierTradeWorkspace() {
      (fn_cashier_history_page), so this is a choice, never a grant. */
   const [historyScope, setHistoryScope] = useState<HistoryBook>('club');
   const [historyKind, setHistoryKind] = useState<HistoryKind>('all');
-  const [historyRange, setHistoryRange] = useState<HistoryRange>('all');
+  const [historyRange, setHistoryRange] = useState<HistoryRange>('today');
   const [historyTotals, setHistoryTotals] = useState<HistorySummary | null>(null);
   const [historyTotalsState, setHistoryTotalsState] = useState<'loading' | 'ready' | 'unavailable'>(
     'loading'
@@ -686,6 +689,8 @@ function CashierTradeWorkspace() {
   const [mgmtClaimAmount, setMgmtClaimAmount] = useState('');
   const [mgmtClaiming, setMgmtClaiming] = useState(false);
   const [mgmtClaimSource, setMgmtClaimSource] = useState<SendDestination>('player_wallet');
+  const [mgmtClaimDestination, setMgmtClaimDestination] =
+    useState<ClaimDestination>('agent_wallet');
   const [claimWalletRead, setClaimWalletRead] = useState<{
     key: string;
     balances: Partial<Record<SendDestination, number>>;
@@ -1496,7 +1501,7 @@ function CashierTradeWorkspace() {
     ? 'mine'
     : isClubStaffRole(myRole) && historyScope === 'club'
       ? 'club'
-      : isAgentRole(myRole) && historyScope === 'downline'
+      : isAgentRole(myRole) && historyScope !== 'mine'
         ? 'downline'
         : 'mine';
 
@@ -1855,7 +1860,7 @@ function CashierTradeWorkspace() {
           rows.push([
             new Date(r.created_at).toISOString(),
             txLabel(r.transaction_type),
-            direction === 'in' ? 'In' : direction === 'out' ? 'Out' : 'Managed',
+            direction === 'in' ? 'In' : direction === 'out' ? 'Out' : 'Transfer',
             r.from_name || (r.from_user_id ? 'A Member' : 'Club'),
             r.to_name || (r.to_user_id ? 'A Member' : ''),
             (Math.round((Number(r.amount) || 0) * 100) / 100).toFixed(2),
@@ -3274,14 +3279,22 @@ function CashierTradeWorkspace() {
       transferAuthorityEpoch.current === owningAuthority;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
+    const returnWallets = claimReturnWallets(row.destination, myRole);
+    const returnWallet = returnWallets.includes(mgmtClaimDestination)
+      ? mgmtClaimDestination
+      : returnWallets[0];
+    const returnLabel = CLAIM_DESTINATION_LABELS[returnWallet];
     try {
       const operation = await reserveCashierWalletOperation(
         user?.id || '',
         clubUuid,
-        'fn_agent_wallet_claim_back',
+        'fn_club_wallet_claim_back',
         {
           p_club_id: clubUuid,
           p_transaction_id: row.transaction_id,
+          p_from_user_id: row.to_user_id,
+          p_source: row.destination,
+          p_destination: returnWallet,
           p_amount: null,
           p_reason: 'Claimed Back From The Trade Grid',
         }
@@ -3290,9 +3303,12 @@ function CashierTradeWorkspace() {
       if (!current()) return;
       const heldOpId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, heldOpId);
-      const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+      const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
+        p_from_user_id: row.to_user_id,
+        p_source: row.destination,
+        p_destination: returnWallet,
         // Ask the database for the maximum whole-cent remainder. Historical
         // rows can contain a sub-cent claimed_back value from the pre-Phase-1
         // RPC; echoing that fractional remainder would now be refused. Null is
@@ -3324,7 +3340,7 @@ function CashierTradeWorkspace() {
       const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In Your Agent Wallet`
+          ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In ${returnLabel}`
           : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`,
         undefined,
         undefined,
@@ -3378,6 +3394,12 @@ function CashierTradeWorkspace() {
       : picked.length === 1
         ? picked[0]
         : null;
+
+  const claimDestinations = claimReturnWallets(mgmtClaimSource, myRole);
+  const claimDestination = claimDestinations.includes(mgmtClaimDestination)
+    ? mgmtClaimDestination
+    : claimDestinations[0];
+  const claimDestinationLabel = CLAIM_DESTINATION_LABELS[claimDestination];
 
   const claimWalletKey = JSON.stringify([
     clubUuid,
@@ -3578,22 +3600,24 @@ function CashierTradeWorkspace() {
       const operation = await reserveCashierWalletOperation(
         user.id,
         clubUuid,
-        'fn_club_bank_claim_back',
+        'fn_club_wallet_claim_back',
         {
           p_club_id: clubUuid,
           p_from_user_id: target.userId,
           p_source: mgmtClaimSource,
+          p_destination: claimDestination,
           p_amount: parsed.value,
           p_reason: 'Cashier Claim Back',
         }
       );
       if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
       if (!current()) return;
-      const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
+      const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
         p_club_id: clubUuid,
         p_from_user_id: target.userId,
         p_amount: parsed.value,
         p_source: mgmtClaimSource,
+        p_destination: claimDestination,
         p_reason: 'Cashier Claim Back',
         p_op_id: operation.operationId,
       });
@@ -3610,8 +3634,8 @@ function CashierTradeWorkspace() {
       if (!current()) return;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
-          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`,
+          ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In ${claimDestinationLabel}`
+          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into ${claimDestinationLabel}`,
         undefined,
         undefined,
         operation.operationId
@@ -4849,7 +4873,7 @@ function CashierTradeWorkspace() {
           {tab === 'record' && (
             <section
               id="cashier-panel-record"
-              className={styles.sectionShell}
+              className={`${styles.sectionShell} ${styles.historyPanel}`}
               role="tabpanel"
               aria-labelledby="cashier-tab-record"
               aria-busy={recordsLoading}
@@ -4858,7 +4882,11 @@ function CashierTradeWorkspace() {
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.sectionEyebrow}>
-                    {historyBook === 'club' ? 'All Club Transactions' : 'My Transactions'}
+                    {historyBook === 'club'
+                      ? 'Club Chip Movements'
+                      : historyBook === 'downline'
+                        ? 'My Wallets And Downline'
+                        : 'My Chip Movements'}
                   </span>
                   <h2 className={styles.sectionTitle} id="ledger-title">
                     Transaction History
@@ -4886,7 +4914,7 @@ function CashierTradeWorkspace() {
                   ? []
                   : isClubStaffRole(myRole)
                     ? [
-                        ['club', 'All Club Transactions'],
+                        ['club', 'Club Transactions'],
                         ['mine', 'My Transactions'],
                       ]
                     : isAgentRole(myRole)
@@ -5087,7 +5115,7 @@ function CashierTradeWorkspace() {
                   aria-label="Search Transaction History"
                 />
                 <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
-                  {(['all', 'in', 'out', 'managed'] as const).map((direction) => (
+                  {(['all', 'in', 'out'] as const).map((direction) => (
                     <button
                       key={direction}
                       type="button"
@@ -5096,17 +5124,18 @@ function CashierTradeWorkspace() {
                       onClick={() => setRecordDirection(direction)}
                     >
                       {direction === 'all'
-                        ? 'All'
+                        ? 'Latest Transactions'
                         : direction === 'in'
                           ? 'Incoming'
                           : direction === 'out'
                             ? 'Outgoing'
-                            : 'Managed'}
+                            : 'Chip Movement'}
                     </button>
                   ))}
                 </div>
               </div>
 
+              <p className={styles.historyCaption}>Newest First · Chip Movements Only</p>
               <div className={styles.list}>
                 {recordsLoading && !historyAuthorityUnverified && (
                   <div className={styles.empty}>Loading Transactions...</div>
@@ -5162,7 +5191,7 @@ function CashierTradeWorkspace() {
                         dialogTriggerRef.current = event.currentTarget;
                         setReceipt(r);
                       }}
-                      aria-label={`Open Receipt For ${r.title ? r.title : `${r.direction === 'managed' ? 'Managed Transfer' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}`}, ${fmt(r.amount)} Chips`}
+                      aria-label={`Open Receipt For ${r.title ? r.title : `${r.direction === 'managed' ? 'Chip Movement' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}`}, ${fmt(r.amount)} Chips`}
                     >
                       <div className={styles.rowInfo}>
                         <span className={styles.rowName}>
@@ -5568,7 +5597,7 @@ function CashierTradeWorkspace() {
                 <div className={styles.receiptAmount}>
                   <span className="sc-label sc-ink--blue">
                     {receipt.direction === 'managed'
-                      ? 'Managed Transfer'
+                      ? 'Chip Movement'
                       : receipt.direction === 'in'
                         ? 'Incoming'
                         : 'Outgoing'}
@@ -6176,7 +6205,9 @@ function CashierTradeWorkspace() {
           >
             <SpadeConsole
               onClose={claimingId || mgmtClaiming ? undefined : () => setClaimOpen(false)}
-              eyebrow={managementClaims ? 'Into The Club Bank' : 'Ten Minute Reversal'}
+              eyebrow={
+                managementClaimTarget ? `Return To ${claimDestinationLabel}` : 'Ten Minute Reversal'
+              }
               title="Claim Back"
               titleId="cashier-claim-title"
               pill={
@@ -6251,6 +6282,31 @@ function CashierTradeWorkspace() {
                         </select>
                       }
                     />
+                    <label className={styles.entryRow}>
+                      <span className={styles.entryRowSlot}>Return To</span>
+                      <span className={styles.entryRowPlate}>
+                        <select
+                          className={styles.walletSelect}
+                          aria-label="Claim Back To"
+                          value={claimDestination}
+                          disabled={mgmtClaiming}
+                          onChange={(event) =>
+                            setMgmtClaimDestination(event.target.value as ClaimDestination)
+                          }
+                        >
+                          {claimDestinations.map((wallet) => (
+                            <option key={wallet} value={wallet}>
+                              {CLAIM_DESTINATION_LABELS[wallet]}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                    <p className={styles.modalHint}>
+                      {mgmtClaimSource === 'promo_wallet'
+                        ? 'Promo Chips Return Only To Your Promo Wallet Or The Club Promo Wallet.'
+                        : `Claimed Chips Go To ${claimDestinationLabel}.`}
+                    </p>
                     {claimWalletError && (
                       <div className={styles.modalHint} role="alert">
                         {claimWalletError}{' '}
@@ -6264,7 +6320,7 @@ function CashierTradeWorkspace() {
                         </button>
                       </div>
                     )}
-                    <CashierWalletRow label="Into The Club Bank" balance={bankBalance} />
+
                     <label className={styles.entryRow}>
                       <span className={styles.entryRowSlot}>Amount</span>
                       <span className={styles.entryRowPlate}>
@@ -6352,6 +6408,29 @@ function CashierTradeWorkspace() {
                           const ss = String(left % 60).padStart(2, '0');
                           return (
                             <div className={styles.claimRow} key={row.transaction_id}>
+                              <label className={styles.claimReturnChoice}>
+                                Return To
+                                <select
+                                  aria-label={`Return Wallet For ${row.to_name}`}
+                                  value={
+                                    claimReturnWallets(row.destination, myRole).includes(
+                                      mgmtClaimDestination
+                                    )
+                                      ? mgmtClaimDestination
+                                      : claimReturnWallets(row.destination, myRole)[0]
+                                  }
+                                  disabled={claimingId !== null}
+                                  onChange={(event) =>
+                                    setMgmtClaimDestination(event.target.value as ClaimDestination)
+                                  }
+                                >
+                                  {claimReturnWallets(row.destination, myRole).map((wallet) => (
+                                    <option key={wallet} value={wallet}>
+                                      {CLAIM_DESTINATION_LABELS[wallet]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                               <img
                                 className={styles.modalTargetAvatar}
                                 src={

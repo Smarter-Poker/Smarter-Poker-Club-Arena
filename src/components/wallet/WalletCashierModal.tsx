@@ -1,3 +1,8 @@
+import {
+  claimReturnWallets,
+  CLAIM_DESTINATION_LABELS,
+  type ClaimDestination,
+} from './claimReturnWallets';
 import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -501,6 +506,10 @@ export default function WalletCashierModal({
   const busyRef = useRef(false);
 
   const viewerRole = normaliseRole(role);
+  const [claimReturn, setClaimReturn] = useState<ClaimDestination>('agent_wallet');
+  const claimReturns = claimReturnWallets(destination, viewerRole);
+  const effectiveClaimReturn = claimReturns.includes(claimReturn) ? claimReturn : claimReturns[0];
+  const claimReturnLabel = CLAIM_DESTINATION_LABELS[effectiveClaimReturn];
   // Who may stand at THIS cashier. The Club Bank keeps its four roles; the
   // promo and agent wallet cashiers admit the people who HOLD those wallets.
   // cashierModes.ts is the pinned law; the server re-checks either way.
@@ -1206,7 +1215,7 @@ export default function WalletCashierModal({
     opIdRef.current = newOpId();
     setConfirming(false);
     setSendError(null);
-  }, [recipient?.user_id, amount, destination, tab, reason, spendWallet]);
+  }, [recipient?.user_id, amount, destination, tab, reason, spendWallet, effectiveClaimReturn]);
 
   const doSend = async () => {
     if (!canSend || !clubUuid || !recipient || busyRef.current) return;
@@ -1219,7 +1228,7 @@ export default function WalletCashierModal({
     try {
       const action =
         tab === 'claim'
-          ? 'fn_club_bank_claim_back'
+          ? 'fn_club_wallet_claim_back'
           : spendWallet === 'promo_wallet'
             ? promoSendRpc(spendPromoSource)
             : spendWallet === 'agent_wallet'
@@ -1228,7 +1237,11 @@ export default function WalletCashierModal({
       const operation = await reserveCashierWalletOperation(user?.id || '', clubUuid, action, {
         p_club_id: clubUuid,
         ...(tab === 'claim'
-          ? { p_from_user_id: recipient.user_id, p_source: destination }
+          ? {
+              p_from_user_id: recipient.user_id,
+              p_source: destination,
+              p_destination: effectiveClaimReturn,
+            }
           : { p_to_user_id: recipient.user_id, p_destination: destination }),
         p_amount: amt,
         p_reason: reason.trim() || null,
@@ -1243,11 +1256,12 @@ export default function WalletCashierModal({
       } | null = null;
       if (tab === 'claim') {
         // CLAIM BACK. Chips come OUT of the chosen wallet INTO the Club Bank.
-        const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
+        const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
           p_club_id: clubUuid,
           p_from_user_id: recipient.user_id,
           p_amount: amt,
           p_source: destination,
+          p_destination: effectiveClaimReturn,
           p_reason: reason.trim() || null,
           p_op_id: opIdRef.current,
         });
@@ -1310,8 +1324,8 @@ export default function WalletCashierModal({
       toast?.success?.(
         tab === 'claim'
           ? res.replayed
-            ? `That Claim Had Already Gone Through. ${fmtWhole(amt)} Chips Are Back In The Club Bank`
-            : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into The Club Bank`
+            ? `That Claim Had Already Gone Through. ${fmtWhole(amt)} Chips Are Back In ${claimReturnLabel}`
+            : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into ${claimReturnLabel}`
           : res.replayed
             ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${titleCase(recipient.name)}`
             : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`,
@@ -1330,7 +1344,7 @@ export default function WalletCashierModal({
       setReason('');
       setSendReceipt(
         tab === 'claim'
-          ? `Claimed ${fmtWhole(amt)} Chips Into The Club Bank`
+          ? `Claimed ${fmtWhole(amt)} Chips Into ${claimReturnLabel}`
           : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
       );
       setConfirming(false);
@@ -1392,14 +1406,20 @@ export default function WalletCashierModal({
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     let closeAfterSuccess = false;
+    const returnWallets = claimReturnWallets(row.destination, viewerRole);
+    const returnWallet = returnWallets.includes(claimReturn) ? claimReturn : returnWallets[0];
+    const returnLabel = CLAIM_DESTINATION_LABELS[returnWallet];
     try {
       const operation = await reserveCashierWalletOperation(
         user?.id || '',
         clubUuid,
-        'fn_agent_wallet_claim_back',
+        'fn_club_wallet_claim_back',
         {
           p_club_id: clubUuid,
           p_transaction_id: row.transaction_id,
+          p_from_user_id: row.to_user_id,
+          p_source: row.destination,
+          p_destination: returnWallet,
           p_amount: null,
           p_reason: 'Claimed Back From The Agent Wallet Cashier',
         }
@@ -1408,9 +1428,12 @@ export default function WalletCashierModal({
       if (!isMounted.current || actionView.current !== owningView) return;
       const opId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, opId);
-      const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+      const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
+        p_from_user_id: row.to_user_id,
+        p_source: row.destination,
+        p_destination: returnWallet,
         p_amount: null,
         p_reason: 'Claimed Back From The Agent Wallet Cashier',
         p_op_id: opId,
@@ -1428,7 +1451,7 @@ export default function WalletCashierModal({
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
+          ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In ${returnLabel}`
           : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`,
         undefined,
         undefined,
@@ -1901,6 +1924,29 @@ export default function WalletCashierModal({
                         </div>
                         <div className="cbc-tx-mid">
                           <span>Into {enumToTitleCase(row.destination)}</span>
+                          <label>
+                            Return To
+                            <select
+                              aria-label={`Return Wallet For ${row.to_name}`}
+                              value={
+                                claimReturnWallets(row.destination, viewerRole).includes(
+                                  claimReturn
+                                )
+                                  ? claimReturn
+                                  : claimReturnWallets(row.destination, viewerRole)[0]
+                              }
+                              disabled={claimingId !== null}
+                              onChange={(event) =>
+                                setClaimReturn(event.target.value as ClaimDestination)
+                              }
+                            >
+                              {claimReturnWallets(row.destination, viewerRole).map((wallet) => (
+                                <option key={wallet} value={wallet}>
+                                  {CLAIM_DESTINATION_LABELS[wallet]}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <span className="cbc-tx-when">
                             {Math.floor(left / 60)} Min {left % 60} Sec Left
                           </span>
@@ -2132,7 +2178,9 @@ export default function WalletCashierModal({
                   {bankTransfer && (
                     <section
                       className={transferStyles.walletRow}
-                      aria-label={tab === 'claim' ? 'Into The Club Bank' : `From ${spentAccount}`}
+                      aria-label={
+                        tab === 'claim' ? `Return To ${claimReturnLabel}` : `From ${spentAccount}`
+                      }
                     >
                       <span className={transferStyles.walletRowSlot} aria-hidden="true">
                         <img
@@ -2142,7 +2190,9 @@ export default function WalletCashierModal({
                       </span>
                       <span className={transferStyles.walletRowPlate}>
                         <span className={transferStyles.walletRowLabel}>
-                          {tab === 'claim' ? 'Into The Club Bank' : `From ${spentAccount}`}
+                          {tab === 'claim'
+                            ? `Return To ${claimReturnLabel}`
+                            : `From ${spentAccount}`}
                         </span>
                         <svg
                           className={transferStyles.entityChevron}
@@ -2163,10 +2213,16 @@ export default function WalletCashierModal({
                       <select
                         className={transferStyles.walletSelect}
                         aria-label={tab === 'claim' ? 'Claim Into' : 'Send From'}
-                        value={tab === 'claim' ? 'club_bank' : bankSendSource}
+                        value={tab === 'claim' ? effectiveClaimReturn : bankSendSource}
                         disabled={inFlight || Boolean(unconfirmed)}
                         onChange={(event) => {
-                          if (tab !== 'send' || busyRef.current || unconfirmed) return;
+                          if (busyRef.current || unconfirmed) return;
+                          if (tab === 'claim') {
+                            setClaimReturn(event.target.value as ClaimDestination);
+                            setConfirming(false);
+                            return;
+                          }
+                          if (tab !== 'send') return;
                           setFundingBalance(null);
                           setFundingCredit(0);
                           setBankSendSource(event.target.value as CashierWalletType);
@@ -2174,7 +2230,15 @@ export default function WalletCashierModal({
                           setSendReceipt(null);
                         }}
                       >
-                        <option value="club_bank">Club Bank</option>
+                        {tab === 'claim' ? (
+                          claimReturns.map((wallet) => (
+                            <option key={wallet} value={wallet}>
+                              {CLAIM_DESTINATION_LABELS[wallet]}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="club_bank">Club Bank</option>
+                        )}
                         {tab === 'send' && canUseCashier('agent_wallet', viewerRole) && (
                           <option value="agent_wallet">Your Agent Wallet</option>
                         )}
@@ -2233,7 +2297,7 @@ export default function WalletCashierModal({
                     {amt > 0 && !overCap && spendBalance !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
-                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmtWallet(spendBalance + amt)} Afterwards.`
+                          ? `Claiming ${fmtWhole(amt)}. Returning To ${claimReturnLabel}.`
                           : creditDraw > 0
                             ? `Sending ${fmtWhole(amt)}. ${fmtExact(creditDraw)} Of It Is Drawn From Your Credit Line.`
                             : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmtWallet(spendBalance - amt)} Afterwards.`}
@@ -2298,7 +2362,7 @@ export default function WalletCashierModal({
                           Club Bank" on every cashier, so an agent sending 20 of
                           a 40 chip float read "50 Percent Of The Club Bank". */}
                       {tab === 'claim'
-                        ? `Claim ${fmtWhole(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
+                        ? `Claim ${fmtWhole(amt)} Chips From ${titleCase(recipient.name)} Into ${claimReturnLabel}?`
                         : creditDraw > 0
                           ? `Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}? ${fmtExact(creditDraw)} Of Them Are Drawn From Your Credit Line.`
                           : `That Is ${((amt / (spendBalance || 1)) * 100).toFixed(1)} Percent Of ${spentAccount}. Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}?`}

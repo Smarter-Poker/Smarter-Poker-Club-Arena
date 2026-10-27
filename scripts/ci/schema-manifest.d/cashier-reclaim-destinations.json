@@ -1,0 +1,4 @@
+{
+  "_owner": "Cashier reclaim destination and chip movement history, 2026-10-27; declaration pending qualified installation and readback.",
+  "functions": ["fn_club_wallet_claim_back"]
+}

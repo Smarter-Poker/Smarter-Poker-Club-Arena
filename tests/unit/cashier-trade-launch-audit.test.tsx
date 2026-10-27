@@ -1231,7 +1231,7 @@ it.each(['self-send', 'bank-claim'] as const)(
     expect(
       state.rpcCalls.some(
         (call) =>
-          call.name === (action === 'self-send' ? 'fn_club_bank_send' : 'fn_club_bank_claim_back')
+          call.name === (action === 'self-send' ? 'fn_club_bank_send' : 'fn_club_wallet_claim_back')
       )
     ).toBe(false);
     expect(durableRows.size).toBe(1);
@@ -1969,7 +1969,7 @@ describe('Simple And Advanced Action Recovery Audit', () => {
       const firstReply = deferred<unknown>();
       const claimCalls: Array<Record<string, unknown>> = [];
       vi.mocked(supabase.rpc).mockImplementation((name, args) => {
-        if (name !== 'fn_agent_wallet_claim_back') return originalRpc(name, args);
+        if (name !== 'fn_club_wallet_claim_back') return originalRpc(name, args);
         claimCalls.push(args as Record<string, unknown>);
         return (
           claimCalls.length === 1
@@ -2206,7 +2206,7 @@ describe('management claims from the selected member wallet', () => {
     state.roster = [{ ...player(0, 1.13), role: 'agent' }];
     const original = vi.mocked(supabase.rpc).getMockImplementation()!;
     vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
-      if (name !== 'fn_club_bank_claim_back') return original(name, args);
+      if (name !== 'fn_club_wallet_claim_back') return original(name, args);
       state.rpcCalls.push({ name, args: args as Record<string, unknown> });
       return Promise.resolve({ data: { success: true }, error: null }) as never;
     });
@@ -2219,18 +2219,19 @@ describe('management claims from the selected member wallet', () => {
     fireEvent.click(all);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Back', exact: true }));
     await waitFor(() =>
-      expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(true)
+      expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(true)
     );
-    const claim = state.rpcCalls.find((call) => call.name === 'fn_club_bank_claim_back')!;
+    const claim = state.rpcCalls.find((call) => call.name === 'fn_club_wallet_claim_back')!;
     expect(claim.args).toMatchObject({
       p_source: source,
+      p_destination: source === 'promo_wallet' ? 'promo_wallet' : 'agent_wallet',
       p_amount: Number(balance),
       p_from_user_id: PLAYER_IDS[0],
     });
     const reservation = state.rpcCalls.find(
       (call) =>
         call.name === 'fn_cashier_browser_recovery_reserve' &&
-        (call.args.p_envelope as any)?.action === 'fn_club_bank_claim_back'
+        (call.args.p_envelope as any)?.action === 'fn_club_wallet_claim_back'
     );
     const { p_op_id: operationId, ...intent } = claim.args;
     const canonical = JSON.stringify(
@@ -2260,7 +2261,7 @@ describe('management claims from the selected member wallet', () => {
     fireEvent.change(amount, { target: { value: '81' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Back', exact: true }));
     expect(toastMocks.error).toHaveBeenCalledWith('Promo Wallet Only Holds 80');
-    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
   });
 
   it('never treats a missing wallet as a zero balance or falls back to the player balance', async () => {
@@ -2274,7 +2275,7 @@ describe('management claims from the selected member wallet', () => {
       target: { value: '1' },
     });
     expect(within(dialog).getByRole('button', { name: 'Claim Back', exact: true })).toBeDisabled();
-    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
   });
   it('blocks claims during a delayed read, reports failure and recovers through Retry', async () => {
     state.roster = [{ ...player(0, 75), role: 'agent' }];
@@ -2298,6 +2299,6 @@ describe('management claims from the selected member wallet', () => {
     await within(dialog).findByRole('button', { name: 'Claim All 75.00' });
     expect(within(dialog).queryByRole('alert')).toBeNull();
     expect(within(dialog).getByRole('button', { name: 'Claim Back', exact: true })).toBeEnabled();
-    expect(state.rpcCalls.some((call) => call.name === 'fn_club_bank_claim_back')).toBe(false);
+    expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
   });
 });

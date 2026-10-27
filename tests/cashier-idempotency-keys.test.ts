@@ -210,10 +210,11 @@ describe('the ten minute rule is what the UI offers', () => {
   );
 
   it('claim back is anchored on a transaction, never on an amount against a player', () => {
-    const call = callArgs(PAGE, 'fn_agent_wallet_claim_back');
+    const call = callArgs(PAGE, 'fn_club_wallet_claim_back');
     expect(call).toContain('p_transaction_id: row.transaction_id');
     expect(call).toContain('p_op_id: heldOpId');
-    expect(call).not.toContain('p_from_user_id');
+    expect(call).toContain('p_from_user_id: row.to_user_id');
+    expect(call).toContain('p_destination: returnWallet');
   });
 
   it('retains one claim op id across an uncertain retry', () => {

@@ -35,6 +35,7 @@ export type WalletName =
   | 'Player Wallet'
   | 'Agent Wallet'
   | 'Promo Wallet'
+  | 'Club Promo Wallet'
   | 'Club Bank'
   | 'Union Bank'
   | 'Rake Treasury';
@@ -44,6 +45,7 @@ const DESTINATION_NAMES: Record<string, WalletName> = {
   agent_wallet: 'Agent Wallet',
   promo_wallet: 'Promo Wallet',
   club_bank: 'Club Bank',
+  club_promo_wallet: 'Club Promo Wallet',
 };
 
 /** Where the chips LEFT from, per transaction type. */
@@ -318,6 +320,11 @@ export function describeChipTransaction(
 
   const meta = (shown.metadata ?? {}) as Record<string, unknown>;
   const amount = figure(shown.amount);
+  const returned = typeof meta.returned_amount === 'number' ? figure(meta.returned_amount) : amount;
+  const repayment =
+    Number(meta.credit_repaid) > 0
+      ? `. ${figure(Number(meta.credit_repaid))} Repaid The Original Credit Draw`
+      : '';
   const from = shown.from_user_id;
   const to = shown.to_user_id;
   const actor = nameOf(from);
@@ -359,7 +366,7 @@ export function describeChipTransaction(
         : null;
     case 'club_bank_claim': {
       const source = walletName(meta.source, 'Agent Wallet');
-      return `${nameOf(to)} Claimed Back ${amount} From ${possessive(from)} ${source} To The Club Bank`;
+      return `${nameOf(to)} Claimed Back ${returned} From ${possessive(from)} ${source} To ${meta.destination === 'club_promo_wallet' ? 'The Club Promo Wallet' : meta.destination && meta.destination !== 'club_bank' ? `${possessive(to)} ${walletName(meta.destination, 'Club Bank')}` : 'The Club Bank'}${repayment}`;
     }
     case 'club_bank_reversal': {
       const source = walletName(meta.destination ?? meta.source, 'Agent Wallet');
@@ -367,7 +374,7 @@ export function describeChipTransaction(
     }
     case 'agent_wallet_claim_back': {
       const source = walletName(meta.source ?? meta.destination, 'Player Wallet');
-      return `${nameOf(to)} Claimed Back ${amount} From ${possessive(from)} ${source} To ${possessive(to)} Agent Wallet`;
+      return `${nameOf(to)} Claimed Back ${returned} From ${possessive(from)} ${source} To ${possessive(to)} ${walletName(meta.source ? meta.destination : null, 'Agent Wallet')}${repayment}`;
     }
     case 'admin_removal': {
       const source = walletName(meta.source, 'Player Wallet');
@@ -434,11 +441,11 @@ export function walletRoute(row: ChipTransactionLike): string | null {
         ? `Player Wallet To ${dest}`
         : null;
     case 'club_bank_claim':
-      return `${walletName(meta.source, 'Agent Wallet')} To Club Bank`;
+      return `${walletName(meta.source, 'Agent Wallet')} To ${walletName(meta.destination, 'Club Bank')}`;
     case 'club_bank_reversal':
       return `${walletName(meta.destination ?? meta.source, 'Agent Wallet')} To Club Bank`;
     case 'agent_wallet_claim_back':
-      return `${walletName(meta.source ?? meta.destination, 'Player Wallet')} To Agent Wallet`;
+      return `${walletName(meta.source ?? meta.destination, 'Player Wallet')} To ${walletName(meta.source ? meta.destination : null, 'Agent Wallet')}`;
     case 'admin_removal':
       return `${walletName(meta.source, 'Player Wallet')} To Club Bank`;
     default:

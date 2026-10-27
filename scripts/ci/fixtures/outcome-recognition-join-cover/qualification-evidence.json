@@ -1,0 +1,1142 @@
+{
+  "status": "passed",
+  "cases": [
+    "pure_materialization_original_full_row_hash_predicate_parity",
+    "all84_exact_three_family_witness_and_wholeweek_reducer_json_unchanged",
+    "full_original_linked_row_bag_reducer_witness_metadata_unchanged",
+    "natural_window_index_without_planner_forcing_or_outcome_union_filter",
+    "actual_resolution_full_proof_check_refuses_corruption",
+    "generic_custom_full_row_parity",
+    "installer_frozen_refusal",
+    "installer_atomic_rollback",
+    "exact_installer_idempotent_replay",
+    "installer_original_acl_fault_refused",
+    "catalog_wrong_column_refused",
+    "catalog_descending_refused",
+    "catalog_partial_refused",
+    "catalog_included_payload_refused",
+    "catalog_include_order_refused",
+    "catalog_missing_include_refused",
+    "catalog_expression_refused",
+    "catalog_wrong_table_refused",
+    "actual_invalid_concurrent_index_refused",
+    "actual_raw_fallback_null_union_and_null_projection_contract",
+    "scalar_include_mvcc_heap_visibility",
+    "installer_browser_service_role_refused",
+    "all_four_actual_logical_table_catalogs_unchanged",
+    "complete_actual_source65_and_original_four_bodies_metadata_unchanged"
+  ],
+  "case_count": 24,
+  "migration_sha256": "b228abb85c4449d6542ef00150b1bd09c567c7a7a3b666816043c39b4e411c3b",
+  "natural_index_nodes": [
+    {
+      "Node Type": "Index Only Scan",
+      "Parent Relationship": "Outer",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "union_pnl_cash_outcomes_recognition_join_cover",
+      "Relation Name": "union_pnl_cash_outcomes",
+      "Alias": "o",
+      "Startup Cost": 0.42,
+      "Total Cost": 14.36,
+      "Plan Rows": 297,
+      "Plan Width": 24,
+      "Actual Startup Time": 0.029,
+      "Actual Total Time": 0.036,
+      "Actual Rows": 200,
+      "Actual Loops": 1,
+      "Index Cond": "((recognized_at >= '2026-10-22 15:00:00+00'::timestamp with time zone) AND (recognized_at < '2026-10-22 17:00:00+00'::timestamp with time zone))",
+      "Rows Removed by Index Recheck": 0,
+      "Heap Fetches": 0,
+      "Shared Hit Blocks": 5,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    }
+  ],
+  "old_plan": [
+    {
+      "Plan": {
+        "Node Type": "Aggregate",
+        "Strategy": "Plain",
+        "Partial Mode": "Simple",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Startup Cost": 3131.79,
+        "Total Cost": 3131.8,
+        "Plan Rows": 1,
+        "Plan Width": 8,
+        "Actual Startup Time": 0.473,
+        "Actual Total Time": 0.473,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 902,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Nested Loop",
+            "Parent Relationship": "Outer",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Join Type": "Inner",
+            "Startup Cost": 0.71,
+            "Total Cost": 3131.79,
+            "Plan Rows": 1,
+            "Plan Width": 0,
+            "Actual Startup Time": 0.019,
+            "Actual Total Time": 0.468,
+            "Actual Rows": 100,
+            "Actual Loops": 1,
+            "Inner Unique": true,
+            "Shared Hit Blocks": 902,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "union_pnl_cash_outcomes_recognition_window",
+                "Relation Name": "union_pnl_cash_outcomes",
+                "Alias": "o",
+                "Startup Cost": 0.29,
+                "Total Cost": 908.33,
+                "Plan Rows": 297,
+                "Plan Width": 24,
+                "Actual Startup Time": 0.009,
+                "Actual Total Time": 0.177,
+                "Actual Rows": 200,
+                "Actual Loops": 1,
+                "Index Cond": "((recognized_at >= '2026-10-22 15:00:00+00'::timestamp with time zone) AND (recognized_at < '2026-10-22 17:00:00+00'::timestamp with time zone))",
+                "Rows Removed by Index Recheck": 0,
+                "Shared Hit Blocks": 202,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Inner",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "union_pnl_cash_outcome_link_resolutions_pkey",
+                "Relation Name": "union_pnl_cash_outcome_link_resolutions",
+                "Alias": "r",
+                "Startup Cost": 0.42,
+                "Total Cost": 7.49,
+                "Plan Rows": 1,
+                "Plan Width": 24,
+                "Actual Startup Time": 0.001,
+                "Actual Total Time": 0.001,
+                "Actual Rows": 0,
+                "Actual Loops": 200,
+                "Index Cond": "((table_id = o.table_id) AND (hand_number = o.hand_number))",
+                "Rows Removed by Index Recheck": 0,
+                "Filter": "((game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+                "Rows Removed by Filter": 0,
+                "Shared Hit Blocks": 700,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 439,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.503,
+      "Triggers": [],
+      "Execution Time": 0.49
+    }
+  ],
+  "new_plan": [
+    {
+      "Plan": {
+        "Node Type": "Aggregate",
+        "Strategy": "Plain",
+        "Partial Mode": "Simple",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Startup Cost": 2237.81,
+        "Total Cost": 2237.82,
+        "Plan Rows": 1,
+        "Plan Width": 8,
+        "Actual Startup Time": 0.375,
+        "Actual Total Time": 0.376,
+        "Actual Rows": 1,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 705,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Nested Loop",
+            "Parent Relationship": "Outer",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Join Type": "Inner",
+            "Startup Cost": 0.83,
+            "Total Cost": 2237.81,
+            "Plan Rows": 1,
+            "Plan Width": 0,
+            "Actual Startup Time": 0.042,
+            "Actual Total Time": 0.371,
+            "Actual Rows": 100,
+            "Actual Loops": 1,
+            "Inner Unique": true,
+            "Shared Hit Blocks": 705,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Only Scan",
+                "Parent Relationship": "Outer",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "union_pnl_cash_outcomes_recognition_join_cover",
+                "Relation Name": "union_pnl_cash_outcomes",
+                "Alias": "o",
+                "Startup Cost": 0.42,
+                "Total Cost": 14.36,
+                "Plan Rows": 297,
+                "Plan Width": 24,
+                "Actual Startup Time": 0.029,
+                "Actual Total Time": 0.036,
+                "Actual Rows": 200,
+                "Actual Loops": 1,
+                "Index Cond": "((recognized_at >= '2026-10-22 15:00:00+00'::timestamp with time zone) AND (recognized_at < '2026-10-22 17:00:00+00'::timestamp with time zone))",
+                "Rows Removed by Index Recheck": 0,
+                "Heap Fetches": 0,
+                "Shared Hit Blocks": 5,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Inner",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Scan Direction": "Forward",
+                "Index Name": "union_pnl_cash_outcome_link_resolutions_pkey",
+                "Relation Name": "union_pnl_cash_outcome_link_resolutions",
+                "Alias": "r",
+                "Startup Cost": 0.42,
+                "Total Cost": 7.49,
+                "Plan Rows": 1,
+                "Plan Width": 24,
+                "Actual Startup Time": 0.002,
+                "Actual Total Time": 0.002,
+                "Actual Rows": 0,
+                "Actual Loops": 200,
+                "Index Cond": "((table_id = o.table_id) AND (hand_number = o.hand_number))",
+                "Rows Removed by Index Recheck": 0,
+                "Filter": "((game_scope ->> 'game_union_id'::text) = 'fade0000-0000-0000-0000-000000000001'::text)",
+                "Rows Removed by Filter": 0,
+                "Shared Hit Blocks": 700,
+                "Shared Read Blocks": 0,
+                "Shared Dirtied Blocks": 0,
+                "Shared Written Blocks": 0,
+                "Local Hit Blocks": 0,
+                "Local Read Blocks": 0,
+                "Local Dirtied Blocks": 0,
+                "Local Written Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              }
+            ]
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 456,
+        "Shared Read Blocks": 1,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 1,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.573,
+      "Triggers": [],
+      "Execution Time": 0.392
+    }
+  ],
+  "full_row_bag_md5": "8ee3057d2e4a66b984e5ef7f90ff894c",
+  "reducer": [
+    {
+      "kind": 0,
+      "rake": 127.5,
+      "delta": null,
+      "hands": 102,
+      "club_id": null,
+      "user_id": null
+    },
+    {
+      "kind": 1,
+      "rake": null,
+      "delta": -127.5,
+      "hands": 102,
+      "club_id": "95cc6b4a-c5ab-dead-c74b-73a8ba7200d9",
+      "user_id": "912af0df-f974-604f-1321-254ca8ff38b6"
+    }
+  ],
+  "witness": {
+    "links": 2,
+    "ordinary_count": 100,
+    "escrow_certificates": 1
+  },
+  "wholeweek_reducer": [
+    {
+      "kind": 0,
+      "rake": 20878.75,
+      "delta": null,
+      "hands": 16703,
+      "club_id": null,
+      "user_id": null
+    },
+    {
+      "kind": 1,
+      "rake": null,
+      "delta": -20878.75,
+      "hands": 16703,
+      "club_id": "95cc6b4a-c5ab-dead-c74b-73a8ba7200d9",
+      "user_id": "912af0df-f974-604f-1321-254ca8ff38b6"
+    }
+  ],
+  "all84_witness_json": [
+    {
+      "witness": {
+        "links": 2,
+        "ordinary_count": 100,
+        "escrow_certificates": 1
+      },
+      "window_end": "2026-10-19T09:00:00+00:00",
+      "window_start": "2026-10-19T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 101,
+        "ordinary_count": 100,
+        "escrow_certificates": 1
+      },
+      "window_end": "2026-10-19T11:00:00+00:00",
+      "window_start": "2026-10-19T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T13:00:00+00:00",
+      "window_start": "2026-10-19T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T15:00:00+00:00",
+      "window_start": "2026-10-19T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T17:00:00+00:00",
+      "window_start": "2026-10-19T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T19:00:00+00:00",
+      "window_start": "2026-10-19T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T21:00:00+00:00",
+      "window_start": "2026-10-19T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-19T23:00:00+00:00",
+      "window_start": "2026-10-19T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T01:00:00+00:00",
+      "window_start": "2026-10-19T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T03:00:00+00:00",
+      "window_start": "2026-10-20T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T05:00:00+00:00",
+      "window_start": "2026-10-20T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T07:00:00+00:00",
+      "window_start": "2026-10-20T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T09:00:00+00:00",
+      "window_start": "2026-10-20T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T11:00:00+00:00",
+      "window_start": "2026-10-20T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T13:00:00+00:00",
+      "window_start": "2026-10-20T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T15:00:00+00:00",
+      "window_start": "2026-10-20T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T17:00:00+00:00",
+      "window_start": "2026-10-20T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T19:00:00+00:00",
+      "window_start": "2026-10-20T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T21:00:00+00:00",
+      "window_start": "2026-10-20T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-20T23:00:00+00:00",
+      "window_start": "2026-10-20T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T01:00:00+00:00",
+      "window_start": "2026-10-20T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T03:00:00+00:00",
+      "window_start": "2026-10-21T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T05:00:00+00:00",
+      "window_start": "2026-10-21T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T07:00:00+00:00",
+      "window_start": "2026-10-21T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T09:00:00+00:00",
+      "window_start": "2026-10-21T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T11:00:00+00:00",
+      "window_start": "2026-10-21T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T13:00:00+00:00",
+      "window_start": "2026-10-21T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T15:00:00+00:00",
+      "window_start": "2026-10-21T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T17:00:00+00:00",
+      "window_start": "2026-10-21T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T19:00:00+00:00",
+      "window_start": "2026-10-21T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T21:00:00+00:00",
+      "window_start": "2026-10-21T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-21T23:00:00+00:00",
+      "window_start": "2026-10-21T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T01:00:00+00:00",
+      "window_start": "2026-10-21T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T03:00:00+00:00",
+      "window_start": "2026-10-22T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T05:00:00+00:00",
+      "window_start": "2026-10-22T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T07:00:00+00:00",
+      "window_start": "2026-10-22T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T09:00:00+00:00",
+      "window_start": "2026-10-22T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T11:00:00+00:00",
+      "window_start": "2026-10-22T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T13:00:00+00:00",
+      "window_start": "2026-10-22T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T15:00:00+00:00",
+      "window_start": "2026-10-22T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T17:00:00+00:00",
+      "window_start": "2026-10-22T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T19:00:00+00:00",
+      "window_start": "2026-10-22T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T21:00:00+00:00",
+      "window_start": "2026-10-22T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-22T23:00:00+00:00",
+      "window_start": "2026-10-22T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T01:00:00+00:00",
+      "window_start": "2026-10-22T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T03:00:00+00:00",
+      "window_start": "2026-10-23T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T05:00:00+00:00",
+      "window_start": "2026-10-23T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T07:00:00+00:00",
+      "window_start": "2026-10-23T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T09:00:00+00:00",
+      "window_start": "2026-10-23T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T11:00:00+00:00",
+      "window_start": "2026-10-23T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T13:00:00+00:00",
+      "window_start": "2026-10-23T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T15:00:00+00:00",
+      "window_start": "2026-10-23T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T17:00:00+00:00",
+      "window_start": "2026-10-23T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T19:00:00+00:00",
+      "window_start": "2026-10-23T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T21:00:00+00:00",
+      "window_start": "2026-10-23T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-23T23:00:00+00:00",
+      "window_start": "2026-10-23T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T01:00:00+00:00",
+      "window_start": "2026-10-23T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T03:00:00+00:00",
+      "window_start": "2026-10-24T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T05:00:00+00:00",
+      "window_start": "2026-10-24T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T07:00:00+00:00",
+      "window_start": "2026-10-24T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T09:00:00+00:00",
+      "window_start": "2026-10-24T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T11:00:00+00:00",
+      "window_start": "2026-10-24T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T13:00:00+00:00",
+      "window_start": "2026-10-24T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T15:00:00+00:00",
+      "window_start": "2026-10-24T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T17:00:00+00:00",
+      "window_start": "2026-10-24T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T19:00:00+00:00",
+      "window_start": "2026-10-24T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T21:00:00+00:00",
+      "window_start": "2026-10-24T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-24T23:00:00+00:00",
+      "window_start": "2026-10-24T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T01:00:00+00:00",
+      "window_start": "2026-10-24T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T03:00:00+00:00",
+      "window_start": "2026-10-25T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T05:00:00+00:00",
+      "window_start": "2026-10-25T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T07:00:00+00:00",
+      "window_start": "2026-10-25T05:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T09:00:00+00:00",
+      "window_start": "2026-10-25T07:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T11:00:00+00:00",
+      "window_start": "2026-10-25T09:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T13:00:00+00:00",
+      "window_start": "2026-10-25T11:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T15:00:00+00:00",
+      "window_start": "2026-10-25T13:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T17:00:00+00:00",
+      "window_start": "2026-10-25T15:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T19:00:00+00:00",
+      "window_start": "2026-10-25T17:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T21:00:00+00:00",
+      "window_start": "2026-10-25T19:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-25T23:00:00+00:00",
+      "window_start": "2026-10-25T21:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-26T01:00:00+00:00",
+      "window_start": "2026-10-25T23:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-26T03:00:00+00:00",
+      "window_start": "2026-10-26T01:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-26T05:00:00+00:00",
+      "window_start": "2026-10-26T03:00:00+00:00"
+    },
+    {
+      "witness": {
+        "links": 100,
+        "ordinary_count": 100,
+        "escrow_certificates": 0
+      },
+      "window_end": "2026-10-26T07:00:00+00:00",
+      "window_start": "2026-10-26T05:00:00+00:00"
+    }
+  ],
+  "fixture_rows": 96700,
+  "baseline_installed_thin220709_index_retained": true,
+  "whole_generation_definition_metadata_unchanged": true,
+  "source65_definition_md5": "8734797c6093c7e5a2a72de9b387a6de",
+  "limits": "Actual original linked/reducer/witness/read bodies and full captured relation columns/constraints. Original hand-line/append owners reused unchanged. Unrelated source65 proof collaborators controlled only for functional native calls, then COMPLETE actual source65 loaded and preserved across exact installer replay. No production speed, whole84-window readiness, financial or deployment claim."
+}

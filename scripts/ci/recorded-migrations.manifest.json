@@ -1394,6 +1394,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027184348",
+      "name": "original_cash_returns_use_their_original_occupancy_keys",
+      "file": "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql",
+      "md5": "d0d91270b7660140029a76bfaf993008",
+      "appliedToProductionAt": "2026-10-27T19:12:08.225Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained qualified-outage installer; full-file history and all4 source postimages/actual before-metadata plus source65 read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly book closure outage: first original2hour flow window timed out240seconds. Original whole/window return lookup now selects candidates by the same original seat-event/refund occupancy keys, retaining every original predicate/math/helper. Only the advance whole-reader pin and those3 guard65 pins evolve. Exact qualified source installed; history/all4 postimages/actual before-metadata and source65 TRUE verified. Native245/84BBJ/7treasury/original key variants/READONLY and normal prechecks qualified. No payments, witness admissions, paid earning math or existing receipts changed. Actual installed window timing, original advance progress and all-books completion require separate live observations."
     }
   ]
 }

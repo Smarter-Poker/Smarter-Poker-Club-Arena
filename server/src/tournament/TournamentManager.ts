@@ -2602,10 +2602,10 @@ export class TournamentManager extends TournamentManagerEliminations {
    * until a fifth migration taught the proof one more arrival shape.
    *
    * The proof is right to refuse what it cannot prove, and it stays strict.
-   * What was wrong is that the table waited on it. A park that has not begun
-   * and whose movement admission has been refused for
-   * UNPROVEN_MOVEMENT_PARK_GRACE_MS (long enough for an unrecorded bust, the
-   * commonest transient refusal, to be recorded) is withdrawn through
+   * What was wrong is that the table waited on it. A park that has not begun,
+   * has existed for UNPROVEN_MOVEMENT_PARK_GRACE_MS, and whose movement
+   * admission still refuses (allowing an unrecorded bust, the commonest
+   * transient refusal, time to be recorded) is withdrawn through
    * fn_f06_withdraw_unproven_movement_park. The database re-asks the proof,
    * withdraws only while it still refuses with a named F06_MOVEMENT_*
    * refusal, proves the park never began, writes that refusal into the
@@ -2635,8 +2635,19 @@ export class TournamentManager extends TournamentManagerEliminations {
       return false;
     }
     const now = Date.now();
-    const since = this.unprovenMovementParkSince.get(state.break_id);
-    if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    // A successor must not restart this original park's grace. The database's
+    // immutable creation time survives adoption; the withdrawal door still
+    // re-proves the refusal and exact custody before changing anything.
+    let since: number | undefined;
+    if (state.park_created_at !== undefined) {
+      since = Date.parse(state.park_created_at);
+      if (!Number.isFinite(since) || since > now) return false;
+    } else {
+      // Compatibility with the pre-timestamp RPC contract: retain its local
+      // first-refusal grace until the database supplies durable age evidence.
+      since = this.unprovenMovementParkSince.get(state.break_id);
+      if (since === undefined) this.unprovenMovementParkSince.set(state.break_id, now);
+    }
     if (since === undefined || now - since < TournamentManager.UNPROVEN_MOVEMENT_PARK_GRACE_MS)
       return false;
     if (!(await this.withdrawUnbegunPark(state, 'unproven_movement'))) return false;
@@ -4859,7 +4870,35 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Any failure leaves the receipts pending for the expansion stage, which
    * admits and acknowledges the same receipts idempotently.
    */
-  protected async admitCommittedCapacityTables(): Promise<void> {
+  private capacityAdmissionOperation: Promise<void> | null = null;
+
+  /** Complete only the committed dealer handoff, independently of a busy sweep. */
+  async admitCommittedCapacityTablesForWake(ownerIsCurrent: () => boolean): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle) return;
+    const current = () =>
+      ownerIsCurrent() &&
+      this.lifecycleIsCurrent(lifecycle) &&
+      !this.isF06RecoveryOwner() &&
+      !this.tournamentFinished &&
+      !this.finalTableDealHandled &&
+      !isMaintenanceFrozen();
+    if (!current()) return;
+    return this.trackLifecycleJob(
+      (async () => {
+        // At most two bounded passes for this cause. A request joining a read
+        // already in flight needs one fresh read after it settles: its newly
+        // committed table may not have been in the earlier SELECT snapshot.
+        for (let pass = 0; pass < 2 && current(); pass++) {
+          const joined = this.capacityAdmissionOperation !== null;
+          await this.admitCommittedCapacityTables(current);
+          if (!joined) return;
+        }
+      })()
+    );
+  }
+
+  protected async admitCommittedCapacityTables(directAuthority?: () => boolean): Promise<void> {
     /*
      * ADMISSION IS NOT BUDGETED WORK (2026-10-26).
      *
@@ -4882,71 +4921,105 @@ export class TournamentManager extends TournamentManagerEliminations {
     const admissionAllowed = (): boolean =>
       !this.tournamentFinished &&
       !this.finalTableDealHandled &&
-      (this.eliminationMutationAllowed() ||
-        (this.running && !this.eliminationSweepSignal?.aborted));
+      (directAuthority
+        ? directAuthority()
+        : this.eliminationMutationAllowed() ||
+          (this.running && !this.eliminationSweepSignal?.aborted));
     if (isMaintenanceFrozen() || !admissionAllowed()) return;
-    const { data, error } = await supabase
-      .from('tournament_capacity_table_receipts')
-      .select('table_id, created_at')
-      .eq('tournament_id', this.tournamentId)
-      .is('manager_admitted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-    if (!admissionAllowed()) return;
-    if (error || !Array.isArray(data)) {
-      if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+    if (this.capacityAdmissionOperation) {
+      await this.capacityAdmissionOperation;
       return;
     }
-    const pendingTableIds = [
-      ...new Set(
-        data
-          .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
-          .filter((id) => id.length > 0)
-      ),
-    ];
-    if (pendingTableIds.length === 0) return;
-
-    const newTableIds: string[] = [];
-    for (const tableId of pendingTableIds) {
-      if (isMaintenanceFrozen() || !admissionAllowed()) return;
-      if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
-    }
-
-    // Same order as the expansion stage: queue the continuation, then ack.
-    this.requestUrgentEliminationSweepAfter(0);
-    const { data: ackData, error: ackError } = await supabase.rpc(
-      'fn_ack_tournament_capacity_tables',
-      { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
-    );
-    if (!admissionAllowed()) return;
-    const acknowledgement = (ackData ?? {}) as {
-      ok?: boolean;
-      reason?: string;
-      requested?: number;
-    };
-    if (
-      ackError ||
-      acknowledgement.ok !== true ||
-      Number(acknowledgement.requested) !== pendingTableIds.length
-    ) {
-      reportError(
-        new Error(
-          `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+    const operation = (async () => {
+      const { data, error } = await supabase
+        .from('tournament_capacity_table_receipts')
+        .select('table_id, created_at')
+        .eq('tournament_id', this.tournamentId)
+        .is('manager_admitted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+      if (!admissionAllowed()) return;
+      if (error || !Array.isArray(data)) {
+        if (error) reportError(error, 'Tournament.capacity_receipts_unreadable');
+        return;
+      }
+      if (directAuthority) {
+        // Read after the receipts: an external finish may have committed while
+        // that SELECT was in flight. Its adoption/financial cleanup remains
+        // with the existing sweep owner. Native F06 admission still owns the
+        // final database fence if a finish races this last read.
+        const { data: event, error: eventError } = await supabase
+          .from('tournaments')
+          .select('status')
+          .eq('id', this.tournamentId)
+          .maybeSingle();
+        if (!admissionAllowed() || isMaintenanceFrozen()) return;
+        if (eventError || !event || typeof event.status !== 'string') {
+          reportError(
+            eventError ?? new Error('Capacity wake tournament authority is unreadable'),
+            'Tournament.capacity_wake_authority_unknown'
+          );
+          return;
+        }
+        if (event.status !== 'RUNNING') return;
+      }
+      const pendingTableIds = [
+        ...new Set(
+          data
+            .map((row: { table_id?: string | null }) => String(row.table_id ?? ''))
+            .filter((id) => id.length > 0)
         ),
-        'Tournament.wake_capacity_table_handoff_ack_failed'
+      ];
+      if (pendingTableIds.length === 0) return;
+
+      const newTableIds: string[] = [];
+      for (const tableId of pendingTableIds) {
+        if (isMaintenanceFrozen() || !admissionAllowed()) return;
+        if (this.startCapacityTableEngine(tableId)) newTableIds.push(tableId);
+      }
+
+      // Same order as the expansion stage: queue the continuation, then ack.
+      this.requestUrgentEliminationSweepAfter(0);
+      const { data: ackData, error: ackError } = await supabase.rpc(
+        'fn_ack_tournament_capacity_tables',
+        { p_tournament_id: this.tournamentId, p_table_ids: pendingTableIds }
       );
-      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
-      return;
-    }
-    if (newTableIds.length > 0) {
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
-      );
-      await this.broadcast('table_expansion', {
-        newTableIds,
-        totalTables: this.tableEngines.size,
-        reason: 'late_registration_capacity',
-      });
+      if (!admissionAllowed()) return;
+      const acknowledgement = (ackData ?? {}) as {
+        ok?: boolean;
+        reason?: string;
+        requested?: number;
+      };
+      if (
+        ackError ||
+        acknowledgement.ok !== true ||
+        Number(acknowledgement.requested) !== pendingTableIds.length
+      ) {
+        reportError(
+          new Error(
+            `capacity table admission acknowledgement failed: ${ackError?.message ?? acknowledgement.reason ?? 'invalid contract'}`
+          ),
+          'Tournament.wake_capacity_table_handoff_ack_failed'
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return;
+      }
+      if (newTableIds.length > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Started ${newTableIds.length} late-registration table(s) on their wake`
+        );
+        await this.broadcast('table_expansion', {
+          newTableIds,
+          totalTables: this.tableEngines.size,
+          reason: 'late_registration_capacity',
+        });
+      }
+    })();
+    this.capacityAdmissionOperation = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.capacityAdmissionOperation === operation) this.capacityAdmissionOperation = null;
     }
   }
 

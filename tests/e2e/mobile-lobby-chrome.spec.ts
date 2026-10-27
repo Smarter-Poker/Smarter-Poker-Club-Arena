@@ -1,3 +1,8 @@
+import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';
+registerInitialTableReadinessCases();
+
+import { registerMobileAvatarPaintCases } from './support/mobileAvatarPaintCases';
+registerMobileAvatarPaintCases();
 import { registerPlayerActionAudioCases } from './audio/playerActionAudioCases';
 import { registerLeaderboardLoadingLayoutCases } from './css/leaderboardLoadingLayoutCases';
 

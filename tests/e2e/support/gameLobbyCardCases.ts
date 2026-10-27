@@ -4,16 +4,19 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 export function registerGameLobbyCardCases() {
-  // Each route/viewport is independent. Sharing one 60s budget across all eight
-  // let CI expire after the last Close, before its overflow assertion could run.
+  // Each route/viewport has its own budget for rendering, waitlist toggles,
+  // scrolling, ticker entry, keyboard focus and pointer navigation.
   for (const viewport of [
     { width: 375, height: 812 },
     { width: 812, height: 375 },
   ]) {
-    for (const kind of ['cash', 'mtt', 'spin', 'sng']) {
+    for (const kind of ['cash', 'cash-full', 'mtt', 'spin', 'sng']) {
       test(`selected ${kind} card survives overflowing details at ${viewport.width}px`, async ({
         page,
       }) => {
+        // Linux WebKit reached the final click after 30s in CI. Preserve every
+        // interaction and leave headroom for the complete journey.
+        test.setTimeout(60_000);
         const bundled = buildSync({
           entryPoints: ['tests/e2e/support/gameLobbyCardFixture.tsx'],
           jsx: 'automatic',
@@ -87,6 +90,29 @@ export function registerGameLobbyCardCases() {
           before!.height,
           `${kind} selected card collapsed into its flex scroll body`
         ).toBeGreaterThan(200);
+        if (kind === 'cash-full') {
+          const originalUrl = page.url();
+          await expect(card.getByText('Full', { exact: true }).first()).toBeVisible();
+          const primary = page.getByRole('dialog').locator('button[data-zone="primaryAction"]');
+          await expect(primary).toHaveAccessibleName('Join Waitlist');
+          await expect(primary).toBeEnabled();
+          await primary.click();
+          await expect(primary).toHaveAccessibleName('Leave Waitlist');
+          await expect(page).toHaveURL(originalUrl);
+          await expect(page.getByTestId('fixture-waitlist-calls')).toHaveText(
+            JSON.stringify([{ tableId: 'fixture-cash-full', joining: true }])
+          );
+          await primary.click();
+          await expect(primary).toHaveAccessibleName('Join Waitlist');
+          await expect(page).toHaveURL(originalUrl);
+          await expect(page.getByTestId('fixture-waitlist-calls')).toHaveText(
+            JSON.stringify([
+              { tableId: 'fixture-cash-full', joining: true },
+              { tableId: 'fixture-cash-full', joining: false },
+            ])
+          );
+          await expect(page.getByTestId('fixture-join-table-calls')).toHaveText('[]');
+        }
         const scroll = page.locator('.glp__scroll');
         await scroll.evaluate((el) => {
           el.scrollTop = el.scrollHeight;

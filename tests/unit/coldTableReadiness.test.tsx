@@ -7,7 +7,11 @@ import {
   whileConnectionBannerStaysHidden,
   whileInitialTableConnects,
 } from '../e2e/support/liveTableRealtime';
-import { remainingInitialTableReadinessMs } from '../e2e/support/initialTableReadiness';
+import {
+  remainingInitialTableReadinessMs,
+  readInitialTableReadiness,
+  waitForInitialTableReadiness,
+} from '../e2e/support/initialTableReadiness';
 
 // Only credentials are a local fixture. Hook, client, mux, native WebSocket,
 // React banner and the exact production observer all execute unchanged.
@@ -200,5 +204,117 @@ describe('cold navigation readiness is distinct from established table continuit
         'navigation deadline'
       );
     }
+  });
+});
+
+describe('bounded browser readiness history owns the original navigation deadline', () => {
+  const startedAt = 1_000;
+  const deadline = 13_000;
+  type HistoryWindow = Window & {
+    __spInitialTableReadiness?: {
+      startedAt: number;
+      deadline: number;
+      stopped: boolean;
+      samples: { observedAt: number; ready: boolean }[];
+      stop: () => void;
+    };
+  };
+  function history(samples: { observedAt: number; ready: boolean }[], stopped = true) {
+    (window as HistoryWindow).__spInitialTableReadiness = {
+      startedAt,
+      deadline,
+      stopped,
+      samples,
+      stop: vi.fn(),
+    };
+  }
+  afterEach(() => {
+    delete (window as HistoryWindow).__spInitialTableReadiness;
+    vi.restoreAllMocks();
+  });
+
+  it('accepts UI readiness after the wire before the deadline even when proof delivery is later', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000);
+    const dispose = vi.fn();
+    const transport = {
+      evaluate: vi.fn(async (fn, args) => {
+        if (args && typeof args === 'object') history([{ observedAt: 12_999, ready: true }]);
+        else fn(args);
+      }),
+      isClosed: () => false,
+      waitForFunction: vi.fn(async (read, args) => {
+        vi.spyOn(Date, 'now').mockReturnValue(14_000);
+        const recorded = read(args);
+        return { jsonValue: async () => recorded, dispose };
+      }),
+    } as unknown as Page;
+    await expect(
+      waitForInitialTableReadiness(transport, startedAt, 12_000, Promise.resolve([{ at: 12_990 }]))
+    ).resolves.toEqual({ kind: 'ready', observedAt: 12_999 });
+    expect(dispose).toHaveBeenCalledOnce();
+    expect((window as HistoryWindow).__spInitialTableReadiness).toBeUndefined();
+  });
+
+  it('does not accept an early banner grace interval followed by Connecting before wire readiness', () => {
+    history([
+      { observedAt: 1_500, ready: true },
+      { observedAt: 12_995, ready: false },
+    ]);
+    vi.spyOn(Date, 'now').mockReturnValue(14_000);
+    expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toEqual({
+      kind: 'expired',
+      observedAt: 14_000,
+    });
+  });
+
+  it.each([13_000, 13_001])(
+    'rejects UI readiness first observed at or after the deadline: %s',
+    (now) => {
+      history([{ observedAt: now, ready: true }]);
+      vi.spyOn(Date, 'now').mockReturnValue(14_000);
+      expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toEqual({
+        kind: 'expired',
+        observedAt: 14_000,
+      });
+    }
+  );
+
+  it('keeps waiting when the mounted table, felt or cleared banner is not yet ready', () => {
+    history([{ observedAt: 12_995, ready: false }], false);
+    vi.spyOn(Date, 'now').mockReturnValue(12_999);
+    expect(readInitialTableReadiness({ startedAt, deadline, wireAt: 12_990 })).toBe(false);
+  });
+
+  it('counts document and chunk startup against the original budget', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(deadline);
+    const evaluate = vi.fn();
+    await expect(
+      waitForInitialTableReadiness({ evaluate } as unknown as Page, startedAt, 12_000)
+    ).rejects.toThrow('navigation deadline');
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('stops and removes its sampler when required protocol frames fail', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000);
+    const stop = vi.fn();
+    const transport = {
+      evaluate: vi.fn(async (fn, args) => {
+        if (args && typeof args === 'object') {
+          history([]);
+          (window as HistoryWindow).__spInitialTableReadiness!.stop = stop;
+        } else fn(args);
+      }),
+      isClosed: () => false,
+    } as unknown as Page;
+    await expect(
+      waitForInitialTableReadiness(
+        transport,
+        startedAt,
+        12_000,
+        Promise.reject(new Error('Missing SNAPSHOT'))
+      )
+    ).rejects.toThrow('Missing SNAPSHOT');
+    expect(stop).toHaveBeenCalledOnce();
+    expect((window as HistoryWindow).__spInitialTableReadiness).toBeUndefined();
   });
 });

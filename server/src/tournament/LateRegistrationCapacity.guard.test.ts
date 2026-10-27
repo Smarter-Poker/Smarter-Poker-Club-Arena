@@ -422,7 +422,7 @@ describe('late-registration capacity authority', () => {
     // stay in the expansion stage after balancing (theFreezeIsTotal law).
     expect(wakeBranch).not.toContain('checkDynamicTableExpansion()');
     const admit = MANAGER.slice(
-      MANAGER.indexOf('protected async admitCommittedCapacityTables(): Promise<void>'),
+      MANAGER.indexOf('protected async admitCommittedCapacityTables('),
       MANAGER.indexOf('protected async checkDynamicTableExpansion(): Promise<boolean>')
     );
     // Fenced by stop, abort and the freeze only - never by the work budget.

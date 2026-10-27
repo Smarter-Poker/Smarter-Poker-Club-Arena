@@ -101,6 +101,35 @@ INSERT INTO operational_alert_events(id,alertname,severity,received_at,investiga
         assert stored == sql("SELECT row_to_json(m) FROM sp_daily_metrics m;").stdout
         repeated = sql(migration.read_text(), check=False)
         assert repeated.returncode and 'DIGEST_ALERT_PREIMAGE_DRIFT' in repeated.stderr
+        # Oct27 assembly timeout: exact live predecessor vs one-pass history.
+        sql((root/'tests/fixtures/digest-spin-attention-preimage.sql').read_text())
+        cases = [
+          '{}',
+          '{"health":{"alert_names":{"Refusal":12,"Direct":1,"Info":1,"OldResolved":1,"UnknownNew":1}}}',
+          '{"health":{"alert_names":{"Refusal":6}}}',
+          '{"health":{"alert_names":{"Refusal":10}}}',
+          '{"health":{"alert_names":{"Refusal":9}}}',
+        ]
+        def attention_values():
+            return [json.loads(sql("SELECT fn_sp_digest_attention('2026-10-24','"+case+"');").stdout) for case in cases]
+        # Preserve new-type, doubling, minimum-ten, update-only and informational rules.
+        old_values=attention_values()
+        metadata=sql("SELECT proowner,proacl,proconfig,prosecdef FROM pg_proc WHERE oid='fn_sp_digest_attention(date,jsonb)'::regprocedure;").stdout
+        candidate=root/'supabase/migrations/20261027142826_digest_attention_reads_critical_history_once.sql'
+        sql(candidate.read_text())
+        assert attention_values()==old_values
+        body=sql("SELECT pg_get_functiondef('fn_sp_digest_attention(date,jsonb)'::regprocedure);").stdout
+        start=body.index('  WITH history AS MATERIALIZED')
+        query=body[start:body.index('  IF v > 0 THEN',start)].replace('    INTO v, t\n','')
+        query=query.replace('p_metrics',"'{\"health\":{\"alert_names\":{\"Refusal\":12}}}'::jsonb")
+        query=query.replace("s - interval", "'2026-10-24 05:00Z'::timestamptz - interval").replace('< s\n',"< '2026-10-24 05:00Z'::timestamptz\n")
+        plan=json.loads(sql('EXPLAIN (FORMAT JSON) '+query).stdout)[0]['Plan']
+        def history_scans(node):
+            return int(node.get('Relation Name')=='operational_alert_events')+sum(history_scans(x) for x in node.get('Plans',[]))
+        assert history_scans(plan)==1, plan
+        assert sql("SELECT proowner,proacl,proconfig,prosecdef FROM pg_proc WHERE oid='fn_sp_digest_attention(date,jsonb)'::regprocedure;").stdout==metadata
+        assert 'DIGEST_SPIN_PREIMAGE_DRIFT' in sql(candidate.read_text(),check=False).stderr
+        print('PASS: exact attention predecessor and candidate agree on new/rising/unchanged/empty alert cases; single materialized history scan; access/config preserved; drift/replay refused')
         print('PASS: 12-to-6 baseline, unchanged ten-event threshold and actual prior-day count 3, all metric consumers, direct/optional metadata, informational/update-only exclusion, unchanged ACL/owner/settings, read-only and dispatch freshness, original snapshot/alert retained, real mismatch remains open, replay refusal')
     finally:
         run('pg_ctl', '-D', str(scratch/'data'), '-m', 'immediate', 'stop')

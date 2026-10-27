@@ -459,7 +459,7 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("panel.getByRole('button', { name: 'Details', exact: true }).click()");
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
-    expect(lobby).toContain("locator('.agc-action--primary')");
+    expect(lobby).toContain(`locator('button[data-zone="primaryAction"]')`);
     // Every fresh lobby context can take the cold read, including the first
     // shell case. A timeout inside only one test does not protect its siblings.
     expect(lobby).toMatch(

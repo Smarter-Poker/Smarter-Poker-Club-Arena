@@ -353,3 +353,19 @@ describe('signed out', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+it('a newer successful choice retires older interrupted fields without losing other chosen fields', async () => {
+  rpc.mockRejectedValue(new Error('network down'));
+  await applyTableAppearance(
+    { table_id: 'jade_city', background_id: 'vegas' },
+    { userId: 'superseded-user' }
+  );
+  expect(pendingAppearanceIntents('superseded-user')).toHaveLength(1);
+  rpc.mockResolvedValue({ error: null });
+  await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'superseded-user' });
+  expect(rpc.mock.calls.at(-1)?.[1].p_patch).toEqual({
+    table_id: 'neon_city',
+    background_id: 'vegas',
+  });
+  expect(pendingAppearanceIntents('superseded-user')).toEqual([]);
+});

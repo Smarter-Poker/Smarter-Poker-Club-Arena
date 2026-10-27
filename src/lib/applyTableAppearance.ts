@@ -114,6 +114,8 @@ function retryableAppearanceWriteError(error: unknown): boolean {
         : String(error || '');
   return (
     name === 'AbortError' ||
+    ['28000', 'PGRST301', 'PGRST302'].includes(code) ||
+    /authenticated account changed|session expired|authentication required/i.test(message) ||
     /^PGRST00[013]$/.test(code) ||
     /abort|network|fetch|timeout|timed out|connection/i.test(message)
   );
@@ -291,7 +293,17 @@ export async function applyTableAppearance(
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
-  rememberAppearanceIntent(opts.userId, { mutationId, gameType, patch: cleanPatch });
+  const supersededIntents = pendingAppearanceIntents(opts.userId).filter(
+    (intent) => intent.gameType === gameType
+  );
+  // A later choice also carries any still-owed fields from earlier interrupted
+  // choices in this bucket. Once this request succeeds, replaying an older
+  // failed request would put the old selection back, so retire those originals.
+  const persistedPatch: AppearancePatch = {
+    ...supersededIntents.reduce((patch, intent) => ({ ...patch, ...intent.patch }), {}),
+    ...cleanPatch,
+  };
+  rememberAppearanceIntent(opts.userId, { mutationId, gameType, patch: persistedPatch });
 
   /* Seed the durable baseline only at the start of a write chain. A later
      optimistic tap's `previous` may itself never persist; using it as a
@@ -309,7 +321,7 @@ export async function applyTableAppearance(
   // and durable mutation UUID cross the RPC boundary.
   const previousTail = writeTails.get(scope) ?? Promise.resolve();
   const task = previousTail.then(() =>
-    persistAppearancePatch(opts.userId as string, mutationId, gameType, cleanPatch)
+    persistAppearancePatch(opts.userId as string, mutationId, gameType, persistedPatch)
   );
   const tail = task.then(() => undefined);
   writeTails.set(scope, tail);
@@ -373,8 +385,9 @@ export async function applyTableAppearance(
     return { ok: false, error, reverted };
   }
 
+  for (const intent of supersededIntents) finishAppearanceIntent(opts.userId, intent.mutationId);
   for (const field of APPEARANCE_FIELDS) {
-    const value = cleanPatch[field];
+    const value = persistedPatch[field];
     if (value) durableFieldValue.set(`${scope}:${field}`, value);
   }
   pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));

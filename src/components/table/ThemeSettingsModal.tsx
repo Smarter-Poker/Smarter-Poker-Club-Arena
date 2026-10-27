@@ -1,4 +1,8 @@
-import { pendingAppearancePatch } from '../../lib/appearanceIntentJournal';
+import {
+  pendingAppearancePatch,
+  pendingAppearanceIntents,
+} from '../../lib/appearanceIntentJournal';
+import { resumePendingAppearance } from '../../lib/applyTableAppearance';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THEME SETTINGS MODAL — Bible V8 §11.2
@@ -1525,6 +1529,21 @@ export function ThemeSettingsModal({
       window.removeEventListener('online', reconcile);
     };
   }, [appearanceRealtime.state, isOpen, userId]);
+
+  // Resume an interrupted choice once on this explicit editor opening. The
+  // existing observation cadence below/above never retries a save.
+  useEffect(() => {
+    if (!isOpen || !userId || !pendingAppearanceIntents(userId).length) return;
+    let current = true;
+    void resumePendingAppearance(userId).then(() => {
+      if (!current) return;
+      themeReadRef.current = null;
+      setThemeLoadRevision((revision) => revision + 1);
+    });
+    return () => {
+      current = false;
+    };
+  }, [isOpen, userId]);
 
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {

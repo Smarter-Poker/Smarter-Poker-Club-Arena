@@ -156,7 +156,11 @@ try:
     require(before == after and before.count('"fee"') > 0, "union reads counted once return exactly the figures they replaced")
     # Owner 2026-10-26: arbitrary-depth downlines, exact per-user totals,
     # and refusal of the whole report/union for every agent rank.
-    boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text()
+    # Pin setup and assertions to one reporting day. The fixture session is UTC;
+    # after UTC midnight CURRENT_DATE is tomorrow for Chicago and the real
+    # reader correctly clamps it away, producing a false zero-total failure.
+    report_day = q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date")
+    boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text().replace("@REPORT_DAY@", report_day)
     setup, checks = boundary.split("-- AFTER MIGRATION", 1)
     run(psql("live"), setup)
     require(q("live", "SELECT cardinality(fn_ca_club_data_downline(md5('boundary-club')::uuid,md5('super_agent')::uuid))") == '21', "baseline reproduces the twenty-level downline cutoff")

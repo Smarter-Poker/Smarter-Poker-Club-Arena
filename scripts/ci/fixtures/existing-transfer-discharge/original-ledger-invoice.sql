@@ -83,4 +83,3 @@ BEGIN
  PERFORM public.fn_deliver_accounting_invoice(inv_id);
  RETURN inv_id;
 END $function$
-

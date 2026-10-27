@@ -9,4 +9,3 @@ BEGIN
  PERFORM public.fn_invoice_accounting_ledger_transfer(NEW.id);
  RETURN NEW;
 END $function$
-

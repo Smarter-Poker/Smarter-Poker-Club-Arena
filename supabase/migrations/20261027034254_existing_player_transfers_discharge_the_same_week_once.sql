@@ -1708,6 +1708,16 @@ BEGIN
     'cash_sessions',jsonb_build_object('available',false,'sessions','[]'::jsonb)));
 END;$function$;
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check','migration 20261027034254_existing_player_transfers_discharge_the_same_week_once');
+REVOKE ALL ON FUNCTION public.fn_ca_settlement_correctness_check() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_correctness_check() TO service_role;
+REVOKE ALL ON FUNCTION public.ca_player_stats_financial_report(uuid,uuid,integer,text,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.ca_player_stats_financial_report(uuid,uuid,integer,text,text) TO authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz) TO service_role;
 DO $postimage$ BEGIN
  IF md5(pg_get_functiondef('public.ca_player_stats_financial_report(uuid,uuid,integer,text,text)'::regprocedure)) IS DISTINCT FROM '79d56064bddddd2025c17310127a62e5'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: ca_player_stats_financial_report(uuid,uuid,integer,text,text)';END IF;
  IF md5(pg_get_functiondef('public.fn_ca_settlement_correctness_check()'::regprocedure)) IS DISTINCT FROM 'aff58a0089c75f8e152e77e9d96fb7c8'THEN RAISE EXCEPTION 'existing_transfer_postimage_changed: fn_ca_settlement_correctness_check()';END IF;

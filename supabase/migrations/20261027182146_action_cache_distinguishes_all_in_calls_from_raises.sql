@@ -1,6 +1,7 @@
 -- Reserved by scripts/new-migration.mjs. A short all-in call is not a raise.
 -- Repair both maintained action readers without replacing their financial math,
 -- authorization, range/keyset access paths or amount/dead-money reconstruction.
+-- @live-proof: (SELECT count(*)=2 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('ca_hand_player_facts_one','ca_hand_player_facts_range') AND position('a.raises_bet_level)::int AS aggro_cnt' in prosrc)>0 AND position('a.action = ''call'' OR (a.action IN (''all_in'',''allin'') AND NOT a.raises_bet_level)' in prosrc)>0)
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';

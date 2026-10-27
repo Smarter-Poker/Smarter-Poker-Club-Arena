@@ -1,0 +1,7 @@
+# Horses stop buying a fifth unresolved tournament promise
+
+The current-load cap intentionally counts future bookings only within one hour. Horses bought six entries outside that window, then occupied six simultaneous tournament chairs after all paid entries were honoured. Every entry in the observed case was purchased after the earlier cap correction.
+
+The two existing horse purchase wrappers now decline a new purchase when the horse already holds four distinct registered/playing entries into unfinished events, regardless of their start time. This conservative purchase choice uses the existing per-user transaction cap lock; it does not guess tournament duration. Existing paid target entries and chairs still reach their original seating/replay paths. Humans, global one-hour load rules, financial delegates and existing freezes are unchanged.
+
+The native PostgreSQL regression executes the captured original wrappers and original seat-acquisition lock, with controlled economic delegate sinks. It proves the preimage buys a fifth future entry, both repaired doors refuse without a new purchase, concurrent last-slot purchases admit one, and paid seating, replay, completed/eliminated release, freeze and service-only permissions persist. The existing required horse daily native owner invokes it. This fixture isolates purchase selection; the required accounting suite separately retains the actual financial-chain checks.

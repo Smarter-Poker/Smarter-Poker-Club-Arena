@@ -227,8 +227,50 @@ export class MuxTableSocket {
     if (this.readyState !== 0) return;
     this.readyState = 1;
     this.onopen?.();
+    for (const finish of this.entryWaiters) finish();
     // SUBSCRIBED alone is not a prepared table: initial warm-up also needs state.
     this.probeWarmState();
+  }
+
+  private initialStateAt: number | null = null;
+  private preparedForEntry = false;
+  private entryWaiters = new Set<() => void>();
+
+  /** Entry is ready only after the engine acknowledges and supplies real state. */
+  waitForInitialState(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const finish = () => {
+        if (this.readyState === 3) {
+          cleanup();
+          reject(new Error('Table Connection Closed Before Preparation Finished'));
+        } else if (
+          this.readyState === 1 &&
+          this.initialStateAt !== null &&
+          Date.now() - this.initialStateAt <= 15_000 &&
+          (this.warmFrames === null ||
+            (this.warmFrames.length > 0 && Date.now() - this.warmStateAt <= 15_000))
+        ) {
+          // Keep the selected warm slot until the felt adopts it (or TTL closes it).
+          this.preparedForEntry = true;
+          cleanup();
+          resolve();
+        }
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.entryWaiters.delete(finish);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Table Preparation Timed Out'));
+      }, SUBSCRIBE_TIMEOUT_MS);
+      this.entryWaiters.add(finish);
+      finish();
+    });
+  }
+
+  isPreparingEntry(): boolean {
+    return this.preparedForEntry || this.entryWaiters.size > 0;
   }
 
   private warmFrames: string[] | null = null;
@@ -299,6 +341,19 @@ export class MuxTableSocket {
 
   /** @internal */
   _message(raw: string): void {
+    try {
+      const frame = JSON.parse(raw);
+      if (
+        frame.type === 'SNAPSHOT' &&
+        Number.isFinite(frame.seq) &&
+        frame.state &&
+        typeof frame.state === 'object' &&
+        !Array.isArray(frame.state)
+      )
+        this.initialStateAt = Date.now();
+    } catch {
+      /* malformed traffic cannot prepare entry */
+    }
     if (this.stateProbe) {
       try {
         const frame = JSON.parse(raw);
@@ -351,6 +406,7 @@ export class MuxTableSocket {
         this.warmFrames = [];
       }
     }
+    for (const finish of this.entryWaiters) finish();
     this.onmessage?.({ data: raw });
   }
 
@@ -363,6 +419,7 @@ export class MuxTableSocket {
     }
     if (this.readyState === 3) return;
     this.readyState = 3;
+    for (const finish of this.entryWaiters) finish();
     this.warmFrames = null;
     this.onclose?.({ code, reason });
   }
@@ -509,7 +566,9 @@ class EngineSocketMuxImpl {
     this.useTransportIdentity(baseUrl, token);
     if (this.isSubscribed(tableId)) return null;
     if (this.facades.size >= 4) {
-      const oldestWarm = [...this.facades.values()].find((facade) => facade.isWarmSubscription());
+      const oldestWarm = [...this.facades.values()].find(
+        (facade) => facade.isWarmSubscription() && !facade.isPreparingEntry()
+      );
       if (!oldestWarm) return null;
       oldestWarm.close(1000, 'new lobby intent');
     }
@@ -548,6 +607,14 @@ class EngineSocketMuxImpl {
   isSubscribed(tableId: string): boolean {
     const f = this.facades.get(tableId);
     return !!f && f.readyState !== 3; /* CLOSED */
+  }
+
+  /** The lobby awaits the same subscription the felt will adopt. */
+  waitForTableEntry(tableId: string): Promise<void> {
+    const facade = this.facades.get(tableId);
+    if (!facade) return Promise.reject(new Error('Table Preparation Could Not Start'));
+    if (facade.readyState === 1) facade.send(JSON.stringify({ type: 'RESYNC' }));
+    return facade.waitForInitialState();
   }
 
   /** A socket is authenticated at its handshake, not by changing these fields. */

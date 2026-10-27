@@ -187,7 +187,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
-import { warmTable } from '../services/tableWarmup';
+import { prepareTableForEntry, warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
 import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
 import { usePageTitle } from '../hooks/usePageTitle';
@@ -4331,6 +4331,27 @@ function ClubHomePageContent({
     };
   }, [gameEntryScope]);
 
+  const handleViewCashTable = useCallback(
+    async (tableId: string) => {
+      if (!gameEntryScope.active || gameEntryScope.busy) return;
+      gameEntryScope.busy = true;
+      setActionBusy(true);
+      try {
+        await prepareTableForEntry(tableId);
+        if (gameEntryScope.active) navigate(`/table/${tableId}`);
+      } catch (error) {
+        if (gameEntryScope.active) {
+          reportError(error, 'ClubHomePage.prepareTableEntry', { tableId });
+          toast.warning('Could Not Connect To The Table. Please Try Again.');
+        }
+      } finally {
+        gameEntryScope.busy = false;
+        if (gameEntryScope.active) setActionBusy(false);
+      }
+    },
+    [gameEntryScope, navigate, toast]
+  );
+
   const handleJoinTable = useCallback(
     (tableId: string) => {
       haptic.medium();
@@ -4859,7 +4880,7 @@ function ClubHomePageContent({
         e.kind === 'cash' && e.game && isLightningMode((e.raw as LobbyTableRow).cluster_mode)
           ? navigate(lightningRoute(e.game.id))
           : e.kind === 'cash'
-            ? (warmTable(e.id), navigate(`/table/${e.id}`))
+            ? void handleViewCashTable(e.id)
             : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,
@@ -4892,6 +4913,7 @@ function ClubHomePageContent({
       handleRegister,
       handleUnregister,
       handleJoinTable,
+      handleViewCashTable,
       openEntry,
       navigate,
       handleLobbyWaitlistToggle,
@@ -6320,6 +6342,7 @@ function ClubHomePageContent({
           busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
+          onViewCashTable={handleViewCashTable}
           seatsClosedLabel={arenaSeatsClosedLabel}
           registrationClosedLabel={arenaRegistrationClosedLabel}
           onWaitlistToggle={handleLobbyWaitlistToggle}

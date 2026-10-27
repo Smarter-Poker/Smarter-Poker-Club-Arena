@@ -62,6 +62,7 @@ export interface GameLobbyPanelProps {
   busy: boolean;
   onClose: () => void;
   onJoinTable: (tableId: string) => void;
+  onViewCashTable?: (tableId: string) => void;
   /** Why no seat can be taken on this whole board; see LobbyRowContext. */
   seatsClosedLabel?: string;
   /** Why no tournament can be entered on this whole board; see LobbyRowContext. */
@@ -175,6 +176,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     busy,
     onClose,
     onJoinTable,
+    onViewCashTable,
     seatsClosedLabel,
     registrationClosedLabel,
     onWaitlistToggle,
@@ -643,12 +645,16 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         else cta.run?.();
       },
       secondaryLabel: isCash ? (entry.game ? 'View Game' : 'View Table') : 'Details',
-      onSecondary: () =>
-        navigate(
-          isCash ? `/table/${entry.id}` : withClubContext(`/tournaments/${entry.id}`, clubId)
-        ),
+      onSecondary: () => {
+        if (busy) return;
+        if (isCash && onViewCashTable) onViewCashTable(entry.id);
+        else
+          navigate(
+            isCash ? `/table/${entry.id}` : withClubContext(`/tournaments/${entry.id}`, clubId)
+          );
+      },
     };
-  }, [busy, cta, ctaDisabled, entry.id, entry.game, navigate, isCash, clubId]);
+  }, [busy, cta, ctaDisabled, entry.id, entry.game, navigate, isCash, clubId, onViewCashTable]);
 
   // ── Right zone of the plaque ──
   /* The lobby row is the fallback for the two figures the table now prints

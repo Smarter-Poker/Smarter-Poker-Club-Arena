@@ -36,6 +36,8 @@ def database_environment(environment):
 def query(start,end):
     # Timestamp literals have already passed a closed UTC grammar. No payload,
     # current player flags or cards are selected, and all joins use original keys.
+    # The cash-admission roster is intentionally narrower than the whole fleet.
+    # Verify every unretired registered identity without changing its eligibility.
     return fr"""BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='1500ms';
 SET LOCAL lock_timeout='250ms';
@@ -46,7 +48,8 @@ SELECT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
 \gset
 \if :fleet_time_index_ok
 WITH cohort AS MATERIALIZED (
- SELECT horse_id::text FROM public.ca_horse_active_roster ORDER BY horse_id LIMIT 1001
+ SELECT horse_id::text FROM public.ca_horse_fleet_register
+ WHERE retired_at IS NULL ORDER BY horse_id LIMIT 1001
 ), selected AS MATERIALIZED (
  SELECT id,table_id,hand_number,created_at FROM public.hand_history
  WHERE created_at>='{start}'::timestamptz AND created_at<'{end}'::timestamptz
@@ -106,7 +109,7 @@ def packet_from_rows(rows,sha,start,end):
     if len(set(keys))!=len(keys) or len({h['id'] for h in hands})!=len(hands):raise ValueError('duplicate_coordinate')
     packet={'version':1,'sourceSha':sha,'window':{'startUtc':start,'endUtc':end},'horseIds':ids,'handKeys':keys}
     digest=hashlib.sha256(json.dumps(packet,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-    attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_active_roster','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
+    attestation={'version':1,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_fleet_register','rosterPredicate':'retired_at IS NULL','cashEligibilityInferred':False,'snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':digest,'rosterCount':1000,'selectedHands':len(keys),'sourceOwnerCounts':{owner:sum(h['source_owner']==owner for h in hands) for owner in ('classic','lightning')},'completePopulation':False,'allPhasesVerified':False}
     return packet,attestation
 
 PHASE_AXES = {

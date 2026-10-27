@@ -74,7 +74,15 @@ jobs:
       - name: Sealed inventory retains the complete original financial proof
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --treasury-seat-gift-migration supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql
+      - name: Original treasury gifts retain hand ownership and future admission
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py --reader-composition scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-readers.py --output "${{ runner.temp }}/treasury-financial-owners"
+      - name: Old queued treasury entry resumes through the current atomic leaf
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/common-leaf/run-queued-native.py --output "${{ runner.temp }}/treasury-queued-old-leaf"
       - name: Earned windows retain every complete hand cardinality
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

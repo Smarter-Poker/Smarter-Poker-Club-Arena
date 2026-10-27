@@ -51,7 +51,7 @@ export function createOpponentMemorySchemaProbe(now = Date.now) {
 }
 export const horseOpponentMemorySchema = createOpponentMemorySchemaProbe();
 
-const addedMemoryVariants = new Set(['flh', 'flo8', 'short_deck']);
+const addedMemoryVariants = new Set(['flh', 'flo8', 'short_deck', 'pineapple']);
 const variantSchema = new Map<string, { epoch: number; retryAt: number | null }>();
 class UnsupportedOpponentMemoryVariant extends Error {
   readonly code = '22023';

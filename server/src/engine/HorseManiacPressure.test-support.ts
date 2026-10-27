@@ -75,6 +75,14 @@ export function hasNewThirdPartyPreflopContribution(
   );
 }
 
+/** Independent smoke-test cost: a nonterminal call still has streets to play.
+ * The synthetic potter bets every hand, so its selection penalty is zero.
+ * This is a uniform-policy benchmark, not a calibrated public-range oracle. */
+export function uniformPolicyContinuationCost(street: string, call: number, stack: number): number {
+  if (call >= stack) return 0;
+  return street === 'flop' ? 0.05 : street === 'turn' ? 0.03 : 0;
+}
+
 export interface PressureTally {
   /** facing the maniac's preflop all-in, hero not yet in voluntarily */
   vsJam: { call: number; fold: number; callScores: number[]; foldScores: number[] };
@@ -96,11 +104,16 @@ export interface PressureTally {
   /**
    * Postflop, heads-up against the maniac's bet: every fold with hero's true
    * equity against a RANDOM holding (the jammer / potter plays every hand)
-   * and the price. A fold with equity above the price is a fold the maniac
-   * profits from.
+   * and the raw price. Showdown equity alone does not price a nonterminal
+   * continuation: retain its independent realization cost separately.
    */
   /** pairedBoardRule: the fold Dan ordered on 2026-10-25 (HorsePloPairedBoardFold) */
-  postflopFolds: { equity: number; price: number; pairedBoardRule: boolean }[];
+  postflopFolds: {
+    equity: number;
+    price: number;
+    continuationCost: number;
+    pairedBoardRule: boolean;
+  }[];
   postflopCalls: number;
   /** 2026-10-22: per hand, at its start, is the seat read as a preflop maniac */
   maniacReadByHand: boolean[];
@@ -376,6 +389,7 @@ export function playManiacPressure(
                 });
               tally.postflopFolds.push({
                 equity: eq,
+                continuationCost: uniformPolicyContinuationCost(street, call, spot.hero.stack),
                 price:
                   call /
                   (spot.state.pot +

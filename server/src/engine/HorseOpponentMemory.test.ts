@@ -40,10 +40,11 @@ describe('variant and session durable opponent reads', () => {
       'flh',
       'flo8',
       'short_deck',
+      'pineapple',
     ]);
     expect(
       new Set(MEMORY_VARIANTS.map((v) => opponentMemoryKey(uid, v, 'cash', 'short'))).size
-    ).toBe(8);
+    ).toBe(9);
   });
   it('retains the read through a portable frame, isolates PLO variants and cash/tournament contexts', () => {
     HorseMind.importDurableOpponentProfiles([

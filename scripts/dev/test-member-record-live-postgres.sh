@@ -77,3 +77,16 @@ if ! grep -q 'Chicago week and month reader preimage changed' "$work/chicago-wee
   cat "$work/chicago-week-replay.log"; exit 1
 fi
 echo 'CHICAGO_WEEK_MONTH_POSTGRES PASS: Monday and 1st at Chicago midnight, DST, year rollover, accounting cutoff, access, both readers agree, replay refusal'
+
+# The browser event log already specifies seven-day retention. Exercise its
+# bounded daily owner on native PostgreSQL; financial tables are not involved.
+"${psql[@]}" -f "$fixture/bus-retention-before.sql"
+if "${psql[@]}" -f "$fixture/bus-retention-after.sql" > "$work/bus-before.log" 2>&1; then
+  echo 'Bus retention unexpectedly passed without its owner'; exit 1
+fi
+if ! grep -q 'fn_prune_bus_event_log' "$work/bus-before.log"; then cat "$work/bus-before.log"; exit 1; fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261027190154_bus_event_logs_obey_their_existing_seven_day_retention.sql" -f "$fixture/bus-retention-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261027190154_bus_event_logs_obey_their_existing_seven_day_retention.sql" > "$work/bus-replay.log" 2>&1; then
+  echo 'Bus retention migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'already exists' "$work/bus-replay.log"; then cat "$work/bus-replay.log"; exit 1; fi

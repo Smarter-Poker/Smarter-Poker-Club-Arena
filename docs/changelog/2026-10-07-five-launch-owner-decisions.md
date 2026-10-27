@@ -56,7 +56,7 @@ says who would be owed what. So the platform stops advertising money it cannot
 pay. Paid leaderboard prizes stay with the club leaderboard programme, which
 has a settler.
 
-**Change.** Every promotion's prize pool is 0, the two still reading active or
+**Change.** Every promotion's prize pool is 0, the three still reading active or
 scheduled months after their end dates are cancelled, and the CHECK
 `promotions_advertise_no_unpaid_prize` refuses a prize pool until the change
 that builds a payer lifts it. The warning trigger is dropped, as its own header

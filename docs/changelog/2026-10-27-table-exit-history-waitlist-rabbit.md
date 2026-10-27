@@ -8,3 +8,5 @@
 - Rabbit Hunt uses the authoritative hand-complete event to show an eligible server offer immediately during the result hold. The shared HUD slot remains exclusive, a new live decision retains priority, and reveal billing, privacy and expiry are unchanged.
 
 This is a client release using existing engine APIs. No engine replacement, migration, permission change, production wager or manual wallet write is required. Focused regression evidence, protected checks, publication identities and live observations are retained in the existing hand-review task checkpoint.
+
+The exact-cent formatter is explicitly reviewed in this branch's entry-chunk fragment because SessionSummaryHost mounts at the app root. The helper has no dependencies and formats the result synchronously; it introduces no account, route or service import. The measured entry bundle remains within its existing size budget.

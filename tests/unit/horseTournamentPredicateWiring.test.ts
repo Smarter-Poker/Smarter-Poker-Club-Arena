@@ -80,8 +80,10 @@ it('embeds fixed helper source and preserves reviewed validators and intentional
   // Independent source pins from reviewed 3269; CI requires no Git history.
   const pins = {
     reference_cases: '31259cb18806e1e6c430efc46a9f9bdd1ca71bb18f88e52a81b516554cc5e544',
+    // Protected #8360 adds bounded unknown-selection diagnostics only; the
+    // observed-result guards and original binding checks remain unchanged.
     sanitize_positive_calloff_result:
-      '2c382f048797f6e692bffaebc2e17b3a3ea0075aca8b4793cc42943b050ad369',
+      '560fd66bde654a23933989342565d7da366b91e216cacec69715fa266bcf1d03',
     sanitize_reference_result: '5b78b3c9dc042dff103861c75050e97912bdcd020abcefb3fb9ead3e37d96e66',
     reference_diagnostic: '808e49bea3a0f1f411191bc9bbd5efe8d831fe308765bdcf5ea6ff91bb45e592',
     tournament_yields: '87d7b1c052ca72140bb659d31f3078f08c1ea7b4a867160b26ed440b8af511d4',
@@ -105,8 +107,10 @@ it('embeds fixed helper source and preserves reviewed validators and intentional
   const currentFunctions = functions(current);
   const sha = (text: string) => createHash('sha256').update(text).digest('hex');
   for (const [key, pin] of Object.entries(pins)) expect(sha(currentFunctions[key]), key).toBe(pin);
+  // The same reviewed #8360 diagnostics compose with this branch's unchanged
+  // awaited stdout flush; keep the exact composed helper bound.
   expect(sha(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0])).toBe(
-    '679417485571a7ab4c8659d1b2e30e43ee8b881717918d26cf6f636fea843f21'
+    'd9d3b2dd3fa0e634422748f439c44ee9783bb99315d58c690d7d08486eaec6c2'
   );
 });
 it('keeps unavailable runtime and untrusted child output sanitized unknown', () => {

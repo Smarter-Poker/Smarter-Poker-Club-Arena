@@ -1,0 +1,5 @@
+# Retain the original tournament cash-yield event in read-only diagnostics
+
+The existing inspector omitted SessionRotator's successful tournament-departure log, so a natural five-to-four seat transition could be observed in the database without attributing it to the prestart decision. The same bounded manual inspector now exports only exact timestamped tournament-yield events: existing eight-character horse/table prefixes, minutes to start, allowlisted verdict and excess count. It reads both the existing recent tail and retained stream/archive paths with a 128-event output bound and explicit truncation.
+
+No engine behavior, release, schedule, financial state or log production changes. An accepted leave request may still wait for a hand boundary; the diagnostic explicitly does not certify completed cashout. Database seat/ledger receipts and original log identity must be checked together. Focused regression covers exact events, malformed/foreign/private suffix rejection, bounded output and an event older than 12,000 noisy records.

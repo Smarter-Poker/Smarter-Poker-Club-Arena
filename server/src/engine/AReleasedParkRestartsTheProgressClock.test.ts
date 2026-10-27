@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { zombieProgressAge } from '../fleetWideZombieVerdict.js';
 
 const TABLE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const ZOMBIE_MS = 180_000;
@@ -67,7 +68,7 @@ function toRunning(e: any): void {
 function sweepCondemns(e: any): boolean {
   const shouldBeDealing = true;
   const parkedOnPurpose = e.isParkedByDesign();
-  return shouldBeDealing && !parkedOnPurpose && e.msSinceProgress() > ZOMBIE_MS;
+  return shouldBeDealing && !parkedOnPurpose && zombieProgressAge(e) > ZOMBIE_MS;
 }
 
 /** Park at the gate the way both loops do, and report when the loop is back. */
@@ -256,7 +257,7 @@ describe('the wiring the behaviour above depends on', () => {
       /const parkedOnPurpose = engine\.isParkedByDesign\(\) && !pausedTooLong;/
     );
     expect(GAME_SERVER).toMatch(
-      /shouldBeDealing && !parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/
+      /shouldBeDealing && !parkedOnPurpose && zombieProgressAge\(engine\) > 180_000/
     );
   });
 });

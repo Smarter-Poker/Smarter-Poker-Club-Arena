@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run actual reclaim and history bodies against isolated PostgreSQL wallets."""
-import os, re, subprocess, tempfile, shutil, json
+import os, re, subprocess, tempfile, shutil, json, sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 PG=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin'))
+if sys.platform=='darwin' and not Path('/Volumes/SmarterWork/agent-work').is_dir():
+ raise RuntimeError('Mounted External Work SSD Is Required')
 base=Path('/Volumes/SmarterWork/agent-work') if Path('/Volumes/SmarterWork').is_dir() else Path(tempfile.gettempdir())
 cluster=Path(tempfile.mkdtemp(prefix='claim-pg-',dir=base)); socket=cluster/'s';socket.mkdir()
 def run(cmd,text=None):
@@ -26,6 +28,18 @@ try:
  fixture=ROOT/'scripts/ci/fixtures/chip-wallet-choice'
  q((fixture/'setup.sql').read_text())
  q((fixture/'selected-setup.sql').read_text())
+ # Use the production exact-intent owner and insertion guard, not the fixture adapter.
+ authority=(ROOT/'supabase/migrations/20261004124327_cashier_authority_and_retry_keys_are_exact.sql').read_text()
+ q('DROP VIEW cashier_rpc_operation_intents; CREATE TABLE chip_requests(op_id uuid);')
+ table=authority[authority.index('CREATE TABLE public.cashier_rpc_operation_intents ('):]
+ q(table[:table.index(');')+2])
+ for name in ['fn_cashier_exact_intent_begin','fn_cashier_exact_intent_finish']:
+  function=authority[authority.index('CREATE FUNCTION public.'+name+'('):]
+  function=function[:function.index('$function$;',function.index('AS $function$')+len('AS $function$'))+len('$function$;')]
+  q(function.replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1))
+ q((fixture/'fn_cashier_operation_intent_guard.sql').read_text())
+ q('CREATE TRIGGER cashier_operation_intent_guard BEFORE INSERT ON chip_transactions FOR EACH ROW EXECUTE FUNCTION fn_cashier_operation_intent_guard();')
+
  sql=(ROOT/'supabase/migrations/20261027153132_cashier_claim_destination_and_movement_history.sql').read_text()
  # Qualification loads the maintained function body itself; source preimages and
  # full migration are separately exercised below by the history fixture.
@@ -45,6 +59,14 @@ try:
  # Retry destination changes never move a second chip.
  op=str(uuid.uuid4()); assert call('agent_wallet','player_wallet',op=op)['success']; assert call('agent_wallet','player_wallet',op=op)['replayed']; assert not call('agent_wallet','promo_wallet',op=op)['success']
  assert not call('agent_wallet','agent_wallet',actor=A,holder=P)['success']
+ # Simultaneous retries have one durable winner and one replay, with one debit.
+ from concurrent.futures import ThreadPoolExecutor
+ concurrent_op=str(uuid.uuid4()); count=int(q('select count(*) from journal;'))
+ with ThreadPoolExecutor(max_workers=2) as pool:
+  replies=list(pool.map(lambda _:call('agent_wallet','player_wallet',op=concurrent_op),range(2)))
+ assert all(reply['success'] for reply in replies) and sum(bool(reply.get('replayed')) for reply in replies)==1,replies
+ assert int(q('select count(*) from journal;'))==count+1
+
  # An agent remains bounded by the original send, its receiver, wallet and clock.
  tx=str(uuid.uuid4())
  q(f"insert into chip_transactions(id,club_id,from_user_id,to_user_id,amount,transaction_type,metadata,reversible_until) values('{tx}','{C}','{A}','{P}',20,'agent_wallet_send','{{\"destination\":\"player_wallet\",\"credit_drawn\":4}}',now()+interval '10 minutes'); select set_config('app.ledger_autoskip_agents','1',false); update agents set credit_used=4 where user_id='{A}';")
@@ -86,6 +108,14 @@ try:
  bank_before=q(f"select chip_treasury from clubs where id='{C}';")
  r=json.loads(q(f"select set_config('request.jwt.claim.sub','{O}',false); select fn_club_bank_claim_core_20261004('{C}','{A}',10,'promo_wallet',NULL,gen_random_uuid());").splitlines()[-1]); assert r['success'],r
  assert q(f"select chip_treasury from clubs where id='{C}';")==bank_before
+ # The older agent entry point also credits promo, preserving its credit debt.
+ legacy_tx=str(uuid.uuid4()); lower='00000000-0000-0000-0000-000000000004'
+ q(f"insert into chip_transactions(id,club_id,from_user_id,to_user_id,amount,transaction_type,metadata,reversible_until) values('{legacy_tx}','{C}','{A}','{lower}',10,'agent_wallet_send','{{\"destination\":\"promo_wallet\",\"credit_drawn\":5}}',now()+interval '10 minutes');")
+ cash_before=q(f"select agent_wallet_balance from agents where user_id='{A}';")
+ promo_before=float(q(f"select promo_wallet_balance from agents where user_id='{A}';"))
+ legacy=json.loads(q(f"select set_config('request.jwt.claim.sub','{A}',false); select fn_agent_wallet_claim_back_phase2_core_20260831('{C}','{legacy_tx}',10,NULL,gen_random_uuid());").splitlines()[-1]); assert legacy['success'],legacy
+ assert q(f"select agent_wallet_balance from agents where user_id='{A}';")==cash_before
+ assert float(q(f"select promo_wallet_balance from agents where user_id='{A}';"))==promo_before+10
  # Seed own/downline/unrelated and game rows, then query real server scopes and totals.
  q('TRUNCATE chip_transactions;')
  q(f"INSERT INTO chip_transactions(club_id,from_user_id,to_user_id,amount,transaction_type,created_at) VALUES ('{C}','{A}','{P}',10,'agent_wallet_send',now()),('{C}','{P}',NULL,999,'buyin',now()),('{C}','{O}',NULL,888,'tournament_buyin',now()),('{C}','{O}','{O}',7,'peer_transfer',now());")
@@ -103,5 +133,7 @@ try:
  print('PASS: full migration/preimage guards; legacy promo returns; real feed, downline authorization and totals exclude game/buy-in rows')
  print('PASS: 15 source/destination combinations, conservation, single journal, destination-bound replay, authority, credit repayment, duplicate claim, rollback')
 finally:
- subprocess.run([str(PG/'pg_ctl'),'-D',str(cluster/'data'),'-m','immediate','-w','stop'],capture_output=True)
+ if (cluster/'data/postmaster.pid').exists():
+  stop=subprocess.run([str(PG/'pg_ctl'),'-D',str(cluster/'data'),'-m','fast','-w','stop'],capture_output=True)
+  if stop.returncode: raise RuntimeError(f'Cluster Stop Failed; Preserved {cluster}')
  shutil.rmtree(cluster)

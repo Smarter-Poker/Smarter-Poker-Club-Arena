@@ -1,0 +1,9 @@
+# Natural horse chat and post-hand reactions
+
+The horse chat event detector treated each paid player as a winner of the whole pot. A chop could therefore produce a line such as "399 bb, nice" and advance a winning streak. It now stays silent on hands with multiple distinct payout recipients, including ambiguous side-pot and multi-board outcomes. Shared payouts also break the recipient's winning streak. A single player paid across several pot records still has one winner identity.
+
+Removed pot-size narration and numbered-seat addresses from the phrase pools, shortened several artificial lines, and removed a remaining "rigged deck" phrase. The existing personal vocabulary, styling, repetition prevention and public-information boundary remain.
+
+Floating reactions previously happened only on the uncommon all-in path. After an ordinary showdown, a qualifying horse now chooses a reaction 40% of the time and a throwable 60% of the time. The reaction uses the same glyphs and CHAT wire format as the person's picker and appears at the horse's own seat; a throw still targets the opponent and uses the existing allowance/receipt RPC. Base participation changes from 14% to 30% after a loss and 6% to 18% after a win, before the horse's independent personal habit and existing 25% maximum. Silent gesture personas, four gestures per horse per hour, 30-second table spacing, audience and administrative gates remain.
+
+Regression tests reproduce split-pot celebration, numeric narration and missing post-hand reactions before the fix. They cover split and unequal payouts, streak reset, both ordinary-hand gesture forms, picker compatibility, receipt identity and existing refusal/quiet/gate/cooldown paths. Engine deployment and natural live verification are separate from local test success; routine activation follows the daily 04:00 America/Chicago maintenance policy.

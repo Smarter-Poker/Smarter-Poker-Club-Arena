@@ -75,6 +75,7 @@ import {
   HORSE_GESTURES_PER_HOUR,
   _resetGesturesForTests,
   allInForm,
+  afterHandForm,
   buildAllInGestureInput,
   detectAfterHand,
   gestureAfterHand,
@@ -143,6 +144,12 @@ function lostHand(handNumber: number): TableTalkInput {
 function handThatRolls(moment: 'lost' | 'won' | 'all_in', from = 1): number {
   for (let n = from; n < from + 10_000; n++) if (rollsGesture(moment, HORSE_A, TABLE, n)) return n;
   throw new Error('no hand rolls');
+}
+function handThatThrows(from = 1): number {
+  for (let n = from; n < from + 10_000; n++) {
+    if (rollsGesture('lost', HORSE_A, TABLE, n) && afterHandForm(HORSE_A, n) === 'throw') return n;
+  }
+  throw new Error('no hand throws');
 }
 function handThatDoesNot(moment: 'lost' | 'won' | 'all_in', from = 1): number {
   for (let n = from; n < from + 10_000; n++) if (!rollsGesture(moment, HORSE_A, TABLE, n)) return n;
@@ -280,6 +287,36 @@ describe('sometimes, never every time', () => {
 });
 
 describe('after a hand', () => {
+  it('ordinary showdowns produce both floating reactions and throws, without needing an all-in', async () => {
+    const outcomes = new Set<string>();
+    let thrown = 0;
+    for (let n = 1; n <= 200; n++) {
+      _resetGesturesForTests();
+      const outcome = await gestureAfterHand(lostHand(n));
+      if (outcome === 'thrown') thrown++;
+      outcomes.add(outcome);
+    }
+    expect(outcomes).toContain('reacted');
+    expect(outcomes).toContain('thrown');
+    expect(outcomes).toContain('no_gesture');
+    const reactions = h.state.sends.filter((s) =>
+      String((s.payload.payload as { message: string }).message).startsWith('[REACTION:')
+    );
+    expect(reactions.length).toBeGreaterThan(0);
+    expect(h.state.rpcCalls).toHaveLength(thrown);
+    expect(h.state.sends).toHaveLength(thrown + reactions.length);
+    const client = readFileSync(
+      join(process.cwd(), '..', 'src/components/table/TableReactions.tsx'),
+      'utf8'
+    );
+    for (const send of reactions) {
+      const glyph = (send.payload.payload as { message: string }).message.split(':')[1];
+      expect(client).toContain(`emoji: '${glyph}'`);
+      expect(send.payload.sender).toBe(HORSE_A);
+      expect((send.payload.payload as { message: string }).message).toMatch(/:1\]$/);
+    }
+  });
+
   it('a horse that lost a showdown may throw at the winner seat', () => {
     const n = handThatRolls('lost');
     const pick = detectAfterHand(lostHand(n));
@@ -294,7 +331,7 @@ describe('after a hand', () => {
   });
 
   it('charges through the person RPC, then broadcasts the browser THROW payload from the horse', async () => {
-    const n = handThatRolls('lost');
+    const n = handThatThrows();
     expect(await gestureAfterHand(lostHand(n))).toBe('thrown');
     expect(h.state.rpcCalls).toHaveLength(1);
     const { fn, args } = h.state.rpcCalls[0];
@@ -318,7 +355,7 @@ describe('after a hand', () => {
 
   it('a refused charge throws nothing', async () => {
     h.state.rpcAnswer = { data: { success: false, error: 'Please Wait' }, error: null };
-    expect(await gestureAfterHand(lostHand(handThatRolls('lost')))).toBe('refused');
+    expect(await gestureAfterHand(lostHand(handThatThrows()))).toBe('refused');
     expect(h.state.sends).toHaveLength(0);
   });
 
@@ -330,7 +367,7 @@ describe('after a hand', () => {
   });
 
   it('a table sees one gesture per spacing window, and a horse a few per hour', async () => {
-    const first = handThatRolls('lost');
+    const first = handThatThrows();
     expect(await gestureAfterHand(lostHand(first))).toBe('thrown');
     expect(await gestureAfterHand(lostHand(handThatRolls('lost', first + 1)))).toBe('limited');
     expect(HORSE_GESTURES_PER_HOUR).toBeLessThanOrEqual(6);

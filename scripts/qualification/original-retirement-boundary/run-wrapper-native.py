@@ -43,6 +43,9 @@ if os.environ.get('ORB_WALLET_JACKPOT_FLOW_MIGRATION') or os.environ.get('ORB_TR
  s+=body+'\nSET LOCAL search_path=public;\n'
  if not os.environ.get('NATIVE_GENERATE_ONLY'):
   s+=treasury['admissions_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else ''
+  if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+   occupancy=runpy.run_path(str(p/'original-flow-occupancy/native-input.py'))
+   s+=occupancy['qualification_sql']
   s+=treasury['wallet_after_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else wallet['after_sql']
   if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):s+=treasury['after_sql']
   s+="DO $wallet_replay$BEGIN BEGIN EXECUTE $wallet_candidate_replay$"+body+"$wallet_candidate_replay$;RAISE EXCEPTION USING ERRCODE='ZX003',MESSAGE='candidate replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'wallet_jackpot_original_flow_owner_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS wallet jackpot exact candidate replay refused';END$wallet_replay$;"

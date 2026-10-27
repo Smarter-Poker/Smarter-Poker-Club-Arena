@@ -21,3 +21,7 @@ The October 27 Sunrise Bounty park `d569d659-f9ff-4849-a4eb-f9fb047b98a1` existe
 ## Verification and delivery
 
 The two-real-manager regression failed before the runtime correction. Afterward 46 focused cases and server TypeScript compilation passed, including old-contract compatibility, malformed/future timestamps, proven movement and unrelated refusal guards. Native PostgreSQL 17 qualification passed all 139 existing movement assertions, four exact-age/custody/admission/replay checks, atomic drift refusal and both stock concurrency cases; metadata installation left business/private rows unchanged and cleanup was confirmed. The existing CI runner enforces these assertions. Both compilers, 320 installer-contract cases and 19 maintenance-window cases passed. Exact protected installation/publication/live proof remain pending in the existing task checkpoint. No production test writes were made.
+
+## Exact activation anchor
+
+PR #8324 protected squash is `f398b67e4ffa1949b71d78fa60b17dc63cf0bba7`. Bind its existing one-use owner window to that actual repair, replacing the earlier minimum base anchor. Two separately owned older queued engine candidates contain the base and omit this repair; their activation must not consume this permission. The original 15:20:34 through 21:20:34 UTC interval, runtime, migration, checks and cutover safeguards are unchanged.

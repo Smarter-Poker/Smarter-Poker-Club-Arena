@@ -117,4 +117,9 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.fn_ca_ack_native_alert(uuid[],uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_ack_native_alert(uuid[],uuid) TO service_role;
+-- Register this bounded credential-authenticated read surface with the existing
+-- telemetry exposure audit, in the same transaction as the exact grants.
+INSERT INTO public.ca_browser_definer_allowlist(proname,reason) VALUES
+ ('fn_ca_native_alert_capability','Receive-only native alert capability verifier used by ca_native_alert_receive on realtime.messages. Requires the fixed random256-bit Vault/Keychain receive credential; returns only possession boolean, never secret material, schema, operator metrics, alerts or write authority.'),
+ ('fn_ca_native_alert_pending','Native receive credential is required before any read. Returns at most32 opaque wake UUIDs plus acknowledgement for caller-supplied opaque IDs, no original inbox IDs or contents. Full evidence and acknowledgement remain service-only; no public client key alone can observe pending state.');
 COMMIT;

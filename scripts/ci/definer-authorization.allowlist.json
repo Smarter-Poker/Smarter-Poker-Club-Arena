@@ -1,5 +1,5 @@
 {
-  "_comment": "Two separate escape hatches for scripts/ci/check-definer-authorization.mjs. Read that file before adding to either. Each newly exposed entry requires a bounded authorization contract and real privilege qualification; a public role alone is not authority.",
+  "_comment": "Two separate escape hatches for scripts/ci/check-definer-authorization.mjs. Read that file before adding to either. Writer exceptions must only ever SHRINK. New credential-authenticated read surfaces require a bounded authorization contract and real privilege qualification; a public role alone is not authority.",
   "_comment_reviewedExceptions": "RULE 1, the writer rule. SECURITY DEFINER functions that WRITE, that a browser role can execute, and that do not consult auth.uid()/auth.role()/auth.jwt(). Each entry needs a reason that explains why a caller cannot point the function at anything that matters - not why it is inconvenient to fix.",
   "reviewedExceptions": {
     "recalculate_leaderboard_ranks": "Recomputes dense_rank() over scores that are already in promotion_leaderboards for one promotion. It reads no input beyond the promotion id, writes no new value, moves no money, and is idempotent, so the worst an attacker achieves is the correct answer. Caller: src/services/PromotionService.ts:365, immediately after the RLS-gated score upsert."

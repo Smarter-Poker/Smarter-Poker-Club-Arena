@@ -18,6 +18,7 @@ try:
     command([PG/'pg_ctl','-D',BASE/'db','-l',BASE/'log','-o',f"-k {SOCK} -p 55883 -c listen_addresses=''",'-w','start'])
     sql('''CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
 CREATE SCHEMA smarter_private; CREATE SCHEMA realtime; CREATE SCHEMA vault;
+CREATE TABLE public.ca_browser_definer_allowlist(proname text PRIMARY KEY,reason text NOT NULL,recorded_at timestamptz DEFAULT now());
 CREATE TABLE vault.decrypted_secrets(name text PRIMARY KEY,decrypted_secret text);
 INSERT INTO vault.decrypted_secrets VALUES('ca_native_alert_receive_capability_v1',repeat('a',64));
 CREATE TABLE public.operational_alert_events(id bigint PRIMARY KEY,payload jsonb NOT NULL, investigation_status text DEFAULT 'new');

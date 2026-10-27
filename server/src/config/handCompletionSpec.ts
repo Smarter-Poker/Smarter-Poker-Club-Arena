@@ -94,8 +94,7 @@ export const HAND_COMPLETION = {
    * been watching. 1400ms still clears the 300ms-staggered flip for a heads-up
    * showdown, which is what the floor was originally for.
    */
-  // Owner 2026-10-26: keep the winning cards visible 1500ms longer.
-  SHOWDOWN_READ_BASE_MS: 2900,
+  SHOWDOWN_READ_BASE_MS: 1400,
   /** Each additional shown hand needs its own beat to read. */
   SHOWDOWN_READ_PER_EXTRA_HAND_MS: 350,
   /**
@@ -122,8 +121,15 @@ export const HAND_COMPLETION = {
    * reads no horse marker and is the same for every table.
    */
   ALL_IN_SHOWDOWN_EXTRA_MS: 2000,
+  /** Owner 2026-10-26: extra winning-card display AFTER identification.
+   * Keep SHOWDOWN_READ_BASE_MS unchanged: the engine also uses that value
+   * to delay pot_win, which first identifies and highlights the winning five.
+   * Increasing both that delay and the total hold would cancel the extra
+   * highlighted-card time. RIT reads instead gain this time per board below.
+   */
+  WINNING_CARDS_EXTRA_MS: 1500,
   /** A big multiway showdown must still not stall the table forever. */
-  SHOWDOWN_READ_MAX_MS: 3700,
+  SHOWDOWN_READ_MAX_MS: 2200,
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 3): per-seat stagger on the
    * showdown card flip, in reveal order — the final-street last aggressor
@@ -511,7 +517,7 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
     return t.doneAt + push + allInTail;
   }
 
-  return read + push + allInTail;
+  return read + push + allInTail + H.WINNING_CARDS_EXTRA_MS;
 }
 
 /**

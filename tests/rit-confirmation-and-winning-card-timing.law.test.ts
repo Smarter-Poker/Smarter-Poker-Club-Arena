@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
 afterEach(() => vi.useRealTimers());
-import { HAND_COMPLETION as H } from '../src/config/handCompletionSpec';
+import { HAND_COMPLETION as H, handCompletionHoldMs } from '../src/config/handCompletionSpec';
 const source = readFileSync(resolve(__dirname, '../src/pages/TablePage.tsx'), 'utf8');
 const handler = (event: string, next: string) =>
   source.slice(
@@ -29,8 +29,16 @@ describe('run confirmation and winning card timing', () => {
     expect(source).toContain('ritConfirmationShownRef.current = false');
   });
   it('adds exactly 1500ms to ordinary and capped showdown reads and each RIT result', () => {
-    expect(H.SHOWDOWN_READ_BASE_MS).toBe(1400 + 1500);
-    expect(H.SHOWDOWN_READ_MAX_MS).toBe(2200 + 1500);
+    expect(H.SHOWDOWN_READ_BASE_MS).toBe(1400);
+    expect(H.SHOWDOWN_READ_MAX_MS).toBe(2200);
+    expect(H.WINNING_CARDS_EXTRA_MS).toBe(1500);
+    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
+    for (const hands of [2, 3, 9]) {
+      const oldRead = Math.min(2200, 1400 + Math.max(0, hands - 2) * 350);
+      expect(handCompletionHoldMs({ wentToShowdown: true, showdownHands: hands })).toBe(
+        oldRead + push + 1500
+      );
+    }
     expect(H.RIT_RESULT_RUN_MS).toBe(2600 + 1500);
   });
 });

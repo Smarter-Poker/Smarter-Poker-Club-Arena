@@ -141,15 +141,15 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
     expect(leaveAvailableLabel(0)).toBe('Leave Available In 0:00');
   });
 
-  it('counts down from the engine clock only while running, and unlocks at zero', () => {
+  it('ignores retired running and paused clocks from older engines', () => {
     const at = 1_000_000;
     const running = { locked: true, remainingMs: 60_000, running: true, at };
-    expect(heroLeaveRemainingMs(running, at + 25_000)).toBe(35_000);
-    expect(heroLeaveIsLocked(running, at + 25_000)).toBe(true);
+    expect(heroLeaveRemainingMs(running, at + 25_000)).toBe(0);
+    expect(heroLeaveIsLocked(running, at + 25_000)).toBe(false);
     expect(heroLeaveIsLocked(running, at + 61_000)).toBe(false);
     const paused = { ...running, running: false };
-    expect(heroLeaveRemainingMs(paused, at + 25_000)).toBe(60_000);
-    expect(heroLeaveIsLocked(paused, at + 999_999)).toBe(true); // frozen, still locked (A0.5)
+    expect(heroLeaveRemainingMs(paused, at + 25_000)).toBe(0);
+    expect(heroLeaveIsLocked(paused, at + 999_999)).toBe(false); // frozen, still locked (A0.5)
     expect(heroLeaveIsLocked(null, at)).toBe(false);
   });
 
@@ -209,19 +209,19 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
     // sheet opens (whitespace-tolerant: Prettier owns the layout).
     expect((TABLE_PAGE.match(/supabase\.rpc\(\s*'fn_cash_effective_buyin'/g) ?? []).length).toBe(2);
     expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId, tableState.arenaAsset]);');
-    expect(TABLE_PAGE).toContain("if (tableState.arenaAsset !== 'chips')");
+    expect(read('src/components/table/TableModalsLayer.tsx')).toContain(
+      'cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined'
+    );
     const BUYIN = read('src/components/table/BuyInModal.tsx');
     expect(stripComments(BUYIN)).not.toContain('For 2 Hours');
     expect(stripComments(BUYIN)).not.toContain('You Cashed Out');
   });
 
-  it('House Rules carry exactly the three sentences allowed', () => {
+  it('House Rules describe the return floor without a minimum stay', () => {
     const RULES = read('src/components/table/GameRulesModal.tsx');
     const flat = RULES.replace(/\s+/g, ' ');
     expect(flat).toContain('Chips On The Table Stay On The Table Until You Leave.');
-    expect(flat).toContain(
-      'If You Are Ahead Of The Money You Put In, You Remain Seated For 10 Minutes Before You Can Leave.'
-    );
+    expect(flat).not.toContain('Remain Seated For 10 Minutes');
     expect(flat).toContain(
       'If You Return To The Same Game In This Club Within 2 Hours, You Buy In For At Least The Stack You Left With.'
     );

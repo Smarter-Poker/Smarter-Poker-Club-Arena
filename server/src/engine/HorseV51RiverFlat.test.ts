@@ -1,6 +1,7 @@
 /**
  * V51 RIVER FLAT (2026-10-05): a committed river one-pair hand calls instead
- * of jamming.
+ * of jamming. Later committed-raise discipline also protects earlier streets
+ * and sets on boards where straights or flushes are possible.
  *
  * The 2026-10-04 horse audit sampled one_pair_river_stackoff hands at 600bb
  * tournament depth. Hand 1039665 is the clearest: QcJh on 6c 5s Qd 9c 3s, the
@@ -13,7 +14,8 @@
  *
  * On the river the jam has nothing to deny and only a better hand calls it,
  * so one pair (or two pair where one pair is the board's) now flats. Sets and
- * better keep the jam; earlier streets are untouched.
+ * better retain V21's dry-board value exception; V51 itself does not alter
+ * earlier streets.
  */
 import { describe, expect, it } from 'vitest';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
@@ -52,10 +54,14 @@ const QQ_PAIRED_BOARD: Spot = {
   hole: [c('Q', S), c('Q', C)],
   board: [c('8', H), c('7', D), c('5', S), c('7', C), c('J', D)],
 };
-// A set is not one pair: it keeps the jam.
+// This set faces a possible wheel: V21's shared call-only rule applies.
 const SET_OF_NINES: Spot = {
   hole: [c('9', C), c('9', S)],
   board: [c('9', D), c('5', H), c('2', C), c('4', D), c('K', H)],
+};
+const DRY_SET_OF_NINES: Spot = {
+  hole: SET_OF_NINES.hole,
+  board: [c('9', D), c('6', H), c('2', C), c('Q', D), c('A', H)],
 };
 
 function seat(n: number, cards: Card[], over: Partial<SeatPlayer> = {}): SeatPlayer {
@@ -173,10 +179,14 @@ describe('V51 river flat, default on', () => {
   );
 
   it(
-    'a set keeps the jam',
+    'a dry-board private set keeps the jam; a set facing a possible straight calls',
     () => {
       for (const seed of SEEDS) {
-        expect(raisedOnCommittedRiver(SET_OF_NINES, seed, {})).toBe('all_in');
+        expect(raisedOnCommittedRiver(DRY_SET_OF_NINES, seed, {})).toBe('all_in');
+        expect(raisedOnCommittedRiver(SET_OF_NINES, seed, {})).toBe('call');
+        expect(
+          raisedOnCommittedRiver(SET_OF_NINES, seed, { committedRaiseDiscipline: false })
+        ).toBe('all_in');
       }
     },
     SUITE_TIMEOUT_MS
@@ -205,7 +215,12 @@ describe('V51 river flat, ablated', () => {
       // the scenario above no longer reaches the committed branch and the
       // default-on tests prove nothing.
       for (const seed of SEEDS) {
-        expect(raisedOnCommittedRiver(QJ_TOP_PAIR, seed, { v51RiverFlat: false })).toBe('all_in');
+        expect(
+          raisedOnCommittedRiver(QJ_TOP_PAIR, seed, {
+            v51RiverFlat: false,
+            committedRaiseDiscipline: false,
+          })
+        ).toBe('all_in');
       }
     },
     SUITE_TIMEOUT_MS

@@ -172,3 +172,41 @@ describe('loadTable', () => {
     }
   });
 });
+
+describe('loadTable carries the club rake defaults on its own club embed (2026-10-26)', () => {
+  it('embeds default_rake_percent and rake_cap and returns them shaped as refreshRakeConfig shapes them', async () => {
+    io.row = {
+      data: {
+        ...chipRow,
+        arena: {
+          id: 'club',
+          asset: 'chips',
+          is_platform: false,
+          union_id: 'union-1',
+          default_rake_percent: 4.5,
+          rake_cap: 3,
+        },
+      },
+      error: null,
+    };
+    const table: any = await loadTable('table-a');
+    const rowRead = io.reads.find((r) => r.columns !== 'kill_mode, kill_threshold_bb');
+    expect(rowRead?.columns).toContain(
+      'arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id, default_rake_percent, rake_cap)'
+    );
+    // The same two reads as before: no separate clubs request.
+    expect(io.reads.map((r) => r.table)).toEqual(['tables', 'tables']);
+    expect(table.club_rake_defaults).toEqual({
+      rakePercent: 4.5,
+      rakeCapBB: 3,
+      unionId: 'union-1',
+    });
+    // The arena identity is still the parsed one.
+    expect(table.arena).toEqual({ id: 'club', kind: 'chip_club', asset: 'chips' });
+  });
+
+  it('an unset default is null, exactly as the separate read answered it', async () => {
+    const table: any = await loadTable('table-a');
+    expect(table.club_rake_defaults).toEqual({ rakePercent: null, rakeCapBB: null, unionId: null });
+  });
+});

@@ -537,3 +537,113 @@ describe('a break whose source still holds an unrecorded bust asks for the bust 
     expect(begins[0].map((x: any) => x.user_id)).toEqual([id(4)]);
   });
 });
+
+// October 23 Coffee Break sources, represented by eleven independent hand
+// callbacks. The manager/cursor/stage execution is real; transport and the
+// financial write are isolated (the PostgreSQL suites own their proof).
+describe('every table records busts behind a blocked later-stage rewind', () => {
+  it.each([6, 7, 8])(
+    'serves eleven sources before interrupted stage %i can advance',
+    async (stage) => {
+      vi.useFakeTimers();
+      const m = balanceStageManager();
+      const pending = new Set<string>();
+      const placed = new Map<string, number>();
+      const callbacks: Array<(id: string, stacks: any[]) => void> = [];
+      Object.assign(m, {
+        tournamentCache: { tournament_type: 'MTT', variant: 'plo4', is_rebuy: false },
+        bustRefusalStreak: new Map(),
+        isCohortSatellite: () => false,
+        mysteryActivationMayOpenOnBust: () => false,
+        declareFieldDecidedIfOneStackRemains: vi.fn(),
+        horseRebuyOfferMayHaveOpened: vi.fn(),
+        tryTournamentRebuys: vi.fn(async () => ({ rebought: new Set(), deferredUntil: new Map() })),
+        eliminatePlayer: vi.fn(async (uid: string, position: number) => {
+          expect(pending.has(uid)).toBe(true);
+          expect(placed.has(uid)).toBe(false);
+          pending.delete(uid);
+          placed.set(uid, position);
+          return true;
+        }),
+        finishTournament: vi.fn(),
+        gameServer: { handTournamentToSuccessorGeneration: vi.fn() },
+      });
+      for (let i = 0; i < 11; i++) {
+        const engine = {
+          onHandComplete: (callback: (id: string, stacks: any[]) => void) =>
+            callbacks.push(callback),
+          onPauseReady: vi.fn(),
+          onRestartRequired: vi.fn(),
+        };
+        m.tableEngines.set(id(i + 20), engine);
+        m.wireEliminationWake(engine);
+      }
+      vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
+        let columns = '';
+        let head = false;
+        const q: any = {
+          select: (s: string, o?: { head?: boolean }) => {
+            columns = s;
+            head = o?.head === true;
+            return q;
+          },
+          eq: () => q,
+          lte: () => q,
+          in: () => q,
+          is: () => q,
+          not: () => q,
+          order: () => q,
+          then: (resolve: (answer: unknown) => unknown, reject: (error: unknown) => unknown) => {
+            let data: unknown = null;
+            let count: number | null = null;
+            if (table === 'tournament_players') {
+              if (head) count = 100 - placed.size;
+              else if (columns === 'user_id, chips')
+                data = [...pending].map((user_id) => ({ user_id, chips: 0 }));
+              else if (columns === 'position')
+                data = [...placed.values()].map((position) => ({ position }));
+              else throw new Error(`Unexpected player read: ${columns}`);
+            } else if (table === 'tournament_knockout_candidates') {
+              data = [...pending].map((uid) => ({
+                id: uid,
+                eliminated_user_id: uid,
+                hand_number: 1,
+                stack_before: 100,
+                state: 'pending',
+              }));
+              count = pending.size;
+            } else throw new Error(`Unexpected table: ${table}`);
+            return Promise.resolve({ data, count, error: null }).then(resolve, reject);
+          },
+        };
+        return q;
+      });
+      vi.spyOn(supabase, 'rpc').mockImplementation((name: string) => {
+        if (name !== 'fn_open_tournament_rebuy_decisions')
+          throw new Error(`Unexpected RPC: ${name}`);
+        return Promise.resolve({
+          data: [...pending].map((user_id) => ({ user_id, decision_open: false })),
+          error: null,
+        }) as any;
+      });
+      m.eliminationSweepCursor.advanceTo(stage);
+      for (let source = 0; source < 11; source++) {
+        const uid = id(source + 40);
+        pending.add(uid);
+        callbacks[source](id(source + 20), [{ userId: uid, stack: 0 }]);
+        // No maintenance, manager replacement or break expiry: a fresh hand
+        // callback must get its own elimination stage within bounded admissions.
+        for (let pass = 0; pass < 4 && pending.size; pass++)
+          await m.runEliminationSweep(new AbortController().signal);
+        expect(placed.size, `source ${source} waits for the break it blocks`).toBe(source + 1);
+        expect(pending.size).toBe(0);
+      }
+      expect(m.eliminatePlayer).toHaveBeenCalledTimes(11);
+      expect(new Set(placed.values()).size).toBe(11);
+      expect(Math.min(...placed.values())).toBeGreaterThan(1);
+      expect(m.checkTableBalance.mock.calls.length).toBeGreaterThanOrEqual(10);
+      expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
+      expect(m.finishTournament).not.toHaveBeenCalled();
+    }
+  );
+});

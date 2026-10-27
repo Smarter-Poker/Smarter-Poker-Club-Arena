@@ -374,8 +374,17 @@ describe('the decision queue (registry)', () => {
     clock.v += 4_000;
     // RESYNC on one room: only hand-b is still on the clock.
     reg.rePushHoleCards(uid(400), P1);
-    expect(sent).toHaveLength(1);
-    expect(sent[0].payload).toMatchObject({
+    // RESYNC also restates the Cluster's status, null included (2026-10-26).
+    expect(sent.filter((s) => s.payload.type === 'lightning_cluster_status')).toEqual([
+      {
+        room: uid(400),
+        user: P1,
+        payload: { type: 'lightning_cluster_status', cluster_id: CLUSTER, status: null },
+      },
+    ]);
+    const decisions = sent.filter((s) => s.payload.type === 'lightning_decision');
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].payload).toMatchObject({
       hand_id: 'hand-b',
       time_remaining_ms: 4_000,
       urgency: 'critical',

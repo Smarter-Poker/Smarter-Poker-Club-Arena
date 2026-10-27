@@ -39,20 +39,11 @@ describe('playRaise is built from pieces the call does not have', () => {
   const raise = sliceMethod(SOUND, 'playRaise(');
   const call = sliceMethod(SOUND, 'playChips(');
 
-  it('pushes the stack with an upward noise sweep', () => {
-    const m = raise.match(/createSweptNoiseBurst\(t, [^,]+, [^,]+, (\d+), (\d+)/);
-    expect(m, 'the raise opens with a swept push').not.toBeNull();
-    expect(Number(m![2])).toBeGreaterThan(Number(m![1]));
+  it('uses a low body and short chip impacts without a melodic tail', () => {
+    expect(raise).toContain('scheduleTone(land, 145, 0.095');
+    expect(raise).toContain('const offsets = [0, 0.019, 0.047, 0.061, 0.092, 0.118]');
+    expect(raise).not.toMatch(/const flick|659|880/);
     expect(call).not.toMatch(/createSweptNoiseBurst/);
-  });
-
-  it('ends on a rising interval, which nothing else in the action set does', () => {
-    const flick = raise.slice(raise.indexOf('const flick'));
-    const pitches = [...flick.matchAll(/scheduleTone\(flick[^,]*, (\d+)/g)].map((x) =>
-      Number(x[1])
-    );
-    expect(pitches.length).toBe(2);
-    expect(pitches[1]).toBeGreaterThan(pitches[0]);
   });
 
   it('is scheduled on the audio clock, not on main-thread timers', () => {

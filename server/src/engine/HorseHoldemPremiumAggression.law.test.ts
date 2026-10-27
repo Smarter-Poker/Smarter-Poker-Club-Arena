@@ -242,6 +242,19 @@ describe("Hold'em premiums are never passive; dominated hands fold to a 3-bet (D
     expect(isPremiumMadeHand(cards('Ac Kd'), cards('Qh 5s 3s'))).toBe(false);
   });
 
+  it('actual final decisions value-bet Broadway and connected-board full houses with valid receipts', () => {
+    for (const seed of SEEDS) {
+      for (const spot of [
+        aceSpot({ hole: 'As Kd', board: 'Th Jc Qd 9s 2h' }),
+        aceSpot({ hole: 'Qs Qd', board: 'Qh Jc Td 9s 9h' }),
+      ]) {
+        const decision = decide(spot, seed);
+        expect(['bet', 'all_in']).toContain(decision.action);
+        expect(horseDecisionReceiptIsValid(decision, 'nlh')).toBe(true);
+      }
+    }
+  });
+
   it('the recorded set of queens bets the river instead of checking it down', () => {
     for (const seed of SEEDS) {
       const d = decide(aceSpot({ hole: 'Qs Qc', board: 'Qh 9s 3d Ad 4d' }), seed);

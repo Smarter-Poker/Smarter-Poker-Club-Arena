@@ -310,6 +310,8 @@ export function gtoFacingDefense(args: {
   /** V34: marginal rake on the pot in cash games (0..1). Default 0 — the
    *  same rakeDrag the heuristic call line already prices. */
   rakeMarg?: number;
+  /** Exact total call-award deduction; marginal rake remains the legacy fallback. */
+  callDeductionFraction?: number;
   /** V34: tournament survival premium to ADD to the required equity (0 in
    *  cash). The caller scales icmRisk by the share of stack the call puts
    *  at risk, exactly as the V24 preflop price defence does — a chip-EV
@@ -326,14 +328,21 @@ export function gtoFacingDefense(args: {
   const range = solverBettingRange({ ...args, betFraction });
   if (!range) return null;
   const equity = equityVsWeightedRange(args.heroCards, args.board, range, args.rand ?? Math.random);
-  const rake = Math.max(0, Math.min(0.5, args.rakeMarg ?? 0));
+  const exact = Number.isFinite(args.callDeductionFraction);
+  const rake = exact
+    ? Math.max(0, Math.min(1, args.callDeductionFraction!))
+    : Math.max(0, Math.min(0.5, args.rakeMarg ?? 0));
   const potOdds = args.toCall / ((args.pot + args.toCall) * (1 - rake));
   const realization =
     typeof args.realization === 'number' && args.realization > 0
       ? Math.min(1, args.realization)
       : 1;
   const premium = Math.max(0, Math.min(0.15, args.riskPremium ?? 0));
-  const required = Math.min(0.99, potOdds / realization + premium);
+  const required = exact
+    ? potOdds / realization + premium
+    : Math.min(0.99, potOdds / realization + premium);
+  if (exact && (args.pot + args.toCall) * (1 - rake) < args.toCall)
+    return { action: 'fold', equity, potOdds, required, source: range.source };
   if (equity >= STRONG_PASS_EQ) {
     // Strong enough that fold-or-call is the wrong question — the aggression
     // layers own this hand. Null-adjacent, but counted distinctly.

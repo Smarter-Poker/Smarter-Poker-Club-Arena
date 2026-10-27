@@ -232,14 +232,14 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     // neither break end may lift. A successor drain owns the same gate until
     // this manager retires; both releases must preserve every authority.
     expect(resumeBreak).toMatch(
-      /if \(\s*!this\.successorDrainRequested &&\s*!this\.handForHandActive &&\s*!addOnBreakStillActive &&\s*!this\.stageEndPause\s*\)/
+      /if \(\s*!this\.successorDrainRequested &&\s*!this\.handForHandActive &&\s*!addOnBreakStillActive &&\s*!this\.mysteryActivationBoundaryPending &&\s*!this\.stageEndPause\s*\)/
     );
     expect(resumeBreak).toContain('if (!addOnBreakStillActive && !this.stageEndPause) {');
     expect(finishBreak).toContain('if (!this.running) return');
     // A bubble can end during this break; its inherited gate must still release.
     // HandForHandBreakOwnership.test.ts exercises that transition with real engine pause methods.
     expect(finishBreak).toMatch(
-      /if \(\s*!this\.successorDrainRequested &&\s*!this\.onBreak &&\s*!this\.handForHandActive &&\s*!this\.stageEndPause\s*\)/
+      /if \(\s*!this\.successorDrainRequested &&\s*!this\.onBreak &&\s*!this\.handForHandActive &&\s*!this\.mysteryActivationBoundaryPending &&\s*!this\.stageEndPause\s*\)/
     );
     expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak && !this\.stageEndPause\)/);
   });

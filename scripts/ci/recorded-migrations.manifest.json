@@ -1334,6 +1334,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback payout outage: all84 earned-fee windows are certified and cash-source refusals are zero, but the later club-book report blocks payout on91 unsupported original flows. Owner explicitly requires union-to-club90percent, agents, players, THEN club settlement and invoicing. Move the SAME P&L guard from fee preparation to after conserved paid rounds and before settled status/ECO/weekly invoices; all fee-source, historical-contract, calculation, funding, authorization, deadline, conservation and original receipt guards remain. Actual-owner native phase tests reproduce old refusal and prove new ordering, refusals, warming progress, replay and atomic legacy rollback using controlled stage contracts. Retained actual original calculator/R3 wallet-ledger/invoice/concurrency regressions passed separately. Production payment still needs full-path rollback proof and exact asserted amounts. Qualified bytes installed through maintained applier and read back with original forty-source authority TRUE; this immediate recording is the next source action. This is not a wallet credit or completed-book claim."
+    },
+    {
+      "version": "20261027015808",
+      "name": "rakeback_source_windows_read_each_keyset_once",
+      "file": "supabase/migrations/20261027015808_rakeback_source_windows_read_each_keyset_once.sql",
+      "md5": "68bbe49ae4a17587094817f25aaa5201",
+      "appliedToProductionAt": "2026-10-27T02:04:26.593Z",
+      "recoveredOn": "2026-10-26",
+      "recoveredFrom": "Maintained installer atomic exact-byte history; live history, reader and forty-source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8224",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: no wallets paid; original source calculation completes only one two-hour count window in roughly135seconds including original guards. Preserve exact original evidence/incomplete/drifted counts while joining bounded original source and batch keysets once. Native PostgreSQL17 actual original owner and exact reserved installer passed22faults in generic/custom plans, ACL/freeze/preimage/refusal/rollback/replay and metadata preservation. One full read-only production window matched all3durable original counts in17.160seconds with2full hash joins, one read per keyset and no temp spill; no uniform latency claim. No payer, receipt, schedule, financial rule, guard or source-authority pin changed. Qualified bytes installed through maintained applier, exact history/postimage/original40source authority read back. This immediate exact-byte recording is the next source action; actual human/agent wallet payment remains pending original guarded coordinator proof and asserted commit."
     }
   ]
 }

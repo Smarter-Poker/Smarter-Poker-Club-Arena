@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 237490,
-      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+      "bytes": 238718,
+      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 41963,
-      "sha256": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5"
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3840,6 +3840,53 @@
           "sha256": "825af31f093bfdc23968f9cc5b964fa5b3c05a9f963bc6d5b113197883182d2e"
         }
       }
+    }
+  },
+  "digestPlayerPeriodNative20261026": {
+    "reason": "Add exact isolated PostgreSQL17 player-period qualification in existing accounting shard2. Reviewed diff adds one step only. Current workflow identity changes; all financial inputs, assertions, historical execution receipts and qualification states are preserved. Not production or financial execution evidence. Integration preserves protected-main Ubuntu browser-mirror repair and all its audit entries.",
+    "execution_performed": false,
+    "previousWorkflowPin": {
+      "bytes": 237490,
+      "sha256": "36faf6df3639f293a63b042550c54ccdc443a9b5c3b8f440c7efa47edb846034"
+    },
+    "currentWorkflowPin": {
+      "bytes": 237758,
+      "sha256": "c928589fb562ecff23c797141b525640c2985327c0c9fc83a89e3acc973400a5"
+    },
+    "originalBranchWorkflowPin": {
+      "bytes": 237557,
+      "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
+    }
+  },
+  "cashReturnRuleNative20261026": {
+    "reason": "Add the isolated full-stack cash-return regression to the existing required matrix. Refresh only the current workflow input identity; retain all financial fixtures, assertions, historical pins and qualification states. This source binding is not production or financial certification.",
+    "execution_performed": false,
+    "previousWorkflowPin": {
+      "bytes": 238211,
+      "sha256": "187083a18030ac26366f893c1f0f4d12ffdbe1b8c431467b0eff435247bbd5a3"
+    },
+    "currentWorkflowPin": {
+      "bytes": 238487,
+      "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+    }
+  },
+  "cashHalfNative20261026": {
+    "reason": "Add exact isolated top-half cash ranking and seat admission qualification to existing required Accounting2. Only current workflow source binding changes; financial assertions and historical evidence are preserved. Not production proof.",
+    "previousWorkflowPin": {
+      "bytes": 238487,
+      "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+    },
+    "currentWorkflowPin": {
+      "bytes": 238718,
+      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+    },
+    "classifierPrevious": {
+      "bytes": 41963,
+      "sha256": "7b39fb1a190613d37362eaa95b6dc8f1ca3cc3a39ee85526093abc4131306da5"
+    },
+    "classifierCurrent": {
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
     }
   }
 }

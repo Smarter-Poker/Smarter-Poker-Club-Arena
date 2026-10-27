@@ -125,17 +125,17 @@ describe('real table action audio', () => {
     expect(context.tones).toEqual([]);
     expect(context.noises).toEqual([]);
   });
-  it('uses more chip hits and higher gain for a large raise, with an ascending signature', () => {
+  it('uses more chip hits and higher gain for a large raise, with a low chip splash', () => {
     service.playRaise(3, 1);
     const small = context.tones.splice(0);
     vi.advanceTimersByTime(51);
     service.playRaise(60, 1);
     const large = context.tones;
     expect(large.length).toBeGreaterThan(small.length);
-    // The first two tones are the same wooden landing at both sizes.
+    // Both sizes begin with the same low landing body.
     expect(large[0].frequency.points[0][0]).toBe(small[0].frequency.points[0][0]);
     const endings = large.slice(-2).map((n) => n.frequency.points[0][0]);
-    expect(endings).toEqual([659, 880]);
+    expect(endings).toEqual([1210, 760]);
     expect(large.every((n) => n.start.mock.calls[0][0] >= 10)).toBe(true);
   });
 });
@@ -144,8 +144,8 @@ describe('accepted player_action cue routing', () => {
   it.each(['bet', 'raise', 'RAISE'])('%s reaches the real raise synthesizer', async (action) => {
     const { playPlayerActionSound } = await import('../../src/lib/playerActionSound');
     playPlayerActionSound(action, 3, 1);
-    expect(context.noises).toHaveLength(1);
-    expect(context.tones.slice(-2).map((n) => n.frequency.points[0][0])).toEqual([659, 880]);
+    expect(context.noises).toHaveLength(5);
+    expect(context.tones.map((n) => n.frequency.points[0][0])).toEqual([145, 1120, 830, 1350, 960]);
   });
   it('a call keeps its dry two clinks and no stack sweep', async () => {
     const { playPlayerActionSound } = await import('../../src/lib/playerActionSound');

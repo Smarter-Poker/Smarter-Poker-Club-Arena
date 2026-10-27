@@ -529,6 +529,9 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration
 # session carrying the header the engine sends (LightningSupervisor), so the
 # current-policy plans and section 13 are planned, formed and compared with
 # the gate open, exactly as the new engine sees them in production.
+# The owner's one-second five-ready wait (20261026131624, Dan 2026-10-26) is
+# installed last, so the port's LIGHTNING_FORMATION_MAX_WAIT_MS (1,000) is
+# compared with the same SQL rule.
 "${PSQL[@]}" -f "$F/lightning-five-ready-preimages.sql" \
   -f "$M/20261023230001_classic_and_lightning_five_ready_waits_three_seconds_for_six.sql" \
   -f "$M/20261024195059_lightning_new_players_are_always_the_big_blind_first.sql" \
@@ -538,6 +541,7 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration
   -f "$F/lightning-entry-top-up-predecessor.sql" \
   -f "$M/20261025050528_lightning_newcomer_posts_a_live_entry_big_blind.sql" \
   -f "$M/20261025050534_lightning_hand_player_admits_the_entry_big_blind_role.sql" \
+  -f "$M/20261026131624_lightning_five_ready_players_wait_one_second_for_a_sixth.sql" \
   -c "SET request.headers = '{\"x-smarter-lightning-entry-bb\":\"1\"}'" \
   -f "$F/lightning-current-policy-parity.sql" \
   -f "$F/lightning-entry-big-blind-parity.sql" > "$fixture/current-policy.out" 2>&1 || {

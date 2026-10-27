@@ -1,0 +1,7 @@
+# Half cash capacity and top performers
+
+Owner October 26 replaces the October 23 unrestricted-fleet policy for cash. Every Chicago-hour occupancy target, tolerance and hard cap is halved; the overnight minimum table count is three. The original cluster transaction halves its total table ceiling, including feeders, rounded down with one table minimum. This applies to future games as well as existing games, without rewriting individual game configuration. Lower ceilings prevent expansion; existing tables close through ordinary hand-boundary departures and cluster consolidation, never by deleting seats or interrupting hands.
+
+The existing daily roster refresh keeps the strongest half of eligible registered horses by 30-day ordinary/heads-up cash net BB per 100 hands, requiring 5,000 measured hands. Ties use sample count then UUID. Lower-sample horses do not displace measured horses. This is a relative ranking, not a profitability claim: baseline had only 20 profitable sampled horses. Cash roster admission applies to every club and variant; PLO adds no separate profit gate. Tournaments, balances, registration and activity counters are preserved. Existing same-game moves and settlement updates complete, while the engine's original leaveTable path drains off-roster cash seats.
+
+The database change and engine change have separate installation evidence in CHECKPOINT-cash-half-top-horses.md. No new scheduler, watcher, repair loop or publisher is added.

@@ -271,9 +271,9 @@
   font-weight: 700;
   color: #ffffff;
   margin-bottom: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .bbj-breakdown-hand {

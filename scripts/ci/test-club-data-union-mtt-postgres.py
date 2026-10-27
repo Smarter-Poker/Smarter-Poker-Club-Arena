@@ -5,6 +5,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -153,6 +154,23 @@ try:
     run(psql("live"), once)
     after = q("live", probe)
     require(before == after and before.count('"fee"') > 0, "union reads counted once return exactly the figures they replaced")
+    # Owner 2026-10-26: arbitrary-depth downlines, exact per-user totals,
+    # and refusal of the whole report/union for every agent rank.
+    # Setup and authenticated assertions use separate connections. Bind their
+    # shared reporting date once in Chicago, including across local midnight.
+    # UTC CURRENT_DATE can be tomorrow, which the real reader clamps away.
+    report_day = date.fromisoformat(q("live", "SELECT (now() AT TIME ZONE 'America/Chicago')::date::text")).isoformat()
+    boundary = (ROOT / "tests/fixtures/club-data-report-db/data-access-boundary.sql").read_text().replace("@REPORT_DAY@", report_day)
+    setup, checks = boundary.split("-- AFTER MIGRATION", 1)
+    run(psql("live"), setup)
+    require(q("live", "SELECT cardinality(fn_ca_club_data_downline(md5('boundary-club')::uuid,md5('super_agent')::uuid))") == '21', "baseline reproduces the twenty-level downline cutoff")
+    downline = (M / "20261026213551_club_data_downline_has_no_depth_cutoff.sql").read_text()
+    run(psql("live"), "SET ROLE authenticated;\n" + downline, expect_fail="maintained installer")
+    run(psql("live"), downline)
+    run(psql("live"), downline, expect_fail="preimage changed")
+    p = run(psql("live", user="authenticator"), checks)
+    require("DATA ACCESS BOUNDARY PASSED" in p.stdout + p.stderr, "every rank: scoped facts, deep descendants, sibling exclusion, cycles, whole-club and union refusal")
+
     evidence=os.environ.get('CLUB_DATA_CONTRACT_EVIDENCE')
     if evidence:
         import re

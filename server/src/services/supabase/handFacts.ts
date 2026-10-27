@@ -960,6 +960,8 @@ export interface HandFactsInput {
   contributions: Map<string, number>;
   /** Authoritative stacks frozen when cards were dealt, before any forced money. */
   dealtStacksAtDeal?: Map<string, number>;
+  /** Original controller witness, captured before remaining community cards. */
+  allInRunoutWitness?: import('../../types.js').AllInRunoutWitness | null;
   winners: Array<{ userId: string; amount: number }>;
   actions: HandAction[];
   /**
@@ -1195,7 +1197,13 @@ export async function writeHandFacts(
       // with no further betting possible - which is exactly what the EV
       // adjustment is measuring, whether they got there by shoving or calling.
       const inAllInRunout = typeof eq === 'number';
-      const wasAllIn = flags.was_all_in || inAllInRunout;
+      const witness = input.allInRunoutWitness;
+      const equityOwed =
+        !!witness &&
+        ['preflop', 'flop', 'turn'].includes(witness.street) &&
+        witness.playerIds.length >= 2 &&
+        witness.playerIds.includes(uid);
+      const wasAllIn = flags.was_all_in || inAllInRunout || equityOwed;
 
       if (inAllInRunout) {
         allInEquity = eq;
@@ -1344,7 +1352,10 @@ export async function writeHandFacts(
         // recorded as an all-in "on the flop" - a street the player never
         // chose to commit on. Fall back to the runout street only when the
         // action log has nothing (i.e. they got all-in by calling).
-        all_in_street: wasAllIn ? (flags.all_in_street ?? equity?.street ?? null) : null,
+        all_in_street: wasAllIn
+          ? (flags.all_in_street ?? (equityOwed ? witness!.street : equity?.street) ?? null)
+          : null,
+        all_in_equity_owed: equityOwed,
         all_in_at_risk: wasAllIn ? invested : null,
         all_in_equity: allInEquity,
         ev_returned: evReturned,

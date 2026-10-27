@@ -76,6 +76,8 @@ describe('a horse plays four Lightning games, like a desktop', () => {
     expect(players.find((p: any) => p.userId === HORSE)).toEqual({
       userId: HORSE,
       presence: 'connected',
+      // The engine is the horse's input device (2026-10-26, "present in the room").
+      inputDevice: true,
       platform: 'desktop',
     });
     // A human's class only ever comes from their own client's room.

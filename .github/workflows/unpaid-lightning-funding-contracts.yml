@@ -6,6 +6,9 @@ on:
     paths:
       - supabase/migrations/**
       - scripts/ci/fixtures/fees-before-club-books/**
+      - scripts/ci/fixtures/rakeback-counts-bulk-joins/**
+      - scripts/ci/test-rakeback-counts-bulk-joins-postgres.py
+      - tests/rakeback-counts-read-each-keyset-once.law.test.ts
       - scripts/ci/test-fees-before-club-books-postgres.py
       - tests/rakeback-is-paid-before-club-books-close.law.test.ts
       - scripts/ci/fixtures/earned-plan-window-original.sql
@@ -81,3 +84,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-fees-before-club-books-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Rakeback source windows retain every original proof count
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-rakeback-counts-bulk-joins-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"

@@ -24,6 +24,7 @@ import { isJointVariant } from '../multiway/JointInputBinding.js';
 import { JOINT_LIVE_DOMAIN } from '../multiway/JointLivePolicy.js';
 import { horsePhase13ContinuationVersion } from '../HorsePhase13Authority.js';
 import { PLO_PAIRED_BOARD_VARIANTS } from '../HorsePloPairedBoardFold.js';
+import { shortAllInSpot } from '../HorseShortAllInCallFloor.js';
 
 const ACTIONS = ['fold', 'check', 'call', 'bet', 'raise', 'all_in'] as const;
 type RecordValue = Record<string, unknown>;
@@ -629,7 +630,47 @@ function phase7Selection(value: RecordValue): Pick<HorseDecision, 'action' | 'am
   return value as unknown as Pick<HorseDecision, 'action' | 'amount'>;
 }
 
-function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boolean {
+/** The decision's own request, when the caller has it. */
+export interface HorseDecisionReceiptContext {
+  player: SeatPlayer;
+  gameState: HorseGameStateV2;
+}
+
+/** V58/V59 may cap a PLO6 river raise/jam at the call. When the original
+ * request is available, bind that de-escalation to its single board, legal
+ * call menu and exact additional-chip price. This does not re-run or relax
+ * the owner's equity rule, and never admits a new wager or another game. */
+function plo6RiverCallIsPriced(
+  selected: HorsePolicyAction,
+  context?: HorseDecisionReceiptContext
+): boolean {
+  if (selected.amount === null || selected.amount <= 0) return false;
+  // Retained context-free receipts cannot establish input provenance; they
+  // still have to carry the priced call and the PLO6 transition below.
+  if (context === undefined) return true;
+  const { player, gameState: gs } = context;
+  const toCall = Number.isFinite(gs.toCall)
+    ? Math.max(0, gs.toCall as number)
+    : Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
+  return (
+    String(gs.gameVariant).toLowerCase() === 'plo6' &&
+    gs.stage === 'river' &&
+    gs.communityCards?.length === 5 &&
+    (gs.boardCount ?? 1) === 1 &&
+    player.cards?.length === 6 &&
+    gs.legalActions?.includes('call') === true &&
+    Number.isFinite(player.stack) &&
+    toCall > 0.005 &&
+    toCall < player.stack - 0.005 &&
+    selected.amount === Math.round(toCall * 100) / 100
+  );
+}
+
+function policyGraphIsValid(
+  value: RecordValue,
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): boolean {
   if (value.policyGraph === undefined) return true;
   const graph = value.policyGraph;
   const order = record(graph) ? horsePolicyOrderForVersion(graph.version) : null;
@@ -661,7 +702,7 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       return false;
     const changed = previous !== null && !same(previous, transition.after);
     if (transition.changed !== changed || (transition.node === 'timing' && changed)) return false;
-    // Wager rules only add aggression, with one exception: two owner rules of
+    // Wager rules add aggression or apply a named owner discipline. Two rules of
     // 2026-10-25 turn a call, raise or jam into a fold. The PLO4/5/6
     // paired-board fold (HorsePloPairedBoardFold) and the no-limit hold'em
     // dominated-hand fold to a big 3-bet (HorseHoldemPremiumAggression). A
@@ -674,10 +715,27 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
       previous !== null &&
       ['call', 'raise', 'all_in'].includes(previous.action) &&
       (PLO_PAIRED_BOARD_VARIANTS.has(variant) || variant === 'nlh');
+    // The short all-in call floor (Dan 2026-10-26, HorseShortAllInCallFloor)
+    // turns a fold into a call; its all-in form is already a wager action.
+    // When the request is known, only in the spot that rule covers.
+    const shortAllInCall =
+      transition.after.action === 'call' &&
+      previous !== null &&
+      previous.action === 'fold' &&
+      (context === undefined || shortAllInSpot(context.player, context.gameState) !== null);
+    const plo6RiverRaiseToCall =
+      transition.node === 'wager_rules' &&
+      variant === 'plo6' &&
+      transition.after.action === 'call' &&
+      previous !== null &&
+      ['raise', 'all_in'].includes(previous.action) &&
+      plo6RiverCallIsPriced(transition.after, context);
     if (
       transition.node === 'wager_rules' &&
       changed &&
       !pairedBoardFold &&
+      !shortAllInCall &&
+      !plo6RiverRaiseToCall &&
       !['bet', 'raise', 'all_in'].includes(transition.after.action)
     )
       return false;
@@ -693,10 +751,12 @@ function policyGraphIsValid(value: RecordValue, expectedVariant?: string): boole
   );
 }
 
-export function horseDecisionReceiptIsValid(
+/** Finite refusal names only: no player identity, cards or raw receipt data. */
+export function horseDecisionReceiptRefusal(
   value: unknown,
-  expectedVariant?: string
-): value is HorseDecision {
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): string | null {
   if (
     !record(value) ||
     !ACTIONS.includes(value.action as (typeof ACTIONS)[number]) ||
@@ -704,7 +764,7 @@ export function horseDecisionReceiptIsValid(
     (value.amount !== undefined && !nonnegative(value.amount)) ||
     (value.policyFallback !== undefined && value.policyFallback !== 'brain_exception')
   )
-    return false;
+    return 'decision_shape';
   if (
     value.policyFallback === 'brain_exception' &&
     (!['check', 'fold'].includes(value.action as string) ||
@@ -715,9 +775,10 @@ export function horseDecisionReceiptIsValid(
       value.tournamentUtility !== undefined ||
       value.tournamentUtilityRefusal !== undefined)
   )
-    return false;
-  if (!policyGraphIsValid(value, expectedVariant)) return false;
-  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision)) return false;
+    return 'exception_fallback';
+  if (!policyGraphIsValid(value, expectedVariant, context)) return 'policy_graph';
+  if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision))
+    return 'corrective_kernel';
   // The final nuts rule can supersede an owner without rewriting what that
   // owner actually selected. Bind its receipt to the graph's verified input
   // to the final rule; the graph itself still binds the executed output.
@@ -735,48 +796,57 @@ export function horseDecisionReceiptIsValid(
       !/^[a-z0-9_]{1,64}$/.test(value.tournamentUtilityRefusal) ||
       value.tournamentUtility !== undefined)
   )
-    return false;
+    return 'phase7_refusal';
   if (
     value.tournamentUtility !== undefined &&
     !horseTournamentUtilityReceiptIsValid(value.tournamentUtility, phase7Selection(selected))
   )
-    return false;
-  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return false;
+    return 'phase7_utility';
+  if (!horsePhase8LedgerIsValid(value.tournamentPostflop, selected)) return 'phase8_ledger';
   if (value.plo4Policy !== undefined && !plo4LiveReceiptBindingIsValid(value.plo4Policy))
-    return false;
-  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return false;
+    return 'phase10_binding';
+  if (!horsePhase10SelectionIsValid(value.plo4Policy, selected)) return 'phase10_selection';
   // P11.1: a Phase 11 receipt's input binding is shape-checked at the boundary.
   if (
     value.omahaVariantPolicy !== undefined &&
     !omahaVariantReceiptBindingIsValid(value.omahaVariantPolicy)
   )
-    return false;
-  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return false;
+    return 'phase11_binding';
+  if (!horsePhase11SelectionIsValid(value.omahaVariantPolicy, selected)) return 'phase11_selection';
   // P12.1: a Phase 12 receipt's bindings (inputs, and the P12-B net-action
   // economics) are re-checked at the boundary.
   if (
     value.remainingVariantPolicy !== undefined &&
     !remainingVariantReceiptBindingIsValid(value.remainingVariantPolicy)
   )
-    return false;
-  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected)) return false;
+    return 'phase12_binding';
+  if (!horsePhase12SelectionIsValid(value.remainingVariantPolicy, selected))
+    return 'phase12_selection';
   // P13.1: a Phase 13 receipt's input binding, pack versions and selection
   // refusal are re-checked at the boundary.
   if (value.jointPolicy !== undefined && !jointReceiptBindingIsValid(value.jointPolicy))
-    return false;
+    return 'phase13_binding';
   // P13.3: and its selection, by the Phase 10/11/12 law.
-  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return false;
+  if (!horsePhase13SelectionIsValid(value.jointPolicy, selected)) return 'phase13_selection';
   if (
     value.tournamentPreflopAttribution !== undefined &&
     !horsePhase6AttributionIsValid(value.tournamentPreflopAttribution)
   )
-    return false;
-  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return false;
+    return 'phase6_attribution';
+  if (!horsePolicyOwnershipMatches(value as unknown as HorseDecision)) return 'policy_ownership';
   if (
     value.policyOwnership !== undefined &&
     expectedVariant !== undefined &&
     (value.policyOwnership as HorseDecision['policyOwnership'])?.variant !== expectedVariant
   )
-    return false;
-  return true;
+    return 'owner_variant';
+  return null;
+}
+
+export function horseDecisionReceiptIsValid(
+  value: unknown,
+  expectedVariant?: string,
+  context?: HorseDecisionReceiptContext
+): value is HorseDecision {
+  return horseDecisionReceiptRefusal(value, expectedVariant, context) === null;
 }

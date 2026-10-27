@@ -34,9 +34,23 @@
  * CONNECTED observation wins: a live socket anywhere is proof the client is
  * there, and a stale entry at the old table is not proof it is not.
  *
+ * PRESENT IN THE ROOM (2026-10-26). A Lightning hand is played in the
+ * player's own pool-session room, so matching counts only the observations of
+ * the device that plays that seat (`inputDevice`): a person's room socket, a
+ * horse's anchor engine. A person's socket on their ANCHOR table is still
+ * read - it is "connected anywhere", which the presence door uses to keep the
+ * reaper's clock off a player who is plainly still here - but for MATCHING it
+ * proves nothing: measured in production, players converted from MUST MOVE (or
+ * sitting back in, or re-entering) were dealt 7.8-9.9 s after entry from that
+ * anchor socket alone, before they had opened Lightning, and their first hands
+ * were folded by the clock at 41-47 s. Such a player is now UNKNOWN for
+ * matching until a socket is on their room - withheld, never dealt.
+ *
  * HORSES ARE PLAYERS (CLAUDE.md 10.5). A horse's presence comes from the same
  * DisconnectEngine entry as a human's (the engine heartbeats it), and it is
- * reported by exactly the same rule. There is no is_horse anywhere here.
+ * reported by exactly the same rule. There is no is_horse anywhere here: the
+ * anchor engine says which seats it is the input device of (its own report,
+ * the one sanctioned input-device branch), and this file applies one rule.
  *
  * WHAT THIS CANNOT SEE. A pool player the process has never observed and the
  * matcher has not yet named. The first pass of a new worker can only know
@@ -94,6 +108,17 @@ export interface PresenceTableReport {
     presence: SeatPresence;
     /** Reported only by a Lightning room whose socket said `?p=`. */
     platform?: LightningDevicePlatform | null;
+    /**
+     * Is this observation of the INPUT DEVICE that plays the player's Lightning
+     * seat (2026-10-26)? A Lightning hand is played in the player's own pool
+     * session room: a person's device is their room socket, and a horse's is
+     * the anchor engine that drives it (CLAUDE.md 10.5 item 2). A person's
+     * socket on their ANCHOR table is not: it cannot see or act in a Lightning
+     * hand. Such an observation says `false`. Absent or true: it is the
+     * seat's device (a room report; an anchor engine reporting a seat it is
+     * the input device of).
+     */
+    inputDevice?: boolean;
   }>;
 }
 
@@ -101,9 +126,22 @@ export interface PresenceTableReport {
 export type PresenceSource = () => Iterable<PresenceTableReport>;
 
 export interface LightningPresenceSnapshot {
+  /**
+   * The MATCHING view (2026-10-26): connected / disconnected / unknown as the
+   * device that plays each player's Lightning seat reports them. A player seen
+   * live only somewhere else (a person's anchor-table socket) is unknown here.
+   */
   connected: string[];
   disconnected: string[];
   unknown: string[];
+  /**
+   * Every observation, wherever made: connected anywhere wins, then a definite
+   * disconnect. The presence DOOR's view (the reaper's clock and the boot
+   * reconciliation), which never stamps away a player some engine here still
+   * sees live.
+   */
+  connectedAnywhere: string[];
+  disconnectedAnywhere: string[];
   /** disconnected + unknown, sorted and unique: the p_disconnected feed. */
   pDisconnected: string[];
   /** Anchor tables of this Cluster that an engine here reported on. */
@@ -131,7 +169,10 @@ export class LightningPresence {
    * reported unknown, and so withheld from the deal.
    */
   snapshot(clusterId: string, knownPoolPlayers: Iterable<string> = []): LightningPresenceSnapshot {
-    const seen = new Map<string, SeatPresence>();
+    /** Every observation of the player, wherever it was made. */
+    const anywhere = new Map<string, SeatPresence>();
+    /** Only observations of the device that plays the player's Lightning seat. */
+    const device = new Map<string, SeatPresence>();
     const platforms = new Map<string, LightningDevicePlatform>();
     let anchorTables = 0;
     for (const report of this.source()) {
@@ -144,14 +185,26 @@ export class LightningPresence {
       }
       if (report.clusterId !== clusterId) continue;
       anchorTables++;
-      for (const { userId, presence } of report.players) {
+      for (const { userId, presence, inputDevice } of report.players) {
         if (!userId) continue;
-        const prior = seen.get(userId);
-        seen.set(userId, merge(prior, presence));
+        anywhere.set(userId, merge(anywhere.get(userId), presence));
+        if (inputDevice !== false) device.set(userId, merge(device.get(userId), presence));
       }
     }
     for (const userId of knownPoolPlayers) {
-      if (userId && !seen.has(userId)) seen.set(userId, 'unknown');
+      if (userId && !anywhere.has(userId)) anywhere.set(userId, 'unknown');
+    }
+    // PRESENT IN THE ROOM (2026-10-26). A player is dealt only on what the
+    // device that plays their Lightning seat says. A person seen live only on
+    // their ANCHOR table (a MUST MOVE conversion, a sit-back-in or a re-entry,
+    // before they open Lightning) is not proof they are where the hand is
+    // played, so they are UNKNOWN for matching - withheld, never dealt into a
+    // hand whose clock they cannot see. One rule for every player: a horse is
+    // present through its own input device, the anchor engine that drives it.
+    const seen = new Map<string, SeatPresence>();
+    for (const [userId, everywhere] of anywhere) {
+      const own = device.get(userId);
+      seen.set(userId, own ?? (everywhere === 'connected' ? 'unknown' : everywhere));
     }
     const connected: string[] = [];
     const disconnected: string[] = [];
@@ -164,10 +217,17 @@ export class LightningPresence {
     connected.sort();
     disconnected.sort();
     unknown.sort();
+    const anywhereIs = (want: SeatPresence) =>
+      [...anywhere]
+        .filter(([, p]) => p === want)
+        .map(([userId]) => userId)
+        .sort();
     return {
       connected,
       disconnected,
       unknown,
+      connectedAnywhere: anywhereIs('connected'),
+      disconnectedAnywhere: anywhereIs('disconnected'),
       pDisconnected: [...new Set([...disconnected, ...unknown])].sort(),
       anchorTables,
       platforms: Object.fromEntries(

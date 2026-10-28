@@ -1,4 +1,10 @@
 {
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    }
+  },
   "schema_version": 1,
   "routePerformanceGateInputs20261025": {
     "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
@@ -57,7 +63,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "1cb908e23e7a2f1ec0ba334e5ab110c9aae87fdbc1df23beebc1fd85a4f5c1d2",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",

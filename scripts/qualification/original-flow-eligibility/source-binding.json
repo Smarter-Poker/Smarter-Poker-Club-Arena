@@ -1,4 +1,13 @@
 {
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      ".github/workflows/ci.yml": {
+        "bytes": 243487,
+        "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      }
+    }
+  },
   "compilerJobCleanupBudget20261028": {
     "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
     "previousWorkflowPin": {
@@ -57,8 +66,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      "bytes": 245561,
+      "sha256": "0c67cac73a3186395f33567c68998aa5b0ad2e22e579aa6cc62907f0de05ab31"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,

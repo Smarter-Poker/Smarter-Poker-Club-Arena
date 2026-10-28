@@ -1,4 +1,17 @@
 {
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      ".github/workflows/ci.yml": {
+        "bytes": 243487,
+        "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 114869,
+        "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      }
+    }
+  },
   "nativeAlertRuntimeAudit20261027": {
     "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
     "previousClassifierPin": {
@@ -222,8 +235,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      "bytes": 245561,
+      "sha256": "0c67cac73a3186395f33567c68998aa5b0ad2e22e579aa6cc62907f0de05ab31"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -326,8 +339,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114869,
-      "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      "bytes": 115405,
+      "sha256": "1cb908e23e7a2f1ec0ba334e5ab110c9aae87fdbc1df23beebc1fd85a4f5c1d2"
     }
   },
   "compilerJobCleanupBudget20261028": {

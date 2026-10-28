@@ -1,17 +1,17 @@
+import {isClubArenaRepository} from './repository-identity.mjs';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {assertProtection} from './assert-money-trigger-protection.mjs';
 export const CHECK_NAME='Money trigger declaration authority';
-const REPOSITORY='Smarter-Poker/Smarter-Poker-Club-Arena';
 const protectionReads=new WeakMap();
 // A receipt exists only in this trusted process, after both a real ruleset
 // read and successful token revocation. No JSON/input/env flag can mint it.
-export async function readProtectionAndRevoke({token,repository,appId,head,runId,fetchImpl=fetch,now=Date.now}){
+export async function readProtectionAndRevoke({token,repository,repositoryId,appId,head,runId,fetchImpl=fetch,now=Date.now}){
  if(!token)throw Error('missing narrowly scoped protection reader token');
  let observedAt;
  try{
-  if(repository!==REPOSITORY||!/^\d+$/.test(runId||'')||!/^[a-f0-9]{40}$/.test(head||''))throw Error('invalid protection read identity');
-  const response=await fetchImpl(`https://api.github.com/repos/${REPOSITORY}/rulesets/21163380`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json'},redirect:'error',signal:AbortSignal.timeout(15000)});
+  if(!isClubArenaRepository(repository,repositoryId)||!/^\d+$/.test(runId||'')||!/^[a-f0-9]{40}$/.test(head||''))throw Error('invalid protection read identity');
+  const response=await fetchImpl(`https://api.github.com/repos/${repository}/rulesets/21163380`,{headers:{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json'},redirect:'error',signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error(`protection read failed ${response.status}`);
   assertProtection(await response.json(),appId);
   observedAt=now();
@@ -22,13 +22,13 @@ export async function readProtectionAndRevoke({token,repository,appId,head,runId
   if(revoked.status!==204)throw Error(`protection reader revocation failed ${revoked.status}`);
  }
  const receipt=Object.freeze({});
- protectionReads.set(receipt,{repository,appId,head,runId,observedAt});
+ protectionReads.set(receipt,{repository,repositoryId,appId,head,runId,observedAt});
  return receipt;
 }
 export function completion({capturedHead,currentHead,outcome,proof,protection,runId,appId,now=Date.now()}){
  const read=protection&&typeof protection==='object'?protectionReads.get(protection):null;
  if(read)protectionReads.delete(protection);
- if(!read||read.repository!==REPOSITORY||read.head!==capturedHead||read.runId!==runId||read.appId!==appId||!Number.isFinite(read.observedAt)||now<read.observedAt||now>=read.observedAt+300000)return 'failure';
+ if(!read||!isClubArenaRepository(read.repository,read.repositoryId)||read.head!==capturedHead||read.runId!==runId||read.appId!==appId||!Number.isFinite(read.observedAt)||now<read.observedAt||now>=read.observedAt+300000)return 'failure';
  if(outcome!=='success'||currentHead!==capturedHead||proof?.headSha!==capturedHead||proof?.runId!==runId)return 'failure';
  if(proof.results.some(x=>x.recovered)){
   const observed=Date.parse(proof.catalogObservedAt),expiry=Date.parse(proof.expiresAt);
@@ -38,7 +38,7 @@ export function completion({capturedHead,currentHead,outcome,proof,protection,ru
 }
 async function main(){
  const repo=process.env.GITHUB_REPOSITORY,number=process.env.PR_NUMBER,appId=process.env.REPORTER_APP_ID;
- if(repo!=='Smarter-Poker/Smarter-Poker-Club-Arena'||!/^\d+$/.test(number||'')||!/^\d+$/.test(appId||''))throw Error('invalid reporting identity');
+ if(!isClubArenaRepository(repo,process.env.GITHUB_REPOSITORY_ID)||!/^\d+$/.test(number||'')||!/^\d+$/.test(appId||''))throw Error('invalid reporting identity');
  const token=process.env.REPORTER_TOKEN;if(!token)throw Error('missing restricted reporter token');
  async function api(p,method='GET',body){const r=await fetch(`https://api.github.com/repos/${repo}/${p}`,{method,headers:{Authorization:`Bearer ${method==='GET'?process.env.GITHUB_TOKEN:token}`,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error(`reporting failed ${r.status}`);return r.json()}
  if(process.argv[2]==='begin'){
@@ -51,7 +51,7 @@ async function main(){
   const state=JSON.parse(fs.readFileSync('money-trigger-check-state.json'));
   const proof=fs.existsSync('money-trigger-recovery.json')?JSON.parse(fs.readFileSync('money-trigger-recovery.json')):null;
   let protection;
-  try{protection=await readProtectionAndRevoke({token:process.env.PROTECTION_READER_TOKEN,repository:repo,appId,head:state.head,runId:state.runId});}
+  try{protection=await readProtectionAndRevoke({token:process.env.PROTECTION_READER_TOKEN,repository:repo,repositoryId:process.env.GITHUB_REPOSITORY_ID,appId,head:state.head,runId:state.runId});}
   catch{console.error('Full protection read or reader revocation failed; no success can be reported.');}
   finally{delete process.env.PROTECTION_READER_TOKEN;}
   const pr=await api(`pulls/${number}`);

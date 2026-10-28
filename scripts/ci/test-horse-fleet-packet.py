@@ -155,7 +155,7 @@ class PacketContracts(unittest.TestCase):
  def test_phase_aggregate_distinguishes_forced_and_independent_without_private_payload(self):
   o=self.phase_observation();result=module.phase_summary(o)
   self.assertEqual(result['phases']['phase8']['authorityProvenance'],{'independentlyQualified':0,'ownerForced':1,'unknown':0})
-  self.assertFalse(result['allPhasesVerified']);self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('reasons',result['phases']['phase8'])
+  self.assertFalse(result['allPhasesVerified']);self.assertNotIn('PRIVATE',json.dumps(result));self.assertEqual(result['phases']['phase8']['reasons'],{'owner_forced_not_independently_qualified':1})
   row=o['phaseEvidence']['phase8'];row['qualification']={'verified':1};row['reasons']={'protected_owner_independently_qualified':1}
   self.assertEqual(module.phase_summary(o)['phases']['phase8']['authorityProvenance']['independentlyQualified'],1)
  def test_legacy_verified_authority_is_unknown_not_independent_or_failed(self):
@@ -195,6 +195,138 @@ class PacketContracts(unittest.TestCase):
   for field,value in [('inspectedHands',760),('remainingHands',-1),('validatedBytes',75497473),('acceptedDecisions',True),('boundReached',1)]:
    bad=dict(o);bad[field]=value
    with self.assertRaises(ValueError):module.capture_diagnostics(a,bad)
+ def partition_fixture(self,hands=65):
+  p,a=self.convert(self.rows());p['handKeys']=[f'{i:064x}' for i in range(hands)]
+  a.update(packetDigest=module.digest(p),selectedHands=hands,sourceOwnerCounts={'classic':hands,'lightning':0})
+  return p,a
+ def partition_result(self,part,actors=(0,)):
+  n=len(actors);row={'capability':{'captured':n},'eligibility':{'eligible':n},'qualification':{'refused':n},'application':{'refused':n},'reasons':{'utility_refused':n}}
+  counts={part['horseIds'][i]:actors.count(i) for i in set(actors)}
+  o={'packetDigest':module.digest(part),'sourceSha':part['sourceSha'],'window':part['window'],
+   'selectedHands':len(part['handKeys']),'inspectedHands':len(part['handKeys']),'remainingHands':0,
+   'validatedBytes':n*1000,'acceptedDecisions':n,'boundReached':False,'captureUnfinished':False,'gaps':{},
+   'limits':{'shards':32,'hands':10000,'validatedBytes':64*1024*1024,'elapsedMs':30000},
+   'observedHorses':len(counts),'completeHorseCoverage':False,
+   'phaseProofSchema':{'version':'horse-fleet-phase-proof-v1','counterUnit':'selected_accepted_decisions'},
+   'phaseEvidence':{f'phase{i}':json.loads(json.dumps(row)) for i in range(1,16)},
+   'horses':[{'horseId':i,'acceptedDecisions':counts.get(i,0),
+    'phaseStatusCounts':{f'phase{j}':[0,0,counts[i],0,0,0] for j in range(1,16)} if counts.get(i) else {},
+    'phaseAcceptedApplications':{}} for i in part['horseIds']]}
+  return {'packetDigest':module.digest(part),'sourceSha':part['sourceSha'],'qualifiedExecution':True,
+   'execution':{'exitCode':2,'containerExitCode':2,'release':part['sourceSha'],'readOnly':True,'network':'none','horseJournalMountVerified':True,
+    'sameServingIdentityAfter':True,'observerRemoved':True,'cleanupExitCode':0,'oomKilled':False,
+    'servingContainer':'c'*64,'imageId':'sha256:'+'d'*64,'servingStartedAt':'2000-01-01T00:00:00Z','observation':o}}
+ def test_partitions_are_predeclared_disjoint_and_never_truncate_or_resume(self):
+  p,a=self.partition_fixture();parts=module.partition_packets(p,a)
+  self.assertEqual([len(x['handKeys']) for x in parts],[64,1])
+  self.assertEqual([k for x in parts for k in x['handKeys']],sorted(p['handKeys']))
+  self.assertEqual(len(set(k for x in parts for k in x['handKeys'])),65)
+  p,a=self.partition_fixture(1025)
+  with self.assertRaises(ValueError):module.partition_packets(p,a)
+  p,a=self.partition_fixture();p['handKeys'][1]=p['handKeys'][0];a['packetDigest']=module.digest(p)
+  with self.assertRaises(ValueError):module.partition_packets(p,a)
+  p,a=self.partition_fixture();a['snapshot']=''
+  with self.assertRaises(ValueError):module.partition_packets(p,a)
+ def test_private_union_counts_each_horse_once_and_retains_phase_refusals(self):
+  p,a=self.partition_fixture();parts=module.partition_packets(p,a)
+  results=[self.partition_result(parts[0],(0,1)),self.partition_result(parts[1],(1,2))]
+  summary=module.bounded_summary(p,a,results)
+  self.assertEqual(summary['observedHorses'],3);self.assertEqual(summary['acceptedDecisions'],4)
+  self.assertTrue(summary['completeCapture']);self.assertFalse(summary['completeCanonicalHorseCoverage'])
+  self.assertFalse(summary['allPhasesVerified']);self.assertFalse(summary['completePopulation'])
+  self.assertEqual(summary['phaseEvidence']['phases']['phase7']['reasons'],{'utility_refused':4})
+  self.assertNotIn(p['horseIds'][0],json.dumps(summary));self.assertNotIn('horses',summary)
+  partial=module.bounded_summary(p,a,results[:1]);self.assertFalse(partial['completeCapture'])
+  self.assertEqual(partial['observedHorses'],2)
+ def test_union_refuses_duplicate_partition_changed_source_container_or_horse_counts(self):
+  for mutate in [lambda r:r.update(packetDigest='0'*64),lambda r:r.update(sourceSha='b'*40),
+   lambda r:r['execution'].update(servingContainer='e'*64),lambda r:r['execution'].update(observerRemoved=False),
+   lambda r:r['execution']['observation'].update(window={}),
+   lambda r:r['execution']['observation']['horses'][0]['phaseAcceptedApplications'].update(phase7=1),
+   lambda r:r['execution']['observation']['horses'][0]['phaseStatusCounts'].update(phase7=[0]*6),
+   lambda r:r['execution']['observation']['horses'][0].update(acceptedDecisions=2),
+   lambda r:r['execution']['observation']['horses'][0].update(horseId='PRIVATE-ID'),
+   lambda r:r['execution']['observation']['limits'].update(validatedBytes=128*1024*1024)]:
+   p,a=self.partition_fixture();parts=module.partition_packets(p,a);results=[self.partition_result(x) for x in parts];mutate(results[1])
+   with self.assertRaises(ValueError):module.bounded_summary(p,a,results)
+  p,a=self.partition_fixture();parts=module.partition_packets(p,a);r=self.partition_result(parts[0])
+  with self.assertRaises(ValueError):module.bounded_summary(p,a,[r,r])
+ def test_bounds_and_gaps_prevent_complete_even_when_every_horse_is_observed(self):
+  p,a=self.partition_fixture(64);part=module.partition_packets(p,a)[0];r=self.partition_result(part,tuple(range(1000)))
+  summary=module.bounded_summary(p,a,[r]);self.assertTrue(summary['completeCanonicalHorseCoverage']);self.assertFalse(summary['allPhasesVerified'])
+  o=r['execution']['observation'];o.update(boundReached=True,captureUnfinished=True,gaps={'bound_reached':1})
+  summary=module.bounded_summary(p,a,[r]);self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertEqual(summary['observedHorses'],1000)
+  o.update(boundReached=False,captureUnfinished=False,gaps={'capture_outside_window':1})
+  self.assertFalse(module.bounded_summary(p,a,[r])['completeCanonicalHorseCoverage'])
+ def test_phase_reason_counts_redact_unknown_text_and_preserve_known_refusals(self):
+  o=self.phase_observation();row=o['phaseEvidence']['phase7'];row['qualification']={'refused':1};row['application']={'refused':1};row['reasons']={'PRIVATE-CARD PLAYER SECRET':1}
+  summary=module.phase_summary(o);self.assertNotIn('PRIVATE',json.dumps(summary))
+  self.assertEqual(summary['phases']['phase7']['reasons'],{'other_retained_phase_reason':1})
+ def test_bounded_driver_uses_existing_cli_once_per_partition_and_preserves_partial(self):
+  from unittest.mock import patch
+  p,a=self.partition_fixture()
+  with tempfile.TemporaryDirectory(prefix='fleet-contract-') as folder:
+   root=Path(folder);packet=root/'packet.json';attestation=root/'attestation.json';ssh=root/'hssh'
+   for path,value in [(packet,p),(attestation,a)]:path.write_text(json.dumps(value));path.chmod(0o600)
+   ssh.write_text('unused fixture');ssh.chmod(0o700)
+   calls=[]
+   def run(command,**kw):
+    calls.append(command);part=json.loads(Path(command[4]).read_text());out=Path(command[8])
+    out.write_text(json.dumps(self.partition_result(part)));out.chmod(0o600)
+    return subprocess.CompletedProcess(command,0,b'',b'')
+   with patch.object(module.subprocess,'run',side_effect=run):summary=module.observe_bounded(str(packet),str(attestation),str(ssh),str(root/'result.json'))
+   self.assertEqual(len(calls),2);self.assertEqual(calls[0][:4],['node','server/scripts/phase6d-population.mjs','fleet','--packet'])
+   self.assertEqual(summary['observedHorses'],1);self.assertEqual((root/'result.json').stat().st_mode&0o777,0o600)
+   with self.assertRaises(ValueError):module.observe_bounded(str(packet),str(attestation),str(ssh),str(root/'result.json'))
+   self.assertEqual(len(calls),2)
+ def test_bounded_driver_retains_valid_prefix_when_second_transport_fails(self):
+  from unittest.mock import patch
+  p,a=self.partition_fixture()
+  with tempfile.TemporaryDirectory(prefix='fleet-partial-') as folder:
+   root=Path(folder);packet=root/'packet.json';attestation=root/'attestation.json';ssh=root/'hssh'
+   for path,value in [(packet,p),(attestation,a)]:path.write_text(json.dumps(value));path.chmod(0o600)
+   ssh.write_text('fixture');ssh.chmod(0o700);calls=[]
+   def run(command,**kw):
+    calls.append(command)
+    if len(calls)==2:return subprocess.CompletedProcess(command,2,b'',b'PRIVATE ERROR')
+    part=json.loads(Path(command[4]).read_text());out=Path(command[8])
+    out.write_text(json.dumps(self.partition_result(part)));out.chmod(0o600)
+    return subprocess.CompletedProcess(command,0,b'',b'')
+   with patch.object(module.subprocess,'run',side_effect=run):summary=module.observe_bounded(str(packet),str(attestation),str(ssh),str(root/'result.json'))
+   self.assertEqual(len(calls),2);self.assertEqual(summary['completedPartitions'],1)
+   self.assertEqual(summary['observedHorses'],1);self.assertFalse(summary['completeCapture'])
+   self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertNotIn('PRIVATE',json.dumps(summary))
+   self.assertEqual(summary['gaps'],{'partition_observation_unavailable':1})
+ def with_partition_reads(self,result,independent_actor=None):
+  o=result['execution']['observation'];fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
+  for h in o['horses']:
+   n=h['acceptedDecisions'];independent=h['horseId']==independent_actor
+   h['retainedReceiptCounts']={'pooledPublicReads':0 if independent else n,'independentPublicReads':n if independent else 0}
+   h['riverLearning']={k:n for k in fields};h['riverLearning']['qualifiedReadBasisCounts']={'independent_public_receipt' if independent else 'individual_scoped_basic_component_of_pooled_public_receipt':n}
+  pooled=[h for h in o['horses'] if h['retainedReceiptCounts']['pooledPublicReads']>0]
+  o['riverLearningEvidence']={'scope':'at_least_one_qualified_observer_context','counterMeaning':'maximum_scoped_opponent_samples_per_accepted_read','readBasis':'original_individual_scoped_basic_counters',**{v:sum(h['riverLearning'][k]>0 for h in o['horses']) for k,v in fields.items()},'pooledIndividualScopedBasicReadHorses':len(pooled),'pooledIndividualScopedBasicReadDecisions':sum(h['retainedReceiptCounts']['pooledPublicReads'] for h in pooled)}
+  return result
+ def test_bounded_union_preserves_public_and_river_reads_without_duplicate_horses(self):
+  p,a=self.partition_fixture();parts=module.partition_packets(p,a)
+  results=[self.with_partition_reads(self.partition_result(parts[0],(0,1))),self.with_partition_reads(self.partition_result(parts[1],(1,2)),p['horseIds'][2])]
+  results[0]['execution']['observation']['horses'][0]['PRIVATE-CARDS']=['secret']
+  out=module.bounded_summary(p,a,results);public=out['publicReadEvidence'];river=out['riverLearningEvidence']
+  self.assertEqual(public['pooledPublicReadDecisions'],3);self.assertEqual(public['pooledPublicReadHorses'],2)
+  self.assertEqual(public['independentPublicReadDecisions'],1);self.assertEqual(public['independentPublicReadHorses'],1)
+  self.assertEqual(river['qualifiedReadDecisions'],4);self.assertEqual(river['qualifiedReadHorses'],3)
+  self.assertEqual(river['retainedHistoryRiverSampleDecisions'],4);self.assertEqual(river['retainedHistoryRiverSampleHorses'],3)
+  self.assertEqual(river['pooledIndividualScopedBasicReadDecisions'],3);self.assertEqual(river['pooledIndividualScopedBasicReadHorses'],2)
+  self.assertFalse(river['durablePersistenceVerified']);self.assertFalse(river['strategyApplicationVerified'])
+  self.assertNotIn('PRIVATE',json.dumps(out));self.assertNotIn(p['horseIds'][0],json.dumps(out))
+  partial=module.bounded_summary(p,a,results[:1]);self.assertEqual(partial['riverLearningEvidence']['qualifiedReadHorses'],2);self.assertFalse(partial['completeCapture'])
+ def test_bounded_reads_keep_legacy_unknown_and_refuse_inconsistent_new_evidence(self):
+  p,a=self.partition_fixture();parts=module.partition_packets(p,a)
+  results=[self.with_partition_reads(self.partition_result(parts[0])),self.partition_result(parts[1])]
+  out=module.bounded_summary(p,a,results)
+  self.assertEqual(out['publicReadEvidence']['status'],'unknown');self.assertEqual(out['riverLearningEvidence']['status'],'unknown')
+  self.assertEqual(module.bounded_summary(p,a,[])['publicReadEvidence']['status'],'unknown')
+  self.with_partition_reads(results[1]);results[1]['execution']['observation']['riverLearningEvidence']['qualifiedReadHorses']=2
+  with self.assertRaises(ValueError):module.bounded_summary(p,a,results)
  def read_result(self):
   p,a=self.convert(self.rows());horses=[]
   for i,id in enumerate(p['horseIds']):

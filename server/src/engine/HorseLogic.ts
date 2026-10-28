@@ -1,4 +1,5 @@
 import { riverPositionIncrements } from './HorseRiverPositionRead.js';
+import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
   runCorrectiveKernelEvaluator,
   type CorrectiveKernelEvaluator,
@@ -2043,6 +2044,8 @@ export interface HorseDecideOpts {
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
    * 6000-pair probe; no production default is changed. */
   v55OmahaRiverTripsFlat?: boolean;
+  /** Qualification-only small-pot near-nut river value candidate; default off. */
+  smallPotNearNutRiverValue?: boolean;
   /** V56: direct public pressure sampling for vulnerable river sets/trips
    * facing tier-three pressure on one Omaha-high cash board. Default on
    * after fixed-clock/full-precision400bb cash qualification; explicit false
@@ -3200,11 +3203,16 @@ export const PLO6_RIVER_CHEAP_PRICE = 0.1;
 export const PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB = 0.3;
 /** Unpaired board, beaten this often: call at most, never raise. */
 export const PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB = 0.15;
+// Private, one-use provenance from the actual value branch. No request or
+// serialized decision field can grant the PLO6 low-commitment flat exception.
+const nearNutValueReferenceRaises = new WeakSet<HorseDecision>();
+
 function plo6RiverNutDiscipline(
   decision: HorseDecision,
   player: SeatPlayer,
   gs: HorseGameStateV2,
-  opts: HorseDecideOpts
+  opts: HorseDecideOpts,
+  retainedNearNutReferenceAmount: number | null = null
 ): HorseDecision {
   try {
     if (String(gs.gameVariant ?? '').toLowerCase() !== 'plo6' || gs.stage !== 'river')
@@ -3250,6 +3258,17 @@ function plo6RiverNutDiscipline(
       return { ...decision, action: 'fold', amount: undefined };
     }
     if (isRaise && beaten >= flatAt) {
+      if (
+        paired &&
+        opts.smallPotNearNutRiverValue === true &&
+        decision.action === 'raise' &&
+        retainedNearNutReferenceAmount !== null &&
+        decision.amount === retainedNearNutReferenceAmount &&
+        smallPotNearNutRiverValue(player, gs)
+      ) {
+        if (telemetryOn(opts)) noteFire('small_pot_near_nut_value_flat_exception');
+        return decision;
+      }
       noteFlat();
       return callFor();
     }
@@ -3978,6 +3997,13 @@ export class HorseLogic {
     }).decision;
 
     const v54StationCheck = v54StationChecks.has(decision);
+    const nearNutReference =
+      nearNutValueReferenceRaises.delete(decision) &&
+      decision.action === 'raise' &&
+      Number.isFinite(decision.amount)
+        ? { action: 'raise' as const, amount: decision.amount!, thinkTime: 0 }
+        : null;
+
     const phase6Attribution =
       gs.stage === 'preflop'
         ? createPhase6Attribution(phase6Reference, gs, isTournamentMode(gs), decision)
@@ -4727,6 +4753,10 @@ export class HorseLogic {
     // timing node see the action they choose: the PLO paired-board fold, then
     // the hold'em premium rule (#8122, #8138), then - LAST, so nothing can
     // fold that spot again - the short all-in call floor (Dan 2026-10-26).
+    const retainedNearNutAmount =
+      nearNutReference && graph.retainsReferenceAction(nearNutReference)
+        ? nearNutReference.amount
+        : null;
     decision = graph.run('wager_rules', decision, () => {
       const wagered = fullPotNearPotWager(
         // V58/V59: PLO6 river nut discipline, after every strategy owner.
@@ -4734,7 +4764,8 @@ export class HorseLogic {
           riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
           player,
           gs,
-          opts
+          opts,
+          retainedNearNutAmount
         ),
         player,
         gs
@@ -9614,14 +9645,20 @@ export class HorseLogic {
         }
       }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
-      if (
+      const originalValueRaise =
         !(dangered && cat < 6) &&
         fastRandom() <
           Math.max(
             0.55 * params.aggression + params.checkRaiseFreq + oopBoost,
             pressure53 && cat >= 3 ? pressure53.raiseFloor : 0
-          )
-      ) {
+          );
+      const nearNutValueRaise =
+        !originalValueRaise &&
+        !(dangered && cat < 6) &&
+        opts.smallPotNearNutRiverValue === true &&
+        smallPotNearNutRiverValue(player, gs);
+      if (originalValueRaise || nearNutValueRaise) {
+        if (telemetryOn(opts) && nearNutValueRaise) noteFire('small_pot_near_nut_value_raise');
         if (tele15 && pressure53 && cat >= 3) noteFire('v53_pressure_value_raise');
         // V18 EXPLOIT SIZING: on the river, a station (valueThinMod > 1)
         // pays a bigger raise; a nit calls only what a smaller one asks.
@@ -9633,7 +9670,20 @@ export class HorseLogic {
           }
         }
         const raiseToAmt = currentBet + (pot + toCall) * sizeF;
-        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+        const raised = this.raiseTo(
+          planHandKey,
+          raiseToAmt * params.sizingMultiplier,
+          player,
+          gs,
+          vi
+        );
+        if (
+          opts.smallPotNearNutRiverValue === true &&
+          smallPotNearNutRiverValue(player, gs) &&
+          raised.action === 'raise'
+        )
+          nearNutValueReferenceRaises.add(raised);
+        return raised;
       }
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }

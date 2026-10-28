@@ -1005,6 +1005,55 @@ PROCESS_FRAMES = {'index.js', 'GameServer.js', 'services/leadership.js',
     'engine/EquityWorkerPool.js', 'services/supabase/client.js'}
 
 
+def v8_crash_contexts(raw):
+    """Closed scalars only; nearby native frames are hints, not isolate ownership."""
+    lines = raw.splitlines()
+    result = {}
+    stamp_re = r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s'
+    gc_re = re.compile(r'^\[(\d{1,10}):0x[0-9a-fA-F]+\]\s+\d+(?:\.\d+)? ms: (?:Mark-Compact|Mark-sweep|Scavenge)(?: \(reduce\))?\s+(\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) -> (\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) MB,')
+    count = 0
+    for i, line in enumerate(lines):
+        stamp = re.match(stamp_re, line)
+        if len(line) > 4096 or not stamp:
+            continue
+        key = next((k for k in ('v8_heap_exhausted', 'v8_ineffective_gc')
+                    if line[stamp.end():].startswith(PROCESS_SIGNALS[k])), None)
+        if key is None or count >= 8:
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+        except ValueError:
+            continue
+        context = {'timestamp': stamp.group(1) + 'Z', 'gc': [],
+                   'workerNativeFrame': False, 'mainNativeFrame': False,
+                   'isolateOwner': 'unknown', 'heapLimitMB': None,
+                   'allocationOwner': 'unknown', 'association': 'nearby_only'}
+        for nearby in lines[max(0, i - 8):i + 13]:
+            ns = re.match(stamp_re, nearby)
+            if len(nearby) > 4096 or not ns:
+                continue
+            try:
+                delta = (datetime.datetime.fromisoformat(ns.group(1) + '+00:00') - instant).total_seconds()
+            except ValueError:
+                continue
+            if not -2 <= delta <= 2:
+                continue
+            payload = nearby[ns.end():]
+            gc = gc_re.match(payload)
+            if gc and len(context['gc']) < 8:
+                numbers = [float(x) for x in gc.groups()[1:]]
+                if all(0 <= x <= 1048576 for x in numbers) and numbers[0] <= numbers[1] and numbers[2] <= numbers[3]:
+                    context['gc'].append(dict(zip(('pid', 'beforeMB', 'beforeTotalMB', 'afterMB', 'afterTotalMB'), [int(gc[1]), *numbers])))
+            # Native frame grammar only: arbitrary application text cannot assert a hint.
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::worker::Worker::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['workerNativeFrame'] = True
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::NodeMainInstance::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['mainNativeFrame'] = True
+        result.setdefault(key, []).append(context)
+        count += 1
+    return result
+
+
 def process_signals(raw):
     result = {}
     active = None
@@ -1050,6 +1099,9 @@ def process_signals(raw):
                     if re.search(r'(?<![A-Za-z0-9_])' + re.escape(cause) + r'(?![A-Za-z0-9_])', payload):
                         counts = result[key]['causes']
                         counts[cause] = counts.get(cause, 0) + 1
+    for key, contexts in v8_crash_contexts(raw).items():
+        if key in result:
+            result[key]['crashContexts'] = contexts
     return result
 
 
@@ -1061,6 +1113,10 @@ def merge_signals(target, addition):
             entry['lastTimestamp'] = value['lastTimestamp']
         for cause, count in value['causes'].items():
             entry['causes'][cause] = entry['causes'].get(cause, 0) + count
+        if value.get('crashContexts'):
+            contexts = entry.setdefault('crashContexts', [])
+            retained = sum(len(item.get('crashContexts', [])) for item in target.values())
+            contexts.extend(value['crashContexts'][:max(0, 8 - retained)])
         for frame in value['frames']:
             if frame not in entry['frames'] and len(entry['frames']) < 8:
                 entry['frames'].append(frame)
@@ -1080,6 +1136,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     yields = tournament_yields('')
     cap_refusals = booking_cap_refusals('')
     block = []
+    recent_gc = []
     pending = b''
     dropping = False
     total = 0
@@ -1099,7 +1156,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
         block = []
 
     def record(raw):
-        nonlocal records, block, oldest, newest
+        nonlocal records, block, oldest, newest, recent_gc
         records += 1
         if len(raw) > 4096:
             if block:
@@ -1122,11 +1179,13 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 '[ServerTableEngine.' in line and '.horse_decision_worker_failed]' in line):
             if block:
                 flush_block()
-            block = [line]
+            block = [*[x for x in recent_gc if re.search(r'\[\d{1,10}:0x[0-9a-fA-F]+\]', x)], line] if 'FATAL ERROR:' in line else [line]
+            recent_gc = []
         elif block:
             block.append(line)
-            if len(block) >= 13:
+            if len(block) >= 21:
                 flush_block()
+        recent_gc = (recent_gc + [line])[-8:]
 
     try:
         while True:

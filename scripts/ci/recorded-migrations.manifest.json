@@ -1622,6 +1622,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8402",
       "refusedBy": [],
       "liveVerdict": "Continuing original weekly-book closure outage: the complete original report still pinned obsolete pre-treasury hand witness/read owners although the genuine current readers and original advance were qualified. Exact source changes are two report reader bindings, one advance report binding and the two corresponding entries of the actual65 authority; all financial SQL/math/other63 sources and GEN58dc body are unchanged. Full-file history and all seven original definitions/whole metadata/ACL were read back; only report/advance/sourceguard definitions changed to their qualified postimages. The actual inventory generation is legitimately nonNULL and different from the real preinstall B7 generation, derived by the unchanged original generation owner. No old partial/certificate was retagged by this installer. Original84 flow+hand rebuild, all paid financial identity preservation and complete live report/book closure remain separate required proof; this installation receipt does not claim them."
+    },
+    {
+      "version": "20261028005400",
+      "name": "weekly_statement_selects_its_exact_coordinator_scope",
+      "file": "supabase/migrations/20261028005400_weekly_statement_selects_its_exact_coordinator_scope.sql",
+      "md5": "eaf9e4abe3bf7d8915dc8a55fa66ddc2",
+      "appliedToProductionAt": "2026-10-28T01:08:58.612Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained function-only active-book-outage install and READ ONLY full-file history/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8404",
+      "refusedBy": [],
+      "liveVerdict": "Lightning original weekly statement timed out before tournament quality in the source aggregate. Exact NULL/non-NULL coordinator partition preserves every payable source and all original financial summary branches, source contracts, wrong-scope checks, cutoff semantics and full ordered source fingerprint. Actual candidate existing-index/hash-anti plan cost41189 versus original199488; complete READ ONLY candidate aggregate finished under90seconds:308801 sources/private3552.70/union0/bad0/fingerprint48c3d96ec64be3668d106cc120eda8bd. Focused PG17 native72 passed actual current summary/issuer/nativebank and current payable/effective view definitions, full-row EXCEPT ALL NULL/nonNULL/admission/cutoff/refusal cases, concurrent STABLE snapshot and actor/freeze/history/real scheduler/atomic postcondition guards. Immediate whole-file history and complete post5225 summary/sourceguard/report/advance/handreader/quality5c8b/Scope72/countcc867 full owner metadata, ACL and actualGEN2a782 were read back exact. No original view, financial rule, source65 renewal, certificate, cache, budget or permission changes. These are installation/readback facts, not full scope closure or future4AM capacity proof."
     }
   ]
 }

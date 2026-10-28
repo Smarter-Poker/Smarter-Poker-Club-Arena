@@ -22,6 +22,9 @@ on:
       - scripts/ci/fixtures/standalone-entry-cover/**
       - scripts/ci/test-standalone-entry-cover-postgres.py
       - tests/standalone-entry-retains-historical-first-week.law.test.ts
+      - scripts/ci/fixtures/weekly-summary-coordinator-scope/**
+      - scripts/ci/test-weekly-summary-coordinator-scope-postgres.py
+      - tests/weekly-summary-preserves-nullable-source-scope.law.test.ts
       - scripts/ci/fixtures/fees-before-club-books/**
       - scripts/ci/fixtures/weekly-fee-preparation/**
       - scripts/ci/test-weekly-fee-preparation-postgres.py
@@ -159,3 +162,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-quality-source-bags-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-quality-source-bags.json"
+      - name: Weekly statements retain exact NULL and non-NULL earning scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-summary-coordinator-scope-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-summary-coordinator-scope.json"

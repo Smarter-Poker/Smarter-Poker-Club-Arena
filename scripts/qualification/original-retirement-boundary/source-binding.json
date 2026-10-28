@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "8d3a27a66db88a78e86fe97e206ca65a2b4bccacfd9db2f2c5e8103d9d2a9281",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "42e2d620b4a8f97054c9ea7eda953b2f18b39ac040665b58d0e8814de8ad74b8",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -475,5 +475,10 @@
   "rakebackQualifiedFollowupComposition20261028": {
     "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
     "execution_performed": false
+  },
+  "workflowSummaryScopeAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "currentSHA256": "edaf58fa20ae5f525956d1633ffe9a7f81c453a4e64f75f7192593d548ca6350",
+    "change": "Adds only three exact summary source paths and one maintained PG17 current-summary/current-view NULL and non-NULL scope native step. All existing qualification steps and source assertions remain unchanged. Reviewed exact workflow diff; no production closure claim."
   }
 }

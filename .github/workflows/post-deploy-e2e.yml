@@ -1752,6 +1752,7 @@ jobs:
           npx playwright test tests/e2e/production-live-table-realtime.spec.ts
           --project=webkit-live-table-realtime --grep='natural horse social behavior'
           --reporter=line,json --workers=1 --retries=0 --output=test-results/horse-social
+          && node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/horse-social.json
 
       - name: Retain natural horse social evidence
         if: always() && steps.horse_social.outcome != 'skipped' && toJSON(github.event.client_payload.horse_social) == 'true'
@@ -1866,11 +1867,17 @@ jobs:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
           RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
           LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
+          HORSE_SOCIAL_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' }}
+          HORSE_SOCIAL_OUTCOME: ${{ steps.horse_social.outcome }}
           MULTIRUN_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' }}
           MULTIRUN_OUTCOME: ${{ steps.multirun.outcome }}
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if [ "${HORSE_SOCIAL_REQUESTED:-false}" = 'true' ] && [ "${HORSE_SOCIAL_OUTCOME:-}" != 'success' ]; then
+            echo "NON-VERDICT: the requested natural horse social observation did not pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "${MULTIRUN_REQUESTED:-false}" = 'true' ] && [ "${MULTIRUN_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural mobile multirun certificate did not pass." >> "$GITHUB_STEP_SUMMARY"
             exit 0

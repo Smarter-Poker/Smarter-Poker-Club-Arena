@@ -1,9 +1,11 @@
-name: Fleet counts preserve unknown observations
+name: October 27 digest reporting regressions
 on:
   pull_request:
     branches: [main]
     paths:
       - supabase/migrations/20261028152402_fleet_reporting_preserves_unknown_stuck_counts.sql
+      - scripts/ci/test-daily-fact-date-index.py
+      - supabase/migrations/20261028162611_daily_reporting_facts_begin_with_their_selected_date.sql
       - scripts/ci/test-digest-oct27-reporting.py
       - scripts/ci/fixtures/digest-oct27-reporting-*
       - .github/workflows/digest-oct27-reporting.yml
@@ -43,6 +45,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-digest-oct27-reporting.py
+      - name: Daily fact input is admitted by its date index
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-daily-fact-date-index.py
       - name: Retain native accounting and query-plan evidence
         if: always()
         uses: actions/upload-artifact@v4

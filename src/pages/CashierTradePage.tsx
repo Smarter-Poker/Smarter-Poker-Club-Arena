@@ -2627,12 +2627,13 @@ function CashierTradeWorkspace() {
     };
   }, [amountModal, clubUuid, user?.id, pickedWalletKey]);
 
+  const selfSelected = picked.some((target) => target.userId === user?.id);
   const availableSendSources: SendSource[] = [
     ...(canSeeClubBank(myRole)
       ? (['agent_wallet', 'club_bank', 'promo_wallet', 'club_promo_wallet'] as const)
       : (['agent_wallet', 'promo_wallet'] as const)),
     ...(holdsPlayerWallet(myRole) ? (['player_wallet'] as const) : []),
-  ];
+  ].filter((source) => !selfSelected || source !== 'promo_wallet');
   const sourceBalanceFor = (source: SendSource): number | null =>
     source === 'player_wallet'
       ? myBalance
@@ -2661,7 +2662,8 @@ function CashierTradeWorkspace() {
       {recipientSendWallets(target.role)
         .filter(
           (wallet) =>
-            !(target.isSelf && sendSource === 'agent_wallet') || wallet === 'player_wallet'
+            target.userId !== user?.id ||
+            (sendSource === 'agent_wallet' ? wallet === 'player_wallet' : wallet !== sendSource)
         )
         .map((wallet) => (
           <option key={wallet} value={wallet}>
@@ -2675,13 +2677,19 @@ function CashierTradeWorkspace() {
   );
 
   const transferDestination = (target: DownlineRow): SendDestination =>
-    target.isSelf && sendSource === 'agent_wallet'
+    target.userId === user?.id && sendSource === 'agent_wallet'
       ? 'player_wallet'
-      : (transferRecovery?.submissionId === submissionIdRef.current
-          ? transferRecovery.destinations?.[target.userId]
-          : undefined) ||
-        recipientWallets[target.userId] ||
-        (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+      : (() => {
+          const recovered =
+            transferRecovery?.submissionId === submissionIdRef.current
+              ? transferRecovery.destinations?.[target.userId]
+              : undefined;
+          if (recovered) return recovered;
+          const chosen = recipientWallets[target.userId];
+          // A source change must not retain a destination that is the same wallet.
+          if (target.userId === user?.id && chosen === sendSource) return 'agent_wallet';
+          return chosen || (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+        })();
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -4459,6 +4467,35 @@ function CashierTradeWorkspace() {
                   Transaction History
                 </button>
               </div>
+              {canHoldAgentWallet(myRole) && holdsPlayerWallet(myRole) && (
+                <button
+                  type="button"
+                  className={styles.historyLink}
+                  disabled={
+                    busy ||
+                    loading ||
+                    !roleResolved ||
+                    Boolean(transferRecovery) ||
+                    !downline.some((row) => row.userId === user?.id)
+                  }
+                  onClick={() => {
+                    const own = downline.find((row) => row.userId === user?.id);
+                    if (!own) return;
+                    setSearch(own.name);
+                    setMineOnly(false);
+                    setRoleFilter('all');
+                    setSelected(new Set([own.userId]));
+                    setAmount('');
+                    setRecipientAmounts({});
+                    setRecipientWallets({});
+                    setSendSource('agent_wallet');
+                    setTransferFailures([]);
+                    setAmountModal('send');
+                  }}
+                >
+                  Transfer Between My Wallets
+                </button>
+              )}
               {/* Balance strip */}
               <div className={styles.strip}>
                 <div className={styles.stripCell}>

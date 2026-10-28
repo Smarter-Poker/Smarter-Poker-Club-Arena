@@ -525,3 +525,34 @@ describe('6. the connection banner is never cut off (Dan 2026-10-04)', () => {
     expect(rule).toMatch(/top:\s*calc\(var\(--sp-brand-top,\s*56%\)\s*-\s*0\.5%\)/);
   });
 });
+
+describe('exact equity reaches the rendered badge without inventing endpoints', () => {
+  it.each([
+    [0.001, '<0.1%'],
+    [99.999, '>99.9%'],
+    [0, '0%'],
+    [100, '100%'],
+  ])('renders %f as %s', (equity, label) => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity }]} />);
+    expect(container.querySelector('.equity-overlay')?.textContent).toBe(label);
+  });
+  it('refuses to call a legacy sampled zero a dead hand', () => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    expect(container.querySelector('.equity-overlay')?.textContent).toBe('Unknown');
+    expect((container.querySelector('.equity-overlay__bar') as HTMLElement).style.width).toBe('0%');
+  });
+  it('remeasures when an Unknown label changes the badge width class', () => {
+    installLayout();
+    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    const before = world.layerReads;
+    rerender(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
+    expect(world.layerReads).toBeGreaterThan(before);
+  });
+  it('does not render a malformed percentage', () => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity: NaN }]} />);
+    expect(container.querySelector('.equity-overlay')).toBeNull();
+  });
+});

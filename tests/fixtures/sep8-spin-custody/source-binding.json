@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "bb3d04cec2bf7cce896c252ee72f9f8a9e03eccec90235806fdf3e11b4c95892",
+    "scripts/ci/classify-ci-changes.mjs": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1451,5 +1451,20 @@
       "actual Node22.23.3 SQLite process-kill/restart, exclusive owner and corrupt-state cases passed",
       "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
     ]
+  },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+  },
+  "retentionMainIntegration20261028": {
+    "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
   }
 }

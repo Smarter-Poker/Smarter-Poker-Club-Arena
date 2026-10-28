@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244212,
-      "sha256": "977ca000b75c66197a2ad60462fbf735b347979df5b943ffd5f28d8b0c03554a"
+      "bytes": 245178,
+      "sha256": "a65b933bdb9126151edc8cd42a957b21eb387ba5646e46353f551ca539d4c414"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -729,5 +729,41 @@
       "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
     },
     "execution_performed": false
+  },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 243205,
+          "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+        },
+        "current": {
+          "bytes": 244016,
+          "sha256": "27ca4aa2e5ffb3d34058db44bb63ab56234944c5bd48042c21d3bc18bb0b3eef"
+        }
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+  },
+  "supersededHorseActionProtectedMainComposition20261028": {
+    "review": "Composed both parents accounting timeout and retention qualification audit records without dropping either. Only additive superseded-actions qualification changes workflow/classifier identities; financial source and assertions remain unchanged. Exact protected-main source integration is not a financial certificate.",
+    "main": "ecf65a7a2fffb3f80b0a6a1ead6d538249cdb033",
+    "candidateBeforeMerge": "59f0798b30be1eac984a1eb12f1d1c63c95d9dd1"
+  },
+  "typecheckExecutionHeadroom20261028": {
+    "reason": "CI40726879893 exact head a9b1e9d86b82ab558272dbcc9f529f2b1aa75125 passed every compiler/repository guard and cleanup step, but its check was cancelled at15m03 against15m. Prior successful equivalent40714001791 took13m45. Only this outer job budget increases15 to20 minutes; assertions, commands, financial sources, native suite deadlines, historical evidence and qualification statuses remain unchanged. Current source binding is not renewed financial or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 244016,
+      "sha256": "27ca4aa2e5ffb3d34058db44bb63ab56234944c5bd48042c21d3bc18bb0b3eef"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244171,
+      "sha256": "e918fba4b0691d7fd2d209522dec2fda7961b6476b401b84a4c8ca0e4c898c07"
+    }
+  },
+  "retentionCurrentMainWorkflowIntegration20261028": {
+    "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
+    "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
   }
 }

@@ -105,6 +105,12 @@ describe('committed operational alert wakes native intake', () => {
     for (const text of ['accepted', '', `Queued message ${A} for thread ${B}.`])
       expect(() => acceptedReceipt(text)).toThrow();
   });
+  it('activates the receive service at gateway startup', () => {
+    const manifest = JSON.parse(
+      readFileSync('tools/production-alerts-native-wakeup/openclaw.plugin.json', 'utf8')
+    );
+    expect(manifest.activation?.onStartup).toBe(true);
+  });
   it('parses the actual shipped gateway entry and requires credential authentication', () => {
     expect(() =>
       execFileSync(process.execPath, ['--check', 'tools/production-alerts-native-wakeup/index.mjs'])

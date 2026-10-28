@@ -372,6 +372,10 @@ jobs:
     runs-on: ubuntu-latest
     # The qualified source/native/TSC checks took 15m03 including cleanup on Oct28.
     # Preserve every check and leave measured completion headroom.
+    # 8443 job122933361176 completed every functional step at14:59, then
+    # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
+    # Preserve all commands/test deadlines and reserve5minutes for the
+    # observed checkout/execution variance plus cache/cleanup.
     timeout-minutes: 20
 
     steps:

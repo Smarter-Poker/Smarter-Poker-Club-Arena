@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240182,
-      "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
+      "bytes": 240421,
+      "sha256": "f9dcc80e8b063d82b7bce7e4c2ddc2f2e094c24f163f2fb85e2129b159e7e385"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -557,6 +557,22 @@
       "bytes": 240182,
       "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
     },
+    "execution_performed": false
+  },
+  "composedServerShardBudget20261028": {
+    "reason": "Ordinary protected-main composition retains accounting outer budget 50 minutes and changes only server_shards outer budget 15 to 25 minutes for the observed 7:25 setup/other work plus 15-minute existing test deadline and 2:35 cleanup. All tests, pairs, seeds, per-test deadlines, matrix, commands and joins unchanged. Current workflow binding only; historical evidence and qualification unchanged.",
+    "previous": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "current": {
+      "bytes": 240125,
+      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+    }
+  },
+  "rakebackCurrentMainRiverLane20261028": {
+    "review": "Preserves every current protected-main runtime/client byte, the added multiway river native step, all prior budgets/commands and all rakeback native lanes. Active combined CI binding renewed only; historical audits unchanged.",
+    "sha256": "f9dcc80e8b063d82b7bce7e4c2ddc2f2e094c24f163f2fb85e2129b159e7e385",
     "execution_performed": false
   }
 }

@@ -190,7 +190,9 @@ export function auditHorseRiverValue(input: RiverValueAuditInput): {
           kind = 'nut_wager_undersized';
       }
     }
-    if (kind && hasRiverNuts(hero, state)) findings.push(finding(kind, a, 'river', amount, target));
+    // Match the value rule: an unbeatable shared board does not create private value.
+    if (kind && hasRiverNuts(hero, state, true))
+      findings.push(finding(kind, a, 'river', amount, target));
   }
   return { findings, riverActionsAudited };
 }

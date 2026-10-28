@@ -176,7 +176,10 @@ function riverReadEvidence(capture: HorsePhaseCapture & { observerReads?: unknow
       // accumulate repeated decision snapshots into invented observations.
       samples = Math.max(samples, row.riverCallSD);
     }
-    if (!eligible || capture.readFrame.version !== 'horse-decision-reads-v6') samples = 0;
+    // The validated codec supplies zero for pre-v6 frames and preserves these
+    // counters in every additive successor. Never inspect an unvalidated body
+    // or discard a valid successor solely because its version advanced.
+    if (!eligible) samples = 0;
     let retainedHistorySamples = 0;
     let retainedHistoryReason = 'history_packet_not_captured';
     const packet = request.type === 'DECIDE_FAST' ? request.ownPublicHistory : undefined;

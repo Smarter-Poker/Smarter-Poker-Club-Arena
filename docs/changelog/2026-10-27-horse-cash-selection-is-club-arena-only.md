@@ -1,0 +1,29 @@
+# Club Arena cash selection leaves Diamond cash eligible
+
+Owner instruction October 27: upgrade all 1,000 registered horses. The selected
+500 play Club Arena cash; the remaining horses can play tournaments and Diamond
+Arena cash. Cash selection is not a brain disablement.
+
+The candidate filter and session rotator now use the authoritative table arena
+identity when reading the cash roster. Diamond cash no longer inherits the home
+club tournament-only bench. The seat trigger makes the same narrow exception for
+active, nonretired registered horses at genuine platform Diamond tables. Missing,
+mismatched or union-scoped arena evidence does not grant an exemption. Disabled
+horses still leave through the ordinary safe exit.
+
+No funding, custody, buy-in amount, retirement, cash roster, existing seat or arena
+switch is changed. Normal hours/rest, personal Diamond balance, capacity and the
+platform game limit remain. Club tags stay tournament-only for the off-roster half;
+restoring those tags would incorrectly reopen Club Arena cash.
+
+The existing required accounting qualification exercises the current scope guard:
+off-roster Club cash refusal, Diamond admission, tournament admission, malformed
+Diamond and disabled/retired refusal, and existing-seat settlement/exit. The engine
+regression checks the complete 1,000 versus 500 roster distinction and malformed
+identity cases. Source wiring pins admission and rotation to the same predicate.
+Production installation, engine publication and natural play evidence remain
+separate from these isolated checks.
+
+The full hosted server shard caught an older strict projection pin that still required max_buy_in to be the final selected column. The canonical Diamond identity is additive; the pin now requires every previous field plus the exact joined asset/platform/union identity. All21 lone-table controls and4 roster controls pass. No runtime predicate or refusal safeguard changed.
+
+Protected-main integration at 21c9a36e187da7acebf9a14a3b2a63b2f878fce1 resolves only the duplicate financial-binding changelog and the public-history fixture namespace comment. The protected main versions retain both earlier explanations and the same corrected UUID namespace. Arena runtime predicates, the scope migration and its accounting qualification are byte-identical to the previously tested 409d candidate. Focused roster/admission/rotation checks pass (97 assertions); full compiler and normal submission checks remain required.

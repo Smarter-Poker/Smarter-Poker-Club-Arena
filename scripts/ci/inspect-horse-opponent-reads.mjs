@@ -96,12 +96,14 @@ export async function inspect(p) {
     const moduleAt = (path) => import(pathToFileURL(resolve('dist', path)).href);
     stage = 'module_load_failed';
     const [
-      { readHorseJournalHandRecords, reconcileHorseJournalHand, horseRetainedPlanContext },
+      { readHorseJournalHandRecords, reconcileHorseJournalHand },
+      { horseRetainedPlanContext },
       { decodeHorseDecisionReads },
       { horsePlanHandKey },
       { horseObserverReadsWereIndependent },
     ] = await Promise.all([
       moduleAt('services/horseDecisionJournal/review.js'),
+      moduleAt('services/horseDecisionJournal/effects.js'),
       moduleAt('engine/HorseDecisionReadFrame.js'),
       moduleAt('engine/HorseDecisionEffects.js'),
       moduleAt('engine/HorseObserverReadEvidence.js'),

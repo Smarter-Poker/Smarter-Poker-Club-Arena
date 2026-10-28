@@ -1,3 +1,4 @@
+-- @live-proof: strpos(pg_get_functiondef('public.fn_ca_tournament_level_clock_floor()'::regprocedure), 'v_schedule_config') > 0 AND (SELECT count(*) = 9 FROM public.tournament_schedules WHERE created_at >= '2026-10-27 00:00 America/Chicago'::timestamptz AND created_at < '2026-10-29 00:00 America/Chicago'::timestamptz AND config->>'lateRegistrationMode' = 'levels' AND config->>'lateRegistrationLevels' = '10' AND config->>'lateRegistrationMinutes' = '0')
 -- Owner October 28: newly authored freezeouts/MTTs admit through displayed level
 -- 10 and close at 11. current_level is a zero-based index. Admission already
 -- uses current_level < late_reg_levels; do not change that shared predicate.

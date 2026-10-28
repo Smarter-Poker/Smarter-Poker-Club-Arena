@@ -13,12 +13,18 @@
     "tests/tournament-credit-sum-index-keeps-original-records.law.test.ts": "3d4bf43756ade0bccc92d4b4c9feaae9912efa2d79cfe460a31f72efb843934c",
     "docs/laws.d/tournament-credit-sum-index-keeps-original-records.md": "98f344ce134c5977b73d421b193749bc551de508853cd7b3a75ed0aaa4e5f758",
     "docs/changelog/2026-10-28-tournament-credit-sum-record-cover.md": "05fc97f80559a6166710c8768e7037dce34582fadb0289d7f1f1bb171373d302",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999"
   },
   "groupedPrivateSourceWorkflowAudit20261028": {
     "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
     "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
     "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  },
+  "orderedPrivateKeyWorkflowAudit20261028": {
+    "review": "Only adds ordered-key native97 path/lane; every existing native command and input retained. Prior valid source evidence remains separate.",
+    "priorWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "currentWorkflowSHA256": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
     "prior_commands_preserved": true
   }
 }

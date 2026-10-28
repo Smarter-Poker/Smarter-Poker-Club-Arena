@@ -1,3 +1,4 @@
+import { publicHandStatsFrame } from '../engine/presentation/publicHandStats.js';
 import {
   recheckHorsePhase14BeforeAcceptance,
   observeHorsePhase14Execution,
@@ -2974,6 +2975,26 @@ export class LightningHandHost {
       });
       if (out.ok) {
         this.state = 'complete';
+        const publicFrame = publicHandStatsFrame({
+          tableId: '',
+          handNumber: this.handNumber,
+          handId: out.value.handHistoryId,
+          facts: statsFacts?.facts,
+          timestamp: this.now(),
+          actions: handRow.actions as ReadonlyArray<Record<string, unknown>>,
+          bigBlind: Number(this.rules?.big_blind) || 2,
+        });
+        if (publicFrame) {
+          this.emitAll(publicFrame);
+          // A player who folded early still receives the original hand's
+          // committed public result, even if their room has advanced already.
+          for (const participant of this.participants.values())
+            if (!this.watching.has(participant.playerId))
+              this.deps.hub.emitEvent(participant.poolSessionId, {
+                ...publicFrame,
+                table_id: participant.poolSessionId,
+              });
+        }
         // EVERY LIGHTNING HAND TEACHES THE HORSES (2026-10-24): the physical
         // path's observeCompletedHand, sent the moment the money is committed
         // and before anyone is released, so the next hand any of these players

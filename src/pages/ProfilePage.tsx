@@ -1293,22 +1293,38 @@ export default function ProfilePage() {
                       isVisible={visibleStats.has(22)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.threeBet, 1)}%`}
+                      value={
+                        stats.threeBetMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.threeBet, 1)}%`
+                      }
                       label="3-Bet"
                       isVisible={visibleStats.has(4)}
                     />
                     <StatCard
-                      value={fixedTrunc(stats.aggression, 2)}
+                      value={
+                        stats.aggressionMeasured === false
+                          ? 'Not Yet Measured'
+                          : fixedTrunc(stats.aggression, 2)
+                      }
                       label="Aggression"
                       isVisible={visibleStats.has(5)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.wtsd, 1)}%`}
+                      value={
+                        stats.wtsdMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.wtsd, 1)}%`
+                      }
                       label="WTSD"
                       isVisible={visibleStats.has(13)}
                     />
                     <StatCard
-                      value={`${fixedTrunc(stats.showdownWinRate, 1)}%`}
+                      value={
+                        stats.showdownMeasured === false
+                          ? 'Not Yet Measured'
+                          : `${fixedTrunc(stats.showdownWinRate, 1)}%`
+                      }
                       label="Won At SD"
                       isVisible={visibleStats.has(14)}
                     />
@@ -1317,7 +1333,11 @@ export default function ProfilePage() {
                         against a "Hours" label, which reads as none at all.
                         It is "1m" now, and "9.9h" once past the hour. */}
                     <StatCard
-                      value={formatHours(stats.hoursPlayed)}
+                      value={
+                        stats.hoursMeasured === false
+                          ? 'Not Yet Measured'
+                          : formatHours(stats.hoursPlayed)
+                      }
                       label="On Felt"
                       isVisible={visibleStats.has(15)}
                     />
@@ -1328,7 +1348,11 @@ export default function ProfilePage() {
                   <h3>Financial</h3>
                   <div className={styles.statsGrid}>
                     <StatCard
-                      value={signed(fixedTrunc(stats.bbPer100, 2), stats.bbPer100)}
+                      value={
+                        stats.cashHands > 0
+                          ? signed(fixedTrunc(stats.bbPer100, 2), stats.bbPer100)
+                          : 'Not Yet Measured'
+                      }
                       label="BB/100"
                       positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
                       isVisible={visibleStats.has(6)}

@@ -533,6 +533,7 @@ export function deriveFlowFlags(
   actions: HandAction[],
   opts: {
     boardLength: number;
+    bigBlind?: number;
     returned: number;
     /** userIds who never folded — 2+ means a showdown happened. */
     nonFoldedCount: number;
@@ -573,7 +574,7 @@ export function deriveFlowFlags(
   // Walk preflop in order, tracking the voluntary raise count and the level,
   // so an all-in can be classified as a raise or a call rather than assumed.
   let raiseCount = 0;
-  let level = 0;
+  let level = Math.max(0, opts.bigBlind ?? 0);
   let myRaiseIndex = -1; // which voluntary raise (0-based) was mine
   let pfr = false;
   let threeBet = false;
@@ -605,6 +606,16 @@ export function deriveFlowFlags(
     const isMine = a.userId === userId;
     const amt = a.amount ?? 0;
     const voluntary = a.origin !== 'forced' && !a.dead;
+    // Live forced blinds set the price without being voluntary raises. A
+    // short all-in below that price is a call, including in straddled hands.
+    if (!voluntary) {
+      if (
+        !a.dead &&
+        ['sb', 'bb', 'small_blind', 'big_blind', 'straddle', 'kill_blind'].includes(a.action)
+      )
+        level = Math.max(level, amt);
+      continue;
+    }
 
     if (isMine && voluntary && contextAvailable) {
       if (raiseCount === 1) threeBetOpportunity = true;
@@ -1158,6 +1169,7 @@ export async function writeHandFacts(
 
       const flags = deriveFlowFlags(uid, input.actions, {
         boardLength: input.boardLength,
+        bigBlind: bb,
         returned,
         nonFoldedCount,
         position:

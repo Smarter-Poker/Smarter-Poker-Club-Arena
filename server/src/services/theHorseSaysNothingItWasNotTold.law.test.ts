@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { LINES, TALK_EVENTS, TALK_PLACEHOLDERS, TALK_VOICES } from './horseTableTalkLines.js';
 import { TALK_LINE_MAX_CHARS, fillLine, sanitizeLine } from './HorseTableTalk.js';
 import { TABLE_TALK_GATE_TTL_MS } from './HorseTableTalkGate.js';
+import { humanBeatMs } from './horsePacing.js';
 
 const SRC = join(process.cwd(), 'src');
 const read = (rel: string): string => readFileSync(join(SRC, rel), 'utf8');
@@ -60,6 +61,12 @@ const FILL = { potBB: 52, street: 'river' as const, hand: 'full house', seat: 7 
 const SEATED = ['danny', 'Plate4', 'gg_master', 'seat7'];
 
 describe('LAW: the horse says nothing it was not told', () => {
+  it('waits at least five seconds to type after a hand (owner 2026-10-27)', () => {
+    for (let hand = 1; hand <= 1_000; hand++) {
+      expect(humanBeatMs(`horse|${hand}|pot_won`, 'typed')).toBeGreaterThanOrEqual(5_000);
+    }
+  });
+
   it('the pool is nine events by three voices, keyed lines, with at least one line per cell', () => {
     expect(TALK_EVENTS).toEqual([
       'big_pot_won',

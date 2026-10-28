@@ -1,3 +1,7 @@
+import {
+  validateTournamentFlagRequest,
+  tournamentFlagResultValid,
+} from './HorseTournamentFlagContract.js';
 /**
  * Main-thread client for the isolated Horse League compute process.
  *
@@ -809,6 +813,9 @@ export function horseLeagueComputeResponseIsValid(
           'completionDiagnostics',
           'completionDiagnosticsDropped',
           ...('opportunityDiagnostics' in r ? ['opportunityDiagnostics'] : []),
+          ...('flagCard' in r
+            ? ['flagCard', 'gameVariant', 'firstPair', 'cardDecisions', 'cardChanged', 'cardPairs']
+            : []),
           ...('opponentPopulation' in r ? ['opponentPopulation', 'humanResponses'] : []),
         ])
       )
@@ -825,6 +832,7 @@ export function horseLeagueComputeResponseIsValid(
       )
         return false;
       if (!tournamentGuardCountsAreValid(r)) return false;
+      if (!tournamentFlagResultValid(r as unknown as TournamentLeagueResult)) return false;
       if (!validTournamentOpportunities(r)) return false;
       // Condition (b) monitoring: a human-calibrated field reports its
       // population and its response counts per node, counts only.
@@ -1056,6 +1064,7 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     shouldContinue: () => boolean = () => true
   ): Promise<TournamentLeagueResult> {
     tournamentPolicyFamily(request.phase8PolicyFamily);
+    validateTournamentFlagRequest(request);
     return this.dispatch<TournamentLeagueResult>(
       { type: 'RUN_TOURNAMENT', request },
       shouldContinue
@@ -1233,6 +1242,8 @@ export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {
     if (message.type === 'TOURNAMENT_RESULT' && pending.job.tournamentRequest) {
       const request = pending.job.tournamentRequest;
       if (
+        message.result.flagCard !== request.flagCard ||
+        message.result.firstPair !== (request.flagCard ? (request.firstPair ?? 0) : undefined) ||
         message.result.seed !== request.seed ||
         message.result.objective !== request.objective ||
         message.result.requestedPairs !== request.pairs ||

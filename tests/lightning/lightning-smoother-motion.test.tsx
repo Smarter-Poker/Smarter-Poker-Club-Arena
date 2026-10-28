@@ -104,7 +104,9 @@ describe('1. the folded hand leaves the felt, it does not vanish', () => {
     expect(head).toMatch(/if \(!idle\) \{\s*if \(lightningExitHoldRef\.current\) \{/);
     expect(head).toMatch(/setTimeout\(\(\) => setLightningExitTick\(\(n\) => n \+ 1\), wait\)/);
     expect(head).toContain('return () => clearTimeout(timer);');
-    expect(PAGE).toContain('}, [engineSnapshot, USE_ENGINE_WS, userId, lightningExitTick]);');
+    expect(PAGE).toContain(
+      '}, [engineSnapshot, USE_ENGINE_WS, userId, tableId, lightningExitTick]);'
+    );
   });
 
   it('the felt is marked as leaving in a Lightning room only, and the CSS fades opponents and board', () => {

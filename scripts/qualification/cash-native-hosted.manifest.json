@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
-    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
+    "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1→3. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 239882,
-      "sha256": "671e085878be9f3775aecbeb930837bec4e24d9743e0c133f7607eeaca6a7fee"
+      "bytes": 240182,
+      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3972,5 +3972,33 @@
       "bytes": 239882,
       "sha256": "671e085878be9f3775aecbeb930837bec4e24d9743e0c133f7607eeaca6a7fee"
     }
+  },
+  "accountingJobBudgetAudit20261027": {
+    "previous": {
+      "bytes": 238718,
+      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+    },
+    "current": {
+      "bytes": 239646,
+      "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
+    },
+    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
+  },
+  "riverPersistenceBudgetIntegration20261027": {
+    "review": "Retains protected-main river persistence Accounting4 step and existing measured Accounting2 50-minute budget. Both historical audits and all financial assertions preserved; active CI pin binds their additive composition.",
+    "combinedWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "execution_performed": false
+  },
+  "rakebackProtectedMainBudgetIntegration20261028": {
+    "review": "Preserves all protected-main changes including measured Accounting2 50 minute budget and every rakeback native step. Only combined active workflow binding changes; historical audits, source pins, financial assertions and installation records retained. Not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
+    },
+    "execution_performed": false
   }
 }

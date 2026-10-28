@@ -12,7 +12,7 @@
     "tests/private-deposit-grouping-retains-source-facts.law.test.ts": "a82c18d6c45bab698761d4c0bc5bf7ba06764f24fb8325cb0982e73ccabf32b8",
     "docs/laws.d/private-deposit-grouping-retains-source-facts.md": "4e726c98fa3040112a0a82d1f70332e4bbd471514b76cb1b8017b5d6cc3f8689",
     "docs/changelog/2026-10-28-private-deposits-group-original-source-facts.md": "efc84878c4f859d6c761503b76a02895e72bcc357f4e0c88eeb8661b8a0f02bd",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
     "supabase/migrations/20261028053643_weekly_private_deposits_group_their_original_source_facts.sql": "e18f1bbc64db63755824a7459f5a55c0e9ae91aeaa69da6f8ca5f050f9153aa3",
     "scripts/ci/fixtures/standalone-weekly-statement-funding/actual-connected-preimages.json": "a3e7bd6dda38d87415913ba53c0db8207383afb8db024dcc6c4df69a69ebc644",
     "scripts/ci/fixtures/standalone-weekly-statement-funding/setup.sql": "7d9519ad6b46c4a2d981b5f5fa0423533d1ebaab09d6ca8c321d995af465ba9e",
@@ -39,6 +39,10 @@
   },
   "rakebackQualifiedFollowupComposition20261028": {
     "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
   }
 }

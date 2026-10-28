@@ -716,3 +716,94 @@ describe('Phase 6D capture continuity names shed records', () => {
     });
   });
 });
+
+it('projects fleet failure metadata to closed diagnostic codes without raw transport data', () => {
+  const clean = {
+    exitCode: 0,
+    containerExitCode: 0,
+    oomKilled: false,
+    sameServingIdentityAfter: true,
+    observerRemoved: true,
+    cleanupExitCode: 0,
+    horseJournalMountVerified: true,
+  };
+  for (const [run, execution, expected] of [
+    [{ status: null, error: { code: 'ETIMEDOUT', message: 'PRIVATE' } }, null, 'transport_timeout'],
+    [{ status: 1, stderr: 'PRIVATE' }, null, 'transport_nonzero'],
+    [{ status: 0 }, null, 'transport_output_invalid'],
+    [{ status: 0 }, { ...clean, oomKilled: true }, 'observer_oom'],
+    [{ status: 0 }, { ...clean, sameServingIdentityAfter: false }, 'serving_identity_unverified'],
+    [{ status: 0 }, { ...clean, observerRemoved: false }, 'observer_cleanup_unverified'],
+    [{ status: 0 }, { ...clean, horseJournalMountVerified: false }, 'journal_mount_unverified'],
+    [{ status: 0 }, { ...clean, errorText: 'PRIVATE' }, 'observation_contract_unverified'],
+  ] as any[])
+    expect(selector.fleetFailureCode(run, execution)).toBe(expected);
+});
+
+it.each([
+  [true, 137, false],
+  [false, 137, false],
+  [false, 134, true],
+  [false, 134, false],
+])(
+  'retains actual Docker OOM=%s and exit=%s before malformed observer output is parsed',
+  async (oomKilled, childExit, v8Fatal) => {
+    const { spawnSync } = await import('node:child_process');
+    const program = `import json,subprocess,sys,io,types
+calls=[]
+class R:
+ def __init__(self,out=b'',code=0): self.stdout=out;self.stderr=b'';self.returncode=code
+def run(args,**kw):
+ calls.append(args)
+ if args[1]=='inspect' and args[3]=='{{json .Mounts}}': return R(json.dumps([{'Destination':'/var/lib/club-arena/horse-decisions','Type':'bind','Source':'/var/lib/club-arena/horse-decisions','RW':True}]).encode())
+ if args[1]=='inspect' and '.Config.Env' in args[3]: return R(b'HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions\\n')
+ if args[1]=='inspect' and args[-1]=='club-arena-engine': return R(('a'*64+' sha256:'+'b'*64+' true '+'c'*40+' 2026-10-28T00:00:00Z').encode())
+ if args[1:3]==['image','inspect']: return R(('c'*40).encode())
+ if args[1]=='start':
+  result=R(b'NOT JSON PRIVATE',${childExit})
+  result.stderr=${v8Fatal ? "b'FATAL ERROR: fixture Allocation failed - JavaScript heap out of memory'" : "b'PRIVATE malformed diagnostics'"}
+  return result
+ if args[1]=='inspect': return R(json.dumps({'OOMKilled':${oomKilled ? 'True' : 'False'},'ExitCode':${childExit}}).encode())
+ return R()
+subprocess.run=run
+import base64
+sys.stdin=io.StringIO(json.dumps({'release':'c'*40,'name':'horse-phase6d-fleet-1t1z','deadline':90,'mode':'fleet','packet':base64.b64encode(json.dumps({'sourceSha':'c'*40}).encode()).decode()}))
+exec(${JSON.stringify(selector.REMOTE_OBSERVER)})
+`;
+    const result = spawnSync('python3', ['-c', program], { encoding: 'utf8', timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    const execution = JSON.parse(result.stdout);
+    expect(execution).toMatchObject({
+      oomKilled,
+      containerExitCode: childExit,
+      v8HeapExhausted: v8Fatal,
+      executionStatus: 'unavailable',
+      observerRemoved: true,
+      cleanupExitCode: 0,
+    });
+    expect(selector.fleetFailureCode({ status: 0 }, execution)).toBe(
+      oomKilled
+        ? 'observer_oom'
+        : v8Fatal
+          ? 'observer_v8_heap_exhausted'
+          : 'remote_observer_unavailable'
+    );
+    expect(result.stdout).not.toContain('NOT JSON PRIVATE');
+  }
+);
+
+it('projects only an explicit V8 exhaustion scalar ahead of generic unavailable metadata', () => {
+  expect(
+    selector.fleetFailureCode(
+      { status: 0 },
+      { executionStatus: 'unavailable', v8HeapExhausted: true }
+    )
+  ).toBe('observer_v8_heap_exhausted');
+  for (const v8HeapExhausted of [false, undefined, 'true'])
+    expect(
+      selector.fleetFailureCode({ status: 0 }, { executionStatus: 'unavailable', v8HeapExhausted })
+    ).toBe('remote_observer_unavailable');
+  expect(selector.REMOTE_OBSERVER).toContain(
+    'r.returncode==134 and b"FATAL ERROR:" in r.stderr and b"Allocation failed - JavaScript heap out of memory" in r.stderr'
+  );
+});

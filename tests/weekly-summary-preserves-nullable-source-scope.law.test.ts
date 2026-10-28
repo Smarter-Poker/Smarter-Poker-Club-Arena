@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
+import { migrationTransactionShape } from '../scripts/ci/migration-transaction-shape.mjs';
 const base = 'scripts/ci/fixtures/weekly-summary-coordinator-scope/';
 const read = (name: string) => readFileSync(base + name, 'utf8');
 const normalized = (name: string) => read(name).trimEnd().replace(/;$/, '').trimEnd() + '\n';
@@ -14,6 +15,10 @@ describe('Weekly summary preserves nullable source scope', () => {
     expect(md5(after)).toBe(receipt.after_md5);
     expect(before.replace(receipt.replacement.old, receipt.replacement.new)).toBe(after);
     const migration = readFileSync(receipt.migration_file, 'utf8');
+    expect(migrationTransactionShape(receipt.migration_file.split('/').at(-1), migration).ok).toBe(
+      true
+    );
+    expect(migration).toMatch(/^BEGIN;$/m);
     for (const guard of [
       'summary_scope_exact_preimage_required',
       'summary_scope_postimage_required',

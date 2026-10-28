@@ -4,7 +4,8 @@
 -- No view, financial rule, certificate, source65/GEN, grant or budget changes.
 -- Actual EXPLAIN cost199488->41189; this is not live full-scope capacity proof.
 -- @live-proof: md5(pg_get_functiondef('public.fn_club_weekly_accounting_summary(uuid)'::regprocedure))='5225ca603c36cc72e905c337c94f3eae'
-BEGIN;SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='5s';
+BEGIN;
+SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='5s';
 DO $summary_scope$
 DECLARE d text;n text;m jsonb;g text;seal text;v jsonb;
  old_query constant text:=$old$ FROM public.accounting_payable_earning_sources s WHERE s.club_id=period.club_id AND s.coordinator_union_id IS NOT DISTINCT FROM period.union_id

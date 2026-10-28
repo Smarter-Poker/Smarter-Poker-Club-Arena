@@ -3,7 +3,7 @@
   "case_count": 72,
   "actual_old_md5": "1d1d9f44deea098a45c2b11dd613c858",
   "actual_postimage": "5225ca603c36cc72e905c337c94f3eae",
-  "migration_sha256": "972f9b70f51abe30c08b229d1ab646989c91ea3887ba4da517dde59bdc75e0f2",
+  "migration_sha256": "a6c185e0f52e96aca395dbabdfa2a11ea872d77861de985140a91eb2f25411f5",
   "cases": [
     "original_native_bank_fund_autoledger_enrich_register_and_replay",
     "actual_current_whole_summary_ready_baseline",
@@ -85,6 +85,6 @@
     "scripts/ci/fixtures/weekly-summary-coordinator-scope/summary-after.sql": "9fdbae79c399206e0e11ae6efb8763fbc2b68e1d4682f4417c373886035ec26a",
     "scripts/ci/fixtures/weekly-summary-coordinator-scope/source-receipt.json": "d166d7b4915a7cb45df4c7369ff70842b973232530d23ee723d6dae9073164d6",
     "scripts/ci/test-weekly-summary-coordinator-scope-postgres.py": "110293201a44748da146266c38b056fd83e68a0eae3a127571bbcb7437fd104a",
-    "supabase/migrations/20261028005400_weekly_statement_selects_its_exact_coordinator_scope.sql": "972f9b70f51abe30c08b229d1ab646989c91ea3887ba4da517dde59bdc75e0f2"
+    "supabase/migrations/20261028005400_weekly_statement_selects_its_exact_coordinator_scope.sql": "a6c185e0f52e96aca395dbabdfa2a11ea872d77861de985140a91eb2f25411f5"
   }
 }

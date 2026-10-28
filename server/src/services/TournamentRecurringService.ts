@@ -1380,46 +1380,11 @@ export function automatedRegistrationIsPermitted(
  * Returns the number of registered entrants the field SHOULD have right now.
  * The caller tops up toward it and never removes anybody.
  */
-/**
- * How far ahead of the gun the field starts building.
- *
- * WAS ONE HOUR, AND THAT IS WHY THE BOARD WAS DEAD (Dan 2026-08-26: "horses
- * should be registering and playing the tournaments anyways").
- *
- * Measured on production the day this changed: of 37 REGISTERING MTTs, THIRTY
- * SIX had a field of exactly ZERO, and the nearest one to the gun was 86
- * minutes out - just outside the window. So the entire tournament board read
- * "0 entered" at every moment except the final hour of each event. A lobby
- * full of empty games is not a lobby anybody joins; the one thing that makes a
- * player enter a tournament is other players already in it.
- *
- * 72 hours matches the lobby's own publish window exactly
- * (tournamentScheduleWindow). The rule is now simply: IF IT IS ON THE BOARD,
- * IT LOOKS LIKE A REAL EVENT. Nothing is announced that is not also populated.
- *
- * WHY THIS IS AFFORDABLE, measured rather than assumed. The old note below
- * said the pool was finite and "most of them already dealing cash". That was
- * true when a seated horse was invisible to every tournament; it stopped being
- * true when horses learned to multi-table. Live at the time of writing:
- *
- *   584 horses x 4 games each   = 2,336 slots
- *   in use (seats + pre-starts) =   664
- *   FREE                        = 1,672
- *   this change costs           =   296  (17.7% of what is free)
- *
- * and 209 horses are completely idle. The squared curve does the shaping: an
- * event three days out gets the `Math.max(1, ...)` floor of one entrant, and
- * the field builds toward MTT_PRESTART_MAX_HORSES as the gun approaches. Far
- * events look started, near events look busy, which is what a real room looks
- * like.
- *
- * NOTE THIS IS NO LONGER TIED TO HORSE_SEED_WITHIN_MS. Those two were aligned
- * on 2026-08-23 when both meant "about to start". They now mean different
- * things: this is the whole build, that is the head start given at SPAWN, and
- * a spawn-time seed three days early would put chips in a pool for an event
- * nobody can see yet. See the note on HORSE_SEED_WITHIN_MS.
+/** Owner October 28, 2026: horses begin scheduled MTT signups at T-10 minutes.
+ * Earlier publication does not authorize earlier horse purchases.
+ * Late arrivals retain their legal-window path in HorseOverlayGuard.
  */
-export const MTT_PRESTART_RAMP_MS = 72 * 60 * 60 * 1000;
+export const MTT_PRESTART_RAMP_MS = 10 * 60 * 1000;
 export const MTT_PRESTART_MAX_HORSES = 24;
 /**
  * Most entrants the ramp will add in a single tick.
@@ -2204,7 +2169,7 @@ export function mttPrestartHorseTarget(opts: {
   const fieldGoal = seats === null ? fundedGoal : Math.min(seats - 1, fundedGoal);
   if (fieldGoal < 1) return 0;
 
-  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
+  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-10, 1 at T-0
   const curve = elapsed * elapsed; // slow early, steep near the close
 
   // At least one entrant the moment the window opens: a lobby row reading 1
@@ -6689,7 +6654,7 @@ export class TournamentRecurringService {
            tournament side read it, so a club held in the console kept being
            handed a full field: the MTT pre-start ramp asks this function for
            one every 45 seconds, for every REGISTERING event inside
-           MTT_PRESTART_RAMP_MS (72 hours).
+           MTT_PRESTART_RAMP_MS (10 minutes).
 
            Measured on 2026-10-05, Deep Stack Society under an operator hold
            with `pause_new_seatings` true on its club row: cash was dark and no
@@ -7034,6 +6999,47 @@ export class TournamentRecurringService {
     try {
       if (isMaintenanceFrozen()) return 0;
       if (this.stopOperation) return 0;
+      // Every automated caller shares this clock and curve: creation,
+      // discovery, freerolls and overlay top-ups. The DB door rechecks time.
+      const { data: entryEvent, error: entryEventError } = await supabase
+        .from('tournaments')
+        .select(
+          'format_contract, variant, max_players, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount'
+        )
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (entryEventError || !entryEvent) {
+        reportError(
+          new Error(entryEventError?.message ?? 'Tournament not found'),
+          'TournamentRecurring.horse_entry_clock_unreadable'
+        );
+        return 0;
+      }
+      if (
+        isPersistedUnlimitedMtt(entryEvent) &&
+        String(entryEvent.status).toUpperCase() === 'REGISTERING'
+      ) {
+        const startMs = Date.parse(String(entryEvent.start_time ?? ''));
+        const current = Math.max(0, Number(entryEvent.current_players) || 0);
+        const now = Date.now();
+        if (!Number.isFinite(startMs)) return 0;
+        // Discovery can still be completing the transition after the gun.
+        // Its existing past-start and late-entry paths retain that decision.
+        if (startMs > now) {
+          const target = mttPrestartHorseTarget({
+            msUntilStart: startMs - now,
+            maxPlayers: entryEvent.max_players,
+            format_contract: entryEvent.format_contract,
+            variant: entryEvent.variant,
+            currentPlayers: current,
+            guaranteedPrize: Number(entryEvent.guaranteed_prize),
+            prizePool: Number(entryEvent.prize_pool),
+            buyInPrizeShare: Number(entryEvent.buy_in_amount),
+          });
+          count = Math.min(count, Math.max(0, target - current));
+          if (count <= 0) return 0;
+        }
+      }
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin

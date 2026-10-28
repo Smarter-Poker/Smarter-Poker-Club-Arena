@@ -1695,6 +1695,12 @@ jobs:
         run: |
           npx tsc --noEmit -p tsconfig.opponent-memory.json
           npx vitest run --config vitest.opponent-memory.config.ts --reporter=verbose
+      - name: Horse MTT purchases begin at T-10 and preserve late entry
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-horse-registration-timing.py
       - name: A treasury-funded seat reads as a Club Bank send (20261012040542)
         if: matrix.shard == 2
         env:

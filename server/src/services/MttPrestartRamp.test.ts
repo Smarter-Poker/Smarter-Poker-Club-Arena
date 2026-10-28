@@ -56,10 +56,10 @@ const curveOnly = (msUntilStart: number, maxPlayers = 60) => {
 
 describe('mttPrestartHorseTarget - the window', () => {
   it('is silent outside the build window', () => {
-    /* WAS "more than an hour out". The window is 72 hours since 2026-08-26,
-       because at one hour the board was 36 empty events out of 37 and only
-       ever showed a field in the final hour of each. The rule now matches the
-       lobby's own publish horizon: if it is on the board, it looks real. */
+    expect(MTT_PRESTART_RAMP_MS).toBe(10 * MIN);
+    expect(mtt(10 * MIN + 1)).toBe(0);
+    expect(mtt(11 * MIN)).toBe(0);
+    expect(mtt(60 * MIN)).toBe(0);
     expect(mtt(73 * 60 * MIN)).toBe(0);
     expect(mtt(7 * 24 * 60 * MIN)).toBe(0);
   });
@@ -69,7 +69,7 @@ describe('mttPrestartHorseTarget - the window', () => {
     expect(mtt(-5 * MIN)).toBe(0);
   });
 
-  it('puts at least one entrant on the board the moment the hour opens', () => {
+  it('puts at least one entrant on the board the moment the ten-minute window opens', () => {
     // A lobby row reading 1 is a game somebody is in. 0 is a game nobody joins.
     expect(mtt(MTT_PRESTART_RAMP_MS - 1)).toBeGreaterThanOrEqual(1);
   });
@@ -91,24 +91,17 @@ describe('mttPrestartHorseTarget - the curve', () => {
   });
 
   it('is slow early and steep late, so the field looks like it is filling', () => {
-    /* Rescaled to the 72-hour window. The shape is the point and it is
-       unchanged: a squared curve, so an event days out shows a couple of
-       entrants and the field arrives as the gun approaches. */
-    const atSixtyHours = curveOnly(60 * 60 * MIN);
-    const atThirtySixHours = curveOnly(36 * 60 * MIN);
-    const atOneHour = curveOnly(60 * MIN);
-    expect(atSixtyHours).toBeLessThan(atThirtySixHours);
-    expect(atThirtySixHours).toBeLessThan(atOneHour);
-    // Quadratic: the first half of the window delivers under a third of it.
-    expect(atThirtySixHours).toBeLessThan(curveOnly(MIN) / 3);
+    const early = curveOnly(9 * MIN);
+    const middle = curveOnly(5 * MIN);
+    const late = curveOnly(MIN);
+    expect(early).toBeLessThan(middle);
+    expect(middle).toBeLessThan(late);
+    expect(middle).toBeLessThan(late / 3);
   });
 
-  it('EVERY event on the board carries a field, however far out', () => {
-    /* The floor that fixes the dead board: `Math.max(1, ...)` inside the
-       window. Measured before this change: 36 of 37 registering MTTs had a
-       field of exactly zero. A lobby of empty games is not one anybody joins. */
-    for (const hoursOut of [1, 6, 24, 48, 71]) {
-      expect(curveOnly(hoursOut * 60 * MIN), `${hoursOut}h out`).toBeGreaterThanOrEqual(1);
+  it('leaves published events empty of automated entrants until T-10', () => {
+    for (const minutesOut of [11, 30, 60, 360, 1440, 4320]) {
+      expect(curveOnly(minutesOut * MIN), `${minutesOut}m out`).toBe(0);
     }
   });
 });
@@ -402,9 +395,9 @@ const replayRamp = (leadMs: number, ev: { gtd: number; prizeShare: number; seats
 const GRAND = { gtd: 2500, prizeShare: 45, seats: 200 };
 
 describe('mttPrestartHorseTarget - the publication lead', () => {
-  it('covers the biggest recurring guarantee within MTT_PUBLISH_LEAD_MS', () => {
+  it('defers some guarantee funding to late registration under the ten-minute rule', () => {
     const { pool } = replayRamp(MTT_PUBLISH_LEAD_MS, GRAND);
-    expect(pool).toBeGreaterThanOrEqual(GRAND.gtd);
+    expect(pool).toBeLessThan(GRAND.gtd);
   });
 
   it('could not cover it at the 60 second lead this replaces', () => {
@@ -415,7 +408,7 @@ describe('mttPrestartHorseTarget - the publication lead', () => {
     expect(pool).toBeLessThan(GRAND.gtd);
   });
 
-  it('leaves the pacing alone when there is time - six a tick, as before', () => {
+  it('publishing thirty minutes ahead does not register a horse', () => {
     /* Far enough out that the curve, not the guarantee, is the binding
        constraint: the step must still be the honest MTT_PRESTART_MAX_STEP. */
     const ask = mttPrestartHorseTarget({
@@ -427,7 +420,7 @@ describe('mttPrestartHorseTarget - the publication lead', () => {
       prizePool: 0,
       buyInPrizeShare: GRAND.prizeShare,
     });
-    expect(ask).toBe(MTT_PRESTART_MAX_STEP);
+    expect(ask).toBe(0);
   });
 });
 

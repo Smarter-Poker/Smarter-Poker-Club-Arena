@@ -1,5 +1,5 @@
 import { workflowJobBudget } from '../productionJobBudget';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -327,6 +327,57 @@ describe('post-deploy production account', () => {
           String(url).includes('fn_ca_stale_certification_accounts')
         )
       ).toBe(false);
+  });
+
+  it('retains the known reserved identity when normalization and immediate cleanup both fail', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-recoverable-'));
+    const env = environment(directory);
+    const path = join(directory, 'club-arena-production-e2e-account.json');
+    writeFileSync(env.GITHUB_ENV, '');
+    let recovering = false;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST')
+        return Response.json({ id: USER_ID });
+      if (url.includes('/rest/v1/profiles?select=id')) return Response.json([{ id: USER_ID }]);
+      if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH')
+        return Response.json({ message: 'normalization refused' }, { status: 400 });
+      if (url.endsWith('/rpc/cleanup_reserved_certification_account')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ p_user_id: USER_ID });
+        return recovering
+          ? Response.json({ success: true })
+          : Response.json({ message: 'cleanup refused' }, { status: 400 });
+      }
+      if (url.endsWith(`/auth/v1/admin/users/${USER_ID}`) && recovering)
+        return new Response(null, { status: 404 });
+      throw new Error('Unexpected recovery request');
+    });
+    try {
+      await expect(
+        createProductionE2EAccount({
+          environment: env,
+          fetchImpl: fetchMock,
+          wait: async () => undefined,
+        })
+      ).rejects.toThrow('setup failed and cleanup was incomplete');
+      expect(existsSync(path)).toBe(true);
+      const saved = JSON.parse(readFileSync(path, 'utf8'));
+      expect(saved).toMatchObject({ id: USER_ID });
+      expect(saved.email).toMatch(/^ca-customization-cert-postdeploy-.*@example\.invalid$/);
+      expect(typeof saved.password).toBe('string');
+      expect(typeof saved.createdAt).toBe('string');
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+      // The workflow's existing always() cleanup can recover from the durable
+      // record even though creation never returned or exported credentials.
+      expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe('');
+      recovering = true;
+      await expect(
+        cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
+      ).resolves.toBe(true);
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {

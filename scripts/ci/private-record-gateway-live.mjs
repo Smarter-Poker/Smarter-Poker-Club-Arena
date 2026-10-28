@@ -72,6 +72,7 @@ export async function qualifyGatewayLive({
   }
   const sockets = [];
   let account;
+  let creationAttempted = false;
   let passed = false;
   let cleanupVerified = false;
   // Existing helper retries remain finite inside this stricter overall budget.
@@ -81,6 +82,7 @@ export async function qualifyGatewayLive({
   };
   try {
     await health();
+    creationAttempted = true;
     account = await createAccount({ environment, fetchImpl: boundedFetch, wait });
     assert.match(account.email, /^ca-customization-cert-postdeploy-.*@example\.invalid$/);
     assert.match(account.id, /^[0-9a-f-]{36}$/);
@@ -165,8 +167,8 @@ export async function qualifyGatewayLive({
   } finally {
     for (const socket of sockets) socket.close();
     deadline = Date.now() + 90_000;
-    // If creation failed after its own write, its helper already owns cleanup and
-    // leaves the durable fixture record for its guarded recovery route on failure.
+    // A setup failure can precede the helper returning its account. Recover its
+    // durable reserved record through the same guarded cleanup owner.
     if (account) {
       cleanupVerified = await cleanupAccount({
         environment,
@@ -175,6 +177,8 @@ export async function qualifyGatewayLive({
         record: account,
       });
       assert.equal(cleanupVerified, true, 'reserved fixture cleanup not verified');
+    } else if (creationAttempted) {
+      await cleanupAccount({ environment, fetchImpl: boundedFetch, wait });
     }
   }
   assert.ok(passed && cleanupVerified);

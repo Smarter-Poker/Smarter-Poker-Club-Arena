@@ -53,3 +53,9 @@ and reader readback. A denied foreign topic must close without private frames.
 Guarded fixture cleanup and exact gateway identity bracket are required. Isolated
 tests qualify this check; actual hosted execution remains pending. The report
 explicitly excludes isolated midstream ACL revocation and paid retirement.
+
+The canary's setup failure path exposed a connected cleanup gap: the existing
+account helper saved its known identity only after fallible profile work. It now
+saves the same private recovery record immediately after creation, and the canary
+uses that guarded record if setup throws before returning the account. Regressions
+fail before both repairs and pass afterward; no new cleanup scheduler is added.

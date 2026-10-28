@@ -176,3 +176,18 @@ test('socket adapter refuses wrong close and close before open without hanging',
   FakeSocket.last.emit('close', 1006);
   await assert.rejects(pending);
 });
+
+test('recovers the durable reserved identity when setup throws before returning the account', async () => {
+  const f = fixture();
+  let recovered = false;
+  f.options.createAccount = async () => {
+    throw new Error('profile setup failed after durable identity');
+  };
+  f.options.cleanupAccount = async ({ record }) => {
+    assert.equal(record, undefined);
+    recovered = true;
+    return true;
+  };
+  await assert.rejects(qualifyGatewayLive(f.options));
+  assert.equal(recovered, true);
+});

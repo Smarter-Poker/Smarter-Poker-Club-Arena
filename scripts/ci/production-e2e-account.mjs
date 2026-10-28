@@ -1572,6 +1572,10 @@ export async function createProductionE2EAccount({
     const id = String(created?.id || created?.user?.id || '');
     if (!id) throw new Error('Supabase Auth created no user id for the post-deploy account.');
     account = { id, email, password, createdAt: new Date().toISOString() };
+    // Save the known identity before fallible profile work, so always() cleanup
+    // can recover it even if setup and its immediate cleanup both fail.
+    const path = firstRun ? firstRunFixturePath(environment) : fixturePath(environment);
+    writeFileSync(path, `${JSON.stringify(account)}\n`, { mode: 0o600 });
     await waitForProfile(configuration, id, fetchImpl, wait);
     // A FIRST-RUN account is left exactly as a brand-new sign-up arrives: its
     // alias chosen on the sign-up form and NO arena avatar, so the profile gate
@@ -1580,8 +1584,6 @@ export async function createProductionE2EAccount({
     // real iPhone player found ENTER ARENA dead (2026-10-17).
     if (!firstRun) await normalizeProfile(configuration, id, fetchImpl);
 
-    const path = firstRun ? firstRunFixturePath(environment) : fixturePath(environment);
-    writeFileSync(path, `${JSON.stringify(account)}\n`, { mode: 0o600 });
     process.stdout.write(`::add-mask::${email}\n::add-mask::${password}\n`);
     appendFileSync(
       environment.GITHUB_ENV,

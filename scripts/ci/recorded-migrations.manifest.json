@@ -1634,6 +1634,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8404",
       "refusedBy": [],
       "liveVerdict": "Lightning original weekly statement timed out before tournament quality in the source aggregate. Exact NULL/non-NULL coordinator partition preserves every payable source and all original financial summary branches, source contracts, wrong-scope checks, cutoff semantics and full ordered source fingerprint. Actual candidate existing-index/hash-anti plan cost41189 versus original199488; complete READ ONLY candidate aggregate finished under90seconds:308801 sources/private3552.70/union0/bad0/fingerprint48c3d96ec64be3668d106cc120eda8bd. Focused PG17 native72 passed actual current summary/issuer/nativebank and current payable/effective view definitions, full-row EXCEPT ALL NULL/nonNULL/admission/cutoff/refusal cases, concurrent STABLE snapshot and actor/freeze/history/real scheduler/atomic postcondition guards. Immediate whole-file history and complete post5225 summary/sourceguard/report/advance/handreader/quality5c8b/Scope72/countcc867 full owner metadata, ACL and actualGEN2a782 were read back exact. No original view, financial rule, source65 renewal, certificate, cache, budget or permission changes. These are installation/readback facts, not full scope closure or future4AM capacity proof."
+    },
+    {
+      "version": "20261028014525",
+      "name": "original_private_deposit_keys_read_scalar_facts",
+      "file": "supabase/migrations/20261028014525_original_private_deposit_keys_read_scalar_facts.sql",
+      "md5": "58a0ec17bc10324964964076440f036d",
+      "appliedToProductionAt": "2026-10-28T02:10:36.658Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained concurrent physical-index active-book-outage install and READ ONLY full-file history/index/source/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8407",
+      "refusedBy": [],
+      "liveVerdict": "Original weekly standalone document closure remains an active outage after all rakeback payments. Actual raw cash source private deposit key discovery exceeded30seconds before any judged or ledger proof; exact existing club/coordinator/week index required heap access for rake_record_id and union_id. One narrow nonpartial three-key/two-INCLUDE scalar cover qualifies the identical original nullable and explicit NULL/nonNULL selectors without any function/query/math/cache/source65/GEN change. Native13 retained full source column types/NOTNULL/check/PK/unique/FK constraints and existing indexes, independent scope/boundary key sets/full original contracts/metadata/ACL and natural heap-to-IndexOnly zero native heap fetches; domain, freeze, operator, source65 and catalog-fault guards passed. Actual immediate READONLY whole-file history and exact VALID READY LIVE index, full source columns/defaults/constraints/triggers/ACL, all11 prior indexes and all11 current whole function definitions/metadata including summary5225/sourceguardedc/GEN2a782 were read back unchanged from actual preinstall baseline. Native does not reproduce production timing; installation is not complete book closure or future4AM capacity proof."
     }
   ]
 }

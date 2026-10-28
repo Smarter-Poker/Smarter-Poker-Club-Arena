@@ -74,6 +74,9 @@ describe('Approved agent adjustments settle once through their original club ban
     expect(read('scripts/qualification/approved-agent-adjustment/document_pipeline.py')).toContain(
       'accounting_transfer_document'
     );
+    expect(read('scripts/qualification/approved-agent-adjustment/document_pipeline.py')).toContain(
+      "assert declaration.count('CREATE TABLE ')==1"
+    );
   });
   it('keeps earned credits payable to suspended wallets without activating them', () => {
     const source = read(

@@ -35,7 +35,9 @@ def install(q, root, fixture):
     
     q('CREATE SEQUENCE hand_id_seq;')
     for canonical_type in ['unions','union_wallets','engine_maintenance_thaws','rake_records','accounting_tournament_fee_custody_resolutions','accounting_tournament_fee_custody_obligations','tournament_terminal_settlements','accounting_tournament_fee_owner_bases','union_pnl_transaction_frames']:
-        q(re.search(r'CREATE TABLE public.'+canonical_type+r' \(.*?\n\);',bootstrap,re.S).group(0))
+        declaration=re.search(r'CREATE TABLE public\.'+re.escape(canonical_type)+r' \(.*?\n\)(?:\nWITH \([^;]*\))?;',bootstrap,re.S).group(0)
+        assert declaration.count('CREATE TABLE ')==1,canonical_type
+        q(declaration)
     owners = {f['signature']:f for p in packets for f in p.get('owners',[])}
     for f in owners.values():
         assert hashlib.md5(f['definition'].encode()).hexdigest()==f['md5'],f['signature']

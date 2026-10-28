@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -571,5 +571,11 @@
   "combinedC2MembershipWorkflow20261028": {
     "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
     "execution_performed": false
+  },
+  "originalTournamentCreditCoverWorkflowAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
+    "after": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "change": "Only3 additive qualification paths and one original2-field creditSUM physical-cover native step. Every existing native command/assertion preserved; no query, function, GEN, financial source/fixture or installed recording changed."
   }
 }

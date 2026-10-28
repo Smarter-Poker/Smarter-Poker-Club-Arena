@@ -85,11 +85,11 @@ it('embeds fixed helper source and preserves reviewed v1/v2/v3 validators and aw
     sanitize_positive_calloff_result:
       '43a342da367225e9b41bffbbb6f68b90e353a8fa24e68f56207469fa1f2d0ad9',
     sanitize_reference_result: '1ceef5c9bdc0f46c9ea45c312ac4a300dc90dcb41c8ecb2086710462d7c885b2',
-    reference_diagnostic: '808e49bea3a0f1f411191bc9bbd5efe8d831fe308765bdcf5ea6ff91bb45e592',
+    reference_diagnostic: 'd7996bcb6760342f3261456368fa2e5a4ae88730f0f452c4a1e4c8487fa3d022',
     tournament_yields: '87d7b1c052ca72140bb659d31f3078f08c1ea7b4a867160b26ed440b8af511d4',
     booking_cap_refusals: '87a4f0a5a46c70db39f4449934b707fdf93198e14ca452db45e3959002335359',
     merge_bounded_events: '74acd6b31531f390fc05377eca361801aab44f301ee4d9ab8ef1055583e1ba81',
-    process_history: '137038b589f6d614e3183dda9ccdb9b7dbc645c8d56939f5bfc2b1a88b38a24c',
+    process_history: '6c2ceb29ab7613e8119cd0b3f657976ab0020e8bcabad60e464592f7a77f10da',
   };
   const current = readFileSync(inspector, 'utf8');
   const functions = (text: string) =>
@@ -110,7 +110,7 @@ it('embeds fixed helper source and preserves reviewed v1/v2/v3 validators and aw
   // Exact reviewed v3 helper, including the shared awaited stdout flush.
   // Original tournament helpers are independently checked below.
   expect(sha(current.split("REFERENCE_DIAGNOSTIC_JS = r'''")[1].split("'''", 1)[0])).toBe(
-    '55990741042849ad2984fc3b6dec83d3b96896bec1e1884336adb4d128e5107b'
+    '6804a3d6159b709217366bb7dea070b1998d19550535151aa78c19f12294a056'
   );
 });
 it('keeps unavailable runtime and untrusted child output sanitized unknown', () => {
@@ -318,7 +318,7 @@ it.each(['tournament', 'reference_v1', 'reference_v2'])(
     }
   }
 );
-it('maps either private child pipe failure to the same sanitized unknown result', () => {
+it('maps private child pipe failures to sanitized unknown results with reference stage', () => {
   const out = python(
     `g=m['reference_diagnostic'].__globals__
 def refused(*a,**k):raise RuntimeError('private-payload-sentinel')
@@ -327,8 +327,13 @@ print(json.dumps([m['reference_diagnostic'](d),m['tournament_diagnostic'](d)]))`
     input
   );
   expect(out.status, out.stderr).toBe(0);
-  expect(JSON.parse(out.stdout)).toEqual(
-    Array(2).fill({ status: 'unknown', reason: 'journal_or_runtime_unavailable' })
-  );
+  expect(JSON.parse(out.stdout)).toEqual([
+    {
+      status: 'unknown',
+      reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'child_transport', code: 'unavailable' },
+    },
+    { status: 'unknown', reason: 'journal_or_runtime_unavailable' },
+  ]);
   expect(out.stdout).not.toContain('private-payload-sentinel');
 });

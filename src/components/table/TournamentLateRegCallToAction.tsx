@@ -102,8 +102,20 @@ export function TournamentLateRegCallToAction({
 
   useEffect(() => {
     if (hidden || !open) return;
-    const id = window.setInterval(() => setNowMs(serverNow()), 1000);
-    return () => window.clearInterval(id);
+    const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setNowMs(serverNow());
+    }, 1000);
+
+    const onVisible = () => {
+      if (!document.hidden) setNowMs(serverNow());
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [hidden, open]);
 
   const eyebrow = copy?.eyebrow ?? '';

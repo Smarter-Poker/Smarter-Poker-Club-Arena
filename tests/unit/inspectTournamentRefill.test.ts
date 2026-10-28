@@ -188,6 +188,7 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`;
     expect(JSON.parse(ran.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(ran.stdout + ran.stderr).not.toMatch(/private-secret|cards|As|Kd/);
   }
@@ -1103,6 +1104,7 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`,
     expect(JSON.parse(checked.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(checked.stdout + checked.stderr).not.toContain('private-secret');
   }
@@ -1285,6 +1287,7 @@ print(json.dumps(m['reference_diagnostic'](d['input'])))`,
     expect(JSON.parse(checked.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(checked.stdout + checked.stderr).not.toContain('private-secret');
   }
@@ -1416,6 +1419,7 @@ m=runpy.run_path(sys.argv[1]);d=json.loads(sys.stdin.read());m['reference_diagno
     expect(JSON.parse(checked.stdout)).toEqual({
       status: 'unknown',
       reason: 'journal_or_runtime_unavailable',
+      diagnostic: { stage: 'sanitizer', code: 'result_refused' },
     });
     expect(checked.stdout + checked.stderr).not.toMatch(/private-secret|As/);
   }
@@ -1454,4 +1458,64 @@ print(json.dumps({'complete':True,'bytes':len(raw)}))
   });
   expect(ran.status, ran.stderr).toBe(0);
   expect(JSON.parse(ran.stdout)).toMatchObject({ complete: true });
+});
+
+it('separates bounded child stderr from JSON and classifies host failures without leaking bytes', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); g=m['reference_diagnostic'].__globals__
+read=m['bounded_command']; failure=m['DiagnosticCommandFailure']
+raw=read([sys.argv[2],'-e',"process.stderr.write('private-secret');process.stdout.write('{}')"],separate_stderr=True)
+assert json.loads(raw)=={}
+for code in ('nonzero_exit','timeout','output_bound'):
+ def fail(*a,**k): raise failure(code)
+ g['bounded_command']=fail
+ assert m['reference_diagnostic']({})['diagnostic']=={'stage':'child_transport','code':code}
+for raw,stage in [('private-secret\\n{}','stdout_parse'),('{}','sanitizer'),(json.dumps({'status':'unknown','reason':'journal_or_runtime_unavailable','diagnostic':{'stage':'private-secret','code':'exception'}}),'sanitizer')]:
+ g['bounded_command']=lambda *a,**k:raw
+ assert m['reference_diagnostic']({'version':3})['diagnostic']['stage']==stage
+try: read([sys.argv[2],'-e',"process.stderr.write('private-secret');process.exit(7)"],separate_stderr=True)
+except failure as error: assert error.code=='nonzero_exit'
+else: raise AssertionError()
+try: read([sys.argv[2],'-e',"process.stderr.write('x'.repeat(4*1024*1024+1))"],separate_stderr=True)
+except failure as error: assert error.code=='output_bound'
+else: raise AssertionError()
+print(json.dumps({'bounded':True}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 8000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual({ bounded: true });
+  expect(ran.stdout + ran.stderr).not.toContain('private-secret');
+});
+
+it('runs the actual child entry point with noisy modules and closed import failure stages', () => {
+  const fixture = `
+import json,re,runpy,subprocess,sys,urllib.parse
+m=runpy.run_path(sys.argv[1]); program=m['REFERENCE_DIAGNOSTIC_JS']
+for mode in ('noise','throw','missing'):
+ def module(match):
+  path=match.group(1)
+  body="console.log('private-secret'); console.warn('private-secret');"
+  if path.endswith('/journalTransport.js'):
+   body += "throw Error('private-secret');" if mode=='throw' else ("export const exportCanonicalHorseJournalBatch=()=>null;" if mode=='noise' else '')
+  if path.endswith('/ChannelHub.js'): body+='export const channelHub={close(){}};'
+  return "import('data:text/javascript,"+urllib.parse.quote(body,safe='')+"')"
+ child=re.sub(r"import\\('(/app/[^']+)'\\)",module,program)
+ ran=subprocess.run([sys.argv[2],'--input-type=module','-e',child,'--','--reference-shape-diagnostic'],input=json.dumps({'version':3,'sourceRelease':'a'*40,'cases':[]}),text=True,capture_output=True,timeout=5)
+ assert ran.returncode==0 and not ran.stderr
+ report=json.loads(ran.stdout)
+ assert 'private-secret' not in ran.stdout
+ if mode=='noise': assert report['reason']=='journal_source_or_shape_mismatch'
+ else: assert report['diagnostic']=={'stage':'module_load_journal' if mode=='throw' else 'export_contract','code':'exception'}
+print(json.dumps({'childVerified':True}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script, process.execPath], {
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual({ childVerified: true });
 });

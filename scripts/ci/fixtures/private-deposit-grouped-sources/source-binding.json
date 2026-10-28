@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact current B000 oneblock grouped JUDGED, official97/native82 retained, original119 financial doors; no wholeScope/liveclaim",
+  "sourceFiles": {
+    "scripts/ci/fixtures/private-deposit-grouped-sources/qualification-evidence.json": "a317f5f82469ee8edd8894fbaa44042e0ea37448bc5df000985221e417102d77",
+    "scripts/ci/fixtures/private-deposit-grouped-sources/summary-before.sql": "a4c13da3abb069fa936bddfc5f6120845de62c3a777ce6c9a87d880f6c10d6ab",
+    "scripts/ci/fixtures/private-deposit-grouped-sources/current-view-dependencies.sql": "77ac87b7abb028e7fe8c78d1e4e9fc56379d8998c5fc81c74025c0d4f2431758",
+    "scripts/ci/fixtures/private-deposit-grouped-sources/root-readonly-probe-syntax.sql": "9be2a47118d5476cd997f3c51323c2185742e8c801dd0b745c5ebad8d771d6a4",
+    "scripts/ci/fixtures/private-deposit-grouped-sources/summary-after.sql": "6f7e67e6739d73430f5fd261a66002083526f922e2723e02bacc167d7060192a",
+    "scripts/ci/fixtures/private-deposit-grouped-sources/source-receipt.json": "d749cf4ede13398367fdacff1e4a47e22c58d135b269cc569bd0387cb72f984f",
+    "scripts/ci/test-private-deposit-grouped-sources-postgres.py": "b4ba2c8861196afbd94ef86993592377d06174d7e9aa8cfa1de49b3a8225a3b7",
+    "tests/private-deposit-grouping-retains-source-facts.law.test.ts": "a82c18d6c45bab698761d4c0bc5bf7ba06764f24fb8325cb0982e73ccabf32b8",
+    "docs/laws.d/private-deposit-grouping-retains-source-facts.md": "28216f1f2055723e1dee0fa366801a296f2b56a31addb651259ce37cf8de0601",
+    "docs/changelog/2026-10-28-private-deposits-group-original-source-facts.md": "efc84878c4f859d6c761503b76a02895e72bcc357f4e0c88eeb8661b8a0f02bd",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "supabase/migrations/20261028053643_weekly_private_deposits_group_their_original_source_facts.sql": "e18f1bbc64db63755824a7459f5a55c0e9ae91aeaa69da6f8ca5f050f9153aa3",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/actual-connected-preimages.json": "a3e7bd6dda38d87415913ba53c0db8207383afb8db024dcc6c4df69a69ebc644",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/setup.sql": "7d9519ad6b46c4a2d981b5f5fa0423533d1ebaab09d6ca8c321d995af465ba9e",
+    "tests/fixtures/weekly-close-scale/prelude.sql": "d5f1952bb82f3d9970b70b73d5b78ee65861c70c093118968d4836fc269f9481",
+    "tests/fixtures/weekly-close-scale/schema-tables.sql": "1357e005cc1c71045fc7dcbe17f777ac6ecb38c6b2f7dccaa286a68e702ed4fb",
+    "tests/fixtures/weekly-close-scale/preimage/fn_union_week_start.sql": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c"
+  }
+}

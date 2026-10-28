@@ -25,6 +25,8 @@ on:
       - scripts/ci/fixtures/standalone-weekly-statement-funding/**
       - tests/fixtures/weekly-close-scale/**
       - scripts/ci/fixtures/weekly-private-deposit-verdict/**
+      - scripts/ci/fixtures/private-deposit-grouped-sources/**
+      - scripts/ci/test-private-deposit-grouped-sources-postgres.py
       - scripts/ci/test-weekly-private-deposit-verdict-postgres.py
       - tests/weekly-private-deposits-retain-original-verdicts.law.test.ts
       - scripts/ci/fixtures/tournament-fee-scope-union-cover/**
@@ -207,3 +209,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-private-deposit-verdict-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-private-deposit-verdict.json"
+      - name: Private deposit grouping retains every original source fact
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-private-deposit-grouped-sources-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-deposit-grouped-sources.json"

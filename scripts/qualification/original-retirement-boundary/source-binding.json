@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -501,5 +501,11 @@
     "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
     "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
     "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928"
+  },
+  "workflowTournamentFeeScopeUnionCoverAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
+    "currentSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "change": "Exactly three new qualification paths and one isolated PG17 global tournament/union scalar-cover step. Removing these additions recovers prior workflow bytes exactly, including all cash23500 and previous native financial commands/assertions. All other source pins/objects unchanged. New official migration native27 qualifies physical access and installer guards only; no production runtime or book closure claim."
   }
 }

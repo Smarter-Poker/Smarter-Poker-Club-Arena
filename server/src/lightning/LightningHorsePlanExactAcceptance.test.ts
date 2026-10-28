@@ -218,6 +218,79 @@ function scenarioEntry(plan: ReturnType<typeof planLane>): Issued {
   return flop[0]!;
 }
 
+describe('Lightning sized shoves retain their original intent', () => {
+  it.each(['nlh', 'plo4', 'plo5', 'plo6'])(
+    '%s refuses an illegal promoted raise but tolerates an explicit all-in',
+    async (variant) => {
+      vi.useFakeTimers();
+      const { HandController } = await import('../engine/HandController.js');
+      const { shapeLightningHorseAction } = await import('./LightningHorse.js');
+      const formed = formedHand(4, 9700);
+      const t = buildHost(formed, [200, 8, 200, 200]);
+      await t.host.start();
+      const players = [200, 8, 200, 200].map((stack, i) => ({
+        seat: i + 1,
+        user_id: formed.players[i]!,
+        username: `Seat ${i + 1}`,
+        stack,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      }));
+      const hc = new HandController(
+        {
+          tableId: formed.handId,
+          handNumber: 1000001,
+          gameVariant: variant,
+          smallBlind: 1,
+          bigBlind: 2,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        } as any,
+        players as any,
+        1
+      );
+      hc.start();
+      expect(hc.performAction(4, 'raise', 6)).toBe(true);
+      expect(hc.performAction(1, 'call')).toBe(true);
+      expect(hc.performAction(2, 'all_in')).toBe(true);
+      expect(hc.performAction(3, 'call')).toBe(true);
+      const actor = hc.getState().players.find((p) => p.seat === 4)!;
+      expect(hc.getAuthoritativeActionState(actor.user_id)!.legalActions).not.toContain('all_in');
+      (t.host as any).hc = hc;
+      const before = actor.stack;
+      const sized = { action: 'raise', amount: actor.stack + actor.bet };
+      const shaped = shapeLightningHorseAction(hc, actor.user_id, sized, false);
+      expect(
+        (t.host as any).applyAction(actor.user_id, shaped.action, shaped.amount, 'horse_policy')
+          .success
+      ).toBe(false);
+      expect(actor.stack).toBe(before);
+      expect(hc.getState().currentPlayerSeat).toBe(4);
+      expect(
+        (t.host as any).applyAction(actor.user_id, sized.action, sized.amount, 'player').success
+      ).toBe(false);
+      expect(actor.stack).toBe(before);
+      const accepted: any[] = [];
+      expect(
+        (t.host as any).applyAction(
+          actor.user_id,
+          'all_in',
+          undefined,
+          'player',
+          undefined,
+          (r: any) => accepted.push(r)
+        ).success
+      ).toBe(true);
+      expect(accepted).toHaveLength(1);
+      expect(accepted[0].action).toBe('call');
+      expect(accepted[0].amount).toBe(2);
+    }
+  );
+});
+
 describe('Lightning commits a horse plan only for the exact accepted wager', () => {
   it.each(['throw', 'false'] as const)(
     'keeps accepted action and effect when controller later %s',

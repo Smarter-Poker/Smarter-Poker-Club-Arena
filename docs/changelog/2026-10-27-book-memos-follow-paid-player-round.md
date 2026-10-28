@@ -1,0 +1,7 @@
+# Optional book memo generation follows player payment
+
+The scheduler still seeded and kept the later club-book report memo before fee payment, despite the installed fee-first ordering. Its original generation scan could consume the remaining attempt budget before R2. This changes only the memo-key helper: no canonical completed R3 receipt for that union/week returns NULL outputs; the existing seed/keep owners already return false for a NULL key. A completed R3 restores the original generation suffix byte-for-byte.
+
+This is cache eligibility, not financial authorization. Original cash refusals, closed-book barrier, current calculation/source receipts, original R1/R2/R3 writers and later P&L source checks stay unchanged. Scope and its pending clock preimage are untouched. Wrong scope/week, unfinished/batch, missing version/provenance and shortfall receipts do not qualify. Stale memo data cannot seed/retag a report under a new original generation; lifetime and newer-book-certificate invalidation are preserved.
+
+Native31 cases exercise actual original memo-key/seed/keep bodies, exact installation rollback/postimage/metadata/ACL/replay, generation fault boundaries and DST. Financial-header and generation boundaries are isolated controlled fixture contracts, not a monetary or production certificate. The independent cash-refusal/preparation costs still need their owning fixes and an actual complete bounded payout proof.

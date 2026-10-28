@@ -1,0 +1,32 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "md5": "84b2e7643d1892b224e344aa43da38a5",
+    "owner": "postgres",
+    "config": ["search_path=public"],
+    "definer": false,
+    "signature": "fn_accounting_close_report_keep(uuid,timestamp with time zone,timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_report_keep(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE k record; v_memo jsonb;\nBEGIN\n IF COALESCE(current_setting('app.weekly_accounting_chunked',true),'')<>'on'\n  OR current_setting('app.accounting_close_memo',true) IS DISTINCT FROM 'on' THEN\n  RETURN false;\n END IF;\n SELECT * INTO k FROM public.fn_accounting_close_report_memo_key(p_union_id,p_start,p_end);\n IF k.memo_key IS NULL THEN RETURN false; END IF;\n v_memo:=NULLIF(current_setting('app.union_pnl_evidence_memo',true),'')::jsonb;\n IF v_memo IS NULL OR NOT (v_memo ? k.memo_key) OR NOT public.fn_accounting_close_report_is_ready(v_memo->k.memo_key) THEN\n  RETURN false;\n END IF;\n INSERT INTO public.accounting_close_report_receipts(union_id,period_start,period_end,generation,report,computed_at)\n VALUES (p_union_id,p_start,p_end,COALESCE(k.generation,''),v_memo->k.memo_key,clock_timestamp())\n ON CONFLICT (union_id,period_start,period_end) DO UPDATE\n  SET generation=EXCLUDED.generation, report=EXCLUDED.report, computed_at=EXCLUDED.computed_at;\n RETURN true;\nEND $function$\n",
+    "volatility": "v"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "md5": "ce1e8a66821765df65671d22c26e81da",
+    "owner": "postgres",
+    "config": ["search_path=public"],
+    "definer": false,
+    "signature": "fn_accounting_close_report_memo_key(uuid,timestamp with time zone,timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_report_memo_key(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, OUT generation text, OUT memo_key text)\n RETURNS record\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public'\nAS $function$\nBEGIN\n IF p_union_id='fade0000-0000-0000-0000-000000000001'::uuid AND p_end>='2026-10-12 07:00:00Z'::timestamptz THEN\n  generation:=COALESCE(smarter_private.original_inventory_basis_generation(),'original-inventory-245:unqualified');\n END IF;\n memo_key:=CASE WHEN generation='original-inventory-245:unqualified' THEN NULL\n   ELSE COALESCE(generation||'|','')||p_union_id::text||'|'||p_start::text||'|'||p_end::text END;\nEND $function$\n",
+    "volatility": "s"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "md5": "58a9a79da50f36fa5fbc4242e8cec8f7",
+    "owner": "postgres",
+    "config": ["search_path=public"],
+    "definer": false,
+    "signature": "fn_accounting_close_report_seed(uuid,timestamp with time zone,timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_close_report_seed(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE k record; v_report jsonb;\nBEGIN\n IF COALESCE(current_setting('app.weekly_accounting_chunked',true),'')<>'on'\n  OR current_setting('app.accounting_close_memo',true) IS DISTINCT FROM 'on' THEN\n  RETURN false;\n END IF;\n SELECT * INTO k FROM public.fn_accounting_close_report_memo_key(p_union_id,p_start,p_end);\n IF k.memo_key IS NULL THEN RETURN false; END IF;\n SELECT r.report INTO v_report FROM public.accounting_close_report_receipts r\n  WHERE r.union_id=p_union_id AND r.period_start=p_start AND r.period_end=p_end\n    AND r.generation=COALESCE(k.generation,'')\n    AND r.computed_at>=p_end\n    AND r.computed_at>clock_timestamp()-public.fn_accounting_close_proof_lifetime()\n    AND NOT EXISTS(SELECT 1 FROM public.accounting_close_certificates c\n     WHERE c.union_id=p_union_id AND c.period_start=p_start AND c.period_end=p_end\n       AND c.certified_at>r.computed_at AND c.kind NOT LIKE 'club\\_statement\\_quality:%');\n IF v_report IS NULL OR NOT public.fn_accounting_close_report_is_ready(v_report) THEN RETURN false; END IF;\n PERFORM set_config('app.union_pnl_evidence_memo',\n   (COALESCE(NULLIF(current_setting('app.union_pnl_evidence_memo',true),'')::jsonb,'{}'::jsonb)\n    ||jsonb_build_object(k.memo_key,v_report))::text,true);\n RETURN true;\nEND $function$\n",
+    "volatility": "v"
+  }
+]

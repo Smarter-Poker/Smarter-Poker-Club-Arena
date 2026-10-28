@@ -1,0 +1,123 @@
+[
+  {
+    "table": "smarter_private.posthand_escrow_certificates",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "original",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "original_sha256",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "recorded_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "posthand_escrow_certificates_check",
+        "definition": "CHECK (jsonb_typeof(original) = 'object'::text AND original_sha256 ~ '^[a-f0-9]{64}$'::text AND isfinite(recorded_at))"
+      },
+      {
+        "name": "posthand_escrow_certificates_hand_id_key",
+        "definition": "UNIQUE (hand_id)"
+      },
+      {
+        "name": "posthand_escrow_certificates_pkey",
+        "definition": "PRIMARY KEY (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "table": "union_pnl_cash_outcome_touches",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "recognized_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "generated": ""
+      },
+      {
+        "name": "game_union_id",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "generated": ""
+      },
+      {
+        "name": "shaped",
+        "type": "boolean",
+        "default": null,
+        "notnull": true,
+        "generated": ""
+      },
+      {
+        "name": "accepted_rake",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "generated": ""
+      },
+      {
+        "name": "participants",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_pnl_cash_outcome_touches_pkey",
+        "definition": "PRIMARY KEY (table_id, hand_number)"
+      }
+    ]
+  }
+]

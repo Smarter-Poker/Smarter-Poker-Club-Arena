@@ -770,6 +770,13 @@ SELECT jsonb_build_object(
   VALUES(v_receipt_id,v_batch.id,p_club_id,'weekly',p_start,p_end,
     'Original empty batch omitted union-root hands after Deep Stack joined Midway; paid published 250/150/100 Chips from Midway Promo.',
     v_union,500,3,v_basis,md5(v_basis::text),v_winners,md5(v_winners::text));
+  INSERT INTO public.financial_alerts(severity,source,message,context,resolved,resolved_at,resolution)
+  VALUES('info','leaderboard_union_basis',
+    'Deep Stack Society Oct18-25 leaderboard union attribution corrected and prizes paid',
+    jsonb_build_object('club_id',p_club_id,'period','weekly','period_start',p_start,
+      'original_batch_id',v_batch.id,'correction_id',v_receipt_id,'winners',v_winners,'chips',500),
+    true,now(),
+    'Paid 500 Chips from Midway Promo through canonical per-player keys. Corrected complete-capture union attribution; original empty batch and basis preserved; future unchanged prizes funded by union Promo.');
   IF (SELECT sum(payout_amount) FROM public.leaderboard_payouts WHERE batch_id=v_batch.id)<>500
     OR (SELECT count(*) FROM public.leaderboard_payouts WHERE batch_id=v_batch.id)<>3 THEN
     RAISE EXCEPTION 'leaderboard_union_awards_receipts_disagree';

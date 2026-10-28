@@ -68,6 +68,7 @@ try:
  assert float(q('SELECT total_paid FROM leaderboard_payout_batches'))==0
  assert q('SELECT basis::text FROM leaderboard_round_basis_receipts')==original_basis
  assert float(q('SELECT total_paid FROM leaderboard_payout_corrections'))==500
+ assert q("SELECT count(*) FROM financial_alerts WHERE resolved AND source='leaderboard_union_basis'")=='1'
  q('UPDATE leaderboard_payout_corrections SET reason=reason','LEADERBOARD_BASIS_IMMUTABLE')
  q('TRUNCATE leaderboard_payout_corrections','LEADERBOARD_BASIS_IMMUTABLE')
  q('SET ROLE authenticated;SELECT * FROM leaderboard_payout_corrections','permission denied')

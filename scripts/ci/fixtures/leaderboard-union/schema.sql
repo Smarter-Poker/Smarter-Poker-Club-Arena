@@ -1,3 +1,4 @@
+CREATE TABLE financial_alerts(severity text,source text,message text,context jsonb,resolved boolean,resolved_at timestamptz,resolution text);
 CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid()RETURNS uuid LANGUAGE sql STABLE AS $$SELECT NULLIF(current_setting('request.jwt.claim.sub',true),'')::uuid$$;

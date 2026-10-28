@@ -1,9 +1,52 @@
 {
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
+  "serverAccountingBudgetComposition20261028": {
+    "reason": "Combine protected-main accounting budget and river persistence workflow with this branch without changing test commands, per-test deadlines, assertions, historical receipts or qualification state. Current workflow identity only; hosted execution remains required. The server shard receives the same bounded 25-minute outer limit required to honor its existing 15-minute individual test allowance; accounting retains protected-main 50 minutes.",
+    "branchWorkflowPin": {
+      "bytes": 239825,
+      "sha256": "e112be43b6aabb08c4279298d640ddc9279bee87baf09e90b82c30d2f1668db7"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 240125,
+      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+    },
+    "execution_performed": false
+  },
+  "retained8372_serverAccountingBudgetComposition20261028": {
+    "reason": "Combine protected-main accounting budget and river persistence workflow with this branch without changing test commands, per-test deadlines, assertions, historical receipts or qualification state. Current workflow identity only; hosted execution remains required.",
+    "branchWorkflowPin": {
+      "bytes": 239586,
+      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    },
+    "execution_performed": false
+  },
+  "retained8365_composedServerShardBudget20261028": {
+    "reason": "Ordinary protected-main composition retains accounting outer budget 50 minutes and changes only server_shards outer budget 15 to 25 minutes for the observed 7:25 setup/other work plus 15-minute existing test deadline and 2:35 cleanup. All tests, pairs, seeds, per-test deadlines, matrix, commands and joins unchanged. Current workflow binding only; historical evidence and qualification unchanged.",
+    "previous": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "current": {
+      "bytes": 239886,
+      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    }
+  },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240390,
-      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+      "bytes": 242909,
+      "sha256": "d6515e7a3b1d92153ce4a39e09ce73df86dcbe682b085336e122ce4b2e8a9b9b"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -519,6 +562,17 @@
     },
     "execution_performed": false
   },
+  "deliveryGuardSetupReuse20261028": {
+    "reason": "Share unchanged PR source/artwork guards with the existing compiler install and retain scheduled checks. Rebalance unchanged weekly recompute and its evidence 1->2 using run40628889736 measured 2203s vs827s shard load and766s proof. Same four financial shards, commands, SQL, assertions, timeouts, required join and qualification states. Current source identity only, not financial certification.",
+    "previousWorkflowPin": {
+      "bytes": 240125,
+      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+    },
+    "currentWorkflowPin": {
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
+    }
+  },
   "midwayFreezeoutRegression20261028": {
     "reason": "Additive required native bounty-freezeout trigger regression only. Existing CI commands, guards, qualifications and budgets unchanged. Current input identity; no historical/native/live certification restamp.",
     "previous": {
@@ -537,47 +591,19 @@
       "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
     }
   },
-  "serverAccountingBudgetComposition20261028": {
-    "reason": "Combine protected-main accounting budget and river persistence workflow with this branch without changing test commands, per-test deadlines, assertions, historical receipts or qualification state. Current workflow identity only; hosted execution remains required. The server shard receives the same bounded 25-minute outer limit required to honor its existing 15-minute individual test allowance; accounting retains protected-main 50 minutes.",
-    "branchWorkflowPin": {
-      "bytes": 239825,
-      "sha256": "e112be43b6aabb08c4279298d640ddc9279bee87baf09e90b82c30d2f1668db7"
+  "deliveryProtectedMainIntegration20261028": {
+    "reason": "Preserve protected-main c873e0cf3d, its Midway bounty-freezeout native financial step and all other writers alongside guard setup reuse and weekly recompute rebalance. Refresh current input identity only. All historical audits and financial qualification states remain intact; no certificate restamp.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
     },
     "protectedMainWorkflowPin": {
-      "bytes": 239886,
-      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+      "bytes": 240390,
+      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
     },
-    "combinedWorkflowPin": {
-      "bytes": 240125,
-      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
-    },
-    "execution_performed": false
-  },
-  "retained8372_serverAccountingBudgetComposition20261028": {
-    "reason": "Combine protected-main accounting budget and river persistence workflow with this branch without changing test commands, per-test deadlines, assertions, historical receipts or qualification state. Current workflow identity only; hosted execution remains required.",
-    "branchWorkflowPin": {
-      "bytes": 239586,
-      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
-    },
-    "protectedMainWorkflowPin": {
-      "bytes": 239886,
-      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
-    },
-    "combinedWorkflowPin": {
-      "bytes": 239886,
-      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
-    },
-    "execution_performed": false
-  },
-  "retained8365_composedServerShardBudget20261028": {
-    "reason": "Ordinary protected-main composition retains accounting outer budget 50 minutes and changes only server_shards outer budget 15 to 25 minutes for the observed 7:25 setup/other work plus 15-minute existing test deadline and 2:35 cleanup. All tests, pairs, seeds, per-test deadlines, matrix, commands and joins unchanged. Current workflow binding only; historical evidence and qualification unchanged.",
-    "previous": {
-      "bytes": 239886,
-      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
-    },
-    "current": {
-      "bytes": 239886,
-      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    "currentWorkflowPin": {
+      "bytes": 242909,
+      "sha256": "d6515e7a3b1d92153ce4a39e09ce73df86dcbe682b085336e122ce4b2e8a9b9b"
     }
   }
 }

@@ -247,7 +247,10 @@ jobs:
   # It reads source and asserts on text. It needs no database, no build and no
   # network, and it finishes in well under a second, so there is no reason for
   # it to be behind a gate that can hide it.
+  # PRs run these unchanged guards in typecheck_compile, sharing its install.
+  # Schedules retain their independent guard job without adding a full compiler run.
   source_windows:
+    if: github.event_name == 'schedule'
     name: Source Windows Are Structural
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -419,6 +422,38 @@ jobs:
       - name: Install Dependencies
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
+
+      # These guards are deliberately independent of changed-file classification.
+      # Share the compiler's checkout/install instead of allocating another
+      # runner and installing the same lockfile on every pull request.
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
+      # ── NO ASSET SHIPS A WHITE MATTE (2026-09-11) ─────────────────────────
+      # Four painted shells reached production with their glow exported as a
+      # WHITE ramp at full alpha instead of cut out - club-nav-shell was 12.7%
+      # matte - and they were cleaned by hand on 2026-09-10. This is what stops
+      # the next export putting it back.
+      #
+      # It lives in this UNGATED job on purpose. An asset change touches
+      # neither src/ nor tests/, so every `changes`-gated job below skips
+      # precisely the pull request that needs this one.
+      #
+      # It is a recorded baseline, not a threshold: the obvious gate was
+      # measured against all 148 assets first and every reading above the floor
+      # turned out to be the detector eating ARTWORK. docs/art/matte-baseline.json
+      # records those six with the reason each was looked at and kept, and the
+      # build fails when a reading RISES above what is recorded. See
+      # docs/laws.d/an-asset-never-ships-a-white-matte.md.
+      - name: No asset ships a white matte
+        run: npm run art:matte
+
+      # The gate above judges the pixels. This judges the baseline: that every
+      # entry names a file that exists and carries a reason saying what was
+      # looked at. A pull request that edits only docs/art/ runs no other
+      # vitest, which is exactly when an excuse would slip in unread.
+      - name: The matte baseline is a record, not a list of excuses
+        run: npx vitest run tests/an-asset-never-ships-a-white-matte.law.test.ts
 
       - name: Actual client runtime retention refuses incomplete and changed inputs
         run: node --test tests/operations/client-runtime-retention.test.mjs
@@ -1363,6 +1398,11 @@ jobs:
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
     # preserving the 40m cap, every suite, financial deadline and artifact.
+    # October 28 run 40628889736: shard 1 took 2203s, shard 2 827s,
+    # shard 3 1462s and shard 4 1198s. The isolated weekly recompute took
+    # 766s on shard 1. Move that unchanged proof AND artifact to shard 2:
+    # measured workload predicts a ~1593s maximum instead of 2203s,
+    # with the same four runners, every assertion and all evidence retained.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1923,7 +1963,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -1931,7 +1971,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}

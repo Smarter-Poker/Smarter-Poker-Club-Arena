@@ -1406,6 +1406,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8322",
       "refusedBy": [],
       "liveVerdict": "Active Club Arena production outage: context-specific independent history reads were disk-bound and competing with games and pages. Exact committed covering index installed under the PUBLISHING active-outage exception while required hosted checks were queued. Native PostgreSQL17 passed104 cases including original privacy, context, retirement and access boundaries plus sparse-context custom/generic index-only plans and shape refusal. Production index is VALID READY LIVE; exact source history and helper body/MD5/bytes match; unchanged reader definition2b66063e989c88fa1a9e9f8d13e35965 and service-role-only ACL read back. Actual full-query plan uses the cover in2279.669ms with13473hits/1545reads. No engine replacement, financial write, private cards, shared observer reads or role-timeout change. This exact-byte recording is the next source action. Protected recording merge and clean-window gameplay verification remain pending; initial authenticated page recovery and independent populated history RPCs are measured separately."
+    },
+    {
+      "version": "20261028002753",
+      "name": "original_weekly_report_uses_its_qualified_hand_readers",
+      "file": "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql",
+      "md5": "a1efeca43178b415ff9bf4fc1ea08bb7",
+      "appliedToProductionAt": "2026-10-28T00:48:31.458Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained original-report composition install and immediate READ ONLY full-file history/seven whole owner definitions+metadata+ACL and naturally changed inventory generation readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8402",
+      "refusedBy": [],
+      "liveVerdict": "Continuing original weekly-book closure outage: the complete original report still pinned obsolete pre-treasury hand witness/read owners although the genuine current readers and original advance were qualified. Exact source changes are two report reader bindings, one advance report binding and the two corresponding entries of the actual65 authority; all financial SQL/math/other63 sources and GEN58dc body are unchanged. Full-file history and all seven original definitions/whole metadata/ACL were read back; only report/advance/sourceguard definitions changed to their qualified postimages. The actual inventory generation is legitimately nonNULL and different from the real preinstall B7 generation, derived by the unchanged original generation owner. No old partial/certificate was retagged by this installer. Original84 flow+hand rebuild, all paid financial identity preservation and complete live report/book closure remain separate required proof; this installation receipt does not claim them."
     }
   ]
 }

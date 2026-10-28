@@ -139,6 +139,8 @@
   -webkit-touch-callout: none;
   user-select: none;
   overscroll-behavior: none;
+  /* Thermal & battery: isolate table page layout/paint recalculations from global DOM tree */
+  contain: layout paint;
 }
 
 /* ─── STATIC RESERVES / HISTORICAL ONE-SIZE PRESENTATION (2026-08-28) ─────

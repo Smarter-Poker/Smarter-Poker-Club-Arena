@@ -249,11 +249,21 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+  /* Containment isolates layout recalculations and repaint passes to the slot */
+  contain: layout paint;
 }
 
-/* Slightly dim inactive tables for visual clarity */
+/* Inactive tables are pointer-inert and pause CSS animation churn */
 .multi-table-page__table-slot:not(.multi-table-page__table-slot--active) {
   pointer-events: none;
+}
+
+.multi-table-page__table-slot:not(.multi-table-page__table-slot--active) .table-page {
+  animation-play-state: paused !important;
+}
+
+.multi-table-page__table-slot:not(.multi-table-page__table-slot--active) .table-page * {
+  animation-play-state: paused !important;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

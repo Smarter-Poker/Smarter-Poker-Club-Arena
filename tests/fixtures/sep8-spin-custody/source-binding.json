@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1439,5 +1439,11 @@
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "before_sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "after_sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
   }
 }

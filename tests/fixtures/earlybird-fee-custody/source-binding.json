@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "07ecc5925d551fde38704413665ef6cb9c68015c2772b577c01bfefec9c95331",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -456,5 +456,11 @@
     "current": {
       "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
     }
+  },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "before_sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "after_sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
   }
 }

@@ -2333,7 +2333,12 @@ export function vpipFloorCallDown(
   },
   rand: () => number
 ): HorseDecision {
-  if (gs.stage !== 'preflop' || decision.action !== 'fold' || gs.allInOrFold === true)
+  if (
+    gs.stage !== 'preflop' ||
+    decision.action !== 'fold' ||
+    gs.allInOrFold === true ||
+    decision.continuationGuard === 'preflop_priced_refusal'
+  )
     return decision;
   const floor = Number(gs.vpipFloor ?? 0);
   if (!(floor > 0)) return decision;
@@ -2412,6 +2417,8 @@ function maniacCallDown(
     if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
     return decision;
   }
+  if (decision.action === 'fold' && decision.continuationGuard === 'preflop_priced_refusal')
+    return decision;
   if (decision.action !== 'fold' || opts.mind === false || gs.allInOrFold === true) return decision;
   const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
   if (!(toCall > 0) || !(player.stack > 0)) return decision;
@@ -2475,8 +2482,11 @@ function maniacCallDown(
     // a preflop maniac's do; its preflop range is its (wide) calling range.
     const postflopOnly =
       !!riverPressure ||
-      (street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read));
-    const width = postflopOnly ? 1 : maniacRaiseWidth(read);
+      (street !== 'preflop' &&
+        (read?.presumed === true || maniacRaiseWidth(read) === null) &&
+        isPostflopManiac(read));
+    // A shared starting prior is not observed evidence for undoing a fold.
+    const width = postflopOnly ? 1 : read?.presumed ? null : maniacRaiseWidth(read);
     if (width === null) return decision;
     const betRate =
       street === 'preflop'
@@ -2601,6 +2611,15 @@ function maniacCallDown(
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
       return { ...decision, action: 'all_in', amount: undefined };
     }
+    // A flat that leaves chips behind is not a terminal heads-up price while
+    // another live seat still owes the raise. Do not invent that seat's call
+    // or cards; retain the earlier range decision until a closed price exists.
+    if (
+      street === 'preflop' &&
+      toCall < player.stack &&
+      allLive.some((p) => !p.is_all_in && p.stack > 0 && p.bet < gs.currentBet - 0.005)
+    )
+      return decision;
     const rawRequired =
       call / ((pot + call) * (1 - rake)) +
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
@@ -2616,7 +2635,12 @@ function maniacCallDown(
     // A heads-up preflop all-in also realizes its sampled equity in full.
     // Its close rejection needs the same bounded confirmation as postflop;
     // ordinary preflop flats retain their separate realization policy.
-    const canRefineRecovery = live.length === 1 && (street !== 'preflop' || allInCall);
+    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
+    // outcomes (and replacing them with a fresh mean) favors continuation.
+    // Keep the existing price/range model, without outcome-selected samples.
+    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    const canRefineRecovery =
+      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
@@ -3765,10 +3789,7 @@ export class HorseLogic {
           : 0
       ),
       typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash',
-      // PLO presumption (2026-10-25): the seats the engine roster says a
-      // person plays, read by HorseMind.opponentRead.
-      Array.isArray(gameState.humanUserIds) ? gameState.humanUserIds : null
+      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
     );
     // V3: ingest the action stream into the opponent-intelligence layer.
     // Wrapped so observation can never take down a decision.
@@ -5251,13 +5272,17 @@ export class HorseLogic {
     // envelope AND raising at least 35% of hands / re-raising 25%). Null for
     // every horse-like read, so horse-versus-horse play is unchanged.
     let maniacRaiserWidth: number | null = null;
+    let observedManiacRaiser = false;
     let maniacBehindWidth: number | null = null;
     if (opts.mind !== false) {
       try {
         const raiserM =
           lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
-        if (raiserM && raiserM.user_id !== player.user_id)
-          maniacRaiserWidth = maniacRaiseWidth(HorseMind.opponentRead(raiserM.user_id));
+        if (raiserM && raiserM.user_id !== player.user_id) {
+          const read = HorseMind.opponentRead(raiserM.user_id);
+          maniacRaiserWidth = maniacRaiseWidth(read);
+          observedManiacRaiser = read?.presumed !== true && maniacRaiserWidth !== null;
+        }
         if (raises === 0) {
           for (const p of gs.players) {
             if (p.seat === player.seat || p.is_folded || p.is_all_in || p.is_sitting_out) continue;
@@ -5454,8 +5479,7 @@ export class HorseLogic {
       const raiserAllIn38 = raiser38?.is_all_in === true;
       const effCall38 = Math.min(toCall, player.stack);
       const maniacPrice38 =
-        maniacRaiserWidth !== null &&
-        (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
+        observedManiacRaiser && (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
       const variantPrice38 =
         (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
         (raiserAllIn38 || effCall38 >= player.stack * 0.4);
@@ -5659,7 +5683,11 @@ export class HorseLogic {
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
           notePhase6Route('variant_fallback', 'variant_price');
-          return { action: 'fold', thinkTime: 0 };
+          return {
+            action: 'fold',
+            thinkTime: 0,
+            ...(vi.isOmaha ? { continuationGuard: 'preflop_priced_refusal' as const } : {}),
+          };
         } catch {
           if (telemetryOn(opts)) noteFire('v38_preflop_price_unavailable');
           /* No invented opponent/equity: the explicit range fallback decides. */
@@ -8984,7 +9012,14 @@ export class HorseLogic {
         return this.betSize(
           planHandKey,
           pot,
-          overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2,
+          // Preserve V40's weak-made-hand sizing limit in the bluff branch too.
+          // A changed range estimate must not turn two called barrels into pot-sized value.
+          Math.min(
+            useV40 && vi.isOmaha && isRiver && made40?.weak && calledBarrels40 >= 2
+              ? 0.5
+              : Infinity,
+            overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2
+          ),
           player,
           gs,
           vi,

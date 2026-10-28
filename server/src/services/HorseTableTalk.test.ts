@@ -86,6 +86,8 @@ import {
   normalizePhrase,
   pickCandidate,
   sanitizeLine,
+  sanitizeStyledLine,
+  writeChatRow,
   speakAtTheFelt,
   speakAsTheyShove,
   tableRefusal,
@@ -363,9 +365,9 @@ describe('the line is a hash, never a roll', () => {
 describe('the one door every line passes', () => {
   const names = ['danny', 'Plate2', null, undefined];
   it('accepts a plain filled line', () => {
-    expect(sanitizeLine('nice pot, 52 bb, gg', names)).toEqual({
+    expect(sanitizeLine('nice pot, gg', names)).toEqual({
       ok: true,
-      line: 'nice pot, 52 bb, gg',
+      line: 'nice pot, gg',
     });
   });
   it('refuses a banned dash, built from the code point so this file holds none', () => {
@@ -545,8 +547,26 @@ describe('speakAtTheFelt', () => {
     expect(detectEvents(input).some((c) => c.event === 'big_pot_won')).toBe(true);
   });
 
+  it.each([
+    '78bb on the river, somebody wanted to see my cards',
+    '399 bb, nice',
+    '78.5 BB, ty',
+    '78 big blinds on the river',
+    'seventy-eight big blinds, nice',
+  ])('hard ban: BB amounts cannot pass either sanitizer or the chat writer: %s', async (line) => {
+    expect(sanitizeLine(line, [])).toEqual({ ok: false, reason: 'bb_amount' });
+    expect(sanitizeStyledLine(line, [])).toEqual({ ok: false, reason: 'bb_amount' });
+    expect(await writeChatRow(TABLE, HORSE_A, line)).toBe(false);
+    expect(inserts('table_chat')).toHaveLength(0);
+  });
+
   it('chat phrases do not narrate pot sizes or address numbered seats', () => {
-    for (const { line } of everyPoolLine()) expect(line).not.toMatch(/\{potBB\}|seat \{seat\}/);
+    for (const { line } of everyPoolLine()) {
+      expect(line).not.toMatch(
+        /\{potBB\}|seat \{seat\}|wanted to see|pay to look|paying me off|you (?:really )?called|bold call|good call|runner runner/i
+      );
+    }
+    expect(fillLine('{potBB} bb', { potBB: 78 })).toBeNull();
   });
 
   it('the hourly cap: that many lines in the last hour, no claim', async () => {

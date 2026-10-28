@@ -18,6 +18,7 @@ export const HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES = Object.freeze([
     'src/services/horseCorrectiveReview/liveKernel.ts',
     'src/services/horseCorrectiveReview/kernelReceipt.ts',
     'src/engine/HorsePhase8GuardAcceptance.ts',
+    'src/engine/HorseQualifiedAcceptance.ts',
     'src/engine/HorseExecutionWitness.ts',
     'src/engine/ServerTableEngineTurns.ts',
     'src/engine/horseDecision/protocol.ts',

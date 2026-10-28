@@ -68,12 +68,12 @@ function fn(name: string): string {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
-const CLAIM_CALL = callArgs(SRC, 'fn_agent_wallet_claim_back');
+const CLAIM_CALL = callArgs(SRC, 'fn_club_wallet_claim_back');
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('the client asks for a claim it is allowed to make', () => {
   it('calls the anchored RPC, and not the unbounded one', () => {
-    expect(SRC).toContain("supabase.rpc('fn_agent_wallet_claim_back'");
+    expect(SRC).toContain("supabase.rpc('fn_club_wallet_claim_back'");
     // The name survives in the header comment that explains why it left; a CALL
     // must not. The SQL function is deliberately still in Postgres.
     expect(SRC).not.toContain("supabase.rpc('fn_cashier_claim_back'");
@@ -85,7 +85,8 @@ describe('the client asks for a claim it is allowed to make', () => {
   it('identifies ONE originating send, not a member and a number', () => {
     expect(CLAIM_CALL).toContain('p_transaction_id: row.transaction_id');
     expect(CLAIM_CALL).toContain('p_amount: null');
-    expect(CLAIM_CALL).not.toContain('p_from_user_id');
+    expect(CLAIM_CALL).toContain('p_from_user_id: row.to_user_id');
+    expect(CLAIM_CALL).toContain('p_destination: returnWallet');
   });
 
   it('carries an op id, so a lost response replays instead of collecting twice', () => {

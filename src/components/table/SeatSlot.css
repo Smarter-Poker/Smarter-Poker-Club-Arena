@@ -2843,38 +2843,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   PLAYER STYLE BADGE — Auto-classified archetype (Shark/Fish/Rock/etc.)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.seat__style-badge {
-  position: relative;
-  text-align: center;
-  padding: 1px 6px;
-  margin-top: 2px;
-  border-radius: 4px;
-  font-size: 0.55rem;
-  font-weight: 700;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  max-width: 100%;
-  box-sizing: border-box;
-  z-index: 5;
-  letter-spacing: 0.3px;
-  animation: styleBadgeFadeIn 0.4s ease-out;
-}
-
-@keyframes styleBadgeFadeIn {
-  0% {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    CARD DEALING ANIMATION -- Per-Seat Card Arrival
    ═══════════════════════════════════════════════════════════════════════════════
    When a new hand starts, each seat's hole cards animate in from the dealer
@@ -3438,13 +3406,6 @@
     overflow: visible;
     white-space: normal;
     overflow-wrap: anywhere;
-  }
-
-  /* Keep the selected style badge's full wording on narrow seats. */
-  .seat__style-badge {
-    max-width: 100%;
-    overflow: visible;
-    padding: 1px 3px;
   }
 }
 

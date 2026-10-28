@@ -12,10 +12,14 @@
     "tests/cash-link-index-keeps-the-original-proof.law.test.ts": "443138226b857a46e67472f88a8ec794ee212c23bf42abd94fb5fb4e38e6a481",
     "docs/laws.d/cash-link-index-keeps-the-original-proof.md": "7866d0b5911e64e4af1ed29dd400417a363f48909642c8b21631ffb569e69966",
     "docs/changelog/2026-10-28-cash-link-original-proof-index.md": "9d1cad7c248091753cdc85a59242ae2375f0f175119a1e1d3fe568fbb61c5705",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
   },
   "cashLinkPhysicalProofWorkflowComposition20261028": {
     "review": "Preserves current63816 ordered-key and every prior native command plus the independently qualified65332 physical partial-index lane. Only active combined workflow identity renewed; no financial assertion or historical receipt restamp.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
   }
 }

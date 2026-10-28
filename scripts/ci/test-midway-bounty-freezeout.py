@@ -72,3 +72,6 @@ with tempfile.TemporaryDirectory(prefix='bounty-', dir=parent) as folder:
         print('PASS: reproduced default override; exact event and future series stay freezeout; unrelated clubs, prices, mystery and running contracts preserved')
     finally:
         run('pg_ctl','-D',str(scratch/'data'),'-m','immediate','stop')
+
+# The existing native CI step also exercises the new fixed-field satellite creator.
+subprocess.run([os.environ.get('PYTHON', 'python3'), '-B', str(root/'scripts/ci/test-fixed-sng-satellites.py')], check=True)

@@ -137,9 +137,7 @@ jobs:
   changes:
     name: What changed
     runs-on: ubuntu-latest
-    # PR #8462: a hosted full-history checkout exhausted the old five-minute
-    # budget before classification. Keep classification and its fallback intact.
-    timeout-minutes: 10
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -165,6 +163,11 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+          # Classify Git paths without hydrating the full artwork/source tree.
+          # Cone mode also retains root package and Playwright configuration files.
+          sparse-checkout: |
+            scripts
+            .github
           persist-credentials: false
       - id: f
         env:

@@ -90,6 +90,14 @@ export default {
               });
               return stdout;
             },
+            async wake(args) {
+              await execute('/usr/bin/open', args, {
+                timeout: 10_000,
+                maxBuffer: 4096,
+                encoding: 'utf8',
+                shell: false,
+              });
+            },
           });
           const onEvent = () => {
             void intake

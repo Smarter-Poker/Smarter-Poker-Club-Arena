@@ -10,6 +10,9 @@ export interface TournamentEntryCapacitySubject {
   satelliteTargetId?: unknown;
   satellite_target?: unknown;
   satelliteTarget?: unknown;
+  min_players?: unknown;
+  table_size?: unknown;
+  satellite_seats?: unknown;
 }
 
 const MTT_TYPES = new Set([
@@ -51,12 +54,35 @@ function hasSatelliteTarget(subject: TournamentEntryCapacitySubject): boolean {
   return false;
 }
 
+/** Owner-authored fixed field: two seats and a single third-place remainder. */
+export function isFixedSngSatellite(subject: TournamentEntryCapacitySubject): boolean {
+  const seats = Number(subject.max_players);
+  return (
+    label(subject.tournament_type) === 'sng' &&
+    label(subject.variant) === 'sng' &&
+    (seats === 6 || seats === 9) &&
+    Number(subject.min_players) === seats &&
+    Number(subject.table_size) === seats &&
+    Number(subject.satellite_seats) === 2 &&
+    !(
+      subject.satellite_target_id &&
+      subject.satellite_target &&
+      subject.satellite_target_id !== subject.satellite_target
+    ) &&
+    hasSatelliteTarget({
+      satellite_target_id: subject.satellite_target_id,
+      satellite_target: subject.satellite_target,
+    })
+  );
+}
+
 /**
  * Classifies raw NEW configuration. Caller-supplied format markers are ignored;
  * they cannot grant a new satellite the historical seat-first exception.
  * Explicit event type wins over obsolete two-seat or variant projections.
  */
 export function isUnlimitedMtt(subject: TournamentEntryCapacitySubject): boolean {
+  if (isFixedSngSatellite(subject)) return false;
   if (hasSatelliteTarget(subject)) return true;
   const type = label(subject.tournament_type ?? subject.tournamentType ?? subject.type);
   if (MTT_TYPES.has(type)) return true;

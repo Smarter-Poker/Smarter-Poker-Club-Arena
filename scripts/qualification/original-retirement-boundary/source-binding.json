@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -596,5 +596,9 @@
     "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
     "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
     "prior_commands_preserved": true
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
+    "execution_performed": false
   }
 }

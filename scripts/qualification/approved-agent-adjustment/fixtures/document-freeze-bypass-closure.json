@@ -1,0 +1,47 @@
+{
+  "owners": [
+    {
+      "md5": "2bfad412c70b965fd9d2c72b2ad83310",
+      "metadata": {
+        "oid": "18645624",
+        "proacl": [
+          "=X/postgres",
+          "postgres=X/postgres",
+          "anon=X/postgres",
+          "authenticated=X/postgres",
+          "service_role=X/postgres"
+        ],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "14",
+        "proname": "fn_freeze_bypass_active",
+        "prorows": 0,
+        "pronargs": 0,
+        "proowner": "16384",
+        "proconfig": ["search_path=public, pg_temp"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "16",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "s",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_freeze_bypass_active()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_freeze_bypass_active()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(current_setting('app.freeze_bypass', TRUE), '') = 'on';\n$function$\n"
+    }
+  ],
+  "observed_at": "2026-10-28T19:40:52.684992+00:00"
+}

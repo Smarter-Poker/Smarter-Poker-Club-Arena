@@ -3840,3 +3840,43 @@ it('never fetches or posts pooled opponent and donor reads for an individual hor
   worker.emitMessage(fastResult(1, 'packet-memory'));
   await expect(pending).resolves.toMatchObject({ fence: 'packet-memory' });
 });
+
+it.each(['missing', 'malformed', 'wrong_shard', 'future', 'extra_field'])(
+  'keeps optional isolate diagnostics %s unknown without failing the worker',
+  async (fault) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      shard: { index: 1 },
+    });
+    worker.emitMessage(ready);
+    const sample: any = {
+      source: 'node_v8_heap_statistics',
+      threadId: 7,
+      shardIndex: 1,
+      sampledAtMs: Date.now(),
+      heapUsedBytes: 100,
+      heapTotalBytes: 200,
+      heapLimitBytes: 1000,
+    };
+    if (fault === 'malformed') sample.heapUsedBytes = NaN;
+    if (fault === 'wrong_shard') sample.shardIndex = 2;
+    if (fault === 'future') sample.sampledAtMs += 100000;
+    if (fault === 'extra_field') sample.secret = 'forbidden';
+    const pending = (client as any).enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    worker.emitMessage({
+      ...ready,
+      type: 'STATUS_RESULT',
+      requestId: 1,
+      generation: 0,
+      fence: 'worker:status',
+      ...(fault === 'missing' ? {} : { isolateMemory: sample }),
+    } as any);
+    await pending;
+    expect(client.status().isolateMemory).toBeNull();
+    expect(client.status().phase).toBe('ready');
+  }
+);

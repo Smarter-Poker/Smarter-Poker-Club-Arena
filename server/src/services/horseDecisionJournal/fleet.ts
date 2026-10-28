@@ -5,7 +5,11 @@ import {
 } from '../../engine/HorseObserverReadEvidence.js';
 import { horseJournalArchiveDirectoryNames, readonlyHorseJournalStoreOptions } from './config.js';
 import { HorseDecisionJournalStore } from './store.js';
-import { reconcileHorseJournalHand, reviewHorsePlanEffects } from './review.js';
+import {
+  reconcileHorseJournalHand,
+  reviewHorsePlanEffects,
+  reviewHorseOwnTurnEffects,
+} from './review.js';
 import {
   HorseFleetPhaseInterpreter,
   HORSE_PHASE_KEYS,
@@ -252,6 +256,16 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
       {
         horseId,
         acceptedDecisions: 0,
+        executionEvidence: {
+          version: 'horse-own-turn-execution-v1' as const,
+          selectedMatch: 0,
+          controllerCoerced: 0,
+          selectionUnknown: 0,
+          effectsNotApplicable: 0,
+          effectsApplied: 0,
+          effectsFailed: 0,
+          effectsUnknown: 0,
+        },
         applicability: 'unobserved' as 'unobserved' | 'accepted_decision_observed',
         // Receipt presence is not qualification of a phase, strategy or source gate.
         phaseCoverage: 'unknown' as const,
@@ -470,6 +484,22 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
             aggregate[axis][proof[axis]] = (aggregate[axis][proof[axis]] ?? 0) + 1;
           aggregate.reasons[proof.reason] = (aggregate.reasons[proof.reason] ?? 0) + 1;
         }
+        // The original controller/committed-hand binding above is required
+        // before either selection or own-turn effect evidence is counted.
+        const ownExecution = horse.executionEvidence;
+        if (
+          witness.executionStatus === 'intended' &&
+          witness.executedAction === witness.selected.action &&
+          witness.executedAmount === witness.expectedExecutionAmount
+        )
+          ownExecution.selectedMatch++;
+        else if (witness.executionStatus === 'coerced') ownExecution.controllerCoerced++;
+        else ownExecution.selectionUnknown++;
+        const ownEffects = reviewHorseOwnTurnEffects(records, handKey, record);
+        if (ownEffects === 'not_applicable') ownExecution.effectsNotApplicable++;
+        else if (ownEffects === 'applied') ownExecution.effectsApplied++;
+        else if (ownEffects === 'failed') ownExecution.effectsFailed++;
+        else ownExecution.effectsUnknown++;
         horse.acceptedDecisions++;
         horse.applicability = 'accepted_decision_observed';
         acceptedDecisions++;

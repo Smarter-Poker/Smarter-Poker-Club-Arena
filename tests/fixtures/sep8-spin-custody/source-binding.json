@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff",
+    "scripts/ci/classify-ci-changes.mjs": "bb3d04cec2bf7cce896c252ee72f9f8a9e03eccec90235806fdf3e11b4c95892",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1440,5 +1440,16 @@
         "current": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
       }
     }
+  },
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+    "current": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7",
+    "evidence": [
+      "716 focused routing/native-input tests passed locally",
+      "actual Node22.23.3 SQLite process-kill/restart, exclusive owner and corrupt-state cases passed",
+      "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
+    ]
   }
 }

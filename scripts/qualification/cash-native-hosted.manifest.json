@@ -275,8 +275,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42122,
-      "sha256": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
+      "bytes": 42696,
+      "sha256": "bb3d04cec2bf7cce896c252ee72f9f8a9e03eccec90235806fdf3e11b4c95892"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4222,5 +4222,18 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+    },
+    "currentClassifierPin": {
+      "bytes": 42678,
+      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
+    },
+    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
+    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
   }
 }

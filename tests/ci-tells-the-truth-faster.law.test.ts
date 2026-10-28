@@ -160,22 +160,13 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4]);
   });
 
-  it('balances the complete Lightning family and concurrent-rebuy guard onto shard 3', () => {
+  it('balances the complete unchanged Lightning family onto shard 3', () => {
     const lightning = steps.filter((step) => step.name?.startsWith('Lightning'));
-    expect(lightning).toHaveLength(26);
-    expect(
-      lightning.some(
-        (step) => step.run === 'python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py'
-      )
-    ).toBe(true);
+    expect(lightning).toHaveLength(25);
     for (const step of lightning) {
       expect(shardsOf(step), step.name).toEqual([3]);
       expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
-      if (step.name === 'Lightning expiry preserves a concurrent paid rebuy') {
-        expect(step.run).toBe('python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py');
-      } else {
-        expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
-      }
+      expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
     }
     expect(job['timeout-minutes']).toBe(50);
   });
@@ -378,4 +369,18 @@ describe('the Diamond games visual baseline informs and never gates', () => {
       ).problems
     ).toEqual([]);
   });
+});
+
+it('the metadata-only classifier checks out its scripts and workflow without the full asset tree', () => {
+  const workflow = parse(read('.github/workflows/ci.yml'));
+  const checkout = workflow.jobs.changes.steps[0];
+  expect(checkout.with['fetch-depth']).toBe(0);
+  expect(checkout.with.filter).toBe('blob:none');
+  expect(checkout.with['sparse-checkout'].trim().split(/\s+/)).toEqual(['scripts', '.github']);
+  expect(checkout.with['sparse-checkout-cone-mode']).not.toBe(false);
+  expect(
+    workflow.jobs.changes.steps.some(
+      (step: Step) => step.run === 'node scripts/ci/classify-ci-changes.mjs'
+    )
+  ).toBe(true);
 });

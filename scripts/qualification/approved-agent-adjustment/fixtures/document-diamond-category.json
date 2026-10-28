@@ -1,0 +1,41 @@
+{
+  "observed_at": "2026-10-28T19:35:06.065737+00:00",
+  "owners": [
+    {
+      "md5": "025ddccd3543a614dc75ef4b4a5f49b7",
+      "metadata": {
+        "oid": "53090394",
+        "proacl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "14",
+        "proname": "fn_diamond_spin_ledger_category",
+        "prorows": 0,
+        "pronargs": 1,
+        "proowner": "16384",
+        "proconfig": ["search_path=pg_catalog"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "16",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_category"],
+        "proargtypes": ["25"],
+        "proisstrict": false,
+        "proparallel": "s",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "i",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_diamond_spin_ledger_category(text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_diamond_spin_ledger_category(p_category text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n SELECT COALESCE(p_category IN ('wheel_prize','plinko_prize','crash_prize','crossing_prize','mines_prize'),false);\n$function$\n"
+    }
+  ]
+}

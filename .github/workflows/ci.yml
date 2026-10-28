@@ -163,6 +163,11 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+          # Classify Git paths without hydrating the full artwork/source tree.
+          # Cone mode also retains root package and Playwright configuration files.
+          sparse-checkout: |
+            scripts
+            .github
           persist-credentials: false
       - id: f
         env:
@@ -2398,11 +2403,6 @@ jobs:
           path: artifacts/retirement-original-helper/
           if-no-files-found: error
           retention-days: 7
-      - name: Lightning expiry preserves a concurrent paid rebuy
-        if: matrix.shard == 3
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py
       - name: Never-dealt rebuy original funding and generation proof
         id: never_dealt_rebuy
         if: matrix.shard == 3

@@ -171,6 +171,17 @@ describe('Lightning rebuy expiry', () => {
     const workflow = readFileSync('../.github/workflows/ci.yml', 'utf8');
     expect(base).toContain('requireUnfunded: true');
     expect(services).toContain("supabase.rpc('fn_cashout_unfunded_seat_occupancy', cashoutArgs)");
-    expect(workflow).toContain('run: python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py');
+    const step = workflow.slice(
+      workflow.indexOf('- name: Never-dealt rebuy original funding'),
+      workflow.indexOf('- name: Retain never-dealt rebuy native proof')
+    );
+    expect(step).toContain('if: matrix.shard == 3');
+    expect(step).toContain('run: python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin');
+    const entry = readFileSync('../scripts/ci/test-never-dealt-rebuy.py', 'utf8');
+    expect(entry).toContain('run_lightning_expiry_proof(root,a.pg_bin,a.socket_root)');
+    expect(entry).toContain("root/'scripts/ci/test-lightning-rebuy-expiry-postgres.py'");
+    expect(entry).toContain('check=True');
+    expect(entry).toContain("'PG_BIN':str(pg_bin.resolve())");
+    expect(entry).toContain("'TMPDIR':str(socket_root.resolve())");
   });
 });

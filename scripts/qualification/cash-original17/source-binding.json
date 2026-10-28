@@ -3,7 +3,7 @@
   "files": {
     ".github/workflows/ci.yml": {
       "bytes": 240182,
-      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
+      "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -753,7 +753,7 @@
       "bytes": 239646,
       "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
     },
-    "review": "Only accounting job40→50minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
     "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
   },
   "riverPersistenceBudgetIntegration20261027": {
@@ -769,6 +769,45 @@
     "combinedWorkflowPin": {
       "bytes": 240182,
       "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
+    },
+    "execution_performed": false
+  },
+  "serverShardOuterBudget20261028": {
+    "reason": "Only the server_shards outer timeout changes from 15 to 25 minutes. PR 8372 job 122518658540 reached the 15-minute job cap while its remaining V54 regression allows 900000 ms per test. The observed 7:25 setup/other-file envelope, 15-minute test allowance and 2:35 remaining-work/cleanup allowance yield 25 minutes. All tests, seeds, pairs, per-test deadlines, matrix, commands and aggregate requirements remain unchanged. This updates current workflow identity only; historical receipts and qualification status are unchanged.",
+    "previous": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "current": {
+      "bytes": 239586,
+      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
+    }
+  },
+  "serverAccountingBudgetUnion20261028": {
+    "review": "Compose the protected accounting 50-minute budget and server 25-minute outer budget. Preserve both original audit entries unchanged, all commands, test deadlines and financial assertions. Current workflow identity only; no qualification or execution claim.",
+    "serverParentPin": {
+      "bytes": 239586,
+      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
+    },
+    "accountingParentPin": {
+      "bytes": 239886,
+      "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 239886,
+      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    },
+    "execution_performed": false
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "rakebackProtectedServerBudgetIntegration20261028": {
+    "review": "Preserve protected-main211ebe5 server shard outer budget15 to25 minutes and all source/tests unchanged. Combined workflow retains every existing rakeback/native command; only the reviewed active CI source identity changes. All historical audits and financial pins retained, not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
     },
     "execution_performed": false
   }

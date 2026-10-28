@@ -15,6 +15,7 @@ describe('corrective policy binds actual baseline and final-action composition',
       'src/engine/horseDecision/client.ts',
       'src/engine/ServerTableEngineTurns.ts',
       'src/lightning/LightningHandHost.ts',
+      'src/engine/HorseQualifiedAcceptance.ts',
       'src/engine/HorseDecisionEffects.ts',
       'src/services/horseCorrectiveReview/riverDecisionModel.ts',
       'src/services/horseCorrectiveReview/riverReference.ts',
@@ -51,4 +52,16 @@ describe('corrective policy binds actual baseline and final-action composition',
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
     expect(digest).not.toBe('0'.repeat(64));
   });
+});
+
+// Acceptance semantics are part of the original guard's runtime identity too.
+it('binds qualified acceptance in the catastrophe guard policy', async () => {
+  const { HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES, horseCatastropheGuardPolicyDigest } =
+    await import('../../engine/HorseCatastropheGuardPolicyDigest.js');
+  const path = 'src/engine/HorseQualifiedAcceptance.ts';
+  expect(HORSE_CATASTROPHE_GUARD_POLICY_SOURCE_FILES).toContain(path);
+  const baseline = horseCatastropheGuardPolicyDigest((p) => Buffer.from(p));
+  expect(
+    horseCatastropheGuardPolicyDigest((p) => Buffer.from(p + (p === path ? ':changed' : '')))
+  ).not.toBe(baseline);
 });

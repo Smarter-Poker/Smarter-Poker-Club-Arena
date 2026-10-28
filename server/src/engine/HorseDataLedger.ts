@@ -1764,14 +1764,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
-    'plo_human_presumed_aggressive',
+    'plo_opponent_presumed_aggressive',
     'HorseMind (PLO presumption)',
-    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'an Omaha opponent received the shared aggressive raise prior before their own public hands proved otherwise (owner update 2026-10-27)',
     'OPPX'
   ),
   receipt(
-    'plo_human_presumption_disproved',
+    'plo_opponent_presumption_disproved',
     'HorseMind (PLO presumption)',
+    "an opponent's own public hands disproved the shared Omaha raise presumption, identically for people and horses",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumed_aggressive',
+    'source',
+    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumption_disproved',
+    'source',
     "a person's own hands showed raising no higher than the average horse, so the PLO presumption came off",
     'OPPX'
   ),

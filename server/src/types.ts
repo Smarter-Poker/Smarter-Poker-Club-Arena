@@ -1036,7 +1036,8 @@ export interface HorseDecision {
   continuationGuard?:
     | 'multiway_commitment_floor'
     | 'dominated_commitment_floor'
-    | 'omaha_cold_flush_pressure';
+    | 'omaha_cold_flush_pressure'
+    | 'preflop_priced_refusal';
   plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
   omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
   remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;

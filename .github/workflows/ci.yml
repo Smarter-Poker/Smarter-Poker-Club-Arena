@@ -3261,7 +3261,7 @@ jobs:
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       max-parallel: 4

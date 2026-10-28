@@ -93,6 +93,14 @@ describe('V53 read helpers', () => {
     expect(aggressiveOpenerPressure(read, true)).toBeNull();
   });
 
+  it('requires observed opener evidence for extra pressure, preserving the common range prior', () => {
+    const observed = measured();
+    const presumed = { ...observed, presumed: true as const };
+    expect(aggressiveOpenerPressure(observed, true)).not.toBeNull();
+    expect(aggressiveOpenerPressure(presumed, true)).toBeNull();
+    expect(preflopVsOpener(presumed, true)).toEqual(preflopVsOpener(observed, true));
+  });
+
   it('3-bets wider than the old value bar, widest in position', () => {
     const read = measured();
     const p = aggressiveOpenerPressure(read, true)!;
@@ -192,9 +200,9 @@ describe('V53 preflop: the top of the flats 3-bets a wide opener', () => {
 
   it('a rundown that "takes the flop" still 3-bets the wide opener heads-up', () => {
     expect(decidePreflopV7(ctx({ classNeverThreeBet: true })).a).not.toBe('raiseTo');
-    expect(
-      decidePreflopV7(ctx({ classNeverThreeBet: true, exploitPressure: pressure })).a
-    ).toBe('raiseTo');
+    expect(decidePreflopV7(ctx({ classNeverThreeBet: true, exploitPressure: pressure })).a).toBe(
+      'raiseTo'
+    );
   });
 
   it('with a caller already in, the pressure bars do not apply', () => {
@@ -214,8 +222,8 @@ describe('V53 preflop: the top of the flats 3-bets a wide opener', () => {
   });
 });
 
-describe('V53 preflop: hold\'em too', () => {
-  it('a wide hold\'em opener is 3-bet in position from a hand that flats without the read', () => {
+describe("V53 preflop: hold'em too", () => {
+  it("a wide hold'em opener is 3-bet in position from a hand that flats without the read", () => {
     const nlhScope = readScopeOf('nlh', 9);
     const c: ExploitCounters = {
       ...freshExploitCounters(),
@@ -267,7 +275,7 @@ describe('V53 preflop: hold\'em too', () => {
   });
 });
 
-describe('V53 continued pressure: the barrel prices the target\'s own folds', () => {
+describe("V53 continued pressure: the barrel prices the target's own folds", () => {
   it('the measured human folds ~1.3x as often as a horse: the bet engine is told so', () => {
     const mul = pressureTargetFoldMul(measured(), 'plo5')!;
     expect(mul).toBeGreaterThan(1.25);
@@ -276,7 +284,13 @@ describe('V53 continued pressure: the barrel prices the target\'s own folds', ()
 
   it('no read, a non-target, or a below-mean folder: no change', () => {
     expect(pressureTargetFoldMul(null, 'plo5')).toBeNull();
-    const sticky: ExploitCounters = { ...MEASURED, foldToBetOpp: 30, foldToBet: 6, fFoldToBetOpp: 8, fFoldToBet: 2 };
+    const sticky: ExploitCounters = {
+      ...MEASURED,
+      foldToBetOpp: 30,
+      foldToBet: 6,
+      fFoldToBetOpp: 8,
+      fFoldToBet: 2,
+    };
     expect(pressureTargetFoldMul(opponentExploitRead(sticky, scope, 'plo5'), 'plo5')).toBeNull();
     const notAggressive: ExploitCounters = {
       ...freshExploitCounters(),
@@ -288,6 +302,8 @@ describe('V53 continued pressure: the barrel prices the target\'s own folds', ()
       foldToBetOpp: 50,
       foldToBet: 40,
     };
-    expect(pressureTargetFoldMul(opponentExploitRead(notAggressive, scope, 'plo5'), 'plo5')).toBeNull();
+    expect(
+      pressureTargetFoldMul(opponentExploitRead(notAggressive, scope, 'plo5'), 'plo5')
+    ).toBeNull();
   });
 });

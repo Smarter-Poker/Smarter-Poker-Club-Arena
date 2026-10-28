@@ -18,7 +18,7 @@
     "tests/weekly-private-deposits-retain-original-verdicts.law.test.ts": "5fa75e9b2da5605251f1bb29a71e622a72386911a1c7d512120ec9d70b4d72b1",
     "docs/laws.d/weekly-private-deposits-retain-original-verdicts.md": "331834902cb5746105ec6647c4678ef5212c7cefaeb9f74ae308c5374f998a2b",
     "docs/changelog/2026-10-28-weekly-statements-evaluate-private-deposit-verdicts-once.md": "ecd966010f81773fbc45e8065dbc6c78e89705411c84929e00522c2498403ece",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
   },
   "combinedC2MembershipWorkflow20261028": {
     "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
@@ -51,6 +51,10 @@
   },
   "rakebackQualifiedFollowupComposition20261028": {
     "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
   }
 }

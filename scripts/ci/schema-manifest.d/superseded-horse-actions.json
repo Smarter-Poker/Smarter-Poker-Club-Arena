@@ -1,0 +1,9 @@
+{
+  "_owner": "Supabase cost reduction; installed state requires separate protected-main readback.",
+  "tables": ["smarter_private.superseded_horse_action_certificates"],
+  "functions": [
+    "smarter_private.superseded_horse_actions_eligible",
+    "smarter_private.superseded_horse_action_certificate_guard",
+    "smarter_private.compact_superseded_horse_actions"
+  ]
+}

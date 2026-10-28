@@ -55,8 +55,8 @@ describe('computeEquity', () => {
     expect(r.exact).toBe(true);
     expect(r.runouts).toBe(44);
     // A jack or a six pairs b below a's kings. Hearts only.
-    expect(r.equities.find((e) => e.userId === 'b')!.pct).toBe(18.2);
-    expect(r.equities.find((e) => e.userId === 'a')!.pct).toBe(81.8);
+    expect(r.equities.find((e) => e.userId === 'b')!.pct).toBeCloseTo((8 / 44) * 100, 12);
+    expect(r.equities.find((e) => e.userId === 'a')!.pct).toBeCloseTo((36 / 44) * 100, 12);
   });
 
   it('a flop is enumerated exactly over 990 runouts', () => {
@@ -235,6 +235,23 @@ describe('the rundown', () => {
     expect(block.querySelector('.hdv__allin-luck')?.textContent).toBe(
       'Ran Above Expectation By 42.30'
     );
+  });
+
+  it.each([
+    [0.00001, '<0.1%'],
+    [0.99999, '>99.9%'],
+    [0, '0%'],
+    [1, '100%'],
+  ])('never rounds the persisted fraction %f into a false endpoint', (fraction, label) => {
+    const m = buildReplay(HAND as never);
+    render(
+      <HandDetailView
+        model={m}
+        currentUserId="h"
+        viewerFacts={{ ...FACTS, all_in_equity: fraction }}
+      />
+    );
+    expect(document.querySelector('.hdv__allin-value')?.textContent).toBe(label);
   });
 
   it('shows no all-in block when the hand had none', () => {

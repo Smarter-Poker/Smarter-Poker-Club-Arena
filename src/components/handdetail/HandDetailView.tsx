@@ -1,3 +1,4 @@
+import { formatAllInEquity } from '../../lib/allInEquityDisplay';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  HAND DETAIL VIEW — the one rundown, rendered once
@@ -89,7 +90,8 @@ function AllInFacts({
 }) {
   const actualMoney = moneyForHand({ arenaAsset });
   if (!facts.was_all_in || facts.all_in_equity === null) return null;
-  const pct = Math.round(facts.all_in_equity * 1000) / 10;
+  const pct = formatAllInEquity(facts.all_in_equity * 100);
+  if (pct === null) return null;
   const luck = facts.ev_returned === null ? null : money(facts.net - facts.ev_net);
   const above = facts.net - facts.ev_net;
   return (
@@ -100,7 +102,7 @@ function AllInFacts({
       <div className="hdv__allin-grid">
         <div className="hdv__allin-cell">
           <span className="hdv__allin-label">Your Equity</span>
-          <span className="hdv__allin-value">{pct}%</span>
+          <span className="hdv__allin-value">{pct}</span>
         </div>
         {facts.all_in_at_risk !== null && (
           <div className="hdv__allin-cell">
@@ -147,6 +149,13 @@ function AllInFacts({
  * Per-street equity, priced only where every contender's cards are known.
  * Exact where the runout can be enumerated; sampled preflop and marked so.
  */
+function streetEquityLabel(percent: number, exact: boolean): string {
+  // No sampled endpoint can establish that a hand is dead or unbeatable.
+  if (!exact && (percent === 0 || percent === 100)) return 'Unknown';
+  const label = formatAllInEquity(percent);
+  return label === null ? 'Unknown' : `${exact ? '' : '~'}${label}`;
+}
+
 function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {
   return useMemo(() => {
     const out = new Map<string, EquityResult>();
@@ -503,8 +512,7 @@ export function HandDetailView({
                       <span className="hdv__fact-hand">{m.name}</span>
                       {eq && (
                         <span className="hdv__fact-eq">
-                          {equities.get(street.key)?.exact ? '' : '~'}
-                          {eq.pct}%
+                          {streetEquityLabel(eq.pct, equities.get(street.key)?.exact === true)}
                         </span>
                       )}
                     </span>
@@ -518,8 +526,7 @@ export function HandDetailView({
                     >
                       <span className="hdv__fact-name">{nameOf(e.userId)}</span>
                       <span className="hdv__fact-eq">
-                        {equities.get(street.key)?.exact ? '' : '~'}
-                        {e.pct}%
+                        {streetEquityLabel(e.pct, equities.get(street.key)?.exact === true)}
                       </span>
                     </span>
                   ))}

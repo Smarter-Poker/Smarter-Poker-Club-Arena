@@ -130,7 +130,7 @@ export function computeEquity(input: EquityInput): EquityResult | null {
     return {
       equities: players.map((p, i) => ({
         userId: p.userId,
-        pct: Math.round(shares[i] * 1000) / 10,
+        pct: shares[i] * 100,
       })),
       exact: true,
       runouts: 1,
@@ -150,7 +150,7 @@ export function computeEquity(input: EquityInput): EquityResult | null {
     return {
       equities: players.map((p, i) => ({
         userId: p.userId,
-        pct: Math.round((totals[i] / runouts.length) * 1000) / 10,
+        pct: (totals[i] / runouts.length) * 100,
       })),
       exact: true,
       runouts: runouts.length,
@@ -177,7 +177,7 @@ export function computeEquity(input: EquityInput): EquityResult | null {
   return {
     equities: players.map((p, i) => ({
       userId: p.userId,
-      pct: Math.round((totals[i] / samples) * 1000) / 10,
+      pct: (totals[i] / samples) * 100,
     })),
     exact: false,
     runouts: samples,

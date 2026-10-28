@@ -3583,11 +3583,11 @@ export class HorseFleetManager {
              from the pool actually used, so a widened hour counts zero. */
           asleepDropped += sittable.length - pool.length;
           const asleepHere = sittable.length - pool.length;
-          // Release only normally eligible arrivals. Unreleased identities
+          // Reserve only normally eligible arrivals. Unreserved identities
           // never enter buyer census or seat selection, even on a rescue.
-          await gameArrivals.releaseEligible(table, pool);
+          await gameArrivals.reserveEligible(table, pool);
           if (!readIsCurrent()) break;
-          pool = pool.filter((h) => gameArrivals.releasedAllowed(table, h.id));
+          pool = pool.filter((h) => gameArrivals.admissionAllowed(table, h.id));
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
@@ -4860,7 +4860,7 @@ export class HorseFleetManager {
         if (claimed >= budget) break;
         const table = tableById.get(offer.table_id);
         if (!table || table.tournament_id) continue;
-        if (gameArrivals && !gameArrivals.releasedAllowed(table, offer.user_id)) continue;
+        if (gameArrivals && !gameArrivals.admissionAllowed(table, offer.user_id)) continue;
         /* A DRAINING TABLE TAKES NOBODY BACK (2026-09-03). This path seats a
            horse from a waitlist offer and never consulted surplusTableIds, so
            a horse holding a `notified` row for a retiring table would be

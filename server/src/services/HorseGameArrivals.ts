@@ -1,4 +1,4 @@
-/** Game-scoped arrivals. Only this existing fleet cycle releases eligibility;
+/** Game-scoped arrivals. Only this existing fleet cycle reserves eligibility;
  * database receipts, never process timers, own cadence and restart recovery. */
 import { createHash } from 'node:crypto';
 
@@ -12,6 +12,8 @@ export interface ArrivalSnapshot {
   game_id: string;
   policy_id: string;
   released_ids: string[];
+  reserved_ids: string[];
+  reservation_epoch: number;
   ranked_horse_ids: string[];
   ranked_unreleased_ids: string[];
   new_identity_capacity: number;
@@ -53,6 +55,9 @@ export function parseArrivalSnapshot(
     !ids(r.ranked_horse_ids) ||
     r.ranked_horse_ids.length !== 20 ||
     !ids(r.released_ids) ||
+    !ids(r.reserved_ids) ||
+    !Number.isSafeInteger(r.reservation_epoch) ||
+    Number(r.reservation_epoch) < 0 ||
     !ids(r.ranked_unreleased_ids) ||
     !Number.isInteger(r.new_identity_capacity) ||
     Number(r.new_identity_capacity) < 0 ||
@@ -63,6 +68,8 @@ export function parseArrivalSnapshot(
   const released = new Set(r.released_ids);
   if (
     r.released_ids.some((x) => !ranked.has(x)) ||
+    r.reserved_ids.some((x) => !ranked.has(x) || released.has(x)) ||
+    r.reserved_ids.length > (r.released_ids.length < 4 ? 4 - r.released_ids.length : 1) ||
     r.ranked_unreleased_ids.some((x) => !ranked.has(x) || released.has(x)) ||
     r.released_ids.length + r.ranked_unreleased_ids.length !== 20 ||
     (r.released_ids.length < 4 && Number(r.new_identity_capacity) > 4 - r.released_ids.length) ||
@@ -133,16 +140,16 @@ export class HorseGameArrivals {
     const s = table.cluster_id ? this.snapshots.get(table.cluster_id) : null;
     return !!s && s.ranked_horse_ids.includes(horse);
   }
-  releasedAllowed(table: ArrivalTable, horse: string): boolean {
+  admissionAllowed(table: ArrivalTable, horse: string): boolean {
     if (!this.scoped(table)) return true;
     const s = table.cluster_id ? this.snapshots.get(table.cluster_id) : null;
-    return !!s && s.released_ids.includes(horse);
+    return !!s && (s.released_ids.includes(horse) || s.reserved_ids.includes(horse));
   }
   rank(table: ArrivalTable, horse: string): number {
     const s = table.cluster_id ? this.snapshots.get(table.cluster_id) : null;
     return s?.ranked_horse_ids.indexOf(horse) ?? Number.MAX_SAFE_INTEGER;
   }
-  async releaseEligible(
+  async reserveEligible(
     table: ArrivalTable,
     normalEligible: readonly { id: string }[]
   ): Promise<void> {
@@ -156,10 +163,11 @@ export class HorseGameArrivals {
       .slice(0, s.new_identity_capacity);
     if (!selected.length) return;
     this.attempted.add(game);
+    if (JSON.stringify(selected) === JSON.stringify(s.reserved_ids)) return;
     // Content-address this observed epoch, including exact selected IDs.
     // Replaying an unknown request after restart cannot consume another slot.
     const digest = createHash('sha256')
-      .update(JSON.stringify([game, s.policy_id, s.released_ids, selected]))
+      .update(JSON.stringify([game, s.policy_id, s.reservation_epoch, s.released_ids, selected]))
       .digest('hex');
     const request =
       digest.slice(0, 8) +
@@ -172,15 +180,16 @@ export class HorseGameArrivals {
       '-' +
       digest.slice(20, 32);
     try {
-      const response = await this.rpc('fn_cash_game_horse_arrival_release', {
+      const response = await this.rpc('fn_cash_game_horse_arrival_reserve', {
         p_game_id: game,
         p_horse_ids: selected,
         p_request_id: request,
+        p_expected_epoch: s.reservation_epoch,
       });
       const envelope = record(response.data);
       const updated = parseArrivalSnapshot(envelope?.game, game, s.policy_id);
       if (response.error || envelope?.version !== 1 || !updated)
-        throw new Error('Horse arrival release not acknowledged');
+        throw new Error('Horse arrival reservation not acknowledged');
       this.snapshots.set(game, updated);
     } catch (error) {
       this.snapshots.set(game, null);

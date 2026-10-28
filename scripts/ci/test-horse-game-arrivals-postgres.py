@@ -2,7 +2,7 @@
 """Isolated PG17 qualification of the actual migration's arrival functions.
 Existing platform dependencies are narrow fixtures; no production data/access.
 """
-import json, os, pathlib, shutil, socket, subprocess, tempfile
+import json, os, pathlib, re, socket, subprocess, tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 PG=os.environ.get('PG_BIN') or ('/opt/homebrew/opt/postgresql@17/bin' if pathlib.Path('/opt/homebrew/opt/postgresql@17/bin/initdb').exists() else '/usr/lib/postgresql/17/bin')
 base=os.environ.get('TMPDIR')
@@ -39,8 +39,9 @@ CREATE TABLE profiles(id uuid PRIMARY KEY,is_horse boolean,status text,horse_sta
 CREATE TABLE ca_horse_active_roster(horse_id uuid PRIMARY KEY);
 CREATE TABLE ca_horse_fleet_register(horse_id uuid PRIMARY KEY,retired_at timestamptz);
 CREATE TABLE cash_games(id uuid PRIMARY KEY,enabled boolean DEFAULT true,closed_at timestamptz,ruleset_snapshot jsonb DEFAULT '{}');
-CREATE TABLE tables(id uuid PRIMARY KEY,cluster_id uuid,settings jsonb DEFAULT '{}',tournament_id uuid);
-CREATE TABLE table_seats(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,left_at timestamptz,stack numeric);
+CREATE TABLE clubs(id uuid PRIMARY KEY,asset text,is_platform boolean,union_id uuid);
+CREATE TABLE tables(id uuid PRIMARY KEY,cluster_id uuid,settings jsonb DEFAULT '{}',tournament_id uuid,club_id uuid,union_id uuid);
+CREATE TABLE table_seats(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),table_id uuid,user_id uuid,left_at timestamptz,stack numeric,active_game_scope text);
 CREATE TABLE test_wallets(user_id uuid PRIMARY KEY,balance numeric NOT NULL);
 CREATE FUNCTION fn_ca_horse_roster_seat_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -83,6 +84,12 @@ INSERT INTO ca_horse_active_roster SELECT id FROM profiles WHERE is_horse;
 INSERT INTO ca_horse_fleet_register SELECT id,NULL FROM profiles WHERE is_horse;
 INSERT INTO test_wallets SELECT id,1000 FROM profiles;
 """)
+        # Qualify against the actual retained current admission function,
+        # not a skeletal substitute for its Diamond/move/settlement branches.
+        original=(ROOT/'supabase/migrations/20261027152318_scope_the_horse_cash_roster_to_club_arena.sql').read_text()
+        guard=re.search(r'CREATE OR REPLACE FUNCTION public.fn_ca_horse_roster_seat_guard\(\).*?\$function\$;',original,re.S)
+        assert guard, 'Actual retained admission source missing'
+        sql(guard.group(0))
         migration=ROOT/'supabase/migrations/20261028174728_cash_game_horse_arrivals.sql'
         sql(migration.read_text())
         horse=lambda i:f'00000000-0000-0000-0000-{i:012}'
@@ -100,59 +107,81 @@ INSERT INTO test_wallets SELECT id,1000 FROM profiles;
         table2=sql(f"SELECT fn_cash_cluster_open_table('{game}','feeder',NULL)")
         scalar(f"SELECT settings->'horse_arrivals'->>'version' FROM tables WHERE id='{table2}'",1)
         sql(f"UPDATE cash_game_horse_arrivals SET starts_at=clock_timestamp()+interval '1 day' WHERE game_id='{game}'")
-        release=lambda ns,key:"SET test.engine='true';SELECT fn_cash_game_horse_arrival_release('"+game+"',"+arr(ns)+",'20000000-0000-0000-0000-"+f'{key:012}'+"')"
-        expect_error(release(range(1,5),1),'HORSE_ARRIVAL_NOT_DUE')
-        sql(f"UPDATE cash_game_horse_arrivals SET starts_at=clock_timestamp()-interval '1 hour' WHERE game_id='{game}'")
-        expect_error(release([21],2),'HORSE_NOT_ON_GAME_ROSTER')
-        expect_error(release([1,1],2),'ARRIVAL_IDS_INVALID')
-        expect_error(release(range(1,5),1).replace("SET test.engine='true';",""),'ENGINE_REQUIRED')
-        initial=json.loads(sql(release(range(1,5),1)))
-        assert initial['released_now']==[horse(i) for i in range(1,5)]
-        expect_error(release([5],2),'HORSE_ARRIVAL_NOT_DUE')
-        # Same request after an arbitrarily delayed retry does not release again.
-        scalar(release(range(1,5),1)+"->>'replayed'",'true')
+        epoch=lambda:sql(f"SELECT reservation_epoch FROM cash_game_horse_arrivals WHERE game_id='{game}'")
+        reserve=lambda ns,key,expected=None:"SET test.engine='true';SELECT fn_cash_game_horse_arrival_reserve('"+game+"',"+arr(ns)+",'20000000-0000-0000-0000-"+f'{key:012}'+"',"+(epoch() if expected is None else str(expected))+")"
+        buyin=lambda i,t=table:f"SELECT test_buyin('{t}','{horse(i)}')"
+        expect_error(reserve(range(1,5),1),'HORSE_ARRIVAL_NOT_DUE')
+        sql(f"UPDATE cash_game_horse_arrivals SET starts_at=clock_timestamp()-interval '4 hours' WHERE game_id='{game}'")
+        expect_error(reserve([21],2),'HORSE_NOT_ON_GAME_ROSTER')
+        expect_error(reserve([1,1],2),'ARRIVAL_IDS_INVALID')
+        expect_error(reserve(range(1,5),1).replace("SET test.engine='true';",""),'ENGINE_REQUIRED')
+        initial=json.loads(sql(reserve(range(1,5),1)))
+        assert initial['reserved_now']==[horse(i) for i in range(1,5)]
+        scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",0)
+        scalar(f"SELECT count(*) FROM cash_game_horse_reservations WHERE game_id='{game}'",4)
+        # A refusal AFTER the actual trigger must roll back wallet AND arrival.
+        sql("CREATE FUNCTION test_refused_buyin(t uuid,u uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM test_buyin(t,u);RAISE EXCEPTION 'AFTER_SEAT_REFUSAL';END $$")
+        expect_error(f"SELECT test_refused_buyin('{table}','{horse(1)}')",'AFTER_SEAT_REFUSAL')
+        scalar(f"SELECT balance FROM test_wallets WHERE user_id='{horse(1)}'",1000)
+        scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",0)
+        expect_error(buyin(5),'HORSE_NOT_RESERVED_FOR_GAME')
+        for i in range(1,4): sql(buyin(i))
+        sql(f"DELETE FROM ca_horse_active_roster WHERE horse_id='{horse(4)}'")
+        expect_error(buyin(4),'horse_not_on_cash_roster')
+        scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",3)
+        scalar(f"SELECT balance FROM test_wallets WHERE user_id='{horse(4)}'",1000)
+        sql(f"INSERT INTO ca_horse_active_roster VALUES('{horse(4)}')");sql(buyin(4))
         scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",4)
-        sql(f"SELECT test_buyin('{table}','{horse(1)}')")
         scalar(f"SELECT balance FROM test_wallets WHERE user_id='{horse(1)}'",900)
-        expect_error(f"SELECT test_buyin('{table}','{horse(5)}')",'HORSE_NOT_RELEASED_FOR_GAME')
-        scalar(f"SELECT balance FROM test_wallets WHERE user_id='{horse(5)}'",1000)
-        sql(f"SELECT test_buyin('{table}','{horse(99)}')")
-        # Same identity can reenter/move without consuming another arrival.
-        sql(f"UPDATE table_seats SET left_at=clock_timestamp() WHERE user_id='{horse(1)}';SELECT test_buyin('{table2}','{horse(1)}')")
+        scalar(reserve(range(1,5),1)+"->>'replayed'",'true')
+        expect_error(reserve([5],2),'HORSE_ARRIVAL_NOT_DUE')
+        # Humans, normal rejoin/move and unrelated games consume no new slot.
+        sql(buyin(99))
+        sql(f"UPDATE table_seats SET left_at=clock_timestamp() WHERE user_id='{horse(1)}';"+buyin(1,table2))
         scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",4)
-        # Unrelated games are unaffected.
         other=sql("INSERT INTO cash_games(id) VALUES(gen_random_uuid()) RETURNING id")
         other_table=sql(f"SELECT fn_cash_cluster_open_table('{other}','main',1)")
-        sql(f"SELECT test_buyin('{other_table}','{horse(21)}')")
+        sql(buyin(21,other_table))
         sql(f"UPDATE cash_game_horse_releases SET released_at=clock_timestamp()-interval '20 minutes' WHERE game_id='{game}'")
-        # Native concurrent transactions compete for ONE new arrival.
-        commands=[release([i],i) for i in [5,6]]
-        procs=[subprocess.Popen([PG+'/psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',str(port),'-U','postgres'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in commands]
-        for proc,command in zip(procs,commands): proc.stdin.write(command);proc.stdin.close()
-        outcomes=[]
-        for proc in procs:
-            # Drain results before wait: a JSON snapshot may fill the OS pipe.
-            proc.stdout.read();proc.stderr.read()
-            proc.wait();outcomes.append(proc.returncode)
-        assert sorted(outcomes)==[0,3],outcomes
+        # Two stale workers compete for the ONE shared pending reservation.
+        def concurrent(commands):
+            procs=[subprocess.Popen([PG+'/psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',str(port),'-U','postgres'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in commands]
+            for proc,command in zip(procs,commands): proc.stdin.write(command);proc.stdin.close()
+            outcomes=[]
+            for proc in procs:
+                proc.stdout.read();proc.stderr.read();proc.wait();outcomes.append(proc.returncode)
+            assert sorted(outcomes)==[0,3],outcomes
+        observed=epoch()
+        concurrent([reserve([i],i,observed) for i in [5,6]])
+        scalar(f"SELECT count(*) FROM cash_game_horse_reservations WHERE game_id='{game}'",1)
+        scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",4)
+        # A late reserved entry cannot permit a simultaneous sixth identity.
+        concurrent([buyin(i) for i in [5,6]])
         scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",5)
-        expect_error(release([7],7),'HORSE_ARRIVAL_NOT_DUE')
-        sql(f"UPDATE cash_games SET enabled=false WHERE id='{game}'")
+        expect_error(reserve([7],7),'HORSE_ARRIVAL_NOT_DUE')
         sql(f"UPDATE cash_game_horse_releases SET released_at=clock_timestamp()-interval '20 minutes' WHERE game_id='{game}'")
-        expect_error(release([7],7),'HORSE_ARRIVAL_NOT_DUE')
+        # Replace a no-longer-eligible pending choice in the original request
+        # boundary; its old in-flight buy-in is then refused, without an expiry loop.
+        sql(reserve([7],70));old_epoch=epoch();sql(reserve([8],80))
+        expect_error(buyin(7),'HORSE_NOT_RESERVED_FOR_GAME')
+        expect_error(reserve([7],71,old_epoch),'ARRIVAL_RESERVATION_STALE')
+        scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",5)
+        sql(f"UPDATE cash_games SET enabled=false WHERE id='{game}'")
+        expect_error(buyin(8),'HORSE_ARRIVAL_NOT_DUE')
         sql(f"UPDATE cash_games SET enabled=true WHERE id='{game}'")
-        expect_error("SET test.frozen='true';"+release([7],7),'PLATFORM_FROZEN')
-        # Exhaust exactly the selected twenty without introducing a 21st identity.
-        sql(f"UPDATE cash_game_horse_arrivals SET starts_at=clock_timestamp()-interval '4 hours' WHERE game_id='{game}'")
-        released=set(json.loads(sql(f"SELECT coalesce(json_agg(horse_id),'[]'::json) FROM cash_game_horse_releases WHERE game_id='{game}'")))
+        expect_error("SET test.frozen='true';"+reserve([9],90),'PLATFORM_FROZEN')
+        expect_error("SET test.frozen='true';"+buyin(8),'PLATFORM_FROZEN')
+        # Exhaust exactly the selected twenty, admitting each through the real
+        # trigger. Reservations alone never advance the cadence.
+        arrived=set(json.loads(sql(f"SELECT coalesce(json_agg(horse_id),'[]'::json) FROM cash_game_horse_releases WHERE game_id='{game}'")))
         for i in range(1,21):
-            if horse(i) in released: continue
+            if horse(i) in arrived: continue
             sql(f"UPDATE cash_game_horse_releases SET released_at=clock_timestamp()-interval '20 minutes' WHERE game_id='{game}'")
-            sql(release([i],100+i))
+            sql(reserve([i],100+i));sql(buyin(i))
         scalar(f"SELECT count(*) FROM cash_game_horse_releases WHERE game_id='{game}'",20)
         scalar(f"SELECT fn_cash_game_horse_arrival_snapshot('{game}')->>'new_identity_capacity'",0)
-        expect_error(release([21],999),'HORSE_NOT_ON_GAME_ROSTER')
+        expect_error(reserve([21],999),'HORSE_NOT_ON_GAME_ROSTER')
         sql("SET ROLE service_role;DO $$ BEGIN BEGIN INSERT INTO cash_game_horse_releases VALUES(gen_random_uuid(),gen_random_uuid(),1,clock_timestamp());RAISE EXCEPTION 'direct write permitted';EXCEPTION WHEN insufficient_privilege THEN NULL;END;END $$;RESET ROLE;")
-        print(json.dumps({'status':'passed','database':'isolated PostgreSQL17','coverage':['live-auth','original-create-refusal-rollback','creator-idempotency','request-mismatch','main-feeder-markers','early-start-refusal','exact-roster','duplicate-IDs','engine-only-release','initial-four','ten-minute-spacing','unknown-replay','wallet-rollback','humans','rejoin','unrelated-games','concurrent-fifth','no-catchup','disabled-game','freeze','direct-write-denied']}))
+        print(json.dumps({'status':'passed','database':'isolated PostgreSQL17','actual_original_component':'October27 horse seat guard','coverage':['live-auth','creator-rollback-idempotency','main-feeder-markers','early-start','exact-roster','engine-only-reservation','initial-four','actual-admission-cadence','unknown-replay','post-trigger-wallet-and-arrival-rollback','humans','rejoin','unrelated-games','concurrent-reservation-and-entry','no-catchup','stale-reservation-replacement','disabled-game','freeze','exactly-twenty','direct-write-denied']}))
     finally:
         run(PG+'/pg_ctl','-D',str(data),'-m','immediate','-w','stop')

@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244453,
-      "sha256": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+      "bytes": 245332,
+      "sha256": "dd2624fb40c4b7a19dffdc819e0789e3957d3935bd8e833995a9f559124ab52e"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -715,5 +715,22 @@
   "retentionCurrentMainWorkflowIntegration20261028": {
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+  },
+  "supersededRetentionProgressEnforcement20261028": {
+    "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244453,
+          "sha256": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+        },
+        "current": {
+          "bytes": 245332,
+          "sha256": "dd2624fb40c4b7a19dffdc819e0789e3957d3935bd8e833995a9f559124ab52e"
+        }
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
   }
 }

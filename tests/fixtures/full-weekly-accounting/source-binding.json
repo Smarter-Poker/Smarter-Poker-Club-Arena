@@ -488,10 +488,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+    "scripts/ci/classify-ci-changes.mjs": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "e0d3e8174d258e01d25e101cae1ae48a400ee804b922bb92c2245dd717b2a4af",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "6c6b045496a6b12b882699cb07d1aa2645696bee2153f9f375062f5dae6e3fe6",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -510,7 +510,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "c95084251c5d64f8500cbfb00b24ab4700402bf7fcd1d084afa71926b4d849e0",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "ea7e210c5f7b8791575dda538d72811ac9ae643517fd88a24536a2d9e6fc5907",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5489,5 +5489,24 @@
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "supersededRetentionProgressEnforcement20261028": {
+    "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+        "current": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "e0d3e8174d258e01d25e101cae1ae48a400ee804b922bb92c2245dd717b2a4af",
+        "current": "6c6b045496a6b12b882699cb07d1aa2645696bee2153f9f375062f5dae6e3fe6"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "c95084251c5d64f8500cbfb00b24ab4700402bf7fcd1d084afa71926b4d849e0",
+        "current": "ea7e210c5f7b8791575dda538d72811ac9ae643517fd88a24536a2d9e6fc5907"
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
   }
 }

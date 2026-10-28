@@ -38,8 +38,8 @@
   ],
   "limits": "Current full cash-source column types/NOTNULL/check/PK/unique/FK constraints and existing indexes; referenced tables are ID-only endpoints; source65/GEN collaborators controlled. Native60000 rows prove physical path and exact bags, not production30/285 timing or whole book closure.",
   "qualified_input_sha256": {
-    "scripts/ci/fixtures/private-deposit-source-cover/source-receipt.json": "f26ee1e1b90d845a78ff0771f18a518daad1ed6e3f03357d30ca6acc384c4cb4",
-    "scripts/ci/fixtures/private-deposit-source-cover/actual-cash-source-catalog.json": "54ba3c1b705ec4ed780135bce1e18cbc2ee955de5f52c26520f54b6335b5ab90",
+    "scripts/ci/fixtures/private-deposit-source-cover/source-receipt.json": "3b469da894a120a279cc0cd3e01de4b1f19cfe1853861deef52500adfba280af",
+    "scripts/ci/fixtures/private-deposit-source-cover/actual-cash-source-catalog.json": "bc5be1b36967fa7ef7938eadc95311fcac71620b65d26525b67ea51965d59ef4",
     "scripts/ci/test-private-deposit-source-cover-postgres.py": "cf0d1ee481b887e41af94e9445e3a962fc9beec428532eaddc04c6367c747370",
     "supabase/migrations/20261028014525_original_private_deposit_keys_read_scalar_facts.sql": "7f4a1aba44e89b4c9378505b99b876e64fd43feb4797f0551c41d8b31000c586"
   }

@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "original_cases": 245,
+  "original_wallet_bbj": 84,
+  "original_treasury": 7,
+  "native_witness_variants": 7,
+  "read_only_context": true,
+  "changed_financial_source_pins": 3,
+  "original_ret_predicate_unchanged": true,
+  "migrationSHA256": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+  "native_resultSHA256": "78c5efff0ece8905c3b215ee3acbdacabe2fa8c23c50a38c1e8f18ed218191a6",
+  "boundary": "Finite isolated original-family qualification. Actual first-window production rollback-only parity is separate; no universal fullweek timing guarantee.",
+  "fixtureGuard": "Dedicated original_source_refs database, PostgreSQL17, Unix socket, port55931 only; never production."
+}

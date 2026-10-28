@@ -94,6 +94,24 @@ describe('the original weekly report consumes its qualified hand readers', () =>
     expect(workflow).toContain(
       'ORB_REPORT_COMPOSITION_NATIVE="$PWD/scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py" python3'
     );
+    const occupancyPath =
+      'supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql';
+    expect(workflow).toContain(`--original-occupancy-flow-migration ${occupancyPath}`);
+    const occupancyBody = read(occupancyPath)
+      .trim()
+      .replace('BEGIN;', '')
+      .replace(/COMMIT;$/, '');
+    expect(read(`${base}native-authority-before.sql`).startsWith(occupancyBody)).toBe(true);
+    const wrapper = read(
+      'scripts/qualification/original-retirement-boundary/run-wrapper-native.py'
+    );
+    expect(wrapper).toContain(
+      'if not report_authority.startswith(occupancy_prefix):raise RuntimeError'
+    );
+    expect(wrapper).toContain('report_authority=report_authority[len(occupancy_prefix):]');
+    expect(wrapper).toContain(
+      "s+=(p/'report-reader-composition/native-authority-after.sql').read_text()"
+    );
     const native = read(`${base}native-report.py`);
     expect(native).toContain("q(settings+report_call,'weekly_hand_parts_owner_changed')");
     expect(native).toContain('q(candidate_report)');

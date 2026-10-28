@@ -1,0 +1,5 @@
+# Deferred payout payer reuse
+
+Actual R3 rollback qualification exhausted285seconds while deferred receipt checks repeatedly parsed the same certified payer plans. The original split receipt owner now uses the existing installed142050 private transaction-local validated payer output for its two payer reads. Every wallet, ledger, invoice, transfer and payout predicate remains unchanged and is executed on each call. Original STABLE/security-definer metadata and postgres-only ACL remain unchanged.
+The helper already invalidates on certificate physical version and every payer-contract row version/semantic digest, rejects forged TEMP relations and drops on commit. Exact helper body/metadata and unchanged original validator are installation prerequisites. No certificate, source proof, rate, amount or financial receipt changes.
+Focused native proof uses actual original R2/R3 and deferred constraints; cache-hit live-receipt and authority tampering refuse. Production installation/payment verification belongs to root and remains separate. The existing daily-maintenance close workflow runs this native regression; no new scheduler.

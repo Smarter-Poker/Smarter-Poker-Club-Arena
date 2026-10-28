@@ -1,0 +1,7 @@
+{
+  "jobid": 272,
+  "active": false,
+  "command": "SELECT set_config('statement_timeout','240s',false),set_config('app.weekly_accounting_attempt_budget','1',false),set_config('app.weekly_accounting_scope_budget','3 minutes',false),set_config('app.weekly_accounting_chunked','on',false); SELECT CASE WHEN extract(minute FROM now()) BETWEEN 40 AND 44 OR (now() >= public.fn_union_accounting_run_at(public.fn_union_week_start(now())) AND now() < public.fn_union_accounting_run_at(public.fn_union_week_start(now())) + interval '40 minutes') OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='running' AND q.result->>'chunk_committed'='true') OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='failed' AND q.result->>'error'='weekly_scope_time_budget_exhausted' AND q.finished_at>now()-interval '3 hours') OR EXISTS(SELECT 1 FROM public.union_accounting_runs q WHERE q.status='failed' AND q.result->>'sqlstate' IN ('40P01','40001','55P03') AND q.finished_at>now()-interval '3 hours') OR public.fn_accounting_close_gate_lifted_unstarted() OR public.fn_union_pnl_inventory_seal_in_progress() OR public.fn_weekly_close_first_visits_pending() THEN public.fn_union_settlement_cascade_due() END;",
+  "jobname": "union-weekly-rakeback-close",
+  "schedule": "*/5 * * * *"
+}

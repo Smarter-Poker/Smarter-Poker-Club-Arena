@@ -1,0 +1,582 @@
+[
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_club_week_player_cover",
+    "bytes": 1093238784,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_foreign_certificate_club_week_cover",
+    "bytes": 1645715456,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_foreign_certificate_club_week_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (id, player_id, rake_record_id, coordinator_union_id, rake_credit)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_bank_period",
+    "bytes": 243359744,
+    "ready": true,
+    "valid": true,
+    "predicate": "(union_id IS NOT NULL)",
+    "definition": "CREATE INDEX accounting_cash_rake_sources_bank_period ON public.accounting_cash_rake_sources USING btree (union_id, earned_at) WHERE (union_id IS NOT NULL)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_club_coordinator_earned",
+    "bytes": 684654592,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_rake_sources_club_coordinator_earned ON public.accounting_cash_rake_sources USING btree (club_id, coordinator_union_id, earned_at)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_club_recorded",
+    "bytes": 923230208,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_rake_sources_club_recorded ON public.accounting_cash_rake_sources USING btree (club_id, recorded_at) INCLUDE (earned_at)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_coordinator_period",
+    "bytes": 836304896,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_rake_sources_coordinator_period ON public.accounting_cash_rake_sources USING btree (coordinator_union_id, earned_at, club_id)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_period",
+    "bytes": 1259102208,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_rake_sources_period ON public.accounting_cash_rake_sources USING btree (club_id, earned_at, player_id)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_pkey",
+    "bytes": 561537024,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_cash_rake_sources_pkey ON public.accounting_cash_rake_sources USING btree (id)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rake_sources_rake_record_id_player_id_key",
+    "bytes": 874217472,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_cash_rake_sources_rake_record_id_player_id_key ON public.accounting_cash_rake_sources USING btree (rake_record_id, player_id)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "accounting_cash_rakeback_player_week",
+    "bytes": 813891584,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_cash_rakeback_player_week ON public.accounting_cash_rake_sources USING btree (club_id, player_id, earned_at)"
+  },
+  {
+    "table": "accounting_cash_rake_sources",
+    "live": true,
+    "name": "idx_cash_rake_sources_player",
+    "bytes": 111714304,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_cash_rake_sources_player ON public.accounting_cash_rake_sources USING btree (player_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_recognitions",
+    "live": true,
+    "name": "accounting_tournament_fee_recog_union_wallet_transaction_id_key",
+    "bytes": 25337856,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recog_union_wallet_transaction_id_key ON public.accounting_tournament_fee_recognitions USING btree (union_wallet_transaction_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_recognitions",
+    "live": true,
+    "name": "accounting_tournament_fee_recognitions_bank_journal_id_key",
+    "bytes": 10149888,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recognitions_bank_journal_id_key ON public.accounting_tournament_fee_recognitions USING btree (bank_journal_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_recognitions",
+    "live": true,
+    "name": "accounting_tournament_fee_recognitions_pkey",
+    "bytes": 29245440,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_recognitions_pkey ON public.accounting_tournament_fee_recognitions USING btree (tournament_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_recognitions",
+    "live": true,
+    "name": "accounting_tournament_fee_recognitions_week",
+    "bytes": 28827648,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_fee_recognitions_week ON public.accounting_tournament_fee_recognitions USING btree (recognized_at) INCLUDE (tournament_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_club_event",
+    "bytes": 91389952,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_club_event ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_club_recorded",
+    "bytes": 122208256,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_club_recorded ON public.accounting_tournament_fee_sources USING btree (club_id, recorded_at) INCLUDE (charged_at)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_coordinator_club",
+    "bytes": 15032320,
+    "ready": true,
+    "valid": true,
+    "predicate": "(coordinator_union_id IS NOT NULL)",
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_coordinator_club ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id) WHERE (coordinator_union_id IS NOT NULL)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_coordinator_event",
+    "bytes": 57311232,
+    "ready": true,
+    "valid": true,
+    "predicate": "(coordinator_union_id IS NOT NULL)",
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_coordinator_event ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, tournament_id) WHERE (coordinator_union_id IS NOT NULL)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_event",
+    "bytes": 89169920,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_event ON public.accounting_tournament_fee_sources USING btree (tournament_id, rake_record_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_pkey",
+    "bytes": 78110720,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_pkey ON public.accounting_tournament_fee_sources USING btree (id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+    "bytes": 127033344,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_rake_record_id_player_id_key ON public.accounting_tournament_fee_sources USING btree (rake_record_id, player_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+    "bytes": 78356480,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_fee_sources_source_entitlement_id_key ON public.accounting_tournament_fee_sources USING btree (source_entitlement_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_fee_sources_standalone_club",
+    "bytes": 8339456,
+    "ready": true,
+    "valid": true,
+    "predicate": "(coordinator_union_id IS NULL)",
+    "definition": "CREATE INDEX accounting_tournament_fee_sources_standalone_club ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) WHERE (coordinator_union_id IS NULL)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_rakeback_player",
+    "bytes": 14475264,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_rakeback_player ON public.accounting_tournament_fee_sources USING btree (club_id, player_id)"
+  },
+  {
+    "table": "accounting_tournament_fee_sources",
+    "live": true,
+    "name": "accounting_tournament_week_club_event_cover",
+    "bytes": 204357632,
+    "ready": true,
+    "valid": true,
+    "predicate": "(coordinator_union_id IS NOT NULL)",
+    "definition": "CREATE INDEX accounting_tournament_week_club_event_cover ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NOT NULL)"
+  },
+  {
+    "table": "accounting_tournament_recognized_sources",
+    "live": true,
+    "name": "accounting_tournament_recognized_sources_event",
+    "bytes": 201859072,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_recognized_sources_event ON public.accounting_tournament_recognized_sources USING btree (tournament_id) INCLUDE (source_id, recognized_at, disposition, rake_credit)"
+  },
+  {
+    "table": "accounting_tournament_recognized_sources",
+    "live": true,
+    "name": "accounting_tournament_recognized_sources_pkey",
+    "bytes": 76750848,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX accounting_tournament_recognized_sources_pkey ON public.accounting_tournament_recognized_sources USING btree (source_id)"
+  },
+  {
+    "table": "accounting_tournament_recognized_sources",
+    "live": true,
+    "name": "accounting_tournament_recognized_sources_week",
+    "bytes": 48316416,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX accounting_tournament_recognized_sources_week ON public.accounting_tournament_recognized_sources USING btree (recognized_at, tournament_id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "agents_agreement_club_and_id",
+    "bytes": 163840,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX agents_agreement_club_and_id ON public.agents USING btree (club_id, id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "agents_club_id_user_id_key",
+    "bytes": 155648,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX agents_club_id_user_id_key ON public.agents USING btree (club_id, user_id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "agents_pkey",
+    "bytes": 122880,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX agents_pkey ON public.agents USING btree (id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "idx_agents_club",
+    "bytes": 155648,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_agents_club ON public.agents USING btree (club_id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "idx_agents_parent",
+    "bytes": 180224,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_agents_parent ON public.agents USING btree (parent_agent_id)"
+  },
+  {
+    "table": "agents",
+    "live": true,
+    "name": "idx_agents_user",
+    "bytes": 131072,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_agents_user ON public.agents USING btree (user_id)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "ca_clubs_one_platform_club",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": "is_platform",
+    "definition": "CREATE UNIQUE INDEX ca_clubs_one_platform_club ON public.clubs USING btree (is_platform) WHERE is_platform"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "clubs_club_id_key",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX clubs_club_id_key ON public.clubs USING btree (club_id)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "clubs_pkey",
+    "bytes": 49152,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX clubs_pkey ON public.clubs USING btree (id)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_active_lifecycle",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": "(lifecycle_status = 'active'::text)",
+    "definition": "CREATE INDEX idx_clubs_active_lifecycle ON public.clubs USING btree (id) WHERE (lifecycle_status = 'active'::text)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_code",
+    "bytes": 32768,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX idx_clubs_code ON public.clubs USING btree (code)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_name_lower",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX idx_clubs_name_lower ON public.clubs USING btree (lower(name))"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_owner",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_clubs_owner ON public.clubs USING btree (owner_id)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_slug",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": "(slug IS NOT NULL)",
+    "definition": "CREATE UNIQUE INDEX idx_clubs_slug ON public.clubs USING btree (slug) WHERE (slug IS NOT NULL)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "idx_clubs_union_id",
+    "bytes": 40960,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_clubs_union_id ON public.clubs USING btree (union_id)"
+  },
+  {
+    "table": "clubs",
+    "live": true,
+    "name": "poker_arena_one_diamond_identity",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": "(asset = 'diamonds'::text)",
+    "definition": "CREATE UNIQUE INDEX poker_arena_one_diamond_identity ON public.clubs USING btree (asset) WHERE (asset = 'diamonds'::text)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "idx_rakeback_periods_club",
+    "bytes": 229376,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_rakeback_periods_club ON public.rakeback_periods USING btree (club_id)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "idx_rakeback_periods_status",
+    "bytes": 212992,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_rakeback_periods_status ON public.rakeback_periods USING btree (status)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "idx_rakeback_periods_user",
+    "bytes": 196608,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_rakeback_periods_user ON public.rakeback_periods USING btree (user_id)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "rakeback_periods_drain_order_idx",
+    "bytes": 524288,
+    "ready": true,
+    "valid": true,
+    "predicate": "(status = 'pending'::text)",
+    "definition": "CREATE INDEX rakeback_periods_drain_order_idx ON public.rakeback_periods USING btree (club_id, defer_count, period_end, id) WHERE (status = 'pending'::text)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "rakeback_periods_due_idx",
+    "bytes": 81920,
+    "ready": true,
+    "valid": true,
+    "predicate": "(status = 'pending'::text)",
+    "definition": "CREATE INDEX rakeback_periods_due_idx ON public.rakeback_periods USING btree (club_id, period_end) WHERE (status = 'pending'::text)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "rakeback_periods_pkey",
+    "bytes": 581632,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX rakeback_periods_pkey ON public.rakeback_periods USING btree (id)"
+  },
+  {
+    "table": "rakeback_periods",
+    "live": true,
+    "name": "rakeback_periods_user_id_club_id_period_start_period_end_key",
+    "bytes": 1048576,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX rakeback_periods_user_id_club_id_period_start_period_end_key ON public.rakeback_periods USING btree (user_id, club_id, period_start, period_end)"
+  },
+  {
+    "table": "union_accounting_runs",
+    "live": true,
+    "name": "idx_union_accounting_runs_standalone_club_id_fk",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_union_accounting_runs_standalone_club_id_fk ON public.union_accounting_runs USING btree (standalone_club_id)"
+  },
+  {
+    "table": "union_accounting_runs",
+    "live": true,
+    "name": "union_accounting_runs_pkey",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX union_accounting_runs_pkey ON public.union_accounting_runs USING btree (scope_kind, scope_id, period_start, period_end)"
+  },
+  {
+    "table": "union_accounting_runs",
+    "live": true,
+    "name": "union_accounting_runs_union_id_period_start_period_end_key",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX union_accounting_runs_union_id_period_start_period_end_key ON public.union_accounting_runs USING btree (union_id, period_start, period_end)"
+  },
+  {
+    "table": "union_clubs",
+    "live": true,
+    "name": "idx_union_clubs_club_id",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE INDEX idx_union_clubs_club_id ON public.union_clubs USING btree (club_id)"
+  },
+  {
+    "table": "union_clubs",
+    "live": true,
+    "name": "union_clubs_pkey",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX union_clubs_pkey ON public.union_clubs USING btree (id)"
+  },
+  {
+    "table": "union_clubs",
+    "live": true,
+    "name": "union_clubs_union_id_club_id_key",
+    "bytes": 16384,
+    "ready": true,
+    "valid": true,
+    "predicate": null,
+    "definition": "CREATE UNIQUE INDEX union_clubs_union_id_club_id_key ON public.union_clubs USING btree (union_id, club_id)"
+  }
+]

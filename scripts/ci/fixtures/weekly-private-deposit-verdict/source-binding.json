@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact existing C2 four-patch function source and official guarded installer/native92; original semantic77 retained, no new bulk group rewrite or production closure claim",
+  "sourceFiles": {
+    "supabase/migrations/20261028032621_weekly_statement_judges_visible_private_deposits_once.sql": "c54eaa9d9401d0a4d2d66809eab55b7541315abfc77f5b50906263bcf9a03b50",
+    "scripts/ci/test-weekly-private-deposit-verdict-postgres.py": "e5c963b7c5977d24ef036168c3639acf53b55ac688e6cecdeb33a53cedf6f0ee",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/summary-before.sql": "9fdbae79c399206e0e11ae6efb8763fbc2b68e1d4682f4417c373886035ec26a",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/summary-after.sql": "a4c13da3abb069fa936bddfc5f6120845de62c3a777ce6c9a87d880f6c10d6ab",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/source-receipt.json": "cd26caa4de4006372c2359625b69af9ce868d9eb63f2b7691148551f6ac36cfb",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/current-view-dependencies.sql": "77ac87b7abb028e7fe8c78d1e4e9fc56379d8998c5fc81c74025c0d4f2431758",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/root-readonly-probe-syntax.sql": "f20f5e4d3f7b244e8e349c09baae92cf7a6400a208fb210e4d8b901389c19416",
+    "scripts/ci/fixtures/weekly-private-deposit-verdict/qualification-evidence.json": "32e8acc0e7d22245bdd9ceae3e47b2979b04ea3ff0977fecb6f890695eb23229",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/actual-connected-preimages.json": "a3e7bd6dda38d87415913ba53c0db8207383afb8db024dcc6c4df69a69ebc644",
+    "scripts/ci/fixtures/standalone-weekly-statement-funding/setup.sql": "7d9519ad6b46c4a2d981b5f5fa0423533d1ebaab09d6ca8c321d995af465ba9e",
+    "tests/fixtures/weekly-close-scale/prelude.sql": "d5f1952bb82f3d9970b70b73d5b78ee65861c70c093118968d4836fc269f9481",
+    "tests/fixtures/weekly-close-scale/schema-tables.sql": "1357e005cc1c71045fc7dcbe17f777ac6ecb38c6b2f7dccaa286a68e702ed4fb",
+    "tests/fixtures/weekly-close-scale/preimage/fn_union_week_start.sql": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c",
+    "tests/weekly-private-deposits-retain-original-verdicts.law.test.ts": "5fa75e9b2da5605251f1bb29a71e622a72386911a1c7d512120ec9d70b4d72b1",
+    "docs/laws.d/weekly-private-deposits-retain-original-verdicts.md": "331834902cb5746105ec6647c4678ef5212c7cefaeb9f74ae308c5374f998a2b",
+    "docs/changelog/2026-10-28-weekly-statements-evaluate-private-deposit-verdicts-once.md": "ecd966010f81773fbc45e8065dbc6c78e89705411c84929e00522c2498403ece",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf"
+  },
+  "combinedC2MembershipWorkflow20261028": {
+    "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
+    "execution_performed": false
+  },
+  "originalTournamentCreditCoverWorkflowAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
+    "after": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "change": "Only3 additive qualification paths and one original2-field creditSUM physical-cover native step. Every existing native command/assertion preserved; no query, function, GEN, financial source/fixture or installed recording changed."
+  },
+  "groupedPrivateSourceWorkflowAudit20261028": {
+    "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
+    "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  }
+}

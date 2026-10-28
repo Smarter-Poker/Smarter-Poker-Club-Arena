@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact official scalar-only tournament fee scope index, original4field aggregate and native27; not production runtime/closure qualification",
+  "sourceFiles": {
+    "supabase/migrations/20261028030330_original_tournament_fee_scope_reads_union_scalars.sql": "db04352a768276ff287d1e0662459ab84db12cf5c75421f6fc9cf674357e2c97",
+    "scripts/ci/test-tournament-fee-scope-union-cover-postgres.py": "dd9c3e5d2dd779385c7406dc75a060c186b1277d9d5d3b02765ab2f7ec6f5ee4",
+    "scripts/ci/fixtures/tournament-fee-scope-union-cover/source-table.json": "615b1e112151e1e4facea46e841f2f1003be316bc8900689bcb5ccdec4121493",
+    "scripts/ci/fixtures/tournament-fee-scope-union-cover/source-receipt.json": "1ed3980692ab40e5a8809e28d123d2f0591647df5ffeb5007e705fecbff0501a",
+    "scripts/ci/fixtures/tournament-fee-scope-union-cover/original-fee-scope.sql": "0b3366017f3f9c6f8958dd3d2fc6051c60bba096b6f11f91fbaaecc73686eb21",
+    "scripts/ci/fixtures/tournament-fee-scope-union-cover/qualification-evidence.json": "0d0e23de555b039a8f23ee91166894797289b664e2414a720a6f71ead96ff44e",
+    "tests/tournament-fee-scope-index-retains-every-union.law.test.ts": "36ebf9d267a15881ccbdaef4527ba2c4359953a7ff670ad025cd6d0f360f95c1",
+    "docs/laws.d/tournament-fee-scope-index-retains-every-union.md": "d029c9ba99a2623def15b045f2ee94dc53175b47593fd931be9064e2d7e81391",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "docs/changelog/2026-10-28-original-tournament-fee-scope-reads-union-scalars.md": "ad09ce2480a69f841bcd3d09a8377aed9b7414b5d630df27b8884b83cca01cbe"
+  },
+  "workflowPrivateVerdictAdditiveAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "currentSHA256": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
+    "change": "Exactly five qualification paths (including both consumed shared fixture families) and one new isolated PG17 exact official private-verdict step. Reverse-removal recovers prior workflow byte-for-byte; every previous native financial command/assertion and every other pinned source byte remains unchanged. Exact existing four-patch C2 is qualified by the new guarded full installer/native92; no new bulk rewrite or production closure claim."
+  },
+  "reportMembershipCapacityQualificationAudit": {
+    "reason": "Reviewed additive exact membership48 native step and current-report/real84 plus actual65 finite245 extension. Existing financial/native steps retained; no monetary source, raw fixtures, economic assertions or installed history changed. Explicit empty tournament boundary uses actual TEXT tournament IDs; exact nonempty membership semantics separately qualified.",
+    "changes": {
+      ".github/workflows/unpaid-lightning-funding-contracts.yml": {
+        "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+        "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
+      }
+    }
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "combinedC2MembershipWorkflow20261028": {
+    "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
+    "execution_performed": false
+  },
+  "originalTournamentCreditCoverWorkflowAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
+    "after": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "change": "Only3 additive qualification paths and one original2-field creditSUM physical-cover native step. Every existing native command/assertion preserved; no query, function, GEN, financial source/fixture or installed recording changed."
+  },
+  "groupedPrivateSourceWorkflowAudit20261028": {
+    "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
+    "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  }
+}

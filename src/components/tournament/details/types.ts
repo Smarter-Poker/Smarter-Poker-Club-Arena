@@ -78,6 +78,7 @@ export const TAB_IDS: readonly TabId[] = [
  */
 export const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'detail', label: 'Details' },
+  { id: 'satellites', label: 'Satellites' },
   { id: 'blinds', label: 'Blinds' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'entries', label: 'Entries' },

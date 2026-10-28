@@ -702,6 +702,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V51'
   ),
   flag(
+    'smallPotNearNutRiverValue',
+    'default-off PLO4/5/6 single-board small-pot near-nut river value candidate, qualification pending; only removes random call after existing value and safety gates',
+    'Small-pot near-nut value'
+  ),
+  flag(
     'v55OmahaRiverTripsFlat',
     'river Omaha weak sets/trips retain call pricing without re-shoving; default off pending deep-cash league qualification',
     'V55'
@@ -3188,6 +3193,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
+  receipt(
+    'small_pot_near_nut_value_flat_exception',
+    'HorseLogic PLO6 final paired-board flat branch',
+    'private original value-branch legal raise retained without intervening action changes below the unchanged fold threshold; accepted execution remains separate',
+    'Small-pot near-nut value'
+  ),
+  receipt(
+    'small_pot_near_nut_value_raise',
+    'HorseLogic existing value raise band after original safety gates',
+    'default-off structural candidate selected a raise instead of random call; selection only, controller acceptance and economic qualification remain separate',
+    'Small-pot near-nut value'
+  ),
   receipt(
     'v55_omaha_river_trips_flat',
     'HorseLogic committed and ordinary raise branches',

@@ -1,0 +1,31 @@
+{
+  "scope": "exact_membership_expression_and_direct_report_pin",
+  "files": {
+    "README.md": "4cc3744d3028893eb474687455a8b2ff9031b72fd8c7ac6f66f73ed2ab6c3939",
+    "actual-original-owner-catalog.json": "d014fbb8c3488ee72d03de09a1be6e39aee4cd7423ffea0900f9965d2ab2134b",
+    "advance-candidate.sql": "f7b602b8b29fa04c8a54c2e60db2d0ba6cdec54ee0a2771dcb85866927b502a7",
+    "advance-original.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
+    "build-candidate.py": "919b5d1548ee9771704426d05e7f13e88f838a4ab23fd8fca630bead1b5655f1",
+    "candidate-contract.json": "a213199838dbcf2b9dc8fae2124ca6aeb8e29a178cea5f2150346e4b38d8f2b6",
+    "candidate-query.sql": "a7ac69eaec3ba15b74e64395c88e64c971cafea7204bd5d84d0a63f0c1ae2767",
+    "composed-candidate.sql": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555",
+    "fn_union_pnl_satellite_seat_owner.sql": "968faca9be18c9796e36464817778c02d1092cfe38e8892ba78d8307771cab9d",
+    "fn_union_pnl_touched_registrations.sql": "950eb995c9c087ff6e2b04643a4dcf3a778354f0e5f77d3b87b5aea979d9b58f",
+    "fn_union_pnl_tournament_entry_club_of.sql": "2705df64d1279c4529b1573c9ba3c783d374b8bbc0c3cf7a45d6d75618bf3358",
+    "fn_union_pnl_tournament_in_union.sql": "4b664765060e0e848bb5e718c09d72ea7fe119ba7ffb404171f597335486f25d",
+    "guard-candidate.sql": "39897e178464f6a584552af2fdd8f71fef8489530f532286969949ad9eea05f9",
+    "guard-original.sql": "15a5972271043235532fa333a1da0ec61d7e4a0e63c00a160c2928e1c8a7a133",
+    "membership-expression.sql": "1005e38b36e44d32c42c7351543246c69a9d7ff44f8cee56b34d441835dcca17",
+    "native-authority-after.sql": "d0a737e4f7d28e571574e5c8e61d86d0efe80fbadd2ba0c5af0df0bfe3faf154",
+    "native-authority-before.sql": "9c65bc0af7e602c2319a07782fdf35ae54b96790120fb3f6e8dc94b39502c3d1",
+    "native-report-extension.py": "d83413882c08afe956ce39e8b53dc18462e991aa12480163bc0abf955f43d863",
+    "native-whole-branch-result.json": "920bc326b797f3621e18b442f8af716a4039e1525c4a5f86bc8b3b066535751e",
+    "native-whole-branch.py": "80d315406e22c3582c4597be83715c4a611ea06e3cdbd8d8cf0e675917699eeb",
+    "original-query.sql": "74f6951af4b3673ce4be8cf6a0f2d98834f2c184da35a9cf114809bb5c2bd9ab",
+    "qualified-complete-report-result.json": "0fba74270c7b71144beecd7f13487971e2bc03422a3124495881b1cf9966ba28",
+    "qualified-result.json": "d15a5c6cbac2744655e36f6211ac4431b857851ea3fccdd50b8aaa0df11e4c3a",
+    "report-candidate.sql": "7c6999828a1e9d43710ead2ebc2442b14bfbcc388f3117fde415a8b4761639be",
+    "report-original.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
+    "runtime-input-manifest.json": "ef4186b8c88f59f4547336425a227b6922142b057e78201593ffc46c38ff1896"
+  }
+}

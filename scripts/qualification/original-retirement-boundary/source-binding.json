@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -56,9 +56,9 @@
     "scripts/qualification/original-retirement-boundary/run-certificate-native.py": "cd69823e06d6f7c618e0ab113e8d255539ea3668153141bf598b0c932f313e51",
     "scripts/qualification/original-retirement-boundary/run-generation-cache-native.py": "5748e431ebf6a2a6fb6c7b95928fc55b789eb7d8679dd82d08d6580eae002fb7",
     "scripts/qualification/original-retirement-boundary/run-installer-native.py": "2fb6dd34483b423ab95fc6cac68b52a98594e078ea7369752e0c5bfcf4ae548f",
-    "scripts/qualification/original-retirement-boundary/run-native.py": "99c0a45846946a1f99d1b3ba2f6b8fd3e4541282044fa344e163c4964293ffbb",
+    "scripts/qualification/original-retirement-boundary/run-native.py": "4d611a7631aadf3537882aa23891477cf41a6d67603af08d769ed6da21219e28",
     "scripts/qualification/original-retirement-boundary/run-source-ref-native.py": "8d93c7d1613f1e8cda69f2acc74abe04181663985993d1459fa8050ba1dc8e8b",
-    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "94f2fe8b578c8555c896f4108a972a43759e81f29fd456a9a804634a09277863",
+    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "cccb5de7b5b8d0c6d47dac13ddd8e0f7b6e5cedc4a50f97b7c0f7a4ff409bd83",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/bootstrap.sql": "997688087569fb095402b1bff74c64d7f1b2cda45ea151255875cddcca6d0dad",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/qualified-parent-20200734.sql": "a4f06a169d4a9b6e95a25d8bd768cde18684cc353d5e7996a00a662f8af67e18",
     "scripts/qualification/original-retirement-boundary/source-ref-reader-proposal.sql": "44432aa686271a580beb4af5a5840b1d0fe06e9f7d2d7309212684843d330cd9",
@@ -184,15 +184,43 @@
     "scripts/qualification/original-retirement-boundary/report-reader-composition/guard-original.sql": "809806842af07372e2994df024a3a56f1d7f3edbc6f50a90f3523020c8b49615",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/native-authority-after.sql": "81270af2f0e53e0395c96a3df25c1c8f2d73a04e9e7fc90bb1327cfbaa498a60",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/native-authority-before.sql": "c690df0529939c7568760bb808b340219a4a9ce06e97573ee0bf52acabb1507d",
-    "scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py": "2a26aadeec6a4116b011179135ed18ff24209cf8801b5172846857ed32a86f5d",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py": "5fb487cc8c72bf3d0d6cf94f551757e286fd9a6ef0c7babe9b3de6ef259cdb41",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/occupancy-owner0.sql": "2056850c935d69fb68d2325fdcc7844ac26d6c19468b40a4ddac1c61808e4dd2",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/occupancy-owner1.sql": "21dfab5c7b8035987b715ebc3abe08ef141f539ac50e0fc265a8707edc6a681b",
-    "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-manifest.json": "ec30cba52a4bdeed6b2ec2b276f4f1f3aa6c5d381f125093072a72e46ed6ce34",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-manifest.json": "28ab49dc0167d3478ac1220d54b8cf532c8c579aabec85989a7e2f5d144e8857",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-result.json": "da5de80d0ffc0aebf9b65e7aeb64b6fad249409ddcc3828cdc6aabd913d44749",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/report-candidate.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/report-original.sql": "fb61a741e21726cce96083a8094501a018f2ae6b875c8c8bf35933335e3746ed",
     "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
-    "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "df300d1b13c16e0f89ec410dade9ff4bfd4be0ada4c24e0f97e65a9dd9572181"
+    "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "df300d1b13c16e0f89ec410dade9ff4bfd4be0ada4c24e0f97e65a9dd9572181",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/README.md": "4cc3744d3028893eb474687455a8b2ff9031b72fd8c7ac6f66f73ed2ab6c3939",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/actual-original-owner-catalog.json": "d014fbb8c3488ee72d03de09a1be6e39aee4cd7423ffea0900f9965d2ab2134b",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/advance-candidate.sql": "f7b602b8b29fa04c8a54c2e60db2d0ba6cdec54ee0a2771dcb85866927b502a7",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/advance-original.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/build-candidate.py": "919b5d1548ee9771704426d05e7f13e88f838a4ab23fd8fca630bead1b5655f1",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/candidate-contract.json": "a213199838dbcf2b9dc8fae2124ca6aeb8e29a178cea5f2150346e4b38d8f2b6",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/candidate-query.sql": "a7ac69eaec3ba15b74e64395c88e64c971cafea7204bd5d84d0a63f0c1ae2767",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/composed-candidate.sql": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_satellite_seat_owner.sql": "968faca9be18c9796e36464817778c02d1092cfe38e8892ba78d8307771cab9d",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_touched_registrations.sql": "950eb995c9c087ff6e2b04643a4dcf3a778354f0e5f77d3b87b5aea979d9b58f",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_tournament_entry_club_of.sql": "2705df64d1279c4529b1573c9ba3c783d374b8bbc0c3cf7a45d6d75618bf3358",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_tournament_in_union.sql": "4b664765060e0e848bb5e718c09d72ea7fe119ba7ffb404171f597335486f25d",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/guard-candidate.sql": "39897e178464f6a584552af2fdd8f71fef8489530f532286969949ad9eea05f9",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/guard-original.sql": "15a5972271043235532fa333a1da0ec61d7e4a0e63c00a160c2928e1c8a7a133",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/membership-expression.sql": "1005e38b36e44d32c42c7351543246c69a9d7ff44f8cee56b34d441835dcca17",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-after.sql": "d0a737e4f7d28e571574e5c8e61d86d0efe80fbadd2ba0c5af0df0bfe3faf154",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-before.sql": "9c65bc0af7e602c2319a07782fdf35ae54b96790120fb3f6e8dc94b39502c3d1",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-report-extension.py": "d83413882c08afe956ce39e8b53dc18462e991aa12480163bc0abf955f43d863",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch-result.json": "920bc326b797f3621e18b442f8af716a4039e1525c4a5f86bc8b3b066535751e",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch.py": "80d315406e22c3582c4597be83715c4a611ea06e3cdbd8d8cf0e675917699eeb",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/original-query.sql": "74f6951af4b3673ce4be8cf6a0f2d98834f2c184da35a9cf114809bb5c2bd9ab",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-complete-report-result.json": "0fba74270c7b71144beecd7f13487971e2bc03422a3124495881b1cf9966ba28",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-manifest.json": "75e7b59aa4bb622c70cbd76e3d393ef94cec60ca446543b799aca090eb68f7c6",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-result.json": "d15a5c6cbac2744655e36f6211ac4431b857851ea3fccdd50b8aaa0df11e4c3a",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/report-candidate.sql": "7c6999828a1e9d43710ead2ebc2442b14bfbcc388f3117fde415a8b4761639be",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/report-original.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/runtime-input-manifest.json": "ef4186b8c88f59f4547336425a227b6922142b057e78201593ffc46c38ff1896",
+    "supabase/migrations/20261028033359_original_weekly_report_reads_tournament_membership_as_a_set.sql": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555"
   },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
@@ -507,5 +535,30 @@
     "previousSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
     "currentSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
     "change": "Exactly three new qualification paths and one isolated PG17 global tournament/union scalar-cover step. Removing these additions recovers prior workflow bytes exactly, including all cash23500 and previous native financial commands/assertions. All other source pins/objects unchanged. New official migration native27 qualifies physical access and installer guards only; no production runtime or book closure claim."
+  },
+  "reportMembershipCapacityQualificationAudit": {
+    "reason": "Reviewed additive exact membership48 native step and current-report/real84 plus actual65 finite245 extension. Existing financial/native steps retained; no monetary source, raw fixtures, economic assertions or installed history changed. Explicit empty tournament boundary uses actual TEXT tournament IDs; exact nonempty membership semantics separately qualified.",
+    "changes": {
+      "scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py": {
+        "before": "2a26aadeec6a4116b011179135ed18ff24209cf8801b5172846857ed32a86f5d",
+        "after": "5fb487cc8c72bf3d0d6cf94f551757e286fd9a6ef0c7babe9b3de6ef259cdb41"
+      },
+      "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": {
+        "before": "94f2fe8b578c8555c896f4108a972a43759e81f29fd456a9a804634a09277863",
+        "after": "cccb5de7b5b8d0c6d47dac13ddd8e0f7b6e5cedc4a50f97b7c0f7a4ff409bd83"
+      },
+      "scripts/qualification/original-retirement-boundary/run-native.py": {
+        "before": "99c0a45846946a1f99d1b3ba2f6b8fd3e4541282044fa344e163c4964293ffbb",
+        "after": "4d611a7631aadf3537882aa23891477cf41a6d67603af08d769ed6da21219e28"
+      },
+      "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-manifest.json": {
+        "before": "ec30cba52a4bdeed6b2ec2b276f4f1f3aa6c5d381f125093072a72e46ed6ce34",
+        "after": "28ab49dc0167d3478ac1220d54b8cf532c8c579aabec85989a7e2f5d144e8857"
+      },
+      ".github/workflows/unpaid-lightning-funding-contracts.yml": {
+        "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+        "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
+      }
+    }
   }
 }

@@ -826,7 +826,16 @@ if [ -n "$CHANGED_TESTS$CHANGED_SRC$NODE_TESTS" ]; then
       fi
       if [ -n "$CHANGED_SRC" ]; then
         echo "[club-arena pre-push] running tests importing the changed source..."
-        if ! "$VITEST" related --run $CHANGED_SRC; then
+        # Source-contract tests above can also import changed source. They
+        # already ran against these exact clean HEAD bytes; exclude only those
+        # exact files from the related invocation, never a directory or family.
+        RELATED_TEST_ARGS=()
+        for tested_file in $CHANGED_TESTS; do
+          RELATED_TEST_ARGS+=(--exclude "$tested_file")
+        done
+        # An empty remainder is valid only after a nonempty direct pass.
+        if [ -n "$CHANGED_TESTS" ]; then RELATED_TEST_ARGS+=(--passWithNoTests); fi
+        if ! "$VITEST" related --run $CHANGED_SRC "${RELATED_TEST_ARGS[@]}"; then
           echo "[club-arena pre-push] BLOCKED: a related local test failed."
           FAIL=1
         fi
@@ -923,7 +932,11 @@ if [ -f server/package.json ]; then
   for rel in $SRV_SRC; do
     # Horse telemetry: every fired key must be registered in the Horse data ledger.
     if grep -q "noteFire(" "$CA_TREE_TOP/server/$rel" 2>/dev/null; then
-      SRV_CONTRACTS="src/engine/HorseDataLedger.test.ts"
+      # A changed contract has already run in SRV_TESTS above.
+      case " $SRV_TESTS " in
+        *" src/engine/HorseDataLedger.test.ts "*) ;;
+        *) SRV_CONTRACTS="src/engine/HorseDataLedger.test.ts" ;;
+      esac
       break
     fi
   done
@@ -938,7 +951,12 @@ if [ -f server/package.json ]; then
 
   if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
     echo "[club-arena pre-push] running the server tests that cover your changes..."
-    if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then
+    SERVER_RELATED_ARGS=()
+    for tested_file in $SRV_TESTS $SRV_CONTRACTS; do
+      SERVER_RELATED_ARGS+=(--exclude "$tested_file")
+    done
+    if [ -n "$SRV_TESTS$SRV_CONTRACTS" ]; then SERVER_RELATED_ARGS+=(--passWithNoTests); fi
+    if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC "${SERVER_RELATED_ARGS[@]}" ); then
       echo ""
       echo "[club-arena pre-push] BLOCKED: your engine change breaks a test that covers it."
       echo "                      If the test pins behaviour you deliberately replaced,"

@@ -11,6 +11,11 @@ import {
 } from './phaseProof.js';
 import { decisionRequest } from '../../testing/horseRegression/plan/fixture.js';
 import { HorseMind } from '../../engine/HorseMind.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
+import {
+  horsePlanContextFromDecision,
+  horsePlanBatchBindingFromRequest,
+} from '../../engine/HorsePlanHandIdentity.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import {
   createHorseExecutionWitness,
@@ -593,12 +598,13 @@ describe('private phase interpretation requires source-qualified accepted eviden
   });
 });
 
-function phase7Baseline() {
+function phase7Baseline(allocated = false) {
   const { hero, state } = jointPolicyFixture('nlh', 1, 'tournament', 'preflop');
   state.toCall = 0;
   state.legalActions = ['check'];
   state.minRaiseTo = null;
   state.maxRaiseTo = null;
+  if (allocated) state.actionHistory = decisionRequest().gameState.actionHistory;
   const opts = {
     telemetry: false,
     mind: false,
@@ -617,13 +623,20 @@ function phase7Baseline() {
   }
   if (!decision.tournamentUtility?.evidence) throw Error('actual supported utility not emitted');
   const snapshot = { ...decisionRequest(), player: hero, gameState: state, opts };
+  const context = allocated ? horsePlanContextFromDecision(snapshot) : undefined;
   const readFrame = encodeHorseDecisionReads(
     HorseMind.createSandbox(),
     state.players,
-    HorseMind.handKeyOf(state.actionHistory)
+    horsePlanHandKey(state.actionHistory, context),
+    context
   );
   decision.tournamentUtility.readFrameSha256 = readFrame.sha256;
   const capture: HorsePhaseCapture = { snapshot, decision, readFrame, effects: [] };
+  if (context)
+    Object.assign(capture, {
+      planContext: context,
+      planBinding: horsePlanBatchBindingFromRequest(snapshot),
+    });
   const witness = createHorseExecutionWitness(snapshot, decision, {
     requestId: snapshot.requestId,
     lane: 'fast',
@@ -661,6 +674,30 @@ describe('supported Phase7 baseline activation and closed qualification domains'
       application: 'accepted',
       reason: 'supported_uncalibrated_utility_baseline',
     });
+  });
+  it('verifies an allocated original frame with nonempty public action history', () => {
+    const f = phase7Baseline(true);
+    expect(f.capture.readFrame.json).toContain('plan-hand-v1:');
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase7
+    ).toMatchObject({ qualification: 'verified', application: 'accepted' });
+  });
+  it('refuses allocated evidence with a malformed retained context', () => {
+    const f = phase7Baseline(true);
+    Object.assign(f.capture, { planContext: { version: 1, hand: { tableId: 'foreign' } } });
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, f.witness, plans).phase7
+    ).toMatchObject({ reason: 'utility_original_evidence_mismatch', application: 'refused' });
+  });
+  it('still refuses an allocated frame with a forged hash repeated by its receipts', () => {
+    const f = phase7Baseline(true);
+    f.capture.readFrame = { ...f.capture.readFrame, sha256: 'f'.repeat(64) };
+    f.capture.decision.tournamentUtility!.readFrameSha256 = 'f'.repeat(64);
+    const witness = structuredClone(f.witness);
+    (witness.phase7Evidence as any).readFrameSha256 = 'f'.repeat(64);
+    expect(
+      new HorseFleetPhaseInterpreter(() => {}).interpret(f.capture, witness, plans).phase7
+    ).toMatchObject({ reason: 'utility_original_evidence_mismatch', application: 'refused' });
   });
   it('refuses disabled or unsupported context and preserves an explicit utility refusal', () => {
     const f = phase7Baseline();

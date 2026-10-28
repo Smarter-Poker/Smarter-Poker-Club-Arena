@@ -10,7 +10,7 @@
     "scripts/ci/fixtures/tournament-fee-scope-union-cover/qualification-evidence.json": "0d0e23de555b039a8f23ee91166894797289b664e2414a720a6f71ead96ff44e",
     "tests/tournament-fee-scope-index-retains-every-union.law.test.ts": "36ebf9d267a15881ccbdaef4527ba2c4359953a7ff670ad025cd6d0f360f95c1",
     "docs/laws.d/tournament-fee-scope-index-retains-every-union.md": "d029c9ba99a2623def15b045f2ee94dc53175b47593fd931be9064e2d7e81391",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
     "docs/changelog/2026-10-28-original-tournament-fee-scope-reads-union-scalars.md": "ad09ce2480a69f841bcd3d09a8377aed9b7414b5d630df27b8884b83cca01cbe"
   },
   "workflowPrivateVerdictAdditiveAudit20261028": {
@@ -46,6 +46,13 @@
     "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
     "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
     "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
     "prior_commands_preserved": true
   }
 }

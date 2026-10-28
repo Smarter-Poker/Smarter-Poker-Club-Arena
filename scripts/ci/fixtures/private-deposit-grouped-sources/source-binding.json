@@ -12,7 +12,7 @@
     "tests/private-deposit-grouping-retains-source-facts.law.test.ts": "a82c18d6c45bab698761d4c0bc5bf7ba06764f24fb8325cb0982e73ccabf32b8",
     "docs/laws.d/private-deposit-grouping-retains-source-facts.md": "4e726c98fa3040112a0a82d1f70332e4bbd471514b76cb1b8017b5d6cc3f8689",
     "docs/changelog/2026-10-28-private-deposits-group-original-source-facts.md": "efc84878c4f859d6c761503b76a02895e72bcc357f4e0c88eeb8661b8a0f02bd",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
     "supabase/migrations/20261028053643_weekly_private_deposits_group_their_original_source_facts.sql": "e18f1bbc64db63755824a7459f5a55c0e9ae91aeaa69da6f8ca5f050f9153aa3",
     "scripts/ci/fixtures/standalone-weekly-statement-funding/actual-connected-preimages.json": "a3e7bd6dda38d87415913ba53c0db8207383afb8db024dcc6c4df69a69ebc644",
     "scripts/ci/fixtures/standalone-weekly-statement-funding/setup.sql": "7d9519ad6b46c4a2d981b5f5fa0423533d1ebaab09d6ca8c321d995af465ba9e",
@@ -23,5 +23,12 @@
   "registryFormattingAudit": {
     "review": "Normal commit Prettier inserted required blank line after law registry heading; only this newline changed, source/native/evidence inputs unchanged.",
     "execution_performed": false
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
+    "prior_commands_preserved": true
   }
 }

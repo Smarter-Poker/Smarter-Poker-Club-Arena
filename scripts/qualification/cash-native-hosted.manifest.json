@@ -267,8 +267,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 245178,
-      "sha256": "a65b933bdb9126151edc8cd42a957b21eb387ba5646e46353f551ca539d4c414"
+      "bytes": 247252,
+      "sha256": "d55d62b2ab8fca440ec24f1009cdf825cad6416c595feb1a4b4206d5400c5221"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -371,8 +371,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 115227,
-      "sha256": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
+      "bytes": 115763,
+      "sha256": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9"
     }
   },
   "nativePgCron": {
@@ -4292,5 +4292,18 @@
   "retentionCurrentMainWorkflowIntegration20261028": {
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+  },
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      ".github/workflows/ci.yml": {
+        "bytes": 243487,
+        "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 114869,
+        "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      }
+    }
   }
 }

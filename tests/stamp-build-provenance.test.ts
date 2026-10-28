@@ -27,7 +27,7 @@ const owned: string[] = [];
 afterEach(() => {
   for (const dir of owned.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-function fixture() {
+function fixture(repository = 'Smarter-Poker/Smarter-Poker-Club-Arena') {
   const outer = mkdtempSync(path.join(tmpdir(), 'build-provenance-'));
   owned.push(outer);
   const repo = path.join(outer, 'repo');
@@ -54,7 +54,11 @@ function fixture() {
   git('config', 'user.email', 'fixture@example.invalid');
   git('config', 'commit.gpgsign', 'false');
   git('config', 'core.hooksPath', path.join(outer, 'no-hooks'));
-  mkdirSync(path.join(repo, 'scripts'));
+  mkdirSync(path.join(repo, 'scripts/ci'), { recursive: true });
+  writeFileSync(
+    path.join(repo, 'scripts/ci/repository-identity.mjs'),
+    readFileSync(path.join(sourceRoot, 'scripts/ci/repository-identity.mjs'))
+  );
   writeFileSync(path.join(repo, 'scripts/stamp-build-provenance.mjs'), source);
   writeFileSync(path.join(repo, '.gitignore'), 'dist/\n');
   git('add', '.');
@@ -85,7 +89,7 @@ function fixture() {
     eventPath,
     JSON.stringify({
       number: 42,
-      repository: { full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' },
+      repository: { full_name: repository },
       pull_request: {
         number: 42,
         state: 'open',
@@ -93,7 +97,7 @@ function fixture() {
         base: {
           sha: base,
           ref: 'main',
-          repo: { full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' },
+          repo: { full_name: repository },
         },
       },
     })
@@ -102,11 +106,11 @@ function fixture() {
     CA_BUILD_PURPOSE: 'ci-validation',
     GITHUB_ACTIONS: 'true',
     GITHUB_EVENT_NAME: 'pull_request',
-    GITHUB_REPOSITORY: 'Smarter-Poker/Smarter-Poker-Club-Arena',
+    GITHUB_REPOSITORY: repository,
+    GITHUB_REPOSITORY_ID: '1132369872',
     GITHUB_SHA: control,
     GITHUB_REF: 'refs/pull/42/merge',
-    GITHUB_WORKFLOW_REF:
-      'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/ci.yml@refs/pull/42/merge',
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/ci.yml@refs/pull/42/merge`,
     GITHUB_EVENT_PATH: eventPath,
     GITHUB_RUN_ID: '123',
   };
@@ -202,6 +206,7 @@ test('both executable publisher predicates reject CI markers even when ancestry 
     'provenance',
     'expectedSha',
     'expectedRun',
+    "repository = 'Smarter-Poker/Smarter-Poker-Club-Arena'",
     `return (${expression});`
   );
   const expectedSha = 'a'.repeat(40),
@@ -263,8 +268,8 @@ test('only the two PR CI build steps select validation-only provenance', () => {
   }
 });
 
-function admittedPublisher() {
-  const f = fixture();
+function admittedPublisher(repository = 'Smarter-Poker/Smarter-Poker-Club-Arena') {
+  const f = fixture(repository);
   f.git('checkout', '-q', '--detach', f.mergeBase);
   writeFileSync(
     f.eventPath,
@@ -272,7 +277,7 @@ function admittedPublisher() {
       ref: 'refs/heads/main',
       after: f.mergeBase,
       deleted: false,
-      repository: { full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena', default_branch: 'main' },
+      repository: { full_name: repository, default_branch: 'main' },
     })
   );
   const env = {
@@ -282,8 +287,7 @@ function admittedPublisher() {
     GITHUB_SHA: f.mergeBase,
     GITHUB_REF: 'refs/heads/main',
     GITHUB_WORKFLOW_SHA: f.mergeBase,
-    GITHUB_WORKFLOW_REF:
-      'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
+    GITHUB_WORKFLOW_REF: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
     GITHUB_RUN_ATTEMPT: '1',
   };
   return { ...f, publish: (overrides: NodeJS.ProcessEnv = {}) => f.run({ ...env, ...overrides }) };
@@ -366,6 +370,7 @@ test('both actual publisher predicates accept the qualified target but reject ta
     'provenance',
     'expectedSha',
     'expectedRun',
+    "repository = 'Smarter-Poker/Smarter-Poker-Club-Arena'",
     `return (${expression});`
   );
   const transaction = readFileSync(
@@ -515,4 +520,14 @@ test('actual origin ordering and activation compare-and-swap still refuse backwa
     );
     expect(r.status, r.stderr).toBe(expectedExit);
   }
+});
+
+test('approved organization transfer preserves exact PR and publisher identities', () => {
+  const repo = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+  const f = fixture(repo);
+  expect(f.run().status).toBe(0);
+  const p = admittedPublisher(repo);
+  expect(p.publish().status).toBe(0);
+  expect(f.run({ GITHUB_REPOSITORY_ID: '999' }).status).not.toBe(0);
+  expect(p.publish({ GITHUB_REPOSITORY_ID: '999' }).status).not.toBe(0);
 });

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "51c3117b1ae62c79d741b5065a56105baac7a4e6125716a99b28ee5ff835c6f4",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d4cf12f4068f3279337bdd404f1d9e391adeff8cd9c6e6b1b66d634bf3b414b6",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -441,6 +441,16 @@
       "bytes": 240182,
       "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
     },
+    "execution_performed": false
+  },
+  "weeklyQualityNativeWorkflowBinding20261028": {
+    "review": "Reviewed exact additive C2 workflow diff: three path triggers and one native PostgreSQL quality-source-bag step. All existing commands and assertions retained. Corrects the missed active workflow identity detected by hosted source-binding verification; no SQL, fixture, generation, assertion or production record changes.",
+    "previous": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "current": "cc9fea0c90f30d332aeb8615155315f5cb9c10225ffff24ada644a8d4916cf86",
+    "execution_performed": false
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
     "execution_performed": false
   }
 }

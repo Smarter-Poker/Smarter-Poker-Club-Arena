@@ -427,5 +427,20 @@
     "qualifiedIncomingHead": "63c1e91a59e5c49f1cea21158dac59e3c97e97e8",
     "migrationSHA256": "b228abb85c4449d6542ef00150b1bd09c567c7a7a3b666816043c39b4e411c3b",
     "qualification": "24 real PG17 cases with five complete core owners/metadata plus original generation and source65; all84-window/wholeweek reducer parity. Local evidence is not installation or full production book closure."
+  },
+  "workflowBindingAudit20261027": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "reviewedCommit": "60f9fe0a31a1ed47366164dfd58dbe298244863c",
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "change": "Protected main added the treasury-seat-gift migration argument plus native original-owner and queued-common-leaf qualification steps. Reviewed full workflow and commit diff; retained those checks unchanged. Repair stale binding that failed PR8351; no new financial qualification claim."
+  },
+  "rakebackProtectedMainBudgetIntegration20261028": {
+    "review": "Preserves all protected-main changes including measured Accounting2 50 minute budget and every rakeback native step. Only combined active workflow binding changes; historical audits, source pins, financial assertions and installation records retained. Not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
+    },
+    "execution_performed": false
   }
 }

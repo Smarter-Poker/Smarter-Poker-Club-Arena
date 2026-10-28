@@ -44,6 +44,9 @@ export function useMasterBusBroadcastChannel({
   onSubscriptionStatus,
 }: UseMasterBusBroadcastChannelOptions): void {
   const [engineReady, setEngineReady] = useState(false);
+  // Network callbacks may share a React batch. Retire fallback authority at
+  // READY itself, before the effect cleanup gets its turn.
+  const engineReadyRef = useRef(false);
   const engineWasReady = useRef(false);
   const engineRecord =
     event === 'record_changed' &&
@@ -65,6 +68,7 @@ export function useMasterBusBroadcastChannel({
   }, [onSubscriptionStatus]);
 
   useEffect(() => {
+    engineReadyRef.current = false;
     setEngineReady(false);
     engineWasReady.current = false;
     if (!enabled || !channelName || !engineRecord) return;
@@ -85,6 +89,7 @@ export function useMasterBusBroadcastChannel({
       remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
         if (!alive || scope !== generation) return;
         if (message.type === 'PRIVATE_RECORD_STATUS') {
+          engineReadyRef.current = message.ready === true;
           setEngineReady(message.ready === true);
           if (message.ready === true) {
             degraded = false;
@@ -114,6 +119,7 @@ export function useMasterBusBroadcastChannel({
     const stopIdentity = masterBus.subscribe('AUTH_STATE_CHANGED', (change) => {
       const scope = ++generation;
       remove();
+      engineReadyRef.current = false;
       setEngineReady(false);
       engineWasReady.current = false;
       statusCallbackRef.current?.('CONNECTING');
@@ -175,12 +181,22 @@ export function useMasterBusBroadcastChannel({
       }
 
       channel.on('broadcast', { event }, (payload: unknown) => {
-        if (alive && generation === subscriptionGeneration) callbackRef.current(payload);
+        if (
+          alive &&
+          generation === subscriptionGeneration &&
+          !(engineRecord && engineReadyRef.current)
+        )
+          callbackRef.current(payload);
       });
       void subscribeRealtime(
         channel,
         (status: string, err?: Error) => {
-          if (!alive || generation !== subscriptionGeneration) return;
+          if (
+            !alive ||
+            generation !== subscriptionGeneration ||
+            (engineRecord && engineReadyRef.current)
+          )
+            return;
           if (status === 'SUBSCRIBED') {
             disarmAuthRetry?.();
             noteRealtimeTransportRecovered();

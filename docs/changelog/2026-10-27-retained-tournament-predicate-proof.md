@@ -1,0 +1,42 @@
+# Original tournament payout/context predicate helper
+
+A separate bounded helper evaluates original retained journal records without exporting private snapshots. It requires explicit versioned finalized payout terms and ladder, unit-grid/pool/reserve validation, complete captured context provenance, and an evidence-bearing Phase 7 MTT payout receipt bound to the original read frame. Same producer/turn, ordered intended execution, committed-hand binding and the actual whole-hand reconciler must all pass.
+
+Both input versions contain one to six original hand coordinates and an exact decision digest or null within at most 256 retained records per hand. Version 1 preserves whole-hand unique discovery. Version 2 additionally requires the zero-based `actionOrdinal` from the original complete persisted action list, including forced/discard/pseudo-actions; it must be below the existing 4096-action ceiling and the actual accepted hand length. The selector uses the real same-turn execution binder's returned ordinal and original observation identity, including early-look handling, never the snapshot's earlier anchor ordinal or an arbitrary first decision. The exact digest, when supplied, remains an additional requirement. Only observed version 2 output includes that ordinal; the parent sanitizer enforces separate versioned exact key sets. Output contains only fixed statuses/reasons, booleans and digests. Missing, legacy, malformed, foreign-source or ambiguous evidence stays unknown. Bubble enabled/disabled is observed separately from whether it was captured. No settlement, calibration, GTO, V56 causality, previous-level branch, replay or fleet activation claim is made.
+
+The helper is wired as the separate optional `tournament_cases_json` mode in the existing maintained inspector. Protected helper source travels through the same pinned SSH stdin payload; its actual installed validators and canonical private exporter run in the existing container. Parent validation and a strict exact-output sanitizer bound the read. Unavailable validators, unverified runtime health/identity or a changing instance produce unknown. No production reads or runs occurred. Original reference v1/v2 predicates, validators, record bindings and the separate yield/cap owner's parser functions remain byte-identical. The only intentional reference-JavaScript change is the stdout flush repair described below.
+
+Focused tests use a wholly synthetic local hand and actual payout/provenance/receipt validators, execution witness, hand binder and full journal reviewer. They cover positive exact/unique selection and missing, malformed, wrong-source, wrong-hash, duplicate, bounds, ambiguous and rehashed foreign-execution failures. A two-player hand with two real P7 receipts reconciles completely: version 1 remains ambiguous while version 2 selects the exact original ordinal; wrong ordinals, wrong execution identity and duplicate bindings remain unknown.
+
+## Delivery and limits
+
+The shared parser boundary was confirmed before integrating its exact 3269d89eb93604ace0ab3c1f35049b59918c8d5c dependency. Its yield/cap functions and stream output keys are preserved. The dependency reached protected main as 22234d645c507ad99650c7bc572e8ef2f9328337; this follow-up integrates that protected source before exact-head required checks. This is diagnostic tooling using existing runtime APIs; it adds no engine deployment trigger or policy execution. The runtime/operator owner retains the separate natural observation. No live or fleet certificate follows from local synthetic tests or publication alone.
+
+## Finite diagnostic stdout completion
+
+Native Node reproduction proved that `console.log(JSON.stringify(report)); process.exit(0)` could exit successfully after emitting only 512 of a valid 7,052-byte six-case report; a full backpressured pipe emitted zero report bytes. The existing reference v1/v2 entrypoint shared the cause. Both entrypoints now assign the same result and await the stdout write callback before exit 0; stdout errors finish with exit 1, and the existing parent maps child failure to sanitized unknown without exposing private output. No predicate, validator, selection, execution binding or parser semantics changed. The reference-JavaScript byte pin is intentionally updated only for this reviewed emission change.
+
+The regression executes the actual private Node entrypoints with synthetic imports/results and pipe backpressure, without strategy execution or production records. Tournament and reference v1/v2 each emit all 7,052 bytes after the fix; broken pipes each exit 1. Archived native RED/GREEN receipts retain the measured byte counts and synthetic-only scope.
+
+## Blocking native Git fixture cleanup
+
+Current-head CI reached a disposable Git fixture teardown error, `Directory not empty: .git`, after its reservation assertions passed. Actual Git TRACE2 showed commits starting detached automatic maintenance children. The fixture now sets only its own `maintenance.autoDetach=false` and `gc.autoDetach=false` before its first commit, preserving real maintenance while requiring it to finish before cleanup. The real-commit regression failed on the original `--detach` child and passes with a successful matching child-exit event. No cleanup errors are suppressed, no retries or sleeps were added, and production reservation behavior is unchanged. The exact Linux cleanup race was not reproduced locally.
+
+## Real journal component tests use the server runtime
+
+The seven synthetic tests that import the real journal reviewer now run under the maintained server suite and its Node 22 runtime. The client Node 20 suite cannot load the reviewer's native `node:sqlite` dependency. All seven assertions remain enforced by the existing server test discovery; the client-side metadata and wiring tests remain in the client suite. Only test import paths, strict fixture typing and suite placement changed. Runtime code and Node versions are unchanged.
+
+## Git maintenance trigger across supported versions
+
+The hosted Git 2.55 fixture regression failed because it required every commit
+to start automatic maintenance. That version no longer invokes maintenance
+from commit; fetch still invokes it and is the actual controller operation
+that originally raced fixture cleanup. Exercise a real local fetch instead,
+retaining the requirement that a maintenance child actually runs, receives no
+detach flag, and exits successfully before the command returns. No reservation,
+thaw, financial, source-binding, cleanup or assertion gate is removed.
+
+Source evidence: [Git 2.55 commit](https://github.com/git/git/blob/v2.55.0/builtin/commit.c)
+and [fetch](https://github.com/git/git/blob/v2.55.0/builtin/fetch.c).
+
+Ordinary fixtures retain protected main's disabled automatic-housekeeping defaults and its real-fetch no-maintenance assertion. Only the separate foreground-maintenance regression opts in for its one command.

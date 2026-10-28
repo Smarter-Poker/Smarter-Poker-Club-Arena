@@ -1742,6 +1742,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Original Lightning book closure remains active after all1367rakeback obligations were paid. Current61 cashgroups timedout60/90; first1000-key naturalplan showed originalsourceIndexOnly reads and no sample spills. This exactsource adds only ORDERBYsource_type/source_group/banked_at inside existingDISTINCT MATERIALIZEDkeys; no keyfilter/LIMIT, sourceSUM, ledger, financial rule, timeout, view, ACL, source65 or GEN change. Native28 typed6field cashgroups/JUDGED/visibleverdict/ALL3orderedJSON, and officialnative97 original119financialdoors/fullmetadata/operator/window/freeze/scheduler/history/replay/atomicity qualified. Actual full86197orderedID/3552.70 parity and wholeTEMP mandatoryROLLBACK Summary168378.917ms READY accountingv3/fullpaidunchanged/no newmoney passed; cacheconfounded timings do not certify causalimprovement/stablecapacity/fullScope/future4AM behavior. Immediate actualREADONLY exactwholeSQLhistory/Summary61to2f/full11wholemetadataACL/twofullviews/source65TRUE/sameGEN72b readback matches baseline. Original fullScope285 rollback/assertedCOMMIT/durablepositivedoc proof and all3books still required."
+    },
+    {
+      "version": "20261028065332",
+      "name": "original_cash_links_read_valid_proofs_from_their_index",
+      "file": "supabase/migrations/20261028065332_original_cash_links_read_valid_proofs_from_their_index.sql",
+      "md5": "53dac4bf8c4ad3f3d6c9c5f74c2735f8",
+      "appliedToProductionAt": "2026-10-28T07:24:19.222Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained concurrent physical-index active-book-outage install and READ ONLY full-file history/index/source/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Exact maintained 65332 concurrent partial proof index installed and full-file history plus fixed-width UUID/bigint key/include catalog verified. The original linked SQL, current11 whole owners/metadata/ACL, both views, all original two-table contracts/nine indexes, source65 and GEN72b remain unchanged after actual63816 recording. No whole-book closure or production-capacity claim."
     }
   ]
 }

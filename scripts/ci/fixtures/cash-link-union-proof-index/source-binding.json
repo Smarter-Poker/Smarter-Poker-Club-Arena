@@ -5,7 +5,7 @@
     "scripts/ci/fixtures/cash-link-union-proof-index/qualification-evidence.json": "0248ffd5b8c945bc7c94a646e50a1fea13de3f2d96b8864ed0818ac3ea442350",
     "scripts/ci/fixtures/cash-link-union-proof-index/README.md": "d2c121645b713bb23f15f6868360299fa95ed088e0a1a36a6d8f3f1cc65003ac",
     "scripts/ci/fixtures/cash-link-union-proof-index/native-fixture.sql": "acd04c5318794f9c4898aab3b374bc7b8a8752f7bd5dbd9940a04c9f0193d5c6",
-    "scripts/ci/fixtures/cash-link-union-proof-index/actual-tables.json": "eb3d63d88b8999036de641cff1e176b858a8e9a8b1aa07c916e61127a8867f6f",
+    "scripts/ci/fixtures/cash-link-union-proof-index/actual-tables.json": "acf9794b9ac845d78a153fbc150b63aa134a5f669deedc66e83f56cfc8291180",
     "scripts/ci/fixtures/cash-link-union-proof-index/original-linked.sql": "b85a3e318732bffd9543853a9ca31cdfd2967f8d37fd1383cd82798e0b7dfd66",
     "supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql": "98649045001fdb8872159d0f311d8f8a4209fdb3f1a09cfd563cf4ec2a82be3a",
     "scripts/ci/test-cash-link-union-proof-index-postgres.py": "98edb97d1b5ef551e3014d1dd36ba7fd3583a9c1c88ecd94ac2773e8fd274da9",
@@ -13,5 +13,8 @@
     "docs/laws.d/cash-link-union-index-keeps-original-proof.md": "e1034936d88a46c9d0e59a786f238183b933d25d1d8fb59d905f4d99d2e41dbb",
     "docs/changelog/2026-10-28-cash-link-union-proof-index.md": "d85de7845b24f6dbecaa56a934001822336a5e2dc52cbd690f7fc1c2d008c6cf",
     ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
+  },
+  "formattingComposition20261028": {
+    "review": "Normal pre-commit formatted actual-tables JSON; parsed table metadata equals the exact SQL installer expected catalog. Native evidence JSON equals retained native03 result. Only formatted input byte pins renewed; no SQL, qualification assertion or financial proof changed."
   }
 }

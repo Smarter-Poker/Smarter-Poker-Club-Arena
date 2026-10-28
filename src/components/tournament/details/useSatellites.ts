@@ -52,6 +52,7 @@ import {
   getTournamentEntryCapacity,
 } from '../../../utils/tournamentPresentation';
 import { totalBuyIn } from '../../../utils/buyIn';
+import { isFixedSngSatellite } from '../../../../server/src/tournament/tournamentEntryCapacity';
 
 /**
  * Explicit column list. `select('*')` on `tournaments` pulls well over a
@@ -79,6 +80,8 @@ export const SATELLITE_COLUMNS = [
   'guaranteed_prize',
   'prize_pool',
   'max_players',
+  'min_players',
+  'table_size',
   'current_players',
   'start_time',
   'started_at',
@@ -173,6 +176,7 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
     maxPlayers: getTournamentEntryCapacity(sat),
     registeredPlayers: num(sat.current_players),
     startsAt: sat.start_time as string | undefined,
+    startsWhenFull: readTournamentFormat(sat) === 'sng-v1' && isFixedSngSatellite(sat),
     started_at: sat.started_at as string | undefined,
     status,
     gameType: (sat.game_type as string) || undefined,

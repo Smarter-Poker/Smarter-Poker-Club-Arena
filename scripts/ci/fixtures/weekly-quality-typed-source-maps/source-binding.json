@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "scope": "Native83 full original quality function parity with portable fixture object references only. No production installation or financial completion inferred.",
+  "sourceFiles": {
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/qualification-evidence.json": "3a70f0e2926ee440059b7744298517732fed45978e53bd2997ef81b23c8d27f2",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/current-boundaries.sql": "1756c8ad591066dcb67d1f58c2527d3ae6e274cfa3ec1c17d0c67a507255494c",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/quality-after.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/actual-quality-metadata.json": "171393a689b089c5d858d2beb95e2cb09f69f8c6063995b941ce236827e8c770",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/cases.sql": "604cb5628205a239b327a1a28ba528649e405beff1d4a4de6241b659c8f891d2",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/quality-before-ad73.sql": "1461013c0004724525fb1323afaf5363972b7132b1b7bbc433b7050fa68c1b20",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/README.md": "a29b052102c8bf52cbf3a7ef4c779a3f62682f0b5fbdcd27abdbb7aee134e2c4",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/quality-composed-before.sql": "c01e52a2e52700b00b5e69a92814aaa4f22278e2a7c6df947b715b54675a6dc1",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/source-receipt.json": "539573f8310cf95b4d948fb71cf90690e59e47ff9c285198396665ccd7c50f31",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/additional-cases.json": "0759f364bbb78f7407bdb27535fe38c14acca4957af5064c84515bff53a2c190",
+    "scripts/ci/fixtures/weekly-quality-typed-source-maps/quality-before.sql": "5370fb8edc3ce9a0c7f130135b2bf02bdbaabeab1405f2689726bf8f3490f47a",
+    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "512f37715dfcb6f146c6aa55c78e7d686a99957753ff79d232d36a0910b3e0d7",
+    "supabase/migrations/20261028185823_weekly_quality_reads_exact_event_aggregate_maps.sql": "8b7e24227b5fb86e4b3327b11bdfaf0b39fd7675ff6f8860418adb3d8a07ae51",
+    "tests/weekly-quality-typed-source-maps-preserve-verdicts.law.test.ts": "0304e386063d44fdf5e98c750525bd2380c6d01594e00c0314da6121030eae2f",
+    "docs/laws.d/weekly-quality-typed-source-maps-preserve-verdicts.md": "c14e66d95652cffe8daa70d7ca502e86c27bca4d8feb3bdfb9508ba36d18062d",
+    "docs/changelog/2026-10-28-weekly-quality-typed-source-maps.md": "6fbd2544883c6dd525461f48ccc69da744fa5f26389e6b859d785339b4edeae8",
+    ".github/workflows/weekly-close-hour-guard.yml": "9082550dfadaa75c64b74f7df2fe4264ec01ed93bc7d32741ded9697d8fcc9e1",
+    "scripts/ci/fixtures/weekly-statement-indexed-quality/schema.sql": "268e8e2056fd532ad6f1680aeec5b5e27f7c18f532daaf727a759d9ccf7a8f38",
+    "scripts/ci/fixtures/weekly-statement-indexed-quality/installer-authorities.sql": "6f889b3bfba8638bc2a52c2b43cf639cd17e8c483aedd0d512f1aa2022e15f2f"
+  },
+  "workflowComposition": {
+    "priorThreeCommandsBytePreserved": true,
+    "newStepOnly": true,
+    "hostedExecutionObserved": false
+  },
+  "explicitAclClosure": {
+    "reason": "Normal definer guard requires explicit role revocation beside quoted function definitions. The one added REVOKE is byte-inverse verified against the reviewed installer and leaves its existing postgres-only ACL unchanged; native83 reran on the exact changed installer.",
+    "functionBodyChanged": false,
+    "allowlistChanged": false
+  }
+}

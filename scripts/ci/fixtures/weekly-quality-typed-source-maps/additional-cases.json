@@ -1,0 +1,94 @@
+[
+  {
+    "name": "owner_direct_true",
+    "setup": "UPDATE public.accounting_tournament_fee_batches SET status='owner_direct';INSERT INTO fixture.direct_proofs SELECT rake_record_id,true FROM public.accounting_tournament_fee_batches;",
+    "independent_expected_subset": {
+      "status": "ready",
+      "checked": 1
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "mixed_cutover_true",
+    "setup": "UPDATE public.accounting_tournament_fee_batches SET status='mixed_cutover';INSERT INTO fixture.mixed_proofs SELECT rake_record_id,true FROM public.accounting_tournament_fee_batches;",
+    "independent_expected_subset": {
+      "status": "ready",
+      "checked": 1
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "wrong_event_recognized_receipt",
+    "setup": "UPDATE public.accounting_tournament_recognized_sources SET tournament_id=fixture.u(999);",
+    "independent_expected_subset": {
+      "reason": "tournament_recognized_source_receipts_incomplete"
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "null_event_recognized_receipt",
+    "setup": "UPDATE public.accounting_tournament_recognized_sources SET tournament_id=NULL;",
+    "independent_expected_subset": {
+      "reason": "tournament_recognized_source_receipts_incomplete"
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "global_orphan_missing_source",
+    "setup": "INSERT INTO public.accounting_tournament_recognized_sources VALUES(fixture.u(999),fixture.u(100),'2026-10-06 12:00Z','earned',0);",
+    "independent_expected_subset": {
+      "reason": "tournament_recognized_source_receipts_incomplete"
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "global_orphan_foreign_source_id",
+    "setup": "INSERT INTO public.accounting_tournament_fee_sources SELECT fixture.u(999),fixture.u(998),rake_record_id,0,union_id,coordinator_union_id,club_id,player_id,contract,charged_at FROM public.accounting_tournament_fee_sources;INSERT INTO public.accounting_tournament_recognized_sources VALUES(fixture.u(999),fixture.u(100),'2026-10-06 12:00Z','earned',0);",
+    "independent_expected_subset": {
+      "reason": "tournament_recognized_source_receipts_incomplete"
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "null_rake_record_source_scope_bad",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET rake_record_id=NULL;",
+    "independent_expected_subset": null,
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "malformed_numeric_inside",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET contract=jsonb_set(contract,'{rake_credit}','\"invalid\"');",
+    "independent_expected_subset": null,
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "malformed_timestamp_inside",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET contract=jsonb_set(contract,'{terms_at}','\"invalid\"');",
+    "independent_expected_subset": null,
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "malformed_uuid_inside",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET contract=jsonb_set(contract,'{union_id}','\"invalid\"');",
+    "independent_expected_subset": null,
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "malformed_contract_foreign_scope_ignored",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET club_id=fixture.u(2),union_id=fixture.u(20),coordinator_union_id=fixture.u(20),contract=jsonb_set(contract,'{union_id}','\"invalid\"');UPDATE public.accounting_tournament_fee_recognitions SET union_id=fixture.u(20),bank_club_id=fixture.u(2);UPDATE public.tournament_rake_settlements SET union_id=fixture.u(20),club_id=fixture.u(2);",
+    "independent_expected_subset": {
+      "status": "ready",
+      "checked": 0
+    },
+    "require_full_old_new_error_or_value_equality": true
+  },
+  {
+    "name": "malformed_contract_outside_week_ignored",
+    "setup": "UPDATE public.accounting_tournament_fee_sources SET contract=jsonb_set(contract,'{union_id}','\"invalid\"');UPDATE public.accounting_tournament_fee_recognitions SET recognized_at='2026-09-28';UPDATE public.tournament_rake_settlements SET settled_at='2026-09-28';INSERT INTO public.tournament_terminal_settlements VALUES(fixture.u(100),'2026-10-06',NULL);",
+    "independent_expected_subset": {
+      "status": "ready",
+      "checked": 0
+    },
+    "require_full_old_new_error_or_value_equality": true
+  }
+]

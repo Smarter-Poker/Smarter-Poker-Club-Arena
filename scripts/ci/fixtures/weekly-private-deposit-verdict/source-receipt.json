@@ -1,0 +1,28 @@
+{
+  "replacements": [
+    {
+      "old": "UNION SELECT s.rake_record_id FROM public.accounting_cash_rake_sources s WHERE s.club_id=period.club_id AND s.union_id IS NULL\n    AND s.coordinator_union_id IS NOT DISTINCT FROM period.union_id AND s.earned_at>=period.start_at AND s.earned_at<period.end_at",
+      "new": "UNION SELECT s.rake_record_id FROM public.accounting_cash_rake_sources s WHERE s.club_id=period.club_id AND s.union_id IS NULL\n    AND period.union_id IS NULL AND s.coordinator_union_id IS NULL AND s.earned_at>=period.start_at AND s.earned_at<period.end_at\n   UNION SELECT s.rake_record_id FROM public.accounting_cash_rake_sources s WHERE s.club_id=period.club_id AND s.union_id IS NULL\n    AND period.union_id IS NOT NULL AND s.coordinator_union_id=period.union_id AND s.earned_at>=period.start_at AND s.earned_at<period.end_at"
+    },
+    {
+      "old": "UNION SELECT s.tournament_id FROM public.accounting_payable_earning_sources s WHERE s.source_type='tournament_fee_accrual'\n    AND s.club_id=period.club_id AND s.union_id IS NULL AND s.coordinator_union_id IS NOT DISTINCT FROM period.union_id\n    AND s.earned_at>=period.start_at AND s.earned_at<period.end_at",
+      "new": "UNION SELECT s.tournament_id FROM public.accounting_payable_earning_sources s WHERE s.source_type='tournament_fee_accrual'\n    AND s.club_id=period.club_id AND s.union_id IS NULL AND period.union_id IS NULL AND s.coordinator_union_id IS NULL\n    AND s.earned_at>=period.start_at AND s.earned_at<period.end_at\n   UNION SELECT s.tournament_id FROM public.accounting_payable_earning_sources s WHERE s.source_type='tournament_fee_accrual'\n    AND s.club_id=period.club_id AND s.union_id IS NULL AND period.union_id IS NOT NULL AND s.coordinator_union_id=period.union_id\n    AND s.earned_at>=period.start_at AND s.earned_at<period.end_at"
+    },
+    {
+      "old": "verdict AS (",
+      "new": "verdict AS MATERIALIZED ("
+    },
+    {
+      "old": "  FROM judged j\n )",
+      "new": "  FROM judged j\n  WHERE NOT(j.n>0 AND NOT j.mine)\n )"
+    }
+  ],
+  "old_query_sha256": "83be356cf30c5da2e65e2987f4749cbeb137a855d053db2827a589306f7da9aa",
+  "new_query_sha256": "2f4d233227a567607dc1d55073b2a1f3d1269428db77d14eef6d3dc40bfadda9",
+  "unchanged": "ALL rawcash/eventgroup lateral rows/bad/mine/time/foreign/N0/source ledger/retirement/orderedJSON",
+  "parity_domain": "ALL original judged typedrows; exact original NONSKIPPED verdict typedrows; allthree original aggregate outputs and original orderedledgerIDs. No claim that excluded skippedissue fields were evaluated.",
+  "before_md5": "5225ca603c36cc72e905c337c94f3eae",
+  "after_md5": "b00039e968bc69a56046c2fe0634fc8b",
+  "migration_file": "supabase/migrations/20261028032621_weekly_statement_judges_visible_private_deposits_once.sql",
+  "migration_version": "20261028032621"
+}

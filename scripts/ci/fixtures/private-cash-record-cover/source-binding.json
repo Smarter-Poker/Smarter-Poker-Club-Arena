@@ -10,7 +10,7 @@
     "scripts/ci/fixtures/private-cash-record-cover/qualification-evidence.json": "a131bfb246bf48ce1daf2bfda1be0b0b059086c14ac8129a69e7071dcfc32bf6",
     "tests/private-cash-record-index-retains-original-facts.law.test.ts": "48859baa852c128692de47a217c833b9426188975f5d20fbe32997abf856e5a4",
     "docs/laws.d/private-cash-record-index-retains-original-facts.md": "950ec27047e671d4c9b5463aeb39a15c58da7ba0d5425b94acd01e1147a03360",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
     "docs/changelog/2026-10-28-original-cash-deposit-records-read-scalar-facts.md": "838bc0d7d4c198c46f950bfeddc2f6b9ee8d78e252a691c5c1dcf0815dccfe78"
   },
   "workflowTournamentFeeScopeAdditiveAudit": {
@@ -18,5 +18,11 @@
     "previousSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
     "currentSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
     "change": "Exactly three new fee-scope qualification paths and one new isolated PG17 step. Reverse-removal was checked to recover prior workflow byte-for-byte; cash23500 exactSQL, runner, fixture, native28 evidence and every other original source pin remain unchanged. No repeat cash physical test is needed because only additive workflow enforcement metadata changed."
+  },
+  "workflowPrivateVerdictAdditiveAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "currentSHA256": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
+    "change": "Exactly five qualification paths (including both consumed shared fixture families) and one new isolated PG17 exact official private-verdict step. Reverse-removal recovers prior workflow byte-for-byte; every previous native financial command/assertion and every other pinned source byte remains unchanged. Exact existing four-patch C2 is qualified by the new guarded full installer/native92; no new bulk rewrite or production closure claim."
   }
 }

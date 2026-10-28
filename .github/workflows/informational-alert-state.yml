@@ -17,6 +17,10 @@ on:
       - supabase/migrations/**
       - scripts/ci/fixtures/alert-ledger-roots/**
       - scripts/ci/test-alert-ledger-roots.py
+      - scripts/ci/test-native-alert-event.py
+      - tools/production-alerts-native-wakeup/**
+      - tests/nativeAlertEvent.test.ts
+      - tests/fixtures/native-alert-event/**
       - scripts/ci/fixtures/informational-alert-state/**
       - scripts/ci/test-informational-alert-state.py
       - .github/workflows/informational-alert-state.yml

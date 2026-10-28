@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244453,
-      "sha256": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+      "bytes": 245332,
+      "sha256": "dd2624fb40c4b7a19dffdc819e0789e3957d3935bd8e833995a9f559124ab52e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42836,
-      "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+      "bytes": 42891,
+      "sha256": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4234,5 +4234,32 @@
   "retentionCurrentMainWorkflowIntegration20261028": {
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+  },
+  "supersededRetentionProgressCurrentInputIdentity20261028": {
+    "reason": "Reviewed additive Accounting shard3 retention-progress fixture/artifact and its input-only classifier selectors. Restamp only those two current enforcement inputs; preserve all historical audit objects, financial sources/assertions, native qualification status and production acceptance. No new financial or production qualification is claimed.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244453,
+          "sha256": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+        },
+        "current": {
+          "bytes": 245332,
+          "sha256": "dd2624fb40c4b7a19dffdc819e0789e3957d3935bd8e833995a9f559124ab52e"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+        },
+        "current": {
+          "bytes": 42891,
+          "sha256": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
+        }
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
   }
 }

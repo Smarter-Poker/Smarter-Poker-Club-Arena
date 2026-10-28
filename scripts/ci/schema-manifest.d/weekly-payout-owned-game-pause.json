@@ -1,8 +1,27 @@
 {
   "_owner": "codex/weekly-payout-owned-pause-20261028",
-  "_comment": "Public objects created by migration 20261028162126 for the engine's durable weekly payout pause subscription, boundary read and fleet acknowledgement.",
-  "tables": ["weekly_accounting_payout_pauses"],
-  "functions": ["fn_weekly_accounting_payout_pause_state", "fn_weekly_accounting_payout_pause_ack"],
+  "_comment": "Objects created by migration 20261028162126 for the durable weekly payout pause, private original financial ownership and engine boundary read/acknowledgement. Declaration only; installation remains a separate protected-main operation.",
+  "tables": [
+    "weekly_accounting_payout_pauses",
+    "smarter_private.weekly_payout_phase_configuration",
+    "smarter_private.weekly_payout_financial_receipts",
+    "smarter_private.weekly_payout_owned_transactions"
+  ],
+  "functions": [
+    "fn_weekly_accounting_payout_pause_state",
+    "fn_weekly_accounting_payout_pause_ack",
+    "smarter_private.weekly_payout_clock",
+    "smarter_private.weekly_payout_pause_json",
+    "smarter_private.weekly_payout_claims_match",
+    "smarter_private.weekly_payout_eligible_scopes",
+    "smarter_private.weekly_payout_scope_plan",
+    "smarter_private.weekly_payout_prepare_due",
+    "smarter_private.weekly_payout_owns_round",
+    "smarter_private.weekly_payout_require_round",
+    "smarter_private.weekly_payout_execute",
+    "smarter_private.weekly_payout_due",
+    "smarter_private.weekly_payout_owned_money_write"
+  ],
   "columns": {
     "weekly_accounting_payout_pauses": [
       "run_id",

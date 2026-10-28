@@ -340,6 +340,108 @@ def union_read_evidence(packet,attestation,parts,results):
     river=({'status':'reported','scope':'selected_accepted_decisions','readBasis':'original_individual_scoped_basic_counters',**river_counts,**{k:len(v) for k,v in river_horses.items()},'pooledIndividualScopedBasicReadHorses':len(basis_horses),'pooledIndividualScopedBasicReadDecisions':basis_total,'completePopulation':False,'allContextsVerified':False,'durablePersistenceVerified':False,'strategyApplicationVerified':False,'allPhasesVerified':False} if public_known and river_known else dict(unknown))
     return public,river
 
+LEDGER_SCHEMA='horse-fleet-indexed-evidence-v1'
+LEDGER_COUNTS=('acceptedDecisions','pooledPublicReadDecisions','independentPublicReadDecisions','qualifiedOriginalReadDecisions')
+
+def indexed_ledger(packet,attestation,results):
+    """Retain coverage by stable canonical ordinal, never an actor or payload.
+    Counts prove accepted journal/read evidence only, not decision optimality or
+    durable plan effects. Raw source rows remain in the private ephemeral owner.
+    """
+    ids=sorted(packet['horseIds']);positions={actor:i for i,actor in enumerate(ids)}
+    rows=[{'index':i,**{k:0 for k in LEDGER_COUNTS},'phaseAcceptedApplications':{}} for i in range(1000)]
+    bindings=[]
+    for part,result in zip(partition_packets(packet,attestation),results):
+        e=result['execution'];o=e['observation']
+        bound={**attestation,'packetDigest':digest(part),'selectedHands':len(part['handKeys'])}
+        public,river=read_evidence(bound,result,o,part)
+        bindings.append({'packetDigest':result['packetDigest'],'window':packet['window'],
+            'servingContainer':e['servingContainer'],'imageId':e['imageId'],'servingStartedAt':e['servingStartedAt']})
+        for h in o['horses']:
+            row=rows[positions[h['horseId']]];n=h['acceptedDecisions']
+            row['acceptedDecisions']+=n
+            receipts=h.get('retainedReceiptCounts');learning=h.get('riverLearning')
+            for output,key in [('pooledPublicReadDecisions','pooledPublicReads'),('independentPublicReadDecisions','independentPublicReads')]:
+                value=(receipts.get(key,0) if public.get('status')=='reported' and isinstance(receipts,dict) and any(k in receipts for k in ('pooledPublicReads','independentPublicReads')) else None) if n else 0
+                row[output]=None if row[output] is None or value is None else row[output]+value
+            value=(learning.get('qualifiedReadDecisions') if river.get('status')=='reported' and isinstance(learning,dict) else None) if n else 0
+            row['qualifiedOriginalReadDecisions']=None if row['qualifiedOriginalReadDecisions'] is None or value is None else row['qualifiedOriginalReadDecisions']+value
+            for phase,count in h['phaseAcceptedApplications'].items():
+                row['phaseAcceptedApplications'][phase]=row['phaseAcceptedApplications'].get(phase,0)+count
+    # One operation window owns disjoint hand partitions. Keep that binding
+    # together so later unions cannot accidentally sum overlapping windows.
+    observation={'packetDigest':digest(packet),'window':packet['window'],
+        'partitionDigests':[b['packetDigest'] for b in bindings],
+        'servingContainer':bindings[0]['servingContainer'] if bindings else None,
+        'imageId':bindings[0]['imageId'] if bindings else None,
+        'servingStartedAt':bindings[0]['servingStartedAt'] if bindings else None}
+    ledger={'schema':LEDGER_SCHEMA,'cohortDigest':digest({'version':1,'horseIds':ids}),
+        'sourceSha':packet['sourceSha'],'rosterCount':1000,'indexBasis':'lexically_sorted_canonical_cohort',
+        'observations':[observation] if bindings else [],'rows':rows,
+        'decisionCorrectness':'unknown','planEffectPersistence':'unknown','profitability':'unknown',
+        'completePopulation':False,'allPhasesVerified':False}
+    return validate_indexed_ledger(ledger) if bindings else None
+
+def validate_indexed_ledger(value):
+    expected={'schema','cohortDigest','sourceSha','rosterCount','indexBasis','observations','rows',
+        'decisionCorrectness','planEffectPersistence','profitability','completePopulation','allPhasesVerified'}
+    if (not isinstance(value,dict) or set(value)!=expected or value['schema']!=LEDGER_SCHEMA
+        or not re.fullmatch('[0-9a-f]{64}',value.get('cohortDigest',''))
+        or not re.fullmatch('[0-9a-f]{40}',value.get('sourceSha','')) or value['rosterCount']!=1000
+        or value['indexBasis']!='lexically_sorted_canonical_cohort'
+        or any(value[k]!='unknown' for k in ('decisionCorrectness','planEffectPersistence','profitability'))
+        or value['completePopulation'] is not False or value['allPhasesVerified'] is not False):raise ValueError('indexed_ledger_header')
+    observations=value['observations'];rows=value['rows']
+    if not isinstance(observations,list) or not 1<=len(observations)<=16:raise ValueError('indexed_ledger_bindings')
+    intervals=[];packets=set()
+    for b in observations:
+        if (not isinstance(b,dict) or set(b)!={'packetDigest','window','partitionDigests','servingContainer','imageId','servingStartedAt'}
+            or not re.fullmatch('[0-9a-f]{64}',b.get('packetDigest','')) or b['packetDigest'] in packets
+            or not re.fullmatch('[0-9a-f]{64}',b.get('servingContainer',''))
+            or not re.fullmatch('sha256:[0-9a-f]{64}',b.get('imageId',''))
+            or not isinstance(b.get('servingStartedAt'),str)
+            or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z',b['servingStartedAt'])):raise ValueError('indexed_ledger_binding')
+        packets.add(b['packetDigest']);parts=b['partitionDigests'];window=b['window']
+        if not isinstance(parts,list) or not 1<=len(parts)<=16 or len(set(parts))!=len(parts) or any(not isinstance(p,str) or not re.fullmatch('[0-9a-f]{64}',p) for p in parts):raise ValueError('indexed_ledger_partitions')
+        if not isinstance(window,dict) or set(window)!={'startUtc','endUtc'}:raise ValueError('indexed_ledger_window')
+        inputs({'FLEET_SOURCE_SHA':value['sourceSha'],'FLEET_FROM_UTC':window['startUtc'],'FLEET_TO_UTC':window['endUtc']})
+        interval=(window['startUtc'],window['endUtc'])
+        if any(interval[0]<end and start<interval[1] for start,end in intervals):raise ValueError('indexed_ledger_overlap')
+        intervals.append(interval)
+    if not isinstance(rows,list) or len(rows)!=1000:raise ValueError('indexed_ledger_rows')
+    for index,row in enumerate(rows):
+        if not isinstance(row,dict) or set(row)!={'index',*LEDGER_COUNTS,'phaseAcceptedApplications'} or row['index']!=index or type(row['index']) is not int:raise ValueError('indexed_ledger_row')
+        n=row['acceptedDecisions']
+        if type(n) is not int or not 0<=n<=16*256*1024:raise ValueError('indexed_ledger_count')
+        for key in LEDGER_COUNTS[1:]:
+            v=row[key]
+            if v is not None and (type(v) is not int or not 0<=v<=n):raise ValueError('indexed_ledger_count')
+        a=row['pooledPublicReadDecisions'];b=row['independentPublicReadDecisions']
+        if a is not None and b is not None and a+b>n:raise ValueError('indexed_ledger_read_count')
+        phases=row['phaseAcceptedApplications']
+        if not isinstance(phases,dict) or any(k not in {f'phase{i}' for i in range(1,16)} or type(v) is not int or not 0<=v<=n for k,v in phases.items()):raise ValueError('indexed_ledger_phase')
+    return value
+
+def union_indexed_ledgers(ledgers):
+    """Only disjoint windows are additive. Identical retries count once;
+    different source/cohort or overlapping observations remain a refusal.
+    """
+    if not isinstance(ledgers,list) or not 1<=len(ledgers)<=16:raise ValueError('indexed_ledger_union_bound')
+    unique={digest(validate_indexed_ledger(v)):v for v in ledgers}
+    values=list(unique.values());first=values[0]
+    out=json.loads(json.dumps(first))
+    for value in values[1:]:
+        if any(value[k]!=first[k] for k in ('cohortDigest','sourceSha','rosterCount','indexBasis')):raise ValueError('indexed_ledger_union_mismatch')
+        out['observations'].extend(value['observations'])
+        # Reject overlap before adding counts, including partially repeated unions.
+        validate_indexed_ledger({**out,'rows':first['rows']})
+        for target,row in zip(out['rows'],value['rows']):
+            for key in LEDGER_COUNTS:
+                target[key]=None if target[key] is None or row[key] is None else target[key]+row[key]
+            for phase,count in row['phaseAcceptedApplications'].items():
+                target['phaseAcceptedApplications'][phase]=target['phaseAcceptedApplications'].get(phase,0)+count
+    return validate_indexed_ledger(out)
+
 def bounded_summary(packet,attestation,results):
     parts=partition_packets(packet,attestation)
     if not isinstance(results,list) or len(results)>len(parts):raise ValueError('partition_results')
@@ -414,6 +516,7 @@ def bounded_summary(packet,attestation,results):
         'observedHorses':len(observed),'unobservedHorses':1000-len(observed),
         'completeCapture':bool(complete),'completeCanonicalHorseCoverage':bool(complete and len(observed)==1000),
         'completePopulation':False,'allPhasesVerified':False,'gaps':gaps,
+        'indexedEvidenceLedger':indexed_ledger(packet,attestation,results),
         'phaseEvidence':phase_summary({'acceptedDecisions':n,'phaseProofSchema':{'version':'horse-fleet-phase-proof-v1','counterUnit':'selected_accepted_decisions'},'phaseEvidence':phase_rows})}
     return summary
 
@@ -474,10 +577,19 @@ def database_failure(stderr):
 
 def main():
     try:
+        if 3<=len(sys.argv)<=18 and sys.argv[1]=='--union-ledgers':
+            values=[]
+            for name in sys.argv[2:]:
+                p=Path(name)
+                if not p.is_absolute() or p.is_symlink() or not p.is_file() or p.stat().st_size>2097152:raise ValueError('indexed_ledger_file')
+                value=json.loads(p.read_text());values.append(value.get('indexedEvidenceLedger',value))
+            ledger=union_indexed_ledgers(values)
+            print(json.dumps({'indexedEvidenceLedger':ledger,'observedHorses':sum(r['acceptedDecisions']>0 for r in ledger['rows']),
+                'allPhasesVerified':False,'decisionCorrectness':'unknown','planEffectPersistence':'unknown'}));return 0
         if len(sys.argv)==6 and sys.argv[1]=='--observe-bounded':
             result=observe_bounded(*sys.argv[2:])
-            # The destination contains only bounded counts/digests. Private
-            # per-horse identities remain in the existing ephemeral directory.
+            # The destination contains bounded counts/digests and stable cohort
+            # indices, never actor IDs. Raw identities remain ephemeral.
             print(json.dumps(result));return 0 if result['completeCanonicalHorseCoverage'] else 2
         if len(sys.argv) in (4,5) and sys.argv[1]=='--summarize':
             paths=[Path(p) for p in sys.argv[2:]]

@@ -1,0 +1,7 @@
+# Tournament Lobby Bottom-Edge Scroll Stability
+
+A continued downward gesture in the tournament details lobby could repeatedly hide and reveal the global footer. Hiding the footer enlarges `.details-content`; reaching that panel's new bottom reveals the footer and creates another footer-height of scroll range. The remaining gesture then hid it again. Browser scroll anchoring and viewport clamping could also be mistaken for fresh directional travel because the footer hook tracked content height but not panel height.
+
+The footer's existing scroll handler now retains the end-of-content state until the reader travels upward away from the end. It rebases resize-only scroll adjustments, including short panels, and releases the old end state when actual content extends the reading range. Genuine down/up travel, first flicks, bottom reveal, focus reveal, live-content anchoring and instant footer height publication remain intact. The tournament design, registration behavior, engine and database are unchanged.
+
+Regression coverage uses the real direction hook and tournament styles in the existing required mobile lobby CSS browser suite, with sustained wheel input across footer-driven resizing in Chromium and WebKit. Unit cases cover resize rebasing, continued end gestures, returning to ordinary travel and newly extended short lists. Before the fix the browser reproducer recorded 20–34 footer transitions; afterward it records exactly shown → hidden → shown, including continued input at the end.

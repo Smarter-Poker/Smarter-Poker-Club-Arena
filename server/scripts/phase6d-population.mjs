@@ -1023,6 +1023,22 @@ finally:
 /** Explicit private observation through the provider's ALREADY configured
  * authenticated HSSH wrapper. No host, key, environment or release operation
  * is selected here. Packet authority remains the original accepted-hand owner. */
+export function fleetFailureCode(run, execution) {
+  if (run.error?.code === 'ETIMEDOUT' || run.signal === 'SIGTERM') return 'transport_timeout';
+  if (run.error) return 'transport_unavailable';
+  if (run.status !== 0) return 'transport_nonzero';
+  if (!execution) return 'transport_output_invalid';
+  if (execution.executionStatus) return 'remote_observer_unavailable';
+  if (execution.oomKilled === true) return 'observer_oom';
+  if (execution.sameServingIdentityAfter !== true) return 'serving_identity_unverified';
+  if (execution.observerRemoved !== true || execution.cleanupExitCode !== 0)
+    return 'observer_cleanup_unverified';
+  if (execution.horseJournalMountVerified !== true) return 'journal_mount_unverified';
+  if (![0, 2].includes(execution.exitCode) || execution.containerExitCode !== execution.exitCode)
+    return 'observer_exit_unverified';
+  return 'observation_contract_unverified';
+}
+
 export function runFleetObservation({ packetPath, sshCommand, outputPath }) {
   if (
     ![packetPath, sshCommand, outputPath].every(isAbsolute) ||
@@ -1129,6 +1145,7 @@ export function runFleetObservation({ packetPath, sshCommand, outputPath }) {
     writeFileSync(fd, JSON.stringify(result) + '\n');
     return {
       qualifiedExecution,
+      ...(qualifiedExecution ? {} : { failureCode: fleetFailureCode(run, execution) }),
       operationDigest: sha256(payload.name),
       completeHorseCoverage: qualifiedExecution && observation.completeHorseCoverage === true,
       observedHorses: qualifiedExecution ? observation.observedHorses : null,
@@ -1597,9 +1614,14 @@ async function main() {
       });
       process.stdout.write(JSON.stringify(result) + '\n');
       process.exitCode = result.qualifiedExecution ? 0 : 2;
-    } catch {
+    } catch (error) {
+      const failureCode = ['fleet_private_paths', 'fleet_packet', 'fleet_window'].includes(
+        error?.message
+      )
+        ? error.message
+        : 'fleet_setup_unavailable';
       process.stdout.write(
-        JSON.stringify({ qualifiedExecution: false, status: 'unavailable' }) + '\n'
+        JSON.stringify({ qualifiedExecution: false, status: 'unavailable', failureCode }) + '\n'
       );
       process.exitCode = 3;
     }

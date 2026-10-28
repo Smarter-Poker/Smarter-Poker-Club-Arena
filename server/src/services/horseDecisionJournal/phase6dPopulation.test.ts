@@ -716,3 +716,26 @@ describe('Phase 6D capture continuity names shed records', () => {
     });
   });
 });
+
+it('projects fleet failure metadata to closed diagnostic codes without raw transport data', () => {
+  const clean = {
+    exitCode: 0,
+    containerExitCode: 0,
+    oomKilled: false,
+    sameServingIdentityAfter: true,
+    observerRemoved: true,
+    cleanupExitCode: 0,
+    horseJournalMountVerified: true,
+  };
+  for (const [run, execution, expected] of [
+    [{ status: null, error: { code: 'ETIMEDOUT', message: 'PRIVATE' } }, null, 'transport_timeout'],
+    [{ status: 1, stderr: 'PRIVATE' }, null, 'transport_nonzero'],
+    [{ status: 0 }, null, 'transport_output_invalid'],
+    [{ status: 0 }, { ...clean, oomKilled: true }, 'observer_oom'],
+    [{ status: 0 }, { ...clean, sameServingIdentityAfter: false }, 'serving_identity_unverified'],
+    [{ status: 0 }, { ...clean, observerRemoved: false }, 'observer_cleanup_unverified'],
+    [{ status: 0 }, { ...clean, horseJournalMountVerified: false }, 'journal_mount_unverified'],
+    [{ status: 0 }, { ...clean, errorText: 'PRIVATE' }, 'observation_contract_unverified'],
+  ] as any[])
+    expect(selector.fleetFailureCode(run, execution)).toBe(expected);
+});

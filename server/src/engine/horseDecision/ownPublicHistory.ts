@@ -297,6 +297,7 @@ export class HorseOwnPublicHistoryCache {
     string,
     {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -318,15 +319,23 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     if (!key || !clock(cutoffMs)) return undefined;
     const known = this.entries.get(key);
-    if (known && (!known.settled || known.packet || cutoffMs < known.retryAfterMs))
-      return known.packet && !known.acknowledged && known.packet.availableAtMs <= cutoffMs
-        ? structuredClone(known.packet)
-        : undefined;
+    if (
+      known &&
+      (!known.settled || known.packet || known.serialized || cutoffMs < known.retryAfterMs)
+    ) {
+      if (known.acknowledged) return undefined;
+      if (known.packet && known.packet.availableAtMs <= cutoffMs)
+        return structuredClone(known.packet);
+      if (known.serialized && known.serialized.availableAtMs <= cutoffMs)
+        return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
+      return undefined;
+    }
     if (activeLoads >= 16) return undefined;
     if (!known && this.entries.size >= this.maxEntries)
       this.entries.delete(this.entries.keys().next().value!);
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -367,11 +376,28 @@ export class HorseOwnPublicHistoryCache {
   state(context: HorseObserverReadContext): 'pending' | 'available' | 'unavailable' {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    return entry?.packet ? 'available' : entry?.settled ? 'unavailable' : 'pending';
+    return entry?.packet || entry?.serialized
+      ? 'available'
+      : entry?.settled
+        ? 'unavailable'
+        : 'pending';
   }
   acknowledge(context: HorseObserverReadContext, digest: string | null): void {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    if (entry) entry.acknowledged = !!entry.packet && digest === entry.packet.digest;
+    if (!entry) return;
+    entry.acknowledged =
+      digest !== null && digest === (entry.packet?.digest ?? entry.serialized?.digest);
+    if (entry.acknowledged && entry.packet) {
+      // Keep the exact original window for a worker's later null ACK (eviction
+      // or restart), but stop retaining its decoded graph after delivery.
+      // Each client owns its ACK; another worker never acknowledges this one.
+      entry.serialized = {
+        json: JSON.stringify(entry.packet),
+        digest: entry.packet.digest,
+        availableAtMs: entry.packet.availableAtMs,
+      };
+      entry.packet = undefined;
+    }
   }
 }

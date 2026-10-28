@@ -9602,14 +9602,10 @@ function LiveTablePage({
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Smart Mini-HUD — track opponent stats (VPIP/PFR/heat)
-  const {
-    getStats: getPlayerHUDStats,
-    recordHandPlayed,
-    recordVPIP,
-    recordPFR,
-    recordWin: recordHUDWin,
-  } = usePlayerStats();
+  // Only committed, card-free public summaries enter the Mini-HUD.
+  const { getStats: getPlayerHUDStats, observePublicEvent } = usePlayerStats(userId);
+  const observePublicEventRef = useRef(observePublicEvent);
+  observePublicEventRef.current = observePublicEvent;
 
   // User settings with persistence
   const { settings: userSettings, updateSetting } = useTableSettings();
@@ -17590,6 +17586,7 @@ function LiveTablePage({
       (engineLastEvent as unknown as Record<string, unknown>);
     const evt = { type: normalizedType, data: normalizedData };
     void engineLastEvent;
+    observePublicEventRef.current(tableId ?? '', evt.type, evt.data);
 
     switch (evt.type) {
       case 'ENGINE_EVENT_GAP': {
@@ -28318,11 +28315,15 @@ function LiveTablePage({
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
                   playerStyle={
-                    userSettings.showHUD && seatHudStats
+                    userSettings.showHUD &&
+                    seatHudStats?.aggressionMeasured &&
+                    (seatHudStats.callActions ?? 0) > 0
                       ? playerStyleClassifier.classify({
                           handsPlayed: seatHudStats.handsPlayed,
                           vpipCount: seatHudStats.vpipCount,
                           pfrCount: seatHudStats.pfrCount,
+                          aggressiveActions: seatHudStats.aggressiveActions,
+                          passiveActions: seatHudStats.callActions,
                         })
                       : null
                   }

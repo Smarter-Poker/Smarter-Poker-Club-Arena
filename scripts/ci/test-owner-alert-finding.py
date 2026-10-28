@@ -58,3 +58,8 @@ CREATE TABLE public.operational_alert_events(id bigint,source text,alertname tex
         print('PASS: baseline reproduction, actual trigger, fallback, priority, truncation, debounce and preimage refusal')
     finally:
         run('pg_ctl','-D',str(scratch/'data'),'-m','immediate','stop')
+
+# The same required accounting job also proves the canonical native intake's
+# exact database capture, permissions, read acknowledgements and silence rule.
+import sys
+subprocess.run([sys.executable,str(root/'scripts/ci/test-native-alert-event.py')],check=True,timeout=90)

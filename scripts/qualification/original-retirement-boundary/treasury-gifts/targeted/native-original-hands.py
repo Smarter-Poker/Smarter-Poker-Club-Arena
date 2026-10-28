@@ -2,7 +2,7 @@
 import argparse,hashlib,json,os,shutil,socket,subprocess,tempfile
 from pathlib import Path
 ap=argparse.ArgumentParser();ap.add_argument('--reader-composition',type=Path);ap.add_argument('--output',type=Path,required=True);reader_args=ap.parse_args()
-P=Path(__file__).resolve().parent;D=P/'deferred-originals';O=reader_args.output.resolve();O.mkdir(parents=True,exist_ok=True);PG=Path(os.environ.get('PG_BIN',str(Path(shutil.which('psql')or'/opt/homebrew/opt/postgresql@17/bin/psql').parent)));base=Path(tempfile.mkdtemp(prefix='g-',dir=O));started=False;data=base/'d'
+P=Path(__file__).resolve().parent;D=P/'deferred-originals';O=reader_args.output.resolve();O.mkdir(parents=True,exist_ok=True);PG=Path(os.environ.get('PG_BIN',str(Path(shutil.which('psql')or'/opt/homebrew/opt/postgresql@17/bin/psql').parent)));base=Path(tempfile.mkdtemp(prefix='report-native-',dir=os.environ.get('ORB_NATIVE_TMPDIR',str(O))));started=False;data=base/'d'
 with socket.socket() as l:l.bind(('127.0.0.1',0));port=str(l.getsockname()[1])
 env={k:v for k,v in os.environ.items()if not k.startswith('PG')};env['TMPDIR']=str(base)
 def run(args,s=None,error=None):

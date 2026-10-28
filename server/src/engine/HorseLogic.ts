@@ -1,9 +1,9 @@
+import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
   multiwayRiverLine,
   multiwayRiverContext,
   riverPublicNode,
 } from './HorseMultiwayRiverRead.js';
-import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import { riverPositionIncrements } from './HorseRiverPositionRead.js';
 import {
   runCorrectiveKernelEvaluator,

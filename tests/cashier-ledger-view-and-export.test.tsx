@@ -391,7 +391,7 @@ describe('wallet balances and ledger movements retain separate formats', () => {
     }
   );
 
-  it('keeps agent claim history compact while the current wallet remains exact', async () => {
+  it('keeps agent claim history compact while the wallet and actionable claim stay exact', async () => {
     fx.agentRow = { agent_wallet_balance: 12500.5, promo_wallet_balance: 0 };
     fx.reversible = [
       {
@@ -411,7 +411,7 @@ describe('wallet balances and ledger movements retain separate formats', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
     await screen.findByText('Sent 2.5K, 1.2K Already Claimed Back');
     expect(document.querySelector('.cbc-tx-amount')).toHaveTextContent('1,250.50');
-    expect(screen.getByRole('button', { name: 'Claim Back 1,251 Chips' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Claim Back 1,250.50 Chips' })).toBeInTheDocument();
     expect(fx.calls.some((c) => /send|claim_back|reverse/.test(c.fn))).toBe(false);
   });
 });

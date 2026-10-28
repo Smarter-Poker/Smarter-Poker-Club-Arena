@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import {
   horseSocialFrames,
   horseSocialTableEligible,
+  rankHorseSocialCohorts,
   postHandChatDelay,
   sharedPayout,
   type HorseSocialFrame,
@@ -422,7 +423,8 @@ async function selectCashLobbyTab(page: Page, tabName: string): Promise<void> {
  */
 async function selectOccupiedRunningCashTables(
   page: Page,
-  request: APIRequestContext
+  request: APIRequestContext,
+  options: { perVariantLimit?: number } = {}
 ): Promise<{ tables: OccupiedCashTable[]; health: EngineHealth }> {
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
@@ -443,10 +445,14 @@ async function selectOccupiedRunningCashTables(
   // Explicit tabs preserve each witness's navigation owner. The initial active
   // tab can vary, and an unlabelled default witness cannot be restored safely.
   const tabs = ['NLH', 'PLO', 'LIMIT'];
+  const totalLimit = options.perVariantLimit
+    ? options.perVariantLimit * tabs.length
+    : CASH_PROGRESS_CANDIDATES;
   const tables: OccupiedCashTable[] = [];
   const seen = new Set<string>();
   for (const tabName of tabs) {
     await selectCashLobbyTab(page, tabName);
+    let variantCount = 0;
     const candidates = (await visibleRunningCashCandidates(page)).filter((c) => !seen.has(c.id));
     if (candidates.length === 0) continue;
     for (let offset = 0; offset < candidates.length; offset += 32) {
@@ -454,14 +460,24 @@ async function selectOccupiedRunningCashTables(
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table && !seen.has(candidate.id) && tables.length < CASH_PROGRESS_CANDIDATES) {
+        if (
+          table &&
+          !seen.has(candidate.id) &&
+          tables.length < totalLimit &&
+          (!options.perVariantLimit || variantCount < options.perVariantLimit)
+        ) {
           seen.add(candidate.id);
           tables.push({ candidate, table, tabName });
+          variantCount++;
         }
       }
-      if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+      if (
+        tables.length >= totalLimit ||
+        (options.perVariantLimit && variantCount >= options.perVariantLimit)
+      )
+        break;
     }
-    if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+    if (tables.length >= totalLimit) break;
   }
   if (tables.length > 0) {
     // Tab scanning takes time. Start every contender from the same fresh
@@ -2313,7 +2329,7 @@ test('natural horse social behavior reaches the live table', async ({
   const content = await db.from('content_settings').select('engine_enabled').limit(2);
   expect(content.error).toBeNull();
   expect(content.data).toEqual([{ engine_enabled: true }]);
-  const selected = await selectOccupiedRunningCashTables(page, request);
+  const selected = await selectOccupiedRunningCashTables(page, request, { perVariantLimit: 3 });
   const candidateIds = selected.tables.map(({ candidate }) => candidate.id);
   const metadata = await db
     .from('tables')
@@ -2343,23 +2359,38 @@ test('natural horse social behavior reaches the live table', async ({
     .eq('is_horse', true);
   expect(horseProfiles.error).toBeNull();
   const selectionHorses = new Set((horseProfiles.data || []).map((row) => row.id));
-  const eligible = selected.tables
-    .flatMap((entry) => {
-      const table = metadata.data?.find((row) => row.id === entry.candidate.id);
-      const asset = clubs.data?.find((club) => club.id === table?.club_id)?.asset;
-      const horseCount = (seatsAtSelection.data || []).filter(
-        (seat) => seat.table_id === entry.candidate.id && selectionHorses.has(seat.user_id)
-      ).length;
-      return table && horseSocialTableEligible(table, asset) && horseCount > 0
-        ? [{ ...entry, horseCount }]
-        : [];
-    })
-    .sort((a, b) => b.horseCount - a.horseCount);
+  const eligible = selected.tables.flatMap((entry) => {
+    const table = metadata.data?.find((row) => row.id === entry.candidate.id);
+    const asset = clubs.data?.find((club) => club.id === table?.club_id)?.asset;
+    const horseCount = (seatsAtSelection.data || []).filter(
+      (seat) => seat.table_id === entry.candidate.id && selectionHorses.has(seat.user_id)
+    ).length;
+    return table && horseSocialTableEligible(table, asset) && horseCount > 0
+      ? [{ ...entry, horseCount }]
+      : [];
+  });
   expect(
     eligible.length,
     'No eligible ordinary chips cash table with a natural horse subject was visible'
   ).toBeGreaterThan(0);
-  const candidate = eligible[0].candidate;
+  // Bounded indexed reads from at most nine discovered tables. Only public
+  // activity metadata leaves the database; no cards or hand actions are read.
+  const activitySince = new Date(Date.now() - 20 * 60_000).toISOString();
+  const showdowns = await db
+    .from('hand_history')
+    .select('table_id,ended_at')
+    .in(
+      'table_id',
+      eligible.map((entry) => entry.candidate.id)
+    )
+    .gte('ended_at', activitySince)
+    .not('showdown', 'is', null)
+    .neq('showdown', '[]')
+    .order('ended_at', { ascending: false })
+    .limit(180);
+  expect(showdowns.error).toBeNull();
+  const cohorts = rankHorseSocialCohorts(eligible, showdowns.data || [], activitySince);
+  const candidate = cohorts[0].candidate;
   const began = new Date().toISOString();
   const frames: HorseSocialFrame[] = [];
   const forbidden: string[] = [];
@@ -2612,6 +2643,13 @@ test('natural horse social behavior reaches the live table', async ({
           {
             expectedEngine: EXPECTED_ENGINE_SHA,
             tableId: candidate.id,
+            cohorts: cohorts.map((entry) => ({
+              tableId: entry.candidate.id,
+              tab: entry.tabName,
+              horseCount: entry.horseCount,
+              showdownCount: entry.showdownCount,
+            })),
+            activitySince,
             began,
             proofs,
             forbidden,

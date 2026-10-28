@@ -9,6 +9,7 @@
  */
 
 import { HandController, scaleWinnerCentsForRake } from './HandController.js';
+import { legacyAllInPercent } from './AllInEquityPresentation.js';
 import { InsuranceEngine } from './InsuranceEngine.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
@@ -2800,8 +2801,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * outcome probabilities (pot-share equity for display, strict-loss and
    * push for the premium). The Monte-Carlo worker (2000 ties-split
    * iterations) that used to feed pricing was both noisy (~1% stderr) and
-   * blind to the push rule; it remains in use for the on-screen equity
-   * broadcast only. The enumeration is cheap on the loop now: flop/turn are
+   * blind to the push rule. Public display now uses exact worker enumeration. The enumeration is cheap on the loop now: flop/turn are
    * exact (<=990 boards) and preflop samples 6,000 boards with a seeded
    * PRNG - the CSPRNG syscall storm that motivated the worker is gone.
    */
@@ -2864,17 +2864,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     pot: number,
     boardCount: number
   ): void {
+    if (
+      percentages.length !== players.length ||
+      percentages.some((p) => !Number.isFinite(p) || p < 0 || p > 100)
+    ) {
+      throw new Error('Incomplete all-in equity result');
+    }
     this.hub?.emitEvent(this.tableId, {
       type: 'all_in_equity',
+      exact: true,
+      replay_until: Date.now() + 30_000,
       table_id: this.tableId,
       hand_number: this.handCount,
       board: board.map((card) => `${card.rank}${card.suit}`),
       board_count: boardCount,
+      boards: [board, ...(this.liveExtraBoards() ?? [])].map((b) =>
+        b.map((c) => `${c.rank}${c.suit}`)
+      ),
       pot,
       equities: players.map((player, index) => ({
         userId: player.user_id,
         username: player.username || 'Unknown',
-        equity: Math.round((percentages[index] ?? 0) * 10) / 10,
+        equity: legacyAllInPercent(percentages[index]),
+        equityRaw: percentages[index],
         seat: player.seat,
       })),
     });
@@ -2923,13 +2935,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return;
     }
 
-    const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
+    // A missing opponent is unknown, never a smaller field priced as fact.
+    if (allInPlayers.length < 2 || allInPlayers.some((p) => (p.cards || []).length < 2)) return;
+    const valid = allInPlayers;
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
     // MULTI-BOARD EQUITY 2026-08-28: all live boards, board 1 first.
     const allBoards = [board, ...(extraBoards ?? [])];
     const equityController = this.handController;
     if (!equityController) return;
     const equityHandNumber = this.handCount;
+    const livePots = equityController.computeLivePots?.();
+    const equityPots = livePots
+      ?.filter((p) => p.amount > 0)
+      .map((p) => ({
+        amount: p.amount,
+        eligible: p.eligiblePlayers.map((id) => valid.findIndex((player) => player.user_id === id)),
+      }));
+    const discarded = valid.flatMap(
+      (p) => equityController.getPineappleKnownDeadCards?.(p.seat) ?? []
+    );
     const requestedBoardKey = allBoards
       .map((liveBoard) => liveBoard.map((card) => `${card.rank}${card.suit}`).join(','))
       .join('|');
@@ -2952,11 +2976,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // once.
       const perBoard: number[][] = await this.weeklyPayoutContinuation(
         Promise.all(
-          allBoards.map((b) =>
-            getEquityPool().estimateEquity(hands, b, [], perBoardIters, {
-              shortDeck: isShortDeck,
-              omaha: isOmaha,
-            })
+          allBoards.map((b, boardIndex) =>
+            getEquityPool().estimateEquity(
+              hands,
+              b,
+              [
+                ...discarded,
+                ...allBoards.flatMap((other, otherIndex) =>
+                  otherIndex === boardIndex ? [] : other
+                ),
+              ],
+              perBoardIters,
+              {
+                exact: true,
+                pots: equityPots,
+                hiLo: isHiLoVariant(equityVariant),
+                shortDeck: isShortDeck,
+                omaha: isOmaha,
+              }
+            )
           )
         )
       );
@@ -2983,14 +3021,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         .map((liveBoard) => liveBoard.map((card) => `${card.rank}${card.suit}`).join(','))
         .join('|');
       if (currentBoardKey !== requestedBoardKey) return;
+      if (
+        perBoard.some(
+          (values) =>
+            values.length !== hands.length ||
+            values.some((v) => !Number.isFinite(v) || v < 0 || v > 1)
+        )
+      ) {
+        throw new Error('Incomplete all-in worker result');
+      }
       const fractions = hands.map(
-        (_, i) => perBoard.reduce((s, f) => s + (f[i] ?? 0), 0) / allBoards.length
+        (_, i) => perBoard.reduce((s, f) => s + f[i], 0) / allBoards.length
       );
       for (let i = 0; i < valid.length; i++) {
         equities.push({
           userId: valid[i].user_id,
           username: valid[i].username || 'Unknown',
-          equity: Math.round(fractions[i] * 1000) / 10, // fraction -> % (1 dp)
+          equity: fractions[i] * 100, // retain rare positive probabilities
           seat: valid[i].seat,
         });
       }
@@ -3064,6 +3111,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   ): Promise<void> {
     if (!this.lifecycleCanMutate() || this.handController !== controller) return;
     const pricingHandNumber = this.handCount;
+    const pricingBoardKey = board.map((card) => `${card.rank}${card.suit}`).join(',');
+    const pricingBoardStillLive = () => {
+      const liveBoard = controller.getState?.()?.communityCards;
+      return (
+        Array.isArray(liveBoard) &&
+        liveBoard.map((card) => `${card.rank}${card.suit}`).join(',') === pricingBoardKey
+      );
+    };
 
     const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
     const result = { board, complete: board.length >= 5 };
@@ -3170,7 +3225,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (
         !this.lifecycleCanMutate() ||
         this.handController !== controller ||
-        this.handCount !== pricingHandNumber
+        this.handCount !== pricingHandNumber ||
+        !pricingBoardStillLive()
       ) {
         return;
       }
@@ -3206,7 +3262,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (
         this.lifecycleCanMutate() &&
         this.handController === controller &&
-        this.handCount === pricingHandNumber
+        this.handCount === pricingHandNumber &&
+        pricingBoardStillLive()
       ) {
         await this.weeklyPayoutContinuation(this.pacedAllInRunout(allInPlayers, pot));
       }
@@ -3215,19 +3272,27 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const pricingByPlayer = new Map(
       allInForOffer.map((player, index) => [player.playerId, allPricing[index]] as const)
     );
-    this.emitAllInEquityPayload(
-      allInPlayers,
-      allPricing.map((pricing) => pricing.equity),
-      result.board,
-      pot,
-      1
+    // Insurance prices are rounded and may be sampled preflop. They are not
+    // public exact probabilities; use the same exact display path as every table.
+    await this.weeklyPayoutContinuation(
+      this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards())
     );
+    // The optional display wait is also a financial authority boundary.
+    // Never create an offer using a prior hand/street after that await.
+    if (
+      !this.lifecycleCanMutate() ||
+      this.handController !== controller ||
+      this.handCount !== pricingHandNumber ||
+      !pricingBoardStillLive()
+    )
+      return;
     if (offerRevealPauseMs > 0) {
       await this.weeklyPayoutContinuation(this.sleepHand(offerRevealPauseMs));
       if (
         !this.lifecycleCanMutate() ||
         this.handController !== controller ||
-        this.handCount !== pricingHandNumber
+        this.handCount !== pricingHandNumber ||
+        !pricingBoardStillLive()
       ) {
         return;
       }

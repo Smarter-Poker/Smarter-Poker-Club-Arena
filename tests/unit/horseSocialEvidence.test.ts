@@ -6,12 +6,65 @@ import { timeoutBudgetMinutes } from '../productionJobBudget';
 import { describe, expect, it } from 'vitest';
 import {
   horseSocialFrames,
+  rankHorseSocialCohorts,
   horseSocialTableEligible,
   postHandChatDelay,
   sharedPayout,
 } from '../e2e/support/horseSocialEvidence';
 
 describe('natural horse social evidence', () => {
+  it('does not let a crowded dry NLH table starve a naturally active PLO cohort', () => {
+    const cohorts = [
+      { candidate: { id: 'dry-nlh' }, horseCount: 9 },
+      { candidate: { id: 'active-plo' }, horseCount: 6 },
+    ];
+    const since = '2026-10-28T17:46:00Z';
+    const rows = [
+      { table_id: 'active-plo', ended_at: '2026-10-28T17:47:00Z' },
+      { table_id: 'active-plo', ended_at: '2026-10-28T17:48:00Z' },
+      { table_id: 'dry-nlh', ended_at: '2026-10-28T17:45:59Z' },
+      { table_id: 'unselected', ended_at: '2026-10-28T17:48:00Z' },
+    ];
+    const ranked = rankHorseSocialCohorts(cohorts, rows, since);
+    expect(ranked.map((entry) => entry.candidate.id)).toEqual(['active-plo', 'dry-nlh']);
+    expect(ranked.map((entry) => entry.showdownCount)).toEqual([2, 0]);
+    expect(cohorts.map((entry) => entry.candidate.id)).toEqual(['dry-nlh', 'active-plo']);
+  });
+
+  it('retains stable horse-count ties and excludes unreadable activity timestamps', () => {
+    const cohorts = [
+      { candidate: { id: 'six' }, horseCount: 6 },
+      { candidate: { id: 'nine' }, horseCount: 9 },
+    ];
+    expect(
+      rankHorseSocialCohorts(
+        cohorts,
+        [{ table_id: 'six', ended_at: 'unreadable' }],
+        '2026-10-28T17:46:00Z'
+      ).map((entry) => entry.candidate.id)
+    ).toEqual(['nine', 'six']);
+  });
+
+  it('bounds diverse discovery and reads activity metadata without mutating games', () => {
+    const spec = readFileSync('tests/e2e/production-live-table-realtime.spec.ts', 'utf8');
+    const social = spec.split("test('natural horse social behavior")[1];
+    expect(social).toContain(
+      'selectOccupiedRunningCashTables(page, request, { perVariantLimit: 3 })'
+    );
+    expect(spec).toContain('variantCount < options.perVariantLimit');
+    expect(spec).toContain('variantCount >= options.perVariantLimit');
+    const activity = social
+      .split('const showdowns = await db')[1]
+      .split('expect(showdowns.error)')[0];
+    expect(activity).toContain(".select('table_id,ended_at')");
+    expect(activity).toContain(".gte('ended_at', activitySince)");
+    expect(activity).toContain(".not('showdown', 'is', null)");
+    expect(activity).toContain(".neq('showdown', '[]')");
+    expect(activity).toContain('.limit(180)');
+    expect(activity).not.toMatch(/cards|winners|actions/);
+    expect(social).not.toMatch(/\.(?:insert|upsert|update|delete|rpc)\(/);
+  });
+
   it('observes only the ordinary chips cash cohort that can actually emit chat', () => {
     const cash = { max_players: 6, ban_chat: false, tournament_id: null, game_type: 'cash' };
     expect(horseSocialTableEligible(cash, 'chips')).toBe(true);

@@ -23,9 +23,7 @@ import { serverNow } from '../../utils/serverClock';
 import '../../styles/table-design-tokens.css';
 import './SeatSlot.css';
 import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
-import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import { SitOutBadge } from './SitOutBadge';
-import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
@@ -386,9 +384,6 @@ export interface SeatSlotProps {
    * chips landed. Cleared by TablePage a few seconds after the payout.
    */
   bbjCreditAmount?: number;
-  hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
-  showHUD?: boolean; // Whether to show the HUD overlay
-  playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
   /**
    * Actual seconds remaining, for the disconnected-player countdown overlay.
    * Same story as `timerProgress`: TablePage stopped passing it on 2026-08-25
@@ -920,9 +915,6 @@ export const SeatSlot = memo(
       winningHandName,
       shownHandName,
       handStrength,
-      hudStats,
-      showHUD = false,
-      playerStyle,
       secondsLeft: secondsLeftProp,
       deckStyle,
       cardBack = 'classic_blue',
@@ -937,7 +929,6 @@ export const SeatSlot = memo(
       onAction,
       onAvatarClick,
       showAvatar = true,
-      showBadges = false,
       gesturesEnabled = true,
       isCollectingChips = false,
       isDealing = false,
@@ -3533,26 +3524,6 @@ export const SeatSlot = memo(
           )}
         </div>
 
-        {/* Mini-HUD — opponent stats (VPIP/PFR) below info box */}
-        {!player.isHero && showHUD && (
-          <MiniHUD stats={hudStats || null} isVisible={showHUD} compact={true} />
-        )}
-
-        {/* Player Style Badge — auto-classified archetype */}
-        {/* Bible V8 §11.1: show_badges toggle controls badge visibility */}
-        {showBadges && !player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
-          <div
-            className="seat__style-badge"
-            style={{
-              color: playerStyle.color,
-              backgroundColor: playerStyle.bgColor,
-            }}
-            title={playerStyle.tooltip}
-          >
-            {playerStyle.icon} {playerStyle.label}
-          </div>
-        )}
-
         {/* Hero Hole Cards — large, premium style beside avatar.
          *  After the hero folds, keep the cards visible but dim them so the
          *  player can still see what they mucked (matches how the avatar
@@ -4004,7 +3975,6 @@ export const SeatSlot = memo(
     if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
-    if (prev.showHUD !== next.showHUD) return false;
     // UI-AUDIT P1: collect-to-pot animation is driven solely by this flag on
     // COMMUNITY_CARDS_DEALT / HAND_COMPLETE — must force a re-render or the
     // cpCollect keyframe never fires and chips teleport into the pot.
@@ -4048,25 +4018,6 @@ export const SeatSlot = memo(
     // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
     if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 
-    // HUD stats — only compare if visible
-    if (prev.showHUD && next.showHUD) {
-      const ps = prev.hudStats;
-      const ns = next.hudStats;
-      if (!ps && !ns) {
-        /* equal */
-      } else if (!ps || !ns) return false;
-      else if (
-        ps.handsPlayed !== ns.handsPlayed ||
-        ps.vpipCount !== ns.vpipCount ||
-        ps.pfrCount !== ns.pfrCount
-      )
-        return false;
-    }
-
-    // Player style badge — compare style name (cheapest check)
-    const prevStyle = prev.playerStyle?.style || 'unknown';
-    const nextStyle = next.playerStyle?.style || 'unknown';
-    if (prevStyle !== nextStyle) return false;
     if (prev.deckStyle !== next.deckStyle) return false;
     if (prev.cardBack !== next.cardBack) return false;
     if (prev.secondsLeft !== next.secondsLeft) return false;

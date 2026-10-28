@@ -534,7 +534,6 @@ export interface TableModalsLayerProps {
 
   // Helpers
   safeBB: (blinds?: string | null, fallback?: number) => number;
-  getPlayerHUDStats: (userId: string) => any;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -753,7 +752,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onCloseSessionHUD,
     // Helpers
     safeBB,
-    getPlayerHUDStats,
   } = props;
 
   const toast = useToast();
@@ -1109,16 +1107,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           tournamentId={tournamentId}
           tournamentName={tableName || 'Tournament'}
           unitCents={tournamentPrizeUnitCents}
-          hudStatsProvider={(uid) => {
-            const stats = getPlayerHUDStats(uid);
-            return stats
-              ? {
-                  handsPlayed: stats.handsPlayed,
-                  vpipCount: stats.vpipCount,
-                  pfrCount: stats.pfrCount,
-                }
-              : null;
-          }}
         />
       )}
 

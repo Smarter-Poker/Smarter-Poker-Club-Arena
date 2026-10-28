@@ -8246,8 +8246,6 @@ export class HorseLogic {
           // runout read that strengthens the other range. In Omaha a range
           // that called two pot-sized barrels is not capped unless the river
           // moved the ranges hero's way (the V40 third-barrel rule).
-          // Static range advantage cannot reopen a range that called twice.
-          // Only an actual favorable river runout can supply that exception.
           const capped54 =
             !oppTurnAggr54 &&
             !oppRaised54 &&

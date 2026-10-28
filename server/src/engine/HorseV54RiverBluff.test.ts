@@ -77,9 +77,7 @@ const ON: HorseDecideOpts = { v54RiverBluff: true, telemetry: true };
 const WALL_CLOCK = new Set(['latencyMs', 'elapsedMs', 'policyMs', 'simulationMs']);
 const stable = (d: unknown): string =>
   JSON.stringify(d, (k, v) => (WALL_CLOCK.has(k) ? undefined : v));
-// Protected baseline211ebe: preserve selected action, chips, timing and RNG.
-// Only the two-called-barrel Omaha row changed after the common-prior update;
-// it was independently replayed against that protected runtime.
+// Current protected baseline60f9: preserve selected action, chips, timing and RNG.
 // Source-derived authority digests naturally change when policy source changes.
 const baselineDecision = (d: ReturnType<typeof decideSpot>): string =>
   JSON.stringify({

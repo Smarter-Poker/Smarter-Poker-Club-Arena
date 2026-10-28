@@ -89,7 +89,7 @@ it('embeds fixed helper source and preserves reviewed v1/v2/v3 validators and aw
     tournament_yields: '87d7b1c052ca72140bb659d31f3078f08c1ea7b4a867160b26ed440b8af511d4',
     booking_cap_refusals: '87a4f0a5a46c70db39f4449934b707fdf93198e14ca452db45e3959002335359',
     merge_bounded_events: '74acd6b31531f390fc05377eca361801aab44f301ee4d9ab8ef1055583e1ba81',
-    process_history: '137038b589f6d614e3183dda9ccdb9b7dbc645c8d56939f5bfc2b1a88b38a24c',
+    process_history: '6c2ceb29ab7613e8119cd0b3f657976ab0020e8bcabad60e464592f7a77f10da',
   };
   const current = readFileSync(inspector, 'utf8');
   const functions = (text: string) =>

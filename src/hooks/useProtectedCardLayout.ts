@@ -200,16 +200,11 @@ export function useProtectedCardLayout(
               ) < 1 || own + 4 < Math.hypot(x - c.x, y - c.y)
           );
         };
-        // Six-max puts the crown at the bar. A full PLO row uses the
-        // available lane at its own plate without covering protected content,
-        // before considering a more distant spot beside another chair.
-        const sixMaxTop =
-          page.getAttribute('data-seats') === '6' &&
-          page.getBoundingClientRect().width > 480 &&
-          row.closest('.seat-wrapper--cap, .seat-wrapper--top');
+        // Prefer the owner's lane with zero extra padding before moving a
+        // shown hand beside another chair. Rectangles still cannot overlap.
         const place = (candidate: CardBox) =>
           placeProtectedCardRow(candidate, others, bounds, cards.length >= 5 ? 3 : 4, ownsIt) ??
-          (sixMaxTop ? placeProtectedCardRow(candidate, others, bounds, 0, ownsIt) : null) ??
+          placeProtectedCardRow(candidate, others, bounds, 0, ownsIt) ??
           placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
         let next = place(box);
@@ -271,7 +266,9 @@ export function useProtectedCardLayout(
           let pick: { step: number; size: number; from: CardBox; to: CardBox } | null = null;
           for (const [step, size] of tries) {
             const from = at(step, size);
-            const to = placeProtectedCardRow(from, others, bounds, 4, ownsIt);
+            const to =
+              placeProtectedCardRow(from, others, bounds, 4, ownsIt) ??
+              placeProtectedCardRow(from, others, bounds, 0, ownsIt);
             if (!to) continue;
             if (!pick || shifted(from, to) < shifted(pick.from, pick.to))
               pick = { step, size, from, to };

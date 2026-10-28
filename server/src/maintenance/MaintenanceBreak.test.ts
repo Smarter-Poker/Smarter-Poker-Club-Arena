@@ -639,7 +639,7 @@ describe('weekly financial admission remains separate from cutover', () => {
     const e = [...engines.values()][0];
     e.deal();
     Object.assign(e, { isMaintenanceStateDurable: () => false });
-    expect(mb.financialDrainReady()).toBe(false);
+    expect(mb.financialDrainReady()).toBe(true);
     await mb.announceLastHand();
     await mb.beginCountdown();
     // This predicate supplies ONLY durable freeze/custody authority. The

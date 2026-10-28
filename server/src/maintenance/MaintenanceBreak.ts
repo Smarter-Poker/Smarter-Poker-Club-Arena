@@ -2704,7 +2704,10 @@ export class MaintenanceBreak {
     // hands-in-flight cutover accounting and the 285s certificate remain
     // exclusively in readyForRestart(). Unresolved retained money custody is
     // still a refusal and must never disappear from this fleet census.
-    if (!this.isActive() || !this.durableConfirmed) return false;
+    // Weekly accounting owns its own durable boundary. Daily maintenance is
+    // an independent authority: when it overlaps it must be durable, but its
+    // absence never prevents the business operation from draining itself.
+    if (this.isActive() && !this.durableConfirmed) return false;
     if ((this.deps.retainedPreparationBlockers?.() ?? []).length > 0) return false;
     for (const [, engine] of this.deps.engines()) {
       try {

@@ -160,13 +160,22 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
     expect([...perShard.keys()].sort()).toEqual([1, 2, 3, 4]);
   });
 
-  it('balances the complete unchanged Lightning family onto shard 3', () => {
+  it('balances the complete Lightning family and concurrent-rebuy guard onto shard 3', () => {
     const lightning = steps.filter((step) => step.name?.startsWith('Lightning'));
-    expect(lightning).toHaveLength(25);
+    expect(lightning).toHaveLength(26);
+    expect(
+      lightning.some(
+        (step) => step.run === 'python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py'
+      )
+    ).toBe(true);
     for (const step of lightning) {
       expect(shardsOf(step), step.name).toEqual([3]);
       expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
-      expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
+      if (step.name === 'Lightning expiry preserves a concurrent paid rebuy') {
+        expect(step.run).toBe('python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py');
+      } else {
+        expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
+      }
     }
     expect(job['timeout-minutes']).toBe(50);
   });

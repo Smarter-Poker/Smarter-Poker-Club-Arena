@@ -165,4 +165,12 @@ describe('Lightning rebuy expiry', () => {
     );
     expect(body).toContain('await this.standUpBustedCashPlayers()');
   });
+  it('keeps the locked paid-rebuy guard in the cashout request and required native CI', () => {
+    const base = readFileSync('src/engine/ServerTableEngineBase.ts', 'utf8');
+    const services = readFileSync('src/services/supabase/seats.ts', 'utf8');
+    const workflow = readFileSync('../.github/workflows/ci.yml', 'utf8');
+    expect(base).toContain('requireUnfunded: true');
+    expect(services).toContain("supabase.rpc('fn_cashout_unfunded_seat_occupancy', cashoutArgs)");
+    expect(workflow).toContain('run: python3 scripts/ci/test-lightning-rebuy-expiry-postgres.py');
+  });
 });

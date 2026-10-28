@@ -187,8 +187,12 @@ jobs:
             payload.jobs.filter(entry => entry?.name === 'retain-runtime').every(entry => entry.conclusion === 'skipped');
           if (gatewayOnly) {
             const builds = payload.jobs.filter(entry => entry?.name === 'build-record-gateway');
-            const proofs = (gateway[0].steps ?? []).filter(entry => entry.name === 'Activate only the prepared independent service');
-            if (builds.length !== 1 || builds[0].conclusion !== 'success' || gateway[0].status !== 'completed' || gateway[0].conclusion !== 'success' || proofs.length !== 1 || proofs[0].status !== 'completed' || proofs[0].conclusion !== 'success') throw new Error('Independent gateway installation is incomplete; no client publication is certified.');
+            const proofNames = ['Activate only the prepared independent service', 'Verify authenticated gateway record delivery', 'Ensure the reserved gateway canary account is retired'];
+            const proofsComplete = proofNames.every(name => {
+              const matching = (gateway[0].steps ?? []).filter(entry => entry.name === name);
+              return matching.length === 1 && matching[0].status === 'completed' && matching[0].conclusion === 'success';
+            });
+            if (builds.length !== 1 || builds[0].conclusion !== 'success' || gateway[0].status !== 'completed' || gateway[0].conclusion !== 'success' || !proofsComplete) throw new Error('Independent gateway installation or authenticated verification is incomplete; no client publication is certified.');
             console.log('Gateway component only; client publication and client E2E remain unclaimed.');
             process.exit(0);
           }

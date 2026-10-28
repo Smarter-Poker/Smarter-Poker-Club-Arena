@@ -44,3 +44,12 @@ Startup removes only an unchanged socket owned by its generation user after an
 explicit connection refusal. Live listeners, symlinks, ordinary files, foreign
 owners and ambiguous paths remain untouched. Publisher refusals now name their
 missing prerequisites, with bounded SSH/rsync transports.
+
+The explicit gateway component also owns a bounded authenticated canary before
+it can report success: an existing reserved fixture account signs in through
+GoTrue, joins the existing public fixture club, receives own-record and roster
+READY, changes only its own free avatar and observes its own record invalidation
+and reader readback. A denied foreign topic must close without private frames.
+Guarded fixture cleanup and exact gateway identity bracket are required. Isolated
+tests qualify this check; actual hosted execution remains pending. The report
+explicitly excludes isolated midstream ACL revocation and paid retirement.

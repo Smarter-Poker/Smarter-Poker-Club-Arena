@@ -1324,7 +1324,7 @@ jobs:
     needs: [publish-needed, build-record-gateway]
     if: needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: read
@@ -1339,6 +1339,14 @@ jobs:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
           fetch-depth: 1
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked live gateway verification dependencies
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify bounded gateway canary and cleanup behavior
+        run: node --test scripts/ci/private-record-gateway-live.test.mjs
       - uses: actions/download-artifact@v4
         with:
           name: private-record-gateway-${{ needs.publish-needed.outputs.target_sha }}
@@ -1380,6 +1388,29 @@ jobs:
           fi
           sudo -n /usr/local/libexec/ca-private-record-gateway-activate "$1" "$2" "$OLD" "$3"
           REMOTE
+      - name: Verify authenticated gateway record delivery
+        id: gateway_live
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          EXPECTED_GATEWAY_REVISION: ${{ needs.publish-needed.outputs.target_sha }}
+          PRIVATE_RECORD_GATEWAY_LIVE_CHECK: '1'
+        run: node scripts/ci/private-record-gateway-live.mjs
+      - name: Ensure the reserved gateway canary account is retired
+        if: always() && steps.gateway_live.outcome != 'skipped' && steps.gateway_live.outcome != ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
+      - name: Retain token-free authenticated gateway evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-gateway-live-${{ github.run_id }}
+          path: ${{ runner.temp }}/private-record-gateway-live.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Remove ephemeral origin credentials
         if: always()
         run: rm -f "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"

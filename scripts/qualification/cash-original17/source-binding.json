@@ -3,7 +3,7 @@
   "files": {
     ".github/workflows/ci.yml": {
       "bytes": 239586,
-      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -732,5 +732,16 @@
       "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
     },
     "execution_performed": false
+  },
+  "serverShardOuterBudget20261028": {
+    "reason": "Only the server_shards outer timeout changes from 15 to 25 minutes. PR 8372 job 122518658540 reached the 15-minute job cap while its remaining V54 regression allows 900000 ms per test. The observed 7:25 setup/other-file envelope, 15-minute test allowance and 2:35 remaining-work/cleanup allowance yield 25 minutes. All tests, seeds, pairs, per-test deadlines, matrix, commands and aggregate requirements remain unchanged. This updates current workflow identity only; historical receipts and qualification status are unchanged.",
+    "previous": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "current": {
+      "bytes": 239586,
+      "sha256": "3a2ce1db41661a8a2e86fd2a069d818cbd9674d39b966d3f9d3c44be19187428"
+    }
   }
 }

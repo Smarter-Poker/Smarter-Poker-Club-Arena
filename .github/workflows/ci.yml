@@ -1329,7 +1329,11 @@ jobs:
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
-    timeout-minutes: 40
+    # Run 40528107352 shard 1 reached Spin at 35m52s and hit the 40m
+    # job deadline. The comparable successful 40520906517 Spin took 5m23s:
+    # 41m15s combined, before artifact cleanup. Fifty minutes retains ~20%
+    # hosted variance headroom; all case/statement/cleanup limits are unchanged.
+    timeout-minutes: 50
     # ── FOUR SHARDS, EVERY CASE (2026-09-26) ─────────────────────────────────
     #
     # This job was the critical path of every server-touching pull request:
@@ -3252,7 +3256,7 @@ jobs:
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       max-parallel: 4

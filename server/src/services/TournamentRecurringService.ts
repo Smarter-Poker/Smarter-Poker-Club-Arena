@@ -3923,6 +3923,10 @@ export class TournamentRecurringService {
        was, all night. The Midway Union's and the Diamond Arena's satellites
        are tournament_schedules rows on the :15 and :45 now, so the feeder
        stands down for them; it still serves every other club. */
+    if (owner.clubId === MIDWAY_UNION_ID && owner.unionId === MIDWAY_UNION_ID) {
+      await this.ensureFixedSngSatellites(budgetLeft);
+      return;
+    }
     if (isFixedBoardClub(owner.clubId)) return;
     try {
       let q = supabase
@@ -3991,6 +3995,75 @@ export class TournamentRecurringService {
         new Error(`[TournamentRecurring] satellite heads-up board error: ${err?.message}`),
         'TournamentRecurring.satellite_board_error'
       );
+    }
+  }
+
+  /** The existing SNG product tick owns these fixed fields, with bounded creation. */
+  private async ensureFixedSngSatellites(budgetLeft: number): Promise<void> {
+    const earliest = new Date(Date.now() + 3 * 60 * 60_000).toISOString();
+    const latest = new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString();
+    const targets = await fetchAllRows<Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournaments')
+          .select(
+            'id, game_type, buy_in_amount, buy_in_fee, schedule_id, satellite_target_id, satellite_target'
+          )
+          .eq('union_id', MIDWAY_UNION_ID)
+          .eq('club_id', MIDWAY_UNION_ID)
+          .in('status', ['ANNOUNCED', 'REGISTERING'])
+          .gt('start_time', earliest)
+          .lt('start_time', latest)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecurring.sng_satellite_targets',
+        maxRows: 50_000,
+        shouldContinue: () => !this.stopOperation && !isMaintenanceFrozen(),
+      }
+    );
+    if (!targets.complete) return;
+    for (const target of targets.rows) {
+      if (budgetLeft <= 0 || isMaintenanceFrozen() || this.stopOperation) break;
+      const ticket = Number(target.buy_in_amount) + Number(target.buy_in_fee);
+      if (
+        target.satellite_target_id ||
+        target.satellite_target ||
+        !(
+          ticket > 25 ||
+          (ticket === 25 && target.schedule_id === 'a70c1028-1800-2500-9000-000000000001')
+        )
+      )
+        continue;
+      const seats = ['PLO5', 'PLO6'].includes(String(target.game_type).toUpperCase()) ? 6 : 9;
+      const result = await supabase.rpc('fn_ensure_fixed_sng_satellite', {
+        p_target_id: target.id,
+        p_seats: seats,
+      });
+      if (result.error) {
+        reportError(result.error, 'TournamentRecurring.sng_satellite_create', {
+          targetId: target.id,
+        });
+        return;
+      }
+      if (
+        result.data?.ok === true &&
+        typeof result.data?.tournament_id === 'string' &&
+        result.data.tournament_id.length > 0 &&
+        result.data?.target_id === target.id
+      ) {
+        if (result.data.created === true) budgetLeft--;
+      } else if (!['platform_frozen', 'target_unavailable'].includes(String(result.data?.reason))) {
+        reportError(
+          new Error(String(result.data?.reason ?? 'SNG satellite creation returned no receipt')),
+          'TournamentRecurring.sng_satellite_receipt',
+          { targetId: target.id }
+        );
+        return;
+      }
     }
   }
 

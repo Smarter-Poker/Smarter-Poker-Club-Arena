@@ -77,7 +77,7 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   theme: 'black',
   fourColorDeck: true,
   fourColorDeckExplicit: false,
-  showHUD: true,
+  showHUD: false,
   showPotOdds: false,
   showBetSizePresets: true,
   confirmAllIn: true,
@@ -340,6 +340,7 @@ function loadFromStorage(): TableUserSettings {
       // FELT_THEMES above records what was found live and what it did.
       merged.theme = coerceFeltTheme(merged.theme);
       if (merged.fourColorDeckExplicit !== true) merged.fourColorDeck = true;
+      merged.showHUD = false; // Opponent HUDs are prohibited, including saved legacy preferences.
       return merged;
     }
     return DEFAULT_SETTINGS;
@@ -502,6 +503,7 @@ function applyGateChanges(prev: TableUserSettings | null, next: TableUserSetting
 function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
   const previous = sharedSettings;
   const next = update(getSnapshot());
+  next.showHUD = false; // Enforce for toggles, bulk updates and cross-tab events.
   if (next === sharedSettings) return;
   sharedSettings = next;
   applySideEffects(next);

@@ -90,7 +90,6 @@ export interface UseTableKeyboardOptions {
   // Toggle callbacks
   onToggleSound?: () => void;
   // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
-  onToggleStats?: () => void;
   onClosePanel?: () => void;
   /**
    * P4 2026-09-05: B fires the Rabbit Hunt tile's OWN reveal (the tile hands
@@ -213,12 +212,6 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
             opts.onToggleSound?.();
             return;
           // FIX 199: 'h' key for hand strength REMOVED — not allowed for live play
-          case 's':
-            if (!e.ctrlKey && !e.metaKey) {
-              e.preventDefault();
-              opts.onToggleStats?.();
-            }
-            return;
           case 'b':
             // Not while a modal owns the keyboard, and never with a modifier
             // (Cmd/Ctrl+B belongs to the browser).

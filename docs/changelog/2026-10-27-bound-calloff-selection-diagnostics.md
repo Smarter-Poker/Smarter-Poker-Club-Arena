@@ -1,0 +1,9 @@
+# Bound calloff selection diagnostics
+
+The six-case accepted-calloff inspector reported `matching_decision_missing` for several different conditions. That left the retained acceptance gap unknown without explaining whether a decision existed or which calloff-shape condition did not match.
+
+The existing version2 inspector now emits bounded, closed-key selection counts only after validating every record hash/source, the original accepted hand and each contributing decision snapshot anchor. It distinguishes an absent decision or requested hash from differences in final action, reference route/action/amount, finite positive stack, finite bet inputs, and whole-stack call price. Counts classify each selected decision by its first mismatch. No raw record, private holding, amount, new identity or new coordinate is exported. Python validates the exact count keys, integer bounds and arithmetic consistency before any child output is printed.
+
+Status remains UNKNOWN until the unchanged receipt, same-turn intended execution and complete hand reconciliation all pass. Version1 historical reference-shape classification is unchanged. The existing six-case/input/record/read bounds and reservation-budget category are unchanged. This is nonengine diagnostic source, requires no engine replacement, and performs no new production observation itself. The owning consolidated chat must dispatch its single bounded successor after protected merge; this patch does not resolve the six historical cases by assumption.
+
+Native JavaScript fixtures use the real journal record hash validator and hand-binding implementation, then exercise the Python sanitizer. Nine absence/mismatch cases fail before the extension and pass afterward. Invalid original anchors/accepted bindings/hash/source never emit counts; private, forged, oversized and arithmetically inconsistent child shapes are refused.

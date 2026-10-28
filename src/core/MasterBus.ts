@@ -1211,6 +1211,7 @@ export interface BusPayloadMap {
       | 'HAND_HISTORY'
       | 'HELP'
       | 'LEAVE_TABLE'
+      | 'LEAVE_TABLE_NEXT_HAND'
       | 'FORCE_LEAVE_TABLE'
       | 'CHANGE_AVATAR'
       | 'TOGGLE_ALIAS'
@@ -1384,6 +1385,8 @@ class MasterBusCore {
     'WALLET_REFRESHED',
     'SYSTEM_ERROR',
     'AUTH_STATE_CHANGED',
+    // Confirmed join and leave transitions can occur inside the same 500ms.
+    'WAITLIST_CHANGED',
     'DIAMOND_BALANCE_CHANGED',
     // Every tap is an ordered visual mutation. Suppressing a repeated choice
     // can strand a rollback or a second mounted table on the prior artwork.

@@ -1,6 +1,7 @@
 import { memo, useEffect } from 'react';
 import { useActionClockSeconds, type ActionClockStore } from '../../hooks/actionClockStore';
 import { soundService } from '../../services/SoundService';
+import { haptic } from '../../services/HapticService';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -85,9 +86,9 @@ export const ActionClockWarning = memo(function ActionClockWarning({
     if (!isWindow) return;
     // Heavy pulse immediately, then once per second while the window is open
     // (mirrors the 1s cadence of soundService.startTimerWarning).
-    void import('../../services/HapticService').then(({ haptic }) => haptic.heavy());
+    haptic.heavy();
     const buzz = window.setInterval(() => {
-      void import('../../services/HapticService').then(({ haptic }) => haptic.heavy());
+      haptic.heavy();
     }, 1000);
     return () => clearInterval(buzz);
   }, [isWindow]);

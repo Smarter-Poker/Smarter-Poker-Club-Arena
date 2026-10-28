@@ -1,0 +1,14 @@
+# Table Exit, History, Waiting List And Rabbit Hunt
+
+- Leave Table Next Hand is available from the table hamburger and game-pill menu. It uses the existing deferred sit-out acknowledgement, preserves the current hand, and invokes the occupancy-bound leave after completion. Duplicate clicks, refused acknowledgements, refresh and late responses retain the original intent.
+- Accepted immediate Leave clears the seat presentation through the same exit latch as a server removal. Folding remains server-owned and occurs on that player's turn. Session Complete closes its table only after acknowledgement. Authenticated-owner summary messages keep same-profile windows aligned; remote seat-left events clear other windows without issuing another financial leave. A consumed buy-in deep link cannot reopen Buy-In after that exit.
+- Session Complete profit retains exact cents, including trailing zeroes. Canonical occupancy identifies acknowledged sessions across windows.
+- Lightning Previous Hand resolves the pool session's settled hand IDs through the existing authenticated RPC, then loads canonical records and private cards under existing permissions. Regular cash and tournament reads remain table-scoped. Empty reopens, newly saved records and viewer changes refresh safely; stale asynchronous results cannot publish another scope's record.
+- The cash-game waiting-list footer and lobby read and share the same authoritative game queue. Confirmed join/leave events refresh both; unavailable reads do not claim zero waiting or a successful join.
+- Rabbit Hunt uses the authoritative hand-complete event to show an eligible server offer immediately during the result hold. The shared HUD slot remains exclusive, a new live decision retains priority, and reveal billing, privacy and expiry are unchanged.
+
+This is a client release using existing engine APIs. No engine replacement, migration, permission change, production wager or manual wallet write is required. Focused regression evidence, protected checks, publication identities and live observations are retained in the existing hand-review task checkpoint.
+
+The exact-cent formatter is explicitly reviewed in this branch's entry-chunk fragment because SessionSummaryHost mounts at the app root. The helper has no dependencies and formats the result synchronously; it introduces no account, route or service import. The measured entry bundle remains within its existing size budget.
+
+Pending chip recaps with a known occupancy now read only the caller's exact closed seat and its retained final stack. An earlier same-table wallet credit cannot settle a new departure. Missing, active, mismatched or unreadable seats remain pending; a genuine zero-stack exit settles correctly without requiring a wallet transaction. Existing legacy and Diamond readers remain unchanged. Live read-only function and policy metadata confirmed this existing contract; no database or engine change was made.

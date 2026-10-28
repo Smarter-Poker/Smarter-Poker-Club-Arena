@@ -1,0 +1,9 @@
+# PLO tournament action-risk candidate
+
+Recovers the PLO4/PLO5/PLO6 high-only tournament preflop ICM candidate from the older PR8014 proposal onto current protected source. `v53PloTourneyIcm` remains explicitly default off. It substitutes action-specific modeled risk for named flat preflop premiums, using public field stacks, payouts, hero identity and depth. Sidepot spill and unresolved third-party all-in claims are refused because this candidate models only a two-way pot. Cash, NLH, hi-lo, all-in-or-fold, bounty and satellite decisions retain their existing paths. Current aggression and terminal-commitment logic are preserved.
+
+Field reconciliation refuses missing or duplicated local identities, invalid live/field chip geometry, mismatched population and invalid payout ladders. Opponent response pricing now removes hero's proposed commitment from the behind-stack vector before adding it to the pot. The old recovered formula counted those chips twice; an independent 25-stack-pair ICM regression reproduced the error and passes with the conserved outcome vectors.
+
+The real HandController corpus pins the pre-recovery e9725f3 protected-source decisions for PLO4/PLO5/PLO6/NLH with the flag absent, and demonstrates changed PLO4 decisions with the flag on while NLH stays identical. These are compatibility/reachability checks, not winning-rate qualification. Risk mappings, equity slopes, Monte Carlo scaling and fold-equity credit are candidate hypotheses requiring a separately declared current-source whole-tournament comparison. No production flag, selection, data, seat or funding changes are included.
+
+The helper is included in the reference decision source digest. Focused candidate, data-ledger and source-closure checks passed (51 tests). Independent qualification, protected delivery and live activation remain separate work; this source change does not certify any horse or guarantee profitability.

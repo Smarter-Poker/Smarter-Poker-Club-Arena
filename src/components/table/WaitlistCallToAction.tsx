@@ -29,13 +29,45 @@ export interface WaitlistCallToActionProps {
   waitingCount: number;
   /** The hero's 1-based place on the list, or null when not on it. */
   position: number | null;
+  /** Membership can be known before the queue has assigned a numbered place. */
+  onList?: boolean;
+  /** An unread queue must never be printed as zero people waiting. */
+  queueState?: 'loading' | 'unavailable';
 }
 
-export function WaitlistCallToAction({ onClick, waitingCount, position, lightning = false }: WaitlistCallToActionProps) {
-  const onList = !lightning && position != null;
-  const socket = lightning ? '' : onList ? `#${position}` : String(waitingCount);
-  const eyebrow = lightning ? 'Lightning Games' : onList ? 'You Are On The Waiting List' : `Table Full · ${waitingCount} Waiting`;
-  const title = lightning ? 'Join Lightning' : onList ? `Position ${position} Of ${waitingCount}` : 'Join The Waiting List';
+export function WaitlistCallToAction({
+  onClick,
+  waitingCount,
+  position,
+  lightning = false,
+  onList: membership,
+  queueState,
+}: WaitlistCallToActionProps) {
+  const onList = !lightning && !queueState && (membership ?? position != null);
+  const socket =
+    lightning || queueState
+      ? ''
+      : onList
+        ? position != null
+          ? `#${position}`
+          : ''
+        : String(waitingCount);
+  const eyebrow = lightning
+    ? 'Lightning Games'
+    : queueState === 'loading'
+      ? 'Reading The Waiting List'
+      : queueState === 'unavailable'
+        ? 'Waiting List Unavailable'
+        : onList
+          ? 'You Are On The Waiting List'
+          : `Table Full · ${waitingCount} Waiting`;
+  const title = lightning
+    ? 'Join Lightning'
+    : queueState || (onList && position == null)
+      ? 'Open Game Lobby'
+      : onList
+        ? `Position ${position} Of ${waitingCount}`
+        : 'Join The Waiting List';
 
   const socketRef = useFitText<HTMLSpanElement>(socket, 1, 0.5);
   const eyebrowRef = useFitText<HTMLSpanElement>(eyebrow, 1, 0.5);

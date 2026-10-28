@@ -1383,6 +1383,16 @@ export class HorseDecisionWorkerRuntime {
     ) {
       throw new Error('horse state known discard or physical cards are invalid');
     }
+    // Every currently registered betting policy is a community-board game.
+    // Pineapple discard has its separate three-card request validator above;
+    // unsupported draw/stud variants are refused by the registry before here.
+    const publicBoardLength = { preflop: 0, flop: 3, turn: 4, river: 5 };
+    if (
+      !Object.hasOwn(publicBoardLength, gs.stage) ||
+      gs.communityCards.length !== publicBoardLength[gs.stage as keyof typeof publicBoardLength]
+    ) {
+      throw new Error('horse state board does not match betting street');
+    }
     const physicalKnown = [...request.player.cards, ...knownDead, ...gs.communityCards];
     if (
       physicalKnown.some(

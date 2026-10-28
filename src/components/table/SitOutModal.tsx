@@ -105,6 +105,7 @@ function useSitOutCountdown(
     read();
     if (sitOutMsRemaining({ sitOutSince, isTournament }) === null) return;
     const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       read();
       /* STOP AT ZERO, like the seat badge. `sitOutMsRemaining` floors at 0
          rather than returning null, so without this the modal re-rendered once
@@ -113,7 +114,19 @@ function useSitOutCountdown(
          become more urgent. */
       if (sitOutMsRemaining({ sitOutSince, isTournament }) === 0) clearInterval(id);
     }, 1000);
-    return () => clearInterval(id);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        read();
+        if (sitOutMsRemaining({ sitOutSince, isTournament }) === 0) clearInterval(id);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isOpen, sitOutSince, isTournament]);
 
   return msRemaining;

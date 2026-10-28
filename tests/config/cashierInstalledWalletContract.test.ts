@@ -71,3 +71,40 @@ it.each([
     expect(contract).toContain(`'hash', '${expected}'`);
   }
 );
+
+it.each([
+  [
+    'fn_club_wallet_claim_back',
+    '20261027164937_agents_reclaim_from_their_own_wallets_at_any_time.sql',
+    '54450c4c6f5e6ca4d3b7804a669bf0cc',
+  ],
+  [
+    'fn_cashier_history_feed',
+    '20261027160320_cashier_claim_destination_and_movement_history.sql',
+    'dad4d92ef739f520d0c512c9950d5c62',
+  ],
+  [
+    'fn_cashier_history_summary',
+    '20261027160320_cashier_claim_destination_and_movement_history.sql',
+    'cf02a67ac0d71d5e0db7c84a5b224f23',
+  ],
+])('certifies only the qualified installed reclaim/history successor %s', (name, file, hash) => {
+  const installed = readFileSync(`supabase/migrations/${file}`, 'utf8');
+  const proof = installed
+    .split('\n')
+    .find((line) => line.startsWith('-- @live-proof:') && line.includes(`public.${name}(`));
+  expect(proof).toContain(`= '${hash}'`);
+  const start = contract.indexOf(`'signature', 'public.${name}(`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const entry = contract.slice(start, contract.indexOf('\n    )', start));
+  expect(
+    [...entry.matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
+  ).toEqual([hash]);
+  expect(entry).toContain("'owner', 'postgres'");
+  expect(contract).toContain("version = '20261027160320'");
+  expect(contract).toContain("version = '20261027164937'");
+  expect(contract).toContain("RAISE EXCEPTION 'cashier function owner drift: %'");
+  expect(contract).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
+  expect(contract).toContain("NOT has_function_privilege('authenticated', v_oid, 'EXECUTE')");
+  expect(contract).toContain("NOT has_function_privilege('service_role', v_oid, 'EXECUTE')");
+});

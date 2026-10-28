@@ -2,6 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchCashGameLobby, type CashGameLobby } from '../../services/cashGameLobby';
 import { useUserStore } from '../../stores/useUserStore';
 import { isGameGone } from './mustMoveLobbyCopy';
+import { masterBus } from '../../core/MasterBus';
+
+// Share fresh server replies only between currently mounted views of the same queue.
+// No reply is cached across openings or viewer changes.
+const lobbyReaders = new Set<{
+  gameId: string;
+  viewerId: string | null;
+  receive: (lobby: CashGameLobby) => void;
+}>();
 
 /** A reply belongs to one viewer, game and opening; the newest explicit read wins. */
 export function useCashGameLobby(
@@ -36,6 +45,24 @@ export function useCashGameLobby(
     };
   }, [session, enabled, gameId]);
 
+  useEffect(() => {
+    if (!enabled || !gameId) return;
+    const reader = {
+      gameId,
+      viewerId,
+      receive: (lobby: CashGameLobby) => {
+        if (!session.active || session.action !== null) return;
+        // An older in-flight response cannot undo a fresher shared reply.
+        session.read++;
+        setSnapshot({ session, lobby, error: null });
+      },
+    };
+    lobbyReaders.add(reader);
+    return () => {
+      lobbyReaders.delete(reader);
+    };
+  }, [enabled, gameId, viewerId, session]);
+
   const load = useCallback(async () => {
     if (!session.active || !gameId) return;
     const read = ++session.read;
@@ -43,7 +70,12 @@ export function useCashGameLobby(
     const current = () => session.active && session.read === read;
     try {
       const lobby = await fetchCashGameLobby(gameId);
-      if (current()) setSnapshot({ session, lobby, error: null });
+      if (current()) {
+        setSnapshot({ session, lobby, error: null });
+        for (const reader of lobbyReaders) {
+          if (reader.gameId === gameId && reader.viewerId === viewerId) reader.receive(lobby);
+        }
+      }
     } catch (error) {
       if (!current()) return;
       setSnapshot((previous) => ({
@@ -56,7 +88,7 @@ export function useCashGameLobby(
       // A superseded reply cannot release a newer read's polling hold.
       if (session.pendingRead === read) session.pendingRead = null;
     }
-  }, [gameId, session]);
+  }, [gameId, viewerId, session]);
 
   useEffect(() => {
     if (!enabled || !gameId) return;
@@ -84,6 +116,12 @@ export function useCashGameLobby(
       },
     };
   }, [session]);
+
+  useEffect(() => {
+    if (!enabled || !gameId) return;
+    // A confirmed join/leave changes the same queue shown by every game surface.
+    return masterBus.subscribe('WAITLIST_CHANGED', () => void load());
+  }, [enabled, gameId, load]);
 
   const current = snapshot?.session === session ? snapshot : null;
   return {

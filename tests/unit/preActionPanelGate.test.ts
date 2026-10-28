@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { tableHudControl } from '../../src/components/table/tableHudControl';
 import {
   isPreActionHonorable,
   PRE_ACTION_EXEC_GRACE_MS,
@@ -185,7 +186,27 @@ describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
       /const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;/
     );
     // the HUD time-bank tile
-    expect(PAGE).toMatch(/hudSlotControl: 'timebank' \| 'rabbit' \| null = heroPromptedToAct/);
+    expect(PAGE).toMatch(
+      /hudSlotControl: 'timebank' \| 'rabbit' \| null = tableHudControl\(\{\s*heroPromptedToAct,/
+    );
+    expect(
+      tableHudControl({
+        heroPromptedToAct: true,
+        handSettling: false,
+        handInProgress: true,
+        rabbitAvailable: true,
+        rabbitEnabled: true,
+      })
+    ).toBe('timebank');
+    expect(
+      tableHudControl({
+        heroPromptedToAct: false,
+        handSettling: false,
+        handInProgress: true,
+        rabbitAvailable: true,
+        rabbitEnabled: true,
+      })
+    ).toBeNull();
     // the page pulse
     expect(PAGE).toMatch(/\$\{heroPromptedToAct \? ' table-page--hero-turn' : ''\}/);
     // the control strip (time bank button + ticking numeral)

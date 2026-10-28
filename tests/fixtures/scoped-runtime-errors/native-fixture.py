@@ -28,6 +28,7 @@ class NativeLogReader(unittest.TestCase):
                  (OSError('PRIVATE path'), 'io_unavailable'),
                  (subprocess.TimeoutExpired(['PRIVATE command'], 1, stderr=b'PRIVATE key'), 'timeout'),
                  (RuntimeError('Log read exceeded bounded input'), 'input_bound'),
+                 (RuntimeError('Log read timed out'), 'timeout'),
                  (RuntimeError('Public and host engine identity changed or differ'), 'identity_mismatch'),
                  (Exception('PRIVATE unexpected'), 'unexpected')]
         with patch.object(reader, 'FAILURE_STAGE', 'current_logs'):

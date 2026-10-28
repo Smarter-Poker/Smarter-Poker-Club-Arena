@@ -712,7 +712,7 @@ FAILURE_STAGES = frozenset({
     'admission', 'public_health_before', 'key_validation', 'pin_validation',
     'remote_transport', 'remote_admission', 'host_health_before', 'current_logs',
     'archives', 'lease_metrics', 'host_health_after', 'response_validation',
-    'public_health_after', 'artifact_write',
+    'public_health_after', 'artifact_write', 'transport_setup', 'response_sanitization',
 })
 FAILURE_CATEGORIES = frozenset({
     'refused', 'timeout', 'invalid_json', 'transport_exit', 'ssh_exit_255',
@@ -735,6 +735,7 @@ def failure_diagnostic(error):
             return {'schema': 'scoped-runtime-failure/v1', 'stage': error.stage,
                     'category': error.category, 'readOnly': True}
     category = ('timeout' if isinstance(error, (TimeoutError, subprocess.TimeoutExpired))
+                or (isinstance(error, RuntimeError) and str(error) == 'Log read timed out')
                 else 'invalid_json' if isinstance(error, json.JSONDecodeError)
                 else 'subprocess_exit' if isinstance(error, subprocess.CalledProcessError)
                 else 'io_unavailable' if isinstance(error, OSError)
@@ -805,6 +806,7 @@ def main():
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
+        FAILURE_STAGE = 'response_sanitization'
         extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
         if fold_timing:
             extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
@@ -834,6 +836,7 @@ def main():
         raise RuntimeError('Configured read transport unavailable')
     FAILURE_STAGE = 'public_health_before'
     before = health()
+    FAILURE_STAGE = 'transport_setup'
     directory = Path(tempfile.mkdtemp(prefix='scoped-engine-read-', dir=os.environ['RUNNER_TEMP']))
     try:
         for name, content in [('key', key), ('known_hosts', pin)]:
@@ -880,6 +883,7 @@ def main():
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')
+        FAILURE_STAGE = 'response_sanitization'
         output = {**result, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   'engineAtObservation': after, 'selection': scopes, 'diagnosticOnly': True}
         serialized = json.dumps(output, indent=2)+'\n'

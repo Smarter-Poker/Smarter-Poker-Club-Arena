@@ -95,6 +95,7 @@ import {
   RetainedHandSubmissionRefusedError,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
+import { CASH_GAME_HORSE_ARRIVALS_VERSION } from './services/HorseGameArrivals.js';
 import { ClusterController } from './cluster/ClusterController.js';
 import { LightningOperatorEvents } from './lightning/LightningOperatorEvents.js';
 import { LightningSupervisor } from './lightning/LightningSupervisor.js';
@@ -5605,6 +5606,7 @@ export class GameServer {
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
       cashRakePolicyVersion: 1,
+      cashGameHorseArrivalsVersion: CASH_GAME_HORSE_ARRIVALS_VERSION,
       // Public liveness comes from the worker-owned store. The main thread no
       // longer hydrates a second solver artifact whose status could look healthy
       // while the live action path was empty or failed.

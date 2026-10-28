@@ -1,11 +1,5 @@
-/**
- * PLO PRESUMPTION THROUGH THE REAL DECISION WORKER (2026-10-25). Dan: "TAG
- * THEM ALL FROM THE START, UNLESS OTHERWISE PROVEN DIFFERENTLY", PLO only.
- * Since #8075 every horse reads opponents from its own observer memory inside
- * the worker, so a person the horse has never seen has no read at all. The
- * engine roster (gameState.humanUserIds) must reach HorseMind through the
- * worker's FAST path, so that unseen person is read as an aggressive raiser.
- */
+/** Shared Omaha presumption through the actual worker. Owner update 2026-10-27:
+ * public evidence and game context drive the same strategy for all opponents. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { HandController } from '../HandController.js';
 import { HorseMind } from '../HorseMind.js';
@@ -29,7 +23,7 @@ afterEach(() => {
 });
 
 it.each([[true], [false]])(
-  'a never-seen person who opens is read as an aggressive raiser through the worker (roster %s)',
+  'any never-seen opponent who opens receives the shared aggressive read through the worker (roster %s)',
   async (withRoster) => {
     HorseMind.reset();
     const messages: HorseDecisionWorkerResponse[] = [];
@@ -109,9 +103,6 @@ it.each([[true], [false]])(
     const result = messages.find((m) => m.type === 'FAST_RESULT');
     expect(result?.type, JSON.stringify(messages.at(-1))).toBe('FAST_RESULT');
     expect(reads.length).toBeGreaterThan(0);
-    if (withRoster)
-      expect(reads.every((r) => r?.presumed === true && r.stats.pfr.engaged === 'high')).toBe(true);
-    // Without the roster the unseen person has no read, exactly as before.
-    else expect(reads.every((r) => r === null)).toBe(true);
+    expect(reads.every((r) => r?.presumed === true && r.stats.pfr.engaged === 'high')).toBe(true);
   }
 );

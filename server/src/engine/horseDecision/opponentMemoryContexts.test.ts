@@ -57,6 +57,7 @@ it('canonical variants remain distinct and donor batches keep the ten actor boun
     'flh',
     'flo8',
     'short_deck',
+    'pineapple',
   ]);
   expect(validOpponentDonorProfiles([donor('flh')], ids, 'nlh', 'cash', 'full')).toBe(false);
   expect(validOpponentDonorProfiles([donor('flo8')], ids, 'plo8', 'cash', 'full')).toBe(false);
@@ -158,7 +159,10 @@ it.each(['flh', 'flo8', 'short_deck'] as const)(
     expect(captures[0].readFrame).not.toBeNull();
     HorseMind.setDecisionScope(readScopeOf(variant, 6), variant, 'cash');
     const first = HorseMind.opponentRead(ids[1]);
-    expect(first).toBeNull();
+    if (variant === 'flo8') {
+      expect(first?.presumed).toBe(true);
+      expect(Object.values(first!.stats).every((stat) => stat.n === 0)).toBe(true);
+    } else expect(first).toBeNull();
     const frame = captures[0].readFrame!;
     const view = decodeHorseDecisionReads(
       frame,
@@ -166,6 +170,7 @@ it.each(['flh', 'flo8', 'short_deck'] as const)(
       JSON.parse(frame.json).handKey,
       captures[0].planContext
     );
+    expect(view.exploit.size).toBe(0);
     HorseMind.runInSandbox(view, () => {
       HorseMind.setDecisionScope(readScopeOf(variant, 6), variant, 'cash');
       expect(HorseMind.opponentRead(ids[1])).toEqual(first);
@@ -175,6 +180,10 @@ it.each(['flh', 'flo8', 'short_deck'] as const)(
       variant === 'flh' ? 'nlh' : variant === 'flo8' ? 'plo8' : 'nlh',
       'cash'
     );
-    expect(HorseMind.opponentRead(ids[1])).toBeNull();
+    const otherVariant = HorseMind.opponentRead(ids[1]);
+    if (variant === 'flo8') {
+      expect(otherVariant?.presumed).toBe(true);
+      expect(Object.values(otherVariant!.stats).every((stat) => stat.n === 0)).toBe(true);
+    } else expect(otherVariant).toBeNull();
   }
 );

@@ -19,6 +19,8 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseNearNutRiverValue.ts':
+      'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':
       'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':
@@ -37,6 +39,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the authoritative whole-Diamond rake arithmetic used for projected call pricing',
     'src/domain/diamondCashJackpotSchedule.ts':
       'the authoritative whole-Diamond jackpot collection used for projected call pricing',
+    'src/engine/HorseOmahaTournamentPressure.ts':
+      'the default-off Omaha tournament preflop action-risk ICM pricing candidate consumed by reference preflop bars',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':
@@ -101,8 +105,12 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the canonical public-action projection used by individual historical and live completed-hand learning',
     'src/engine/horseDecision/lane.ts':
       'boundary: actual pool wiring admits original validated observers and propagates public completions only to the same observer; read owners are separately hashed',
+    'src/services/HorsePooledPublicBootstrap.ts':
+      'boundary: bounded saved-only service bootstrap with closed public profile schema and original resolved availability before worker READY; no turn query or private history',
     'src/services/HorseOwnPublicHistory.ts':
       'boundary: the individual service-only public reader pins its exact native-qualified database definition, context and bounded query; provider transport is not strategy authority',
+    'src/engine/horseDecision/pooledPublicProfiles.ts':
+      'owner-authorized shared public aggregate admission, saved bootstrap, context/version/cutoff and detached read projection consumed by reference decisions',
     'src/engine/horseDecision/observerReads.ts':
       'the individual observation admission, cutoff, completion and read-state ownership used by FAST decisions',
     'src/engine/horseDecision/client.ts':
@@ -138,6 +146,7 @@ export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freez
   'src/engine/horseDecision/client.ts',
   'src/engine/horseDecision/lane.ts',
   'src/services/HorseOwnPublicHistory.ts',
+  'src/services/HorsePooledPublicBootstrap.ts',
 ]);
 
 /**

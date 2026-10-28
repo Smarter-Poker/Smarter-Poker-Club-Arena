@@ -235,7 +235,7 @@ export interface TableTabBarProps {
   /** Batch 3: long-press quick actions. */
   onQuickAction?: (
     tabId: string,
-    action: 'sitout' | 'back' | 'leave' | 'mute' | 'reload' | 'open-browser'
+    action: 'sitout' | 'back' | 'leave' | 'leave-next-hand' | 'mute' | 'reload' | 'open-browser'
   ) => void;
   /** Batch 3: one-tap sit out / return across every seated table. */
   onSitOutAll?: () => void;
@@ -718,6 +718,11 @@ export function TableTabBar({
                 }),
               onHelp: () =>
                 masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+              onLeaveTableNextHand: () =>
+                masterBus.emit('TABLE_MENU_ACTION', {
+                  tableId: activeTabId,
+                  action: 'LEAVE_TABLE_NEXT_HAND',
+                }),
               onLeaveTable: () =>
                 masterBus.emit('TABLE_MENU_ACTION', {
                   tableId: activeTabId,
@@ -1309,6 +1314,10 @@ export function TableTabBar({
                     count gate stays only for a LOBBY tab, where "Close Lobby"
                     on your only tab would close the thing you are looking at
                     and leave an empty bar behind. */}
+                {onQuickAction &&
+                  !isLobby &&
+                  !isHubId(tab.id) &&
+                  item('Leave Table Next Hand', () => onQuickAction(tab.id, 'leave-next-hand'))}
                 {onQuickAction &&
                   (!isLobby || tabs.length > 1) &&
                   item(

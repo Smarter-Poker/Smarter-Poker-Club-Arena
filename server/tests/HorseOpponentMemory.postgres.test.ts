@@ -134,10 +134,10 @@ async function insert(row: ReturnType<typeof hand>) {
     ]
   );
 }
-async function profile(variant = 'plo5', mode = 'cash') {
+async function profile(variant = 'plo5', mode = 'cash', actor = uid) {
   return (
     await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
-      [uid],
+      [actor],
       variant,
       mode,
       'short',
@@ -765,15 +765,6 @@ describe('durable opponent memory with real PostgreSQL', () => {
       expect(next.counters[field]).toBeCloseTo(base[field], 10);
   });
 
-  it('keeps every PLO variant and tournament history separate', async () => {
-    for (const variant of MEMORY_VARIANTS) {
-      const p = await profile(variant);
-      expect(p.variant).toBe(variant);
-      if (variant !== 'plo5') expect(p.counters.hands).toBe(0);
-    }
-    expect((await profile('plo5', 'tournament')).counters.hands).toBe(0);
-  });
-
   it('uses the authoritative dealt count rather than the access-control roster size', async () => {
     const roster = Array.from({ length: 8 }, (_, n) => ({
       userId: n === 0 ? uid : `91000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
@@ -909,9 +900,19 @@ describe('durable opponent memory with real PostgreSQL', () => {
     expect(HorseMind.importDurableOpponentProfiles([p])).toBe(0);
     expect(HorseMind.importDurableOpponentProfiles([{ ...p, observed_hands: 0 }])).toBe(0);
     HorseMind.setDecisionScope('omaha:short', 'plo5');
-    expect(HorseMind.opponentRead(uid)?.stats.pfr.engaged).toBe('high');
+    const observed = HorseMind.opponentRead(uid);
+    expect(observed?.stats.pfr.engaged).toBe('high');
+    expect(observed?.stats.pfr.n).toBeGreaterThan(0);
     HorseMind.setDecisionScope('omaha:short', 'plo4');
-    expect(HorseMind.opponentRead(uid)).toBeNull();
+    // An unseen Omaha variant receives the common prior, not observations
+    // imported for a different variant. Switching back retains the real read.
+    const unseen = HorseMind.opponentRead(uid);
+    expect(unseen?.presumed).toBe(true);
+    expect(unseen?.stats.pfr.engaged).toBe('high');
+    expect(unseen?.stats.pfr.mean).toBe(0.35);
+    expect(Object.values(unseen!.stats).every((stat) => stat.n === 0)).toBe(true);
+    HorseMind.setDecisionScope('omaha:short', 'plo5');
+    expect(HorseMind.opponentRead(uid)).toEqual(observed);
     HorseMind.setDecisionScope(null);
   });
 });
@@ -1069,5 +1070,112 @@ describe('remaining saved opponent contexts with real PostgreSQL', () => {
       ])
     ).rows.map((r) => r.variant);
     expect(variants).toEqual(expect.arrayContaining([...addedVariants]));
+  });
+});
+
+describe('Pineapple public opponent memory exact schema extension', () => {
+  const pineappleActor = 'd1000000-0000-4000-8000-000000000001';
+  let migration: string;
+  const before = new Map<string, string>();
+  beforeAll(async () => {
+    const path = join(process.cwd(), '../supabase/migrations');
+    const file = readdirSync(path).find((f) => f.endsWith('_horse_opponent_memory_pineapple.sql'));
+    if (!file) throw Error('Pineapple migration missing');
+    migration = readFileSync(join(path, file), 'utf8');
+    for (const name of [
+      'fn_horse_exploit_accept_hand()',
+      'fn_horse_exploit_mark_hand()',
+      'fn_horse_exploit_profiles_read(text[],text,text,text)',
+    ])
+      before.set(
+        name,
+        (await client.query('select pg_get_functiondef($1::regprocedure) body', [name])).rows[0]
+          .body
+      );
+    await client.query(migration);
+  });
+  it('keeps every PLO variant and tournament history separate', async () => {
+    // This case runs only after the exact ninth-variant schema extension.
+    // Its own actor avoids earlier concurrency fixtures' accepted PLO6 hands.
+    const actor = 'd3000000-0000-4000-8000-000000000001';
+    const row = hand('d4000000-0000-4000-8000-000000000001');
+    row.actions = [{ userId: actor, action: 'raise', stage: 'preflop' }];
+    row.players = [{ userId: actor }, { userId: other }, { userId: uid }];
+    await insert(row);
+    expect((await profile('plo5', 'cash', actor)).counters.hands).toBe(1);
+    for (const variant of MEMORY_VARIANTS) {
+      const p = await profile(variant, 'cash', actor);
+      expect(p.variant).toBe(variant);
+      if (variant !== 'plo5') expect(p.counters.hands).toBe(0);
+    }
+    expect((await profile('plo5', 'tournament', actor)).counters.hands).toBe(0);
+  });
+  it('changes only the exact variant literal and preserves service-only grants', async () => {
+    for (const [name, body] of before) {
+      const after = (await client.query('select pg_get_functiondef($1::regprocedure) body', [name]))
+        .rows[0].body;
+      expect(after).toBe(
+        body.replace(
+          "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck')",
+          "('nlh','plo4','plo5','plo6','plo8','flh','flo8','short_deck','pineapple')"
+        )
+      );
+    }
+    expect(
+      (
+        await client.query(
+          "select has_function_privilege('service_role','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') service,has_function_privilege('authenticated','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') browser,has_function_privilege('anon','fn_horse_exploit_profiles_read(text[],text,text,text)','execute') anon"
+        )
+      ).rows[0]
+    ).toEqual({ service: true, browser: false, anon: false });
+  });
+  it('marks and learns an accepted Pineapple hand exactly once through real triggers', async () => {
+    const row = hand('d2000000-0000-4000-8000-000000000001', 'raise', 'pineapple');
+    row.actions = [{ userId: pineappleActor, action: 'raise', stage: 'preflop' }];
+    row.players = [{ userId: pineappleActor }, { userId: other }, { userId: uid }];
+    await insert(row);
+    await insert(row);
+    expect(
+      (await client.query('select horse_exploit_recorded from hand_history where id=$1', [row.id]))
+        .rows[0].horse_exploit_recorded
+    ).toBe(true);
+    const read = async (variant = 'pineapple', mode = 'cash', size = 'short') =>
+      (
+        await client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+          [pineappleActor],
+          variant,
+          mode,
+          size,
+        ])
+      ).rows[0];
+    const p = await read();
+    expect(Number(p.observed_hands)).toBe(1);
+    expect(p.counters.hands).toBe(1);
+    expect(p.counters.pfr).toBe(1);
+    for (const [v, m, z] of [
+      ['nlh', 'cash', 'short'],
+      ['pineapple', 'tournament', 'short'],
+      ['pineapple', 'cash', 'hu'],
+    ])
+      expect((await read(v, m, z)).counters.hands).toBe(0);
+  });
+  it('refuses unsupported variants and refuses replay without changing installed definitions', async () => {
+    await expect(
+      client.query('select * from fn_horse_exploit_profiles_read($1,$2,$3,$4)', [
+        [pineappleActor],
+        'unsupported',
+        'cash',
+        'short',
+      ])
+    ).rejects.toMatchObject({ code: '22023' });
+    await expect(client.query(migration)).rejects.toThrow(/variant constraint preimage differs/);
+    await client.query('rollback');
+    expect(
+      (
+        await client.query(
+          "select convalidated,pg_get_constraintdef(oid) body from pg_constraint where conrelid='horse_exploit_profiles'::regclass and conname='horse_exploit_profiles_variant_check'"
+        )
+      ).rows[0]
+    ).toMatchObject({ convalidated: true, body: expect.stringContaining("'pineapple'::text") });
   });
 });

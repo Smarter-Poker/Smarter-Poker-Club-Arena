@@ -381,6 +381,12 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
     'V24'
   ),
   tag(
+    'one_pair_turn_stackoff',
+    'measurement',
+    'single-board showdown one-pair shape with turn commitment, mirrored on wins; not turn decision EV or strategy authority',
+    'V24'
+  ),
+  tag(
     'board_paired_two_pair_stackoff',
     'measurement',
     'two pair where one pair is the board own, so board cards counterfeit or outkick it, 40bb+',
@@ -696,6 +702,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V51'
   ),
   flag(
+    'smallPotNearNutRiverValue',
+    'default-off PLO4/5/6 single-board small-pot near-nut river value candidate, qualification pending; only removes random call after existing value and safety gates',
+    'Small-pot near-nut value'
+  ),
+  flag(
     'v55OmahaRiverTripsFlat',
     'river Omaha weak sets/trips retain call pricing without re-shoving; default off pending deep-cash league qualification',
     'V55'
@@ -714,6 +725,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'v52RangeAdvantage',
     'heads-up postflop public-range advantage drives the range c-bet, V38 initiative and PLO small sizes (league v52_range_advantage)',
     'V52'
+  ),
+  flag(
+    'v53PloTourneyIcm',
+    'default-off candidate: PLO4/5/6 standard tournament preflop action-risk ICM shifts, requires independently qualified whole-tournament comparison',
+    'V53'
   ),
   flag(
     'v53Pressure',
@@ -1748,14 +1764,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
-    'plo_human_presumed_aggressive',
+    'plo_opponent_presumed_aggressive',
     'HorseMind (PLO presumption)',
-    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'an Omaha opponent received the shared aggressive raise prior before their own public hands proved otherwise (owner update 2026-10-27)',
     'OPPX'
   ),
   receipt(
-    'plo_human_presumption_disproved',
+    'plo_opponent_presumption_disproved',
     'HorseMind (PLO presumption)',
+    "an opponent's own public hands disproved the shared Omaha raise presumption, identically for people and horses",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumed_aggressive',
+    'source',
+    "a person at an Omaha table read as an aggressive raiser before their own hands proved it (Dan: 'TAG THEM ALL FROM THE START')",
+    'OPPX'
+  ),
+  retiredReceipt(
+    'plo_human_presumption_disproved',
+    'source',
     "a person's own hands showed raising no higher than the average horse, so the PLO presumption came off",
     'OPPX'
   ),
@@ -3148,6 +3176,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'authoritative public-action snapshot applied or refused; no player identifiers or cards leave the worker',
     'V50'
   ),
+  {
+    ...receipt(
+      'horse_pooled_public_bootstrap_*',
+      'HorseDecisionWorkerRuntime startup public-profile hydration',
+      'boot-only observation: loaded means a finite saved public-profile batch was read, unavailable means the read failed or exceeded its bounds, and refused means cache admission rejected the batch; none proves decision consumption, independent history, complete fleet coverage or activation',
+      'V50'
+    ),
+    cadence: 'boot',
+  },
   receipt(
     'horse_mind_mirror_*',
     'LiveHorseDecisionWorkerPool.observeCompletedHand',
@@ -3168,6 +3205,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   // No floor: the spot (committed, river, one pair, clearing the call bar)
   // is rare by construction; silence on a quiet day is not a dead layer.
+  receipt(
+    'small_pot_near_nut_value_flat_exception',
+    'HorseLogic PLO6 final paired-board flat branch',
+    'private original value-branch legal raise retained without intervening action changes below the unchanged fold threshold; accepted execution remains separate',
+    'Small-pot near-nut value'
+  ),
+  receipt(
+    'small_pot_near_nut_value_raise',
+    'HorseLogic existing value raise band after original safety gates',
+    'default-off structural candidate selected a raise instead of random call; selection only, controller acceptance and economic qualification remain separate',
+    'Small-pot near-nut value'
+  ),
   receipt(
     'v55_omaha_river_trips_flat',
     'HorseLogic committed and ordinary raise branches',

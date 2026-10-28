@@ -1,4 +1,10 @@
 {
+  "cashierAsyncMountAudit20261027": {
+    "reason": "Reviewed full async-mount diff: await act around initial mocked identity/club/balance promises and await every mount. All eight existing assertions/cases and timeouts retained. Isolated eight cases pass; combined pre-push verification follows. No financial/native/live certificate restamp.",
+    "path": "tests/cashier-weekly-statements.test.tsx",
+    "previousSHA256": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
+    "currentSHA256": "dc2c3cb202c4119f3828f4ac68865e31e8f52874cdecb154bf8832491202bac2"
+  },
   "status": "source_changed_unrun_pending_qualification",
   "routePerformanceGateInputs20261025": {
     "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
@@ -200,7 +206,7 @@
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "1741188412170b7dc2d283c217dfe7895dc888b2880c6b9c9f41f313dd3cb13a",
     "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
-    "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
+    "tests/config/roleScopedCashier.test.ts": "37d64780e8c8aaa7e65c2529f2649952b566c328bfae731532b19d390a22ffbd",
     "tests/cashout-escrow-flow.test.ts": "08c3b2ed491fad0fb4673779f5ff863452e2a9bd6cf617955a3d4d36f2c534c6",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
@@ -220,7 +226,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
+    "tests/cashier-weekly-statements.test.tsx": "dc2c3cb202c4119f3828f4ac68865e31e8f52874cdecb154bf8832491202bac2",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "6be8e7def307a8363525ac7eb3600674f5d35f9524304cdd9770e77ab0c45856",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
@@ -5431,5 +5437,11 @@
         "current": "a60a0ef77be8fb2a1bcc49c7a9f2f0b0347c9550e550cf51982f328583587e02"
       }
     }
+  },
+  "cashierReturnWallet20261027": {
+    "reason": "Reviewed one-line assertion update: the real cashier uses fn_club_wallet_claim_back with explicit destination and retained operation ID. All role/downline assertions remain. Refresh test input identity only; no historical financial certificate is restamped.",
+    "file": "tests/config/roleScopedCashier.test.ts",
+    "previous": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
+    "current": "37d64780e8c8aaa7e65c2529f2649952b566c328bfae731532b19d390a22ffbd"
   }
 }

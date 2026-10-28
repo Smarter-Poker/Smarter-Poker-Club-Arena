@@ -343,7 +343,7 @@ describe('clause 6 — the ten minute window is presented honestly', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 describe('the cashier never offers a recipient the server will refuse', () => {
-  it('self is excluded from the agent and promo cashiers, and kept for the bank', () => {
+  it('self-send restrictions apply to sends while personal claims remain available', () => {
     /**
      * fn_agent_wallet_send and fn_promo_wallet_send refuse
      * `p_to_user_id = auth.uid()`. fn_club_bank_send deliberately does not:
@@ -361,8 +361,10 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     expect(cashierRefusesSelfSend('promo_wallet', 'club_pot')).toBe(false);
     expect(cashierRefusesSelfSend('promo_wallet', 'own_float')).toBe(true);
     expect(MODAL).toContain(
-      'const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource, destination)'
+      "tab === 'send' && cashierRefusesSelfSend(spendWallet, spendPromoSource, destination)"
     );
+    expect(MODAL).toContain('Claim From My Wallets');
+    expect(MODAL).toContain('setPersonalClaim(true)');
   });
 
   it('a selected recipient who becomes ineligible is cleared, not left hidden', () => {

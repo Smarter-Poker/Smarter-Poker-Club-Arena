@@ -82,11 +82,21 @@ export default function TournamentStartCountdown({
       .finally(() => {
         if (active) void read();
       });
-    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const tick = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setNow(Date.now());
+    }, 1000);
+
+    const onVisible = () => {
+      if (!document.hidden) setNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       active = false;
       clearTimeout(refresh);
       clearInterval(tick);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [tournamentId, hasLiveHand]);
   if (hasLiveHand || start?.id !== tournamentId) return null;

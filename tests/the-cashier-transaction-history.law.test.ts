@@ -150,12 +150,12 @@ describe('the cashier transaction history', () => {
 
   it('lets only owners, co-owners and admins choose All Club Transactions', () => {
     expect(page).toContain("return role === 'owner' || role === 'co_owner' || role === 'admin';");
-    expect(page).toContain("['club', 'All Club Transactions'],");
+    expect(page).toContain("['club', 'Club Transactions'],");
     expect(page).toContain("['mine', 'My Transactions'],");
     // Staff choose between the club and their own; agents between their own
     // and their downline (Dan's Club Data rule); a player has one book.
     expect(page).toMatch(
-      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'All Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
+      /isClubStaffRole\(myRole\)\s*\?\s*\[\s*\['club', 'Club Transactions'\],\s*\['mine', 'My Transactions'\],?\s*\]/
     );
     expect(page).toMatch(
       /isAgentRole\(myRole\)\s*\?\s*\[\s*\['mine', 'My Transactions'\],\s*\['downline', 'My Downline'\],?\s*\]/

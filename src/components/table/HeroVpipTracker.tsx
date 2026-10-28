@@ -119,8 +119,31 @@ export function useHeroVpipStatus(
       return;
     }
     void refresh();
-    const t = setInterval(() => void refresh(), VPIP_BACKSTOP_MS);
-    return () => clearInterval(t);
+    let t: ReturnType<typeof setInterval> | null = null;
+    const startBackstop = () => {
+      if (!t) t = setInterval(() => void refresh(), VPIP_BACKSTOP_MS);
+    };
+    const stopBackstop = () => {
+      if (t) {
+        clearInterval(t);
+        t = null;
+      }
+    };
+    startBackstop();
+
+    const onVis = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        stopBackstop();
+      } else {
+        startBackstop();
+        void refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stopBackstop();
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [enabled, refresh]);
 
   // Every hand, once the fact row has had time to land.

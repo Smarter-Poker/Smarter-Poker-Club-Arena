@@ -448,6 +448,25 @@ class SoundService {
 
   private unlockInstalled = false;
   private removeUnlockListeners: (() => void) | null = null;
+  private idleSuspendTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private resetIdleSuspendTimer(): void {
+    if (this.idleSuspendTimer) {
+      clearTimeout(this.idleSuspendTimer);
+      this.idleSuspendTimer = null;
+    }
+    // Mobile energy optimization:
+    // If no sounds have played for 20 seconds, suspend the AudioContext so
+    // mobile OS audio daemons (iOS CoreAudio / Android AudioFlinger) can enter
+    // low-power deep sleep mode instead of continuously drawing hardware power.
+    if (typeof window !== 'undefined' && this.ctx && this.ctx.state === 'running') {
+      this.idleSuspendTimer = setTimeout(() => {
+        if (this.ctx && this.ctx.state === 'running') {
+          void this.ctx.suspend().catch(() => {});
+        }
+      }, 20_000);
+    }
+  }
 
   private installUnlockListeners(): void {
     if (this.unlockInstalled || typeof window === 'undefined') return;
@@ -558,6 +577,7 @@ class SoundService {
         /* only a real gesture can do it - installUnlockListeners is waiting */
       });
     }
+    this.resetIdleSuspendTimer();
     return true;
   }
 
@@ -3534,6 +3554,7 @@ class SoundService {
     this.removeUnlockListeners?.();
     this.removeUnlockListeners = null;
     this.unlockInstalled = false;
+    if (this.idleSuspendTimer) clearTimeout(this.idleSuspendTimer);
     if (this.priorityResetTimer) clearTimeout(this.priorityResetTimer);
     this.stopAllMotors(0.02);
     this.stopTimerWarning();

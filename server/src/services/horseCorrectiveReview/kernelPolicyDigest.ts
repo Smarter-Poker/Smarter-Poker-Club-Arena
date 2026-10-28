@@ -37,6 +37,7 @@ export const CORRECTIVE_KERNEL_POLICY_SOURCE_FILES: readonly string[] = Object.f
       'src/engine/HorseTournamentContinuation.ts',
       'src/engine/HorsePhase8Safety.ts',
       'src/engine/HorsePhase14Acceptance.ts',
+      'src/engine/HorseQualifiedAcceptance.ts',
       'src/engine/HorsePhase14Authority.ts',
       'src/engine/HorseQualifiedAuthority.ts',
       'src/engine/HorsePhase6Attribution.ts',

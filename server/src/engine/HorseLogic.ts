@@ -1,3 +1,4 @@
+import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
   runCorrectiveKernelEvaluator,
   type CorrectiveKernelEvaluator,
@@ -162,6 +163,7 @@ import {
   type TournamentPreflopPolicyInput,
 } from './HorseTournamentPreflop.js';
 import { potLimitRaiseTo } from './BettingStructure.js';
+import { omahaTournamentPressure } from './HorseOmahaTournamentPressure.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
 import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
@@ -2035,6 +2037,8 @@ export interface HorseDecideOpts {
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
    * 6000-pair probe; no production default is changed. */
   v55OmahaRiverTripsFlat?: boolean;
+  /** Qualification-only small-pot near-nut river value candidate; default off. */
+  smallPotNearNutRiverValue?: boolean;
   /** V56: direct public pressure sampling for vulnerable river sets/trips
    * facing tier-three pressure on one Omaha-high cash board. Default on
    * after fixed-clock/full-precision400bb cash qualification; explicit false
@@ -2061,6 +2065,8 @@ export interface HorseDecideOpts {
    *  to ablate (default: enabled; league matchups v53_pressure, plo4/plo5/
    *  plo6_v53_pressure). */
   v53Pressure?: boolean;
+  /** Candidate PLO4/5/6 tournament preflop ICM pricing; default off pending independent qualification. */
+  v53PloTourneyIcm?: boolean;
   /** V58 (2026-10-25): PLO6 river nut discipline on a paired board. Facing a
    *  river bet, a hand one random hand beats 15%+ of the time folds (unless
    *  the price is tiny), and one beaten 5%+ calls instead of raising. Disable to ablate (default: enabled; league
@@ -2290,7 +2296,12 @@ export function vpipFloorCallDown(
   },
   rand: () => number
 ): HorseDecision {
-  if (gs.stage !== 'preflop' || decision.action !== 'fold' || gs.allInOrFold === true)
+  if (
+    gs.stage !== 'preflop' ||
+    decision.action !== 'fold' ||
+    gs.allInOrFold === true ||
+    decision.continuationGuard === 'preflop_priced_refusal'
+  )
     return decision;
   const floor = Number(gs.vpipFloor ?? 0);
   if (!(floor > 0)) return decision;
@@ -2369,6 +2380,8 @@ function maniacCallDown(
     if (telemetryOn(opts)) noteFire('horse_continuation_protected_fold_retained');
     return decision;
   }
+  if (decision.action === 'fold' && decision.continuationGuard === 'preflop_priced_refusal')
+    return decision;
   if (decision.action !== 'fold' || opts.mind === false || gs.allInOrFold === true) return decision;
   const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
   if (!(toCall > 0) || !(player.stack > 0)) return decision;
@@ -2408,8 +2421,11 @@ function maniacCallDown(
     // was never priced here. Its postflop bets carry as little information as
     // a preflop maniac's do; its preflop range is its (wide) calling range.
     const postflopOnly =
-      street !== 'preflop' && maniacRaiseWidth(read) === null && isPostflopManiac(read);
-    const width = postflopOnly ? 1 : maniacRaiseWidth(read);
+      street !== 'preflop' &&
+      (read?.presumed === true || maniacRaiseWidth(read) === null) &&
+      isPostflopManiac(read);
+    // A shared starting prior is not observed evidence for undoing a fold.
+    const width = postflopOnly ? 1 : read?.presumed ? null : maniacRaiseWidth(read);
     if (width === null) return decision;
     const betRate =
       street === 'preflop'
@@ -2532,6 +2548,15 @@ function maniacCallDown(
       if (telemetryOn(opts)) noteFire('v58_short_stack_maniac_jam');
       return { ...decision, action: 'all_in', amount: undefined };
     }
+    // A flat that leaves chips behind is not a terminal heads-up price while
+    // another live seat still owes the raise. Do not invent that seat's call
+    // or cards; retain the earlier range decision until a closed price exists.
+    if (
+      street === 'preflop' &&
+      toCall < player.stack &&
+      allLive.some((p) => !p.is_all_in && p.stack > 0 && p.bet < gs.currentBet - 0.005)
+    )
+      return decision;
     const rawRequired =
       call / ((pot + call) * (1 - rake)) +
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
@@ -2547,7 +2572,12 @@ function maniacCallDown(
     // A heads-up preflop all-in also realizes its sampled equity in full.
     // Its close rejection needs the same bounded confirmation as postflop;
     // ordinary preflop flats retain their separate realization policy.
-    const canRefineRecovery = live.length === 1 && (street !== 'preflop' || allInCall);
+    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
+    // outcomes (and replacing them with a fresh mean) favors continuation.
+    // Keep the existing price/range model, without outcome-selected samples.
+    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    const canRefineRecovery =
+      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
@@ -3139,11 +3169,16 @@ export const PLO6_RIVER_CHEAP_PRICE = 0.1;
 export const PLO6_RIVER_UNPAIRED_FOLD_BEAT_PROB = 0.3;
 /** Unpaired board, beaten this often: call at most, never raise. */
 export const PLO6_RIVER_UNPAIRED_RAISE_BEAT_PROB = 0.15;
+// Private, one-use provenance from the actual value branch. No request or
+// serialized decision field can grant the PLO6 low-commitment flat exception.
+const nearNutValueReferenceRaises = new WeakSet<HorseDecision>();
+
 function plo6RiverNutDiscipline(
   decision: HorseDecision,
   player: SeatPlayer,
   gs: HorseGameStateV2,
-  opts: HorseDecideOpts
+  opts: HorseDecideOpts,
+  retainedNearNutReferenceAmount: number | null = null
 ): HorseDecision {
   try {
     if (String(gs.gameVariant ?? '').toLowerCase() !== 'plo6' || gs.stage !== 'river')
@@ -3189,6 +3224,17 @@ function plo6RiverNutDiscipline(
       return { ...decision, action: 'fold', amount: undefined };
     }
     if (isRaise && beaten >= flatAt) {
+      if (
+        paired &&
+        opts.smallPotNearNutRiverValue === true &&
+        decision.action === 'raise' &&
+        retainedNearNutReferenceAmount !== null &&
+        decision.amount === retainedNearNutReferenceAmount &&
+        smallPotNearNutRiverValue(player, gs)
+      ) {
+        if (telemetryOn(opts)) noteFire('small_pot_near_nut_value_flat_exception');
+        return decision;
+      }
       noteFlat();
       return callFor();
     }
@@ -3361,10 +3407,7 @@ export class HorseLogic {
           : 0
       ),
       typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null,
-      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash',
-      // PLO presumption (2026-10-25): the seats the engine roster says a
-      // person plays, read by HorseMind.opponentRead.
-      Array.isArray(gameState.humanUserIds) ? gameState.humanUserIds : null
+      gameState.gameMode === 'tournament' || gameState.tournament ? 'tournament' : 'cash'
     );
     // V3: ingest the action stream into the opponent-intelligence layer.
     // Wrapped so observation can never take down a decision.
@@ -3660,6 +3703,13 @@ export class HorseLogic {
       decision = maniacShortStackJam(decision, player, gs, opts);
       return { decision };
     }).decision;
+
+    const nearNutReference =
+      nearNutValueReferenceRaises.delete(decision) &&
+      decision.action === 'raise' &&
+      Number.isFinite(decision.amount)
+        ? { action: 'raise' as const, amount: decision.amount!, thinkTime: 0 }
+        : null;
 
     const phase6Attribution =
       gs.stage === 'preflop'
@@ -4408,6 +4458,10 @@ export class HorseLogic {
     // timing node see the action they choose: the PLO paired-board fold, then
     // the hold'em premium rule (#8122, #8138), then - LAST, so nothing can
     // fold that spot again - the short all-in call floor (Dan 2026-10-26).
+    const retainedNearNutAmount =
+      nearNutReference && graph.retainsReferenceAction(nearNutReference)
+        ? nearNutReference.amount
+        : null;
     decision = graph.run('wager_rules', decision, () => {
       const wagered = fullPotNearPotWager(
         // V58/V59: PLO6 river nut discipline, after every strategy owner.
@@ -4415,7 +4469,8 @@ export class HorseLogic {
           riverNutsRaise(tournamentShoveDiscipline(decision, player, gs), player, gs),
           player,
           gs,
-          opts
+          opts,
+          retainedNearNutAmount
         ),
         player,
         gs
@@ -4832,13 +4887,17 @@ export class HorseLogic {
     // envelope AND raising at least 35% of hands / re-raising 25%). Null for
     // every horse-like read, so horse-versus-horse play is unchanged.
     let maniacRaiserWidth: number | null = null;
+    let observedManiacRaiser = false;
     let maniacBehindWidth: number | null = null;
     if (opts.mind !== false) {
       try {
         const raiserM =
           lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
-        if (raiserM && raiserM.user_id !== player.user_id)
-          maniacRaiserWidth = maniacRaiseWidth(HorseMind.opponentRead(raiserM.user_id));
+        if (raiserM && raiserM.user_id !== player.user_id) {
+          const read = HorseMind.opponentRead(raiserM.user_id);
+          maniacRaiserWidth = maniacRaiseWidth(read);
+          observedManiacRaiser = read?.presumed !== true && maniacRaiserWidth !== null;
+        }
         if (raises === 0) {
           for (const p of gs.players) {
             if (p.seat === player.seat || p.is_folded || p.is_all_in || p.is_sitting_out) continue;
@@ -5035,8 +5094,7 @@ export class HorseLogic {
       const raiserAllIn38 = raiser38?.is_all_in === true;
       const effCall38 = Math.min(toCall, player.stack);
       const maniacPrice38 =
-        maniacRaiserWidth !== null &&
-        (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
+        observedManiacRaiser && (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
       const variantPrice38 =
         (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
         (raiserAllIn38 || effCall38 >= player.stack * 0.4);
@@ -5240,7 +5298,11 @@ export class HorseLogic {
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
           notePhase6Route('variant_fallback', 'variant_price');
-          return { action: 'fold', thinkTime: 0 };
+          return {
+            action: 'fold',
+            thinkTime: 0,
+            ...(vi.isOmaha ? { continuationGuard: 'preflop_priced_refusal' as const } : {}),
+          };
         } catch {
           if (telemetryOn(opts)) noteFire('v38_preflop_price_unavailable');
           /* No invented opponent/equity: the explicit range fallback decides. */
@@ -5329,7 +5391,76 @@ export class HorseLogic {
       ...vi,
       isOmaha: vi.isOmaha && (opts.v46Charts ?? true) !== false,
     });
+    // ═══ V53 OMAHA TOURNAMENT PRESSURE (default off) ═══ candidate ICM pricing
+    // of modeled pot-limit action risk, replacing the flat premium on the
+    // bars it names. Null outside its scope (see the module header).
+    const ploIcm53 = (() => {
+      const t53 = trustedTournament;
+      if (
+        opts.v53PloTourneyIcm !== true ||
+        !vi.isOmaha ||
+        !isTournamentMode(gs) ||
+        gs.allInOrFold === true ||
+        (gs.format !== 'mtt' && gs.format !== 'sng') ||
+        t53?.schemaVersion !== 1 ||
+        t53.satellite === true ||
+        t53.isPko === true ||
+        t53.isBounty === true ||
+        t53.isMysteryBounty === true ||
+        (t53.bountyFactor ?? 0) > 0 ||
+        !t53.m ||
+        !Array.isArray(t53.stacks) ||
+        !Array.isArray(t53.payoutPct) ||
+        !t53.stackByUser
+      )
+        return null;
+      try {
+        const behind = phase7PlayersBehind(gs, player);
+        const lastRaiser =
+          lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
+        const realM = tournamentNextLevelProjectionApplies(t53.nextBlindInMin, t53.nextBlindMult)
+          ? Math.min(t53.m.realM, t53.m.projectedM)
+          : t53.m.realM;
+        return omahaTournamentPressure({
+          holeCount: vi.holeCount,
+          isHiLo: vi.isHiLo,
+          isPotLimit: vi.isPotLimit,
+          heroUserId: player.user_id,
+          heroStack: player.stack,
+          heroBet: player.bet,
+          pot: gs.pot,
+          contestablePot,
+          currentBet: gs.currentBet,
+          toCall,
+          bigBlind: bb,
+          potRaiseTo: potLimitRaiseTo(gs.pot, gs.currentBet, toCall),
+          unopened: straddleUnopened || (raises === 0 && gs.currentBet <= bb * 1.05),
+          lastRaiserUserId: lastRaiser?.user_id ?? null,
+          opponents: gs.players
+            .filter((p) => p.user_id !== player.user_id)
+            .map((p) => ({
+              userId: p.user_id,
+              stack: p.stack,
+              bet: p.bet,
+              folded: p.is_folded,
+              allIn: p.is_all_in,
+              sittingOut: p.is_sitting_out === true,
+              actsAfterHero: behind.has(p.user_id),
+            })),
+          fieldStacks: t53.stacks,
+          fieldStackByUser: t53.stackByUser,
+          payoutPct: t53.payoutPct,
+          playersLeft: t53.playersLeft ?? 0,
+          realM,
+        });
+      } catch (error) {
+        reportError(error, 'HorseLogic.v53_plo_icm');
+        return null;
+      }
+    })();
+    if (ploIcm53 && telemetryOn(opts)) noteFire('v53_plo_icm');
     const intent = decidePreflopV7({
+      ...(ploIcm53 ? { ploIcm: ploIcm53.shifts } : {}),
       strength,
       position,
       raiserPosition,
@@ -8314,7 +8445,14 @@ export class HorseLogic {
         return this.betSize(
           planHandKey,
           pot,
-          overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2,
+          // Preserve V40's weak-made-hand sizing limit in the bluff branch too.
+          // A changed range estimate must not turn two called barrels into pot-sized value.
+          Math.min(
+            useV40 && vi.isOmaha && isRiver && made40?.weak && calledBarrels40 >= 2
+              ? 0.5
+              : Infinity,
+            overbetBluff ? 1.3 + fastRandom() * 0.3 : sizeBase + 0.15 + fastRandom() * 0.2
+          ),
           player,
           gs,
           vi,
@@ -9044,14 +9182,20 @@ export class HorseLogic {
         }
       }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
-      if (
+      const originalValueRaise =
         !(dangered && cat < 6) &&
         fastRandom() <
           Math.max(
             0.55 * params.aggression + params.checkRaiseFreq + oopBoost,
             pressure53 && cat >= 3 ? pressure53.raiseFloor : 0
-          )
-      ) {
+          );
+      const nearNutValueRaise =
+        !originalValueRaise &&
+        !(dangered && cat < 6) &&
+        opts.smallPotNearNutRiverValue === true &&
+        smallPotNearNutRiverValue(player, gs);
+      if (originalValueRaise || nearNutValueRaise) {
+        if (telemetryOn(opts) && nearNutValueRaise) noteFire('small_pot_near_nut_value_raise');
         if (tele15 && pressure53 && cat >= 3) noteFire('v53_pressure_value_raise');
         // V18 EXPLOIT SIZING: on the river, a station (valueThinMod > 1)
         // pays a bigger raise; a nit calls only what a smaller one asks.
@@ -9063,7 +9207,20 @@ export class HorseLogic {
           }
         }
         const raiseToAmt = currentBet + (pot + toCall) * sizeF;
-        return this.raiseTo(planHandKey, raiseToAmt * params.sizingMultiplier, player, gs, vi);
+        const raised = this.raiseTo(
+          planHandKey,
+          raiseToAmt * params.sizingMultiplier,
+          player,
+          gs,
+          vi
+        );
+        if (
+          opts.smallPotNearNutRiverValue === true &&
+          smallPotNearNutRiverValue(player, gs) &&
+          raised.action === 'raise'
+        )
+          nearNutValueReferenceRaises.add(raised);
+        return raised;
       }
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }

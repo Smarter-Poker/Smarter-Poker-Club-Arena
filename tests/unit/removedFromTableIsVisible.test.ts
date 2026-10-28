@@ -41,7 +41,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceBlockAfter, sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const readRaw = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -61,7 +61,10 @@ describe('one recovery, shared by both paths', () => {
        entry `applySeatRemoved]` deliberately do not match this pattern, so the
        number is the two recoveries and nothing else. */
     const calls = (TABLE_PAGE.match(/applySeatRemoved\(/g) || []).length;
-    expect(calls, 'the websocket path and the poll path').toBe(2);
+    expect(calls, 'the websocket, both poll outcomes, and both accepted leave doors').toBe(5);
+    expect(TABLE_PAGE.match(/applySeatRemoved\(undefined, \{ announce: false \}\)/g)).toHaveLength(
+      3
+    );
     // …and each is in the right place.
     /* Both now carry an `announce` decision: clearing the seat is always right,
        SAYING the player "was removed" is only right when they did not ask to
@@ -101,6 +104,47 @@ describe('one recovery, shared by both paths', () => {
        anywhere, the bug comes back with it. */
     expect(TABLE_PAGE).not.toMatch(
       /setTableState\(\(prev\) => \(prev\.heroSeat === 0 \? prev : \{ \.\.\.prev, heroSeat: 0 \}\)\)/
+    );
+  });
+
+  it('presents a voluntary remote exit before either transport clears the seat', () => {
+    const socket = sliceEnclosingBlock(
+      TABLE_PAGE,
+      'if (!reason) presentRemoteSeatExitRef.current();'
+    );
+    expect(socket.indexOf('presentRemoteSeatExitRef.current();')).toBeLessThan(
+      socket.indexOf('applySeatRemoved(reason,')
+    );
+    const pendingPoll = sliceBlockAfter(TABLE_PAGE, 'if (heroRow?.leave_pending)');
+    expect(pendingPoll.indexOf('presentRemoteSeatExitRef.current();')).toBeGreaterThan(-1);
+    expect(pendingPoll.indexOf('presentRemoteSeatExitRef.current();')).toBeLessThan(
+      pendingPoll.indexOf('leftSeatPendingRef.current = true;')
+    );
+    expect(pendingPoll.indexOf('presentRemoteSeatExitRef.current();')).toBeLessThan(
+      pendingPoll.indexOf('applySeatRemoved(undefined,')
+    );
+    const completedPoll = sliceEnclosingBlock(
+      TABLE_PAGE,
+      'if (leftSeatPendingRef.current) presentRemoteSeatExitRef.current();'
+    );
+    expect(completedPoll.indexOf('presentRemoteSeatExitRef.current();')).toBeLessThan(
+      completedPoll.indexOf('applySeatRemoved(evictionReasonRef.current,')
+    );
+    expect(TABLE_PAGE).toContain('presentRemoteSeatExitRef.current = presentRemoteSeatExit;');
+  });
+
+  it('deduplicates presentation by occupancy without issuing another financial leave', () => {
+    const present = sliceBlockAfter(TABLE_PAGE, 'const presentRemoteSeatExit = () =>');
+    expect(present).toContain('leaveRequestActiveRef.current');
+    expect(present).toContain('leaveNavigatedRef.current');
+    expect(present).toContain('ownSeatIdentity.occupancyId');
+    expect(present).toContain('const key = `${userId}:${tableId}:${occupancyId}`;');
+    expect(present).toContain('if (reportedSeatExitsRef.current.has(key)) return;');
+    expect(present.indexOf('reportedSeatExitsRef.current.add(key);')).toBeLessThan(
+      present.indexOf('openLightningSessionSummary({')
+    );
+    expect(present).not.toMatch(
+      /(?:tableService\.leaveTable|handleLeaveTable|handleForceLeaveTable|setSitOut|supabase\.rpc)\s*\(/
     );
   });
 });

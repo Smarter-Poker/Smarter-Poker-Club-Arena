@@ -74,3 +74,8 @@ if not args.baseline:
 if not args.baseline:
     subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-hand-wallet-requests-postgres.py')],
                    env=choice_env, check=True, timeout=60)
+
+# Selected reclaim destinations and promo confinement use the same native gate.
+if not args.baseline:
+    subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-cashier-reclaim-destinations-postgres.py')],
+                   env=choice_env, check=True, timeout=60)

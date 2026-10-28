@@ -164,8 +164,20 @@ export function ClubProfileModal({
     if (!isOpen || !tableId) return;
     const startedAt = () => sessionStatsService.getStats(tableId)?.sessionStartTime ?? Date.now();
     setDuration(formatDuration(startedAt()));
-    const t = setInterval(() => setDuration(formatDuration(startedAt())), 1000);
-    return () => clearInterval(t);
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setDuration(formatDuration(startedAt()));
+    }, 1000);
+
+    const onVisible = () => {
+      if (!document.hidden) setDuration(formatDuration(startedAt()));
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isOpen, tableId]);
 
   // Escape closes, and the table behind stops scrolling. Both are what a

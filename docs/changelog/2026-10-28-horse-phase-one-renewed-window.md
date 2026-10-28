@@ -7,3 +7,5 @@ Only the original Pineapple migration is named, confirmed uninstalled at 03:16:4
 This changes no runtime strategy, feature flags or qualification. Protected merge, certified activation and natural live verification remain separate requirements; this entry is not proof that all 1,000 horses are qualified or upgraded.
 
 Protected-main integration preserves the independently authorized MTT add-on window from PR #8410 alongside this entry. Its existing release operation retains ownership; no duplicate cutover is requested. The Pineapple migration remains a separate uninstalled obligation until its original certified installer and readback prove completion.
+
+A separate database-only continuation preserves the same 03:17–08:50 UTC bounds when an independently authorized containing engine release cannot install Pineapple. It names only the original migration and uses the existing typed database seal, installer and verified thaw. It never replaces the engine, extends expiry, bypasses the rolling-hour lock or replays an installed migration.

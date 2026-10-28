@@ -2625,22 +2625,23 @@ function maniacCallDown(
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
       (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0));
     const required = exactRake === null ? Math.min(0.99, rawRequired) : rawRequired;
-    // A 240-deal estimate close to the price can reject a profitable call
-    // through sampling noise (retained PLO4 potter hand 74 after full-pot
-    // sizing). Refine that boundary once, with a fixed bounded sample; do
-    // not lower the price, survival premium or realization requirement.
+    // Preserve the existing refinement policy only outside the fixed-budget
+    // domains below. No recovery lowers the price, survival premium or
+    // realization requirement.
     const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
     const uncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
-    // A heads-up preflop all-in also realizes its sampled equity in full.
-    // Its close rejection needs the same bounded confirmation as postflop;
-    // ordinary preflop flats retain their separate realization policy.
-    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
-    // outcomes (and replacing them with a fresh mean) favors continuation.
-    // Keep the existing price/range model, without outcome-selected samples.
-    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    // Outside the fixed-budget domains, heads-up preflop all-ins share the
+    // existing postflop refinement eligibility; ordinary preflop flats do not.
+    // NLH and PLO4/PLO5/PLO6 high retain their original governed batch.
+    // Retrying only below-price outcomes, then replacing a selected low mean
+    // with a fresh one, biases recovery toward continuation. A noisy false
+    // negative does not justify another attempt selected by that outcome.
+    // Keep the existing price, range and total original sampling allowance.
+    const fixedRecovery =
+      gs.gameVariant === 'nlh' || (vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount));
     const canRefineRecovery =
-      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
+      !fixedRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =

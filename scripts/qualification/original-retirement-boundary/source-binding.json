@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "cc9fea0c90f30d332aeb8615155315f5cb9c10225ffff24ada644a8d4916cf86",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -224,5 +224,11 @@
     "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
     "reviewedPreimageRevision": "b78abb1fbdffeb761d98bcf888cdce7a0dddce37",
     "change": "Protected #8288 adds three rakeback-player-week path triggers and one additional isolated PostgreSQL step; all original financial qualification commands, cases, constraints and assertions remain byte-identical. Pin correction repairs required merge-composition failure, not financial qualification or production proof."
+  },
+  "weeklyQualityNativeWorkflowBinding20261028": {
+    "review": "Reviewed exact additive C2 workflow diff: three path triggers and one native PostgreSQL quality-source-bag step. All existing commands and assertions retained. Corrects the missed active workflow identity detected by hosted source-binding verification; no SQL, fixture, generation, assertion or production record changes.",
+    "previous": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "current": "cc9fea0c90f30d332aeb8615155315f5cb9c10225ffff24ada644a8d4916cf86",
+    "execution_performed": false
   }
 }

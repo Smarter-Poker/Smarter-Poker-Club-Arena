@@ -1,0 +1,5 @@
+# Qualified rakeback followups retain both native authority lanes
+
+Combining the already qualified occupancy and report-reader migrations exposed a native-only ordering defect: occupancy's full installer/rollback/replay/metadata/ACL/source65 proof had already installed the exact184348 postimage, while the captured report setup began by replaying the same migration and correctly refused its old preimage. No production query or migration changed.
+
+When both options are present, the native wrapper now requires the report setup prefix to equal the exact supplied occupancy migration body byte for byte, reuses that already-proved authority once, and retains all remaining report setup and every report/245/cache/retention/concurrency/current-seven assertion. The ordinary standalone report lane is unchanged. The source contract also binds both workflow options and the exact captured prefix. The combined actual native245 path failed before this correction and passes afterward; five focused source laws and1119 source bindings pass. Protected hosted checks and live book completion remain separate evidence.

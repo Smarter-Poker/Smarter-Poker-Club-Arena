@@ -55,7 +55,16 @@ if os.environ.get('ORB_REPORT_READER_COMPOSITION_MIGRATION') and not os.environ.
  report_path=Path(os.environ['ORB_REPORT_READER_COMPOSITION_MIGRATION'])
  report_candidate=report_path.read_text().strip()
  assert report_candidate.endswith('COMMIT;')
- s+=(p/'report-reader-composition/native-authority-before.sql').read_text()
+ report_authority=(p/'report-reader-composition/native-authority-before.sql').read_text()
+ if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+  # The earlier occupancy lane already ran every exact installer, rollback,
+  # replay, metadata/ACL and source65 check. Reuse that proven authority once.
+  occupancy_candidate=Path(os.environ['ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION']).read_text().strip()
+  if not occupancy_candidate.endswith('COMMIT;'):raise RuntimeError('combined occupancy transaction shape changed')
+  occupancy_prefix=occupancy_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
+  if not report_authority.startswith(occupancy_prefix):raise RuntimeError('combined report occupancy authority prefix changed')
+  report_authority=report_authority[len(occupancy_prefix):]
+ s+=report_authority
  report_body=report_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
  for fault_sql,expected_reason in [
   ('GRANT EXECUTE ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)TO service_role','original_report_composition_owner_or_authority_changed:report'),

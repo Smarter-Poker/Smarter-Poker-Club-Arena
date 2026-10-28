@@ -58,7 +58,7 @@
     "scripts/qualification/original-retirement-boundary/run-installer-native.py": "2fb6dd34483b423ab95fc6cac68b52a98594e078ea7369752e0c5bfcf4ae548f",
     "scripts/qualification/original-retirement-boundary/run-native.py": "99c0a45846946a1f99d1b3ba2f6b8fd3e4541282044fa344e163c4964293ffbb",
     "scripts/qualification/original-retirement-boundary/run-source-ref-native.py": "8d93c7d1613f1e8cda69f2acc74abe04181663985993d1459fa8050ba1dc8e8b",
-    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "701344bcab3cec8e311289c3e68241a8794fb0736018c2358d5ea7b9bb16abdf",
+    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "94f2fe8b578c8555c896f4108a972a43759e81f29fd456a9a804634a09277863",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/bootstrap.sql": "997688087569fb095402b1bff74c64d7f1b2cda45ea151255875cddcca6d0dad",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/qualified-parent-20200734.sql": "a4f06a169d4a9b6e95a25d8bd768cde18684cc353d5e7996a00a662f8af67e18",
     "scripts/qualification/original-retirement-boundary/source-ref-reader-proposal.sql": "44432aa686271a580beb4af5a5840b1d0fe06e9f7d2d7309212684843d330cd9",
@@ -192,7 +192,7 @@
     "scripts/qualification/original-retirement-boundary/report-reader-composition/report-candidate.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
     "scripts/qualification/original-retirement-boundary/report-reader-composition/report-original.sql": "fb61a741e21726cce96083a8094501a018f2ae6b875c8c8bf35933335e3746ed",
     "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
-    "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "731371946212a4544340a62e46a9bdd6a68962eeb667d187109359bcb4756f31"
+    "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "df300d1b13c16e0f89ec410dade9ff4bfd4be0ada4c24e0f97e65a9dd9572181"
   },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
@@ -485,5 +485,9 @@
     "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
     "currentSHA256": "bba16848ad0adb7d646a3c43b42258c71403de7ccc62c946ca266e98503eb090",
     "change": "Only three new private-deposit source-cover paths and one isolated PG17 physical index qualification step. All prior original financial qualification commands, cases and assertions retained. Physical native plan evidence is not production book closure."
+  },
+  "combinedOccupancyReportNativeOrdering20261028": {
+    "review": "When both qualified options run, occupancy already executed full rollback/replay/metadata/ACL/source65 proofs. Require the captured report authority prefix to equal the exact occupancy migration body byte-for-byte, then retain the entire remaining report setup and all original assertions; avoid replaying only that already-proved prefix. No production SQL or financial expectations changed.",
+    "execution_performed": false
   }
 }

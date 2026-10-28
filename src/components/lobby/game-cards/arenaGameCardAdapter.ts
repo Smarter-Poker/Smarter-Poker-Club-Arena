@@ -76,7 +76,7 @@ export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: st
     /* Dan 2026-09-03: "Make sure the Variant Name is first, Like PLO5 25/50
        and then the table name under it." */
     const title = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
-    const residual = stripTableIndex(cashTitleLines(entry).subtitle || '');
+    const residual = cashTitleLines(entry).subtitle || '';
     const subtitle =
       residual ||
       entry.clubLabel ||

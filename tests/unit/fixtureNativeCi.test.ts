@@ -664,6 +664,9 @@ describe('required CI owns native fixture verification', () => {
 
   it.each([
     'scripts/ci/test-f06-shared-hand-lane.py',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/qualify.py',
+    'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/fixture.sql',
+    'supabase/migrations/20261028233452_interrupted_postflop_void_preserves_original_principal.sql',
     'scripts/ci/probes/f06-shared-hand-lane/unsettled_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/successor_qualification.py',
     'scripts/ci/probes/f06-shared-hand-lane/generation_qualification.py',

@@ -207,3 +207,43 @@ describe('the fallback keeps a thin sample honest', () => {
     expect(e.callDownMod).toBeLessThanOrEqual(1);
   });
 });
+
+describe('legacy aggression recency uses the same street population', () => {
+  function legacyCallDown(
+    postAggr: number,
+    postPassive: number,
+    recentAggr: number,
+    recentPassive: number
+  ) {
+    const template = structuredClone(feedLoosePreflopAggressivePostflop(40, 2)!);
+    HorseMind.reset();
+    const view = HorseMind.createSandbox();
+    view.stats.set('dan', {
+      ...template,
+      hands: 40,
+      aggr: 100,
+      passive: 200,
+      postAggr,
+      postPassive,
+      rAggr: recentAggr,
+      rPassive: recentPassive,
+    });
+    return HorseMind.runInSandbox(view, () => HorseMind.exploit('dan').callDownMod);
+  }
+
+  it('does not turn a postflop passive into a maniac from preflop-heavy recent aggression', () => {
+    expect(legacyCallDown(5, 10, 60, 10)).toBeCloseTo(0.85);
+  });
+
+  it('does not dilute established postflop aggression with preflop-heavy recent calls', () => {
+    expect(legacyCallDown(30, 10, 1, 30)).toBeCloseTo(1.2);
+  });
+
+  it('preserves all-street gear-change adaptation below the postflop sample gate', () => {
+    expect(legacyCallDown(3, 6, 60, 10)).toBeCloseTo(1.2);
+  });
+
+  it('switches to postflop evidence at the ten-action boundary', () => {
+    expect(legacyCallDown(3, 7, 60, 10)).toBeCloseTo(0.85);
+  });
+});

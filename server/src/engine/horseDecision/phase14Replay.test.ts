@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { harness, request, run } from './phase14Worker.test-support.js';
 import { fastRandom } from '../HorseEval.js';
@@ -188,10 +188,7 @@ describe('qualified Phase14 replay authority and versioned state', () => {
       requestLifecycleVerified: true,
     });
     const directory = mkdtempSync(
-      join(
-        process.platform === 'darwin' ? resolve(process.cwd(), '../../tmp') : tmpdir(),
-        'phase14-native-fleet-'
-      )
+      join(process.platform === 'darwin' ? process.cwd() : tmpdir(), 'phase14-native-fleet-')
     );
     try {
       const store = new HorseDecisionJournalStore(directory, {

@@ -449,3 +449,106 @@ it('reconstructs only this observer conditional river read after a fresh worker 
     );
   }
 });
+
+it('releases an acknowledged decoded graph while preserving exact original-window recovery', async () => {
+  const load = vi.fn(async () => window());
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200);
+  cache.forSnapshot(context(), 200);
+  await new Promise<void>((done) => setImmediate(done));
+  const original = cache.forSnapshot(context(), 200)!;
+  cache.acknowledge(context(), 'f'.repeat(64));
+  expect(cache.forSnapshot(context(), 200)).toEqual(original);
+  cache.acknowledge(context(), original.digest);
+  const entry = [...(cache as any).entries.values()][0];
+  expect(entry.packet).toBeUndefined();
+  expect(cache.state(context())).toBe('available');
+  cache.acknowledge(context(), original.digest);
+  expect(cache.forSnapshot(context(), 201)).toBeUndefined();
+  cache.acknowledge(context(), null);
+  expect(cache.forSnapshot(context(), 199)).toBeUndefined();
+  const replay = cache.forSnapshot(context(), 202)!;
+  expect(replay).toEqual(original);
+  replay.hands[0]!.actions[0]!.amount = 999;
+  expect(cache.forSnapshot(context(), 202)).toEqual(original);
+  cache.acknowledge(context(), 'e'.repeat(64));
+  expect(cache.forSnapshot(context(), 202)).toEqual(original);
+  cache.acknowledge(context(), original.digest);
+  expect(cache.forSnapshot(context(), 202)).toBeUndefined();
+  expect(cache.state(context())).toBe('available');
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('keeps acknowledgements independent between worker-client caches of the same public window', async () => {
+  const load = vi.fn(async () => window());
+  const left = new HorseOwnPublicHistoryCache(load, () => 200);
+  const right = new HorseOwnPublicHistoryCache(load, () => 200);
+  left.forSnapshot(context(), 200);
+  right.forSnapshot(context(), 200);
+  await new Promise<void>((done) => setImmediate(done));
+  const original = left.forSnapshot(context(), 200)!;
+  left.acknowledge(context(), original.digest);
+  expect(left.forSnapshot(context(), 201)).toBeUndefined();
+  expect(right.forSnapshot(context(), 201)).toEqual(original);
+  right.acknowledge(context(), original.digest);
+  left.acknowledge(context(), null);
+  expect(left.forSnapshot(context(), 202)).toEqual(original);
+  expect(right.forSnapshot(context(), 202)).toBeUndefined();
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+it('reports only bounded main-cache scalar counts through ACK, recovery and eviction', async () => {
+  const load = vi.fn(async (c: any) => {
+    const w = window();
+    w.context = c;
+    for (const h of w.hands) {
+      h.observerId = c.observerId;
+      h.actions[0]!.userId = c.observerId;
+      h.results[0]!.user_id = c.observerId;
+    }
+    return w;
+  });
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200, 1);
+  expect(cache.status()).toMatchObject({
+    owner: 'main',
+    entries: 0,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  cache.forSnapshot(context(), 200);
+  expect(cache.status()).toMatchObject({ entries: 1, pendingCount: 1, decodedPacketCount: 0 });
+  await new Promise<void>((done) => setImmediate(done));
+  const p = cache.forSnapshot(context(), 200)!;
+  expect(cache.status()).toMatchObject({
+    pendingCount: 0,
+    decodedPacketCount: 1,
+    serializedPacketCount: 0,
+  });
+  cache.acknowledge(context(), p.digest);
+  const expected = Buffer.byteLength(JSON.stringify(p));
+  expect(cache.status()).toMatchObject({
+    decodedPacketCount: 0,
+    serializedPacketCount: 1,
+    acknowledgedCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
+    throw Error('status must not serialize');
+  });
+  try {
+    expect(cache.status().retainedSerializedUtf8Bytes).toBe(expected);
+  } finally {
+    stringify.mockRestore();
+  }
+  cache.acknowledge(context(), null);
+  expect(cache.status()).toMatchObject({
+    acknowledgedCount: 0,
+    serializedPacketCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  cache.forSnapshot({ ...context(), observerId: opponentId }, 201);
+  expect(cache.status()).toMatchObject({
+    entries: 1,
+    pendingCount: 1,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  expect(JSON.stringify(cache.status())).not.toMatch(/11111111|22222222|digest|hands|cards/);
+});

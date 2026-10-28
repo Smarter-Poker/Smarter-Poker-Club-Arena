@@ -340,6 +340,17 @@ def union_read_evidence(packet,attestation,parts,results):
     river=({'status':'reported','scope':'selected_accepted_decisions','readBasis':'original_individual_scoped_basic_counters',**river_counts,**{k:len(v) for k,v in river_horses.items()},'pooledIndividualScopedBasicReadHorses':len(basis_horses),'pooledIndividualScopedBasicReadDecisions':basis_total,'completePopulation':False,'allContextsVerified':False,'durablePersistenceVerified':False,'strategyApplicationVerified':False,'allPhasesVerified':False} if public_known and river_known else dict(unknown))
     return public,river
 
+EXECUTION_FIELDS=('selectedMatch','controllerCoerced','selectionUnknown','effectsNotApplicable','effectsApplied','effectsFailed','effectsUnknown')
+def validated_execution_evidence(h,n):
+    value=h.get('executionEvidence')
+    if value is None:return None
+    if (not isinstance(value,dict) or set(value)!={'version',*EXECUTION_FIELDS}
+        or value['version']!='horse-own-turn-execution-v1'
+        or any(type(value[k]) is not int or not 0<=value[k]<=n for k in EXECUTION_FIELDS)
+        or sum(value[k] for k in EXECUTION_FIELDS[:3])!=n
+        or sum(value[k] for k in EXECUTION_FIELDS[3:])!=n):raise ValueError('indexed_execution_evidence')
+    return {k:value[k] for k in EXECUTION_FIELDS}
+
 LEDGER_SCHEMA='horse-fleet-indexed-evidence-v1'
 LEDGER_COUNTS=('acceptedDecisions','pooledPublicReadDecisions','independentPublicReadDecisions','qualifiedOriginalReadDecisions')
 
@@ -349,7 +360,7 @@ def indexed_ledger(packet,attestation,results):
     durable plan effects. Raw source rows remain in the private ephemeral owner.
     """
     ids=sorted(packet['horseIds']);positions={actor:i for i,actor in enumerate(ids)}
-    rows=[{'index':i,**{k:0 for k in LEDGER_COUNTS},'phaseAcceptedApplications':{}} for i in range(1000)]
+    rows=[{'index':i,**{k:0 for k in LEDGER_COUNTS},'phaseAcceptedApplications':{},'ownTurnExecution':{k:0 for k in EXECUTION_FIELDS}} for i in range(1000)]
     bindings=[]
     for part,result in zip(partition_packets(packet,attestation),results):
         e=result['execution'];o=e['observation']
@@ -360,6 +371,10 @@ def indexed_ledger(packet,attestation,results):
         for h in o['horses']:
             row=rows[positions[h['horseId']]];n=h['acceptedDecisions']
             row['acceptedDecisions']+=n
+            execution=validated_execution_evidence(h,n) if n else {k:0 for k in EXECUTION_FIELDS}
+            for key in EXECUTION_FIELDS:
+                old=row['ownTurnExecution'][key]
+                row['ownTurnExecution'][key]=None if old is None or execution is None else old+execution[key]
             receipts=h.get('retainedReceiptCounts');learning=h.get('riverLearning')
             for output,key in [('pooledPublicReadDecisions','pooledPublicReads'),('independentPublicReadDecisions','independentPublicReads')]:
                 value=(receipts.get(key,0) if public.get('status')=='reported' and isinstance(receipts,dict) and any(k in receipts for k in ('pooledPublicReads','independentPublicReads')) else None) if n else 0
@@ -383,6 +398,11 @@ def indexed_ledger(packet,attestation,results):
     return validate_indexed_ledger(ledger) if bindings else None
 
 def validate_indexed_ledger(value):
+    value=json.loads(json.dumps(value))
+    if isinstance(value,dict) and isinstance(value.get('rows'),list):
+        for row in value['rows']:
+            if isinstance(row,dict) and 'ownTurnExecution' not in row:
+                row['ownTurnExecution']={k:None for k in EXECUTION_FIELDS}
     expected={'schema','cohortDigest','sourceSha','rosterCount','indexBasis','observations','rows',
         'decisionCorrectness','planEffectPersistence','profitability','completePopulation','allPhasesVerified'}
     if (not isinstance(value,dict) or set(value)!=expected or value['schema']!=LEDGER_SCHEMA
@@ -400,7 +420,7 @@ def validate_indexed_ledger(value):
             or not re.fullmatch('[0-9a-f]{64}',b.get('servingContainer',''))
             or not re.fullmatch('sha256:[0-9a-f]{64}',b.get('imageId',''))
             or not isinstance(b.get('servingStartedAt'),str)
-            or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z',b['servingStartedAt'])):raise ValueError('indexed_ledger_binding')
+            or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z',b['servingStartedAt'])):raise ValueError('indexed_ledger_binding')
         packets.add(b['packetDigest']);parts=b['partitionDigests'];window=b['window']
         if not isinstance(parts,list) or not 1<=len(parts)<=16 or len(set(parts))!=len(parts) or any(not isinstance(p,str) or not re.fullmatch('[0-9a-f]{64}',p) for p in parts):raise ValueError('indexed_ledger_partitions')
         if not isinstance(window,dict) or set(window)!={'startUtc','endUtc'}:raise ValueError('indexed_ledger_window')
@@ -410,7 +430,7 @@ def validate_indexed_ledger(value):
         intervals.append(interval)
     if not isinstance(rows,list) or len(rows)!=1000:raise ValueError('indexed_ledger_rows')
     for index,row in enumerate(rows):
-        if not isinstance(row,dict) or set(row)!={'index',*LEDGER_COUNTS,'phaseAcceptedApplications'} or row['index']!=index or type(row['index']) is not int:raise ValueError('indexed_ledger_row')
+        if not isinstance(row,dict) or set(row)!={'index',*LEDGER_COUNTS,'phaseAcceptedApplications','ownTurnExecution'} or row['index']!=index or type(row['index']) is not int:raise ValueError('indexed_ledger_row')
         n=row['acceptedDecisions']
         if type(n) is not int or not 0<=n<=16*256*1024:raise ValueError('indexed_ledger_count')
         for key in LEDGER_COUNTS[1:]:
@@ -418,6 +438,13 @@ def validate_indexed_ledger(value):
             if v is not None and (type(v) is not int or not 0<=v<=n):raise ValueError('indexed_ledger_count')
         a=row['pooledPublicReadDecisions'];b=row['independentPublicReadDecisions']
         if a is not None and b is not None and a+b>n:raise ValueError('indexed_ledger_read_count')
+        execution=row['ownTurnExecution']
+        if not isinstance(execution,dict) or set(execution)!=set(EXECUTION_FIELDS):raise ValueError('indexed_execution_evidence')
+        for key in EXECUTION_FIELDS:
+            v=execution[key]
+            if v is not None and (type(v) is not int or not 0<=v<=n):raise ValueError('indexed_execution_evidence')
+        for family in (EXECUTION_FIELDS[:3],EXECUTION_FIELDS[3:]):
+            if all(execution[k] is not None for k in family) and sum(execution[k] for k in family)!=n:raise ValueError('indexed_execution_evidence')
         phases=row['phaseAcceptedApplications']
         if not isinstance(phases,dict) or any(k not in {f'phase{i}' for i in range(1,16)} or type(v) is not int or not 0<=v<=n for k,v in phases.items()):raise ValueError('indexed_ledger_phase')
     return value
@@ -427,7 +454,7 @@ def union_indexed_ledgers(ledgers):
     different source/cohort or overlapping observations remain a refusal.
     """
     if not isinstance(ledgers,list) or not 1<=len(ledgers)<=16:raise ValueError('indexed_ledger_union_bound')
-    unique={digest(validate_indexed_ledger(v)):v for v in ledgers}
+    unique={digest(validate_indexed_ledger(v)):validate_indexed_ledger(v) for v in ledgers}
     values=list(unique.values());first=values[0]
     out=json.loads(json.dumps(first))
     for value in values[1:]:
@@ -438,6 +465,9 @@ def union_indexed_ledgers(ledgers):
         for target,row in zip(out['rows'],value['rows']):
             for key in LEDGER_COUNTS:
                 target[key]=None if target[key] is None or row[key] is None else target[key]+row[key]
+            for key in EXECUTION_FIELDS:
+                a=target['ownTurnExecution'][key];b=row['ownTurnExecution'][key]
+                target['ownTurnExecution'][key]=None if a is None or b is None else a+b
             for phase,count in row['phaseAcceptedApplications'].items():
                 target['phaseAcceptedApplications'][phase]=target['phaseAcceptedApplications'].get(phase,0)+count
     return validate_indexed_ledger(out)
@@ -530,6 +560,20 @@ FLEET_FAILURE_CODES=frozenset(('fleet_private_paths','fleet_packet','fleet_windo
     'remote_observer_unavailable','observer_oom','observer_v8_heap_exhausted','serving_identity_unverified','observer_cleanup_unverified',
     'journal_mount_unverified','observer_exit_unverified','observation_contract_unverified'))
 
+# Only literal labels from maintained validation sites may leave the private boundary.
+PARTITION_VALIDATION_CODES=frozenset((
+    'capture_counts','capture_gaps','indexed_ledger_binding','indexed_ledger_bindings',
+    'indexed_ledger_count','indexed_ledger_header','indexed_ledger_overlap','indexed_ledger_partitions',
+    'indexed_ledger_phase','indexed_ledger_read_count','indexed_ledger_row','indexed_ledger_rows',
+    'indexed_ledger_window','partition_canonical_binding','partition_capture_unknown','partition_execution_binding',
+    'partition_horse_counts','partition_horse_phase_counts','partition_horse_phases','partition_horses',
+    'partition_packet_bounds','partition_phase_unknown','partition_results','partition_serving_changed',
+    'phase_axes','phase_counts','phase_keys','phase_provenance_counts',
+    'phase_reasons','phase_schema','private_result','read_cohort',
+    'read_counts','read_packet','river_basis','river_counts',
+    'river_schema','river_totals',
+))
+
 def partition_failure_code(error,run=None):
     if isinstance(error,subprocess.TimeoutExpired):return 'partition_timeout'
     if isinstance(error,OSError):return 'partition_process_unavailable'
@@ -543,6 +587,8 @@ def partition_failure_code(error,run=None):
         except (ValueError,TypeError):pass
         return 'partition_cli_unclassified'
     if isinstance(error,ValueError) and str(error)=='partition_deadline':return 'partition_deadline'
+    if isinstance(error,json.JSONDecodeError):return 'partition_result_json_invalid'
+    if isinstance(error,ValueError) and str(error) in PARTITION_VALIDATION_CODES:return str(error)
     return 'partition_result_unverified'
 
 def observe_bounded(packet_path,attestation_path,ssh_command,output_path):

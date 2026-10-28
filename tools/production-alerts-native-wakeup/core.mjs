@@ -3,6 +3,9 @@ export const TARGET = '01a09b86-5ba8-7290-8657-1041f13dd3ca';
 export const TOPIC = 'ca-native-alert-intake-v1';
 export const CODEX =
   '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
+export function wakeArguments() {
+  return ['-g', '-a', '/Applications/ChatGPT.app', `codex://threads/wake/${TARGET}`];
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function validateState(value) {
   if (value === null) return null;
@@ -15,7 +18,9 @@ export function validateState(value) {
     !value.ids.every((id) => typeof id === 'string' && UUID.test(id)) ||
     new Set(value.ids).size !== value.ids.length ||
     !['submitting', 'queued', 'uncertain'].includes(value.phase) ||
-    (value.phase === 'queued' && !UUID.test(value.messageId))
+    (value.phase === 'queued' && !UUID.test(value.messageId)) ||
+    (value.wake !== undefined &&
+      (value.phase !== 'queued' || !['attempting', 'requested', 'uncertain'].includes(value.wake)))
   )
     throw new Error('invalid native wake state');
   return value;
@@ -36,12 +41,28 @@ export function acceptedReceipt(stdout) {
 }
 // A serialized explicit-event handler, with at most one acknowledged batch in
 // flight. No timer, polling, repair or automatic retry after an unknown queue.
-export function createIntake({ load, save, pending, queue, id = randomUUID }) {
+export function createIntake({ load, save, pending, queue, wake, id = randomUUID }) {
   let active;
   let loaded = false;
   let running = null;
   let requested = false;
   let lastError = null;
+  const wakeAccepted = async () => {
+    if (active?.phase !== 'queued' || active.wake !== undefined) return;
+    // Queue acceptance persists input only. Wake that exact existing queue,
+    // once, through the desktop's native queue-resume route. Never requeue.
+    active = { ...active, wake: 'attempting' };
+    await save(active);
+    try {
+      await wake(wakeArguments());
+      active = { ...active, wake: 'requested' };
+      await save(active);
+    } catch {
+      active = { ...active, wake: 'uncertain' };
+      await save(active);
+      throw new Error('native wake outcome uncertain; retain accepted queue operation');
+    }
+  };
   const run = async () => {
     if (!loaded) {
       active = validateState(await load());
@@ -58,7 +79,10 @@ export function createIntake({ load, save, pending, queue, id = randomUUID }) {
       new Set(result.pending).size !== result.pending.length
     )
       throw new Error('invalid opaque pending response');
-    if (active && !result.active_acknowledged) return;
+    if (active && !result.active_acknowledged) {
+      await wakeAccepted();
+      return;
+    }
     if (active) {
       await save(null);
       active = null;
@@ -84,6 +108,7 @@ export function createIntake({ load, save, pending, queue, id = randomUUID }) {
         'native queue outcome uncertain; retain operation and inspect native receipt'
       );
     }
+    await wakeAccepted();
   };
   return {
     event() {

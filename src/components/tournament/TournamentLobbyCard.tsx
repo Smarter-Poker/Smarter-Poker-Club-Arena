@@ -85,6 +85,7 @@ interface Tournament extends TournamentEntryWindowRow {
   maxPlayers: number | null;
   registeredPlayers: number;
   startsAt?: string;
+  startsWhenFull?: boolean;
   /** `bagged`: a multi-day event between days (live, entries closed). */
   status: 'registering' | 'running' | 'bagged' | 'finished' | 'cancelled';
   blindStructure: string;
@@ -910,16 +911,26 @@ function TournamentLobbyCardInner({
           </div>
         )}
 
-        {tournament.startsAt && tournament.status === 'registering' && countdown && (
+        {tournament.startsWhenFull && tournament.status === 'registering' && (
           <div className={styles.row}>
-            <span className="sc-label sc-ink--blue">Starts In</span>
-            <span
-              className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
-            >
-              {countdown}
-            </span>
+            <span className="sc-label sc-ink--blue">Starts</span>
+            <span className={`${styles.value} sc-ink--silver`}>When Full</span>
           </div>
         )}
+
+        {!tournament.startsWhenFull &&
+          tournament.startsAt &&
+          tournament.status === 'registering' &&
+          countdown && (
+            <div className={styles.row}>
+              <span className="sc-label sc-ink--blue">Starts In</span>
+              <span
+                className={`${styles.value} ${isCountdownCritical ? 'sc-ink--red' : 'sc-ink--silver'}`}
+              >
+                {countdown}
+              </span>
+            </div>
+          )}
 
         <div className={styles.row}>
           <span className="sc-label sc-ink--blue">Seats</span>

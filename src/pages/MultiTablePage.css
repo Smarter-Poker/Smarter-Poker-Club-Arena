@@ -1495,7 +1495,7 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
 }
 @media (max-width: 480px) {
   .multi-table-page {
-    --sp-game-tool-size: 34px;
+    --sp-game-tool-size: 48px;
   }
 }
 

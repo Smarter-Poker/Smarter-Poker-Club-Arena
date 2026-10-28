@@ -970,9 +970,13 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'claim-promo-return-wallets-393');
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    // Read the club's actual promo figure through the same maintained identity.
+    // The Advanced Cashier entry opens cashier-classic, whose wallet strip
+    // exposes these cashier buttons. The club home's My Wallets is collapsed.
     // Opening and switching accounts submits no chip movement.
-    await page.goto(`clubs/${clubId}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await page.goto(`clubs/${clubId}/cashier-classic`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
     const openPromo = page.getByRole('button', { name: 'Open Promo Wallet', exact: true });
     await expect(openPromo).toBeVisible({ timeout: 60_000 });
     const promoRead = page.waitForResponse(

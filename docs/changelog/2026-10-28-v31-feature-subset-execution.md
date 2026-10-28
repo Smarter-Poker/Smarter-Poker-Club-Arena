@@ -1,6 +1,6 @@
-# V31 feature subsets avoid repeated SQL planning
+# V31 feature subsets avoid repeated SQL execution
 
-R6 built all 107 cells, but the bounded seal timed out in the river feature key's best-five subset loop. Every five-card subset planned separate SQL queries for ranks, rank multiplicities, suits and hole-card contribution.
+R6 built all 107 cells, but the bounded seal timed out in the river feature key's best-five subset loop. Every five-card subset executed separate SQL queries for ranks, rank multiplicities, suits and hole-card contribution.
 
 The feature function now uses bounded arrays for those operations and its other small rank/suit queries while keeping independent best-five enumeration and every output byte unchanged. The migration pins its exact preimage and preserves strictness, volatility, search path, owner and permissions. Build, seal, heldout scoring, promotion, inputs and quality thresholds are unchanged.
 

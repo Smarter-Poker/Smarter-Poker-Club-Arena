@@ -21,7 +21,13 @@ else
   echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/horse-phase4-pg.XXXXXX")
+# The hosted parity reader admits only this runner's own private fixture socket.
+# Local runs retain their explicit external-SSD TMPDIR.
+WORK_ROOT="${TMPDIR:-/tmp}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  WORK_ROOT="${RUNNER_TEMP:?hosted qualification requires RUNNER_TEMP}"
+fi
+WORK=$(mktemp -d "$WORK_ROOT/horse-phase4-pg.XXXXXX")
 SOCKET="$WORK/socket"
 DB=horse_phase4_probe
 mkdir -p "$SOCKET"

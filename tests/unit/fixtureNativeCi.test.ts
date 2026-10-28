@@ -147,7 +147,10 @@ it('runs the real Diamond playfields once with an isolated software-rendering wo
   const commands = [beat.run, playfieldStep.run]
     .join('\n')
     .split('\n')
-    .filter((line: string) => line.includes('playwright test'));
+    .filter(
+      (line: string) =>
+        line.includes('playwright test') || line.includes('ui-test-selection.mjs browser')
+    );
   const playfields = commands.filter((line: string) =>
     line.includes('tests/e2e/css/diamond-games-playfield.spec.ts')
   );
@@ -1536,7 +1539,7 @@ describe('required CI owns funded Spin expiry PostgreSQL qualification', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
       )
     ).toBe(true);
   });
@@ -1603,7 +1606,7 @@ describe('Production Alert SQL checks use the existing accounting job', () => {
     expect(
       ci.jobs.unit_shards.steps.some(
         (step: { run?: string }) =>
-          step.run === 'npx vitest run tests/ --shard=${{ matrix.shard }}/4'
+          step.run === 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
       )
     ).toBe(true);
   });
@@ -2180,7 +2183,9 @@ describe('instruction-only verification preserves source contracts without repla
     expect(ci).toContain('node --test docs/agent-policy/agent-policy.test.mjs');
     expect(ci).toContain("if: steps.compile_scope.outputs.instructions_only != 'true'");
     expect(ci).toContain('npx tsc --noEmit');
-    expect(ci).toContain('npx vitest run tests/ --shard=${{ matrix.shard }}/4');
+    expect(ci).toContain(
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+    );
   });
 });
 

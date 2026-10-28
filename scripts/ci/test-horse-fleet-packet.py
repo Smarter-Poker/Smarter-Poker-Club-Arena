@@ -424,6 +424,23 @@ class PacketContracts(unittest.TestCase):
   summary=module.bounded_summary(p,a,[r]);self.assertFalse(summary['completeCapture'])
   self.assertIsNotNone(summary['indexedEvidenceLedger'])
   empty=module.bounded_summary(p,a,[]);self.assertIsNone(empty['indexedEvidenceLedger'])
+ def test_indexed_own_turn_counts_require_closed_validated_schema(self):
+  p,a,r,_=self.indexed_fixture((0,))
+  o=r['execution']['observation'];h=o['horses'][0]
+  values={k:0 for k in module.EXECUTION_FIELDS};values.update(selectedMatch=1,effectsUnknown=1)
+  h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values}
+  row=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']['rows'][0]
+  self.assertEqual(row['ownTurnExecution']['selectedMatch'],1)
+  self.assertEqual(row['ownTurnExecution']['effectsUnknown'],1)
+  for mutation in [lambda v:v.update(effectsApplied=1),lambda v:v.update(selectedMatch=True),lambda v:v.update(secret='PRIVATE'),lambda v:v.update(version='unknown')]:
+   h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values};mutation(h['executionEvidence'])
+   with self.assertRaises(ValueError):module.bounded_summary(p,a,[r])
+ def test_indexed_legacy_own_turn_evidence_is_unknown_and_union_does_not_promote_it(self):
+  _,_,_,old=self.indexed_fixture((0,))
+  for row in old['rows']:row.pop('ownTurnExecution',None)
+  parsed=module.validate_indexed_ledger(old)
+  self.assertTrue(all(v is None for v in parsed['rows'][0]['ownTurnExecution'].values()))
+  self.assertEqual(parsed['planEffectPersistence'],'unknown')
 if __name__=='__main__':
  import sys
  unittest.main(argv=[sys.argv[0],'PacketContracts'] if '--contracts' in sys.argv else None)

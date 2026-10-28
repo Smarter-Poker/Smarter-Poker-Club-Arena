@@ -570,11 +570,18 @@ export function nextCardOutlook(
     const after = cat(next);
     const suitAfter = (suitN.get(c.suit) || 0) + 1;
     const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
-    // NLH plans must not promote a dirty straight out to clean value merely
-    // because its category improved. The range/equity owner still prices the
-    // hand; this records which continuation cards genuinely helped the plan.
+    // A category improvement cannot clean a third-suit out when hero cannot
+    // make that flush. Omaha needs TWO suited hole cards; a lone nut blocker
+    // remains a strategic bluff input at the consumer, not a made flush here.
+    // Keep quality=false as the original paired-comparison baseline.
     const holdem = quality && !vi.isOmaha && !vi.isShortDeck && hole.length === 2;
-    if (holdem && suitAfter >= 3 && !holdsSuit && after < CAT_FLUSH) {
+    if (
+      quality &&
+      (holdem || (vi.isOmaha && !vi.isHiLo)) &&
+      suitAfter >= 3 &&
+      !holdsSuit &&
+      after < CAT_FLUSH
+    ) {
       out.scare.push(k);
       continue;
     }

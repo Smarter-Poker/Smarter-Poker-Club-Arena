@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+      "bytes": 243586,
+      "sha256": "2e08dc1ff0e5bbb0f9a76aef32a51da9dab862ff9bfd7e84fe48ca2e3b8da563"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4164,5 +4164,17 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "playerRecordDeliveryBudget20261028": {
+    "reason": "PR #8462 required delivery recovery changes only existing changes/compiler outer timeout budgets 5->10 and 15->20 minutes after confirmed hosted cancellations. All native cash qualification sources, commands, assertions and historical receipts remain unchanged; this binds current workflow identity and does not claim new financial or production proof.",
+    "previousWorkflow": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflow": {
+      "bytes": 243586,
+      "sha256": "2e08dc1ff0e5bbb0f9a76aef32a51da9dab862ff9bfd7e84fe48ca2e3b8da563"
+    },
+    "execution_performed": false
   }
 }

@@ -370,6 +370,10 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
+    # 8443 job122933361176 completed every functional step at14:59, then
+    # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
+    # Preserve all commands/test deadlines and reserve5minutes for the
+    # observed checkout/execution variance plus cache/cleanup.
     # Run40726879893 passed every guard but exceeded15m during cleanup;
     # comparable successful run40714001791 took13m45. Preserve execution headroom.
     timeout-minutes: 20

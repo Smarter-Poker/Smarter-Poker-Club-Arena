@@ -89,7 +89,7 @@ export function cashTemplateBlurb(
  * Render the cadence stored in a game snapshot. Historical tokens remain
  * readable because settled and retired game snapshots are preserved.
  */
-export type CashBombTrigger = 'timed_10m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
+export type CashBombTrigger = 'timed_10m' | 'timed_12m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
 
 export function bombCadenceLabel(
   trigger: CashBombTrigger | string | null | undefined,

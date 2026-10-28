@@ -118,7 +118,7 @@ export function captureAllInEquity(tableId: string, payload: Record<string, unkn
     const byUser = new Map<string, number>();
     for (const e of raw as Array<{ userId?: string; equity?: number }>) {
       if (!e?.userId || typeof e.equity !== 'number' || !Number.isFinite(e.equity)) continue;
-      // The event carries percent with one decimal; store the fraction.
+      // The event carries a full-precision percentage; store the fraction.
       const fraction = Math.min(1, Math.max(0, e.equity / 100));
       byUser.set(e.userId, fraction);
     }
@@ -1220,11 +1220,9 @@ export async function writeHandFacts(
       if (inAllInRunout) {
         allInEquity = eq;
         const eligible = maxWinnable(invested, investedList) * rakeFactor;
-        // NOTE: `eq` is equity against the whole all-in field while `eligible`
-        // caps at this player's main pot. In a side-pot spot a short stack's
-        // true share of the main pot is higher than its share of the field, so
-        // ev_returned is biased slightly LOW for short stacks. Exact for the
-        // two-way case that dominates volume.
+        // Exact display equity uses this player's eligible-pot denominator,
+        // including every side-pot layer, so the existing cap is also the
+        // correct denominator for the expected return.
         evReturned = r2(eq * eligible);
         evNet = r2(evReturned - invested);
       }

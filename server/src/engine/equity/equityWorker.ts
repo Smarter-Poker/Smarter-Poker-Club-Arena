@@ -17,8 +17,16 @@
  */
 import { parentPort, isMainThread } from 'node:worker_threads';
 import type { Card } from '../../types.js';
-import { evaluateHand, evaluateOmahaHand, compareHands, SUITS, RANKS } from '../PokerEngine.js';
+import {
+  evaluateHand,
+  evaluateOmahaHand,
+  evaluateOmahaLowHand,
+  compareHands,
+  SUITS,
+  RANKS,
+} from '../PokerEngine.js';
 import { isOmahaVariant, isShortDeckVariant } from '../VariantRules.js';
+import { scoreHoldem, scoreOmahaHi, scoreOmahaHiPartial, scoreOmahaLow } from '../HorseEval.js';
 import { SeededRandom, hashSeed } from './SeededRandom.js';
 
 const FULL_DECK: Card[] = [];
@@ -34,6 +42,10 @@ const SHORT_DECK_REMOVED = new Set(['2', '3', '4', '5']);
 export interface EquityOptions {
   shortDeck?: boolean;
   omaha?: boolean;
+  hiLo?: boolean;
+  /** Display probabilities enumerate every legal runout; never sample. */
+  exact?: boolean;
+  pots?: Array<{ amount: number; eligible: number[] }>;
 }
 
 export interface InsuranceEquityComponents {
@@ -218,6 +230,131 @@ export function computeInsuranceComponentsForHands(
   }));
 }
 
+/** Exact public display equity. The fast numeric evaluators are checked against
+ * settlement by AllInEquityAccuracy.test.ts. Worker deadlines remain authoritative:
+ * if enumeration cannot finish, callers omit the number rather than invent it. */
+function exactDisplayEquity(
+  hands: Card[][],
+  board: Card[],
+  dead: Card[],
+  opts: EquityOptions
+): number[] {
+  const known = [...hands.flat(), ...board, ...dead];
+  const keys = known.map(cardKey);
+  const base = opts.shortDeck
+    ? FULL_DECK.filter((c) => !SHORT_DECK_REMOVED.has(c.rank))
+    : FULL_DECK;
+  const legal = new Set(base.map(cardKey));
+  if (
+    ![0, 3, 4, 5].includes(board.length) ||
+    hands.length < 2 ||
+    hands.some((h) => (opts.omaha ? ![4, 5, 6].includes(h.length) : h.length !== 2)) ||
+    new Set(keys).size !== keys.length ||
+    keys.some((k) => !legal.has(k)) ||
+    (opts.hiLo && !opts.omaha)
+  )
+    throw new Error('Invalid exact equity cards or variant');
+  const used = new Set(keys);
+  const remaining = base.filter((c) => !used.has(cardKey(c)));
+  const need = 5 - board.length;
+  if (remaining.length < need) throw new Error('Not enough cards for exact equity');
+  const totals = hands.map(() => 0);
+  let count = 0;
+  // Preflop Omaha has over a million boards but only ~13k board triples.
+  // Cache each triple's exactly-two-hole score once; each full board is the
+  // maximum of its ten triples. This is exact, with bounded task-local memory.
+  const width = remaining.length;
+  const tripleHigh: Float64Array[] = [];
+  const tripleLow: Float64Array[] = [];
+  if (opts.omaha && need === 5) {
+    for (const hand of hands) {
+      const high = new Float64Array(width ** 3);
+      const low = opts.hiLo ? new Float64Array(width ** 3).fill(Infinity) : null;
+      for (let a = 0; a < width - 2; a++)
+        for (let b = a + 1; b < width - 1; b++)
+          for (let c = b + 1; c < width; c++) {
+            const triple = [remaining[a], remaining[b], remaining[c]];
+            const key = (a * width + b) * width + c;
+            high[key] = scoreOmahaHiPartial(hand, triple);
+            if (low) {
+              const result = evaluateOmahaLowHand(hand, triple);
+              if (result) low[key] = result.kickers.reduce((value, rank) => value * 16 + rank, 0);
+            }
+          }
+      tripleHigh.push(high);
+      if (low) tripleLow.push(low);
+    }
+  }
+  const pots = opts.pots ?? [{ amount: 1, eligible: hands.map((_, i) => i) }];
+  if (
+    !pots.length ||
+    pots.some(
+      (p) =>
+        !Number.isFinite(p.amount) ||
+        p.amount <= 0 ||
+        !p.eligible.length ||
+        new Set(p.eligible).size !== p.eligible.length ||
+        p.eligible.some((i) => !Number.isInteger(i) || i < 0 || i >= hands.length)
+    )
+  ) {
+    throw new Error('Invalid exact equity pot eligibility');
+  }
+  // Each percentage is equity in the pots THIS player can win, matching the
+  // existing EV consumer's maxWinnable denominator. Different eligibility sets
+  // need not sum to 100% across players.
+  const eligibleTotals = hands.map((_, i) =>
+    pots.reduce((sum, p) => sum + (p.eligible.includes(i) ? p.amount : 0), 0)
+  );
+  if (eligibleTotals.some((total) => total <= 0))
+    throw new Error('Player has no eligible equity pot');
+  const scoreShares = (high: number[], low: number[]): void => {
+    for (const pot of pots) {
+      const bestHigh = Math.max(...pot.eligible.map((i) => high[i]));
+      const highWinners = pot.eligible.filter((i) => high[i] === bestHigh);
+      const bestLow = low.length ? Math.min(...pot.eligible.map((i) => low[i])) : Infinity;
+      const lowWinners = Number.isFinite(bestLow)
+        ? pot.eligible.filter((i) => low[i] === bestLow)
+        : [];
+      for (const i of highWinners)
+        totals[i] +=
+          ((pot.amount / eligibleTotals[i]) * (lowWinners.length ? 0.5 : 1)) / highWinners.length;
+      for (const i of lowWinners)
+        totals[i] += ((pot.amount / eligibleTotals[i]) * 0.5) / lowWinners.length;
+    }
+    count++;
+  };
+  if (tripleHigh.length) {
+    visitCombinations(
+      remaining.map((_, i) => i),
+      5,
+      (indices) => {
+        const high = hands.map(() => 0);
+        const low = opts.hiLo ? hands.map(() => Infinity) : [];
+        for (let a = 0; a < 3; a++)
+          for (let b = a + 1; b < 4; b++)
+            for (let c = b + 1; c < 5; c++) {
+              const key = (indices[a] * width + indices[b]) * width + indices[c];
+              for (let i = 0; i < hands.length; i++) {
+                high[i] = Math.max(high[i], tripleHigh[i][key]);
+                if (opts.hiLo) low[i] = Math.min(low[i], tripleLow[i][key]);
+              }
+            }
+        scoreShares(high, low);
+      }
+    );
+    return totals.map((total) => Math.min(1, Math.max(0, total / count)));
+  }
+  visitCombinations(remaining, need, (runout) => {
+    const full = board.concat(runout);
+    const high = hands.map((h) =>
+      opts.omaha ? scoreOmahaHi(h, full) : scoreHoldem(h.concat(full), 7, !!opts.shortDeck)
+    );
+    const low = opts.hiLo ? hands.map((h) => scoreOmahaLow(h, full)) : [];
+    scoreShares(high, low);
+  });
+  return totals.map((total) => Math.min(1, Math.max(0, total / count)));
+}
+
 /**
  * Monte-Carlo equity for a set of KNOWN hands over the remaining board.
  *
@@ -238,6 +375,7 @@ export function computeEquity(
   opts: EquityOptions = {},
   seed?: number
 ): number[] {
+  if (opts.exact) return exactDisplayEquity(hands, board, deadCards, opts);
   const n = hands.length;
   const equities = new Array<number>(n).fill(0);
   if (n === 0) return equities;

@@ -1,3 +1,4 @@
+import { formatAllInEquity } from '../../lib/allInEquityDisplay';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RUN IT TWICE — Deal Remaining Cards Twice
@@ -192,7 +193,7 @@ export function RunItTwicePrompt({
                 </div>
                 <span className="rit-panel__player-name">{p.name}</span>
                 {typeof p.equityPct === 'number' && (
-                  <span className="rit-panel__player-equity">{p.equityPct.toFixed(2)}%</span>
+                  <span className="rit-panel__player-equity">{formatAllInEquity(p.equityPct)}</span>
                 )}
                 <span
                   className={`rit-panel__check ${p.accepted ? 'rit-panel__check--on' : ''}`}

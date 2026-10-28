@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240390,
-      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+      "bytes": 242909,
+      "sha256": "d6515e7a3b1d92153ce4a39e09ce73df86dcbe682b085336e122ce4b2e8a9b9b"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -791,6 +791,17 @@
     },
     "execution_performed": false
   },
+  "deliveryGuardSetupReuse20261028": {
+    "reason": "Share unchanged PR source/artwork guards with the existing compiler install and retain scheduled checks. Rebalance unchanged weekly recompute and its evidence 1->2 using run40628889736 measured 2203s vs827s shard load and766s proof. Same four financial shards, commands, SQL, assertions, timeouts, required join and qualification states. Current source identity only, not financial certification.",
+    "previousWorkflowPin": {
+      "bytes": 240125,
+      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+    },
+    "currentWorkflowPin": {
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
+    }
+  },
   "midwayFreezeoutRegression20261028": {
     "reason": "Additive required native bounty-freezeout trigger regression only. Existing CI commands, guards, qualifications and budgets unchanged. Current input identity; no historical/native/live certification restamp.",
     "previous": {
@@ -807,6 +818,21 @@
     "currentWorkflow": {
       "bytes": 240390,
       "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+    }
+  },
+  "deliveryProtectedMainIntegration20261028": {
+    "reason": "Preserve protected-main c873e0cf3d, its Midway bounty-freezeout native financial step and all other writers alongside guard setup reuse and weekly recompute rebalance. Refresh current input identity only. All historical audits and financial qualification states remain intact; no certificate restamp.",
+    "previousCandidateWorkflowPin": {
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 240390,
+      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+    },
+    "currentWorkflowPin": {
+      "bytes": 242909,
+      "sha256": "d6515e7a3b1d92153ce4a39e09ce73df86dcbe682b085336e122ce4b2e8a9b9b"
     }
   }
 }

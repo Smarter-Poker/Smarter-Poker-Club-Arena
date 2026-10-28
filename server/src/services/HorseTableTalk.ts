@@ -330,6 +330,7 @@ export function tableRefusal(table: TalkTable): TableRefusal | null {
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 
 export interface TalkFacts {
+  /** Event thresholds only. Never expose this amount in chat or template filling. */
   potBB?: number;
   street?: Street;
   hand?: string;
@@ -548,10 +549,6 @@ export function lineIndexFor(
 
 function factValue(key: string, facts: TalkFacts): string | undefined {
   switch (key) {
-    case 'potBB':
-      return facts.potBB !== undefined && Number.isFinite(facts.potBB)
-        ? String(Math.round(facts.potBB))
-        : undefined;
     case 'street':
       return facts.street;
     case 'hand':
@@ -663,7 +660,13 @@ const EMOJI = new RegExp(
   'u'
 );
 
+// Owner: never narrate BB amounts in horse chat, including future/styled lines.
+// Also refuse the unit written out, so spelling out the amount cannot bypass it.
+const FORBIDDEN_BB_CHAT =
+  /\d[\d.,]*[\s-]*(?:bbs?|big[\s-]*blinds?)\b|\bbbs?\b|\bbig[\s-]+blinds?\b/i;
+
 export type SanitizeRefusal =
+  | 'bb_amount'
   | 'empty'
   | 'too_long'
   | 'dash'
@@ -695,6 +698,7 @@ export function sanitizeLine(
   usernames: readonly (string | null | undefined)[]
 ): SanitizeVerdict {
   const trimmed = line.trim();
+  if (FORBIDDEN_BB_CHAT.test(trimmed)) return { ok: false, reason: 'bb_amount' };
   if (trimmed.length === 0) return { ok: false, reason: 'empty' };
   if (trimmed.length > TALK_LINE_MAX_CHARS) return { ok: false, reason: 'too_long' };
   if (BANNED_DASH.test(trimmed)) return { ok: false, reason: 'dash' };
@@ -1219,6 +1223,12 @@ export async function writeChatRow(
   horseId: string,
   line: string
 ): Promise<boolean> {
+  if (FORBIDDEN_BB_CHAT.test(line)) {
+    reportError(new Error('Horse chat refused: bb_amount'), 'HorseTableTalk.chat_refused', {
+      tableId,
+    });
+    return false;
+  }
   const { error } = await supabase.from('table_chat').insert({
     table_id: tableId,
     user_id: horseId,

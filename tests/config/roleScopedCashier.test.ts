@@ -422,7 +422,7 @@ describe('the client asks the right server', () => {
     // no longer wrapped by CashoutService (the dead wrappers minted their own op
     // id when a caller forgot one). The cashier modal calls both RPCs itself
     // with a retained op id, so the pin moved to the surface that owns it.
-    for (const rpc of ['fn_agent_wallet_send', 'fn_agent_wallet_claim_back']) {
+    for (const rpc of ['fn_agent_wallet_send', 'fn_club_wallet_claim_back']) {
       expect(MODAL).toContain(`'${rpc}'`);
       expect(SERVICE).not.toContain(`'${rpc}'`);
     }

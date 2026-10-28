@@ -259,25 +259,43 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
 }
 if (process.argv[1] === '--reference-shape-diagnostic') {
   let report;
+  let diagnosticStage='input';
+  // This finite child emits only its validated report, never module startup logs.
+  for (const key of ['log','info','warn','error','debug','trace','dir']) console[key]=()=>{};
   try {
     let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
     const input=JSON.parse(raw);
+    diagnosticStage='module_load_journal';
     const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+    diagnosticStage='module_load_records';
     const records=await import('/app/dist/services/horseDecisionJournal/record.js');
+    diagnosticStage='module_load_binding';
     const binding=await import('/app/dist/engine/HorseDecisionHandBinding.js');
+    diagnosticStage='module_load_phase6';
     const phase6=await import('/app/dist/engine/HorsePhase6Attribution.js');
+    diagnosticStage='module_load_logic';
     const logic=await import('/app/dist/engine/HorseLogic.js');
     // Match the existing private export CLI: this finite child owns no lobby timer.
+    diagnosticStage='module_load_hub';
     const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
+    diagnosticStage='export_contract';
+    if(typeof journal.exportCanonicalHorseJournalBatch!=='function') throw Error();
+    diagnosticStage='journal_read';
     const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
     if (input.version===2 || input.version===3) {
+      diagnosticStage='module_load_review';
       const review=await import('/app/dist/services/horseDecisionJournal/review.js');
+      diagnosticStage='module_load_validation';
       const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
       let evaluator={};
       if(input.version===3) {try {evaluator=await import('/app/dist/engine/HorseEval.js');} catch { /* optional, remains unknown */ }}
+      diagnosticStage='evaluation';
       report=inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation,omahaNutStatus:evaluator.omahaNutStatus});
-    } else report=inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB});
-  } catch {report={status:'unknown',reason:'journal_or_runtime_unavailable'};}
+    } else {
+      diagnosticStage='evaluation';
+      report=inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB});
+    }
+  } catch {report={status:'unknown',reason:'journal_or_runtime_unavailable',diagnostic:{stage:diagnosticStage,code:'exception'}};}
   await new Promise(resolve=>{
     process.stdout.once('error',()=>process.exit(1));
     process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
@@ -430,16 +448,43 @@ def sanitize_reference_result(result, value):
     return result
 
 
+DIAGNOSTIC_CHILD_STAGES = {'input', 'module_load_journal', 'module_load_records',
+    'module_load_binding', 'module_load_phase6', 'module_load_logic', 'module_load_hub',
+    'module_load_review', 'module_load_validation', 'export_contract', 'journal_read', 'evaluation'}
+
+
+def diagnostic_failure(stage, code):
+    return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable',
+            'diagnostic': {'stage': stage, 'code': code}}
+
+
 def reference_diagnostic(value):
     try:
         raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
                                '-e', REFERENCE_DIAGNOSTIC_JS, '--', '--reference-shape-diagnostic'],
-                              input_bytes=json.dumps(value).encode('utf-8'))
-        # Parse without printing untrusted child output, including import errors.
+                              input_bytes=json.dumps(value).encode('utf-8'), separate_stderr=True)
+    except Exception as error:
+        # Never expose exception text. Only our own closed transport codes escape.
+        code = (error.code if isinstance(error, DiagnosticCommandFailure)
+                and error.code in {'timeout', 'output_bound', 'nonzero_exit'} else 'unavailable')
+        return diagnostic_failure('child_transport', code)
+    try:
         result = json.loads(raw)
+    except Exception:
+        return diagnostic_failure('stdout_parse', 'invalid_json')
+    try:
+        if isinstance(result, dict) and 'diagnostic' in result:
+            diagnostic = result['diagnostic']
+            if (set(result) != {'status', 'reason', 'diagnostic'}
+                    or result['status'] != 'unknown' or result['reason'] != 'journal_or_runtime_unavailable'
+                    or not isinstance(diagnostic, dict) or set(diagnostic) != {'stage', 'code'}
+                    or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
+                raise ValueError()
+            return result
         return sanitize_reference_result(result, value)
     except Exception:
-        return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
+        return diagnostic_failure('sanitizer', 'result_refused')
+
 EVENTS = (
     'sng_atomic_creation_failed', 'spin_atomic_creation_failed',
     'sng_atomic_identity_mismatch', 'spin_atomic_identity_mismatch',
@@ -828,35 +873,53 @@ def merge_worker_receipt_errors(target, addition):
     target['events'] = combined[-128:]
 
 
-def bounded_command(args, input_bytes=None):
+class DiagnosticCommandFailure(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+def bounded_command(args, input_bytes=None, separate_stderr=False):
     process = subprocess.Popen(args, stdin=subprocess.PIPE if input_bytes is not None else None,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
+    if separate_stderr:
+        selector.register(process.stderr, selectors.EVENT_READ)
     payload = bytearray()
+    total_bytes = 0
     deadline = time.monotonic() + 25
     try:
         if input_bytes is not None:
             process.stdin.write(input_bytes)
             process.stdin.close()
-        while True:
+        while selector.get_map():
             if time.monotonic() >= deadline:
-                raise RuntimeError('read_deadline')
+                raise DiagnosticCommandFailure('timeout')
             ready = selector.select(min(1, max(0, deadline - time.monotonic())))
-            if not ready:
-                continue
-            chunk = process.stdout.read1(65536)
-            if not chunk:
-                break
-            payload.extend(chunk)
-            if len(payload) > MAX_BYTES:
-                raise RuntimeError('read_size_bound')
-        if process.wait(timeout=2) != 0:
-            raise RuntimeError('read_command_refused')
+            for key, _ in ready:
+                chunk = key.fileobj.read1(65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                total_bytes += len(chunk)
+                if total_bytes > MAX_BYTES:
+                    raise DiagnosticCommandFailure('output_bound')
+                if key.fileobj is process.stdout:
+                    payload.extend(chunk)
+        try:
+            code = process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            raise DiagnosticCommandFailure('timeout') from None
+        if code != 0:
+            raise DiagnosticCommandFailure('nonzero_exit')
         return payload.decode('utf-8', errors='replace')
     finally:
         selector.close()
         process.stdout.close()
+        if separate_stderr:
+            process.stderr.close()
         if process.poll() is None:
             process.kill()  # Only this read-only diagnostic child, never the engine.
             process.wait(timeout=2)
@@ -942,6 +1005,55 @@ PROCESS_FRAMES = {'index.js', 'GameServer.js', 'services/leadership.js',
     'engine/EquityWorkerPool.js', 'services/supabase/client.js'}
 
 
+def v8_crash_contexts(raw):
+    """Closed scalars only; nearby native frames are hints, not isolate ownership."""
+    lines = raw.splitlines()
+    result = {}
+    stamp_re = r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s'
+    gc_re = re.compile(r'^\[(\d{1,10}):0x[0-9a-fA-F]+\]\s+\d+(?:\.\d+)? ms: (?:Mark-Compact|Mark-sweep|Scavenge)(?: \(reduce\))?\s+(\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) -> (\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) MB,')
+    count = 0
+    for i, line in enumerate(lines):
+        stamp = re.match(stamp_re, line)
+        if len(line) > 4096 or not stamp:
+            continue
+        key = next((k for k in ('v8_heap_exhausted', 'v8_ineffective_gc')
+                    if line[stamp.end():].startswith(PROCESS_SIGNALS[k])), None)
+        if key is None or count >= 8:
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+        except ValueError:
+            continue
+        context = {'timestamp': stamp.group(1) + 'Z', 'gc': [],
+                   'workerNativeFrame': False, 'mainNativeFrame': False,
+                   'isolateOwner': 'unknown', 'heapLimitMB': None,
+                   'allocationOwner': 'unknown', 'association': 'nearby_only'}
+        for nearby in lines[max(0, i - 8):i + 13]:
+            ns = re.match(stamp_re, nearby)
+            if len(nearby) > 4096 or not ns:
+                continue
+            try:
+                delta = (datetime.datetime.fromisoformat(ns.group(1) + '+00:00') - instant).total_seconds()
+            except ValueError:
+                continue
+            if not -2 <= delta <= 2:
+                continue
+            payload = nearby[ns.end():]
+            gc = gc_re.match(payload)
+            if gc and len(context['gc']) < 8:
+                numbers = [float(x) for x in gc.groups()[1:]]
+                if all(0 <= x <= 1048576 for x in numbers) and numbers[0] <= numbers[1] and numbers[2] <= numbers[3]:
+                    context['gc'].append(dict(zip(('pid', 'beforeMB', 'beforeTotalMB', 'afterMB', 'afterTotalMB'), [int(gc[1]), *numbers])))
+            # Native frame grammar only: arbitrary application text cannot assert a hint.
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::worker::Worker::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['workerNativeFrame'] = True
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::NodeMainInstance::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['mainNativeFrame'] = True
+        result.setdefault(key, []).append(context)
+        count += 1
+    return result
+
+
 def process_signals(raw):
     result = {}
     active = None
@@ -987,6 +1099,9 @@ def process_signals(raw):
                     if re.search(r'(?<![A-Za-z0-9_])' + re.escape(cause) + r'(?![A-Za-z0-9_])', payload):
                         counts = result[key]['causes']
                         counts[cause] = counts.get(cause, 0) + 1
+    for key, contexts in v8_crash_contexts(raw).items():
+        if key in result:
+            result[key]['crashContexts'] = contexts
     return result
 
 
@@ -998,6 +1113,10 @@ def merge_signals(target, addition):
             entry['lastTimestamp'] = value['lastTimestamp']
         for cause, count in value['causes'].items():
             entry['causes'][cause] = entry['causes'].get(cause, 0) + count
+        if value.get('crashContexts'):
+            contexts = entry.setdefault('crashContexts', [])
+            retained = sum(len(item.get('crashContexts', [])) for item in target.values())
+            contexts.extend(value['crashContexts'][:max(0, 8 - retained)])
         for frame in value['frames']:
             if frame not in entry['frames'] and len(entry['frames']) < 8:
                 entry['frames'].append(frame)
@@ -1017,6 +1136,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     yields = tournament_yields('')
     cap_refusals = booking_cap_refusals('')
     block = []
+    recent_gc = []
     pending = b''
     dropping = False
     total = 0
@@ -1036,7 +1156,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
         block = []
 
     def record(raw):
-        nonlocal records, block, oldest, newest
+        nonlocal records, block, oldest, newest, recent_gc
         records += 1
         if len(raw) > 4096:
             if block:
@@ -1059,11 +1179,13 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 '[ServerTableEngine.' in line and '.horse_decision_worker_failed]' in line):
             if block:
                 flush_block()
-            block = [line]
+            block = [*[x for x in recent_gc if re.search(r'\[\d{1,10}:0x[0-9a-fA-F]+\]', x)], line] if 'FATAL ERROR:' in line else [line]
+            recent_gc = []
         elif block:
             block.append(line)
-            if len(block) >= 13:
+            if len(block) >= 21:
                 flush_block()
+        recent_gc = (recent_gc + [line])[-8:]
 
     try:
         while True:

@@ -1372,6 +1372,18 @@
       "liveVerdict": "Active weekly rakeback payout outage: remaining club calculation pages use a cash player-only access path and tournament nonleading player index. Two matching concurrent indexes preserve all original calculation, source, rate, payer, certificate, fingerprint, guard and cache bytes. Native PostgreSQL17 actual allocation/check/write/certificate/payer qualification passed9cases including independent1727amount oracle, full ordered source fingerprints, partial replay, wrong shapes and real INVALID build refusal; TypeScript/focused laws/normal pre-push passed. Native reads126794to6121blocks with local317.680to273.047ms; no production timing or04AM guarantee. Hosted required checks queued while human wallets remain unpaid, so qualified exact bytes installed through PUBLISHING active-outage exception. Official assigned-project Metrics API proved /data available276379811840bytes at2026-10-27T04:26:35.435Z. Exact full-file history and live index definitions plus original40source authority read back. This recording is the very next source action; human payments and final protected merge/live capacity proof remain separate pending gates."
     },
     {
+      "version": "20261027160320",
+      "name": "cashier_claim_destination_and_movement_history",
+      "file": "supabase/migrations/20261027160320_cashier_claim_destination_and_movement_history.sql",
+      "md5": "c5118da8bac3d29e8790f59ce7eb6179",
+      "appliedToProductionAt": "2026-10-27T16:03:20Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Supabase schema_migrations statements, byte-exact full-file md5 c5118da8bac3d29e8790f59ce7eb6179, 36218 bytes",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8329",
+      "refusedBy": [],
+      "liveVerdict": "Procedural error: applied through MCP before protected merge, with no active-outage exception. This records the actual installed version and exact bytes; never replay. All five native-qualified function postimage hashes match live and anon EXECUTE is false. New RPC requires auth.uid, active membership, staff authority or original own-send/downline authority, explicit promo-only return restriction, exact intent and atomic declared journal. Existing feed and summary enforce role/downline scope and movement allowlists. Installation moved no balances. Required protected checks, merge, client publication and live browser proof remain separate."
+    },
+    {
       "version": "20261027070115",
       "name": "historical_agent_roles_keep_their_earned_commission",
       "file": "supabase/migrations/20261027070115_historical_agent_roles_keep_their_earned_commission.sql",

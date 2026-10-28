@@ -22,14 +22,16 @@
  * and this file carries none of those keys on purpose: every cell is keyed
  * `lines`.
  *
- * A line may carry only facts the engine holds at that moment, through four
+ * A line may carry only facts the engine holds at that moment, through three
  * placeholders and no others:
  *
- *   {potBB}   the pot in big blinds, rounded
  *   {street}  preflop, flop, turn or river (the street the hand ended on)
  *   {hand}    the hand name the engine SHOWED (the horse's own unmucked hand,
  *             or the winner's shown hand), lowercased
  *   {seat}    a seat number the engine holds, never a username
+ *
+ * BB amounts are forbidden in chat, including written-out big-blind amounts.
+ * Pot size may qualify an event internally; it is never a phrase placeholder.
  *
  * No username ever reaches a line: the sanitizer in HorseTableTalk.ts refuses
  * any token that equals a seated player's username, and
@@ -67,7 +69,7 @@ export const TALK_EVENTS: readonly TalkEvent[] = [
 export const TALK_VOICES: readonly TalkVoice[] = ['quiet', 'needler', 'friendly'];
 
 /** The only placeholders a line may carry. Anything else fails the law test. */
-export const TALK_PLACEHOLDERS: readonly string[] = ['potBB', 'street', 'hand', 'seat'];
+export const TALK_PLACEHOLDERS: readonly string[] = ['street', 'hand', 'seat'];
 
 export interface TalkPool {
   readonly lines: readonly string[];
@@ -109,11 +111,11 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
       lines: [
         'ty ty',
         'thanks for the donation',
-        'ty for paying me off',
-        'you really wanted to see it huh',
+        'that helps a lot',
+        'nice one for me',
         'expensive {street} for somebody',
         'cheers for that',
-        'that was a lot to pay to look',
+        'finally, a decent one',
         'next time trust the bet',
         'pricey {street} for you',
         'love a big pot',
@@ -122,8 +124,8 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'told you i had it',
         'i always have it',
         'pay the man',
-        'curiosity is expensive',
-        'should have let that one go',
+        'well, that worked',
+        'onto the next one',
         'thanks, i was getting short',
       ],
     },
@@ -355,21 +357,21 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'every single time',
         'how',
         'really?',
-        'you called with that?',
+        'that one stings',
         'sure, why not',
         'unreal',
         'hit your card huh',
         'gotta be kidding',
         'gift from the poker gods',
         'nice catch',
-        'wow you really called',
-        'runner runner, classic',
+        'not how i saw that going',
+        'rough way to lose that one',
         'that was a reach',
         'enjoy it while it lasts',
         'ok i see how it is',
         'you play like that every hand?',
         'deck must love you',
-        'bold call',
+        'tough one to lose',
         'cant believe that got there',
       ],
     },
@@ -387,7 +389,7 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'too good',
         'well played sir',
         'nh, you had me',
-        'good call',
+        'nice pot for you',
         'you earned that one',
         'great read',
         'nicely done',
@@ -432,7 +434,7 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'lol',
         'too easy',
         'appreciate it',
-        'keep calling',
+        'ill take another like that',
         'knew you had nothing',
         'come again',
         'tip your dealer',

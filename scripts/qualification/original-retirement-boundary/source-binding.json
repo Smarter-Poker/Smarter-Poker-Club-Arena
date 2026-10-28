@@ -495,5 +495,11 @@
     "previousSHA256": "b109de5c6ede08c2aa13daee091cd1dac7a22a91a69e4adf6e6126d0154aff16",
     "currentSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
     "change": "Exactly three new qualification paths and one new isolated PG17 cash-record scalar-cover step; removing these additions recovers prior workflow byte-for-byte. Every prior financial qualification command/assertion/input remains unchanged. New exact official migration/native guard cases qualify only additive physical access; no production runtime or book closure claim."
+  },
+  "cashierMainIntegration20261027": {
+    "reason": "Repair stale input identity inherited from protected main PR8296 after reviewing its workflow diff: adds the treasury migration argument and two original-treasury native qualification steps. No test, financial body, assertion or historical certification is changed; this records workflow input identity only.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928"
   }
 }

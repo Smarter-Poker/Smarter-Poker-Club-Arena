@@ -173,4 +173,7 @@ END $function$
 ;
 REVOKE ALL ON FUNCTION public.fn_ca_diamond_snapshot() FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_diamond_snapshot() TO service_role;
+DO $declaration$ BEGIN
+ PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_diamond_snapshot', 'migration 20261028151339_diamond_snapshot_classifies_its_holder_set_once');
+END $declaration$;
 COMMIT;

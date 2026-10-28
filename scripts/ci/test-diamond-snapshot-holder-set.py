@@ -42,6 +42,11 @@ try:
  cmd(owner+[PG/'initdb','-D',cluster/'d','-U','postgres','--auth-local=trust','--auth-host=reject','--no-locale','--encoding=UTF8'])
  cmd(owner+[PG/'pg_ctl','-D',cluster/'d','-l',cluster/'log','-o',f"-k {sock} -p 55839 -c listen_addresses='' -c shared_buffers=16MB",'-w','start'])
  run((ROOT/'scripts/ci/fixtures/diamond-snapshot-holder-world.sql').read_text())
+ # Execute the actual declaration owner against isolated registry tables.
+ run("CREATE TABLE ca_guard_def_history(proname text,def_hash text,def_text text,UNIQUE(proname,def_hash)); CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text,declared_ref text,declared_at timestamptz,updated_at timestamptz); CREATE FUNCTION fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $$ SELECT ARRAY['fn_ca_diamond_snapshot']::text[] $$;")
+ declaration=(ROOT/'supabase/migrations/20260910143032_a_declared_guard_change_is_recorded_not_raised.sql').read_text()
+ declaration=declaration[declaration.index('CREATE OR REPLACE FUNCTION public.fn_ca_declare_guard_redefinition('):]
+ run(declaration[:declaration.index('$function$;')+len('$function$;')])
  defs=json.loads((ROOT/'scripts/ci/fixtures/diamond-snapshot-holder-preimages.json').read_text())
  for d in defs:run(d['definition']+';')
  run('REVOKE ALL ON FUNCTION fn_ca_diamond_snapshot() FROM PUBLIC; GRANT EXECUTE ON FUNCTION fn_ca_diamond_snapshot() TO service_role;')
@@ -52,6 +57,7 @@ try:
  meta=run("SELECT oid::text||':'||proacl::text||':'||proconfig::text FROM pg_proc WHERE oid='fn_ca_diamond_snapshot()'::regprocedure")
  migration=next((ROOT/'supabase/migrations').glob('*_diamond_snapshot_classifies_its_holder_set_once.sql')).read_text()
  run(migration)
+ check('declared-guard-baseline-matches-installed-definition',run("SELECT def_hash=md5(pg_get_functiondef('fn_ca_diamond_snapshot()'::regprocedure)) AND declared_ref='migration 20261028151339_diamond_snapshot_classifies_its_holder_set_once' FROM ca_guard_defs WHERE proname='fn_ca_diamond_snapshot'")=='t')
  run('VACUUM ANALYZE ca_mint_ledger;')
  new_plan=run('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+plan_query)
  (OUT/'before-plan.json').write_text(old_plan)

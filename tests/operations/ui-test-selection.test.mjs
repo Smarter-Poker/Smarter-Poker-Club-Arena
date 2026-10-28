@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
   presentationOnly,
+  runSelection,
   selectionInputs,
   consumedInputs,
   browserSpecs,
@@ -91,6 +92,23 @@ test('exact Git proof refuses missing inputs, executable companions, deletes and
     git('commit', '-qm', 'copy');
     const head = git('rev-parse', 'HEAD');
     assert.equal(selectionInputs(root, base, head).focused, true);
+    const output = join(root, 'scope-output');
+    runSelection(root, ['scope'], {
+      ...process.env,
+      CI_BASE_SHA: base,
+      CI_HEAD_SHA: head,
+      GITHUB_OUTPUT: output,
+      GITHUB_STEP_SUMMARY: '',
+    });
+    assert.equal(readFileSync(output, 'utf8'), 'presentation_only=true\n');
+    runSelection(root, ['scope'], {
+      ...process.env,
+      CI_BASE_SHA: '',
+      CI_HEAD_SHA: head,
+      GITHUB_OUTPUT: output,
+      GITHUB_STEP_SUMMARY: '',
+    });
+    assert.ok(readFileSync(output, 'utf8').endsWith('presentation_only=false\n'));
     assert.equal(selectionInputs(root, undefined, head).focused, false);
     write(root, p, 'export const Control = () => <button onClick={pay}>Proceed</button>;');
     assert.equal(selectionInputs(root, base, head).focused, false);

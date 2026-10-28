@@ -338,7 +338,10 @@ export function runSelection(root, args, env = process.env) {
     if (result.error) throw result.error;
     if (result.status !== 0) throw Error(`${bin} failed (${result.status})`);
   };
-  if (mode === 'unit') {
+  if (mode === 'scope') {
+    if (!env.GITHUB_OUTPUT) throw Error('Compiler scope output is missing');
+    appendFileSync(env.GITHUB_OUTPUT, `presentation_only=${proof.focused}\n`);
+  } else if (mode === 'unit') {
     if (!proof.focused) return invoke('vitest', ['run', 'tests/', ...args]);
     // Run the conservative source-contract set, then the actual import graph.
     // Exact exclusions prevent a contract from executing twice on this shard.

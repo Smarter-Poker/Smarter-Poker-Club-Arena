@@ -2196,14 +2196,20 @@ it('the actual replay condition executes for missing output and non-instruction 
   ).if;
   const evaluate = new Function('steps', `return (${condition});`);
   for (const value of ['true', 'false', undefined, '']) {
-    expect(evaluate({ compile_scope: { outputs: { instructions_only: value } } })).toBe(
-      value !== 'true'
-    );
+    for (const presentation of ['true', 'false', undefined, '']) {
+      expect(
+        evaluate({
+          compile_scope: { outputs: { instructions_only: value, presentation_only: presentation } },
+        })
+      ).toBe(value !== 'true' && presentation !== 'true');
+    }
   }
   const classifier = ci.jobs.typecheck_compile.steps.find(
     (step: { id: string }) => step.id === 'compile_scope'
   );
-  expect(classifier.run).toBe('node scripts/ci/classify-ci-changes.mjs');
+  expect(classifier.run).toBe(
+    'node scripts/ci/classify-ci-changes.mjs\nnode scripts/ci/ui-test-selection.mjs scope\n'
+  );
   expect(classifier.env.CI_HEAD_SHA).toBe('${{ github.sha }}');
   expect(classifier['continue-on-error']).toBeUndefined();
   expect(ci.jobs.typecheck_compile.needs).toBeUndefined();

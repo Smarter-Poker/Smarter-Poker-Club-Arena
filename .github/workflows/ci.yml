@@ -469,13 +469,16 @@ jobs:
         env:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.sha }}
-        run: node scripts/ci/classify-ci-changes.mjs
+        run: |
+          node scripts/ci/classify-ci-changes.mjs
+          node scripts/ci/ui-test-selection.mjs scope
 
-      # Only the exact five-file instruction allowlist can omit this unchanged
-      # SQL/native fixture. Keep all compiler, invariant and source-contract checks.
+      # Only exact policy prose or proved presentation-only UI can omit this
+      # unchanged SQL fixture. Financial/executable/shared inputs still run it.
+      # Keep all compiler, invariant and source-contract checks.
       # Unavailable classification always executes the existing replay.
       - name: Chip journal transactions survive failures and replays
-        if: steps.compile_scope.outputs.instructions_only != 'true'
+        if: steps.compile_scope.outputs.instructions_only != 'true' && steps.compile_scope.outputs.presentation_only != 'true'
         run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check

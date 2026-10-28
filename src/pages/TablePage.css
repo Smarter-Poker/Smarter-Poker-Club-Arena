@@ -5228,7 +5228,7 @@ button.post-bb-overlay-button {
 @media (max-width: 340px) and (orientation: portrait) {
   .table-container {
     --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
-    --sp-hero-clear: 56px;
+    --sp-hero-clear: clamp(52px, calc(10vw + 24px), 56px);
   }
 }
 @media (max-width: 380px) and (orientation: portrait) {

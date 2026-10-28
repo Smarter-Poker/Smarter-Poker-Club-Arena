@@ -7,3 +7,10 @@ The legacy fourth scope argument remains accepted for caller/replay compatibilit
 Regression coverage compares fresh and measured reads across both labels, cash/tournament modes, missing or changed roster metadata, and scope cleanup. The actual worker test requires the same aggressive read with and without roster metadata. These checks establish the intended behavior; merge, activation, and live fleet evidence remain separate.
 
 The full pre-push suite exposed a weak-made-hand river sizing gap: the pure-bluff branch could bypass the half-pot limit already applied to value bets after two called barrels. Apply that same limit in the bluff branch without changing its betting probability. The unchanged V40 regression fails before and passes after; all 61 V40, variant-scale and V53 pressure checks pass. Historical neutrality retains its original corpus and coverage floor while isolating the deliberately replaced prior; context and style-change tests distinguish observed evidence from a zero-observation presumption.
+
+Hosted PostgreSQL qualification exposed one remaining assertion for the replaced
+unknown-Omaha policy. The same 23-test isolated PostgreSQL suite reproduces the
+failure locally. Its context-isolation regression now requires the unseen PLO4
+context to have the common presumed prior and zero observed samples in every
+statistic, while switching back to PLO5 must preserve the imported measured
+read. Malformed, stale and duplicate snapshot refusals remain asserted.

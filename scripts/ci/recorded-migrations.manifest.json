@@ -1730,6 +1730,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
       "refusedBy": [],
       "liveVerdict": "Original standalone book closure remains incomplete after all1367rakeback obligations were paid. Exact originalJUDGED exceeded60s before ledger proof despite scalar covers. Only the JUDGED block now groups source facts by DISTINCT originaldeposit type/key/bankedtime and joins to the unchanged complete deposit bag. All rawsource/foreign/time/N0/zero/mixed/multiplicity cases, originalvisibleverdict/ledgerpredicate and allthreeaggregates/orderedIDs remain equivalent. Native97 includes actual119financialfixture/typed EXCEPT ALL/allaggregates/duplicatebags/fullmetadata/domain/permissions/installerfreeze/operator/scheduler/history/replay/atomicity; controlled authorization/quality/epoch/routing/delivery and accessedcolumnfixture boundaries explicit. Actual temporary wholeSummary mandatoryROLLBACK passed170122.778ms, READY_TO_ISSUE accountingv3 with earning/funding/burn3552.70,117paid183.24/retained3369.46/no newmoney/allpaid unchanged, but variablecache and narrow180sreserve prevent causalspeedup/fullScope/future4AM claims. Immediate actualREADONLY exactwholeSQLhistory/Summary B000to61wholedefinition+fullmetadata/STABLE/security/searchpath/threepartyACL/all10otherowners/fulltwoViews/source65TRUE/GEN72b unchanged verified against actualbaseline. Original guardedScope285 proof/assertedCOMMIT/durablepositiveeconomics and allthreebooks still required before completion."
+    },
+    {
+      "version": "20261028063816",
+      "name": "weekly_private_deposits_traverse_their_original_source_keys",
+      "file": "supabase/migrations/20261028063816_weekly_private_deposits_traverse_their_original_source_keys.sql",
+      "md5": "62532c52a92972b75bcaa318dc2ad49c",
+      "appliedToProductionAt": "2026-10-28T07:11:57.146Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained function-only active-book-outage install and immediate READ ONLY full-file history/Summary definition/full metadata/ACL/views/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Original Lightning book closure remains active after all1367rakeback obligations were paid. Current61 cashgroups timedout60/90; first1000-key naturalplan showed originalsourceIndexOnly reads and no sample spills. This exactsource adds only ORDERBYsource_type/source_group/banked_at inside existingDISTINCT MATERIALIZEDkeys; no keyfilter/LIMIT, sourceSUM, ledger, financial rule, timeout, view, ACL, source65 or GEN change. Native28 typed6field cashgroups/JUDGED/visibleverdict/ALL3orderedJSON, and officialnative97 original119financialdoors/fullmetadata/operator/window/freeze/scheduler/history/replay/atomicity qualified. Actual full86197orderedID/3552.70 parity and wholeTEMP mandatoryROLLBACK Summary168378.917ms READY accountingv3/fullpaidunchanged/no newmoney passed; cacheconfounded timings do not certify causalimprovement/stablecapacity/fullScope/future4AM behavior. Immediate actualREADONLY exactwholeSQLhistory/Summary61to2f/full11wholemetadataACL/twofullviews/source65TRUE/sameGEN72b readback matches baseline. Original fullScope285 rollback/assertedCOMMIT/durablepositivedoc proof and all3books still required."
     }
   ]
 }

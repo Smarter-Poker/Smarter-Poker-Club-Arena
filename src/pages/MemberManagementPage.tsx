@@ -51,6 +51,7 @@ import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import MemberRakebackEditor from '../components/club/MemberRakebackEditor';
+import MemberCreditEditor from '../components/club/MemberCreditEditor';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
@@ -1456,6 +1457,7 @@ export function RoleSection({
   const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
   const [editingRakeback, setEditingRakeback] = useState(false);
+  const [editingCredit, setEditingCredit] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
   const roleConfirmationRef = useRef<HTMLDivElement>(null);
   const roleButtonsRef = useRef(new Map<ClubRole, HTMLButtonElement>());
@@ -1734,7 +1736,40 @@ export function RoleSection({
       {/* The offer. It takes the place of the role controls while it is up,
           because the promotion is already done and the only question left is
           whether to fund it now. */}
-      {editingRakeback ? (
+      {isAgentRole(targetRole) &&
+        ['owner', 'co_owner', 'admin'].includes(myRole) &&
+        !editingCredit &&
+        !editingRakeback &&
+        !confirmRole &&
+        !fundPrompt && (
+          <button
+            type="button"
+            className="mm-roles__confirm-no"
+            disabled={promoting || rolesLoading || rolesLoadFailed}
+            onClick={() => {
+              setError('');
+              setSuccess('');
+              setEditingCredit(true);
+            }}
+          >
+            Edit Credit Line
+          </button>
+        )}
+      {editingCredit ? (
+        <MemberCreditEditor
+          key={`${resolvedClubId}:${targetUserId}:${targetRole}`}
+          clubId={resolvedClubId}
+          userId={targetUserId}
+          role={targetRole}
+          onClose={() => setEditingCredit(false)}
+          onSaved={() => {
+            setEditingCredit(false);
+            setSuccess('Credit Line Updated');
+            toast.success('Credit Line Updated');
+            onRoleChanged();
+          }}
+        />
+      ) : editingRakeback ? (
         <MemberRakebackEditor
           key={targetRole}
           clubId={resolvedClubId}

@@ -2398,10 +2398,13 @@ test('natural horse social behavior reaches the live table', async ({
       'table_id',
       eligible.map((entry) => entry.candidate.id)
     )
+    // Match the existing (table_id, created_at, id) index before applying
+    // public showdown/finish filters; ended_at alone scans retained history.
+    .gte('created_at', activitySince)
     .gte('ended_at', activitySince)
     .not('showdown', 'is', null)
     .neq('showdown', '[]')
-    .order('ended_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(180);
   expect(showdowns.error).toBeNull();
   const cohorts = rankHorseSocialCohorts(eligible, showdowns.data || [], activitySince);

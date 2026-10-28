@@ -62,6 +62,10 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+          # The detector reads this policy file and Git history, not runtime
+          # files or player assets. Full checkout exhausted its three-minute
+          # budget before admission in run 40784960118.
+          sparse-checkout: server/release
 
       # Owner 2026-10-20 explicitly requests daily routine updates. Both UTC
       # candidates run; only 03:30 Chicago prepares the 04:00 window. No repair

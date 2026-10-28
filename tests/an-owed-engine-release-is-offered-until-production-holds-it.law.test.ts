@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -336,6 +337,40 @@ describe('the offer: one per window, never racing a receiver', () => {
 });
 
 describe('the offer is the existing release, not a second publisher', () => {
+  it('stages an unmaterialized runtime change without checking out the asset tree', () => {
+    const fx = fixture();
+    fx.commit('server/release/owner-maintenance-windows.json', '{"version":1,"windows":[]}');
+    const runtime = fx.commit('server/src/GameServer.ts', 'new runtime');
+    fx.commit('public/assets/unneeded.bin', 'asset bytes');
+    const before = fx.git('rev-parse', 'HEAD');
+    const after = fx.commit('src/pages/ClubHomePage.tsx', 'client after runtime');
+    const checkout = stage.jobs.detect.steps.find((s: { uses?: string }) =>
+      s.uses?.startsWith('actions/checkout@')
+    );
+    const selected = String(checkout.with['sparse-checkout'] ?? '').trim();
+    if (selected) {
+      fx.git('sparse-checkout', 'init', '--cone');
+      fx.git('sparse-checkout', 'set', ...selected.split(/\s+/));
+    }
+    expect(existsSync(join(fx.cwd, 'public/assets/unneeded.bin'))).toBe(false);
+    expect(existsSync(join(fx.cwd, 'server/src/GameServer.ts'))).toBe(false);
+    expect(
+      readFileSync(join(fx.cwd, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    ).toBe('{"version":1,"windows":[]}');
+    expect(checkout.with['fetch-depth']).toBe(0);
+    expect(fx.git('merge-base', '--is-ancestor', fx.live, after)).toBe('');
+    const result = detect(fx, {
+      before,
+      after,
+      healthUrl: health(fx.cwd, JSON.stringify({ releaseSha: fx.live })),
+    });
+    expect(result.out).toMatchObject({
+      release_required: 'true',
+      target_sha: runtime,
+      offer_reason: 'behind',
+    });
+  });
+
   const workflows = readdirSync(join(root, '.github/workflows')).filter((f) => /\.ya?ml$/.test(f));
   const code = (f: string) =>
     readFileSync(join(root, '.github/workflows', f), 'utf8')

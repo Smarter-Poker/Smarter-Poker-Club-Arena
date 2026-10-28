@@ -97,6 +97,9 @@ BEGIN
 END
 $function$;
 
+REVOKE ALL ON FUNCTION public.sp_prune_hand_state_snapshots(integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.sp_prune_hand_state_snapshots(integer) TO service_role;
+
 -- CREATE OR REPLACE preserves the existing function identity and ACL.
 -- No cron, timeout, retention duration, payout or disposal predicate changes.
 

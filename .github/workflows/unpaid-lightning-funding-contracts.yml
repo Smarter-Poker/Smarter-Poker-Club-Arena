@@ -22,6 +22,9 @@ on:
       - scripts/ci/fixtures/standalone-entry-cover/**
       - scripts/ci/test-standalone-entry-cover-postgres.py
       - tests/standalone-entry-retains-historical-first-week.law.test.ts
+      - scripts/ci/fixtures/tournament-fee-scope-union-cover/**
+      - scripts/ci/test-tournament-fee-scope-union-cover-postgres.py
+      - tests/tournament-fee-scope-index-retains-every-union.law.test.ts
       - scripts/ci/fixtures/private-cash-record-cover/**
       - scripts/ci/test-private-cash-record-cover-postgres.py
       - tests/private-cash-record-index-retains-original-facts.law.test.ts
@@ -180,3 +183,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-private-cash-record-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-cash-record-cover.json"
+      - name: Original tournament fee scopes retain every source union
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-tournament-fee-scope-union-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/tournament-fee-scope-union-cover.json"

@@ -59,3 +59,10 @@ action identity by separate natural-card controllers and conserving 106 total.
 Fixed cards are independent chooser fixtures, never injected into the controller.
 Dominated flush, retained callOnce, no-reopen, pot ceiling, invalid chip/cap and
 excluded-domain controls remain covered. No new feature flag or prior is enabled.
+
+
+The historical October16 opponent-exploit neutrality replay isolates this
+independent repair at its pure helper boundary, as it does other later policy
+repairs. Its original before-layer corpus, random-draw comparisons, every
+variant/mode and greater-than90-percent coverage assertion remain unchanged.
+Production has no opt-out; the repaired helper runs in its connected tests.

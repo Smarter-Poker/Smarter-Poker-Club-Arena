@@ -24,8 +24,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: gto-v31-qualification-${{ inputs.dataset }}
-  cancel-in-progress: false
+  group: gto-v31-qualification-${{ github.event.pull_request.number || inputs.dataset }}
+  # Admission checks retire per PR; explicit data operations keep their owner.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   contract:

@@ -264,6 +264,42 @@ describe('stale deployment chunk recovery', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    it('rejects both critical lazy imports when their shared purge-time departure is declined', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      let finishPurge!: (value: string[]) => void;
+      vi.stubGlobal('caches', {
+        keys: () =>
+          new Promise<string[]>((resolve) => {
+            finishPurge = resolve;
+          }),
+        delete: vi.fn(),
+      });
+      const failure = new TypeError('Importing a module script failed.');
+      const first = recovery.lazyWithRetry(async () => {
+        throw failure;
+      }, 1) as unknown as () => Promise<unknown>;
+      const second = recovery.lazyWithRetry(async () => {
+        throw failure;
+      }, 1) as unknown as () => Promise<unknown>;
+      const rejected = [vi.fn(), vi.fn()];
+      void first().catch(rejected[0]);
+      await flush();
+      void second().catch(rejected[1]);
+      await flush();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
+      browser.dispatchEvent(new Event('pagehide'));
+      finishPurge([]);
+      await flush();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await flush();
+      expect(rejected[0]).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(rejected[1]).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(replace).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('0');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('defers a direct hard reload requested during a navigation', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();

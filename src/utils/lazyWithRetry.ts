@@ -44,6 +44,7 @@ const BUILD_ID: string = (() => {
 const RELOAD_KEY = `${STORAGE_KEYS.CHUNK_RELOAD}:${BUILD_ID}`;
 const MAX_RELOADS = 1; // One guarded hard reload per build
 let recoveryStarted = false;
+const recoveryDeclines = new Set<() => void>();
 
 /** The sessionStorage key that guards this build's single recovery reload. */
 export function chunkReloadGuardKey(): string {
@@ -380,7 +381,10 @@ export async function recoverFromStaleChunk(
   onDeclined?: () => void
 ): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
-  if (recoveryStarted) return true;
+  if (recoveryStarted) {
+    if (onDeclined) recoveryDeclines.add(onDeclined);
+    return true;
+  }
   // A cancelled load during navigation spends no reload budget. A failure
   // that arrives after the grace while the departure is still undecided
   // (a lazy retry's backoff can outlast it) is confirmed the same way rather
@@ -391,6 +395,7 @@ export async function recoverFromStaleChunk(
   }
 
   recoveryStarted = true;
+  if (onDeclined) recoveryDeclines.add(onDeclined);
   incrementReloadCount();
   await hardReload(() => {
     recoveryStarted = false;
@@ -400,7 +405,11 @@ export async function recoverFromStaleChunk(
     } catch {
       /* storage unavailable */
     }
-    onDeclined?.();
+    // Every critical importer sharing this incident needs its own rejection.
+    // Snapshot and clear before callbacks so each is notified exactly once.
+    const declines = [...recoveryDeclines];
+    recoveryDeclines.clear();
+    for (const decline of declines) decline();
   });
   return true;
 }

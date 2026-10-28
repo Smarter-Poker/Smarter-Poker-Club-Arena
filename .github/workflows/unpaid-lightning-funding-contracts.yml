@@ -32,6 +32,10 @@ on:
       - scripts/ci/fixtures/tournament-fee-scope-union-cover/**
       - scripts/ci/fixtures/tournament-source-credit-cover/**
       - scripts/ci/test-tournament-source-credit-cover-postgres.py
+      - scripts/ci/fixtures/cash-link-valid-proof-index/**
+      - scripts/ci/test-cash-link-valid-proof-index-postgres.py
+      - tests/cash-link-index-keeps-the-original-proof.law.test.ts
+      - docs/laws.d/cash-link-index-keeps-the-original-proof.md
       - tests/tournament-credit-sum-index-keeps-original-records.law.test.ts
       - scripts/ci/test-tournament-fee-scope-union-cover-postgres.py
       - tests/tournament-fee-scope-index-retains-every-union.law.test.ts
@@ -205,6 +209,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-tournament-source-credit-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/tournament-source-credit-cover.json"
+      - name: Original cash link proof index native qualification
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-cash-link-valid-proof-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/cash-link-valid-proof-index.json"
       - name: Weekly private deposits retain every original relevant verdict
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

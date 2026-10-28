@@ -349,39 +349,23 @@ describe('the migration is safe to apply', () => {
   });
 });
 
-/**
- * SUPERSEDED BY DAN, OCTOBER 2026: "agents have no credit lines; all agents are
- * prepaid from now on." The promote screen no longer offers a funding choice:
- * it always sends prepaid with a zero line, and the database refuses a line on
- * any agent row (agents_are_prepaid, 20261016001952).
- */
-describe('the promote screen sends every agent prepaid', () => {
-  it('sends prepaid and a zero line, always', () => {
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_is_prepaid:\s*true/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_credit_limit:\s*0/);
+/** Owner direction October 27, 2026 restores the explicit funding choice. */
+describe('the promote screen assigns prepaid or a credit line', () => {
+  it('offers an explicit choice and a credit amount beside rakeback', () => {
+    expect(MEMBER_MANAGEMENT_CODE).toContain('Choose Prepaid Or A Credit Line');
+    expect(MEMBER_MANAGEMENT_CODE).toContain('Credit Limit In Chips');
+    expect(MEMBER_MANAGEMENT_CODE).toContain("p_is_prepaid: funding === 'prepaid'");
+    expect(MEMBER_MANAGEMENT_CODE).toContain("p_credit_limit: funding === 'credit' ? limit : 0");
+    expect(MEMBER_MANAGEMENT_CODE).toContain('Number.isSafeInteger(limit)');
+    expect(MEMBER_MANAGEMENT_CODE).not.toContain('Every Agent Is Prepaid.');
   });
 
-  it('offers no credit line and no funding choice', () => {
-    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/mm-roles__funding-option/);
-    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/Credit Limit In Chips/);
-    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/Choose Prepaid Or A Credit Line/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/Every Agent Is Prepaid\./);
-  });
-
-  it('is held by the database, not only the screen', () => {
-    const sql = read(
-      'supabase/migrations/20261016001952_agents_are_prepaid_and_carry_no_credit_line.sql'
-    );
-    expect(sql).toMatch(/CHECK \(is_prepaid AND credit_limit = 0\)/);
-    expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF is_prepaid, credit_limit ON public\.agents/);
-  });
-
-  /** CLAUDE.md section 5.7: popup and page copy is Title Case, em dashes forbidden. */
-  it('adds no em dash to the copy', () => {
-    const added = (MEMBER_MANAGEMENT.match(/^.*(Prepaid|Credit Line|Credit Limit).*$/gm) ?? []).join(
-      '\n'
-    );
-    expect(added).not.toMatch(/\u2014/);
+  it('replaces the blanket database ban while preserving outstanding debt', () => {
+    const sql = read('supabase/migrations/20261028034523_restore_role_credit_line_choice.sql');
+    expect(sql).toContain('DROP CONSTRAINT agents_are_prepaid');
+    expect(sql).toContain('COALESCE(NEW.credit_used, 0) > NEW.credit_limit');
+    expect(sql).toContain('NEW.is_prepaid AND NEW.credit_limit <> 0');
+    expect(sql).not.toMatch(/UPDATE public\.agents/i);
   });
 });
 

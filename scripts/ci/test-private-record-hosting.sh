@@ -15,6 +15,21 @@ if [ -z "${CADDY_BIN:-}" ]; then
 fi
 export PRIVATE_RECORD_HOSTING_WORK="$parent"
 if [ "$(uname -s)" = Linux ]; then
+  # Production units require /usr/bin/node; setup-node uses the hosted toolcache.
+  # Supply that fixture only on the ephemeral Actions runner, never on a local host.
+  assert_node_version() {
+    [ -x "$1" ] || { echo 'The fixed unit Node path must be executable' >&2; exit 1; }
+    "$1" -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (!(major > 20 || (major === 20 && minor >= 19))) process.exit(1);'
+  }
+  if [ "${GITHUB_ACTIONS:-}" = true ]; then
+    runner_node="$(command -v node)"
+    [[ "$runner_node" = /* ]] || { echo 'Actions Node must resolve to an absolute executable' >&2; exit 1; }
+    assert_node_version "$runner_node"
+    if [ ! -e /usr/bin/node ] && [ ! -L /usr/bin/node ]; then
+      sudo ln -s -- "$runner_node" /usr/bin/node
+    fi
+    assert_node_version /usr/bin/node
+  fi
   systemd-analyze verify "$repo/infra/ca-origin/ca-private-record-gateway@.service" "$repo/infra/ca-origin/ca-private-record-gateway-boot.service"
 fi
 bash "$repo/scripts/ci/test-private-record-credentials-postgres.sh"

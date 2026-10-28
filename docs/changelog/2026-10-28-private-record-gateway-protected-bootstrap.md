@@ -59,3 +59,10 @@ account helper saved its known identity only after fallible profile work. It now
 saves the same private recovery record immediately after creation, and the canary
 uses that guarded record if setup throws before returning the account. Regressions
 fail before both repairs and pass afterward; no new cleanup scheduler is added.
+
+Hosted qualification stopped before bootstrap tests because the GitHub runner's
+selected Node runtime lived in its tool cache while systemd validates the exact
+production `/usr/bin/node` command. The Linux GitHub Actions fixture now provisions
+that path only when absent, verifies supported runtime versions and preserves
+existing paths. Production service definitions are unchanged. The regression
+fails before the fix; real hosted bootstrap execution still must pass.

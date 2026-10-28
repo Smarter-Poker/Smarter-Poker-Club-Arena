@@ -244,6 +244,18 @@ describe('hosting qualification remains enforced', () => {
     expect(owners[0].if).toBe('matrix.shard == 2');
     expect(owners[0]['continue-on-error']).toBeUndefined();
   });
+  it('qualifies the ephemeral Linux runner node path before verifying unchanged production units', () => {
+    const script = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    const provision = script.indexOf('sudo ln -s -- "$runner_node" /usr/bin/node');
+    expect(provision).toBeGreaterThan(-1);
+    expect(script.indexOf('systemd-analyze verify')).toBeGreaterThan(provision);
+    expect(script).toContain('[ "${GITHUB_ACTIONS:-}" = true ]');
+    expect(script).toContain('[ ! -e /usr/bin/node ] && [ ! -L /usr/bin/node ]');
+    expect(script).toContain('assert_node_version "$runner_node"');
+    expect(script).toContain('assert_node_version /usr/bin/node');
+    expect(script).toContain('major > 20 || (major === 20 && minor >= 19)');
+    expect(script).not.toMatch(/ln\s+-[^\n]*f[^\n]*\/usr\/bin\/node/);
+  });
   it('does not accept a different repository identity in a verified signing result', async () => {
     const { verifyAttestationIdentity } =
       await import('../../scripts/ci/private-record-gateway-activate.mjs');

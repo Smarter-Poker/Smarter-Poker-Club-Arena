@@ -1,0 +1,17 @@
+# Player record exact cents
+
+Owner request 2026-10-28: player record statistics accurate to the penny, without compact rounding.
+Scope: MemberManagementPage monetary stats, fees and downline fees, and MemberWinLossCard total/cash/tournament amounts for all four periods. Counts, rates and other pages retain their existing contracts. Client-only; existing RPC returns numeric cents, no engine or schema dependency.
+Acceptance: comma-separated complete monetary amounts and exactly two decimals; signed winnings, negative sub-unit values, zero, restricted state; meaningful component regression coverage; local prechecks, protected PR merge, static publication and both live provenance endpoints plus affected behavior.
+Owner: chat 01a1838e. Branch fix/player-record-exact-cents-01a1838e. Worktree /Volumes/SmarterWork/agent-work/shared-capacity/player-record-cents-01a1838e-final.
+
+Policy reading 2026-10-28T17:28:36.511Z: canonical four policies emitted and read, version 2.9, manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. OWNER b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349; OPERATING a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5; HARDENING d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e; INDEX adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555. Read canonical MAC-STORAGE.md, repo AGENTS.md/CLAUDE.md/AGENT-PLAYBOOK.md/PUBLISHING.md, deploy-paths and club ledger model. User's current penny instruction supersedes earlier compact-format rule for this record only.
+Base 7cb17bef4d588c8e4ff19dcdf458de44baf1a74a.
+Access: configured GitHub CLI authenticated; repository secret-name metadata lists client origin and probe secrets. No credential values read.
+Cause: MemberWinLossCard and record winnings use winLossChips -> compactChips, flooring fractional chips and abbreviating large values; record feeFigure abbreviates >=1000.
+Data trace: ca_club_member_win_loss produces round(numeric,2) JSON fields; ClubRosterService winLossFigure uses numeric conversion without truncation, card alone loses cents. No data writes required.
+Preparation: full worktree checkout interrupted while under 2%; registration removed by Git; partial task-created folder retained for later cleanup. New no-checkout worktree uses sparse source/test/policy paths. npm first attempt lacked vendored auth tarball; restoring exact tracked tarball before repeat locked install.
+
+Preparation recovery: read-only object access from the shared clone was extremely slow. Fresh disposable partial clone on SSD at player-record-cents-01a1838e-clone, same protected base, linked final worktree; locked dependencies moved only from this task. Normal hooks configured, no bypass. Full supported remote pack checkout succeeded. Regression on original record component failed as expected: -1,250.75 absent (compact -1.2K).
+
+Final validation reading: canonical policies emitted/read again 2026-10-28T17:38:21.259Z, same version 2.9 and all six hashes recorded above. Policy check --canonical passed. npx tsc --noEmit passed. Final focused component/calendar/formatter and law registry run: 5 files, 1,284 tests passed (73 behavioral tests plus registry). Production baseline observed read-only in Chrome: lil_noodle record displays -2K week and -1.2K cash despite decimal amounts elsewhere; no player state mutated. Pending: normal hooks, exact-head hosted checks, protected merge, publisher and live readback.

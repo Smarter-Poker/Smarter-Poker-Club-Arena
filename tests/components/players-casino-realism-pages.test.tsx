@@ -638,17 +638,24 @@ describe('the member record survives a failed background refresh', () => {
     expect(topics.every((name) => name === name.toLowerCase())).toBe(true);
   });
 
-  it('formats record figures with the shared Player Management formatters', async () => {
+  it('prints record monetary stats to the penny without compact rounding', async () => {
+    state.getMemberDetail.mockResolvedValueOnce({
+      ...memberDetail,
+      stats: {
+        ...memberDetail.stats,
+        total_fee: 12345.67,
+        total_winnings: -1250.75,
+        mtt_winnings: -0.4,
+      },
+    });
     render(<MemberManagementPage />);
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
-    // Wallets: formatWalletChips, exactly two decimals (Dan, 2026-10-18).
     expect(screen.getAllByText('500.00').length).toBeGreaterThan(0);
     expect(screen.getByText('25.00')).toBeVisible();
-    // Signed winnings: winLossChips (Dan 2026-10-16). Fees: feeFigure (Dan, 2026-10-14).
-    expect(screen.getByText('+120')).toBeVisible();
-    expect(screen.getByText('+40')).toBeVisible();
-    expect(screen.getByText('18')).toBeVisible();
-    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+    expect(screen.getByText('-1,250.75')).toBeVisible();
+    expect(screen.getByText('-0.40')).toBeVisible();
+    expect(screen.getByText('12,345.67')).toBeVisible();
+    expect(screen.getByText('MTT Fees').closest('.mm-stat')).toHaveTextContent('4.00');
   });
 });
 

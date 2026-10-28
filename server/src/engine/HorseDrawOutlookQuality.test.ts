@@ -45,3 +45,39 @@ describe('holdem barrel plans discount shared improvements and dirty outs', () =
     expect(o.scare).not.toContain('Qh');
   });
 });
+
+describe('Omaha dirty-flush continuation cards', () => {
+  it.each([
+    ['plo4', 'Ad Ks Qh Jc'],
+    ['plo5', 'Ad Ks Qh Jc Tc'],
+    ['plo6', 'Ad Ks Qh Jc Tc 3h'],
+  ])('%s keeps third-diamond pair and straight improvements in the scare set', (variant, hole) => {
+    const board = cards('9d 8d 2s');
+    const legacy = nextCardOutlook(cards(hole), board, variantInfo(variant), false);
+    const corrected = nextCardOutlook(cards(hole), board, variantInfo(variant));
+    for (const dirty of ['Td', 'Kd']) {
+      expect(legacy.good).toContain(dirty);
+      expect(corrected.good).not.toContain(dirty);
+      expect(corrected.scare).toContain(dirty);
+    }
+    expect(corrected.good).toContain('Th');
+    expect(corrected.good).toContain('Kh');
+  });
+
+  it('retains a real Omaha flush improvement with two suited hole cards', () => {
+    const o = nextCardOutlook(cards('Ad Kd Qh Jc Tc'), cards('9d 4d 2s'), variantInfo('plo5'));
+    expect(o.good).toContain('3d');
+    expect(o.scare).not.toContain('3d');
+  });
+});
+
+it.each([
+  ['plo5', 'Ad Kd Qh Jc Tc', '9d 4d 2d'],
+  ['plo5', '9h 9c Kd Qc Th', '9d 2d 2s'],
+  ['plo8', 'Ad Ks Qh Jc', '9d 8d 2s'],
+  ['flo8', 'Ad Ks Qh Jc', '9d 8d 2s'],
+])('preserves the %s made-flush/full-house or hi-lo baseline: %s on %s', (variant, hole, board) => {
+  expect(nextCardOutlook(cards(hole), cards(board), variantInfo(variant))).toEqual(
+    nextCardOutlook(cards(hole), cards(board), variantInfo(variant), false)
+  );
+});

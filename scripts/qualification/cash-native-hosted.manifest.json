@@ -313,8 +313,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114869,
-      "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      "bytes": 115127,
+      "sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
     }
   },
   "nativePgCron": {
@@ -4244,6 +4244,19 @@
     "currentWorkflowPin": {
       "bytes": 244685,
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+    },
+    "execution_performed": false
+  },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive assertions routing the interrupted-postflop module, fixture and migration through the existing required F06 qualification. Only this current test input identity changes; original cash SQL, financial assertions, historical audits and qualification status remain unchanged. Matching fingerprints are not execution or financial recertification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "previous": {
+      "bytes": 114869,
+      "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    },
+    "current": {
+      "bytes": 115127,
+      "sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
     },
     "execution_performed": false
   }

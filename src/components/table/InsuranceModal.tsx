@@ -223,12 +223,24 @@ export function InsuranceModal({
     if (!isOpen) return;
     setSecondsLeft(remainingNow());
     const iv = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       // Deadline-anchored when available (drift-proof); simple decrement
       // otherwise (legacy offers without deadlineAt).
       if (offer.deadlineAt) setSecondsLeft(remainingNow());
       else setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
-    return () => clearInterval(iv);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        if (offer.deadlineAt) setSecondsLeft(remainingNow());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isOpen, offer, timeRemaining, remainingNow]);
 
   // ── Insurance calculations — REFERENCE PARITY 2026-08-26 ──

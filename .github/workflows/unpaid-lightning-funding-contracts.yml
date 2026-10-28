@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/**
+      - scripts/ci/fixtures/weekly-summary-coordinator-scope/**
+      - scripts/ci/test-weekly-summary-coordinator-scope-postgres.py
+      - tests/weekly-summary-preserves-nullable-source-scope.law.test.ts
       - scripts/ci/fixtures/fees-before-club-books/**
       - scripts/ci/fixtures/rakeback-player-week-indexes/**
       - scripts/ci/test-rakeback-player-week-indexes-postgres.py
@@ -99,3 +102,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-rakeback-player-week-indexes-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/rakeback-player-week-indexes.json"
+      - name: Weekly statements retain exact NULL and non-NULL earning scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-summary-coordinator-scope-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-summary-coordinator-scope.json"

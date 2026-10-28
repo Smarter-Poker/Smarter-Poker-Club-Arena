@@ -29,6 +29,8 @@ import {
   cardKey,
   compareScore,
   isEightOrBetterVariant,
+  isOmahaVariant,
+  isPineappleVariant,
   isShortDeckVariant,
 } from './handEvaluator';
 
@@ -113,15 +115,36 @@ function settleRunout(
 }
 
 export function computeEquity(input: EquityInput): EquityResult | null {
-  const players = input.players.filter((p) => Array.isArray(p.hole) && p.hole.length >= 2);
-  if (players.length < 2) return null;
+  const players = input.players;
   const board = input.board || [];
+  if (!Array.isArray(board) || ![0, 3, 4, 5].includes(board.length)) return null;
+  // As on the live table, a future Pineapple discard is not a known holding.
+  if (isPineappleVariant(input.variant) && board.length === 0) return null;
+  const variant = String(input.variant || '').toLowerCase();
+  const expectedCards = isOmahaVariant(input.variant)
+    ? variant.includes('6')
+      ? 6
+      : variant.includes('5')
+        ? 5
+        : 4
+    : 2;
+  if (
+    players.length < 2 ||
+    players.some((p) => !p.userId || !Array.isArray(p.hole) || p.hole.length !== expectedCards) ||
+    new Set(players.map((p) => p.userId)).size !== players.length
+  )
+    return null;
   const toCome = 5 - board.length;
-  if (toCome < 0) return null;
   const known = [...board, ...players.flatMap((p) => p.hole)];
   // A card cannot be in two places; a record that says so is not priced.
-  if (new Set(known.map(cardKey)).size !== known.length) return null;
+  const legalCards = new Set(remainingDeck([], input.variant).map(cardKey));
+  if (
+    known.some((card) => !card || !legalCards.has(cardKey(card))) ||
+    new Set(known.map(cardKey)).size !== known.length
+  )
+    return null;
   const deck = remainingDeck(known, input.variant);
+  if (deck.length < toCome) return null;
   const highOnly = isEightOrBetterVariant(input.variant);
   const totals = players.map(() => 0);
 

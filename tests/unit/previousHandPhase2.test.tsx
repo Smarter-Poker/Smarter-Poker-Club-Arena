@@ -124,6 +124,32 @@ describe('computeEquity', () => {
     ).toBeNull();
   });
 
+  it('does not price incomplete opponents or an unresolved Pineapple discard', () => {
+    const players = [
+      { userId: 'a', hole: cards('Ah Kh') },
+      { userId: 'b', hole: cards('Qc Qd') },
+    ];
+    expect(
+      computeEquity({
+        players: [...players, { userId: 'c', hole: cards('2c') }],
+        board: cards('3c 4d 8s'),
+        variant: 'nlh',
+      })
+    ).toBeNull();
+    expect(computeEquity({ players, board: [], variant: 'pineapple' })).toBeNull();
+    expect(
+      computeEquity({
+        players: [{ userId: 'a', hole: cards('Ah Kh Jh') }, players[1]],
+        board: cards('3c 4d 8s'),
+        variant: 'pineapple',
+      })
+    ).toBeNull();
+    expect(computeEquity({ players, board: cards('3c 4d 8s'), variant: 'plo4' })).toBeNull();
+    expect(computeEquity({ players, board: cards('3c 4d 8s'), variant: 'pineapple' })?.exact).toBe(
+      true
+    );
+  });
+
   it('needs two known hands', () => {
     expect(
       computeEquity({ players: [{ userId: 'a', hole: cards('Ah Kh') }], board: [], variant: 'nlh' })

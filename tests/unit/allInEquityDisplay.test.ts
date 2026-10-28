@@ -25,6 +25,11 @@ describe('all-in probabilities never invent endpoints', () => {
     expect(formatAllInEquity(100)).toBe('100%');
     expect(formatAllInEquity(33.333)).toBe('33.3%');
   });
+  it('never presents sampled or legacy endpoints as mathematical certainty', () => {
+    expect(formatAllInEquity(0, false)).toBe('Unknown');
+    expect(formatAllInEquity(100, false)).toBe('Unknown');
+    expect(formatAllInEquity(82.3, false)).toBe('~82.3%');
+  });
   it('rejects malformed or incomplete fields', () => {
     const a = { userId: 'a', username: 'A', seat: 1, equity: 20 };
     const b = { userId: 'b', username: 'B', seat: 2, equity: 80 };

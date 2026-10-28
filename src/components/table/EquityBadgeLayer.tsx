@@ -56,6 +56,7 @@ import {
 export interface EquityBadge {
   seatNumber: number;
   equity: number;
+  exact?: boolean;
   /** Spots to try, best first (Dan 2026-08-28: above; top-cap seats to a side). */
   order: EquitySpot[];
 }
@@ -215,7 +216,7 @@ export function EquityBadgeLayer({
   return (
     <div className="equity-layer" ref={layerRef}>
       {badges
-        .filter((badge) => formatAllInEquity(badge.equity) !== null)
+        .filter((badge) => formatAllInEquity(badge.equity, badge.exact) !== null)
         .map((badge) => {
           const key = String(badge.seatNumber);
           const at = placements[key];
@@ -242,7 +243,7 @@ export function EquityBadgeLayer({
                 key={`eq-${badge.equity}`}
                 className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
               >
-                {formatAllInEquity(badge.equity)}
+                {formatAllInEquity(badge.equity, badge.exact)}
                 {/* Fixed-width track (AUDIT-2 2026-08-20) so every seat's bar is
                   drawn on the same scale. */}
                 <span className="equity-overlay__track">

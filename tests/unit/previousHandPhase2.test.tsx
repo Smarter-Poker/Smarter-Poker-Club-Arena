@@ -238,10 +238,10 @@ describe('the rundown', () => {
   });
 
   it.each([
-    [0.00001, '<0.1%'],
-    [0.99999, '>99.9%'],
-    [0, '0%'],
-    [1, '100%'],
+    [0.00001, '~<0.1%'],
+    [0.99999, '~>99.9%'],
+    [0, 'Unknown'],
+    [1, 'Unknown'],
   ])('never rounds the persisted fraction %f into a false endpoint', (fraction, label) => {
     const m = buildReplay(HAND as never);
     render(

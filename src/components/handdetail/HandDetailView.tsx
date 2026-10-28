@@ -90,7 +90,9 @@ function AllInFacts({
 }) {
   const actualMoney = moneyForHand({ arenaAsset });
   if (!facts.was_all_in || facts.all_in_equity === null) return null;
-  const pct = formatAllInEquity(facts.all_in_equity * 100);
+  // Legacy persisted facts have no exactness provenance; a stored zero may
+  // have been rounded or sampled. Never present that as a proven dead hand.
+  const pct = formatAllInEquity(facts.all_in_equity * 100, false);
   if (pct === null) return null;
   const luck = facts.ev_returned === null ? null : money(facts.net - facts.ev_net);
   const above = facts.net - facts.ev_net;
@@ -150,10 +152,7 @@ function AllInFacts({
  * Exact where the runout can be enumerated; sampled preflop and marked so.
  */
 function streetEquityLabel(percent: number, exact: boolean): string {
-  // No sampled endpoint can establish that a hand is dead or unbeatable.
-  if (!exact && (percent === 0 || percent === 100)) return 'Unknown';
-  const label = formatAllInEquity(percent);
-  return label === null ? 'Unknown' : `${exact ? '' : '~'}${label}`;
+  return formatAllInEquity(percent, exact) ?? 'Unknown';
 }
 
 function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {

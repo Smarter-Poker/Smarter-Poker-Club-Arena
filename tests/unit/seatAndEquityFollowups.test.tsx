@@ -537,6 +537,11 @@ describe('exact equity reaches the rendered badge without inventing endpoints', 
     const { container } = render(<Felt badges={[{ ...BADGES[0], equity }]} />);
     expect(container.querySelector('.equity-overlay')?.textContent).toBe(label);
   });
+  it('refuses to call a legacy sampled zero a dead hand', () => {
+    installLayout();
+    const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    expect(container.querySelector('.equity-overlay')?.textContent).toBe('Unknown');
+  });
   it('does not render a malformed percentage', () => {
     installLayout();
     const { container } = render(<Felt badges={[{ ...BADGES[0], equity: NaN }]} />);

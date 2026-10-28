@@ -9534,7 +9534,14 @@ function LiveTablePage({
   // FIX 89: All-in equity display — shows equity percentages for all all-in players
   // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
   const [allInEquities, setAllInEquities] = useState<
-    Array<{ userId: string; username: string; equity: number; seat: number; boardKey?: string }>
+    Array<{
+      userId: string;
+      username: string;
+      equity: number;
+      seat: number;
+      boardKey?: string;
+      exact?: boolean;
+    }>
   >([]);
   /* True from the first all_in_equity broadcast of a hand until the next hand
      starts. Read by the tournament Show Hand suppression (Dan 2026-08-30). */
@@ -9567,6 +9574,7 @@ function LiveTablePage({
         name: p?.name || eq?.username || 'Player',
         cards: (p?.holeCards ?? []).filter((c): c is Card => c != null),
         equityPct: eq ? eq.equity : undefined,
+        equityExact: eq?.exact,
         accepted: ritAcceptedIds.includes(pid),
       };
     });
@@ -13559,7 +13567,9 @@ function LiveTablePage({
         if (matchesHand && validAllInEquityEntries(equities)) {
           const boards = Array.isArray(handState.boards) ? handState.boards : [handState.board];
           const boardKey = allInEquityBoardKey(boards);
-          setAllInEquities(equities.map((e) => ({ ...e, boardKey })));
+          setAllInEquities(
+            equities.map((e) => ({ ...e, boardKey, exact: handState.exact === true }))
+          );
           /* Dan 2026-08-30: "ANYTIME THERE IS AN ALL IN, ALL CARDS ARE ALWAYS
              SHOW[N]" in a tournament — so the voluntary Show Hand button must
              never render on an all-in showdown there. The equities themselves
@@ -28526,7 +28536,7 @@ function LiveTablePage({
                       pos.y < 20
                         ? [inboard, outboard, 'below']
                         : ['above', inboard, outboard, 'below'];
-                    return [{ seatNumber, equity: eq.equity, order }];
+                    return [{ seatNumber, equity: eq.equity, exact: eq.exact, order }];
                   })
             }
           />

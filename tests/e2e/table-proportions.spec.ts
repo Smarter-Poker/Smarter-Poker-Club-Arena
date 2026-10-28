@@ -843,9 +843,13 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 // 2026-10-24 they parked shown PLO5/PLO6 hands under the hero or in front of
 // another player. They are certified on the PLO5/PLO6 scenes this regime is
 // for; their seat pods keep the tablet ring (see `largePortrait` below).
-for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
-  for (const count of width === 1024 ? [6] : [6, 9])
-    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats`, async ({
+const occupiedViewports: Array<[number, number?]> = [
+  ...[320, 375, 393, 430, 480, 600, 768, 1024].map((width): [number] => [width]),
+  [600, 852],
+];
+for (const [width, heightOverride] of occupiedViewports)
+  for (const count of heightOverride || width === 1024 ? [6] : [6, 9])
+    test(`occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at ${width}px with ${count} seats${heightOverride ? ' (short portrait)' : ''}`, async ({
       page,
     }, testInfo) => {
       // Keep each ring independently bounded on hosted runners while retaining
@@ -1016,6 +1020,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
                       ? 2048
                       : 852,
         });
+        if (heightOverride) await page.setViewportSize({ width, height: heightOverride });
         await page.route('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', (route) =>
           route.fulfill({
             contentType: 'text/html',

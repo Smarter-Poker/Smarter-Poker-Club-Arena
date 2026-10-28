@@ -424,7 +424,9 @@ export function useProtectedCardLayout(
               window.innerWidth <= 768 && pod.querySelector('.seat__cards--revealed')
                 ? Math.max(
                     naturalTarget,
-                    pageBox.top + (cardHeight + 9) * scale - (plateTop - anchorTop)
+                    Math.max(pageBox.top, chromeBottom) +
+                      (cardHeight + 9) * scale -
+                      (plateTop - anchorTop)
                   )
                 : naturalTarget;
             const shift = (target - anchorTop) / scale;

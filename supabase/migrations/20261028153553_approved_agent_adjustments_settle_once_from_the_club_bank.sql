@@ -83,7 +83,7 @@ BEGIN
  FOR setting IN SELECT jsonb_object_keys(saved)LOOP PERFORM set_config(setting,saved->>setting,true);END LOOP;
  RETURN jsonb_build_object('success',true,'replayed',false,'adjustment_id',a.id,'ledger_id',l.id,'club_id',p_club,'user_id',a.target_id,'amount',a.amount,'bank_before',bank_before,'bank_after',bank_after,'wallet_before',wallet_before,'wallet_after',wallet_after,'approved_intent_md5',md5(intent::text));
 END $body$;
-REVOKE ALL ON FUNCTION public.fn_ca_settle_approved_agent_adjustment(uuid,uuid,jsonb)FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_settle_approved_agent_adjustment(uuid, uuid, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 DO $audit$
 DECLARE d text; before_meta jsonb;
 BEGIN

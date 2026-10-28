@@ -19,7 +19,7 @@ describe('Approved agent adjustments settle once through their original club ban
     ])
       expect(source).toContain(invariant);
     expect(source).toContain("session_user<>'postgres' OR current_user<>'postgres'");
-    expect(source).toContain('FROM PUBLIC,anon,authenticated,service_role');
+    expect(source).toContain('FROM PUBLIC, anon, authenticated, service_role');
     expect(source).not.toContain('request.jwt.claim');
     expect(source).not.toMatch(
       /UPDATE\s+public\.(rakeback_periods|rakeback_period_payouts|agent_commission_settlements|accounting_cash_rake_sources)/i

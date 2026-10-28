@@ -12,7 +12,7 @@
     "scripts/qualification/approved-agent-adjustment/fixtures/tally-owners.json": "15893d878091cb8f26c5adf349c4d775ef412f8cff3e90062a304ba5517565af",
     "scripts/qualification/approved-agent-adjustment/fixtures/write-authorization-owners.json": "279677f25c7cf09281fd1638438fa975c49e11aba31f535dc61f388b56e0a6c2",
     "scripts/qualification/approved-agent-adjustment/native.py": "664a8fdf615e0eacb0f8a9f2e4dc18aa606f3a9541dc6542573ec134ef503ed7",
-    "supabase/migrations/20261028153553_approved_agent_adjustments_settle_once_from_the_club_bank.sql": "68280ed7dd81ce3eeca11a7e789866f22051697ff26da5c52bc6d009a843de79",
-    "tests/approved-agent-adjustments-settle-once.law.test.ts": "d0e0cffb2290788f54f314612b11b42d5ed16b47fec2932cbba442c04663c57a"
+    "supabase/migrations/20261028153553_approved_agent_adjustments_settle_once_from_the_club_bank.sql": "1d2d991b0d19c086e15adf25128c8290485cdb6372579b0b34432b5a0973f053",
+    "tests/approved-agent-adjustments-settle-once.law.test.ts": "aa9a0e455f26e06ff791bfd6ae22d4395ed95281c88b05d66e7ca7c953e3af4c"
   }
 }

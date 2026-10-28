@@ -7017,12 +7017,12 @@ export class TournamentRecurringService {
       }
       if (
         isPersistedUnlimitedMtt(entryEvent) &&
-        String(entryEvent.status).toUpperCase() === 'REGISTERING'
+        ['ANNOUNCED', 'REGISTERING'].includes(String(entryEvent.status).toUpperCase())
       ) {
         const startMs = Date.parse(String(entryEvent.start_time ?? ''));
         const current = Math.max(0, Number(entryEvent.current_players) || 0);
         const now = Date.now();
-        if (!Number.isFinite(startMs)) return 0;
+        if (!Number.isFinite(startMs) || startMs - now > MTT_PRESTART_RAMP_MS) return 0;
         // Discovery can still be completing the transition after the gun.
         // Its existing past-start and late-entry paths retain that decision.
         if (startMs > now) {
@@ -7037,7 +7037,9 @@ export class TournamentRecurringService {
             buyInPrizeShare: Number(entryEvent.buy_in_amount),
           });
           count = Math.min(count, Math.max(0, target - current));
-          if (count <= 0) return 0;
+          // A paid award still uses the existing bounded ticket-only recovery
+          // after this clock opens, even when ordinary funding is already met.
+          if (count <= 0 && !redeemTickets) return 0;
         }
       }
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in

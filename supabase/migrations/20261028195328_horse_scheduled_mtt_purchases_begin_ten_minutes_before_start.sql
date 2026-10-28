@@ -21,7 +21,7 @@ LANGUAGE sql IMMUTABLE
 SET search_path TO 'public','pg_temp'
 AS $window$
   SELECT CASE
-    WHEN p_format IN ('mtt-v1','mtt-v2') AND upper(p_status)='REGISTERING'
+    WHEN p_format IN ('mtt-v1','mtt-v2') AND upper(p_status) IN ('ANNOUNCED','REGISTERING')
       THEN coalesce(p_start <= p_now + interval '10 minutes',false)
     ELSE true
   END

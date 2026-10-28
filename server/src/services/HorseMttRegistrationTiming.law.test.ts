@@ -43,12 +43,15 @@ function harness(over: Record<string, unknown> = {}) {
 }
 
 describe('every automated MTT caller shares the T-10 purchase choice', () => {
-  it('rejects one millisecond early before picking or charging a horse', async () => {
-    const h = harness();
-    expect(await h.svc.registerHorses('event', 139)).toBe(0);
-    expect(h.load).not.toHaveBeenCalled();
-    expect(h.rpc).not.toHaveBeenCalled();
-  });
+  it.each(['REGISTERING', 'ANNOUNCED'])(
+    'rejects %s one millisecond early before picking or charging a horse',
+    async (status) => {
+      const h = harness({ status });
+      expect(await h.svc.registerHorses('event', 139)).toBe(0);
+      expect(h.load).not.toHaveBeenCalled();
+      expect(h.rpc).not.toHaveBeenCalled();
+    }
+  );
   it.each(['mtt-v1', 'mtt-v2'])('opens at exactly T-10 for %s', async (format_contract) => {
     const h = harness({ format_contract, start_time: new Date(NOW + 600000).toISOString() });
     await h.svc.registerHorses('event', 139);

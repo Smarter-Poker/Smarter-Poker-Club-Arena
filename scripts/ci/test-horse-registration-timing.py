@@ -49,9 +49,14 @@ INSERT INTO purchases VALUES($1,$2);INSERT INTO tournament_players(tournament_id
             migration=(ROOT/'supabase/migrations'/MIGRATION).read_text();run(migration)
             check('same early purchase now refuses',json.loads(run(call)).get('reason')=='horse_registration_not_open')
             check('refusal creates no funded entry',run('SELECT (SELECT count(*) FROM purchases)+(SELECT count(*) FROM tournament_players)')=='0')
+            run(f"UPDATE tournaments SET status='ANNOUNCED' WHERE id='{T}';")
+            check('announced purchase also refuses early',json.loads(run(call)).get('reason')=='horse_registration_not_open')
+            check('announced refusal creates no funded entry',run('SELECT (SELECT count(*) FROM purchases)+(SELECT count(*) FROM tournament_players)')=='0')
+            run(f"UPDATE tournaments SET status='REGISTERING' WHERE id='{T}';")
             for fmt in ['mtt-v1','mtt-v2']:
-                for delta,want in [('10 minutes 0.001 seconds',False),('10 minutes',True),('9 minutes 59.999 seconds',True)]:
-                    check(fmt+' exact boundary '+delta,run(f"SELECT fn_ca_horse_mtt_purchase_window_open('{fmt}','REGISTERING','2026-10-28 20:00Z'::timestamptz+interval '{delta}','2026-10-28 20:00Z')") == ('t' if want else 'f'))
+                for status in ['ANNOUNCED','REGISTERING']:
+                    for delta,want in [('10 minutes 0.001 seconds',False),('10 minutes',True),('9 minutes 59.999 seconds',True)]:
+                        check(fmt+' '+status+' exact boundary '+delta,run(f"SELECT fn_ca_horse_mtt_purchase_window_open('{fmt}','{status}','2026-10-28 20:00Z'::timestamptz+interval '{delta}','2026-10-28 20:00Z')") == ('t' if want else 'f'))
             check('null scheduled start refuses',run("SELECT fn_ca_horse_mtt_purchase_window_open('mtt-v2','REGISTERING',NULL,now())")=='f')
             for fmt in ['sng-v1','spin-v1','seat-first-satellite-v1']:
                 check(fmt+' bought-seat timing unchanged',run(f"SELECT fn_ca_horse_mtt_purchase_window_open('{fmt}','REGISTERING',now()+interval '3 days',now())")=='t')

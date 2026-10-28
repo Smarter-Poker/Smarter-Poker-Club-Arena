@@ -10,7 +10,7 @@
     "scripts/ci/fixtures/private-cash-record-cover/qualification-evidence.json": "a131bfb246bf48ce1daf2bfda1be0b0b059086c14ac8129a69e7071dcfc32bf6",
     "tests/private-cash-record-index-retains-original-facts.law.test.ts": "48859baa852c128692de47a217c833b9426188975f5d20fbe32997abf856e5a4",
     "docs/laws.d/private-cash-record-index-retains-original-facts.md": "950ec27047e671d4c9b5463aeb39a15c58da7ba0d5425b94acd01e1147a03360",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979",
     "docs/changelog/2026-10-28-original-cash-deposit-records-read-scalar-facts.md": "838bc0d7d4c198c46f950bfeddc2f6b9ee8d78e252a691c5c1dcf0815dccfe78"
   },
   "workflowTournamentFeeScopeAdditiveAudit": {
@@ -58,6 +58,13 @@
     "review": "Only adds ordered-key native97 path/lane; every existing native command and input retained. Prior valid source evidence remains separate.",
     "priorWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
     "currentWorkflowSHA256": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
+    "prior_commands_preserved": true
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
     "prior_commands_preserved": true
   }
 }

@@ -18,7 +18,7 @@
     "tests/weekly-private-deposits-retain-original-verdicts.law.test.ts": "5fa75e9b2da5605251f1bb29a71e622a72386911a1c7d512120ec9d70b4d72b1",
     "docs/laws.d/weekly-private-deposits-retain-original-verdicts.md": "331834902cb5746105ec6647c4678ef5212c7cefaeb9f74ae308c5374f998a2b",
     "docs/changelog/2026-10-28-weekly-statements-evaluate-private-deposit-verdicts-once.md": "ecd966010f81773fbc45e8065dbc6c78e89705411c84929e00522c2498403ece",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979"
   },
   "combinedC2MembershipWorkflow20261028": {
     "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
@@ -41,5 +41,16 @@
     "priorWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
     "currentWorkflowSHA256": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
     "prior_commands_preserved": true
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
+    "prior_commands_preserved": true
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
   }
 }

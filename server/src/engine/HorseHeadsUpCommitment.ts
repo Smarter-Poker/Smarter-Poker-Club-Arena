@@ -3,7 +3,7 @@ import type { HorseGameStateV2 } from './HorseLogic.js';
 
 /** The existing low-SPR policy may risk only money its sole opponent can match.
  * This qualification is deliberately cash NLH only: tournament survival,
- * multiway side pots, capped PLO wagers and all-in-only fields retain their
+ * multiway side pots, binding commitment caps and all-in-only fields retain their
  * existing policy. Missing canonical action rights never create a wager. */
 export function headsUpCashCommitment(
   hero: SeatPlayer,
@@ -37,13 +37,24 @@ export function headsUpCashCommitment(
     return null;
   const unit = gs.chipUnit ?? (gs.asset === 'diamonds' ? 1 : 0.01);
   if (unit !== 0.01 && unit !== 1) return null;
-  const cap = Number.isFinite(gs.commitmentCapRemaining)
-    ? Math.max(0, gs.commitmentCapRemaining!)
-    : hero.stack;
-  const exposure = Math.min(hero.stack, cap, Math.max(0, opponent.stack + opponent.bet - hero.bet));
+  // Binding whole-hand caps need separate qualification. In particular a cap
+  // below the call removes CALL in the producer; a contradictory supplied
+  // tuple must not masquerade as a zero-risk commitment opportunity.
+  if (
+    gs.commitmentCapRemaining != null &&
+    (!Number.isFinite(gs.commitmentCapRemaining) || gs.commitmentCapRemaining < hero.stack - 1e-8)
+  )
+    return null;
+  const exposure = Math.min(hero.stack, Math.max(0, opponent.stack + opponent.bet - hero.bet));
+  const effectiveCall = Math.min(gs.toCall!, hero.stack);
+  if (
+    exposure < effectiveCall - 1e-8 ||
+    Math.abs(effectiveCall - Math.min(gs.currentBet - hero.bet, hero.stack)) > 1e-8
+  )
+    return null;
   const call: HorseDecision = {
     action: 'call',
-    amount: Math.min(gs.toCall!, hero.stack),
+    amount: effectiveCall,
     thinkTime: 0,
   };
   if (exposure <= call.amount!) return { exposure, wager: call };
@@ -66,7 +77,7 @@ export function headsUpCashCommitment(
       Math.ceil((Math.max(hero.bet + exposure, gs.minRaiseTo!) - unit * 1e-8) / unit) * unit
     ).toFixed(2)
   );
-  const max = Math.min(gs.maxRaiseTo!, hero.bet + hero.stack, hero.bet + cap);
+  const max = Math.min(gs.maxRaiseTo!, hero.bet + hero.stack);
   if (target > max + 1e-8 || target <= gs.currentBet) return { exposure, wager: call };
   return { exposure, wager: { action: 'raise', amount: target, thinkTime: 0 } };
 }

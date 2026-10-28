@@ -6,6 +6,7 @@ import { seedFastRandom } from './HorseEval.js';
 import { headsUpCashCommitment } from './HorseHeadsUpCommitment.js';
 import { HandController } from './HandController.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
+import { applyTableCommitmentCap } from './ServerTableEngineTurns.js';
 
 const cards = (s: string): Card[] =>
   s.split(' ').map((c) => ({
@@ -119,15 +120,38 @@ describe('cash heads-up matched commitment', () => {
     );
   });
 
-  it('respects a canonical commitment cap instead of promoting it to all in', () => {
+  it('retains the existing policy for a binding whole-hand commitment cap', () => {
     const s = spot(1000);
     s.gs.commitmentCapRemaining = 30;
     s.gs.legalActions = ['fold', 'call'];
     s.gs.minRaiseTo = null;
     s.gs.maxRaiseTo = null;
-    expect(headsUpCashCommitment(s.hero, s.gs)).toMatchObject({
-      exposure: 30,
-      wager: { action: 'call' },
+    expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
+  });
+  it.each([0, 10, 35, NaN, -1])(
+    'rejects a binding or malformed cap %s even if supplied call rights disagree',
+    (cap) => {
+      const s = spot(1000);
+      s.gs.commitmentCapRemaining = cap;
+      expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
+    }
+  );
+  it('rejects opponent exposure below the effective call and an inconsistent call price', () => {
+    const s = spot(1000);
+    s.gs.players[1].bet = 1;
+    s.gs.players[1].stack = 1;
+    expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
+    s.gs.players[1].bet = 20;
+    s.gs.players[1].stack = 15;
+    s.gs.toCall = 5;
+    expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
+  });
+  it('admits a nonbinding cap with the same bounded intent', () => {
+    const s = spot(1000);
+    s.gs.commitmentCapRemaining = 1000;
+    expect(headsUpCashCommitment(s.hero, s.gs)?.wager).toMatchObject({
+      action: 'raise',
+      amount: 40,
     });
   });
 
@@ -250,6 +274,17 @@ describe('cash heads-up matched commitment', () => {
       const state = controller.getState();
       const hero = state.players.find((p) => p.seat === 1)!;
       const auth = controller.getAuthoritativeActionState('hero')!;
+      if (initial === 1010) {
+        const capped = applyTableCommitmentCap(auth, hero, true, 20, 2);
+        expect(capped.commitmentCapRemaining).toBe(30);
+        expect(capped.legalActions).toEqual(['fold', 'call']);
+        expect(
+          headsUpCashCommitment(hero, { ...s.gs, ...capped, players: state.players })
+        ).toBeNull();
+        const belowCall = applyTableCommitmentCap(auth, hero, true, 10, 2);
+        expect(belowCall.commitmentCapRemaining).toBe(10);
+        expect(belowCall.legalActions).toEqual(['fold']);
+      }
       const gs = {
         ...s.gs,
         ...auth,

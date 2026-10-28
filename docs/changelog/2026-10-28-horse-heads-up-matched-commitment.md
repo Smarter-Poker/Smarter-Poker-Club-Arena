@@ -6,7 +6,7 @@ could match only 35. A retained `foldToRaise` plan also folded only the
 covering horse because its investment fraction used the surplus stack.
 
 The qualified context now uses
-`min(hero.stack, commitmentCapRemaining, opponent.stack + opponent.bet - hero.bet)`
+`min(hero.stack, opponent.stack + opponent.bet - hero.bet)`
 for the existing SPR and investment commitment rules. Actual stack still
 governs legality and every tournament policy. The committed wager becomes an
 explicit canonical raise, rather than a shove of the covering stack. Where
@@ -17,7 +17,7 @@ before this wager and remain effective.
 
 This change requires canonical state, explicit cash NLH, no-limit betting,
 one board, and exactly one nonfolded opponent who can respond. It excludes
-tournaments, PLO, fixed limit, bomb pots, multiboard play, additional all-in
+tournaments, PLO, fixed limit, binding whole-hand commitment caps, bomb pots, multiboard play, additional all-in
 contenders, all-in-only opponents and legacy snapshots. It does not claim
 universal stack invariance, improved profit or a complete repair of PLO
 decisions against aggressive players. PLO requires separate canonical
@@ -29,7 +29,8 @@ a retained-plan call/fold difference. A corrected nonadaptive seeded matrix
 of 180 isolated decisions has 64 covering-stack action-class differences on
 that baseline and zero on the candidate. These are fixture observations,
 not a strength or win-rate measurement. Tests also cover excluded domains,
-canonical cap/no-raise rights, invalid chip units and fractional bounds, and
+binding cap exclusion/no-raise rights, contradictory cap/call/exposure inputs,
+invalid chip units and fractional bounds, and
 `callOnce` on each street. Real controller actions establish the canonical
 menus and accept both short all-in and covering raise-to-40: each matches 35
 additional chips, with five unmatched chips returned to the covering horse.

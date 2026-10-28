@@ -90,7 +90,7 @@
   "actual_after_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
   "actual_whole_quality_body": true,
   "bank_primary_key": "PRIMARY KEY (tournament_id)",
-  "migration_sha256": "554684b600c45f0e631c0f6037346d59ffe2bf5bc056eec3749c54f912c9bc54",
+  "migration_sha256": "8b7e24227b5fb86e4b3327b11bdfaf0b39fd7675ff6f8860418adb3d8a07ae51",
   "plans": {
     "before": {
       "Plan": {
@@ -2668,9 +2668,9 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 2.892,
+      "Planning Time": 2.264,
       "Triggers": [],
-      "Execution Time": 11.302
+      "Execution Time": 9.789
     },
     "after": {
       "Plan": {
@@ -5804,9 +5804,9 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 3.024,
+      "Planning Time": 2.307,
       "Triggers": [],
-      "Execution Time": 22.617
+      "Execution Time": 20.808
     }
   },
   "limits": "Controlled accessed-column schemas and external net-plan/terms/mixed-cutover boundaries; no full producer qualification or production latency claim."

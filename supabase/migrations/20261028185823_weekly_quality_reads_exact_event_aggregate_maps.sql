@@ -552,4 +552,5 @@ BEGIN
   OR smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR smarter_private.original_inventory_basis_generation()IS DISTINCT FROM generation
  THEN RAISE EXCEPTION 'weekly_quality_bags_postimage_required';END IF;
 END$original_quality_bags$;
+REVOKE ALL ON FUNCTION public.fn_accounting_tournament_week_quality(uuid, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 COMMIT;

@@ -217,8 +217,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42262,
-      "sha256": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      "bytes": 42836,
+      "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -337,8 +337,8 @@
         "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 17771,
-        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -353,8 +353,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -372,8 +372,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -389,8 +389,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -407,8 +407,8 @@
           "sha256": "e3a1de6444d5ad4901c9213b53987c36d2c639e3a919d759fb155c250b35ed63"
         },
         "scripts/ci/classify-ci-changes.mjs": {
-          "bytes": 17771,
-          "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
         },
         "tests/unit/fixtureNativeCi.test.ts": {
           "bytes": 88814,
@@ -422,8 +422,8 @@
     "reason": "Mixed custody qualification is routed through the existing accounting lane; both existing and retained-MTT selectors are preserved. Cash SQL and immutable fixture inputs are unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 17771,
-        "sha256": "52dd4403b11289790dee758a50ce5e80aa47cc5e52b5d9ce5b34545c924ff4ca"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 88814,
@@ -439,8 +439,8 @@
         "sha256": "c0d3b2129194aabf06b055fab3303ff927f10c156656dffb9447afd3ab3b498b"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 22361,
-        "sha256": "84457fdc34f379c8bb39601bcc7d1d4ba4612134e524fe1a884acc80eb383fe6"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 90321,
@@ -524,8 +524,8 @@
     "reason": "Horse prevention regression uses the existing accounting job; adds its module, race, paid-entry fixture and provider directories plus modification/deletion/rename controls. Cash SQL and all historical manifest pins unchanged.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 23401,
-        "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 92029,
@@ -553,8 +553,8 @@
     "reason": "Cashier totals online index companion selects the existing native accounting lane and client routing tests; financial SQL and captured accounting inputs remain unchanged. Cascaded pins reflect only this reviewed additive routing and current binding metadata.",
     "previousPins": {
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 23401,
-        "sha256": "e48e0d868cd5f8daa40509dc2a95ea1a62aaf7cb79d8c7798ba3bb7404a9569e"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -566,8 +566,8 @@
         "sha256": "a4a2eb4a09c00b2b025d12b0689cfb8ef5c7a5330cce1514897adbc276833b02"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 23714,
-        "sha256": "cfad1fc70889bc105f928d541e9469e10f51f4b18b29029fe26a1eb452139284"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "current": {
@@ -576,8 +576,8 @@
         "sha256": "ebe2e5f49b298b24325f14f7d35f07fb393eef0759188fb919f1efee76e559c8"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 23938,
-        "sha256": "d07464c57df9e80f79cfafa723baed3d818fada575b3c9da041093c115d78ded"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -792,8 +792,8 @@
         "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 24631,
-        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "updated": {
@@ -802,8 +802,8 @@
         "sha256": "0b775e67c48ce61d46b869f0d23b7802d60a785fbfe8c6ac2d2e83fac373bbba"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 24824,
-        "sha256": "9976370fce1acde9f8c23c106b9c65373556c3ea663b4107a14c9e4016ae0711"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -1015,8 +1015,8 @@
         "sha256": "41fbedcb119643e56ce9d32d9f56e41efae4a94ee603cb66ee4943e251d3ab3c"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 24631,
-        "sha256": "8b686dc6969e21bfa20a8023a5bb883ddce7338d3fc01cc8cbd32244252a70c0"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     },
     "current": {
@@ -1025,8 +1025,8 @@
         "sha256": "f9797380e7c19134282f7f60603f0e754c54aa07d2fba31818a1f8d3bdfc617e"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 24951,
-        "sha256": "6d21d76b0ed2941f9b306a7f42da65ef864915b9cf03b1f961a149ed91f911f8"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -1948,8 +1948,8 @@
         "sha256": "a9422a1122cfd4a39c721d93ba0ff2e9dc3a2615fde2da36aec451be35733914"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 32804,
-        "sha256": "9e32091e5a712856d7593b6650b54e60e9d49f52b44af7d1f87972b27ed79388"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 102135,
@@ -2344,8 +2344,8 @@
         "sha256": "cbecb15da2fd2b57f1c3fcb7a75f9eede415cef9ad40bce2f25257266ca3f732"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35480,
-        "sha256": "1fc422b810641eee2149abbdbbf5ddf50c54e87162fbea82f22456c506bd712d"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105657,
@@ -2358,8 +2358,8 @@
         "sha256": "1699ddcbdafde77bbb538e632911eb11663486d78a99571e67006ae4f4004995"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35533,
-        "sha256": "6afe9dd3d84c639d8995271514bc1195202f2e930835137edcb7e0d73bf946ec"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105657,
@@ -2768,8 +2768,8 @@
         "sha256": "526ce2cb5ae8c17319b7181238858a9d820a4609f4a90f7572c19d316d552ee9"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 35991,
-        "sha256": "d064527051d9ca3b8687b8414144a81008571552ab3d73f104ee462c0dac2a80"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       },
       "tests/unit/fixtureNativeCi.test.ts": {
         "bytes": 105731,
@@ -3287,8 +3287,8 @@
         "sha256": "8716d2d184b824c542069f47d4f542bbbdb71f3246ed2b4b3f9ba07885b62002"
       },
       "scripts/ci/classify-ci-changes.mjs": {
-        "bytes": 36585,
-        "sha256": "f69cf7c2955f8a2f792d0936b0478598e88438677c12088513ca4393a50754b2"
+        "bytes": 42836,
+        "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
       }
     }
   },
@@ -4205,5 +4205,18 @@
       "bytes": 244171,
       "sha256": "e918fba4b0691d7fd2d209522dec2fda7961b6476b401b84a4c8ca0e4c898c07"
     }
+  },
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+    },
+    "currentClassifierPin": {
+      "bytes": 42678,
+      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
+    },
+    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
+    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
   }
 }

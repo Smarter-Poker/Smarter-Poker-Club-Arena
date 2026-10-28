@@ -86,6 +86,12 @@ const retainedOriginalCorrection =
   /^(?:scripts\/qualification\/retained18-correction\/|scripts\/ci\/(?:test-superseded-horse-actions\.py$|fixtures\/superseded-action-preimages\.json$)|tests\/unit\/supersededHorseActionRetention\.test\.ts$)/;
 const f06HandAuthority =
   /^(?:scripts\/ci\/(?:(?:test-f06-shared-hand-lane|build-f06-retired-origin|build-f06-stopped-bank-custody)\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody|mixed-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\/|probes\/f06-(?:retired-origin-cohorts\.json$|shared-hand-lane\/|mixed-restart-qualification\.py$|(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\.(?:sql|spec)$|(?:retired-origin-authority|movement-opening|drained-custody-authority|mixed-custody-authority|mixed-movement-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody|mixed-custody|retained-mtt-disposition|retired-origin|stopped-bank-custody|lease-retention)\.json$|(?:test-hand-submission|build-hand-submission-migration)\.py$|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
+// The gateway consumer has its own native runtime and transactional intake
+// contract; source-only changes must reach their existing required jobs too.
+const nativeAlerts =
+  /^(tools\/production-alerts-native-wakeup\/(?!.*\.md$)|tests\/nativeAlertEvent\.test\.ts$)/;
+const nativeAlertSql =
+  /^(scripts\/ci\/test-native-alert-event\.py$|tests\/fixtures\/native-alert-event\/|supabase\/migrations\/20261027175950_native_alert_event_delivery\.sql$)/;
 const fixture =
   /^(server\/(src\/(?!.*\.test\.)|package(-lock)?\.json|tsconfig\.json)|supabase\/migrations\/20260917(230925|232243)_|operations\/release\/(fixture\/|native\/|ci\/fixture-smoke\.py)|\.github\/workflows\/(ci|component-fixture-native-smoke|release-component-qualification)\.yml|scripts\/ci\/(fixture-native-gate|classify-ci-changes)\.mjs|tests\/(fixtures\/ev-cashout-lifecycle\/|fixtures\/full-weekly-accounting\/(tables|functions|types|sequences|triggers-round-3)\.json$|fixtures\/cash-participant-funding\/(bootstrap\.sql|captured-(preimages|hand-preimages|integration-preimages|reader-preimages)\.json)$|fixtures\/union-weekly-basis\/captured-cash-dependencies\.json$|operations\/(fixture-|financial-|component-source-contract|native-component-semantics|fixtures\/realtime-launcher\/)|unit\/fixtureNativeCi\.test\.ts)|package(-lock)?\.json|\.npmrc|\.nvmrc|\.node-version)/;
 
@@ -388,6 +394,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      matches(nativeAlertSql) ||
       cashHalfNative ||
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(
@@ -449,6 +456,8 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(nativeAlerts) ||
+      matches(nativeAlertSql) ||
       cashHalfNative ||
       matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
@@ -510,7 +519,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     phase4: phase4Changed,
-    fixture: matches(fixture),
+    fixture: matches(fixture) || matches(nativeAlerts),
   };
 }
 

@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/approved-agent-adjustment-20261028",
+  "functions": ["fn_ca_settle_approved_agent_adjustment"]
+}

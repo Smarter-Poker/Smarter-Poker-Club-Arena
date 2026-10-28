@@ -857,6 +857,79 @@ def tournament_diagnostic(value):
         return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
 
 
+ADDON_POLICY_JS = r"""
+import {createHash} from 'node:crypto';
+export function inspectMttAddonPolicy(api) {
+  if (api.HORSE_ADDON_PARTICIPATION_RATE !== 0.74 || typeof api.horseTakesAddOn !== 'function')
+    throw new Error('mtt_addon_policy_mismatch');
+  const eventA='00000000-0000-4000-8000-000000000001';
+  const eventB='00000000-0000-4000-8000-000000000002';
+  const bucket=(horse,event)=>createHash('sha256').update(`${horse}|${event}|addon-participation`).digest().readUInt32BE(0)%1000;
+  const horses=new Map();
+  for (let i=0;i<50000 && horses.size<1000;i++) {
+    const horse=`00000000-0000-4000-8000-${(i+1000).toString(16).padStart(12,'0')}`;
+    const b=bucket(horse,eventA);
+    if (!horses.has(b)) horses.set(b,horse);
+  }
+  if (horses.size!==1000) throw new Error('mtt_addon_bucket_coverage_refused');
+  let selected=0,varied=0;
+  for (const [b,horse] of horses) {
+    const expected=b<740;
+    for (let repeat=0;repeat<8;repeat++) {
+      if (api.horseTakesAddOn(horse,eventA)!==expected) throw new Error('mtt_addon_policy_mismatch');
+    }
+    const other=api.horseTakesAddOn(horse,eventB);
+    if (other!==(bucket(horse,eventB)<740)) throw new Error('mtt_addon_event_policy_mismatch');
+    selected+=Number(expected); varied+=Number(other!==expected);
+  }
+  if (varied===0) throw new Error('mtt_addon_event_variation_refused');
+  return {rate:api.HORSE_ADDON_PARTICIPATION_RATE,buckets:1000,selected,declined:1000-selected,
+    repeatsPerPair:8,stableOnRepeat:true,variedAcrossEvents:true,verified:true};
+}
+if (process.argv.includes('--inspect-mtt-addon-policy')) {
+  const {readFile}=await import('node:fs/promises');
+  const path='/app/dist/services/FreeBuy.js';
+  const api=await import(path);
+  const moduleSha256=createHash('sha256').update(await readFile(path)).digest('hex');
+  console.log(JSON.stringify({...inspectMttAddonPolicy(api),moduleSha256}));
+}
+"""
+
+
+def addon_policy_result(value):
+    expected = {'rate': 0.74, 'buckets': 1000, 'selected': 740, 'declined': 260,
+                'repeatsPerPair': 8, 'stableOnRepeat': True, 'variedAcrossEvents': True, 'verified': True}
+    if (not isinstance(value, dict) or set(value) != set(expected) | {'moduleSha256'}
+            or any(type(value.get(key)) is not type(wanted) or value[key] != wanted for key, wanted in expected.items())
+            or not isinstance(value['moduleSha256'], str)
+            or not re.fullmatch(r'[0-9a-f]{64}', value['moduleSha256'])):
+        raise ValueError('mtt_addon_policy_result_refused')
+    return value
+
+
+def addon_policy_main(expected):
+    # Fixed pure installed module only. No player/table/receipt reads or writes.
+    if not re.fullmatch(r'[0-9a-f]{40}', expected):
+        raise ValueError('expected_sha_refused')
+    before = identity(expected)
+    if before['health'] != 'ok' or before['instanceId'] is None:
+        raise ValueError('mtt_addon_runtime_unavailable')
+    raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module',
+                           '--max-old-space-size=64', '-e', ADDON_POLICY_JS, '--', '--inspect-mtt-addon-policy'],
+                          separate_stderr=True)
+    if len(raw.encode('utf-8')) > 4096:
+        raise ValueError('mtt_addon_policy_size_refused')
+    policy = addon_policy_result(json.loads(raw))
+    after = identity(expected)
+    if before != after:
+        raise ValueError('mtt_addon_runtime_changed')
+    print(json.dumps({'schema': 'mtt-addon-policy-observation/v1', 'readOnly': True,
+                      'engineSha': expected, 'instanceId': before['instanceId'],
+                      'identityBefore': before, 'identityAfter': after,
+                      'runtimeStable': True, 'policy': policy,
+                      'purchasesPerformed': False, 'naturalPurchaseCohortVerified': False}, sort_keys=True))
+
+
 def tournament_host_script():
     """Protected checkout source only; caller never supplies a path or command."""
     helper = Path(__file__).with_name('horse-tournament-predicate-proof.mjs').read_text(encoding='utf-8')
@@ -1386,6 +1459,9 @@ def main(expected, selected_cases=None, selected_tournament_cases=None):
 
 def cli(argv):
     try:
+        if len(argv) == 3 and argv[1] == '--mtt-addon-policy':
+            addon_policy_main(argv[2])
+            return 0
         if len(argv) == 2 and argv[1] == '--host-script':
             print(tournament_host_script())
             return 0

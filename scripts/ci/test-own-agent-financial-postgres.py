@@ -16,10 +16,29 @@ P.add_argument('--output',type=Path,default=None)
 P.add_argument('--pause-source-root',type=Path,default=None)
 P.add_argument('--document-source-root',type=Path,default=None)
 P.add_argument('--candidate-migration',type=Path,default=None)
+P.add_argument('--compile-fragments',action='store_true',help='Emit new owner body identities for migration generation; not whole-installer qualification')
 A=P.parse_args()
 if A.candidate_migration is None:A.candidate_migration=A.repo/'supabase/migrations/20261028184531_own_playing_agent_earnings_keep_typed_wallet_receipts.sql'
 R=A.repo; F=R/'scripts/ci/fixtures/commission-agent-wallet'; BASE=R/'tests/fixtures/weekly-close-scale'; DR=R/'scripts/ci/fixtures/deleted-weekly-routing'
 MIG=next((R/'supabase/migrations').glob('20261022164439_*.sql'))
+# Record every actual repository source/fixture read, including reads inside
+# the shared document loader. Scratch outputs and interpreter files are excluded.
+source_inputs={};source_roots=[R.resolve(),(A.pause_source_root or R).resolve(),(A.document_source_root or R).resolve()]
+original_read_text=Path.read_text;original_read_bytes=Path.read_bytes
+def record_source(path):
+    path=path.resolve()
+    for root in source_roots:
+        if path.is_relative_to(root):
+            relative=path.relative_to(root)
+            if relative.parts[0]in('.owned-scratch','.owned-npm-cache','node_modules'):return
+            key=str(relative);digest=hashlib.sha256(original_read_bytes(path)).hexdigest()
+            assert key not in source_inputs or source_inputs[key]==digest,('conflicting input source roots',key)
+            source_inputs[key]=digest;return
+def source_text(path,*args,**kwargs):
+    value=original_read_text(path,*args,**kwargs);record_source(path);return value
+def source_bytes(path,*args,**kwargs):
+    value=original_read_bytes(path,*args,**kwargs);record_source(path);return value
+Path.read_text=source_text;Path.read_bytes=source_bytes
 E={k:v for k,v in os.environ.items() if not k.startswith('PG')};E.update(LC_ALL='C',LANG='C',PGTZ='UTC')
 os.environ.update(LC_ALL='C',LANG='C')
 A.scratch_root.mkdir(parents=True,exist_ok=True)
@@ -157,7 +176,7 @@ try:
     q("CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text,updated_at timestamptz DEFAULT now(),declared_ref text,declared_at timestamptz);CREATE TABLE ca_guard_def_history(id bigserial PRIMARY KEY,proname text,def_hash text,def_text text,captured_at timestamptz DEFAULT now(),UNIQUE(proname,def_hash));")
     for row in json.loads((R/'scripts/ci/fixtures/historical-rakeback-guard-declaration-preimages.json').read_text()):q('SET check_function_bodies=off;'+row['definition']+';')
     q("SELECT fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check','native original owner');INSERT INTO supabase_migrations.schema_migrations(version)VALUES('20261028162126');UPDATE dr_controls SET generation='original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20';")
-    if A.candidate_migration:
+    if not A.compile_fragments:
         candidate=A.candidate_migration.read_text()
         # Every injected installer fault must roll the entire DDL transaction
         # back over original paid books, including a post-DDL failure.
@@ -180,7 +199,7 @@ try:
         assert replay.returncode and 'own_agent_owner_preimage_changed'in replay.stderr
         results.append({'case':'whole-original-phase-bound-typed-installer-and-live-proof-metadata-and-replay-refusal','passed':True})
     else:
-        for name in ['earning-contract','destination-contract','unpaid-interpretation','effective-views','typed-receipts','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','deferred-proof','ca_player_stats_financial_report','fn_ca_settlement_correctness_check']:
+        for name in ['earning-contract','destination-contract','unpaid-interpretation','effective-views','typed-receipts','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','deferred-proof','ca_player_stats_financial_report','fn_ca_settlement_correctness_check','weekly_payout_prepare_due']:
             q('SET check_function_bodies=off;'+(H/(name+'.sql')).read_text().rstrip()+';')
         q("UPDATE smarter_private.weekly_payout_phase_configuration SET cutover_period_end='2026-10-12 07:00Z';")
     for namespace in ['old1','old2','old3']:
@@ -200,8 +219,8 @@ try:
     # plan, source guard and commission posting. Only unrelated full-week
     # source-evidence/launch prerequisites remain controlled in isolation.
     q("""ALTER TABLE agents ADD COLUMN parent_agent_id uuid,ADD COLUMN commission_rate numeric,ADD COLUMN player_rakeback_rate numeric,ADD COLUMN lifetime_rake_generated numeric DEFAULT 0,ADD COLUMN weekly_rake_generated numeric DEFAULT 0,ADD COLUMN last_active_at timestamptz;
-    CREATE TABLE accounting_close_partials(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,window_start timestamptz,window_end timestamptz,value jsonb);
-    CREATE TABLE accounting_close_certificates(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,value jsonb);
+    CREATE TABLE accounting_close_partials(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,window_start timestamptz,window_end timestamptz,value jsonb,computed_at timestamptz DEFAULT now());
+    CREATE TABLE accounting_close_certificates(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,value jsonb,certified_at timestamptz DEFAULT now());
     CREATE TABLE accounting_recompute_split_parts(club_id uuid,period_start date,period_end date,kind text,part int,value jsonb);
     CREATE TABLE accounting_period_recompute_requests(id uuid DEFAULT gen_random_uuid(),club_id uuid,period_start date,period_end date,status text DEFAULT 'pending',reason text,last_result jsonb DEFAULT '{}',last_requested_at timestamptz DEFAULT now(),UNIQUE(club_id,period_start,period_end));
     CREATE TABLE union_wallet_transactions(id uuid,union_id uuid,amount numeric,created_at timestamptz,wallet text,direction text,tx_type text);
@@ -357,16 +376,68 @@ try:
     q("CREATE FUNCTION fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE sql AS $$SELECT '{\"status\":\"ready\",\"count\":0,\"sources\":[]}'::jsonb$$;")
     q("BEGIN;SET LOCAL test.own_namespace='public-R0';SELECT own_playing_seed(false,256);CREATE TEMP TABLE before_public_r0 AS SELECT caw_balances()b;CREATE TEMP TABLE public_r0_result AS SELECT fn_prepare_accounting_week(NULL,caw_u('club'),'2026-10-19 07:00Z','2026-10-26 07:00Z')r;SELECT caw_assert((SELECT r->>'success'='false'AND r#>>'{problems,0,reason}'='own_agent_source_interpretation_in_progress'FROM public_r0_result),'actual original public R0 reports bounded progress');SELECT caw_assert((SELECT count(*)=256 FROM accounting_own_agent_interpretations),'full bounded batch committed to original interpretation owner');SELECT caw_assert(caw_balances()=(SELECT b FROM before_public_r0),'R0 changes no bank or wallet');SELECT caw_assert(("+prep+")->>'ready'='true','next original bounded call sees completed interpretation');ROLLBACK;")
     results.append({'case':'actual-public-owning-R0-entry-bounded256-source-admission-no-money-and-resumable-progress','passed':True})
-    changed=['fn_accounting_earning_contract','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_ca_rakeback_payout_leg_is_documented','ca_player_stats_financial_report','fn_ca_settlement_correctness_check','own_agent_destination_contract','rakeback_wallet_plan','record_rakeback_wallet_contracts','rakeback_certificate_wallets','rakeback_wallet_payout_complete','own_agent_interpreted_contract','admit_own_agent_source','prepare_own_agent_interpretation','assert_own_agent_scope_interpreted']
+    # Count actual historical interpretation calls in a large mixed population.
+    # Instrumentation is rolled back; original historical body is called intact.
+    interpretation=q("SELECT pg_get_functiondef('smarter_private.own_agent_interpreted_contract(jsonb,uuid,uuid,numeric,uuid,timestamptz)'::regprocedure)").stdout.strip()
+    instrument=interpretation.replace('smarter_private.own_agent_interpreted_contract(', 'smarter_private.native_original_interpreted_contract(',1)+";CREATE OR REPLACE FUNCTION smarter_private.own_agent_interpreted_contract(p_contract jsonb,p_club uuid,p_player uuid,p_rake numeric,p_union uuid,p_terms timestamptz)RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$BEGIN PERFORM nextval('public.own_interpret_calls');RETURN smarter_private.native_original_interpreted_contract($1,$2,$3,$4,$5,$6);END$$;"
+    selection=(H/'unpaid-interpretation.sql').read_text().split('FOR item IN ',1)[1].split(' LOOP',1)[0]
+    for parameter,value in {'p_union':'NULL::uuid','p_club':"caw_u('club')",'p_from':"'2026-10-19 07:00Z'::timestamptz",'p_to':"'2026-10-26 07:00Z'::timestamptz",'p_limit':'256'}.items():selection=re.sub(r'\b'+parameter+r'\b',value,selection)
+    counted=q("BEGIN;SET LOCAL test.own_namespace='mixed-capacity';SELECT own_playing_seed(false,1024,true);CREATE SEQUENCE own_interpret_calls;"+instrument+"CREATE TEMP TABLE capacity_batches(step int,result jsonb,historical_calls int);CREATE TEMP TABLE capacity_before AS SELECT caw_balances()b;"+
+      'EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+selection+";SELECT caw_assert((SELECT NOT is_called FROM own_interpret_calls),'ID selection never invokes historical constructors before LIMIT');"+
+      "DO $capacity$DECLARE i int;b bigint;a bigint;r jsonb;BEGIN FOR i IN 1..6 LOOP SELECT CASE WHEN is_called THEN last_value ELSE 0 END INTO b FROM own_interpret_calls;r:=smarter_private.prepare_own_agent_interpretation(NULL,caw_u('club'),'2026-10-19 07:00Z','2026-10-26 07:00Z',256);SELECT CASE WHEN is_called THEN last_value ELSE 0 END INTO a FROM own_interpret_calls;PERFORM caw_assert(a-b=(r->>'reviewed')::int AND a-b<=256,'at most256 actual historical calls per original R0 request');INSERT INTO capacity_batches VALUES(i,r,a-b);END LOOP;END $capacity$;"+
+      "SELECT caw_assert((SELECT count(*)=1025 FROM accounting_own_agent_source_reviews),'every mixed source reviewed once');SELECT caw_assert((SELECT count(*)=512 FROM accounting_own_agent_source_reviews WHERE outcome='admitted'),'all eligible own-agent sources admitted');SELECT caw_assert((SELECT count(*)=513 FROM accounting_own_agent_source_reviews WHERE outcome='unchanged'),'all unchanged promotion-gap sources advance');SELECT caw_assert((SELECT historical_calls=0 AND result->>'ready'='true'AND result->>'reviewed'='0'FROM capacity_batches WHERE step=6),'completed request performs no repeated historical calls');SELECT caw_assert(caw_balances()=(SELECT b FROM capacity_before),'reviewing moves no money');SELECT jsonb_agg(to_jsonb(c)ORDER BY step)FROM capacity_batches c;ROLLBACK;").stdout
+    if A.output:A.output.with_name(A.output.stem+'-capacity.log').write_text(counted)
+    results.append({'case':'large-mixed-original-R0-selection-has-zero-history-calls-then-at-most256-per-request-and-durable-progress','passed':True,'sources_reviewed':1025,'admitted':512,'unchanged':513,'maximum_historical_calls_per_request':256})
+    # Run the actual original preparation caller and original R0 transition.
+    # Scope discovery/calendar and unrelated downstream calculation are the
+    # explicit controlled boundaries; no progress result is fabricated.
+    begin_owner=next(r for r in json.loads((R/'scripts/ci/fixtures/weekly-fee-preparation/original-owners.json').read_text())if r['signature']=='fn_weekly_accounting_attempt_begin(boolean)')
+    q(begin_owner['definition']+';')
+    end_source=(R/'supabase/migrations/20260928211132_a_union_close_proves_its_pnl_evidence_once_and_fast.sql').read_text();end_at=end_source.index('CREATE OR REPLACE FUNCTION public.fn_weekly_accounting_attempt_end(');q(end_source[end_at:end_source.index('$function$;',end_at)+len('$function$;')])
+    # Parse the original union-only branch against its actual read owners;
+    # it is not entered by this controlled standalone preparation case.
+    for row in json.loads((R/'scripts/ci/fixtures/inventory-proof-lifetime-sources.json').read_text())['functions']:
+        if row['signature']=='public.fn_accounting_close_certificate(text,uuid,timestamptz,timestamptz)':q('SET check_function_bodies=off;'+row['definition']+';')
+    for row in json.loads((R/'scripts/ci/fixtures/weekly-fee-preparation/original-owners.json').read_text()):
+        if row['signature']=='fn_accounting_close_windows(timestamp with time zone,timestamp with time zone)':q('SET check_function_bodies=off;'+row['definition']+';')
+    lifetime=(R/'supabase/migrations/20261016123337_the_weekly_close_proofs_outlive_the_close.sql').read_text();at=lifetime.index('CREATE OR REPLACE FUNCTION public.fn_accounting_close_proof_lifetime()');q(lifetime[at:lifetime.index('$function$;',at)+len('$function$;')])
+    prep_definition=q("SELECT pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz)'::regprocedure)").stdout.strip()
+    prep_count=prep_definition.replace('public.fn_prepare_accounting_week(', 'public.native_original_prepare_week(',1)+";CREATE OR REPLACE FUNCTION public.fn_prepare_accounting_week(p_union_id uuid,p_club_id uuid,p_from timestamptz,p_to timestamptz)RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$BEGIN PERFORM nextval('public.preparation_calls');RETURN public.native_original_prepare_week(p_union_id,p_club_id,p_from,p_to);END$$;"
+    preparation_boundaries="""
+    SET LOCAL statement_timeout='240s';SET LOCAL app.weekly_accounting_chunked='on';
+    CREATE SEQUENCE preparation_calls;
+    CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_clock()RETURNS timestamptz LANGUAGE sql VOLATILE AS $$SELECT clock_timestamp()$$;
+    CREATE OR REPLACE FUNCTION public.fn_union_accounting_run_at(p_period_end timestamptz)RETURNS timestamptz LANGUAGE sql STABLE AS $$SELECT transaction_timestamp()+interval '1 hour'$$;
+    CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_scope_plan(p_end timestamptz,p_now timestamptz)RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public AS $$SELECT jsonb_build_array(jsonb_build_object('kind','club','id',caw_u('club'),'period_start','2026-10-19 07:00Z'::timestamptz,'period_end','2026-10-26 07:00Z'::timestamptz))$$;
+    CREATE OR REPLACE FUNCTION public.fn_accounting_week_clubs(uuid,uuid,timestamptz,timestamptz)RETURNS TABLE(club_id uuid)LANGUAGE sql AS $$SELECT NULL::uuid WHERE false$$;
+    CREATE OR REPLACE FUNCTION public.fn_accounting_close_windows_pending(uuid,uuid,timestamptz,timestamptz)RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
+    """
+    q("BEGIN;SET LOCAL test.own_namespace='connected-precompute';SELECT own_playing_seed(false,1024,true);CREATE TEMP TABLE preparation_before AS SELECT caw_balances()b;"+preparation_boundaries+prep_count+
+      "CREATE TEMP TABLE connected_result AS SELECT smarter_private.weekly_payout_prepare_due()r;DO $$BEGIN RAISE NOTICE 'CONNECTED_RESULT:%',(SELECT r FROM connected_result);END$$;SELECT caw_assert((SELECT r->>'stage'='weekly_payout_prepared'FROM connected_result),'original precompute completes multiple own-agent pages in same request');SELECT caw_assert((SELECT last_value>1 FROM preparation_calls),'original caller consumed ready false progress without another tick');SELECT caw_assert((SELECT count(*)=1025 FROM accounting_own_agent_source_reviews),'connected original caller reviewed complete mixed population');SELECT caw_assert(caw_balances()=(SELECT b FROM preparation_before),'precompute moves no money');SELECT caw_assert(coalesce(current_setting('app.weekly_accounting_preparation_deadline',true),'')='','preparation deadline context restored');ROLLBACK;")
+    results.append({'case':'actual-original-precompute-consumes-over256-mixed-source-progress-in-one-bounded-request','passed':True,'sources_reviewed':1025})
+    # Expiry before a source starts must preserve the selected work for the
+    # next request without false ready or even a preparation-version rewrite.
+    q("BEGIN;SET LOCAL test.own_namespace='expired-source-budget';SELECT own_playing_seed();SELECT set_config('app.weekly_accounting_preparation_deadline',(clock_timestamp()-interval '1 second')::text,true);CREATE TEMP TABLE stopped AS SELECT "+prep+"r;SELECT caw_assert((SELECT r->>'ready'='false'AND r->>'reviewed'='0'AND r->>'budget_exhausted'='true'FROM stopped),'expired original physical budget stops before source work');SELECT caw_assert(NOT EXISTS(SELECT FROM accounting_own_agent_source_reviews)AND NOT EXISTS(SELECT FROM accounting_own_agent_interpretations)AND NOT EXISTS(SELECT FROM accounting_own_agent_preparation_versions),'expired budget admits and invalidates nothing');ROLLBACK;")
+    results.append({'case':'original-physical-preparation-deadline-stops-before-source-mutation-without-false-ready','passed':True})
+    slow_instrument=instrument.replace("PERFORM nextval('public.own_interpret_calls');", "PERFORM nextval('public.own_interpret_calls');PERFORM pg_sleep(0.2);")
+    q("BEGIN;SET LOCAL test.own_namespace='partial-source-budget';SELECT own_playing_seed(false,256);CREATE SEQUENCE own_interpret_calls;"+slow_instrument+"SELECT set_config('app.weekly_accounting_preparation_deadline',(clock_timestamp()+interval '3 seconds')::text,true);CREATE TEMP TABLE partial_budget AS SELECT "+prep+"r;SELECT caw_assert((SELECT r->>'ready'='false'AND r->>'budget_exhausted'='true'AND(r->>'reviewed')::int>0 AND(r->>'reviewed')::int<256 FROM partial_budget),'physical deadline retains positive partial source progress');SELECT caw_assert((SELECT count(*)=(SELECT(r->>'reviewed')::int FROM partial_budget)FROM accounting_own_agent_source_reviews),'partial progress is durable immutable review evidence');"+interpretation+";SELECT set_config('app.weekly_accounting_preparation_deadline','',true);SELECT caw_assert(("+prep+")->>'ready'='true','next original request resumes remaining source IDs');SELECT caw_assert((SELECT count(*)=256 FROM accounting_own_agent_source_reviews),'no review lost or repeated after partial budget');ROLLBACK;")
+    results.append({'case':'physical-budget-retains-positive-partial-review-and-next-original-request-resumes','passed':True})
+    # A source refusal remains the original single refusal. It is never
+    # transformed into the one progress result the new caller may continue.
+    q("BEGIN;SET LOCAL test.own_namespace='precompute-refusal';SELECT own_playing_seed();"+preparation_boundaries+prep_count+"CREATE OR REPLACE FUNCTION fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE sql AS $$SELECT '{\"status\":\"blocked\",\"count\":1,\"sources\":[\"synthetic-refusal\"]}'::jsonb$$;CREATE TEMP TABLE refused AS SELECT smarter_private.weekly_payout_prepare_due()r;SELECT caw_assert((SELECT r#>>'{problems,0,preparation,problems,0,reason}'='cash_source_refusals_pending'FROM refused),'original refusal preserved');SELECT caw_assert((SELECT last_value=1 FROM preparation_calls),'no generic refusal retry');SELECT caw_assert(NOT EXISTS(SELECT FROM accounting_own_agent_source_reviews),'refusal reviews no source');ROLLBACK;")
+    results.append({'case':'original-precompute-refusal-is-returned-once-without-general-retry','passed':True})
+    changed=['fn_accounting_earning_contract','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_ca_rakeback_payout_leg_is_documented','ca_player_stats_financial_report','fn_ca_settlement_correctness_check','own_agent_destination_contract','rakeback_wallet_plan','record_rakeback_wallet_contracts','rakeback_certificate_wallets','rakeback_wallet_payout_complete','own_agent_interpreted_contract','admit_own_agent_source','prepare_own_agent_interpretation','assert_own_agent_scope_interpreted','weekly_payout_prepare_due']
     names=','.join("'"+n+"'"for n in changed)
     postimages=json.loads(q("SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'definition',pg_get_functiondef(p.oid),'metadata',to_jsonb(p)-'prosrc')ORDER BY p.proname)FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private')AND p.proname IN("+names+")").stdout.strip())
-    assert len(postimages)==23
+    assert len(postimages)==24
     assert q("SELECT NOT EXISTS(SELECT FROM pg_trigger WHERE tgname='wcs_receipt')AND NOT EXISTS(SELECT FROM social_messages)AND NOT EXISTS(SELECT FROM notifications)").stdout.strip()=='t'
     document_proof={name:q("SELECT md5(pg_get_functiondef('"+name+"'::regprocedure))").stdout.strip()for name in ['fn_accounting_transfer_document_on_insert()','fn_invoice_accounting_ledger_transfer(uuid)','fn_deliver_accounting_invoice(uuid)']}
     assert document_proof=={'fn_accounting_transfer_document_on_insert()':'164aae2fca35c964331ed8aecd225411','fn_invoice_accounting_ledger_transfer(uuid)':'2b9d4a150c45608118ba20b2f90f6aa7','fn_deliver_accounting_invoice(uuid)':'5a76ce1162d43b158e496bf3574c86d3'}
     inputs={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest()for root,paths in [(R,list((R/'supabase/accounting/own-agent-v1').glob('*.sql'))+list((R/'scripts/qualification/own-agent-v1').glob('*.json'))+[A.candidate_migration,Path(__file__).resolve(),R/'scripts/ci/fixtures/own-agent-v1/playing-source.sql',R/'supabase/migrations/20261028153553_approved_agent_adjustments_settle_once_from_the_club_bank.sql']),(document_root,[document_dir/'document_pipeline.py']+list((document_dir/'fixtures').glob('*.json'))+list((document_root/'supabase/migrations').glob('20261028183252_*.sql'))+list((document_root/'supabase/migrations').glob('20261028193243_*.sql'))),(A.pause_source_root or R,list(((A.pause_source_root or R)/'supabase/migrations').glob('20261028162126_*.sql')))]for p in paths}
-    if A.output:A.output.write_text(json.dumps({'status':'passed','input_sha256':inputs,'actual_document_pipeline':document_proof,'history_only_no_messenger':True,'cases':results,'postimages':postimages},indent=2)+'\n')
+    inputs={**source_inputs,**inputs}
+    if A.output:A.output.write_text(json.dumps({'status':'fragment_compiler_passed'if A.compile_fragments else'passed','whole_installer':not A.compile_fragments,'input_sha256':inputs,'actual_document_pipeline':document_proof,'history_only_no_messenger':True,'cases':results,'postimages':postimages},indent=2)+'\n')
     print(json.dumps({'status':'source-and-financial-passed','cases':results}))
 finally:
     if started: subprocess.run([str(A.pg_bin/'pg_ctl'),'-D',str(D),'-m','immediate','stop'],env=E,capture_output=True)
     shutil.rmtree(W,ignore_errors=True)
+    Path.read_text=original_read_text;Path.read_bytes=original_read_bytes

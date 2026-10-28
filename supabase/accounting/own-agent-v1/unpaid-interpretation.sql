@@ -105,9 +105,24 @@ REVOKE ALL ON public.accounting_own_agent_preparation_versions FROM PUBLIC,anon,
 CREATE TRIGGER own_agent_preparation_version_immutable BEFORE UPDATE OR DELETE ON public.accounting_own_agent_preparation_versions FOR EACH ROW EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
 CREATE TRIGGER own_agent_preparation_version_no_truncate BEFORE TRUNCATE ON public.accounting_own_agent_preparation_versions FOR EACH STATEMENT EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
 
+-- The original R0 request reviews a finite source-ID batch before invoking
+-- historical constructors. Even an unchanged source gets immutable progress,
+-- so a later request does not repeat an unbounded eligibility scan.
+CREATE TABLE public.accounting_own_agent_source_reviews(
+ source_type text NOT NULL CHECK(source_type IN('cash_rake_accrual','tournament_fee_accrual')),
+ source_id uuid NOT NULL,version text NOT NULL CHECK(version='own-agent-v1'),
+ original_contract_md5 text NOT NULL,effective_contract_md5 text NOT NULL,
+ outcome text NOT NULL CHECK(outcome IN('unchanged','admitted')),
+ reviewed_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(source_type,source_id)
+);
+ALTER TABLE public.accounting_own_agent_source_reviews ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.accounting_own_agent_source_reviews FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER own_agent_source_review_immutable BEFORE UPDATE OR DELETE ON public.accounting_own_agent_source_reviews FOR EACH ROW EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
+CREATE TRIGGER own_agent_source_review_no_truncate BEFORE TRUNCATE ON public.accounting_own_agent_source_reviews FOR EACH STATEMENT EXECUTE FUNCTION public.fn_accounting_agreement_history_immutable();
+
 CREATE FUNCTION smarter_private.prepare_own_agent_interpretation(p_union uuid,p_club uuid,p_from timestamptz,p_to timestamptz,p_limit int DEFAULT 256)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $prepare$
-DECLARE kind text;identity uuid;item record;seen int:=0;admitted int:=0;clubs uuid[];parts jsonb;certs jsonb;
+DECLARE kind text;identity uuid;item record;seen int:=0;admitted int:=0;clubs uuid[];parts jsonb;certs jsonb;old_hash text;new_hash text;did_admit boolean;budget_exhausted boolean:=false;work_deadline timestamptz:=LEAST(NULLIF(current_setting('app.weekly_accounting_preparation_deadline',true),'')::timestamptz,NULLIF(current_setting('app.weekly_accounting_scope_deadline',true),'')::timestamptz);
 BEGIN
  IF NOT public.fn_caller_is_engine()OR p_from IS NULL OR p_to IS NULL OR(p_union IS NULL)=(p_club IS NULL)OR p_limit IS NULL OR p_limit<1 OR p_limit>1024
  OR p_from IS DISTINCT FROM public.fn_union_week_start(p_from)OR p_to IS DISTINCT FROM public.fn_union_week_start(p_from+interval '8 days')OR p_to>now()THEN RAISE EXCEPTION 'own_agent_preparation_scope_invalid' USING ERRCODE='22023';END IF;
@@ -116,6 +131,7 @@ BEGIN
  -- Original completed books remain authoritative, including manual correction
  -- receipts made later. Replaying them cannot create a v1 source or new delta.
  IF EXISTS(SELECT FROM public.accounting_routed_settlement_runs r WHERE r.scope_kind=kind AND r.scope_id=identity AND r.period_start=p_from AND r.period_end=p_to AND r.round_no=3)THEN RETURN jsonb_build_object('ready',true,'legacy_paid',true,'admitted',0);END IF;
+ IF work_deadline IS NOT NULL AND(NOT isfinite(work_deadline)OR clock_timestamp()+interval '1 second'>=work_deadline)THEN RETURN jsonb_build_object('ready',false,'admitted',0,'reviewed',0,'budget_exhausted',true,'version','own-agent-v1');END IF;
  SELECT coalesce(array_agg(DISTINCT s.club_id),'{}')INTO clubs FROM public.accounting_payable_earning_sources s WHERE s.earned_at>=p_from AND s.earned_at<p_to AND((p_union IS NOT NULL AND s.coordinator_union_id=p_union)OR(p_club IS NOT NULL AND s.club_id=p_club AND s.coordinator_union_id IS NULL));
  IF NOT EXISTS(SELECT FROM public.accounting_own_agent_preparation_versions v WHERE v.scope_kind=kind AND v.scope_id=identity AND v.period_start=p_from AND v.period_end=p_to)THEN
   IF EXISTS(SELECT FROM public.accounting_routed_settlement_runs r WHERE r.scope_kind=kind AND r.scope_id=identity AND r.period_start=p_from AND r.period_end=p_to)
@@ -129,14 +145,22 @@ BEGIN
   DELETE FROM public.accounting_recompute_split_parts WHERE club_id=ANY(clubs)AND period_start=(p_from AT TIME ZONE'America/Los_Angeles')::date AND period_end=(p_to AT TIME ZONE'America/Los_Angeles')::date-1;
   UPDATE public.accounting_period_recompute_requests SET status='pending',reason=NULL,last_result='{}',last_requested_at=clock_timestamp()WHERE club_id=ANY(clubs)AND period_start=(p_from AT TIME ZONE'America/Los_Angeles')::date AND period_end=(p_to AT TIME ZONE'America/Los_Angeles')::date-1;
  END IF;
- FOR item IN SELECT s.source_type,s.source_id FROM public.accounting_payable_earning_sources s LEFT JOIN public.accounting_tournament_fee_sources f ON f.id=CASE WHEN s.source_type='tournament_fee_accrual'THEN s.source_id END
+ FOR item IN SELECT s.source_type,s.source_id FROM public.accounting_payable_earning_sources s
  WHERE s.earned_at>=p_from AND s.earned_at<p_to AND((p_union IS NOT NULL AND s.coordinator_union_id=p_union)OR(p_club IS NOT NULL AND s.club_id=p_club AND s.coordinator_union_id IS NULL))
  AND coalesce(s.contract#>>'{membership,terms,role}','')IN('super_agent','agent','sub_agent')AND s.contract#>>'{tiers,0,user_id}'IS DISTINCT FROM s.player_id::text
- AND NOT EXISTS(SELECT FROM public.accounting_own_agent_interpretations a WHERE a.source_type=s.source_type AND a.source_id=s.source_id)
- AND smarter_private.own_agent_interpreted_contract(s.contract,s.club_id,s.player_id,s.rake_credit,s.union_id,CASE WHEN s.source_type='tournament_fee_accrual'THEN public.fn_accounting_tournament_source_terms_at(f.tournament_id,f.charged_at,f.contract)ELSE s.earned_at END)IS NOT NULL ORDER BY s.source_type,s.source_id LIMIT p_limit LOOP
-  seen:=seen+1;IF smarter_private.admit_own_agent_source(item.source_type,item.source_id)THEN admitted:=admitted+1;END IF;
+ AND NOT(coalesce((s.contract#>>'{membership,terms,player_rakeback_pct}')::numeric=.70,false)AND EXISTS(SELECT FROM public.clubs c WHERE c.id=s.club_id AND c.owner_id=NULLIF(s.contract#>>'{membership,terms,agent_id}','')::uuid))
+ AND NOT EXISTS(SELECT FROM public.accounting_own_agent_source_reviews a WHERE a.source_type=s.source_type AND a.source_id=s.source_id)
+ ORDER BY s.source_type,s.source_id LIMIT p_limit LOOP
+  IF work_deadline IS NOT NULL AND clock_timestamp()+interval '1 second'>=work_deadline THEN budget_exhausted:=true;EXIT;END IF;
+  seen:=seen+1;
+  SELECT md5(s.contract::text)INTO STRICT old_hash FROM public.accounting_payable_earning_sources s WHERE s.source_type=item.source_type AND s.source_id=item.source_id;
+  did_admit:=smarter_private.admit_own_agent_source(item.source_type,item.source_id);
+  IF did_admit THEN admitted:=admitted+1;END IF;
+  SELECT md5(s.contract::text)INTO STRICT new_hash FROM public.accounting_payable_earning_sources s WHERE s.source_type=item.source_type AND s.source_id=item.source_id;
+  INSERT INTO public.accounting_own_agent_source_reviews(source_type,source_id,version,original_contract_md5,effective_contract_md5,outcome)VALUES(item.source_type,item.source_id,'own-agent-v1',old_hash,new_hash,CASE WHEN did_admit THEN'admitted'ELSE'unchanged'END);
+  IF work_deadline IS NOT NULL AND clock_timestamp()+interval '1 second'>=work_deadline THEN budget_exhausted:=true;EXIT;END IF;
  END LOOP;
- RETURN jsonb_build_object('ready',seen<p_limit,'admitted',admitted,'version','own-agent-v1');
+ RETURN jsonb_build_object('ready',NOT budget_exhausted AND seen<p_limit,'admitted',admitted,'reviewed',seen,'budget_exhausted',budget_exhausted,'version','own-agent-v1');
 END $prepare$;
 REVOKE ALL ON FUNCTION smarter_private.prepare_own_agent_interpretation(uuid,uuid,timestamptz,timestamptz,int)FROM PUBLIC,anon,authenticated,service_role;
 
@@ -150,12 +174,15 @@ BEGIN
  -- Historical entitlement survives suspension. Frozen, missing or ambiguous
  -- current own-agent destinations cannot accept a new transfer. Deleted
  -- profiles retain the original documented discharge transaction below.
+ IF EXISTS(SELECT FROM public.accounting_payable_earning_sources s WHERE s.earned_at>=p_from AND s.earned_at<p_to AND((p_kind='union'AND s.coordinator_union_id=p_scope)OR(p_kind='club'AND s.club_id=p_scope AND s.coordinator_union_id IS NULL))AND coalesce(s.contract#>>'{membership,terms,role}','')IN('super_agent','agent','sub_agent')AND s.contract#>>'{tiers,0,user_id}'IS DISTINCT FROM s.player_id::text
+ AND NOT(coalesce((s.contract#>>'{membership,terms,player_rakeback_pct}')::numeric=.70,false)AND EXISTS(SELECT FROM public.clubs c WHERE c.id=s.club_id AND c.owner_id=NULLIF(s.contract#>>'{membership,terms,agent_id}','')::uuid))
+ AND NOT EXISTS(SELECT FROM public.accounting_own_agent_source_reviews a WHERE a.source_type=s.source_type AND a.source_id=s.source_id AND a.version='own-agent-v1'AND a.effective_contract_md5=md5(s.contract::text)))THEN RAISE EXCEPTION 'own_agent_source_interpretation_pending' USING ERRCODE='55000';END IF;
  IF EXISTS(SELECT FROM public.accounting_payable_earning_sources s LEFT JOIN public.accounting_tournament_fee_sources f ON f.id=CASE WHEN s.source_type='tournament_fee_accrual'THEN s.source_id END
  CROSS JOIN LATERAL(SELECT count(*)n,min(a.status)status,min(a.role)role FROM public.agents a WHERE a.club_id=s.club_id AND a.user_id=s.player_id)g
  WHERE s.earned_at>=p_from AND s.earned_at<p_to AND((p_kind='union'AND s.coordinator_union_id=p_scope)OR(p_kind='club'AND s.club_id=p_scope AND s.coordinator_union_id IS NULL))AND s.rake_credit>0
  AND coalesce(s.contract#>>'{membership,terms,role}','')IN('super_agent','agent','sub_agent')
  AND(s.contract#>>'{tiers,0,user_id}'=s.player_id::text OR smarter_private.own_agent_destination_contract(s.contract,s.club_id,s.player_id,CASE WHEN s.source_type='tournament_fee_accrual'THEN public.fn_accounting_tournament_source_terms_at(f.tournament_id,f.charged_at,f.contract)ELSE s.earned_at END)IS NOT NULL)
  AND(g.n<>1 OR coalesce(g.role,'')NOT IN('super_agent','agent','sub_agent')OR(coalesce(g.status,'')NOT IN('active','suspended')AND NOT EXISTS(SELECT FROM public.profiles p WHERE p.id=s.player_id AND p.status='deleted'))))THEN RAISE EXCEPTION 'own_agent_current_destination_unavailable' USING ERRCODE='23514';END IF;
- IF EXISTS(SELECT FROM public.accounting_payable_earning_sources s LEFT JOIN public.accounting_tournament_fee_sources f ON f.id=CASE WHEN s.source_type='tournament_fee_accrual'THEN s.source_id END WHERE s.earned_at>=p_from AND s.earned_at<p_to AND((p_kind='union'AND s.coordinator_union_id=p_scope)OR(p_kind='club'AND s.club_id=p_scope AND s.coordinator_union_id IS NULL))AND coalesce(s.contract#>>'{membership,terms,role}','')IN('super_agent','agent','sub_agent')AND s.contract#>>'{tiers,0,user_id}'IS DISTINCT FROM s.player_id::text AND smarter_private.own_agent_interpreted_contract(s.contract,s.club_id,s.player_id,s.rake_credit,s.union_id,CASE WHEN s.source_type='tournament_fee_accrual'THEN public.fn_accounting_tournament_source_terms_at(f.tournament_id,f.charged_at,f.contract)ELSE s.earned_at END)IS NOT NULL)THEN RAISE EXCEPTION 'own_agent_source_interpretation_pending' USING ERRCODE='55000';END IF;
+
 END $assert$;
 REVOKE ALL ON FUNCTION smarter_private.assert_own_agent_scope_interpreted(text,uuid,timestamptz,timestamptz,int)FROM PUBLIC,anon,authenticated,service_role;

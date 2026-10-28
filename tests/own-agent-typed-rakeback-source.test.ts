@@ -16,8 +16,8 @@ describe('own playing earnings source qualification stays connected', () => {
       expect(createHash('sha256').update(source).digest('hex')).toBe(hash);
       expect(migration).toContain(source.trim().replace(/;$/, '') + ';');
     }
-    expect(binding.preimages).toHaveLength(14);
-    expect(binding.postimages).toHaveLength(23);
+    expect(binding.preimages).toHaveLength(15);
+    expect(binding.postimages).toHaveLength(24);
     for (const owner of [...binding.preimages, ...binding.postimages]) {
       expect(migration).toContain(owner.signature);
       expect(migration).toContain(owner.md5);
@@ -45,6 +45,36 @@ describe('own playing earnings source qualification stays connected', () => {
     expect(migration).toContain('original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20');
     expect(migration).not.toContain(
       'CREATE OR REPLACE FUNCTION smarter_private.original_inventory'
+    );
+  });
+
+  it('bounds IDs before historical review and retains unchanged progress in original R0', () => {
+    const source = read('supabase/accounting/own-agent-v1/unpaid-interpretation.sql');
+    const selection = source.split('FOR item IN ')[1].split(' LOOP')[0];
+    expect(selection).toContain('LIMIT p_limit');
+    expect(selection).not.toContain('own_agent_interpreted_contract(');
+    expect(selection).toContain('accounting_own_agent_source_reviews');
+    expect(source).toContain("CASE WHEN did_admit THEN'admitted'ELSE'unchanged'END");
+    expect(source).toContain('own_agent_source_review_immutable');
+    expect(source).toContain('own_agent_source_review_no_truncate');
+    expect(read('scripts/ci/test-own-agent-financial-postgres.py')).toContain(
+      'maximum_historical_calls_per_request'
+    );
+  });
+
+  it('continues only the explicit reviewed-progress result under the original caller budget', () => {
+    const phase = JSON.parse(read(`${folder}/phase-preparation-owner.json`));
+    expect(
+      binding.preimages.find((p: { signature: string }) => p.signature === phase.signature)?.md5
+    ).toBe(phase.md5);
+    const caller = read('supabase/accounting/own-agent-v1/weekly_payout_prepare_due.sql');
+    expect(caller).toContain("LEAST(began+interval '30 seconds'");
+    expect(caller).toContain("'own_agent_source_interpretation_in_progress'");
+    expect(caller).toContain("'{problems,0,source_check,reviewed}'");
+    expect(caller).toContain("'{problems,0,source_check,budget_exhausted}'");
+    expect(caller).toContain("coalesce(saved_preparation_deadline,'')");
+    expect(read('scripts/ci/test-own-agent-financial-postgres.py')).toContain(
+      'actual-original-precompute-consumes-over256'
     );
   });
 

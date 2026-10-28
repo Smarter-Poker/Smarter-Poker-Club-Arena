@@ -2,7 +2,7 @@
 CREATE FUNCTION own_history(p_id bigint,p_type text,p_key text,p_at timestamptz,p_terms jsonb)RETURNS void LANGUAGE sql AS $$
  INSERT INTO accounting_agreement_history(id,entity_type,entity_key,club_id,subject_user_id,observed_at,transaction_id,after_terms)
  VALUES(p_id,p_type,p_key,(p_terms->>'club_id')::uuid,NULLIF(p_terms->>'user_id','')::uuid,p_at,p_id,p_terms)$$;
-CREATE FUNCTION own_playing_seed(p_fee boolean DEFAULT false,p_own_count int DEFAULT 1)RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION own_playing_seed(p_fee boolean DEFAULT false,p_own_count int DEFAULT 1,p_mixed boolean DEFAULT false)RETURNS void LANGUAGE plpgsql AS $$
 DECLARE club uuid:=caw_u('club');terms jsonb;src uuid;rr uuid;hand uuid;attribution uuid;journal uuid;contract jsonb;n int;earned timestamptz;amt numeric;
 BEGIN
  INSERT INTO clubs(id,name,owner_id,chip_treasury,is_union,asset,lifecycle_status)VALUES(club,'Own playing synthetic '||club,caw_u('O'),1000,false,'chips','active');
@@ -19,9 +19,10 @@ BEGIN
  PERFORM own_history(10011,'club_members',club||':'||caw_u('A'),'2026-10-15',jsonb_build_object('club_id',club,'user_id',caw_u('A'),'agent_id',caw_u('O'),'role','player','status','active','is_active',true,'player_rakeback_pct',.70));
  PERFORM own_history(10012,'club_members',club||':'||caw_u('A'),'2026-10-21',jsonb_build_object('club_id',club,'user_id',caw_u('A'),'agent_id',caw_u('O'),'role','agent','status','active','is_active',true,'player_rakeback_pct',.70));
  PERFORM own_history(10013,'club_members',club||':'||caw_u('A'),'2026-10-23',jsonb_build_object('club_id',club,'user_id',caw_u('A'),'agent_id',caw_u('S'),'role','agent','status','active','is_active',true,'player_rakeback_pct',.15));
+ IF p_mixed THEN PERFORM own_history(10014,'club_members',club||':'||caw_u('A'),'2026-10-19 08:00Z',jsonb_build_object('club_id',club,'user_id',caw_u('A'),'agent_id',caw_u('S'),'role','agent','status','active','is_active',true,'player_rakeback_pct',.15));END IF;
  FOR n IN 1..(p_own_count+2)LOOP
   src:=caw_u('own-source-'||n);rr:=caw_u('own-record-'||n);hand:=caw_u('own-hand-'||n);attribution:=caw_u('own-attribution-'||n);journal:=caw_u('own-bank-'||n);
-  earned:=CASE n WHEN 1 THEN'2026-10-19 12:00Z'::timestamptz WHEN 2 THEN'2026-10-22 12:00Z'::timestamptz ELSE'2026-10-24 12:00Z'::timestamptz END;amt:=CASE WHEN n>=3 THEN 100 ELSE 1 END;
+  earned:=CASE n WHEN 1 THEN'2026-10-19 12:00Z'::timestamptz WHEN 2 THEN'2026-10-22 12:00Z'::timestamptz ELSE CASE WHEN p_mixed AND n%2=0 THEN'2026-10-19 18:00Z'::timestamptz ELSE'2026-10-24 12:00Z'::timestamptz END END;amt:=CASE WHEN n>=3 THEN 100 ELSE 1 END;
   IF p_fee AND n=3 THEN
    INSERT INTO rake_records(id,table_id,club_id,rake_amount,created_at,is_tournament,tournament_id,metadata)VALUES(rr,caw_u('table'),club,amt,earned,true,caw_u('event'),jsonb_build_object('accounting_source_version',2,'union_id',NULL));
    contract:=public.own_original_earning_contract(club,caw_u('A'),amt,NULL,earned);

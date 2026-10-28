@@ -4,7 +4,7 @@ import argparse,hashlib,json
 from pathlib import Path
 R=Path(__file__).resolve().parents[3];D=Path(__file__).resolve().parent;H=R/'supabase/accounting/own-agent-v1'
 P=argparse.ArgumentParser();P.add_argument('--bootstrap-postimages',type=Path);P.add_argument('--check',action='store_true');A=P.parse_args()
-files=['earning-contract','destination-contract','unpaid-interpretation','effective-views','typed-receipts','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','deferred-proof','ca_player_stats_financial_report','fn_ca_settlement_correctness_check']
+files=['earning-contract','destination-contract','unpaid-interpretation','effective-views','typed-receipts','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','deferred-proof','ca_player_stats_financial_report','fn_ca_settlement_correctness_check','weekly_payout_prepare_due']
 changed={'fn_accounting_earning_contract','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_ca_rakeback_payout_leg_is_documented','ca_player_stats_financial_report','fn_ca_settlement_correctness_check'}
 original=json.loads((D/'original-owners.json').read_text());patches=json.loads((D/'pause-owner-patches.json').read_text());by_name={x['signature'].split('(')[0].split('.')[-1]:x for x in patches}
 pre=[]
@@ -13,6 +13,8 @@ for row in original:
  if name not in changed:continue
  pre.append({'signature':row['signature'],'md5':by_name[name]['postimage']if name in by_name else row['md5'],'acl':row['acl'],'config':row['config']})
 assert len(pre)==14
+phase=json.loads((D/'phase-preparation-owner.json').read_text())
+pre.append({k:phase[k]for k in ['signature','md5','acl','config']})
 for name,patch in by_name.items():
  s=(H/(name+'.sql')).read_text()
  for pair in patch['replacements']:assert s.count(pair['new'])==1,('lost original owned-pause seam',name,pair['new'])
@@ -20,7 +22,7 @@ if A.bootstrap_postimages:
  # Compiler output supplies body identities only. It is not a financial or
  # document qualification certificate; the whole native suite runs separately.
  post=[{'signature':x['signature'],'md5':x['md5']}for x in json.loads(A.bootstrap_postimages.read_text())['postimages']]
- assert len(post)==23
+ assert len(post)==24
  binding={'version':1,'original_catalog_observed_at':'2026-10-28T18:52:58.54895Z','source_only':True,'phase_dependency':'20261028162126','preimages':pre,'postimages':post,'source_sha256':{n+'.sql':hashlib.sha256((H/(n+'.sql')).read_bytes()).hexdigest()for n in files}}
  (D/'source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
 b=json.loads((D/'source-binding.json').read_text());assert b['preimages']==pre
@@ -78,4 +80,4 @@ sql='-- @live-proof: '+proof+'\n'+sql
 path=R/'supabase/migrations/20261028184531_own_playing_agent_earnings_keep_typed_wallet_receipts.sql'
 if A.check:assert path.read_text()==sql,'generated migration drift'
 else:path.write_text(sql)
-print(json.dumps({'migration':path.name,'sha256':hashlib.sha256(sql.encode()).hexdigest(),'existing_owners':14,'new_private_owners':9,'financial_execution_at_install':False}))
+print(json.dumps({'migration':path.name,'sha256':hashlib.sha256(sql.encode()).hexdigest(),'existing_owners':15,'new_private_owners':9,'financial_execution_at_install':False}))

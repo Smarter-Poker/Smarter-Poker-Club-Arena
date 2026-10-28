@@ -17,7 +17,8 @@
     "accounting_rakeback_wallet_transfers",
     "accounting_own_agent_interpretations",
     "accounting_own_agent_preparation_versions",
-    "accounting_effective_tournament_fee_sources"
+    "accounting_effective_tournament_fee_sources",
+    "accounting_own_agent_source_reviews"
   ],
   "columns": {
     "accounting_rakeback_wallet_contracts": [
@@ -67,6 +68,32 @@
       "original_certificates",
       "owner_hashes",
       "admitted_at"
+    ],
+    "accounting_own_agent_source_reviews": [
+      "source_type",
+      "source_id",
+      "version",
+      "original_contract_md5",
+      "effective_contract_md5",
+      "outcome",
+      "reviewed_at"
+    ],
+    "accounting_effective_tournament_fee_sources": [
+      "id",
+      "rake_record_id",
+      "tournament_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "game_type",
+      "registration_id",
+      "source_charge_ledger_id",
+      "source_entitlement_id",
+      "charged_at",
+      "rake_credit",
+      "contract",
+      "recorded_at"
     ]
   }
 }

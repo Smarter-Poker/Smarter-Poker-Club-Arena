@@ -8,7 +8,9 @@ the same original payer without changing that payer's aggregate cent amount.
 
 Versioned immutable sidecars preserve original source, certificate and transfer
 row shapes. The existing unpaid R0 request owns bounded interpretation and
-cache invalidation; paid source/capture/R0/R2/R3 replays retain original receipts,
+cache invalidation. It limits source IDs before historical evaluation and retains
+immutable unchanged review results so each request advances. Paid
+source/capture/R0/R2/R3 replays retain original receipts,
 including after a separate approved correction. Suspended agents retain earned
 AGENT payments without reactivation; unavailable destinations refuse.
 

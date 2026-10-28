@@ -2,10 +2,13 @@
 
 This is maintained source qualification, not production installation or payment evidence.
 The reserved migration is `supabase/migrations/20261028184531_own_playing_agent_earnings_keep_typed_wallet_receipts.sql`.
-It changes 14 existing owners and adds nine private owners, four immutable cold
+It changes 15 existing owners and adds nine private owners, five immutable cold
 sidecars and an effective tournament-fee view. `source-binding.json` records
 all exact function preimages/postimages and the maintained SQL SHA256 inputs.
 `build-migration.py --check` enforces the generated migration against those files.
+For a maintained source edit, native `--compile-fragments` emits compiler body
+identities for `build-migration.py --bootstrap-postimages PATH`; then run the
+default whole-installer native mode. Compiler mode does not qualify installation.
 
 The original earning constructor omitted the earning agent's own historical
 agreement. The corrected constructor uses that agreement first. Its explicit
@@ -28,6 +31,11 @@ records the complete original raw source and contract, original pending
 commission rows, and original invalidated cache/certificate hashes. Only a
 certifiably unpaid scope can receive this version. It then invokes the original
 commission posting owner. New R2/R3 refuse an incomplete interpretation.
+Source IDs are limited before historical evaluation; immutable review receipts
+also retain unchanged results, so every bounded request makes durable progress.
+The original preparation caller continues only this explicit positive-progress
+result within its existing 30-second/scope/due boundary. Each source checks that
+same physical deadline; unrelated errors and refusal results stop immediately.
 There is no periodic repair worker, synthetic history invalidation, GEN retag,
 paid-certificate rebuild or source rewrite. Current active and suspended agent
 wallets receive historically earned amounts; frozen/missing/ambiguous new
@@ -37,7 +45,7 @@ own-agent destinations refuse. Existing deleted-profile discharge is preserved.
 
 The three R2/R3 source files compose every exact owned-pause patch from
 `pause-owner-patches.json`. The migration requires installed history
-`20261028162126` and all three exact postpause preimages. Preserve that dependency
+`20261028162126` and all three exact postpause preimages and the exact original private preparation caller. Preserve that dependency
 when integrating the protected pause PR. The native suite also consumes the
 maintained actual document pipeline from the protected earned-commission helper
 followup. External source-root flags are for coordinated local qualification;
@@ -82,7 +90,9 @@ Acceptance includes original paid three-scope five-hash/six-header/raw-source
 and certificate preservation, no delta after manual correction, old cash and
 recognized-fee producer replay, genuine unpaid cash/fee R0 through R3, same-payer
 mixed destinations, suspended status preservation, original append-only audit,
-256-source bounded R0 progress, bank shortfall, malformed/mutated source and
+256-source bounded R0 progress, an actual historical-call counter over 1,025
+mixed eligible/unchanged sources with no repeated work after completion, bank
+shortfall, malformed/mutated source and
 commission refusals, missing phase and private-role denial. JSON output records
 all source input SHA256 values and exact postimages.
 

@@ -87,6 +87,12 @@
       "md5": "236228d068e90194a306b81d0f6c88fd",
       "acl": ["postgres=X/postgres", "service_role=X/postgres"],
       "config": ["search_path=public"]
+    },
+    {
+      "signature": "smarter_private.weekly_payout_prepare_due()",
+      "md5": "340403efcb909853831de1c46b6e278b",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=pg_catalog, public"]
     }
   ],
   "postimages": [
@@ -96,7 +102,7 @@
     },
     {
       "signature": "smarter_private.assert_own_agent_scope_interpreted(text,uuid,timestamp with time zone,timestamp with time zone,integer)",
-      "md5": "22d56d8a4aef6bc445a5eee3696045a1"
+      "md5": "e1fb96151324d44215c10047f7604ddd"
     },
     {
       "signature": "ca_player_stats_financial_report(uuid,uuid,integer,text,text)",
@@ -164,7 +170,7 @@
     },
     {
       "signature": "smarter_private.prepare_own_agent_interpretation(uuid,uuid,timestamp with time zone,timestamp with time zone,integer)",
-      "md5": "93ce2f66b07fbd533e4702cd1131532f"
+      "md5": "1c55ef1fa8989a68d0ae95f39a1cbf27"
     },
     {
       "signature": "smarter_private.rakeback_certificate_wallets(bigint)",
@@ -181,12 +187,16 @@
     {
       "signature": "smarter_private.record_rakeback_wallet_contracts()",
       "md5": "e0ba664285b5b6cc885fd6a2357d8596"
+    },
+    {
+      "signature": "smarter_private.weekly_payout_prepare_due()",
+      "md5": "71e651b7e956674a7d288e0fe49ff3af"
     }
   ],
   "source_sha256": {
     "earning-contract.sql": "a7f05a2060768205b592c2ddf3b63fdda090b9cf38aa00d6a1cfbed9e3b601f5",
     "destination-contract.sql": "5620785718867a3fd2e87375687fc5be4f924037f50f81e4020b9e59bd5cc262",
-    "unpaid-interpretation.sql": "080d51392725c2868af1fb23c5af391bea308c6da2d4fd609a270dd178f1979d",
+    "unpaid-interpretation.sql": "bada207fd5e0180df1f8a5ef613bb021a0ccb8f3e52acc6c3aac766529a3f5f6",
     "effective-views.sql": "aed88f71ff0e364e3bfcea48eaace496e4ddde84dff911af77142b4ee140951a",
     "typed-receipts.sql": "2fe7a5394011160fc5fa9363d295c04f82cb236a68cb1261eaf85726c17ee343",
     "fn_accounting_tournament_commission_source_guard.sql": "8a679b2e6d0cec3771946e726b7b544f7f8f99a30badc419faf3cd3f3c425407",
@@ -201,6 +211,7 @@
     "fn_settle_accounting_rakeback_stage.sql": "b59bbcf6a0fdea6bb5402d99647c9fdd1c06e7d5d0021e610f482a4971859638",
     "deferred-proof.sql": "19e370867cb6c63b5ff2123fe1ff15efbe7462e53db621f7c908743d065fba5f",
     "ca_player_stats_financial_report.sql": "c8146ed6a5654d69022c3a8c5ed232e36a68d44726859a8780b10abfb29ec53e",
-    "fn_ca_settlement_correctness_check.sql": "0c2a0a52e1a53dcb0404b1d4e328ba485a6841308a6ba1b92c37fc43c6542943"
+    "fn_ca_settlement_correctness_check.sql": "0c2a0a52e1a53dcb0404b1d4e328ba485a6841308a6ba1b92c37fc43c6542943",
+    "weekly_payout_prepare_due.sql": "30b51547ce1a19a28c538a1aaf800d768fef64fb7a8ac54b6f3ba6cc42ca77c3"
   }
 }

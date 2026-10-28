@@ -111,6 +111,52 @@ describe('worker-only insurance runout authority', () => {
     );
   });
 
+  it.each(['hand', 'controller', 'board'])(
+    'does not issue insurance when the %s fence changes during exact display computation',
+    async (fence) => {
+      const { engine, controller, offerPlayers, allInPlayers, createOffers } = harness();
+      engine.hub = { emitEvent: vi.fn() };
+      engine.waitForInsuranceResponses = vi.fn();
+      engine.insuranceEngine.configure(TABLE, { enabled: true });
+      workerMocks.estimateInsurance.mockResolvedValueOnce([
+        { equity: 82, strictLossPct: 18, pushPct: 0, exact: false, runouts: 6000 },
+        { equity: 18, strictLossPct: 82, pushPct: 0, exact: false, runouts: 6000 },
+      ]);
+      let release!: (value: number[]) => void;
+      workerMocks.estimateEquity.mockReturnValueOnce(
+        new Promise<number[]>((resolve) => {
+          release = resolve;
+        })
+      );
+      const flow = engine.runInsurancePerStreetFlow(
+        offerPlayers,
+        allInPlayers,
+        200,
+        [],
+        controller
+      );
+      await vi.waitFor(() => expect(workerMocks.estimateEquity).toHaveBeenCalledOnce());
+      if (fence === 'hand') engine.handCount = 18;
+      else if (fence === 'controller')
+        engine.handController = { getState: () => ({ communityCards: [] }) };
+      else
+        controller.getState = () => ({
+          communityCards: [
+            { rank: '2', suit: 'clubs' },
+            { rank: '7', suit: 'diamonds' },
+            { rank: 'J', suit: 'hearts' },
+          ] as any,
+          communityCards2: [],
+          communityCards3: [],
+        });
+      release([0.82, 0.18]);
+      await flow;
+      expect(createOffers).not.toHaveBeenCalled();
+      expect(engine.waitForInsuranceResponses).not.toHaveBeenCalled();
+      expect(engine.hub.emitEvent).not.toHaveBeenCalled();
+    }
+  );
+
   it('preserves a rare nonzero percentage through hub reconnect replay', async () => {
     const { engine, allInPlayers } = harness();
     engine.hub = new TableStateHub();

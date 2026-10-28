@@ -3084,6 +3084,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   ): Promise<void> {
     if (!this.lifecycleCanMutate() || this.handController !== controller) return;
     const pricingHandNumber = this.handCount;
+    const pricingBoardKey = board.map((card) => `${card.rank}${card.suit}`).join(',');
+    const pricingBoardStillLive = () => {
+      const liveBoard = controller.getState?.()?.communityCards;
+      return (
+        Array.isArray(liveBoard) &&
+        liveBoard.map((card) => `${card.rank}${card.suit}`).join(',') === pricingBoardKey
+      );
+    };
 
     const offerTimeout = 25; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
     const result = { board, complete: board.length >= 5 };
@@ -3188,7 +3196,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (
         !this.lifecycleCanMutate() ||
         this.handController !== controller ||
-        this.handCount !== pricingHandNumber
+        this.handCount !== pricingHandNumber ||
+        !pricingBoardStillLive()
       ) {
         return;
       }
@@ -3224,7 +3233,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (
         this.lifecycleCanMutate() &&
         this.handController === controller &&
-        this.handCount === pricingHandNumber
+        this.handCount === pricingHandNumber &&
+        pricingBoardStillLive()
       ) {
         await this.pacedAllInRunout(allInPlayers, pot);
       }
@@ -3236,12 +3246,22 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // Insurance prices are rounded and may be sampled preflop. They are not
     // public exact probabilities; use the same exact display path as every table.
     await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
+    // The optional display wait is also a financial authority boundary.
+    // Never create an offer using a prior hand/street after that await.
+    if (
+      !this.lifecycleCanMutate() ||
+      this.handController !== controller ||
+      this.handCount !== pricingHandNumber ||
+      !pricingBoardStillLive()
+    )
+      return;
     if (offerRevealPauseMs > 0) {
       await this.sleep(offerRevealPauseMs);
       if (
         !this.lifecycleCanMutate() ||
         this.handController !== controller ||
-        this.handCount !== pricingHandNumber
+        this.handCount !== pricingHandNumber ||
+        !pricingBoardStillLive()
       ) {
         return;
       }

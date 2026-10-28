@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+      "bytes": 243420,
+      "sha256": "58dd37d0f2be1dbc53ee2a5f9330a2fa877e4c85429459c12dae358b67dd5fbf"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -686,6 +686,23 @@
       "40542328149 shard1 cancelled at40-minute limit while progressing; weekly proof893seconds,shard2 completed1203seconds",
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
+    ]
+  },
+  "privateRecordGatewayHosting20261028": {
+    "reason": "Reviewed additive required shard2 gateway native hosting/bootstrap qualification and classification. Existing financial commands, sources, assertions, verdicts and historical receipts remain unchanged. Current input identity only; hosted execution remains required.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 243205,
+          "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+        },
+        "current": {
+          "bytes": 243420,
+          "sha256": "58dd37d0f2be1dbc53ee2a5f9330a2fa877e4c85429459c12dae358b67dd5fbf"
+        }
+      }
     ]
   }
 }

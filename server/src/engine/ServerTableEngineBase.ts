@@ -2212,6 +2212,10 @@ export abstract class ServerTableEngineBase {
     return (this.deferredWeeklyPayoutReleaseSet ??= new Set());
   }
   protected weeklyPayoutStartedController: HandController | null = null;
+  private weeklyPayoutDeferredInputs?: Map<
+    string,
+    { controller: HandController | null; work: () => void }
+  >;
   private weeklyPayoutBoundaryListenerSet?: Set<() => void>;
   private get weeklyPayoutBoundaryListeners(): Set<() => void> {
     return (this.weeklyPayoutBoundaryListenerSet ??= new Set());
@@ -8429,6 +8433,39 @@ export abstract class ServerTableEngineBase {
 
   protected sleepHand(ms: number): Promise<void> {
     return this.weeklyHandTimers.sleep(ms);
+  }
+
+  /** One pending current intent per input/seat, released by the same barrier.
+   * Presence remains observable while reconnect/horse ownership cannot re-arm
+   * or replace an in-hand decision during the money phase.
+   */
+  protected deferWeeklyPayoutInput(
+    key: string,
+    controller: HandController | null,
+    work: () => void
+  ): boolean {
+    if (!this.weeklyHandPause.held()) return false;
+    const pending = (this.weeklyPayoutDeferredInputs ??= new Map());
+    const existing = pending.has(key);
+    pending.set(key, { controller, work });
+    if (!existing)
+      void this.weeklyHandPause
+        .checkpoint()
+        .then((current) => {
+          const input = pending.get(key);
+          pending.delete(key);
+          if (
+            current &&
+            input &&
+            this.handController === input.controller &&
+            this.lifecycleCanMutate()
+          )
+            input.work();
+        })
+        .catch((error) =>
+          reportError(error, 'ServerTableEngine.weekly_payout_input_resume_failed')
+        );
+    return true;
   }
 
   /** Captured async decision clocks exclude only this hand owner's held time. */

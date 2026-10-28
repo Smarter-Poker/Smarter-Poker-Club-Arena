@@ -1714,6 +1714,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     this.ownClientSockets?.delete(userId);
     this.ownClientClaims?.delete(userId);
     if (!was) return;
+    if (
+      this.deferWeeklyPayoutInput(`horse_control:${userId}`, this.handController, () => {
+        if (!this.isOwnClientControlling(userId)) this.resumeHorseControlAfterClientLeft(userId);
+      })
+    )
+      return;
+    this.resumeHorseControlAfterClientLeft(userId);
+  }
+
+  private resumeHorseControlAfterClientLeft(userId: string): void {
     try {
       if (!this.lifecycleCanMutate() || !this.handController) return;
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
@@ -2580,6 +2590,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * timer). No-op unless a hand is live and it's genuinely this player's turn.
    */
   protected rearmTurnTimerIfCurrent(userId: string): void {
+    if (
+      this.deferWeeklyPayoutInput(`reconnect:${userId}`, this.handController, () =>
+        this.rearmTurnTimerIfCurrent(userId)
+      )
+    )
+      return;
     if (!this.handController) return;
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);

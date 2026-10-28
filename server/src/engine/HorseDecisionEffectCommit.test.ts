@@ -372,6 +372,27 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it('defers a client-to-horse handoff until the retained clock resumes', async () => {
+    vi.setSystemTime(100000);
+    const { engine, player, performAction } = harness(true);
+    engine.playerTurnStartTime = Date.now();
+    engine.playerTurnDuration = 15;
+    engine.broadcastCurrentState = vi.fn(async () => {});
+    engine.ownClientClaims.add(player.user_id);
+    engine.ownClientSockets.add(player.user_id);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    await vi.advanceTimersByTimeAsync(60000);
+    engine.releaseOwnClientControl(player.user_id);
+    await vi.advanceTimersByTimeAsync(180000);
+    expect(decisionWorker.decideFast).not.toHaveBeenCalled();
+    expect(performAction).not.toHaveBeenCalled();
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(decisionWorker.decideFast).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(performAction).toHaveBeenCalledTimes(1);
+  });
   it('retains a worker reply across the weekly pause without expiring its protected clock or think beat', async () => {
     vi.setSystemTime(100000);
     const { engine, player, enginePlayer, state, performAction } = harness(true);

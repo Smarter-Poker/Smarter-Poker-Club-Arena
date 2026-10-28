@@ -43,6 +43,24 @@ function liveHand() {
 }
 
 describe('the real live hand is retained across the original weekly financial edge', () => {
+  it('retains only the latest reconnect intent and drops a superseded hand intent', async () => {
+    vi.useFakeTimers();
+    const { engine, hand } = liveHand();
+    engine.lifecycleCanMutate = () => true;
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    const old = vi.fn(),
+      current = vi.fn(),
+      stale = vi.fn();
+    expect(engine.deferWeeklyPayoutInput('reconnect:p1', hand, old)).toBe(true);
+    expect(engine.deferWeeklyPayoutInput('reconnect:p1', hand, current)).toBe(true);
+    expect(engine.deferWeeklyPayoutInput('reconnect:p2', null, stale)).toBe(true);
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(old).not.toHaveBeenCalled();
+    expect(stale).not.toHaveBeenCalled();
+    expect(current).toHaveBeenCalledTimes(1);
+  });
   it('retains countdown pulses and publishes the same unspent display clock after release', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(100000);

@@ -15,15 +15,20 @@ export interface PokerStats {
   vpip: number;
   pfr: number;
   threeBet: number;
+  threeBetMeasured?: boolean;
   aggression: number;
+  aggressionMeasured?: boolean;
   bbPer100: number;
   biggestPot: number;
   biggestLoss: number;
   totalProfit: number;
   winRate: number;
   wtsd: number;
+  wtsdMeasured?: boolean;
+  showdownMeasured?: boolean;
   showdownWinRate: number;
   hoursPlayed: number;
+  hoursMeasured?: boolean;
   cashHands: number;
   tourneyHands: number;
   tournamentsPlayed: number;
@@ -144,15 +149,20 @@ export function profileStatsFromV2(payload: any): PokerStats | null {
     vpip: finiteStat(overall.vpip) * 100,
     pfr: finiteStat(overall.pfr) * 100,
     threeBet: finiteStat(overall.three_bet_percent) * 100,
+    threeBetMeasured: payload.quality?.metric_availability?.three_bet_percent === true,
     aggression: finiteStat(overall.aggression_factor),
+    aggressionMeasured: payload.quality?.metric_availability?.aggression_factor === true,
     bbPer100: finiteStat(overall.bb_per_100),
     biggestPot: finiteStat(overall.biggest_pot_won),
     biggestLoss: finiteStat(overall.biggest_hand_loss),
     totalProfit: finiteStat(overall.total_profit),
     winRate: totalHands > 0 ? (handsWon / totalHands) * 100 : 0,
     wtsd: finiteStat(overall.wtsd) * 100,
+    wtsdMeasured: payload.quality?.metric_availability?.wtsd === true,
+    showdownMeasured: showdownsTotal > 0,
     showdownWinRate: showdownsTotal > 0 ? (showdownsWon / showdownsTotal) * 100 : 0,
     hoursPlayed: finiteStat(overall.hours_played),
+    hoursMeasured: payload.quality?.metric_availability?.hours_played === true,
     cashHands: finiteStat(overall.cash_hands),
     tourneyHands: finiteStat(overall.tourney_hands),
     tournamentsPlayed: finiteStat(tournaments.entries),

@@ -62,7 +62,7 @@ export interface FreeBuyConfig {
  *  REBUY ADD ON'S FOR MIDWAY UNION ARE 1 CHIP REBUY ADD ON NOT 2". Both tiers
  *  charge 1. Starting stack 3,000; an add-on is 10,000,
  *  so an add-on is worth more than three starting stacks and is close to
- *  compulsory - which is exactly why every horse takes one. */
+ *  compulsory - the participation policy below decides which horses take one. */
 export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   standard: {
     tier: 'standard',
@@ -257,13 +257,12 @@ export function rebuysOpen(nowMs: number, startMs: number, cfg: FreeBuyConfig): 
 /* Horse behaviour                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Owner update 2026-10-25 (replaces 90% from 2026-10-22): "EVERY HORSE, IF
- * THEY ARE IN THE TOURNAMENT, AND HAVE THE CHIPS AVAILABLE TO ADD ON, SHOULD
- * 100% BE ADDING ON IN EVERY SINGLE TOURNAMENT IF THEY ARE STILL HAVE THERE
- * SEAT!" Every seated, funded horse takes the add-on; the purchase RPC still
- * refuses a seatless or unfunded entry. The early timing split is unchanged. */
+/** Owner update 2026-10-27: each eligible MTT horse takes an add-on with a
+ * 74% random chance, replacing the previous 100% policy. The per-horse/event
+ * hash keeps that choice stable across repeat offers and engine restarts.
+ * The purchase RPC still owns seat/funding checks; early timing is unchanged. */
 export const HORSE_ADDON_IMMEDIATE_RATE = 0.35;
-export const HORSE_ADDON_PARTICIPATION_RATE = 1;
+export const HORSE_ADDON_PARTICIPATION_RATE = 0.74;
 
 export function horseTakesAddOn(horseId: string, eventId: string): boolean {
   return (
@@ -278,8 +277,8 @@ export function horseAddsOnImmediately(horseId: string, eventId: string): boolea
 export type AddOnTiming = 'immediate' | 'at_break' | 'busted_before_break' | 'declined';
 
 /**
- * When this horse takes its add-on. Every horse still alive when the rebuy
- * period closes belongs to the 90% participation policy. Busted entries
+ * When this horse takes its add-on. Eligible horses belong to the stable 74%
+ * participation cohort for their event. Busted entries
  * cannot buy chips, and the canonical purchase RPC still owns funding checks.
  */
 export function horseAddOnTiming(

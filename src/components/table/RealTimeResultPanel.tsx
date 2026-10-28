@@ -232,8 +232,20 @@ export default function RealTimeResultPanel({
   useEffect(() => {
     if (!isOpen) return undefined;
     setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setNow(Date.now());
+    }, 1000);
+
+    const onVisible = () => {
+      if (!document.hidden) setNow(Date.now());
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isOpen]);
 
   /* ── Observers ──

@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { execFileSync } from 'node:child_process';
 import { HorseObserverReads } from '../../engine/horseDecision/observerReads.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
@@ -223,7 +224,7 @@ function stored(shard = 0, phase7 = false) {
   return { dir, f };
 }
 
-function riverFixture(otherScope = false) {
+function riverFixture(otherScope = false, version = 6) {
   const f = fixture();
   const request = f.d.snapshot;
   const context = horseObserverReadContextFromRequest(request)!;
@@ -237,6 +238,34 @@ function riverFixture(otherScope = false) {
         hands: 24,
         riverCallSD: 24,
         riverCallSDWeak: 18,
+        ...(version >= 7 ? { riverLastToActOpps: 1, riverLastToActBets: 1 } : {}),
+        ...(version >= 8 ? { riverTripleCheckRaiseOpps: 1, riverTripleCheckRaiseFolds: 1 } : {}),
+        ...(version >= 9
+          ? {
+              riverHu: {
+                entries: [
+                  [
+                    JSON.stringify([
+                      'multiway-hu-river-v1',
+                      'nlh',
+                      'cash',
+                      'chips',
+                      100,
+                      200,
+                      0,
+                      'per_player',
+                      3,
+                    ]),
+                    1,
+                    1,
+                    1,
+                    1,
+                  ] as [string, number, number, number, number],
+                ],
+                overflow: false,
+              },
+            }
+          : {}),
       },
     ]);
     return HorseMind.snapshotDecisionReads(
@@ -356,6 +385,42 @@ describe('finite retained individual river learning evidence', () => {
     const horse = result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!;
     expect(result.acceptedDecisions).toBe(1);
     expect(horse.retainedReceiptCounts.pooledPublicReads).toBe(1);
+    // Exercise the maintained Python union with actual native retained-journal
+    // output, not a hand-built observation. Only transport attestation is a fixture.
+    const summary = JSON.parse(
+      execFileSync(
+        'python3',
+        [
+          '-B',
+          '-c',
+          `
+import importlib.util,json,sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('contracts',Path('../scripts/ci/test-horse-fleet-packet.py'))
+c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+p,o=json.load(sys.stdin);t=c.PacketContracts();_,a=t.convert(t.rows())
+a.update(packetDigest=c.module.digest(p),sourceSha=p['sourceSha'],selectedHands=len(p['handKeys']))
+r=t.partition_result(p);r['execution']['observation']=o
+print(json.dumps(c.module.bounded_summary(p,a,[r])))
+`,
+        ],
+        { input: JSON.stringify([packet(), result]), encoding: 'utf8', maxBuffer: 2097152 }
+      )
+    );
+    expect(summary.publicReadEvidence).toMatchObject({
+      status: 'reported',
+      pooledPublicReadDecisions: 1,
+      pooledPublicReadHorses: 1,
+    });
+    expect(summary.riverLearningEvidence).toMatchObject({
+      status: 'reported',
+      qualifiedReadHorses: 1,
+      retainedHistoryRiverSampleHorses: 1,
+      pooledIndividualScopedBasicReadDecisions: 1,
+    });
+    expect(summary.completeCanonicalHorseCoverage).toBe(false);
+    expect(JSON.stringify(summary)).not.toContain(horse.horseId);
+
     expect(horse.retainedReceiptCounts.independentPublicReads).toBeUndefined();
     expect(horse.riverLearning.qualifiedReadBasisCounts).toEqual({
       individual_scoped_basic_component_of_pooled_public_receipt: 1,
@@ -1029,3 +1094,14 @@ describe('elapsed budget inside a catalog read', () => {
     }
   });
 });
+
+it.each([7, 8, 9])(
+  'preserves validated predecessor river-call counts in read frame v%s',
+  (version) => {
+    const f = riverFixture(false, version);
+    expect(f.d.readFrame.version).toBe(`horse-decision-reads-v${version}`);
+    const result = storeRiverFixture(f);
+    expect(result.riverLearningEvidence.positiveSampleHorses).toBe(1);
+    expect(result.riverLearningEvidence.strategyApplicationVerified).toBe(false);
+  }
+);

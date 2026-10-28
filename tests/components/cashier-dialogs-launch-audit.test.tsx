@@ -327,13 +327,104 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
   });
 });
 
+describe('promo account balances survive role resolution', () => {
+  it('re-reads both balances when the viewer role changes while the promo cashier stays open', async () => {
+    fx.balances.mockResolvedValue({ ...snapshot(), promoPot: 3000, promoFloat: 0, hasFloat: true });
+    const { view } = await openCashier({ walletType: 'promo_wallet' });
+    const figure = () => document.querySelector('.cbc-bank strong')?.textContent;
+    await waitFor(() => expect(figure()).toBe('3,000.00'));
+    fireEvent.click(screen.getByRole('radio', { name: 'My Promo Float 0.00' }));
+    await waitFor(() => expect(figure()).toBe('0.00'));
+    view.rerender(
+      <WalletCashierModal
+        isOpen
+        onClose={() => {}}
+        clubId={CLUB}
+        role="co_owner"
+        walletType="promo_wallet"
+      />
+    );
+    await waitFor(() => expect(figure()).toBe('3,000.00'));
+    expect(fx.balances).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('radio', { name: 'My Promo Float 0.00' })).toBeTruthy();
+  });
+});
+
+describe('agents reclaim from their own wallets at any time', () => {
+  it.each(['agent', 'super_agent', 'sub_agent'])(
+    'opens the personal claim form for %s with no recent send',
+    async (role) => {
+      const original = fx.rpc.getMockImplementation()!;
+      fx.rpc.mockImplementation(async (name, args) =>
+        name === 'fn_cashier_recipient_wallet_balances'
+          ? {
+              data: [{ user_id: USER, player_wallet: 250, agent_wallet: 500, promo_wallet: 20 }],
+              error: null,
+            }
+          : name === 'fn_agent_wallet_reversible'
+            ? { data: [], error: null }
+            : original(name, args)
+      );
+      await openCashier({ walletType: 'agent_wallet', role });
+      fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Claim From My Wallets' }));
+      await waitFor(() =>
+        expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('250.00')
+      );
+      const returns = screen.getByRole('combobox', { name: 'Claim Into' });
+      expect(returns).toHaveValue('agent_wallet');
+      expect(within(returns).getByRole('option', { name: 'My Promo Wallet' })).toBeTruthy();
+      expect(within(returns).queryByRole('option', { name: 'My Player Wallet' })).toBeNull();
+      fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '50' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Chips', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Yes, Claim It', exact: true }));
+      await waitFor(() =>
+        expect(fx.rpc).toHaveBeenCalledWith(
+          'fn_club_wallet_claim_back',
+          expect.objectContaining({
+            p_from_user_id: USER,
+            p_source: 'player_wallet',
+            p_destination: 'agent_wallet',
+            p_amount: 50,
+          })
+        )
+      );
+      const args = fx.rpc.mock.calls.find(([name]) => name === 'fn_club_wallet_claim_back')![1];
+      expect(args.p_transaction_id).toBeUndefined();
+    }
+  );
+});
+
+it('starts an admin personal claim on its eligible agent wallet', async () => {
+  const original = fx.rpc.getMockImplementation()!;
+  fx.rpc.mockImplementation(async (name, args) =>
+    name === 'fn_cashier_recipient_wallet_balances'
+      ? {
+          data: [{ user_id: USER, player_wallet: null, agent_wallet: 0, promo_wallet: 0 }],
+          error: null,
+        }
+      : name === 'fn_agent_wallet_reversible'
+        ? { data: [], error: null }
+        : original(name, args)
+  );
+  await openCashier({ walletType: 'agent_wallet', role: 'admin' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Claim From My Wallets' }));
+  await waitFor(() =>
+    expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('0.00')
+  );
+  expect(screen.getByRole('combobox', { name: 'Claim From' })).toHaveValue('agent_wallet');
+  expect(screen.getByRole('combobox', { name: 'Claim Into' })).toHaveValue('club_bank');
+  expect(screen.getByRole('button', { name: 'Claim Chips', exact: true })).toBeDisabled();
+});
+
 describe('D-04: the holder figure follows the roster after a claim', () => {
   it('re-reads the chosen player from the refreshed members', async () => {
     let claimed = false;
     fx.rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_club_cashier_members')
         return { data: [member(PLAYER, claimed ? 500 : 1000, 'player')], error: null };
-      if (name === 'fn_club_bank_claim_back') {
+      if (name === 'fn_club_wallet_claim_back') {
         claimed = true;
         return { data: { success: true }, error: null };
       }

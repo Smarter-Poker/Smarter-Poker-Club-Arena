@@ -1,3 +1,4 @@
+import { bindTournamentDataAuthority, dataActorHeaders } from './supabase/dataActorContext.js';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
@@ -9,11 +10,13 @@ const a = src.indexOf('    const operation = (async () => {');
 const b = src.indexOf('    })().catch(async (error) => {', a);
 const body = src.slice(a + '    const operation = (async () => {'.length, b);
 const js = ts.transpileModule(
-  `async function run(lifecycle,tableId,engine,supabase,nodeCrypto,F06HandPermit,resumeRetainedHandSubmission,INSTANCE_ID){${body}}`,
+  `async function run(lifecycle,tableId,engine,supabase,nodeCrypto,F06HandPermit,resumeRetainedHandSubmission,INSTANCE_ID,bindTournamentDataAuthority){${body}}`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }
 ).outputText;
 const run = new Function(js + '; return run;')();
-const tableId = 'table';
+const tableId = 'aaaaaaaa-0000-4000-8000-000000000003';
+const tournamentId = 'aaaaaaaa-0000-4000-8000-000000000001';
+const leaseGeneration = 'aaaaaaaa-0000-4000-8000-000000000002';
 const state = {
   ok: true,
   table_id: tableId,
@@ -39,8 +42,8 @@ function fixture(data: unknown) {
   };
   let valid = true;
   const self = {
-    tournamentId: 'tournament',
-    tournamentLeaseGeneration: 'lease',
+    tournamentId,
+    tournamentLeaseGeneration: leaseGeneration,
     lifecycleIsCurrent: () => valid,
     tableEngines: new Map([[tableId, engine]]),
     gameServer: {
@@ -55,17 +58,28 @@ function fixture(data: unknown) {
       tableId,
       engine,
       {
-        rpc: async (name: string) => ({
-          data: typeof data === 'function' ? data(name) : data,
-          error: null,
-        }),
+        rpc: async (name: string) => {
+          if (
+            name === 'fn_f06_allocate_hand_number' ||
+            (name === 'fn_f06_hand_number_state' && starts > 0)
+          ) {
+            const headers = dataActorHeaders();
+            expect(headers.get('x-smarter-tournament-id')).toBe(tournamentId);
+            expect(headers.get('x-smarter-tournament-lease-generation')).toBe(leaseGeneration);
+          }
+          return {
+            data: typeof data === 'function' ? data(name) : data,
+            error: null,
+          };
+        },
       },
       { randomUUID: () => 'uuid' },
       class {
         constructor(public binding: unknown) {}
       },
       async () => null,
-      'original-fixture-instance'
+      'original-fixture-instance',
+      bindTournamentDataAuthority
     );
   return {
     invoke,

@@ -43,11 +43,57 @@ if os.environ.get('ORB_WALLET_JACKPOT_FLOW_MIGRATION') or os.environ.get('ORB_TR
  s+=body+'\nSET LOCAL search_path=public;\n'
  if not os.environ.get('NATIVE_GENERATE_ONLY'):
   s+=treasury['admissions_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else ''
+  if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+   occupancy=runpy.run_path(str(p/'original-flow-occupancy/native-input.py'))
+   s+=occupancy['qualification_sql']
   s+=treasury['wallet_after_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else wallet['after_sql']
   if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):s+=treasury['after_sql']
   s+="DO $wallet_replay$BEGIN BEGIN EXECUTE $wallet_candidate_replay$"+body+"$wallet_candidate_replay$;RAISE EXCEPTION USING ERRCODE='ZX003',MESSAGE='candidate replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'wallet_jackpot_original_flow_owner_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS wallet jackpot exact candidate replay refused';END$wallet_replay$;"
 s+="DO $cert$DECLARE c record;started timestamptz:=clock_timestamp();BEGIN FOR c IN SELECT event_id FROM smarter_private.original_inventory_restoration_cases LOOP PERFORM smarter_private.certify_original_inventory_restoration(c.event_id,'2026-10-12 07:00:00Z');END LOOP;RAISE NOTICE 'QUALIFICATION finite245 certificate elapsed_ms=% count=%',(extract(epoch FROM(clock_timestamp()-started))*1000)::numeric(15,3),(SELECT count(*) FROM smarter_private.original_inventory_restoration_certificates);END$cert$;"
 s+=(p/'admitted-wrapper-proposal.sql').read_text()
+if os.environ.get('ORB_REPORT_READER_COMPOSITION_MIGRATION') and not os.environ.get('NATIVE_GENERATE_ONLY'):
+ report_path=Path(os.environ['ORB_REPORT_READER_COMPOSITION_MIGRATION'])
+ report_candidate=report_path.read_text().strip()
+ assert report_candidate.endswith('COMMIT;')
+ report_authority=(p/'report-reader-composition/native-authority-before.sql').read_text()
+ if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+  # The earlier occupancy lane already ran every exact installer, rollback,
+  # replay, metadata/ACL and source65 check. Reuse that proven authority once.
+  occupancy_candidate=Path(os.environ['ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION']).read_text().strip()
+  if not occupancy_candidate.endswith('COMMIT;'):raise RuntimeError('combined occupancy transaction shape changed')
+  occupancy_prefix=occupancy_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
+  if not report_authority.startswith(occupancy_prefix):raise RuntimeError('combined report occupancy authority prefix changed')
+  report_authority=report_authority[len(occupancy_prefix):]
+ s+=report_authority
+ report_body=report_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
+ for fault_sql,expected_reason in [
+  ('GRANT EXECUTE ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)TO service_role','original_report_composition_owner_or_authority_changed:report'),
+  ('ALTER FUNCTION public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz) SECURITY DEFINER','original_report_composition_source65_unqualified'),
+  ('GRANT EXECUTE ON FUNCTION smarter_private.original_inventory_proof_sources_match()TO service_role','original_report_composition_owner_or_authority_changed:guard'),
+  ("ALTER FUNCTION public.fn_union_pnl_boundary(uuid,timestamptz)SET search_path=pg_catalog,public",'original_report_composition_source65_unqualified')]:
+  s+="DO $report_fault$BEGIN BEGIN EXECUTE $fault_sql$"+fault_sql+"$fault_sql$;BEGIN EXECUTE $report_fault_body$"+report_body+"$report_fault_body$;RAISE EXCEPTION USING ERRCODE='ZX008',MESSAGE='report drift unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM<>$reason$"+expected_reason+"$reason$ THEN RAISE;END IF;END;RAISE EXCEPTION USING ERRCODE='ZX007',MESSAGE='rollback fault';EXCEPTION WHEN SQLSTATE 'ZX007' THEN NULL;END;IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'report native fault rollback changed source';END IF;RAISE NOTICE 'PASS exact report composition authority drift refused: %',$reason$"+expected_reason+"$reason$;END$report_fault$;"
+ s+="DO $report_atomic$DECLARE old_sources jsonb;new_sources jsonb;BEGIN SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO old_sources FROM(VALUES('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)'),('smarter_private.original_inventory_proof_sources_match()'))s(signature);BEGIN EXECUTE $report_atomic_sql$"+report_body+"$report_atomic_sql$;RAISE EXCEPTION USING ERRCODE='ZX005',MESSAGE='rollback exact report composition';EXCEPTION WHEN SQLSTATE 'ZX005' THEN NULL;END;SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO new_sources FROM(VALUES('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)'),('smarter_private.original_inventory_proof_sources_match()'))s(signature);IF old_sources IS DISTINCT FROM new_sources OR smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'report_composition_atomic_rollback_failed';END IF;RAISE NOTICE 'PASS exact report composition three-owner atomic rollback';END$report_atomic$;"
+ s+=report_body
+ s+=(p/'report-reader-composition/native-authority-after.sql').read_text()
+ s+="DO $report_replay$BEGIN BEGIN EXECUTE $report_replay_sql$"+report_body+"$report_replay_sql$;RAISE EXCEPTION USING ERRCODE='ZX006',MESSAGE='report replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'original_report_composition_owner_or_authority_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS exact report composition replay refused';END$report_replay$;"
+if os.environ.get('ORB_REPORT_MEMBERSHIP_MIGRATION') and not os.environ.get('NATIVE_GENERATE_ONLY'):
+ report_path=Path(os.environ['ORB_REPORT_MEMBERSHIP_MIGRATION'])
+ report_candidate=report_path.read_text().strip()
+ assert report_candidate.endswith('COMMIT;')
+ report_authority=(p/'membership-capacity/native-authority-before.sql').read_text()
+ s+=report_authority
+ report_body=report_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
+ for fault_sql,expected_reason in [
+  ("DELETE FROM public.engine_maintenance_break;INSERT INTO public.engine_maintenance_break(id,phase,ownership_token,announced_at,break_started_at,break_ends_at,enforce_freeze)VALUES(true,'counting_down',gen_random_uuid(),clock_timestamp()-interval '3 minutes',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '3 minutes',true)",'original_report_membership_platform_frozen'),
+  ('GRANT EXECUTE ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)TO service_role','original_report_membership_owner_or_authority_changed:report'),
+  ('ALTER FUNCTION public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz) SECURITY DEFINER','original_report_membership_source65_unqualified'),
+  ('GRANT EXECUTE ON FUNCTION smarter_private.original_inventory_proof_sources_match()TO service_role','original_report_membership_owner_or_authority_changed:guard'),
+  ("ALTER FUNCTION public.fn_union_pnl_boundary(uuid,timestamptz)SET search_path=pg_catalog,public",'original_report_membership_source65_unqualified')]:
+  s+="DO $report_fault$BEGIN BEGIN EXECUTE $fault_sql$"+fault_sql+"$fault_sql$;BEGIN EXECUTE $report_fault_body$"+report_body+"$report_fault_body$;RAISE EXCEPTION USING ERRCODE='ZX008',MESSAGE='report drift unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM<>$reason$"+expected_reason+"$reason$ THEN RAISE;END IF;END;RAISE EXCEPTION USING ERRCODE='ZX007',MESSAGE='rollback fault';EXCEPTION WHEN SQLSTATE 'ZX007' THEN NULL;END;IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'report native fault rollback changed source';END IF;RAISE NOTICE 'PASS exact report composition authority drift refused: %',$reason$"+expected_reason+"$reason$;END$report_fault$;"
+ s+="DO $report_atomic$DECLARE old_sources jsonb;new_sources jsonb;BEGIN SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO old_sources FROM(VALUES('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)'),('smarter_private.original_inventory_proof_sources_match()'))s(signature);BEGIN EXECUTE $report_atomic_sql$"+report_body+"$report_atomic_sql$;RAISE EXCEPTION USING ERRCODE='ZX005',MESSAGE='rollback exact report composition';EXCEPTION WHEN SQLSTATE 'ZX005' THEN NULL;END;SELECT jsonb_object_agg(signature,md5(pg_get_functiondef(to_regprocedure(signature))))INTO new_sources FROM(VALUES('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)'),('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)'),('smarter_private.original_inventory_proof_sources_match()'))s(signature);IF old_sources IS DISTINCT FROM new_sources OR smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'report_composition_atomic_rollback_failed';END IF;RAISE NOTICE 'PASS exact report composition three-owner atomic rollback';END$report_atomic$;"
+ s+=report_body
+ s+=(p/'membership-capacity/native-authority-after.sql').read_text()
+ s+="DO $report_replay$BEGIN BEGIN EXECUTE $report_replay_sql$"+report_body+"$report_replay_sql$;RAISE EXCEPTION USING ERRCODE='ZX006',MESSAGE='report replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'original_report_membership_owner_or_authority_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS exact report composition replay refused';END$report_replay$;"
 s+="""DO $test$DECLARE old jsonb;raw jsonb;warm jsonb;a jsonb;BEGIN SELECT r INTO old FROM native_original_raw;raw:=public.fn_union_pnl_inventory_as_of('2026-10-12 07:00:00Z');IF raw IS DISTINCT FROM old OR md5(raw::text)<>'0b5f26fa2d7ec5aa15097b1f64d2c67b' THEN RAISE EXCEPTION 'originalrawfiniteactiveprojection differs %',md5(raw::text);END IF;
 a:=public.fn_union_pnl_inventory_as_of_admitted('2026-10-12 07:00:00Z');IF a->>'status' IS DISTINCT FROM 'observed' OR a->'issues'<>'[]'::jsonb OR jsonb_array_length(a->'retained_original_inventory_issues')<>245 OR jsonb_array_length(a->'admitted_original_inventory_issues')<>245 OR a->'population' IS DISTINCT FROM raw->'population' THEN RAISE EXCEPTION 'full245wrapper admission differs %',a->>'admission_status';END IF;
 warm:=public.fn_union_pnl_inventory_as_of_admitted('2026-10-12 07:00:00Z');IF warm IS DISTINCT FROM a OR public.fn_union_pnl_inventory_as_of('2026-10-12 07:00:00Z') IS DISTINCT FROM old THEN RAISE EXCEPTION 'warm/raw drift';END IF;

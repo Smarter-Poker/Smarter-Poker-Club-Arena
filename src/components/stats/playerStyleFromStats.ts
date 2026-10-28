@@ -27,7 +27,10 @@
  * classifier receives the ratio it actually reads.
  */
 
-import { playerStyleClassifier, type PlayerStyleResult } from '../../services/PlayerStyleClassifier';
+import {
+  playerStyleClassifier,
+  type PlayerStyleResult,
+} from '../../services/PlayerStyleClassifier';
 
 /** Below this many hands a style label is a coin flip, not a read. */
 export const STYLE_MIN_HANDS = 300;
@@ -44,9 +47,10 @@ export interface StyleSourceStats {
  *          anything honest about it.
  */
 export function playerStyleFromStats(
-  overall: StyleSourceStats | null | undefined
+  overall: StyleSourceStats | null | undefined,
+  aggressionAvailable = true
 ): PlayerStyleResult | null {
-  if (!overall) return null;
+  if (!overall || !aggressionAvailable) return null;
   const hands = overall.total_hands;
   if (!Number.isFinite(hands) || hands < STYLE_MIN_HANDS) return null;
 

@@ -2,6 +2,7 @@
  * No production receipt, private card, counter snapshot or donor authority is
  * invented. The normal worker observer validates/hydrates these packets.
  */
+import { completedHandActionsForMind } from '../engine/horseDecision/completedHandActions.js';
 import { createHash } from 'node:crypto';
 import type { ActionRecord, Card, HandConfig, HandEvent, SeatPlayer } from '../types.js';
 import { HandController } from '../engine/HandController.js';
@@ -14,6 +15,7 @@ import {
 import type { HorseObserverReadContext } from '../engine/HorseObserverReadContext.js';
 import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
 import { referenceDeck } from './OmahaReference.js';
+import type { Plo4AblationPopulation } from './Plo4PolicyLeague.js';
 import { pressureOpponentDecision, V53_PRESSURE_VARIANTS } from './V53PressurePopulation.js';
 
 export const FEATURE_ABLATION_HISTORY_VERSION = 'ablation-public-warm-hand-v1';
@@ -37,6 +39,7 @@ export interface FeatureAblationWarmHand {
   variant: string;
   playedAtMs: number;
   bigBlind: number;
+  riverNodeEvidence?: 'captured' | 'unavailable';
   actions: Array<ActionRecord & { amount: number; userId: string; timestamp: number }>;
   results: Array<{ user_id: string; net: number }>;
 }
@@ -74,6 +77,32 @@ export function buildPressureWarmRecords(input: {
   seats: number;
   seed: number;
 }): readonly FeatureAblationWarmHand[] {
+  return buildFeatureWarmRecords({
+    ...input,
+    hands: PRESSURE_PUBLIC_WARM_HANDS,
+    historyVersion: FEATURE_ABLATION_HISTORY_VERSION,
+    population: { id: 'v53_pressure_stress_v1', decide: pressureOpponentDecision },
+  });
+}
+/** Explicit development workload only; old V53 wrapper retains identical inputs/bytes. */
+export function buildFeatureWarmRecords(input: {
+  variant: (typeof V53_PRESSURE_VARIANTS)[number];
+  seats: number;
+  seed: number;
+  hands: number;
+  historyVersion: string;
+  population: Plo4AblationPopulation;
+  retainPublicNodes?: boolean;
+}): readonly FeatureAblationWarmHand[] {
+  if (
+    !Number.isInteger(input.hands) ||
+    input.hands < 1 ||
+    input.hands > 64 ||
+    !input.historyVersion ||
+    !input.population.id ||
+    typeof input.population.decide !== 'function'
+  )
+    throw new Error('Invalid bounded physical warm workload');
   if (
     !V53_PRESSURE_VARIANTS.includes(input.variant) ||
     ![2, 4, 6].includes(input.seats) ||
@@ -85,7 +114,7 @@ export function buildPressureWarmRecords(input: {
   const { variant, seats, seed } = input;
   const full = getFullRakeConfig(1, 2, variant);
   const records: FeatureAblationWarmHand[] = [];
-  for (let hand = 0; hand < PRESSURE_PUBLIC_WARM_HANDS; hand++) {
+  for (let hand = 0; hand < input.hands; hand++) {
     const handNumber = 1000000 + hand;
     const button = (hand % seats) + 1;
     const dealtSeed = (seed ^ Math.imul(hand + 1, 2654435761)) >>> 0 || 1;
@@ -185,7 +214,7 @@ export function buildPressureWarmRecords(input: {
       const policyRandom = randomOf(
         (dealtSeed ^ Math.imul(step + 1, 104729) ^ Math.imul(actor.seat, 1009)) >>> 0
       );
-      const action = pressureOpponentDecision(actor, gs, policyRandom);
+      const action = input.population.decide(actor, gs, policyRandom);
       if (!controller.performAction(actor.seat, action.action, action.amount))
         throw new Error(`Warm controller rejected ${action.action} on hand ${hand}`);
     }
@@ -195,10 +224,19 @@ export function buildPressureWarmRecords(input: {
       Math.abs(end.players.reduce((sum, p) => sum + p.stack, 0) + rake + bbj - seats * 200) > 0.01
     )
       throw new Error(`Warm hand ${hand} failed conservation`);
-    const playedAtMs =
-      FEATURE_ABLATION_HISTORY_AVAILABLE_AT_MS - (PRESSURE_PUBLIC_WARM_HANDS - hand) * 1000;
+    const playedAtMs = FEATURE_ABLATION_HISTORY_AVAILABLE_AT_MS - (input.hands - hand) * 1000;
+    const projected = input.retainPublicNodes
+      ? completedHandActionsForMind(end.actionHistory, undefined)?.actions
+      : undefined;
+    if (input.retainPublicNodes && !projected)
+      throw Error('Physical public history projection refused');
+    const nodeCount = projected?.filter((a) => a.publicNode).length ?? 0;
+    const captured = input.retainPublicNodes && [2, 4].includes(nodeCount);
     records.push({
-      handId: uuid(`${FEATURE_ABLATION_HISTORY_VERSION}:${variant}:${seats}:${seed}:${hand}`),
+      ...(input.retainPublicNodes
+        ? { riverNodeEvidence: captured ? ('captured' as const) : ('unavailable' as const) }
+        : {}),
+      handId: uuid(`${input.historyVersion}:${variant}:${seats}:${seed}:${hand}`),
       tableId: WARM_TABLE,
       handNumber,
       button,
@@ -206,7 +244,7 @@ export function buildPressureWarmRecords(input: {
       variant,
       playedAtMs,
       bigBlind: 2,
-      actions: end.actionHistory.map((a, i) => ({
+      actions: (input.retainPublicNodes ? (projected ?? []) : end.actionHistory).map((a, i) => ({
         seat: a.seat,
         userId: a.userId,
         action: a.action,
@@ -214,6 +252,7 @@ export function buildPressureWarmRecords(input: {
         stage: a.stage,
         timestamp: playedAtMs - end.actionHistory.length + i,
         ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
+        ...(captured && a.publicNode ? { publicNode: structuredClone(a.publicNode) } : {}),
       })),
       results: end.players.map((p) => ({
         user_id: p.user_id,
@@ -249,6 +288,7 @@ export function makeFeatureAblationOwnHistory(
       format: 'cash',
       playedAtMs: h.playedAtMs,
       bigBlind: h.bigBlind,
+      ...(h.riverNodeEvidence ? { riverNodeEvidence: h.riverNodeEvidence } : {}),
       actions: h.actions.map((a) => ({ ...a })),
       results: h.results.map((r) => ({ ...r })),
     })),

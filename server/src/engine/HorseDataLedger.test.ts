@@ -76,6 +76,7 @@ const BRAIN_FILES = [
   // including paused-at-quota apart from failed (2026-09-26).
   'services/HorseDecisionJournal.ts',
   'services/BrainTelemetryFlush.ts',
+  'services/HorseOwnPublicHistory.ts',
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
   'engine/ServerTableEngineDealing.ts',
@@ -341,6 +342,13 @@ describe('HorseDataLedger - the contract holds against the source', () => {
     const iEnd = mindSrc.indexOf('\n}\n', iStart);
     const fields = [...mindSrc.slice(iStart, iEnd).matchAll(/^\s+([a-zA-Z0-9]+): number;/gm)].map(
       (m) => m[1]
+    );
+    // Structured optional counters have their own bounded codec, but still
+    // require an owning ledger row and real reads/writes just like scalars.
+    fields.push(
+      ...[
+        ...mindSrc.slice(iStart, iEnd).matchAll(/^\s+([a-zA-Z0-9]+)\?: MultiwayRiverReadState;/gm),
+      ].map((m) => m[1])
     );
     expect(fields.length).toBeGreaterThanOrEqual(20);
     const registered = new Set(ledgerByKind('mind').map((e) => e.key));

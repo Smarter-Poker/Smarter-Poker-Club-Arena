@@ -108,7 +108,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     expect(screen.queryByText('976')).toBeNull();
     expect((screen.getByLabelText('Share This Session') as HTMLButtonElement).disabled).toBe(true);
     await act(async () => answer({ data: recorded(), error: null }));
-    expect(screen.getByText('-2,624 Diamonds')).toBeTruthy();
+    expect(screen.getByText('-2,624.00 Diamonds')).toBeTruthy();
     expect(screen.getByText('4,000')).toBeTruthy();
     expect(screen.getByText('20')).toBeTruthy();
     expect(screen.getByText('33m')).toBeTruthy();
@@ -129,7 +129,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     expect(screen.queryByText('Profit')).toBeNull();
     expect(testState.rpc).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByText('Retry Recorded Session'));
-    await screen.findByText('-2,624 Diamonds');
+    await screen.findByText('-2,624.00 Diamonds');
     expect(testState.rpc).toHaveBeenCalledTimes(2);
   });
 
@@ -149,9 +149,9 @@ describe('the final Diamond card belongs to its closed custody', () => {
       error: null,
     });
     act(() => publishSessionSummary(oldMount({ diamondRecap: next })));
-    await screen.findByText('-3,000 Diamonds');
+    await screen.findByText('-3,000.00 Diamonds');
     await act(async () => answer({ data: recorded(), error: null }));
-    expect(screen.queryByText('-2,624 Diamonds')).toBeNull();
+    expect(screen.queryByText('-2,624.00 Diamonds')).toBeNull();
     testState.userId = '00000000-0000-4000-8000-000000000099';
     rendered.rerender(view());
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -164,7 +164,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     });
     render(view());
     act(() => publishSessionSummary(oldMount()));
-    await screen.findByText('-2,624 Diamonds');
+    await screen.findByText('-2,624.00 Diamonds');
     expect(screen.getAllByText('-')).toHaveLength(2);
     expect(screen.queryByText('0%')).toBeNull();
   });
@@ -183,7 +183,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     rendered.rerender(view());
     await act(async () => answer({ data: recorded(), error: null }));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.queryByText('-2,624 Diamonds')).toBeNull();
+    expect(screen.queryByText('-2,624.00 Diamonds')).toBeNull();
     expect(testState.rpc).toHaveBeenCalledTimes(1);
   });
 
@@ -202,7 +202,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
   it('keeps a same-account fresh card isolated from its prior ready data', async () => {
     const rendered = render(view());
     act(() => publishSessionSummary(oldMount()));
-    await screen.findByText('-2,624 Diamonds');
+    await screen.findByText('-2,624.00 Diamonds');
     let answer!: (value: unknown) => void;
     testState.rpc.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -213,11 +213,11 @@ describe('the final Diamond card belongs to its closed custody', () => {
     act(() => publishSessionSummary(oldMount({ diamondRecap: next })));
     rendered.rerender(view());
     expect(screen.getByText('Reading Recorded Session')).toBeTruthy();
-    expect(screen.queryByText('-2,624 Diamonds')).toBeNull();
+    expect(screen.queryByText('-2,624.00 Diamonds')).toBeNull();
     await act(async () =>
       answer({ data: recorded({ occupancy_id: next.occupancyId }), error: null })
     );
-    expect(screen.getByText('-2,624 Diamonds')).toBeTruthy();
+    expect(screen.getByText('-2,624.00 Diamonds')).toBeTruthy();
     expect(testState.rpc).toHaveBeenCalledTimes(2);
   });
 
@@ -253,7 +253,7 @@ describe('the final Diamond card belongs to its closed custody', () => {
     await screen.findByText('Pending Settlement');
     expect(screen.queryByText('Profit')).toBeNull();
     act(() => settlePendingSummary(-999)); // the mount baseline is immaterial
-    await screen.findByText('-2,624 Diamonds');
+    await screen.findByText('-2,624.00 Diamonds');
     expect(testState.rpc).toHaveBeenCalledTimes(2);
   });
 

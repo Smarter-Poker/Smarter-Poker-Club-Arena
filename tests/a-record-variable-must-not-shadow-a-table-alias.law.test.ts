@@ -77,7 +77,10 @@ export function detect(sql: string): string[] {
   const declared = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:record\b|[\w.]+%ROWTYPE\b)/i;
   const hits: string[] = [];
   for (const body of functionBodies(sql)) {
-    const code = body.replace(/--[^\n]*/g, '');
+    // Message literals and dynamic SQL strings do not bind PL/pgSQL variables.
+    // Blank SQL single-quoted strings (including doubled apostrophes) before
+    // reading aliases, so "From Its Original Wallet" is not FROM its original.
+    const code = body.replace(/'(?:''|[^'])*'/g, "''").replace(/--[^\n]*/g, '');
     const names = new Set<string>();
     for (const fragment of code.split(';')) {
       const m = declared.exec(fragment);
@@ -129,6 +132,28 @@ describe('a record variable must not shadow a table alias', () => {
       END
       $fn$;`;
     expect(detect(clean)).toEqual([]);
+  });
+
+  it('does not parse a user message as a table alias', () => {
+    const sample = `
+      CREATE OR REPLACE FUNCTION public.fn_message() RETURNS void LANGUAGE plpgsql AS $fn$
+      DECLARE
+        n integer; original public.chip_transactions%ROWTYPE;
+      BEGIN
+        RAISE EXCEPTION 'You Can Only Claim Your Own Recent Send From Its Original Wallet';
+        RAISE EXCEPTION 'Player''s Send From Its Original Wallet';
+      END
+      $fn$;`;
+    expect(detect(sample)).toEqual([]);
+    // A real collision after either message must still be refused.
+    expect(
+      detect(
+        sample.replace(
+          '      END',
+          '        SELECT original.id FROM chip_transactions original;\n      END'
+        )
+      )
+    ).toEqual(['original']);
   });
 
   it('the one historical offender is the one that caused this', () => {

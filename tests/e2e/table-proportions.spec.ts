@@ -40,7 +40,10 @@ import { AVATAR_CROWN_TOP } from '../../src/components/table/avatarCrownBounds';
  * here, add it to the `css-beats-e2e` command too or it cannot fail anything.
  */
 
-import { certifyMobileLiveTableLayout } from './support/mobileLiveTableLayout';
+import {
+  certifyMobileLiveTableLayout,
+  readMobileTableLayout,
+} from './support/mobileLiveTableLayout';
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
 import { resolve, dirname } from 'node:path';
@@ -991,13 +994,17 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
         [true, 'mini', 5, 'all-in'],
         [true, 'mini', 6, 'all-in'],
         [true, 'mini', 6, 'all-shown'],
+        [false, 'none', 2, 'scaled-phone'],
       ] as const) {
         // Both rings exercise every occupied state at every phone width.
-        if (width > 480 && villainCards < 5) continue;
+        const scaledPhone = state === 'scaled-phone';
+        if (scaledPhone && (width !== 600 || count !== 9)) continue;
+        if (width > 480 && villainCards < 5 && !scaledPhone) continue;
         await page.setViewportSize({
           width,
-          height:
-            width === 320
+          height: scaledPhone
+            ? 1065
+            : width === 320
               ? 568
               : width === 375
                 ? 667
@@ -1009,13 +1016,23 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
                       ? 2048
                       : 852,
         });
-        await page.route('http://rail.fixture/', (route) =>
+        await page.route('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', (route) =>
           route.fulfill({
             contentType: 'text/html',
             body: `<html data-seats="${count}" data-cards="${villainCards >= 5 ? villainCards : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
-        await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
+        await page.goto('https://smarter.poker/hub/club-arena/__isolated_rail_fixture', {
+          waitUntil: 'domcontentloaded',
+        });
+        // Same-origin pixels must not grant a synthetic renderer an inherited
+        // authenticated session from the browser job's isolated login fixture.
+        // This clears only this test context; it never signs out any session.
+        await page.evaluate(() => {
+          localStorage.clear();
+          sessionStorage.clear();
+        });
+        expect(await page.evaluate(() => localStorage.getItem('smarter-poker-auth'))).toBeNull();
         const runtimeErrors: string[] = [];
         page.on('pageerror', (error) => runtimeErrors.push(error.message));
         await page.addScriptTag({ content: bundle });
@@ -1070,6 +1087,14 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
           );
         });
+        if (scaledPhone) {
+          const proof = await page.evaluate(readMobileTableLayout, AVATAR_CROWN_TOP);
+          expect(proof.occupied).toBe(count);
+          expect(
+            proof.violations,
+            'Decoded crowns and plates clear the scaled phone board'
+          ).toEqual([]);
+        }
         // Dan 2026-10-23: shown cards never move once tabled, in every game.
         // Hold'em-sized shown hands get the same no-movement proof as PLO5/6.
         if (revealed) {
@@ -1403,25 +1428,45 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           // ring's single top seat is full size ("CAN BE FULL SCREEN NOW THAT
           // THE BBJ IS REMOVED FROM ABOVE THEM"), so there it must match the
           // other villains instead.
-          const ringSeats = Number(document.documentElement.dataset.seats);
           const villainAvatars = [
             ...document.querySelectorAll(
               '.seat-wrapper:not(.seat-wrapper--top):not(.seat-wrapper--hero) .seat__avatar'
             ),
           ].map((e) => box(e).width);
-          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
-            if (ringSeats >= 7 && !largePortrait && box(e).height > 40.5)
-              violations.push('Top Avatar Is Not Compact');
           for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar'))
             if (
-              ringSeats <= 6 &&
+              !largePortrait &&
               villainAvatars.length &&
               Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
             )
               violations.push('Top Avatar Is Not Full Size');
-          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
-            if (ringSeats >= 7 && !largePortrait && box(e).width > 64.5)
-              violations.push('Top Plate Is Not Compact');
+          if (innerWidth <= 480) {
+            const plates = [
+              ...document.querySelectorAll(
+                '.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__info'
+              ),
+            ].map(box);
+            for (const plate of document.querySelectorAll('.seat-wrapper--top .seat__info')) {
+              const measured = box(plate);
+              if (
+                plates.length &&
+                (Math.abs(measured.width - plates[0].width) > 1.5 ||
+                  Math.abs(measured.height - plates[0].height) > 1.5)
+              )
+                violations.push('Top Name And Stack Plate Is Smaller Than Other Villains');
+            }
+          }
+          if (!largePortrait) {
+            const scales = [
+              ...document.querySelectorAll(
+                '.seat-wrapper:not(.seat-wrapper--hero) .seat__avatar-img'
+              ),
+            ].map(
+              (e) => parseFloat(getComputedStyle(e).getPropertyValue('--sp-bust-scale')) || 1.45
+            );
+            if (Math.max(...scales) - Math.min(...scales) > 0.01)
+              violations.push('Top Artwork Is Smaller Than Other Villains');
+          }
           const canvas = box(document.querySelector('.table-scaler')!);
           const felt = box(document.querySelector('.table-surface')!);
           // The browser's inverse homography maps a DOM rectangle to a
@@ -1527,10 +1572,9 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
-          // The owner's mobile enlargement is confined to the action strip.
-          // Felt tools retain their existing footprint.
+          // Every phone gameplay tool must have a visible 48px painted target.
           const expected =
-            tool.selector === '.mtp-lobby-btn' ? (width === 320 ? 44 : 52) : width <= 480 ? 34 : 40;
+            tool.selector === '.mtp-lobby-btn' ? (width === 320 ? 44 : 52) : width <= 480 ? 48 : 40;
           expect(tool.width, tool.selector).toBeCloseTo(expected, 1);
           expect(tool.height, tool.selector).toBeCloseTo(expected, 1);
         }
@@ -1548,7 +1592,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
             };
           }, toolAlpha[icon]);
           expect(Math.max(painted.width, painted.height), `${icon} painted frame`).toBeCloseTo(
-            width <= 480 ? 34 : 40,
+            width <= 480 ? 48 : 40,
             0
           );
         }
@@ -1562,7 +1606,7 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
             contentType: 'application/json',
           });
         }
-        await page.unroute('http://rail.fixture/');
+        await page.unroute('https://smarter.poker/hub/club-arena/__isolated_rail_fixture');
       }
     });
 
@@ -1729,6 +1773,14 @@ for (const [width, height] of [
               const overlaps = (a: DOMRect, b: DOMRect) =>
                 a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
               return {
+                buttonHeights: [...document.querySelectorAll('.action-btn, .pre-action-btn')].map(
+                  (e) => e.getBoundingClientRect().height
+                ),
+                buttonBottom: Math.max(
+                  ...[...document.querySelectorAll('.action-btn, .pre-action-btn')].map(
+                    (e) => e.getBoundingClientRect().bottom
+                  )
+                ),
                 rowTop: row.top,
                 rowHeight: row.height,
                 rowBottom: row.bottom,
@@ -1759,9 +1811,12 @@ for (const [width, height] of [
               measured.rowTop,
               `${width}px inset${bottomInset} ticker${ticker} ${state}: hero cards`
             ).toBeGreaterThanOrEqual(measured.cardsBottom + 1);
-            expect(measured.rowHeight - bottomInset, `${state}: compact row`).toBeLessThanOrEqual(
-              50
-            );
+            for (const buttonHeight of measured.buttonHeights)
+              expect(buttonHeight, `${state}: readable button`).toBeCloseTo(52, 0);
+            expect(
+              height - measured.buttonBottom,
+              'Buttons Clear The Home Indicator'
+            ).toBeGreaterThanOrEqual(Math.max(12, bottomInset) - 1);
             expect(measured.rowBottom).toBeCloseTo(height, 0);
             if (
               width === 393 &&
@@ -2145,6 +2200,107 @@ test('full player style, run-it-twice and jackpot names wrap on a narrow phone',
     expect(result.fits).toBe(true);
     expect(result.ellipsis).not.toBe('ellipsis');
   }
+});
+
+test('painted coverage rejects opaque avatar pixels through rotation and clipping, while transparent canvas stays clear', async ({
+  page,
+}) => {
+  await page.setContent(
+    `<div class="table-page" style="position:relative;width:200px;height:200px"><div class="community-area" style="position:absolute;left:70px;top:20px;width:20px;height:20px"></div><img class="seat__avatar-img" style="position:absolute;left:0;top:0;width:100px;height:100px;object-fit:contain;object-position:50% 50%"></div>`
+  );
+  const covered = async () =>
+    (await page.evaluate(readMobileTableLayout, {})).violations.some((value) =>
+      value.startsWith('Player Or Bet Covers Board')
+    );
+  const paint = async (x: number, y: number, width: number, height: number) =>
+    page.evaluate(
+      async ({ x, y, width, height }) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = '#ff0000';
+        context.fillRect(x, y, width, height);
+        const image = document.querySelector<HTMLImageElement>('.seat__avatar-img')!;
+        image.src = `${canvas.toDataURL()}#/avatars/table/vip_wolf.webp`;
+        await image.decode();
+      },
+      { x, y, width, height }
+    );
+  await paint(0, 0, 20, 100);
+  expect(await covered(), 'Transparent canvas is not a player').toBe(false);
+  await paint(70, 25, 5, 5);
+  expect(await covered(), 'Real opaque coverage is still refused').toBe(true);
+  expect(await page.locator('.seat__avatar-img').getAttribute('src')).toMatch(
+    /\/avatars\/table\/vip_wolf\.webp$/
+  );
+  const staleMetadata = await page.evaluate(readMobileTableLayout, { 'vip_wolf.webp': 0.95 });
+  expect(
+    staleMetadata.violations.some((value) => value.startsWith('Player Or Bet Covers Board')),
+    'Old crown metadata cannot hide newly painted pixels'
+  ).toBe(true);
+  await paint(0, 0, 20, 100);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transformOrigin = '0 0';
+    element.style.transform = 'translate(100px,0) rotate(90deg)';
+  });
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.left = '40px';
+    element.style.top = '60px';
+  });
+  expect(await covered(), 'Rotation must not fill transparent canvas').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '5px';
+  });
+  expect(await covered(), 'Rotated opaque pixels remain protected').toBe(true);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'none';
+    element.style.clipPath = 'inset(0 0 60% 0)';
+  });
+  await paint(0, 0, 100, 100);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '60px';
+  });
+  expect(await covered(), 'The clipped nameplate is not a visible player').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '10px';
+  });
+  expect(await covered(), 'Visible pixels above the clip remain protected').toBe(true);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.top = '60px';
+  });
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'perspective(300px) rotateY(20deg)';
+  });
+  expect(await covered(), 'Unsupported 3D geometry retains the conservative refusal').toBe(true);
+  await page.locator('.seat__avatar-img').evaluate((element) => {
+    element.style.transform = 'none';
+  });
+  await page.evaluate(() => {
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as typeof HTMLCanvasElement.prototype.getContext;
+  });
+  expect(await covered(), 'Unreadable pixels fail closed under the original bounds').toBe(true);
+});
+
+test('painted action coverage protects the pill face without inventing paint in its rounded corners', async ({
+  page,
+}) => {
+  await page.setContent(
+    `<div class="table-page" style="position:relative;width:200px;height:100px"><div class="community-area" style="position:absolute;left:99px;top:0;width:20px;height:2px"></div><div class="seat__action" style="position:absolute;left:0;top:0;width:100px;height:20px;border-radius:999px;background:#fff"></div></div>`
+  );
+  const covered = async () =>
+    (await page.evaluate(readMobileTableLayout, {})).violations.some((value) =>
+      value.startsWith('Player Or Bet Covers Board')
+    );
+  expect(await covered(), 'An empty rounded corner does not cover a board').toBe(false);
+  await page.locator('.community-area').evaluate((element) => {
+    element.style.left = '80px';
+    element.style.top = '8px';
+    element.style.width = '10px';
+    element.style.height = '4px';
+  });
+  expect(await covered(), 'The opaque pill face still refuses coverage').toBe(true);
 });
 
 test('the phone action clock uses stationary ink and compositor clips at its real deadline', async ({

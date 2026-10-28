@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { shHash } from './StableHand.js';
 import {
   FREE_BUY_SLOT_MINUTE,
   FREE_BUY_HALF_HOUR_SLOTS_FROM_MS,
@@ -143,7 +144,7 @@ describe('the add-on window is ONE window, open from the start', () => {
   });
 });
 
-describe('90 percent of surviving funded horses add on', () => {
+describe('74 percent of surviving funded horses add on', () => {
   const ids = Array.from({ length: 2000 }, (_, i) => `h-${i}`);
 
   it('35% take it immediately, within sampling tolerance', () => {
@@ -153,21 +154,46 @@ describe('90 percent of surviving funded horses add on', () => {
     expect(rate).toBeLessThan(HORSE_ADDON_IMMEDIATE_RATE + 0.04);
   });
 
-  it('selects every horse for the event (owner ruling 2026-10-25: 100 percent)', () => {
-    expect(HORSE_ADDON_PARTICIPATION_RATE).toBe(1);
+  it('selects a stable random 74 percent cohort for the event', () => {
+    expect(HORSE_ADDON_PARTICIPATION_RATE).toBe(0.74);
     const chosen = ids.filter((h) => horseTakesAddOn(h, 'evt-1'));
-    expect(chosen.length).toBe(ids.length);
+    expect(chosen.length / ids.length).toBeGreaterThan(0.71);
+    expect(chosen.length / ids.length).toBeLessThan(0.77);
     for (const id of ids) {
       expect(horseAddOnTiming(id, 'evt-1', true) !== 'declined').toBe(horseTakesAddOn(id, 'evt-1'));
       expect(horseTakesAddOn(id, 'evt-1')).toBe(horseTakesAddOn(id, 'evt-1'));
     }
   });
 
-  it('only a horse already busted misses out - and it has nothing to add on to', () => {
+  it('a selected horse waiting for the break cannot add on after busting', () => {
     const late = ids.filter(
       (h) => horseTakesAddOn(h, 'evt-1') && !horseAddsOnImmediately(h, 'evt-1')
     );
     expect(horseAddOnTiming(late[0], 'evt-1', false)).toBe('busted_before_break');
+  });
+
+  it('accepts exactly 740 of the 1000 participation buckets, including the boundary', () => {
+    const buckets = new Map<number, string>();
+    for (let i = 0; buckets.size < 1000 && i < 20000; i++) {
+      const id = `boundary-horse-${i}`;
+      buckets.set(shHash(id, 'event', 'addon-participation') % 1000, id);
+    }
+    expect(buckets.size).toBe(1000);
+    for (const [bucket, id] of buckets) {
+      expect(horseTakesAddOn(id, 'event')).toBe(bucket < 740);
+    }
+    expect([...buckets.values()].filter((id) => horseTakesAddOn(id, 'event'))).toHaveLength(740);
+  });
+
+  it('does not reroll declined horses on repeated offers and varies across events', () => {
+    const declined = ids.find((id) => !horseTakesAddOn(id, 'evt-1'))!;
+    expect(declined).toBeDefined();
+    for (let offer = 0; offer < 20; offer++) {
+      expect(horseTakesAddOn(declined, 'evt-1')).toBe(false);
+      expect(horseAddOnTiming(declined, 'evt-1', true)).toBe('declined');
+    }
+    const choices = Array.from({ length: 100 }, (_, i) => horseTakesAddOn('horse-a', `evt-${i}`));
+    expect(new Set(choices).size).toBe(2);
   });
 
   it('is deterministic per horse and event', () => {

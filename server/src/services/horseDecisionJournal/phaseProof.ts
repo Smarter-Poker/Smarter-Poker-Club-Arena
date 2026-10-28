@@ -52,6 +52,7 @@ const baselineDomains = Object.freeze({
   phase13: Object.freeze(Object.keys(PHASE13_PROTECTED_RELEASE_SELECTIONS)),
 });
 const admissionKeys = new Set([
+  'features',
   'phase8',
   'phase8_guard',
   'phase10',
@@ -176,6 +177,10 @@ export class HorseFleetPhaseInterpreter {
       return this.admissions.get(key);
     };
     this.replayAdmissions = {
+      admitFeatureAuthority: () =>
+        once('features', qualifiedReplayAdmissions.admitFeatureAuthority) as ReturnType<
+          typeof qualifiedReplayAdmissions.admitFeatureAuthority
+        >,
       admitPhase8Authority: () =>
         once('phase8', qualifiedReplayAdmissions.admitPhase8Authority) as ReturnType<
           typeof qualifiedReplayAdmissions.admitPhase8Authority

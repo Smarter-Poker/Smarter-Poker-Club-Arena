@@ -174,3 +174,61 @@ it.each([
     expect(result.hands[0]).not.toHaveProperty('riverCalls');
   } else expect(result.hands[0].riverCalls).toEqual([]);
 });
+
+it.each(['missing', 'stale', 'throw', 'captured'] as const)(
+  'uses one bound sidecar in the existing load deadline and preserves original history for %s',
+  async (mode) => {
+    const { hand } = withCalledHand();
+    const multi = { ...context, dealtCount: 3 };
+    hand.playersDealt = 3;
+    fixture.response.data.window.context = multi;
+    // A third participant is public and folded before the two-player river.
+    hand.actions.unshift({
+      userId: '44444444-4444-4444-8444-444444444444',
+      seat: 3,
+      action: 'fold',
+      amount: 0,
+      stage: 'preflop',
+      timestamp: 0,
+    });
+    fixture.categoryAbort.mockResolvedValue({ data: [], error: null });
+    const base = structuredClone(fixture.response.data.window);
+    const second = vi.fn(async (_signal: AbortSignal) => {
+      if (mode === 'throw') throw Error('missing RPC');
+      if (mode === 'missing') return { data: null, error: { message: 'missing RPC' } };
+      const { HORSE_RIVER_NODE_DEFINITION_MD5, riverNodeBindings } =
+        await import('../engine/horseDecision/riverNodeSidecar.js');
+      return {
+        error: null,
+        data: {
+          version: 1,
+          status: 'captured',
+          definitionMd5: mode === 'stale' ? '0'.repeat(32) : HORSE_RIVER_NODE_DEFINITION_MD5,
+          hands: riverNodeBindings(base).map((b) => ({
+            handId: b.handId,
+            binding: b.binding,
+            status: 'unavailable',
+            reason: 'incomplete_or_bounded_nodes',
+          })),
+        },
+      };
+    });
+    fixture.rpc.mockImplementation((name) => ({
+      abortSignal: name === 'fn_horse_own_public_history_read_v3' ? fixture.abort : second,
+    }));
+    const result: any = await readHorseOwnPublicHistory(multi);
+    expect(fixture.rpc).toHaveBeenCalledTimes(2);
+    const original = fixture.rpc.mock.calls[0][1],
+      enriched = fixture.rpc.mock.calls[1][1];
+    expect(enriched).toMatchObject({
+      p_observer: original.p_observer,
+      p_variant: original.p_variant,
+      p_dealt_count: 3,
+      p_before: original.p_before,
+    });
+    expect(second.mock.calls[0][0]).toBe(fixture.abort.mock.calls[0][0]);
+    expect(result.hands[0].actions).toEqual(base.hands[0].actions);
+    expect(result.hands[0].riverNodeEvidence).toBe(mode === 'captured' ? 'unavailable' : undefined);
+    expect(fixture.response.data.window).toEqual(base);
+  }
+);

@@ -229,15 +229,15 @@ export function benchmark(
     if (value < bandLo) {
       bandPosition = 'below';
       tone = 'bad';
-      readout = `${value.toFixed(1)}${def.unit} is below the ${bandLo}-${bandHi}${def.unit} range most winning players sit in. ${def.lowNote ?? ''}`;
+      readout = `${value.toFixed(1)}${def.unit} is below the ${bandLo}-${bandHi}${def.unit} general reference range. Format And Table Size Can Change The Appropriate Range.`;
     } else if (value > bandHi) {
       bandPosition = 'above';
       tone = 'bad';
-      readout = `${value.toFixed(1)}${def.unit} is above the ${bandLo}-${bandHi}${def.unit} range most winning players sit in. ${def.highNote ?? ''}`;
+      readout = `${value.toFixed(1)}${def.unit} is above the ${bandLo}-${bandHi}${def.unit} general reference range. Format And Table Size Can Change The Appropriate Range.`;
     } else {
       bandPosition = 'inside';
       tone = 'good';
-      readout = `${value.toFixed(1)}${def.unit} sits inside the ${bandLo}-${bandHi}${def.unit} range most winning players hold.`;
+      readout = `${value.toFixed(1)}${def.unit} sits inside the ${bandLo}-${bandHi}${def.unit} general reference range. Format And Table Size Can Change The Appropriate Range.`;
     }
 
     return {

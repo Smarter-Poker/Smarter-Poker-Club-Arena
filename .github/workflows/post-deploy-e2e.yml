@@ -81,12 +81,19 @@ jobs:
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
           MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
+          HORSE_SOCIAL_JSON: ${{ toJSON(github.event.client_payload.horse_social) }}
           MOBILE_MULTIRUN_TARGET_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun_target) }}
           CLIENT_NAVIGATION_JSON: ${{ toJSON(github.event.client_payload.client_navigation) }}
           CLIENT_NAVIGATION_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = repository_dispatch ]; then
+            # One explicitly requested natural observation per fixture budget.
+            # Horse evidence is valid only for an exact engine-triggered run.
+            if [ "${HORSE_SOCIAL_JSON-null}" != null ]; then
+              { [ "$HORSE_SOCIAL_JSON" = true ] && [ "$MOBILE_MULTIRUN_JSON" = null ] && [ "$MOBILE_MULTIRUN_TARGET_JSON" = null ] && [ "$CLIENT_NAVIGATION_JSON" = null ] && [ "$ENGINE_TRIGGER_JSON" != null ]; } \
+                || { echo '::error::Horse social proof requires literal true, one engine pin and no other observation mode.'; exit 1; }
+            fi
             if node -e 'const p=JSON.parse(process.env.CLIENT_NAVIGATION_PAYLOAD || "null"); process.exit(p && Object.hasOwn(p,"client_navigation") ? 0 : 1)'; then
               [ "${CLIENT_NAVIGATION_JSON-null}" = true ] \
                 || { echo '::error::client_navigation must be literal true.'; exit 1; }
@@ -1378,7 +1385,7 @@ jobs:
     # Two proven natural MTT closures may each require another complete subject:
     # 2 x (390s startup + 15m maximum HUD clock + 60s reserve) = 45m.
     # Preserve the existing 76/98-minute overhead and optional multirun budget.
-    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && 156 || github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 143 || 121 }}
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && (toJSON(github.event.client_payload.mobile_multirun) == 'true' || toJSON(github.event.client_payload.horse_social) == 'true') && 143 || 121 }}
     permissions:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary

@@ -2275,7 +2275,7 @@ test('natural horse social behavior reaches the live table', async ({
     process.env.HORSE_SOCIAL_CERTIFICATION !== '1',
     'Explicit post-cutover horse observation only'
   );
-  testInfo.setTimeout(35 * 60_000);
+  testInfo.setTimeout(22 * 60_000);
   requireCertificationConfiguration(testInfo, browserName);
   execFileSync('git', [
     'merge-base',
@@ -2359,7 +2359,7 @@ test('natural horse social behavior reaches the live table', async ({
   await expect(page.locator('.seat__avatar').first()).toBeVisible({ timeout: 30_000 });
   const proofs: Record<string, unknown>[] = [];
   const screenshots = new Set<string>();
-  const deadline = Date.now() + 30 * 60_000;
+  const deadline = Date.now() + 20 * 60_000;
   let lastDatabaseRead = 0;
   const knownHorses = new Set<string>();
   const checkedSenders = new Set<string>();

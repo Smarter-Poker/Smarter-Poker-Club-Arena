@@ -217,6 +217,11 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const privateRecordHosting =
+    paths.includes('server/tsconfig.private-record-gateway.json') ||
+    matches(
+      /^(?:infra\/ca-origin\/(?!.*\.md$)[^/]+$|scripts\/ci\/(?:private-record-gateway-[^/]+\.(?:mjs|sql)|private-record-compatibility\.test\.mjs|(?:test-private-record-hosting|test-private-record-bootstrap-linux|test-private-record-credentials-postgres|build-private-record-gateway)\.sh)$|scripts\/ci\/fixtures\/private-record-(?:bootstrap-linux|credentials-postgres)\.mjs$|server\/scripts\/privateRecordGateway[^/]+\.mts$|scripts\/dev\/test-member-record-live-postgres\.sh$|tests\/fixtures\/stats-club-scope\/member-record-live\/|tests\/unit\/privateRecordHosting\.test\.ts$)/
+    );
   const cashHalfNative = matches(/^scripts\/qualification\/test-cash-half-top-horses\.py$/);
   const onTimeMaintenance = matches(
     /^scripts\/ci\/(?:test-on-time-maintenance-thaw\.py$|test-multi-day-stage-foundation\.py$|fixtures\/on-time-start\/)/
@@ -387,6 +392,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      privateRecordHosting ||
       cashHalfNative ||
       // Default opening reuses funded welcome reserves and the real publisher.
       matches(
@@ -448,6 +454,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      privateRecordHosting ||
       cashHalfNative ||
       matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||

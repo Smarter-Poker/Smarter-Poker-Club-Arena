@@ -84,6 +84,7 @@ jobs:
       actions: read
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
+      component: ${{ steps.target.outputs.component }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
       publish: ${{ steps.runtime.outputs.publish }}
     steps:
@@ -122,6 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}
+          REQUESTED_COMPONENT: ${{ github.event.client_payload.component || 'client' }}
         run: |
           set -euo pipefail
           TIP=$(timeout 30s gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
@@ -137,6 +139,10 @@ jobs:
             TARGET="$REQUESTED_SHA"
           fi
 
+          COMPONENT=client
+          if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then COMPONENT="$REQUESTED_COMPONENT"; fi
+          case "$COMPONENT" in client|private-record-gateway|private-record-bootstrap|private-record-credentials) ;; *) echo '::error::Unknown publication component'; exit 1;; esac
+          echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
           echo "sha=$TARGET" >> "$GITHUB_OUTPUT"
           echo "Publishing target: ${TARGET:0:7}; current main: ${TIP:0:7}; trigger: ${GITHUB_SHA:0:7}"
 
@@ -152,9 +158,14 @@ jobs:
         id: runtime
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/ci/client-runtime-retention.mjs admit "${{ steps.target.outputs.sha }}"
+        run: |
+          if [ "${{ steps.target.outputs.component }}" != client ]; then
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci/client-runtime-retention.mjs admit "${{ steps.target.outputs.sha }}"
+          fi
       - name: Preserve immutable runtime admission evidence
-        if: steps.runtime.outputs.publish == 'false'
+        if: steps.target.outputs.component == 'client' && steps.runtime.outputs.publish == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-runtime-admission
@@ -259,7 +270,7 @@ jobs:
     # Runs unless this exact TREE already passed the same suite on the pull
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
-    if: needs.publish-needed.outputs.tests_proven != 'true'
+    if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -306,6 +317,7 @@ jobs:
     if: >-
       always() &&
       needs.publish-needed.result == 'success' &&
+      needs.publish-needed.outputs.component == 'client' &&
       needs.publish-needed.outputs.publish == 'false' &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
@@ -477,6 +489,8 @@ jobs:
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          # Remains off until a protected source change follows hosted qualification.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
           VITE_APP_ENV: production
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
@@ -724,6 +738,8 @@ jobs:
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          # Remains off until a protected source change follows hosted qualification.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
           VITE_APP_ENV: production
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
@@ -1255,3 +1271,225 @@ jobs:
           path: publisher-verdict.json
           if-no-files-found: error
           retention-days: 7
+
+  build-record-gateway:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'private-record-gateway'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout the admitted gateway source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compile and qualify the gateway
+        working-directory: server
+        run: |
+          npm ci --ignore-scripts
+          node_modules/.bin/tsc -p tsconfig.private-record-gateway.json
+          node_modules/.bin/vitest run src/transport/PrivateRecordGateway.test.ts src/transport/privateRecordGatewayRuntime.test.ts src/services/supabase/privateRecordListener.test.ts src/transport/PrivateRecordSubscriptions.test.ts src/transport/AuthorizedPrivateSend.test.ts --maxWorkers=2 --minWorkers=1
+      - name: Seal the independent runtime
+        run: bash scripts/ci/build-private-record-gateway.sh "$RUNNER_TEMP/gateway-artifact" "${{ needs.publish-needed.outputs.target_sha }}"
+      - name: Package immutable gateway subject
+        run: |
+          mkdir "$RUNNER_TEMP/gateway-transfer"
+          tar -czf "$RUNNER_TEMP/gateway-transfer/runtime.tar.gz" -C "$RUNNER_TEMP/gateway-artifact" .
+      - name: Attest the protected gateway build
+        id: gateway-attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/gateway-transfer/runtime.tar.gz
+      - name: Retain verification bundle beside its exact subject
+        env:
+          BUNDLE: ${{ steps.gateway-attestation.outputs.bundle-path }}
+        run: cp "$BUNDLE" "$RUNNER_TEMP/gateway-transfer/attestation.jsonl"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: private-record-gateway-${{ needs.publish-needed.outputs.target_sha }}
+          path: ${{ runner.temp }}/gateway-transfer
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-record-gateway:
+    needs: [publish-needed, build-record-gateway]
+    if: needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+      REVISION: ${{ needs.publish-needed.outputs.target_sha }}
+    steps:
+      - name: Checkout the admitted publication controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: private-record-gateway-${{ needs.publish-needed.outputs.target_sha }}
+          path: gateway-artifact
+      - name: Configure the dedicated gateway publisher identity
+        env:
+          KEY: ${{ secrets.CA_RECORD_GATEWAY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ]
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/ca_origin"
+          printf '%s\n' "$HOST_KEY" > "$HOME/.ssh/ca_origin_known_hosts"
+          ssh-keygen -y -f "$HOME/.ssh/ca_origin" >/dev/null
+      - name: Activate only the prepared independent service
+        run: |
+          set -euo pipefail
+          SSH=(ssh -i "$HOME/.ssh/ca_origin" -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
+          gh attestation verify gateway-artifact/runtime.tar.gz --bundle gateway-artifact/attestation.jsonl --repo Smarter-Poker/Smarter-Poker-Club-Arena --signer-workflow Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml --source-ref refs/heads/main --deny-self-hosted-runners
+          STAGE="$REVISION.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
+          "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" <<'REMOTE'
+          set -euo pipefail
+          [[ "$1" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
+          test -x /usr/local/libexec/ca-private-record-gateway-activate
+          sudo -n -l /usr/local/libexec/ca-private-record-gateway-activate >/dev/null
+          mkdir "/srv/ca-private-record-gateway/incoming/$1"
+          REMOTE
+          RSYNC_RSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes"
+          rsync -a --fsync -e "$RSYNC_RSH" gateway-artifact/ "ca-record-publisher@$ORIGIN_HOST:/srv/ca-private-record-gateway/incoming/$STAGE/"
+          "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" "$REVISION" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          OLD=none
+          if [ -L /run/ca-private-record-gateway/active.sock ]; then
+            TARGET=$(readlink /run/ca-private-record-gateway/active.sock)
+            [[ "$TARGET" =~ ^[0-9a-f]{40}/listener\.sock$ ]]
+            OLD="${TARGET%%/*}"
+          fi
+          sudo -n /usr/local/libexec/ca-private-record-gateway-activate "$1" "$2" "$OLD" "$3"
+          REMOTE
+      - name: Remove ephemeral origin credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"
+
+  bootstrap-record-gateway:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'private-record-bootstrap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+      ENGINE_HOST: ${{ secrets.HETZNER_HOST }}
+      REVISION: ${{ needs.publish-needed.outputs.target_sha }}
+    steps:
+      - name: Checkout exact protected infrastructure controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked bootstrap verification driver
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify bootstrap admission and rollback controls
+        run: node --test scripts/ci/private-record-gateway-bootstrap.test.mjs
+      - name: Verify dedicated session before any origin mutation
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+        run: node scripts/ci/private-record-gateway-credentials.mjs verify
+      - name: Admit dedicated canonical credentials before any host mutation
+        env:
+          ADMIN_KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          ADMIN_HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+          ENGINE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          ENGINE_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+          GATEWAY_KEY: ${{ secrets.CA_RECORD_GATEWAY_SSH_KEY }}
+          CANONICAL_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+          API_URL: ${{ secrets.SUPABASE_URL }}
+          API_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$ENGINE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          for name in ADMIN_KEY ADMIN_HOST_KEY ENGINE_KEY ENGINE_HOST_KEY GATEWAY_KEY CANONICAL_DATABASE_URL PRIVATE_RECORD_GATEWAY_DB_PASSWORD API_URL API_KEY; do
+            [ -n "${!name}" ] || { echo "::error::Required canonical configuration $name is absent; no host operation admitted."; exit 1; }
+          done
+          umask 077
+          mkdir -p "$RUNNER_TEMP/gateway-bootstrap"
+          printf '%s\n' "$ADMIN_KEY" > "$RUNNER_TEMP/gateway-bootstrap/admin-key"
+          printf '%s\n' "$ADMIN_HOST_KEY" > "$RUNNER_TEMP/gateway-bootstrap/admin-host"
+          printf '%s\n' "$ENGINE_KEY" > "$RUNNER_TEMP/gateway-bootstrap/engine-key"
+          printf '%s\n' "$ENGINE_HOST_KEY" > "$RUNNER_TEMP/gateway-bootstrap/engine-host"
+          printf '%s\n' "$GATEWAY_KEY" > "$RUNNER_TEMP/gateway-bootstrap/gateway-key"
+          ssh-keygen -y -f "$RUNNER_TEMP/gateway-bootstrap/gateway-key" > "$RUNNER_TEMP/gateway-bootstrap/publisher.pub"
+          ssh -i "$RUNNER_TEMP/gateway-bootstrap/engine-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/gateway-bootstrap/engine-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$ENGINE_HOST" 'cat /etc/machine-id' > "$RUNNER_TEMP/gateway-bootstrap/engine-machine-id"
+          gh attestation trusted-root > "$RUNNER_TEMP/gateway-bootstrap/trusted-root.jsonl"
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { deriveGatewayConnection } from './scripts/ci/private-record-gateway-credentials.mjs';
+          import { gatewayMachineIdSha256 } from './scripts/ci/private-record-gateway-host-identity.mjs';
+          const root = process.env.RUNNER_TEMP + '/gateway-bootstrap/';
+          const config = { revision: process.env.REVISION, runId: process.env.GITHUB_RUN_ID, engineMachineIdSha256: gatewayMachineIdSha256(readFileSync(root+'engine-machine-id')), publisherPublicKey: readFileSync(root+'publisher.pub','utf8').trim(), trustedRoot: readFileSync(root+'trusted-root.jsonl','utf8'), environment: { PRIVATE_RECORD_GATEWAY_DATABASE_URL: deriveGatewayConnection(process.env.CANONICAL_DATABASE_URL,process.env.PRIVATE_RECORD_GATEWAY_DB_PASSWORD), SUPABASE_URL: process.env.API_URL, SUPABASE_SERVICE_ROLE_KEY: process.env.API_KEY } };
+          writeFileSync(root+'input.json', JSON.stringify(config), {mode:0o600});
+          NODE
+      - name: Install inert prerequisites through the existing protected provider
+        run: |
+          set -euo pipefail
+          PRIVATE="$RUNNER_TEMP/gateway-bootstrap"
+          SSH=(ssh -i "$PRIVATE/admin-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$PRIVATE/admin-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20)
+          REMOTE="/var/lib/ca-private-record-bootstrap-$GITHUB_RUN_ID"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n mkdir -m 0700 "$REMOTE"
+          tar -czf "$PRIVATE/source.tar.gz" infra/ca-origin scripts/ci/private-record-gateway-activate.mjs scripts/ci/private-record-gateway-artifact.mjs scripts/ci/private-record-gateway-boot.mjs scripts/ci/private-record-gateway-bootstrap.mjs scripts/ci/private-record-gateway-host-identity.mjs
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n tar --no-same-owner -xzf - -C "$REMOTE" < "$PRIVATE/source.tar.gz"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n /usr/bin/node "$REMOTE/scripts/ci/private-record-gateway-bootstrap.mjs" "$REMOTE" < "$PRIVATE/input.json"
+          "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n rm -rf -- "$REMOTE"
+      - name: Remove only this runner's bootstrap credentials
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/gateway-bootstrap"
+
+  install-record-gateway-credentials:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'private-record-credentials'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact protected credential controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked database driver
+        working-directory: server
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Qualify credential admission and no-rotation behavior
+        run: node --test scripts/ci/private-record-gateway-credentials.test.mjs
+      - name: Install only the dedicated listener credential
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
+        run: node scripts/ci/private-record-gateway-credentials.mjs

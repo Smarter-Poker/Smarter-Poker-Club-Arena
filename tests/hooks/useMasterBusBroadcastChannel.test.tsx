@@ -63,6 +63,7 @@ vi.mock('../../src/utils/errorReporter', () => ({
 
 import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadcastChannel';
 import { __resetRealtimeTransportLossForTests } from '../../src/lib/realtimeTransportLoss';
+import { PrivateRecordFailover } from '../../src/services/PrivateRecordFailover';
 
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
@@ -107,6 +108,41 @@ describe('useMasterBusBroadcastChannel', () => {
   const authEvent = (event: string) => {
     for (const listener of [...mocks.authListeners]) listener(event);
   };
+
+  it.each(['reconnecting', 'failed', 'auth_failed', 'access_refused'])(
+    'does not demote an already-ready standby when the primary is %s',
+    (primaryStatus) => {
+      const trace: Array<[string, string]> = [];
+      mocks.engineStatus.mockReturnValue(primaryStatus);
+      const failover = new PrivateRecordFailover(
+        {
+          onPrivateRecord(topic, callback) {
+            callback({ type: 'PRIVATE_RECORD_STATUS', topic, ready: false, phase: 'connecting' });
+            return vi.fn();
+          },
+        },
+        {
+          onPrivateRecord(topic, callback) {
+            callback({ type: 'PRIVATE_RECORD_STATUS', topic, ready: true });
+            return vi.fn();
+          },
+        }
+      );
+      mocks.privateRecord.mockImplementation((topic, callback) =>
+        failover.onPrivateRecord(topic, callback)
+      );
+      renderHook(() =>
+        useMasterBusBroadcastChannel({
+          channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+          event: 'record_changed',
+          onPayload: vi.fn(),
+          onSubscriptionStatus: (status) => trace.push(['status', status]),
+          onSubscriptionError: (status) => trace.push(['error', status]),
+        })
+      );
+      expect(trace.at(-1)).toEqual(['status', 'SUBSCRIBED']);
+    }
+  );
 
   it('keeps paid fallback until an authorized ready acknowledgment and restores it on loss', async () => {
     const status = vi.fn();

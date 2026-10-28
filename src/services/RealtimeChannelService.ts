@@ -29,6 +29,7 @@
  */
 
 import { engineChannelClient } from './EngineStateClient';
+import { resetPrivateRecordFallbackSession } from './PrivateRecordTransport';
 import type {
   ClubPresenceUpdateMessage,
   ClubEventMessage,
@@ -159,6 +160,7 @@ class RealtimeChannelService {
     this.subscriptions.clear();
     this.presenceState.clear();
     engineChannelClient.resetSession(userId !== null);
+    resetPrivateRecordFallbackSession(userId !== null);
   }
 
   /** One server subscription can serve several independently mounted consumers. */

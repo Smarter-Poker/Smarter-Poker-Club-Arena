@@ -1495,6 +1495,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-runtime-privilege-ddl-guard-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Independent private record fallback and hosting
+        if: matrix.shard == 2
+        env:
+          PG17_BINDIR: /usr/lib/postgresql/17/bin
+        run: bash scripts/ci/test-private-record-hosting.sh
       - name: Retention bounds retained prefixes before accounting guards
         if: matrix.shard == 4
         env:

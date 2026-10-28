@@ -133,3 +133,36 @@ describe('the publication gate and a publisher that never reached the origin', (
     expect(result.error).not.toBeNull();
   });
 });
+
+describe('a gateway component is not a static client publication', () => {
+  it('leaves client certification unclaimed after a qualified gateway-only publication', () => {
+    const gateway = job('publish-record-gateway', 'success');
+    gateway.steps = [
+      {
+        name: 'Activate only the prepared independent service',
+        status: 'completed',
+        conclusion: 'success',
+      },
+    ];
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      gateway,
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+  it('does not hide an incomplete gateway installation as a successful client standdown', () => {
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      job('publish-record-gateway', 'failure', 2),
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+});

@@ -160,6 +160,31 @@ jobs:
           // source run's own top-level conclusion is still never consulted -
           // an optional Capgo failure must not suppress web E2E.
           if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const credential = payload.jobs.filter(entry => entry?.name === 'install-record-gateway-credentials');
+          if (credential.length === 1 && credential[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (credential[0].steps ?? []).filter(entry => entry.name === 'Install only the dedicated listener credential');
+            if (credential[0].status !== 'completed' || credential[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Dedicated listener credential is incomplete; no gateway activation or client publication certified.');
+            console.log('Dedicated listener credential only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const bootstrap = payload.jobs.filter(entry => entry?.name === 'bootstrap-record-gateway');
+          if (bootstrap.length === 1 && bootstrap[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (bootstrap[0].steps ?? []).filter(entry => entry.name === 'Install inert prerequisites through the existing protected provider');
+            if (bootstrap[0].status !== 'completed' || bootstrap[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Gateway bootstrap is incomplete; no activation or client publication is certified.');
+            console.log('Gateway bootstrap only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const gateway = payload.jobs.filter((entry) => entry?.name === 'publish-record-gateway');
+          const gatewayOnly = gateway.length === 1 && gateway[0].conclusion !== 'skipped' &&
+            jobs.length === 1 && jobs[0].conclusion === 'skipped' &&
+            payload.jobs.filter(entry => entry?.name === 'retain-runtime').every(entry => entry.conclusion === 'skipped');
+          if (gatewayOnly) {
+            const builds = payload.jobs.filter(entry => entry?.name === 'build-record-gateway');
+            const proofs = (gateway[0].steps ?? []).filter(entry => entry.name === 'Activate only the prepared independent service');
+            if (builds.length !== 1 || builds[0].conclusion !== 'success' || gateway[0].status !== 'completed' || gateway[0].conclusion !== 'success' || proofs.length !== 1 || proofs[0].status !== 'completed' || proofs[0].conclusion !== 'success') throw new Error('Independent gateway installation is incomplete; no client publication is certified.');
+            console.log('Gateway component only; client publication and client E2E remain unclaimed.');
+            process.exit(0);
+          }
           const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
           const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
             ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>

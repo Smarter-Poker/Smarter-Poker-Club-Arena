@@ -1,4 +1,4 @@
-import { engineChannelClient } from '../services/EngineStateClient';
+import { privateRecordTransport as engineChannelClient } from '../services/PrivateRecordTransport';
 /**
  * Private Supabase Broadcast subscription owned by the MasterBus registry.
  *
@@ -109,7 +109,10 @@ export function useMasterBusBroadcastChannel({
         } else callbackRef.current({ payload: {} });
       });
       // Joining an already failed/reconnecting singleton need not change status.
+      // An existing standby may have acknowledged READY synchronously above.
+      // Its topic readiness takes authority over the primary's coarse status.
       if (
+        !engineReadyRef.current &&
         ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(
           engineChannelClient.getStatus()
         )

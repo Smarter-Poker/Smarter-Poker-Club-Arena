@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "edaf58fa20ae5f525956d1633ffe9a7f81c453a4e64f75f7192593d548ca6350",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "bba16848ad0adb7d646a3c43b42258c71403de7ccc62c946ca266e98503eb090",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -242,5 +242,10 @@
     "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
     "currentSHA256": "edaf58fa20ae5f525956d1633ffe9a7f81c453a4e64f75f7192593d548ca6350",
     "change": "Adds only three exact summary source paths and one maintained PG17 current-summary/current-view NULL and non-NULL scope native step. All existing qualification steps and source assertions remain unchanged. Reviewed exact workflow diff; no production closure claim."
+  },
+  "workflowPrivateDepositCoverAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "currentSHA256": "bba16848ad0adb7d646a3c43b42258c71403de7ccc62c946ca266e98503eb090",
+    "change": "Only three new private-deposit source-cover paths and one isolated PG17 physical index qualification step. All prior original financial qualification commands, cases and assertions retained. Physical native plan evidence is not production book closure."
   }
 }

@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/**
+      - scripts/ci/fixtures/private-deposit-source-cover/**
+      - scripts/ci/test-private-deposit-source-cover-postgres.py
+      - tests/private-deposit-key-index-keeps-original-sources.law.test.ts
       - scripts/ci/fixtures/weekly-summary-coordinator-scope/**
       - scripts/ci/test-weekly-summary-coordinator-scope-postgres.py
       - tests/weekly-summary-preserves-nullable-source-scope.law.test.ts
@@ -106,3 +109,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-summary-coordinator-scope-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-summary-coordinator-scope.json"
+      - name: Original private deposit key discovery reads scalar source witnesses
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-private-deposit-source-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-deposit-source-cover.json"

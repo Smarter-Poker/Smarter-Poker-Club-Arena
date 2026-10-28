@@ -109,8 +109,8 @@ describe('LAW: the horse says nothing it was not told', () => {
     }
   });
 
-  it('no line carries a placeholder other than potBB, street, hand and seat', () => {
-    expect(TALK_PLACEHOLDERS).toEqual(['potBB', 'street', 'hand', 'seat']);
+  it('BB pot amounts are forbidden; only street, hand and seat may be filled', () => {
+    expect(TALK_PLACEHOLDERS).toEqual(['street', 'hand', 'seat']);
     for (const { line } of everyLine()) {
       for (const m of line.matchAll(/\{([^}]*)\}/g)) {
         expect(TALK_PLACEHOLDERS, `"${line}" carries {${m[1]}}`).toContain(m[1]);

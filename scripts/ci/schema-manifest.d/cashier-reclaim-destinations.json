@@ -1,0 +1,4 @@
+{
+  "_owner": "Cashier reclaim destination and chip movement history, 2026-10-27; installed by Supabase apply_migration as version 20261027160320, with qualified function hashes read back on 2026-10-27 at 16:03 UTC.",
+  "functions": ["fn_club_wallet_claim_back"]
+}

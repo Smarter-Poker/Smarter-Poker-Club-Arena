@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   payloadCallbacks: [] as Array<(payload: unknown) => void>,
 }));
 
+vi.mock('../../src/services/PrivateRecordTransport', () => ({
+  privateRecordTransport: { onPrivateRecord: mocks.privateRecord, getStatus: mocks.engineStatus },
+}));
+
 vi.mock('../../src/services/EngineStateClient', () => ({
   engineChannelClient: {
     onPrivateRecord: mocks.privateRecord,
@@ -111,7 +115,7 @@ describe('useMasterBusBroadcastChannel', () => {
 
   it.each(['reconnecting', 'failed', 'auth_failed', 'access_refused'])(
     'does not demote an already-ready standby when the primary is %s',
-    (primaryStatus) => {
+    async (primaryStatus) => {
       const trace: Array<[string, string]> = [];
       mocks.engineStatus.mockReturnValue(primaryStatus);
       const failover = new PrivateRecordFailover(
@@ -140,7 +144,7 @@ describe('useMasterBusBroadcastChannel', () => {
           onSubscriptionError: (status) => trace.push(['error', status]),
         })
       );
-      expect(trace.at(-1)).toEqual(['status', 'SUBSCRIBED']);
+      await waitFor(() => expect(trace.at(-1)).toEqual(['status', 'SUBSCRIBED']));
     }
   );
 
@@ -159,6 +163,7 @@ describe('useMasterBusBroadcastChannel', () => {
       })
     );
     await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
     await waitFor(() => expect(mocks.removeRegisteredChannel).toHaveBeenCalled());
     expect(status).toHaveBeenCalledWith('SUBSCRIBED');
@@ -188,6 +193,7 @@ describe('useMasterBusBroadcastChannel', () => {
         })
       );
       await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+      await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
       act(() => {
         mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true });
         // Network callbacks can share a React batch: cleanup has not run yet.
@@ -212,6 +218,7 @@ describe('useMasterBusBroadcastChannel', () => {
         onSubscriptionStatus: status,
       })
     );
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     status.mockClear();
     const retired = mocks.privateListener;
     expect(mocks.privateRecord).toHaveBeenCalledTimes(1);
@@ -249,6 +256,7 @@ describe('useMasterBusBroadcastChannel', () => {
       })
     );
     await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     act(() =>
       mocks.privateListener?.({
         type: 'PRIVATE_RECORD_STATUS',

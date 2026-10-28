@@ -63,7 +63,7 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
     'src/engine/HorseHeadsUpCommitment.ts':
-      'qualified cash NLH heads-up matchable exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
+      'qualified cash NLH and high-only PLO heads-up matchable exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',

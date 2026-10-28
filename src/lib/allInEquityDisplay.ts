@@ -15,6 +15,7 @@ export interface AllInEquityEntry {
   userId: string;
   username: string;
   equity: number;
+  equityRaw?: number;
   seat: number;
 }
 
@@ -29,7 +30,9 @@ export function validAllInEquityEntries(value: unknown): value is AllInEquityEnt
       !e.userId ||
       ids.has(e.userId) ||
       typeof e.equity !== 'number' ||
-      formatAllInEquity(e.equity) === null
+      formatAllInEquity(e.equity) === null ||
+      (e.equityRaw !== undefined &&
+        (typeof e.equityRaw !== 'number' || formatAllInEquity(e.equityRaw) === null))
     )
       return false;
     ids.add(e.userId);

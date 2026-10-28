@@ -116,10 +116,11 @@ export function captureAllInEquity(tableId: string, payload: Record<string, unkn
     if (!Array.isArray(raw) || raw.length === 0) return;
 
     const byUser = new Map<string, number>();
-    for (const e of raw as Array<{ userId?: string; equity?: number }>) {
-      if (!e?.userId || typeof e.equity !== 'number' || !Number.isFinite(e.equity)) continue;
-      // The event carries a full-precision percentage; store the fraction.
-      const fraction = Math.min(1, Math.max(0, e.equity / 100));
+    for (const e of raw as Array<{ userId?: string; equity?: number; equityRaw?: number }>) {
+      const percent = e?.equityRaw === undefined ? e?.equity : e.equityRaw;
+      if (!e?.userId || typeof percent !== 'number' || !Number.isFinite(percent)) continue;
+      // Prefer full precision; legacy events carry only the display percentage.
+      const fraction = Math.min(1, Math.max(0, percent / 100));
       byUser.set(e.userId, fraction);
     }
     if (byUser.size === 0) return;

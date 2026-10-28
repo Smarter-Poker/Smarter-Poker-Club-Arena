@@ -104,8 +104,8 @@ describe('worker-only insurance runout authority', () => {
         exact: true,
         board_count: 1,
         equities: [
-          expect.objectContaining({ equity: 82.6366112559452 }),
-          expect.objectContaining({ equity: 17.3633887440548 }),
+          expect.objectContaining({ equity: 82.6, equityRaw: 82.6366112559452 }),
+          expect.objectContaining({ equity: 17.4, equityRaw: 17.3633887440548 }),
         ],
       })
     );
@@ -130,7 +130,7 @@ describe('worker-only insurance runout authority', () => {
       replayed: true,
       boards: [[]],
     });
-    expect(event.payload.equities[0].equity).toBeCloseTo(100 / 990, 12);
+    expect(event.payload.equities[0].equityRaw).toBeCloseTo(100 / 990, 12);
   });
 
   it('sends pot eligibility, hi-lo and other exposed cards to every board worker', async () => {

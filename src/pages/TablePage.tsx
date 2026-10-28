@@ -13558,6 +13558,7 @@ function LiveTablePage({
           userId: string;
           username: string;
           equity: number;
+          equityRaw?: number;
           seat: number;
         }>;
         const currentHand =
@@ -13568,7 +13569,12 @@ function LiveTablePage({
           const boards = Array.isArray(handState.boards) ? handState.boards : [handState.board];
           const boardKey = allInEquityBoardKey(boards);
           setAllInEquities(
-            equities.map((e) => ({ ...e, boardKey, exact: handState.exact === true }))
+            equities.map((e) => ({
+              ...e,
+              boardKey,
+              equity: e.equityRaw ?? e.equity,
+              exact: handState.exact === true && e.equityRaw !== undefined,
+            }))
           );
           /* Dan 2026-08-30: "ANYTIME THERE IS AN ALL IN, ALL CARDS ARE ALWAYS
              SHOW[N]" in a tournament — so the voluntary Show Hand button must

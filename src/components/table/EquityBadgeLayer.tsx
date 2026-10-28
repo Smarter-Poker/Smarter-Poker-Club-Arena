@@ -104,9 +104,14 @@ export function EquityBadgeLayer({
   const [placements, setPlacements] = useState<Record<string, EquityBadgePlacement>>({});
   const [measureTick, setMeasureTick] = useState(0);
   /* Position depends on WHICH seats carry a badge and where they may go, not
-     on the number printed in it - the street-by-street change of a percentage
-     must not re-measure the felt. */
-  const signature = badges.map((b) => `${b.seatNumber}:${b.order.join('')}`).join('|');
+     on equal-width numbers. A label length change (notably Unknown) must
+     re-measure so a wider label cannot grow over a displayed card. */
+  const signature = badges
+    .map(
+      (b) =>
+        `${b.seatNumber}:${b.order.join('')}:${formatAllInEquity(b.equity, b.exact)?.length ?? 0}`
+    )
+    .join('|');
 
   const hasBadges = badges.length > 0;
   useLayoutEffect(() => {

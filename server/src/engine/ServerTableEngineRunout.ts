@@ -9,6 +9,7 @@
  */
 
 import { HandController, scaleWinnerCentsForRake } from './HandController.js';
+import { legacyAllInPercent } from './AllInEquityPresentation.js';
 import { InsuranceEngine } from './InsuranceEngine.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
@@ -2861,7 +2862,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       equities: players.map((player, index) => ({
         userId: player.user_id,
         username: player.username || 'Unknown',
-        equity: percentages[index],
+        equity: legacyAllInPercent(percentages[index]),
+        equityRaw: percentages[index],
         seat: player.seat,
       })),
     });

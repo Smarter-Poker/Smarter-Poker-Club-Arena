@@ -34,6 +34,7 @@ describe('all-in probabilities never invent endpoints', () => {
     const a = { userId: 'a', username: 'A', seat: 1, equity: 20 };
     const b = { userId: 'b', username: 'B', seat: 2, equity: 80 };
     expect(validAllInEquityEntries([a, b])).toBe(true);
+    expect(validAllInEquityEntries([{ ...a, equityRaw: NaN }, b])).toBe(false);
     for (const field of [
       [],
       [a],

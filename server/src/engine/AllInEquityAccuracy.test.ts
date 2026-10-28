@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Card } from '../types.js';
+import { legacyAllInPercent } from './AllInEquityPresentation.js';
 import { computeEquity } from './equity/equityWorker.js';
 import {
   evaluateHand,
@@ -20,6 +21,13 @@ const cards = (text: string): Card[] =>
     })) as Card[];
 
 describe('exact all-in display equity', () => {
+  it('keeps legacy labels short without manufacturing endpoint certainty', () => {
+    expect(legacyAllInPercent(82.6366112559452)).toBe(82.6);
+    expect(legacyAllInPercent(0.001234567)).toBe(0.0012);
+    expect(legacyAllInPercent(99.999999)).toBe(99.9);
+    expect(legacyAllInPercent(0)).toBe(0);
+    expect(legacyAllInPercent(100)).toBe(100);
+  });
   it('finds the one backdoor royal runout even with a one-trial budget', () => {
     // Only Jh + Qh can beat quads. A 1000-trial sample may never draw it.
     const equities = computeEquity([cards('Ah Kh'), cards('2c 2s')], cards('2h 2d Th'), [], 1, {

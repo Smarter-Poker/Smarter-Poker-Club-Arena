@@ -24,6 +24,13 @@
  */
 
 let frozen = false;
+let freezeStartedAtMs: number | null = null;
+let frozenElapsedMs = 0;
+
+/** Player decision clocks exclude maintenance, including a fully parked loop. */
+export function maintenanceActiveNow(): number {
+  return (freezeStartedAtMs ?? Date.now()) - frozenElapsedMs;
+}
 
 /**
  * THE LAST-HAND SETTLEMENT WINDOW (2026-10-03).
@@ -71,6 +78,11 @@ const thawListeners = new Set<MaintenanceThawListener>();
 
 export function setMaintenanceFrozen(value: boolean): void {
   const wasFrozen = frozen;
+  if (!wasFrozen && value) freezeStartedAtMs = Date.now();
+  if (wasFrozen && !value && freezeStartedAtMs !== null) {
+    frozenElapsedMs += Math.max(0, Date.now() - freezeStartedAtMs);
+    freezeStartedAtMs = null;
+  }
   frozen = value;
   // Every freeze edge closes the last-hand settlement window; only the
   // announcement reopens it, after this call (setLastHandSettlementWindow).

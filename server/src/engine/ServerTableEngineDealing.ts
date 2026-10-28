@@ -67,7 +67,7 @@ import {
   handCompletionHoldMs,
   boardClearMs,
 } from '../config/handCompletionSpec.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { maintenanceActiveNow, isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { presenceFromFsm } from '../lightning/LightningPresence.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
 import {
@@ -4118,6 +4118,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * is skipped outright.
    */
   private bustedSince: Map<string, number> = new Map();
+  private lightningBustedSince: Map<string, number> = new Map();
 
   /** How long a seat must sit at zero before it is released. */
   static readonly BUSTED_GRACE_MS = 10_000;
@@ -4129,6 +4130,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * because the heartbeat (Turns) writes it and this sweep (Dealing) reads it.
    */
   static readonly REBUY_PROMPT_HOLD_MS = 12_000;
+
+  static readonly LIGHTNING_BUSTED_GRACE_MS = 20_000;
+
+  protected override async passWhileDealingHalted(): Promise<void> {
+    await super.passWhileDealingHalted();
+    if (!this.lifecycleCanMutate() || this.isTournamentTable() || isMaintenanceFrozen()) return;
+    // A paid rebuy must land even though this anchor never deals another hand.
+    // The existing resolver owns lease checks, live-hand refusal and receipts.
+    await this.usersWithPendingLedgerChips(this.seatedPlayers.map((p) => p.user_id));
+    await this.processPendingAddOns(this.seatedPlayers);
+    if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
+    await this.standUpBustedCashPlayers();
+  }
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
@@ -4148,17 +4162,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // person is stood up here after the grace; a busted horse now is too,
     // through the same door, the same grace and the same cash-out (10.5).
     const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';
-    const seated = this.seatedPlayers.filter((p) => p.user_id && (!p.is_horse || diamondCash));
-    const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
+    const lightning = this.clusterLightningEnabled === true || Boolean(this.dealingHaltLock);
+    const seated = this.seatedPlayers.filter(
+      (p) => p.user_id && (!p.is_horse || diamondCash || lightning)
+    );
+    const broke = seated.filter(
+      (p) => p.stack !== null && p.stack !== undefined && Number(p.stack) === 0
+    );
+    const clocks = lightning ? this.lightningBustedSince : this.bustedSince;
+    const clockKey = (p: (typeof broke)[number]) => (lightning ? p.occupancy_id : p.user_id);
 
     // Anyone who is funded again stops being watched.
-    const brokeIds = new Set(broke.map((p) => p.user_id));
-    for (const [id] of this.bustedSince) {
-      if (!brokeIds.has(id)) this.bustedSince.delete(id);
+    const brokeIds = new Set(broke.map(clockKey));
+    for (const [id] of clocks) {
+      if (!brokeIds.has(id)) clocks.delete(id);
     }
     if (broke.length === 0) return;
 
-    const now = Date.now();
+    const now = lightning ? maintenanceActiveNow() : Date.now();
     const removed: string[] = [];
 
     /* CHIP STANDARD C3 (2026-09-02): the in-memory `pendingAddOns` map only
@@ -4173,11 +4194,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     if (owed === null) return;
 
     for (const player of broke) {
+      const key = clockKey(player);
+      if (!key) continue; // Never time out an unidentified occupancy.
       /* Money already on its way to this seat. `pendingAddOns` is the queue
          processPendingAddOns drains a few lines above; a player in it has been
          DEBITED already and is owed their chips, not their seat taken away. */
       if (this.pendingAddOns.has(player.user_id) || owed.has(player.user_id)) {
-        this.bustedSince.delete(player.user_id);
+        clocks.delete(key);
         continue;
       }
 
@@ -4185,17 +4208,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          restarts the grace: the clock measures how long a seat sat at zero
          with NOBODY minding it, not how long a human took to decide. */
       const promptSeen = this.rebuyPromptOpenAt.get(player.user_id) ?? 0;
-      if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
-        this.bustedSince.set(player.user_id, now);
+      if (!lightning && now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
+        clocks.set(key, now);
         continue;
       }
 
-      const firstSeen = this.bustedSince.get(player.user_id);
+      const firstSeen = clocks.get(key);
       if (firstSeen === undefined) {
-        this.bustedSince.set(player.user_id, now);
+        clocks.set(key, now);
         continue;
       }
-      if (now - firstSeen < ServerTableEngineDealing.BUSTED_GRACE_MS) continue;
+      const grace = lightning
+        ? ServerTableEngineDealing.LIGHTNING_BUSTED_GRACE_MS
+        : ServerTableEngineDealing.BUSTED_GRACE_MS;
+      if (now - firstSeen < grace) continue;
 
       /* Never remove a player who is all-in in a live hand. Same rule the
          eviction sweep and leaveTable both enforce — a seat cannot leave the
@@ -4211,7 +4237,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          the same cashout again. An unknown outcome is not a leave. */
       const released = await this.releaseBustedSeat(player, 'busted_no_rebuy');
       if (!released) continue;
-      this.bustedSince.delete(player.user_id);
+      clocks.delete(key);
       this.rebuyPromptOpenAt.delete(player.user_id);
       removed.push(player.occupancy_id!);
       console.log(

@@ -301,6 +301,7 @@ export function TournamentBreakScreen({
     // down, but the seed is re-sent when the countdown truly starts.
     let fallback = read();
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (breakEndsAtMs) {
         setDisplayTime(read());
       } else {
@@ -308,7 +309,18 @@ export function TournamentBreakScreen({
         setDisplayTime(fallback);
       }
     }, 1000);
-    return () => clearInterval(timer);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        setDisplayTime(read());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isVisible, countingDown, breakEndsAtMs, breakTimeRemaining]);
 
   /**

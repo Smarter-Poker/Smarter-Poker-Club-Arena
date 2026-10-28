@@ -525,6 +525,26 @@ def private_json(path,limit=2097152):
     if not p.is_absolute() or not p.is_file() or p.is_symlink() or p.stat().st_size>limit or p.stat().st_mode&0o077:raise ValueError('private_result')
     return json.loads(p.read_text())
 
+FLEET_FAILURE_CODES=frozenset(('fleet_private_paths','fleet_packet','fleet_window','fleet_setup_unavailable',
+    'transport_timeout','transport_unavailable','transport_nonzero','transport_output_invalid',
+    'remote_observer_unavailable','observer_oom','observer_v8_heap_exhausted','serving_identity_unverified','observer_cleanup_unverified',
+    'journal_mount_unverified','observer_exit_unverified','observation_contract_unverified'))
+
+def partition_failure_code(error,run=None):
+    if isinstance(error,subprocess.TimeoutExpired):return 'partition_timeout'
+    if isinstance(error,OSError):return 'partition_process_unavailable'
+    if run is not None and run.returncode!=0:
+        try:
+            raw=run.stdout
+            if len(raw)>4096:return 'partition_cli_unclassified'
+            value=json.loads(raw)
+            code=value.get('failureCode') if isinstance(value,dict) and value.get('qualifiedExecution') is False else None
+            if code in FLEET_FAILURE_CODES:return code
+        except (ValueError,TypeError):pass
+        return 'partition_cli_unclassified'
+    if isinstance(error,ValueError) and str(error)=='partition_deadline':return 'partition_deadline'
+    return 'partition_result_unverified'
+
 def observe_bounded(packet_path,attestation_path,ssh_command,output_path):
     packet=private_json(packet_path);attestation=private_json(attestation_path)
     parts=partition_packets(packet,attestation)
@@ -533,7 +553,7 @@ def observe_bounded(packet_path,attestation_path,ssh_command,output_path):
         or not transport.is_absolute() or not transport.is_file() or transport.is_symlink()):raise ValueError('private_output')
     # Reserve final destination before any read, preserving interrupted attempts.
     fd=os.open(output,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-    results=[];deadline=time.monotonic()+FLEET_OPERATION_SECONDS
+    results=[];run=None;deadline=time.monotonic()+FLEET_OPERATION_SECONDS
     try:
         manifest=output.parent/'partition-manifest.json'
         manifest_fd=os.open(manifest,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
@@ -541,6 +561,7 @@ def observe_bounded(packet_path,attestation_path,ssh_command,output_path):
             json.dump({'version':1,'packetDigest':digest(packet),'snapshot':attestation['snapshot'],
                 'partitions':[{'index':i,'packetDigest':digest(p),'handKeys':p['handKeys']} for i,p in enumerate(parts)]},f,separators=(',',':'))
         for index,part in enumerate(parts):
+            run=None
             if deadline-time.monotonic()<115:raise ValueError('partition_deadline')
             part_path=output.parent/f'partition-{index:02d}.json'
             result_path=output.parent/f'partition-{index:02d}-result.json'
@@ -555,10 +576,11 @@ def observe_bounded(packet_path,attestation_path,ssh_command,output_path):
             bounded_summary(packet,attestation,[*results,result])
             results.append(result)
         summary=bounded_summary(packet,attestation,results)
-    except Exception:
+    except Exception as error:
         summary=bounded_summary(packet,attestation,results)
         summary['completeCapture']=False;summary['completeCanonicalHorseCoverage']=False
         summary['gaps']['partition_observation_unavailable']=1
+        summary['partitionFailure']={'code':partition_failure_code(error,run),'completedPartitions':len(results)}
     with os.fdopen(fd,'w') as f:json.dump(summary,f,separators=(',',':'));f.write('\n')
     return summary
 

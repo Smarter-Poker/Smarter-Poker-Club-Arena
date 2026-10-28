@@ -395,6 +395,53 @@ describe('agents reclaim from their own wallets at any time', () => {
   );
 });
 
+it.each(
+  ['agent', 'super_agent', 'sub_agent'].flatMap((role) =>
+    ['0.01', '1.13'].map((amount) => [role, amount])
+  )
+)('moves %s personal player chips to their agent wallet exactly: %s', async (role, amount) => {
+  const original = fx.rpc.getMockImplementation()!;
+  fx.rpc.mockImplementation(async (name, args) =>
+    name === 'fn_cashier_recipient_wallet_balances'
+      ? {
+          data: [{ user_id: USER, player_wallet: 250.13, agent_wallet: 500, promo_wallet: 20 }],
+          error: null,
+        }
+      : name === 'fn_agent_wallet_reversible'
+        ? { data: [], error: null }
+        : original(name, args)
+  );
+  await openCashier({ walletType: 'agent_wallet', role });
+  fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Claim From My Wallets' }));
+  await waitFor(() =>
+    expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('250.13')
+  );
+  const input = screen.getByLabelText('Chips To Claim Back');
+  expect(input).toHaveAttribute('inputmode', 'decimal');
+  fireEvent.change(input, { target: { value: amount } });
+  const submit = screen.getByRole('button', { name: 'Claim Chips', exact: true });
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    `Claim ${amount} Chips From My Account Into My Agent Wallet?`
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, Claim It', exact: true }));
+  await waitFor(() =>
+    expect(fx.rpc).toHaveBeenCalledWith(
+      'fn_club_wallet_claim_back',
+      expect.objectContaining({
+        p_from_user_id: USER,
+        p_source: 'player_wallet',
+        p_destination: 'agent_wallet',
+        p_amount: Number(amount),
+      })
+    )
+  );
+  const args = fx.rpc.mock.calls.find(([name]) => name === 'fn_club_wallet_claim_back')![1];
+  expect(args.p_transaction_id).toBeUndefined();
+});
+
 it('starts an admin personal claim on its eligible agent wallet', async () => {
   const original = fx.rpc.getMockImplementation()!;
   fx.rpc.mockImplementation(async (name, args) =>

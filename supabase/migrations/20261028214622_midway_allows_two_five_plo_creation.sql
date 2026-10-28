@@ -5,14 +5,18 @@
 BEGIN;
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
-DO $preimage$
+-- A concurrent delivery already opened Midway while this PR qualified.
+-- Preserve that exact installed function; never restore the older cap over it.
+DO $install$
+DECLARE v_hash text := md5(pg_get_functiondef('public.fn_cash_game_max_stake_guard()'::regprocedure));
 BEGIN
-  IF md5(pg_get_functiondef('public.fn_cash_game_max_stake_guard()'::regprocedure))
-     <> '868b3f5b90d5266cf8cf68d20105345c' THEN
+  IF v_hash = 'b02ce4fda596606aa3f94ff2b46e3980' THEN
+    RAISE NOTICE 'Concurrent Midway allowance already installed; preserving it';
+    RETURN;
+  ELSIF v_hash <> '868b3f5b90d5266cf8cf68d20105345c' THEN
     RAISE EXCEPTION 'Cash stake guard changed; inspect before installation';
   END IF;
-END
-$preimage$;
+  EXECUTE $ddl$
 CREATE OR REPLACE FUNCTION public.fn_cash_game_max_stake_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -32,5 +36,8 @@ begin
   return new;
 end
 $function$;
--- @live-proof: position('new.sb = 2.00 and new.bb = 5.00' in pg_get_functiondef('public.fn_cash_game_max_stake_guard()'::regprocedure)) > 0
+$ddl$;
+END
+$install$;
+-- @live-proof: md5(pg_get_functiondef('public.fn_cash_game_max_stake_guard()'::regprocedure)) IN ('22f570ccac0a28781b4728938ee3d3c0', 'b02ce4fda596606aa3f94ff2b46e3980')
 COMMIT;

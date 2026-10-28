@@ -119,6 +119,39 @@ CREATE TRIGGER guard BEFORE INSERT OR UPDATE OF enabled, bb, variant ON public.c
         'scripts/qualification/midway-two-five-stake-guard.sql',
       ])
     ).toContain('ROLLBACK');
+    run(
+      'psql',
+      ['-X', '-v', 'ON_ERROR_STOP=1'],
+      `
+ALTER TABLE cash_games ADD COLUMN union_id uuid;
+CREATE TABLE clubs (id uuid, union_id uuid);
+${readFileSync(resolve(root, 'tests/fixtures/midway-concurrent-stake-guard.sql'), 'utf8')}`
+    );
+    const definitionHash = () =>
+      run('psql', [
+        '-X',
+        '-At',
+        '-c',
+        "SELECT md5(pg_get_functiondef('public.fn_cash_game_max_stake_guard()'::regprocedure))",
+      ]).trim();
+    expect(definitionHash()).toBe('b02ce4fda596606aa3f94ff2b46e3980');
+    run('psql', ['-X', '-v', 'ON_ERROR_STOP=1'], migration);
+    expect(definitionHash()).toBe('b02ce4fda596606aa3f94ff2b46e3980');
+    run(
+      'psql',
+      ['-X', '-v', 'ON_ERROR_STOP=1'],
+      "INSERT INTO cash_games(club_id,variant,sb,bb,enabled) VALUES ('fade0000-0000-0000-0000-000000000001','plo5',2,5,true)"
+    );
+    run(
+      'psql',
+      ['-X', '-v', 'ON_ERROR_STOP=1'],
+      `
+CREATE OR REPLACE FUNCTION public.fn_cash_game_max_stake_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$;`
+    );
+    expect(() => run('psql', ['-X', '-v', 'ON_ERROR_STOP=1'], migration)).toThrow(
+      /Cash stake guard changed/
+    );
   } finally {
     if (started) run('pg_ctl', ['-D', data, '-m', 'fast', '-w', 'stop']);
     rmSync(scratch, { recursive: true, force: true });

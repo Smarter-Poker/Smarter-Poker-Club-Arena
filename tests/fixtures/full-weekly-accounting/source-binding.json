@@ -1,4 +1,10 @@
 {
+  "cashierAsyncMountAudit20261027": {
+    "reason": "Reviewed full async-mount diff: await act around initial mocked identity/club/balance promises and await every mount. All eight existing assertions/cases and timeouts retained. Isolated eight cases pass; combined pre-push verification follows. No financial/native/live certificate restamp.",
+    "path": "tests/cashier-weekly-statements.test.tsx",
+    "previousSHA256": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
+    "currentSHA256": "dc2c3cb202c4119f3828f4ac68865e31e8f52874cdecb154bf8832491202bac2"
+  },
   "status": "source_changed_unrun_pending_qualification",
   "routePerformanceGateInputs20261025": {
     "reason": "Route-performance gate inputs (PR #7985): classify-ci-changes.mjs now routes the four route-performance gate scripts to the Production Build job so a change to the gate is executed before it merges. Current source identity only; historical audits, financial pins/assertions and qualification states unchanged. No financial certificate restamp.",
@@ -220,7 +226,7 @@
     "tests/fixtures/correction-document-authority/captured-references.json": "60b794f91a5d726c9302856a220b193eae52fbd95dc1e15ad4b95b312b092479",
     "tests/fixtures/correction-document-authority/captured-union-party.json": "9bc97fef36c4e3e3ec2766cb3596764513bb20fd8bce78e5fa1ee87337bb86f7",
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
-    "tests/cashier-weekly-statements.test.tsx": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
+    "tests/cashier-weekly-statements.test.tsx": "dc2c3cb202c4119f3828f4ac68865e31e8f52874cdecb154bf8832491202bac2",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
     "tests/unit/ClubWeeklyAccountingReader.test.ts": "6be8e7def307a8363525ac7eb3600674f5d35f9524304cdd9770e77ab0c45856",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",

@@ -383,6 +383,10 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
       : undefined;
   const street = streetOf(input.communityCards.length);
   const winnerIds = new Set(input.winners.map((w) => w.userId));
+  // Multiple recipients can be a chop, hi/lo, multiple boards or side pots.
+  // A payout alone cannot tell us who won or lost the hand. Stay quiet rather
+  // than celebrate the whole pot or invent a bad beat from incomplete facts.
+  if (winnerIds.size !== 1) return out;
   const seatOf = (userId: string): number | undefined =>
     input.seated.find((s) => s.userId === userId)?.seat;
   // A hand is "shown" only when its showdown record is unmucked. A fold-win
@@ -660,7 +664,13 @@ const EMOJI = new RegExp(
 );
 
 export type SanitizeRefusal =
-  'empty' | 'too_long' | 'dash' | 'emoji' | 'at_sign' | 'placeholder' | 'names_a_player';
+  | 'empty'
+  | 'too_long'
+  | 'dash'
+  | 'emoji'
+  | 'at_sign'
+  | 'placeholder'
+  | 'names_a_player';
 
 export type SanitizeVerdict = { ok: true; line: string } | { ok: false; reason: SanitizeRefusal };
 
@@ -896,7 +906,9 @@ function noteStreaks(mem: TableMemory, input: TableTalkInput): void {
   for (const r of input.showdownResults) {
     if (!horses.has(r.userId)) continue;
     const cur = mem.streak.get(r.userId) ?? 0;
-    if (winners.has(r.userId)) mem.streak.set(r.userId, cur > 0 ? cur + 1 : 1);
+    if (winners.has(r.userId) && winners.size > 1) {
+      mem.streak.delete(r.userId);
+    } else if (winners.has(r.userId)) mem.streak.set(r.userId, cur > 0 ? cur + 1 : 1);
     else mem.streak.set(r.userId, cur < 0 ? cur - 1 : -1);
   }
 }

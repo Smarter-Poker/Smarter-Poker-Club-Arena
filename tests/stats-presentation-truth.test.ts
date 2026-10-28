@@ -142,7 +142,7 @@ describe('Stats presentation truth', () => {
     expect(normalized.positions.map((position) => position.three_bet_opps)).toEqual([0, 0, 0, 0]);
   });
 
-  it('labels mixed 3-bet denominators without claiming every row is per opportunity', () => {
+  it('keeps positions without recorded opportunities unmeasured', () => {
     const normalized = normalizeFull({
       positions: [
         {
@@ -164,7 +164,7 @@ describe('Stats presentation truth', () => {
 
     expect(
       screen.getByText(
-        /3-Bet Measurement Varies By Position: Per Opportunity Where Available, Otherwise Per Hand Dealt\./
+        /3-Bet Uses Recorded Opportunities. Positions Without Opportunities Are Not Yet Measured\./
       )
     ).toBeInTheDocument();
     expect(

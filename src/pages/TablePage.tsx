@@ -9602,14 +9602,10 @@ function LiveTablePage({
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Smart Mini-HUD — track opponent stats (VPIP/PFR/heat)
-  const {
-    getStats: getPlayerHUDStats,
-    recordHandPlayed,
-    recordVPIP,
-    recordPFR,
-    recordWin: recordHUDWin,
-  } = usePlayerStats();
+  // Only committed, card-free public summaries enter the Mini-HUD.
+  const { getStats: getPlayerHUDStats, observePublicEvent } = usePlayerStats(userId);
+  const observePublicEventRef = useRef(observePublicEvent);
+  observePublicEventRef.current = observePublicEvent;
 
   // User settings with persistence
   const { settings: userSettings, updateSetting } = useTableSettings();
@@ -17590,6 +17586,7 @@ function LiveTablePage({
       (engineLastEvent as unknown as Record<string, unknown>);
     const evt = { type: normalizedType, data: normalizedData };
     void engineLastEvent;
+    observePublicEventRef.current(tableId ?? '', evt.type, evt.data);
 
     switch (evt.type) {
       case 'ENGINE_EVENT_GAP': {
@@ -25809,6 +25806,26 @@ function LiveTablePage({
     getPlayerAtSeat,
   ]);
 
+  const isModalActive = Boolean(
+    tournamentWinner ||
+    showMustMoveLobby ||
+    showSettings ||
+    showInsurance ||
+    showRIT ||
+    showBuyInModal ||
+    showHandHistory ||
+    showHandDetail ||
+    showHandReplay ||
+    showPlayerNotes ||
+    showWaitList ||
+    showCashier ||
+    showDiamondWallet ||
+    showLeaveConfirm ||
+    bustRebuyOpen ||
+    showRebuyModal ||
+    postOrWaitOpen
+  );
+
   const tablePage = (
     <div
       ref={pageRootRef}
@@ -25828,7 +25845,7 @@ function LiveTablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}${isModalActive ? ' table-page--modal-active' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -28298,11 +28315,15 @@ function LiveTablePage({
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
                   playerStyle={
-                    userSettings.showHUD && seatHudStats
+                    userSettings.showHUD &&
+                    seatHudStats?.aggressionMeasured &&
+                    (seatHudStats.callActions ?? 0) > 0
                       ? playerStyleClassifier.classify({
                           handsPlayed: seatHudStats.handsPlayed,
                           vpipCount: seatHudStats.vpipCount,
                           pfrCount: seatHudStats.pfrCount,
+                          aggressiveActions: seatHudStats.aggressiveActions,
+                          passiveActions: seatHudStats.callActions,
                         })
                       : null
                   }

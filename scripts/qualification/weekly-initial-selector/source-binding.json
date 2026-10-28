@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240421,
-      "sha256": "f9dcc80e8b063d82b7bce7e4c2ddc2f2e094c24f163f2fb85e2129b159e7e385"
+      "bytes": 240686,
+      "sha256": "b96c265681376a24b7d00e00e9a7ec361781d24a790e794ee496d5eea56e3e51"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -553,6 +553,29 @@
   "rakebackCurrentMainRiverLane20261028": {
     "review": "Preserves every current protected-main runtime/client byte, the added multiway river native step, all prior budgets/commands and all rakeback native lanes. Active combined CI binding renewed only; historical audits unchanged.",
     "sha256": "f9dcc80e8b063d82b7bce7e4c2ddc2f2e094c24f163f2fb85e2129b159e7e385",
+    "execution_performed": false
+  },
+  "midwayFreezeoutRegression20261028": {
+    "reason": "Additive required native bounty-freezeout trigger regression only. Existing CI commands, guards, qualifications and budgets unchanged. Current input identity; no historical/native/live certification restamp.",
+    "previous": {
+      "bytes": 239886,
+      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    },
+    "current": {
+      "bytes": 240151,
+      "sha256": "bf4de42647ddc7ca050127405fe84ae26bc7bc15dea3c49b1af62ee63fccda33"
+    }
+  },
+  "midwayProtectedMainComposition20261028": {
+    "reason": "Compose the additive Midway native regression with newly protected horse and role-credit work. Both workflow changes and all existing qualifications retained. Current source identity only; no financial/native/live certificate restamp.",
+    "currentWorkflow": {
+      "bytes": 240390,
+      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+    }
+  },
+  "rakebackCurrentMainFreezeoutLane20261028": {
+    "review": "Preserves all protected da3a main client/server bytes and additive Midway bounty-freezeout regression; every prior financial native command/budget/source pin/historical audit retained. Only active combined CI binding renewed.",
+    "sha256": "b96c265681376a24b7d00e00e9a7ec361781d24a790e794ee496d5eea56e3e51",
     "execution_performed": false
   }
 }

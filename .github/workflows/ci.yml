@@ -1559,6 +1559,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           TMPDIR: ${{ runner.temp }}
         run: python3 -B scripts/ci/test-messenger-inbox-equipment.py
+      - name: Midway daily bounty freezeout preserves the owner contract
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B scripts/ci/test-midway-bounty-freezeout.py
       - name: Owner alerts preserve the actual finding through the real PostgreSQL trigger
         if: matrix.shard == 1
         env:

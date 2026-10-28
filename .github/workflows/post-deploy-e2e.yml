@@ -1378,7 +1378,7 @@ jobs:
     # Two proven natural MTT closures may each require another complete subject:
     # 2 x (390s startup + 15m maximum HUD clock + 60s reserve) = 45m.
     # Preserve the existing 76/98-minute overhead and optional multirun budget.
-    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 143 || 121 }}
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && 156 || github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 143 || 121 }}
     permissions:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary
@@ -1724,6 +1724,38 @@ jobs:
           npx playwright test tests/e2e/production-live-table-realtime.spec.ts
           --project=webkit-live-table-realtime --reporter=line,json --workers=1 --retries=0
           --output=test-results/live-table-realtime
+
+      - name: Observe natural horse chat, reactions and throwables
+        id: horse_social
+        if: "!cancelled() && github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
+          LIVE_TABLE_REALTIME_CERTIFICATION: '1'
+          HORSE_SOCIAL_CERTIFICATION: '1'
+          EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/horse-social.json
+        run: >-
+          npx playwright test tests/e2e/production-live-table-realtime.spec.ts
+          --project=webkit-live-table-realtime --grep='natural horse social behavior'
+          --reporter=line,json --workers=1 --retries=0 --output=test-results/horse-social
+
+      - name: Retain natural horse social evidence
+        if: always() && steps.horse_social.outcome != 'skipped' && toJSON(github.event.client_payload.horse_social) == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: horse-social-live-proof
+          path: |
+            test-results/horse-social/
+            e2e-report/horse-social.json
+          if-no-files-found: error
+          retention-days: 3
 
       # One explicit owner-requested observation. Ordinary publication keeps its
       # existing four required continuity cases; absence of a natural multirun

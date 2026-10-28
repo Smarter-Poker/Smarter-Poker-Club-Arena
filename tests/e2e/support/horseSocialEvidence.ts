@@ -1,0 +1,42 @@
+export interface HorseSocialFrame {
+  at: number;
+  sender: string;
+  message: string;
+  throwId?: string;
+}
+
+/** Retain only public social facts; never retain a websocket URL or auth frame. */
+export function horseSocialFrames(value: unknown, at: number, depth = 0): HorseSocialFrame[] {
+  if (!value || typeof value !== 'object' || depth > 6) return [];
+  const row = value as Record<string, unknown>;
+  const payload = row.payload as Record<string, unknown> | undefined;
+  if (
+    row.type === 'CHAT' &&
+    typeof row.sender === 'string' &&
+    typeof payload?.message === 'string'
+  ) {
+    return [
+      {
+        at,
+        sender: row.sender,
+        message: payload.message,
+        ...(typeof payload.throwId === 'string' ? { throwId: payload.throwId } : {}),
+      },
+    ];
+  }
+  return Object.values(row).flatMap((child) => horseSocialFrames(child, at, depth + 1));
+}
+
+export function postHandChatDelay(endedAt: string, createdAt: string): number {
+  const delay = Date.parse(createdAt) - Date.parse(endedAt);
+  if (!Number.isFinite(delay)) throw new Error('Missing authoritative hand/chat timestamp');
+  return delay;
+}
+
+export function sharedPayout(winners: unknown): boolean {
+  if (!Array.isArray(winners)) throw new Error('Unreadable hand winners');
+  if (winners.some((winner) => !winner || typeof winner.userId !== 'string' || !winner.userId)) {
+    throw new Error('Unreadable payout recipient');
+  }
+  return new Set(winners.map((winner) => winner.userId)).size > 1;
+}

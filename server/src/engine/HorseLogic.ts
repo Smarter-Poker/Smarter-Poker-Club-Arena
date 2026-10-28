@@ -8251,7 +8251,12 @@ export class HorseLogic {
             !oppRaised54 &&
             runoutFavorsOpponent !== true &&
             rangeAdvantage?.disadvantage !== true &&
-            !(vi.isOmaha && calledBarrels40 >= 2 && !rangeFavors54);
+            !(
+              vi.isOmaha &&
+              calledBarrels40 >= 2 &&
+              rangeChange?.improves !== true &&
+              rangeChange?.nutAdvantage !== true
+            );
           // Blockers: Omaha needs the nut blocker (two-card flush blocker or
           // the top-straight card); Hold'em also takes the missed-flush
           // unblocker (none of a two-suited river's suit: hero holds none of

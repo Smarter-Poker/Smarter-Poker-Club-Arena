@@ -86,7 +86,7 @@ describe('V54 station intent survives the actual worker policy graph', () => {
       ] as const)
         expect(r[key], key).toBe(0);
       expect(baselineRiver).toEqual([
-        { action: 'bet', amount: variant === 'plo4' ? 22 : variant === 'plo5' ? 19 : 16 },
+        { action: 'bet', amount: variant === 'plo4' ? 22 : variant === 'plo5' ? 36 : 16 },
       ]);
       expect(checks.some((c) => c.reference === 'check')).toBe(true);
       expect(

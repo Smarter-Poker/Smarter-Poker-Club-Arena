@@ -3273,6 +3273,31 @@ BEGIN
  IF r.scope_plan IS DISTINCT FROM plan THEN RAISE EXCEPTION 'weekly_payout_prepared_scope_changed' USING ERRCODE='55000';END IF;
  RETURN jsonb_build_object('success',false,'owns_tick',true,'advanced',true,'stage','weekly_payout_prepared','run_id',r.run_id);
 END $function$;
+REVOKE ALL ON FUNCTION public.ca_player_stats_financial_report(uuid,uuid,integer,text,text) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.ca_player_stats_financial_report(uuid,uuid,integer,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.ca_player_stats_financial_report(uuid,uuid,integer,text,text) TO authenticated;
+REVOKE ALL ON FUNCTION public.fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_tournament_commission_source_guard() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_rakeback_payout_leg_is_documented() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_settlement_correctness_check() FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_correctness_check() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_split_check(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_split_check(uuid,date,date,uuid[]) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_rakeback_split_write(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_rakeback_split_write(uuid,date,date,uuid[]) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION smarter_private.weekly_payout_prepare_due() FROM PUBLIC,anon,authenticated,service_role;
 
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check','migration 20261028184531 own-agent typed wallet receipts');
 DO $post$

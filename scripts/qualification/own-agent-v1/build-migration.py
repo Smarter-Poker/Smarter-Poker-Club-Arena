@@ -58,6 +58,16 @@ BEGIN
 END $pre$;
 """
 for name in files:sql+='\n-- Maintained owner: supabase/accounting/own-agent-v1/'+name+'.sql\n'+(H/(name+'.sql')).read_text().rstrip().rstrip(';')+';\n'
+# State each original ACL explicitly for the existing static admission gate.
+# Restore grants in the captured order so full pg_proc metadata stays exact.
+for owner in pre:
+ signature=owner['signature']if '.'in owner['signature'].split('(')[0]else'public.'+owner['signature']
+ sql+='REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;\n'
+ for acl in owner['acl']or[]:
+  role=acl.split('=')[0]
+  if role!='postgres':
+   assert role in('service_role','authenticated')and acl.split('=')[1]=='X/postgres',('unrecognized original grant',signature,acl)
+   sql+='GRANT EXECUTE ON FUNCTION '+signature+' TO '+role+';\n'
 sql+="""
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check','migration 20261028184531 own-agent typed wallet receipts');
 DO $post$

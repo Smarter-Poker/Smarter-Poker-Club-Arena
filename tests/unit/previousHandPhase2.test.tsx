@@ -311,6 +311,18 @@ describe('the rundown', () => {
     expect(pre.querySelector('.hdv__fact-eq')).toBeNull();
   });
 
+  it('does not present board-one equity as a multiboard hand percentage', () => {
+    const m = buildReplay(HAND as never);
+    for (const street of m.streets) {
+      if (street.board.length > 0)
+        street.extraBoards = [cards('2h 3h 4h 5h 6h').slice(0, street.board.length)];
+    }
+    render(<HandDetailView model={m} currentUserId="h" />);
+    expect(document.querySelector('.hdv__street-run')).not.toBeNull();
+    expect(document.querySelector('.hdv__fact-eq')).toBeNull();
+    expect(document.querySelector('.hdv__fact-hand')).not.toBeNull();
+  });
+
   it('prices nothing when a contender is unknown', () => {
     const m = buildReplay({ ...HAND, holeCards: { h: ['9c', '9d'] } } as never);
     render(<HandDetailView model={m} currentUserId="h" />);

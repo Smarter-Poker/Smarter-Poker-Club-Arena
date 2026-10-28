@@ -163,6 +163,9 @@ function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {
     for (const street of model.streets) {
       if (street.key === 'showdown' || street.key === 'pineapple_discard') continue;
       if (street.contenders.length < 2) continue;
+      // The replay solver prices one board only. Extra exposed runs cannot
+      // be presented as an exact percentage for the whole multiboard hand.
+      if (street.extraBoards.some((board) => board.length > 0)) continue;
       const players: Array<{
         userId: string;
         hole: NonNullable<ReplayModel['players'][number]['hole']>;

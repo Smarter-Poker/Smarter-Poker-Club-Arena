@@ -356,6 +356,74 @@ class PacketContracts(unittest.TestCase):
  def test_configured_uri_is_internal_environment_not_arguments(self):
   e=module.database_environment({'DATABASE_URL':'postgresql://fixture:percent%21@127.0.0.1:5432/test?sslmode=require'})
   self.assertEqual(e['PGPASSWORD'],'percent!');self.assertEqual(e['PGSSLMODE'],'require');self.assertNotIn('DATABASE_URL',e)
+ def indexed_fixture(self,actors=(0,1),start='2000-01-01T00:00:00.000Z',end='2000-01-01T00:00:01.000Z'):
+  p,a=self.partition_fixture(1);p['window']={'startUtc':start,'endUtc':end};a['packetDigest']=module.digest(p)
+  part=module.partition_packets(p,a)[0];r=self.partition_result(part,actors)
+  return p,a,r,module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+ def test_indexed_ledger_retains_private_ordinal_evidence_and_explicit_unknowns(self):
+  p,a,r,ledger=self.indexed_fixture((0,0,1))
+  self.assertEqual(ledger['rows'][0]['acceptedDecisions'],2)
+  self.assertIsNone(ledger['rows'][0]['qualifiedOriginalReadDecisions'])
+  self.assertIsNone(ledger['rows'][0]['pooledPublicReadDecisions'])
+  self.assertEqual(ledger['rows'][2]['acceptedDecisions'],0)
+  self.assertEqual(ledger['decisionCorrectness'],'unknown');self.assertEqual(ledger['planEffectPersistence'],'unknown')
+  self.assertFalse(ledger['allPhasesVerified']);self.assertFalse(ledger['completePopulation'])
+  self.assertNotIn(p['horseIds'][0],json.dumps(ledger))
+  # Roster ordering in transport does not change stable ordinal mapping.
+  p['horseIds'].reverse();a['packetDigest']=module.digest(p);r['packetDigest']=module.digest(p)
+  o=r['execution']['observation'];o['packetDigest']=module.digest(p)
+  again=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+  self.assertEqual(again['cohortDigest'],ledger['cohortDigest']);self.assertEqual(again['rows'],ledger['rows'])
+ def test_indexed_ledger_does_not_promote_unreported_read_evidence(self):
+  p,a,r,_=self.indexed_fixture((0,))
+  # A numerical field without a validated public/read schema is not evidence.
+  for h in r['execution']['observation']['horses']:
+   h['riverLearning']={'qualifiedReadDecisions':h['acceptedDecisions']}
+  ledger=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+  self.assertEqual(ledger['rows'][0]['acceptedDecisions'],1)
+  self.assertIsNone(ledger['rows'][0]['qualifiedOriginalReadDecisions'])
+  # Valid public counts still do not validate missing river schema/provenance.
+  for h in r['execution']['observation']['horses']:
+   h['retainedReceiptCounts']={'pooledPublicReads':h['acceptedDecisions'],'independentPublicReads':0}
+  summary=module.bounded_summary(p,a,[r]);row=summary['indexedEvidenceLedger']['rows'][0]
+  self.assertEqual(summary['publicReadEvidence']['status'],'reported')
+  self.assertEqual(summary['riverLearningEvidence']['status'],'unknown')
+  self.assertEqual(row['pooledPublicReadDecisions'],1)
+  self.assertIsNone(row['qualifiedOriginalReadDecisions'])
+ def test_indexed_union_disjoint_windows_union_horses_and_dedupe_exact_retries(self):
+  _,_,_,one=self.indexed_fixture((0,1))
+  _,_,_,two=self.indexed_fixture((1,2),'2000-01-01T00:00:01.000Z','2000-01-01T00:00:02.000Z')
+  joined=module.union_indexed_ledgers([one,two,one])
+  self.assertEqual(len(joined['observations']),2)
+  self.assertEqual(sum(r['acceptedDecisions']>0 for r in joined['rows']),3)
+  self.assertEqual(sum(r['acceptedDecisions'] for r in joined['rows']),4)
+  self.assertEqual(joined['rows'][1]['acceptedDecisions'],2)
+  self.assertIsNone(joined['rows'][1]['qualifiedOriginalReadDecisions'])
+ def test_indexed_union_refuses_source_cohort_overlap_and_partial_duplicate_unions(self):
+  _,_,_,one=self.indexed_fixture()
+  _,_,_,two=self.indexed_fixture((1,2),'2000-01-01T00:00:01.000Z','2000-01-01T00:00:02.000Z')
+  for key,value in [('sourceSha','b'*40),('cohortDigest','b'*64)]:
+   changed=json.loads(json.dumps(two));changed[key]=value
+   with self.assertRaises(ValueError):module.union_indexed_ledgers([one,changed])
+  changed=json.loads(json.dumps(one));changed['observations'][0]['packetDigest']='e'*64
+  with self.assertRaises(ValueError):module.union_indexed_ledgers([one,changed])
+  joined=module.union_indexed_ledgers([one,two])
+  with self.assertRaises(ValueError):module.union_indexed_ledgers([joined,one])
+ def test_indexed_ledger_refuses_false_claims_reorder_private_fields_and_bad_counts(self):
+  _,_,_,ledger=self.indexed_fixture()
+  mutations=[lambda v:v.update(allPhasesVerified=True),lambda v:v.update(planEffectPersistence='verified'),
+   lambda v:v.update(secret='PRIVATE'),lambda v:v['rows'][0].update(qualifiedOriginalReadDecisions=True),
+   lambda v:v['rows'][0].update(acceptedDecisions=-1),lambda v:v['rows'].reverse(),
+   lambda v:v['observations'][0].update(servingContainer='PRIVATE'),
+   lambda v:v['rows'][0].update(horseId='PRIVATE')]
+  for mutate in mutations:
+   v=json.loads(json.dumps(ledger));mutate(v)
+   with self.assertRaises(ValueError):module.validate_indexed_ledger(v)
+ def test_indexed_ledger_partial_capture_never_claims_complete_and_missing_identity_is_not_fabricated(self):
+  p,a=self.partition_fixture();part=module.partition_packets(p,a)[0];r=self.partition_result(part)
+  summary=module.bounded_summary(p,a,[r]);self.assertFalse(summary['completeCapture'])
+  self.assertIsNotNone(summary['indexedEvidenceLedger'])
+  empty=module.bounded_summary(p,a,[]);self.assertIsNone(empty['indexedEvidenceLedger'])
 if __name__=='__main__':
  import sys
  unittest.main(argv=[sys.argv[0],'PacketContracts'] if '--contracts' in sys.argv else None)

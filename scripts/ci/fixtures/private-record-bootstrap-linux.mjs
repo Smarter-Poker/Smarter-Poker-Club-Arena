@@ -10,7 +10,7 @@ const root = '/qualification/source';
 const sha = 'a'.repeat(40);
 const global = '{\n auto_https off\n admin 127.0.0.1:2019\n}\n';
 const site = (identity, gateway = false) =>
-  `http://ca-static.smarter.poker:8080 {\n${gateway ? 'handle_path /private-record/* { reverse_proxy unix//run/ca-private-record-gateway/active.sock }\n' : ''}handle {\nrespond /build-info.json "{\\"ca_sha\\":\\"${identity}\\"}" 200\nrespond "original static" 200\n}\n}\nhttp://unrelated.example:8080 { respond "unrelated retained" 200 }\n`;
+  `http://ca-static.smarter.poker:8080 {\n${gateway ? 'handle_path /private-record/* {\n reverse_proxy unix//run/ca-private-record-gateway/active.sock\n}\n' : ''}handle {\nrespond /build-info.json "{\\"ca_sha\\":\\"${identity}\\"}" 200\nrespond "original static" 200\n}\n}\nhttp://unrelated.example:8080 {\nrespond "unrelated retained" 200\n}\n`;
 const before = global + site(sha);
 const replacement = global + site(scenario === 'rollback' ? 'b'.repeat(40) : sha, true);
 mkdirSync('/etc/caddy', { recursive: true });
@@ -39,6 +39,12 @@ writeFileSync(
   `#!/bin/sh\nset -eu\nfor arg do target="$arg"; done\ncase "$target" in\n https://ca-static.smarter.poker/build-info.json|https://smarter.poker/hub/club-arena/build-info.json) exec /usr/bin/curl.real --fail --silent --show-error --max-time 5 -H 'Host: ca-static.smarter.poker' http://127.0.0.1:8080/build-info.json;;\n *) echo 'External network refused' >&2; exit 1;;\nesac\n`,
   { mode: 0o755 }
 );
+// Parse both exact configurations before starting the real server. A grammar error
+// must fail directly rather than masquerade as an HTTP readiness timeout.
+for (const configuration of [before, replacement])
+  run('/usr/bin/caddy', ['adapt', '--config', '-', '--adapter', 'caddyfile'], {
+    input: configuration,
+  });
 const server = spawn('/usr/bin/caddy', ['run', '--config', '/etc/caddy/Caddyfile'], {
   stdio: ['ignore', 'ignore', 'pipe'],
 });

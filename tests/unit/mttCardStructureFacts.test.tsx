@@ -258,3 +258,23 @@ describe('tournament cards display the same engine structure facts as details', 
     expect(value('Starting Chips')).toContain('10 BB');
   });
 });
+
+describe('fixed-field SNG satellites start when full', () => {
+  it.each([6, 9])('shows the actual start rule for a %s-player field', (seats) => {
+    const card = mapSatelliteRowToCard({
+      ...row([{ level: 1, smallBlind: 25, bigBlind: 50, durationMinutes: 5 }]),
+      tournament_type: 'SNG',
+      variant: 'sng',
+      format_contract: 'sng-v1',
+      max_players: seats,
+      min_players: seats,
+      table_size: seats,
+      satellite_seats: 2,
+      satellite_target_id: '00000000-0000-4000-8000-000000000002',
+      start_time: '2099-10-23T13:00:00Z',
+    });
+    render(<TournamentLobbyCard tournament={card} knownRegistration={false} unframed />);
+    expect(screen.getByText('When Full')).toBeTruthy();
+    expect(screen.queryByText('Starts In')).toBeNull();
+  });
+});

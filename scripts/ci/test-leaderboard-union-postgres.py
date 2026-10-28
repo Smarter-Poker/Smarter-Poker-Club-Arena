@@ -71,6 +71,7 @@ try:
  status=json.loads(q("SET request.jwt.claim.sub='d712fcf0-3741-461d-9617-8cb68fb1c54c';SELECT fn_get_leaderboard_settlement_status('"+club+"','weekly','2026-10-18')"))
  assert status['batch']['total_paid']==500 and status['batch']['winner_count']==3 and len(status['receipts'])==3,status
  assert status['batch']['correction']['total_paid']==500
+ assert status['batch']['funding_owner_type']=='union' and status['batch']['funding_union_id']=='fade0000-0000-0000-0000-000000000001'
  replay=json.loads(q(f"SELECT fn_payout_leaderboard('{club}','weekly','hands_played','2026-10-18 00:00Z','2026-10-25 00:00Z')"))
  assert replay['already_settled'] and replay['total_paid']==500
  assert float(q('SELECT promo_wallet FROM union_wallets'))==1000

@@ -29,7 +29,7 @@ CREATE TABLE public.leaderboard_payout_corrections (
   UNIQUE(club_id,period,period_start)
 );
 ALTER TABLE public.leaderboard_payout_corrections ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.leaderboard_payout_corrections FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON public.leaderboard_payout_corrections FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT,INSERT ON public.leaderboard_payout_corrections TO service_role;
 CREATE TRIGGER leaderboard_payout_correction_immutable
   BEFORE UPDATE OR DELETE OR TRUNCATE ON public.leaderboard_payout_corrections
@@ -319,8 +319,8 @@ BEGIN
       'program_version', v_batch.program_version,
       'program_hash', v_batch.program_hash,
       'metric', v_batch.metric,
-      'funding_owner_type', v_batch.funding_owner_type,
-      'funding_union_id', v_batch.funding_union_id,
+      'funding_owner_type', CASE WHEN EXISTS(SELECT 1 FROM public.leaderboard_payout_corrections c WHERE c.batch_id=v_batch.id) THEN 'union' ELSE v_batch.funding_owner_type END,
+      'funding_union_id', COALESCE((SELECT c.funding_union_id FROM public.leaderboard_payout_corrections c WHERE c.batch_id=v_batch.id),v_batch.funding_union_id),
       'total_paid', v_batch.total_paid+COALESCE((SELECT c.total_paid FROM public.leaderboard_payout_corrections c WHERE c.batch_id=v_batch.id),0),
       'seed_funded', v_batch.seed_funded,
       'promo_funded', v_batch.promo_funded+COALESCE((SELECT c.total_paid FROM public.leaderboard_payout_corrections c WHERE c.batch_id=v_batch.id),0),

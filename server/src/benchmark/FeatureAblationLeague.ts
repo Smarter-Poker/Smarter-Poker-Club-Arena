@@ -1,3 +1,9 @@
+import {
+  authenticateIncrementalPlan,
+  incrementalQualificationRules,
+  isIncrementalQualificationTarget,
+  TOURNAMENT_RESERVED_HOLDOUT_SEEDS,
+} from './IncrementalPressureQualification.js';
 /** Shared physical, after-rake flag-ablation runner. Development evidence only
  * until a separately protected, locked experiment supplies its exact matrix.
  * This module has no production writer or policy activation capability. */
@@ -22,6 +28,15 @@ import { isRemainingVariantHoldoutSeed } from './RemainingVariantStrengthContrac
 import { isJointHoldoutSeed } from './JointStrengthContract.js';
 import { PLO6_V24_DEVELOPMENT_DESIGN } from './Plo6V24Qualification.js';
 import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationContract.js';
+import {
+  INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
+  ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+  SEPARATE_RIVER_FLAGS,
+  SEPARATE_RIVER_DESIGNS,
+  MULTIWAY_RIVER_POPULATION,
+  PRESSURE_PACKAGE_FLAGS,
+  PRESSURE_PACKAGE_POPULATION,
+} from './IncrementalPressureDevelopment.js';
 
 export interface FeatureAblationSpec {
   id: string;
@@ -121,10 +136,40 @@ export interface FeatureAblationResult {
   promotionEligible: false;
 }
 export function assertAblationArms(spec: FeatureAblationSpec): void {
+  if (Object.hasOwn(spec.candidate, 'multiwayRiverBluffCheckRaise')) {
+    const exact = (arm: Plo4AblationFlags, value: boolean) =>
+      Object.keys(arm).length === 2 &&
+      arm.riverBluffCheckRaise === true &&
+      arm.multiwayRiverBluffCheckRaise === value;
+    if (
+      !exact(spec.candidate, true) ||
+      !exact(spec.reference, false) ||
+      spec.population !== MULTIWAY_RIVER_POPULATION ||
+      ![4, 6].includes(spec.profile.seats) ||
+      spec.profile.stackBB !== 100
+    )
+      throw Error('Separate multiway composition refused');
+    return assertAblationArms({
+      ...spec,
+      candidate: { riverBluffCheckRaise: true },
+      reference: { riverBluffCheckRaise: false },
+    });
+  }
+  if (Object.hasOwn(spec.candidate, 'smallPotNearNutRiverValue') && spec.profile.variant === 'nlh')
+    throw Error('Near-nut Omaha only');
   const keys = [...new Set([...Object.keys(spec.candidate), ...Object.keys(spec.reference)])];
   if (
     keys.length !== 1 ||
-    !['v24PloDefense', 'v53Pressure'].includes(keys[0]) ||
+    ![
+      'v24PloDefense',
+      'v53Pressure',
+      'comboDrawPressure',
+      'v54RiverBluff',
+      'riverPositionDefense',
+      'riverBluffCheckRaise',
+      'barrelContinuationOutlook',
+      'smallPotNearNutRiverValue',
+    ].includes(keys[0]) ||
     Object.values(spec.candidate).some((v) => typeof v !== 'boolean') ||
     Object.values(spec.reference).some((v) => typeof v !== 'boolean') ||
     Object.keys(spec.candidate).length !== 1 ||
@@ -169,13 +214,33 @@ export function ablationPilotMoments(s: Plo4PowerSums) {
     kurtosis: m2 > 0 ? m4 / (m2 * m2) : null,
   };
 }
+/** Only this exact five-flag contrast is admitted in development. The
+ * protected contract path still calls the unchanged single-flag validator. */
+export function assertDevelopmentAblationArms(spec: FeatureAblationSpec): void {
+  if (spec.id !== 'pressure_package-development-v1') return assertAblationArms(spec);
+  const exact = (arm: Plo4AblationFlags, value: boolean) =>
+    Object.keys(arm).length === PRESSURE_PACKAGE_FLAGS.length &&
+    PRESSURE_PACKAGE_FLAGS.every((flag) => Object.hasOwn(arm, flag) && arm[flag] === value);
+  if (
+    !exact(spec.candidate, true) ||
+    !exact(spec.reference, false) ||
+    spec.population !== PRESSURE_PACKAGE_POPULATION ||
+    !spec.profile.id.startsWith('pressure_package-')
+  )
+    throw new Error('Only the exact declared five-flag development package is admitted');
+  assertAblationArms({
+    ...spec,
+    candidate: { comboDrawPressure: true },
+    reference: { comboDrawPressure: false },
+  });
+}
 export async function runFeatureAblationDevelopment(
   spec: FeatureAblationSpec,
   request: { seed: number; pairs: number; startPair?: number; reservedSeeds?: readonly number[] },
   shouldContinue = () => true,
   onPair?: (record: FeatureAblationPairRecord) => void | Promise<void>
 ): Promise<FeatureAblationResult> {
-  assertAblationArms(spec);
+  assertDevelopmentAblationArms(spec);
   const { seed, pairs } = request,
     startPair = request.startPair ?? 0;
   if (
@@ -188,6 +253,10 @@ export async function runFeatureAblationDevelopment(
     isJointHoldoutSeed(seed) ||
     (PLO6_V24_DEVELOPMENT_DESIGN.reservedHeldoutSeeds as readonly number[]).includes(seed) ||
     (V53_PRESSURE_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (INCREMENTAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (ADDITIONAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    (TOURNAMENT_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    Object.values(SEPARATE_RIVER_DESIGNS).some((d) => d.reservedHoldoutSeeds.includes(seed)) ||
     request.reservedSeeds?.includes(seed)
   )
     throw new Error('Development never deals a held-out or invalid seed');
@@ -219,15 +288,55 @@ export async function runFeatureAblationContract(
   onPair?: (record: FeatureAblationPairRecord) => void | Promise<void>,
   shouldContinue = () => true
 ): Promise<FeatureAblationResult & { mode: 'contract' }> {
-  assertAblationArms(spec);
   const {
     qualificationPlan,
     qualificationPlanDigest,
     assertProtectedFeatureAblationSource,
     featureQualificationCanonical: canonical,
   } = await import('./FeatureAblationQualification.js');
-  const target = Object.hasOwn(spec.candidate, 'v24PloDefense') ? 'plo6_v24' : 'v53_pressure';
+  const { INCREMENTAL_FLAGS } = await import('./IncrementalPressureDevelopment.js');
+  const keys = Object.keys(spec.candidate);
+  const target = keys.includes('multiwayRiverBluffCheckRaise')
+    ? 'multiway_river_bluff_checkraise'
+    : keys[0] === 'smallPotNearNutRiverValue'
+      ? 'small_pot_near_nut_value_raise'
+      : keys.length === 5
+        ? 'pressure_package'
+        : keys[0] === 'v24PloDefense'
+          ? 'plo6_v24'
+          : keys[0] === 'v53Pressure'
+            ? 'v53_pressure'
+            : Object.entries(INCREMENTAL_FLAGS).find(([, flag]) => flag === keys[0])?.[0];
+  if (
+    !target ||
+    (!isIncrementalQualificationTarget(target) &&
+      target !== 'plo6_v24' &&
+      target !== 'v53_pressure')
+  )
+    throw Error('Incremental candidate has no protected locked heldout plan');
+  if (target === 'pressure_package') {
+    const rules = incrementalQualificationRules(target);
+    if (
+      canonical(spec.candidate) !== canonical(rules.flags.candidate) ||
+      canonical(spec.reference) !== canonical(rules.flags.reference) ||
+      spec.population !== rules.population
+    )
+      throw Error('Unregistered package');
+    assertAblationArms({
+      ...spec,
+      candidate: { comboDrawPressure: true },
+      reference: { comboDrawPressure: false },
+    });
+  } else assertAblationArms(spec);
   const plan = qualificationPlan(target);
+  if (isIncrementalQualificationTarget(target)) {
+    const { isActualFeatureAblationWorker } = await import('./FeatureAblationWorker.js');
+    if (
+      !isActualFeatureAblationWorker(spec.brain) ||
+      spec.population !== incrementalQualificationRules(target).population
+    )
+      throw Error('Incremental original worker/population required');
+  }
   const cell = plan.matrix.find((c) => c.key === request.cellKey);
   const profile = plan.profiles.find((p) => p.id === cell?.profileId);
   if (
@@ -265,6 +374,7 @@ export async function runFeatureAblationContract(
   if (canonical(spec.profile) !== canonical(expected))
     throw new Error('Contract physical profile changed');
   assertProtectedFeatureAblationSource(plan);
+  await authenticateIncrementalPlan(plan, request.cellKey);
   if (typeof authorizedGuard !== 'function')
     throw new Error('Original provider authorization unavailable');
   await authorizedGuard();

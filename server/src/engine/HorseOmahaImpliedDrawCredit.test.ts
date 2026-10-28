@@ -12,7 +12,7 @@ type Variant = 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'nlh';
 const suits: Record<string, Card['suit']> = { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' };
 const cards = (s: string): Card[] =>
   s.split(' ').map((c) => ({ rank: c[0] as Card['rank'], suit: suits[c[1]] }));
-function price(variant: Variant, hole = '8s Th Ad 4h', board = 'Ac 3s Js Jh') {
+function price(variant: Variant, hole = '8s Th Ad 4h', board = 'Ac 3s Js Jh', equity = 0.35) {
   const actions = fixture.actions as unknown as ActionRecord[];
   const n = actions[18].publicNode as Extract<HorsePublicActionNode, { status: 'captured' }>;
   const ids = new Map(fixture.players.map((p) => [p.seat, p.userId]));
@@ -89,7 +89,7 @@ function price(variant: Variant, hole = '8s Th Ad 4h', board = 'Ac 3s Js Jh') {
   const simulate = Eval.simulateEquity;
   vi.spyOn(Eval, 'simulateEquity').mockImplementation((...args) => {
     simulate(...args);
-    return 0.35;
+    return equity;
   });
   const spy = vi.spyOn(Ev, 'evaluateSpot');
   const decision = HorseLogic.decide(hero, gs, 'balanced', {}, { telemetry: false });
@@ -146,3 +146,16 @@ describe('physical Omaha draw credit reaches the actual pricing consumer', () =>
     expect(price('nlh', 'Ad Th').decision.action).toBe('fold');
   });
 });
+
+for (const variant of ['plo4', 'plo5', 'plo6'] as const)
+  it(`${variant}: dirty wraps do not receive the clean nut-draw pressure allowance`, () => {
+    const dirty = price(variant, 'Jc Jd Tc Qd', '8h 9h 2h 3c', 0.9);
+    vi.restoreAllMocks();
+    const clean = price(variant, 'Jc Jd Tc Qd', '8h 9d 2c 3s', 0.9);
+    expect(dirty.draw).toMatchObject({ bigWrap: true, nutStraightOuts: 0, nutty: false });
+    expect(clean.draw).toMatchObject({ bigWrap: true, nutty: true });
+    expect(dirty.input).toBeDefined();
+    expect(clean.input).toBeDefined();
+    expect(dirty.input!.equity).toBeLessThan(clean.input!.equity);
+    expect(clean.input!.equity - dirty.input!.equity).toBeCloseTo(0.12, 10);
+  });

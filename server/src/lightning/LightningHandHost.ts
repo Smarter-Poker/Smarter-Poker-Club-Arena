@@ -2525,6 +2525,12 @@ export class LightningHandHost {
       typeof amount === 'number' &&
       amount >= player.bet + player.stack - 0.005
     ) {
+      // The controller's explicit ALL IN tolerance may become a call when
+      // betting cannot reopen. A sized wager did not choose that call: refuse
+      // it before timers or chips change, matching the Classic action door.
+      if (!hc.getAuthoritativeActionState(userId)?.legalActions.includes('all_in')) {
+        return { success: false, error: 'Sized wager cannot be a legal all-in' };
+      }
       a = 'all_in';
       amount = undefined;
     }

@@ -2165,59 +2165,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
-   * B2 2026-08-27 — THE TOURNAMENT COUNTERPART OF registerWaitForBB.
-   *
-   * A tournament player cannot be held out of a hand the way a cash player can:
-   * tournament players must be dealt in and blinded off or the field never
-   * shrinks. So the cash rule ("wait one hand, pay nothing") has no tournament
-   * equivalent, and the two seats it exists to protect were simply unprotected
-   * here — a late registrant or a balanced-in player who landed on the button
-   * or the small blind for the coming hand played out most of an orbit before
-   * the big blind reached them, for free, while everyone already at the table
-   * had paid to be there.
-   *
-   * Those two seats — and ONLY those two — are the ones the big blind has just
-   * passed (one and two hands ago). Every other seat reaches the big blind
-   * inside the current orbit on its own and owes nothing. An arrival in the big
-   * blind seat itself posts it naturally and is likewise left alone.
-   *
-   * Fewer than three in the rotation is heads-up or a table about to be broken,
-   * where the button IS the small blind and both players pay every hand: there
-   * is no free orbit available to take, so nothing is charged.
-   *
-   * TableBalancer keeps moved players out of these two seats wherever another
-   * free seat exists (`findOpenSeat`), so in practice this fires for late
-   * registrants and for the tail of a table break that had nowhere else to sit.
+   * Tournament arrivals never owe an entry post (owner correction 2026-10-27).
+   * A moved or newly registered player pays only the natural blinds/antes.
+   * In particular, receiving the button creates no big-blind debt. Heads-up
+   * button/SB and legal SB arrivals still post through the normal rotation.
+   * Drop any legacy marker instead of carrying it into a later hand.
    */
-  protected noteTournamentArrival(seatNumber: number, userId: string): void {
+  protected noteTournamentArrival(_seatNumber: number, userId: string): void {
     if (!this.isTournamentTable()) return;
-    const rotationSize = this.seatedPlayers.filter((p) => p.stack > 0).length;
-    if (rotationSize < 3) return;
-
-    /* A SMALL BLIND IS A BLIND (Dan, 2026-10-21): "GOT MOVED INTO THE SMALL
-       BLIND, PAID SMALL BLIND WERE DEALT IN AND THEN HAD TO PAY THE SMALL AND
-       BB AGAIN. THIS BUG NEEDS TO BE FIXED."
-
-       An arrival in the small blind seat posts that small blind on its first
-       hand. Under the tournament dead-button rule (TDA Rule 30) that seat is
-       the BUTTON on the next hand, never the big blind, so the old "keep the
-       small blind seat on the hook for the big blind" charged them a second,
-       live big blind from the button straight after the small blind they had
-       already paid. A player who has paid a blind to be dealt in owes nothing
-       more. Only the button seat, which would otherwise be dealt in for free,
-       carries the one live big blind. */
-    const buttonSeatIndex = this.getButtonSeatIndex();
-    const sbSeatIndex = this.getSBSeatIndex();
-    if (
-      buttonSeatIndex > 0 &&
-      seatNumber === buttonSeatIndex &&
-      !(sbSeatIndex > 0 && seatNumber === sbSeatIndex)
-    ) {
-      this.mustPostBB.add(userId);
-      console.log(
-        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed - owes one big blind`
-      );
-    }
+    this.mustPostBB.delete(userId);
   }
 
   /**

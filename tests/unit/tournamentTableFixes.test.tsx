@@ -68,42 +68,19 @@ describe('Tournament Table Engine Seating & Dealing Rules', () => {
     );
   });
 
-  it('never attaches deadBlinds to a tournament, and bills a tournament seat only through mustPostBB', () => {
+  it('never attaches entry or dead blinds to a tournament', () => {
     const code = tsCode(read(DEALING_SRC));
-    // Unchanged: a tournament player never owes a dead small blind.
     expect(code).toMatch(
       /deadBlinds:\s*!this\.isTournamentTable\(\)\s*&&\s*this\.returningFromSitout\.size\s*>\s*0/
     );
-
-    /* UPDATED 2026-08-27, house rule 8 — this half of the contract genuinely
-       CHANGED, so the spec changes with it rather than being deleted.
-
-       `bbOnlyPosts` is no longer cash-only. B2 gave it a second source: a
-       tournament arrival that lands on the button or the small blind has taken
-       the one seat the big blind has just passed, and would otherwise play most
-       of a free orbit while everyone already at the table had paid to be there.
-       A cash player is held out of the hand instead (registerWaitForBB), which
-       is not available in a tournament — tournament players must be dealt in
-       and blinded off or the field never shrinks. So they owe one live big
-       blind, billed through the same config field.
-
-       The invariant this test guards is therefore no longer "tournaments never
-       populate bbOnlyPosts" but the SPLIT, which is what is pinned below: the
-       cash set can still never bill a tournament seat, and the tournament set
-       can still never bill a cash seat. Nothing here is loosened — the two
-       gates are each asserted where the single old assertion covered one, and
-       the behaviour itself is exercised in
-       server/src/engine/TournamentArrivalPosting.test.ts. */
+    // Owner correction 2026-10-27: both post-to-enter paths are cash-only.
     expect(code).toMatch(/if \(!this\.isTournamentTable\(\) && this\.postingBBToEnter\.size > 0\)/);
-    expect(code).toMatch(/if \(this\.isTournamentTable\(\) && this\.mustPostBB\.size > 0\)/);
-    expect(code).toMatch(
-      /bbOnlyPosts:\s*bbOnlyPostSeats\.length > 0 \? bbOnlyPostSeats : undefined/
-    );
-    // And mustPostBB is only ever added to on a tournament table.
+    expect(code).not.toMatch(/bbOnlyPostSeats\.push\([^;]*mustPostBB/);
+    expect(code).not.toMatch(/if \(this\.isTournamentTable\(\) && this\.mustPostBB\.size > 0\)/);
     const seating = tsCode(read(SEATING_SRC));
     const note = sliceMethod(seating, 'protected noteTournamentArrival');
-    expect(note).toMatch(/if \(!this\.isTournamentTable\(\)\) return;/);
-    expect(note).toMatch(/this\.mustPostBB\.add\(userId\)/);
+    expect(note).toMatch(/this\.mustPostBB\.delete\(userId\)/);
+    expect(seating).not.toMatch(/this\.mustPostBB\.add\(/);
   });
 });
 

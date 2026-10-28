@@ -85,7 +85,39 @@ BEGIN
     RAISE EXCEPTION 'cashier conservation origin migration history drift';
   END IF;
 
+  -- The destination-aware reclaim and movement-only history are one installed
+  -- contract; the later self-claim exception is its only accepted successor.
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261027160320'
+       AND name = 'cashier_claim_destination_and_movement_history'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261027164937'
+       AND name = 'agents_reclaim_from_their_own_wallets_at_any_time'
+  ) THEN
+    RAISE EXCEPTION 'cashier reclaim and movement history migration history drift';
+  END IF;
+
   v_contract := jsonb_build_array(
+    jsonb_build_object(
+      'signature', 'public.fn_club_wallet_claim_back(uuid,uuid,numeric,text,text,text,uuid,uuid)',
+      -- Qualified 160320 destination/credit/replay body with only the 164937
+      -- actor=holder exception; all three agent tiers passed native proof.
+      'hash', '54450c4c6f5e6ca4d3b7804a669bf0cc',
+      'owner', 'postgres'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_history_feed(uuid,text,text,timestamp with time zone,timestamp with time zone,uuid,text,timestamp with time zone,uuid,integer)',
+      -- Installed 160320: server-scoped chip movements, including paging/export.
+      'hash', 'dad4d92ef739f520d0c512c9950d5c62',
+      'owner', 'postgres'
+    ),
+    jsonb_build_object(
+      'signature', 'public.fn_cashier_history_summary(uuid,text,text,timestamp with time zone,timestamp with time zone,uuid)',
+      'hash', 'cf02a67ac0d71d5e0db7c84a5b224f23',
+      'owner', 'postgres'
+    ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
       -- Installed 20261019185853 retains the sealed-day and bank-entity
@@ -437,6 +469,11 @@ BEGIN
         END,
         v_actual_hash;
     END IF;
+    IF v_item ? 'owner'
+       AND (SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = v_oid)
+           IS DISTINCT FROM v_item ->> 'owner' THEN
+      RAISE EXCEPTION 'cashier function owner drift: %', v_item ->> 'signature';
+    END IF;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = v_oid) THEN
       RAISE EXCEPTION 'cashier function is not SECURITY DEFINER: %', v_item ->> 'signature';
     END IF;
@@ -518,7 +555,9 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_club_bank_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', '0b7684873b6cee74e2eafb2cf9cf604a'),
     jsonb_build_object('signature', 'public.fn_club_bank_claim_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', '976208c9e650e2a706a41eeea60b641c'),
+      -- Installed 160320 keeps promo claims in club promo and records that
+      -- destination's balance. Native proof and live source agree exactly.
+      'hash', 'fcfeeb86ff63e1a4e4c01315d851a1e8'),
     jsonb_build_object('signature', 'public.fn_club_bank_reverse_core_20261004(uuid,text,uuid)',
       'hash', '2a67b4b80c857356ef0eaca621b358c3'),
     jsonb_build_object('signature', 'public.fn_admin_remove_chips_core_20261004(uuid,uuid,numeric,text,uuid)',

@@ -54,7 +54,9 @@ describe('P14.2: the accepted roster is produced inside the settlement transacti
     expect(sql).toContain('ACCEPTED_ROSTER_IMMUTABLE');
     expect(sql).toContain('ACCEPTED_ROSTER_TRANSACTION_REQUIRED');
     expect(sql).toContain('ACCEPTED_ROSTER_RECEIPT_REQUIRED');
-    expect(sql).not.toMatch(/accepted_hand_roster_\w+\([^)]*\)\s*\n\s*RETURNS[^$]*SECURITY DEFINER/);
+    expect(sql).not.toMatch(
+      /accepted_hand_roster_\w+\([^)]*\)\s*\n\s*RETURNS[^$]*SECURITY DEFINER/
+    );
     expect(sql).not.toMatch(/GRANT\s+\w+.*accepted_hand_roster/i);
   });
 
@@ -63,7 +65,9 @@ describe('P14.2: the accepted roster is produced inside the settlement transacti
     expect(sql).toContain("'profiles_read_in_acceptance_transaction'");
     expect(sql).toContain("'classification_null'");
     expect(sql).toContain("'profile_missing'");
-    expect(sql).toMatch(/to_char\(p_captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)/);
+    expect(sql).toMatch(
+      /to_char\(p_captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)/
+    );
   });
 
   it('is qualified natively in the maintained accounting shard', () => {
@@ -86,7 +90,36 @@ describe('P14.2: the accepted roster is produced inside the settlement transacti
       expect(probe).toContain(witness);
     const manifest = JSON.parse(read('scripts/qualification/cash-native-hosted.manifest.json'));
     expect(manifest.files['.github/workflows/ci.yml'].sha256).toBe(
-      createHash('sha256').update(readFileSync(resolve(root, '.github/workflows/ci.yml'))).digest('hex')
+      createHash('sha256')
+        .update(readFileSync(resolve(root, '.github/workflows/ci.yml')))
+        .digest('hex')
     );
+  });
+  it('qualifies Lightning original positions through the existing native accounting owner', () => {
+    const correction = read(
+      'supabase/migrations/20261028100820_lightning_accepted_rosters_bind_original_hand_seats.sql'
+    );
+    const lightningProbe = read('scripts/ci/probes/lightning-accepted-roster-native.sql');
+    expect(correction).toContain("'1ece582b0e0e8fbfafa7fb8a3db30441'");
+    expect(correction).toContain("'ecf42ffc004dfe0d9040e76dd338694e'");
+    expect(correction).toContain('m.txid = pg_current_xact_id_if_assigned()');
+    expect(correction).toContain('hp.hand_id = m.hand_id AND hp.player_id = s.user_id');
+    expect(correction).toContain('m.seat_id = s.seat_id');
+    expect(correction).not.toMatch(
+      /UPDATE\s+(?:public\.)?(?:hand_history|hand_atomic_commits|table_seats)/i
+    );
+    expect(runner).toContain("label='lightning-before-correction'");
+    expect(runner).toContain('file=ROOT / LIGHTNING_FIX');
+    expect(runner).toContain("label='lightning-original-seats'");
+    for (const witness of [
+      'LIGHTNING_ORIGINAL_HAND_POSITION_OR_CLASSIFICATION_LOST',
+      'LIGHTNING_MARKER_HAND_DRIFT_NOT_REFUSED',
+      'LIGHTNING_ANCHOR_DRIFT_NOT_REFUSED',
+      'LIGHTNING_CROSS_TRANSACTION_MARKER_NOT_REFUSED',
+      'LIGHTNING_MALFORMED_MAP_NOT_UNAVAILABLE',
+      'LIGHTNING_INVALID_UUID_MAP_NOT_UNAVAILABLE',
+      'LIGHTNING_PARTIAL_MAP_NOT_UNAVAILABLE',
+    ])
+      expect(lightningProbe).toContain(witness);
   });
 });

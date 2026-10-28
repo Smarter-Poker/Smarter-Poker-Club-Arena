@@ -18,6 +18,7 @@
  * preference can reach it.
  */
 import { describe, it, expect } from 'vitest';
+import { tableHudControl } from '../../src/components/table/tableHudControl';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -180,8 +181,17 @@ describe('the player may hide the button, and only the button', () => {
   it('gates the HUD slot', () => {
     const TABLE_PAGE = stripComments(read('src/pages/TablePage.tsx'));
     expect(TABLE_PAGE).toMatch(
-      /!tableState\.isHandInProgress && isRabbitAvailable && v8Settings\.rabbit_hunt_button/
+      /tableHudControl\(\{\s*heroPromptedToAct,\s*handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable,\s*rabbitEnabled: v8Settings\.rabbit_hunt_button,?\s*\}\)/
     );
+    const completed = {
+      heroPromptedToAct: false,
+      handSettling: true,
+      handInProgress: true,
+      rabbitAvailable: true,
+      rabbitEnabled: true,
+    };
+    expect(tableHudControl(completed)).toBe('rabbit');
+    expect(tableHudControl({ ...completed, rabbitEnabled: false })).toBeNull();
   });
 
   it('CANNOT reach the pause: the engine has never heard of the setting', () => {

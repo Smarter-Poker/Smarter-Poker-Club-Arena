@@ -36,6 +36,7 @@ const body = ts.transpile(
 function fixture(overrides: Record<string, unknown> = {}) {
   const d = {
     autoBuyInFiredRef: { current: false },
+    leftSeatPendingRef: { current: false },
     openBuyInOnArrival: true,
     acceptedChair: 0,
     location: { pathname: '/table/destination' },
@@ -76,6 +77,17 @@ describe('an accepted waiting-list chair opens the destination buy-in', () => {
     (f.d as any).engineSnapshot = { table_id: 'destination', players: [{ seat: 1 }] };
     f.run();
     expect(f.d.handleSeatClick).toHaveBeenCalledExactlyOnceWith(2);
+  });
+  it('never reopens a departed seat from a retained buy-in query', () => {
+    const f = fixture({
+      leftSeatPendingRef: { current: true },
+      openBuyInOnArrival: true,
+      window: { location: { search: '?buyin=1' } },
+    });
+    f.run();
+    f.run();
+    expect(f.d.handleSeatClick).not.toHaveBeenCalled();
+    expect(f.d.autoBuyInFiredRef.current).toBe(false);
   });
   it("does not spend another mounted table's buy-in query", () => {
     const f = fixture({

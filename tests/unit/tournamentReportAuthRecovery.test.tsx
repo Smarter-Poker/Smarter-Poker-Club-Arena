@@ -38,6 +38,9 @@ afterEach(() => {
   auth.id = null;
 });
 it('restores the finish after SSO refresh and removes it when the account changes', async () => {
+  // Prepare the real lazy card before timing auth recovery. Parallel test-file
+  // transforms must not consume findByRole's deadline for the state transition.
+  await import('../../src/components/tournament/TournamentRankingCard');
   sessionStorage.setItem(
     'club-arena-finish-reports-v1:hero',
     JSON.stringify({

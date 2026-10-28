@@ -51,6 +51,7 @@ import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import MemberRakebackEditor from '../components/club/MemberRakebackEditor';
+import MemberCreditEditor from '../components/club/MemberCreditEditor';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
@@ -1456,6 +1457,7 @@ export function RoleSection({
   const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
   const [editingRakeback, setEditingRakeback] = useState(false);
+  const [editingCredit, setEditingCredit] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
   const roleConfirmationRef = useRef<HTMLDivElement>(null);
   const roleButtonsRef = useRef(new Map<ClubRole, HTMLButtonElement>());
@@ -1481,9 +1483,9 @@ export function RoleSection({
   // only; what the agent gives their players is the agent's to set
   // (Dan, 2026-10-15), from their agent dashboard.
   const [commissionPct, setCommissionPct] = useState('');
-  // Dan, October 2026: agents have no credit lines; every agent is prepaid.
-  // There is no funding choice to make, so the promotion always sends prepaid
-  // and the database refuses a credit line (agents_are_prepaid).
+  // The operator chooses the funding agreement with the role and rate.
+  const [funding, setFunding] = useState<'prepaid' | 'credit' | ''>('');
+  const [creditLimit, setCreditLimit] = useState('');
 
   // ───────────────────────────────────────────────────────────────────────────
   // FUND THEM NOW?
@@ -1605,11 +1607,25 @@ export function RoleSection({
         setPromoting(false);
         return;
       }
+      if (!funding) {
+        setError('Choose Prepaid Or A Credit Line.');
+        setPromoting(false);
+        return;
+      }
+      const limit = Number(creditLimit);
+      if (
+        funding === 'credit' &&
+        (creditLimit.trim() === '' || !Number.isSafeInteger(limit) || limit <= 0)
+      ) {
+        setError('Enter A Credit Limit In Whole Chips Greater Than Zero.');
+        setPromoting(false);
+        return;
+      }
       // The database stores a fraction. The field asks for a percentage.
       rates = {
         p_commission_rate: comm / 100,
-        p_is_prepaid: true,
-        p_credit_limit: 0,
+        p_is_prepaid: funding === 'prepaid',
+        p_credit_limit: funding === 'credit' ? limit : 0,
       };
     }
 
@@ -1720,7 +1736,40 @@ export function RoleSection({
       {/* The offer. It takes the place of the role controls while it is up,
           because the promotion is already done and the only question left is
           whether to fund it now. */}
-      {editingRakeback ? (
+      {isAgentRole(targetRole) &&
+        ['owner', 'co_owner', 'admin'].includes(myRole) &&
+        !editingCredit &&
+        !editingRakeback &&
+        !confirmRole &&
+        !fundPrompt && (
+          <button
+            type="button"
+            className="mm-roles__confirm-no"
+            disabled={promoting || rolesLoading || rolesLoadFailed}
+            onClick={() => {
+              setError('');
+              setSuccess('');
+              setEditingCredit(true);
+            }}
+          >
+            Edit Credit Line
+          </button>
+        )}
+      {editingCredit ? (
+        <MemberCreditEditor
+          key={`${resolvedClubId}:${targetUserId}:${targetRole}`}
+          clubId={resolvedClubId}
+          userId={targetUserId}
+          role={targetRole}
+          onClose={() => setEditingCredit(false)}
+          onSaved={() => {
+            setEditingCredit(false);
+            setSuccess('Credit Line Updated');
+            toast.success('Credit Line Updated');
+            onRoleChanged();
+          }}
+        />
+      ) : editingRakeback ? (
         <MemberRakebackEditor
           key={targetRole}
           clubId={resolvedClubId}
@@ -1829,8 +1878,35 @@ export function RoleSection({
                 This Rate Covers The Agent Account And Every Sub Agent Under Them. The Agent Sets
                 The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
+              <label className="mm-field">
+                <span className="mm-field__label">Funding</span>
+                <select
+                  className="mm-assign__select"
+                  value={funding}
+                  disabled={promoting}
+                  onChange={(event) => setFunding(event.target.value as typeof funding)}
+                >
+                  <option value="">Choose Prepaid Or A Credit Line</option>
+                  <option value="prepaid">Prepaid</option>
+                  <option value="credit">Credit Line</option>
+                </select>
+              </label>
+              {funding === 'credit' && (
+                <label className="mm-field">
+                  <span className="mm-field__label">Credit Limit In Chips</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={creditLimit}
+                    disabled={promoting}
+                    onChange={(event) => setCreditLimit(event.target.value)}
+                  />
+                </label>
+              )}
               <p className="mm-roles__rates-note">
-                Every Agent Is Prepaid. They Send Only Chips They Already Hold.
+                A Credit Line Authorizes Borrowing. It Does Not Transfer Chips.
               </p>
 
               <p className="mm-roles__rates-note">
@@ -1885,6 +1961,8 @@ export function RoleSection({
                   return;
                 }
                 setCommissionPct('');
+                setFunding('');
+                setCreditLimit('');
                 setConfirmRole(role);
               }}
               aria-current={role === targetRole ? 'true' : undefined}

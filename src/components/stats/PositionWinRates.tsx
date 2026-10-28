@@ -37,8 +37,8 @@ interface PositionStats {
   handsPlayed: number;
   vpip: number;
   pfr: number;
-  /** Per OPPORTUNITY when the payload carries three_bet_opps, else per hand dealt. */
-  threeBet: number;
+  /** Per recorded opportunity; null means no opportunity was measured. */
+  threeBet: number | null;
   threeBetPerOpp: boolean;
   winRate: number | null; // bb/100; null means the scoped contract did not measure it
   totalProfit: number;
@@ -103,9 +103,7 @@ function mapRows(rows: PositionRowLike[]): PositionStats[] {
       handsPlayed: hp,
       vpip: (num(live?.vpip_count) / hp) * 100,
       pfr: (num(live?.pfr_count) / hp) * 100,
-      threeBet: perOpp
-        ? (num(live?.three_bet_count) / opps) * 100
-        : (num(live?.three_bet_count) / hp) * 100,
+      threeBet: perOpp ? (num(live?.three_bet_count) / opps) * 100 : null,
       threeBetPerOpp: perOpp,
       winRate: measuredRate(live?.bb100),
       totalProfit: num(live?.total_profit),
@@ -282,12 +280,12 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
                   <span>{hovered.pfr.toFixed(1)}%</span>
                 </div>
                 <div className="tooltip-stat">
+                  <span>{hovered.threeBetPerOpp ? '3-Bet (Per Opportunity):' : '3-Bet:'}</span>
                   <span>
-                    {hovered.threeBetPerOpp
-                      ? '3-Bet (Per Opportunity):'
-                      : '3-Bet (Per Hand Dealt):'}
+                    {hovered.threeBet === null
+                      ? 'Not Yet Measured'
+                      : `${hovered.threeBet.toFixed(1)}%`}
                   </span>
-                  <span>{hovered.threeBet.toFixed(1)}%</span>
                 </div>
                 <div className="tooltip-stat">
                   <span>Win Rate:</span>
@@ -409,7 +407,12 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
           { key: 'hands', label: 'Hands', render: (row) => row.handsPlayed.toLocaleString() },
           { key: 'vpip', label: 'VPIP', render: (row) => `${row.vpip.toFixed(1)}%` },
           { key: 'pfr', label: 'PFR', render: (row) => `${row.pfr.toFixed(1)}%` },
-          { key: 'three_bet', label: '3-Bet', render: (row) => `${row.threeBet.toFixed(1)}%` },
+          {
+            key: 'three_bet',
+            label: '3-Bet',
+            render: (row) =>
+              row.threeBet === null ? 'Not Yet Measured' : `${row.threeBet.toFixed(1)}%`,
+          },
           {
             key: 'bb100',
             label: 'BB/100',
@@ -424,8 +427,8 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ initialPositions, d
           {allPerOpp
             ? '3-Bet Is Measured Per Opportunity To Re-Raise.'
             : anyPerOpp
-              ? '3-Bet Measurement Varies By Position: Per Opportunity Where Available, Otherwise Per Hand Dealt.'
-              : '3-Bet Is Measured Per Hand Dealt For This Payload.'}{' '}
+              ? '3-Bet Uses Recorded Opportunities. Positions Without Opportunities Are Not Yet Measured.'
+              : '3-Bet Is Not Yet Measured For This Payload.'}{' '}
           Positions Under A Few Hundred Hands Swing A Long Way; Read The Shape, Not The Decimals.
         </p>
       )}

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "finite245 original financial native inputs; no production qualification claim",
   "sourceFiles": {
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979",
     "docs/changelog/2026-10-26-weekly-books-read-original-treasury-gifts.md": "8c81a4494f53a0b99391ccba01d04abe450d6ce1619f9f61837e1217dde53dc2",
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
@@ -56,9 +56,9 @@
     "scripts/qualification/original-retirement-boundary/run-certificate-native.py": "cd69823e06d6f7c618e0ab113e8d255539ea3668153141bf598b0c932f313e51",
     "scripts/qualification/original-retirement-boundary/run-generation-cache-native.py": "5748e431ebf6a2a6fb6c7b95928fc55b789eb7d8679dd82d08d6580eae002fb7",
     "scripts/qualification/original-retirement-boundary/run-installer-native.py": "2fb6dd34483b423ab95fc6cac68b52a98594e078ea7369752e0c5bfcf4ae548f",
-    "scripts/qualification/original-retirement-boundary/run-native.py": "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+    "scripts/qualification/original-retirement-boundary/run-native.py": "4d611a7631aadf3537882aa23891477cf41a6d67603af08d769ed6da21219e28",
     "scripts/qualification/original-retirement-boundary/run-source-ref-native.py": "8d93c7d1613f1e8cda69f2acc74abe04181663985993d1459fa8050ba1dc8e8b",
-    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+    "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": "cccb5de7b5b8d0c6d47dac13ddd8e0f7b6e5cedc4a50f97b7c0f7a4ff409bd83",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/bootstrap.sql": "997688087569fb095402b1bff74c64d7f1b2cda45ea151255875cddcca6d0dad",
     "scripts/qualification/original-retirement-boundary/seal-native-inputs/qualified-parent-20200734.sql": "a4f06a169d4a9b6e95a25d8bd768cde18684cc353d5e7996a00a662f8af67e18",
     "scripts/qualification/original-retirement-boundary/source-ref-reader-proposal.sql": "44432aa686271a580beb4af5a5840b1d0fe06e9f7d2d7309212684843d330cd9",
@@ -104,8 +104,8 @@
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/hand-lines-candidate.sql": "196e0a4025420f7bb21aee8b2c3fcf3e4992b421018480663d75eccd5ef3c95e",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-bbj-combination.py": "820b89d96302d241818b27c388c22ee71dd0956837b6b97feceb9f71b497589d",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-future-return.py": "ba81e3395a4f248ef838d7337c8c3b49821669378822f896be9228561cd885f5",
-    "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py": "79f765b6ff27d119fe27630eabe8c3696eca056ec5cf05077c71b0a3d2688ca0",
-    "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-parts.py": "45b11f77a68ddbbb5931dfb288234391c0a90ae9e77c2753aa148a14a8a47f6f",
+    "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py": "57f8992088a7b19c78e6a3fc1e08d57181f5f6772a769c9621cb448b3f25e7e8",
+    "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-parts.py": "7f177706e18fc99ff64da21649b00164ada1805ea803bdd6ea5f09fc2c43014c",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-readers.py": "12756caae54e497125a3fd6feddaf89ad90552eab6a38fe7ccbc056d9a962b30",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-stale-flows.py": "837e453db12910e1d0182ee99c5156014f63104831b2518fc21fc9bb7d1a0235",
     "scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/old-reader-owners/fn_union_pnl_week_hand_lines.sql": "639de5e3388f2bde70002133fe0891800758620ca3016f8e144511b30e9ddbc2",
@@ -164,7 +164,63 @@
     "scripts/ci/probes/chip-journal-atomicity/test_atomicity.py": "f7d6739a6489fee2d21d6b1356c5b3130a0803006c78efe1cf4b619f5e1dd9f1",
     "scripts/ci/probes/chip-journal-atomicity/test_sql_function_parser.py": "2ad29f475d5f47bef8b3ffba104e1dd3848d1e58da58e8b434241d8583e5f84f",
     "scripts/ci/probes/chip-journal-atomicity/test_rebuy_receipts.py": "01d5d47ca7974c1fbb98eb3b5aa6be957c7f6160329faaa954aa6a3ac747d0a8",
-    "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8"
+    "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8",
+    "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+    "scripts/ci/fixtures/original-flow-occupancy/original-authorities.json": "9e3a5c802d9d192c9b7bc8a95ca8cb07688438d639222cec854ce21cd662ebf8",
+    "scripts/ci/fixtures/original-flow-occupancy/expected-postimages.json": "0c0c708d61b22e6f976fe7682108229bcdf57fb5346981c697869692f19d5ba7",
+    "scripts/qualification/original-retirement-boundary/original-flow-occupancy/native-input.py": "72f329ae5f3df2e53d349f042b629f8e13a59d6bb485dd6f0603a5ec17f53c6b",
+    "scripts/qualification/original-retirement-boundary/original-flow-occupancy/witness-cases.sql": "3c0e698bd4dc0a15ce5919062069334db09133d6babaf6e0e110e8879d9372a6",
+    "docs/changelog/2026-10-28-original-weekly-report-qualified-hand-readers.md": "fd56bf9c6191d95dfe718ef4cccc11785c3dc074dc739d9fe719d045d06870f0",
+    "docs/laws.d/original-weekly-report-uses-qualified-hand-parts.md": "3a81f4396b652746c8996caf9ddc99da78a3de8aa0ebb3b009ffb29f08e16c06",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/README.md": "d241d84fa2ae4f173c08349651597ecb2a15c49f689e8178cc3f630a28bfb61f",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/actual-occupancy-prerequisite.sql": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/actual-original-owner-catalog.json": "b872a0285d1c5ce2f22df5b11bbff4f85700e5aa6f50b9ae84c994c9adfab74e",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/advance-candidate.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/advance-original.sql": "fa9dc9d0ddd15e4415b5c9bf39823fcd994dd2d364722c966c5799ee99c793a5",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/build-candidate.py": "59d675a61d42719f55d897e2f2b7637d223e415b8a9bf51b99d57bfb830618b7",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/candidate-contract.json": "1e63365f65e03dcbebeb9cb7fe1e5b596890725cf18cb7ea71302ff94978dd07",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/composed-candidate.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/guard-candidate.sql": "15a5972271043235532fa333a1da0ec61d7e4a0e63c00a160c2928e1c8a7a133",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/guard-original.sql": "809806842af07372e2994df024a3a56f1d7f3edbc6f50a90f3523020c8b49615",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/native-authority-after.sql": "81270af2f0e53e0395c96a3df25c1c8f2d73a04e9e7fc90bb1327cfbaa498a60",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/native-authority-before.sql": "c690df0529939c7568760bb808b340219a4a9ce06e97573ee0bf52acabb1507d",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py": "5fb487cc8c72bf3d0d6cf94f551757e286fd9a6ef0c7babe9b3de6ef259cdb41",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/occupancy-owner0.sql": "2056850c935d69fb68d2325fdcc7844ac26d6c19468b40a4ddac1c61808e4dd2",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/occupancy-owner1.sql": "21dfab5c7b8035987b715ebc3abe08ef141f539ac50e0fc265a8707edc6a681b",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-manifest.json": "28ab49dc0167d3478ac1220d54b8cf532c8c579aabec85989a7e2f5d144e8857",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-result.json": "da5de80d0ffc0aebf9b65e7aeb64b6fad249409ddcc3828cdc6aabd913d44749",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/report-candidate.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
+    "scripts/qualification/original-retirement-boundary/report-reader-composition/report-original.sql": "fb61a741e21726cce96083a8094501a018f2ae6b875c8c8bf35933335e3746ed",
+    "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
+    "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "df300d1b13c16e0f89ec410dade9ff4bfd4be0ada4c24e0f97e65a9dd9572181",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/README.md": "4cc3744d3028893eb474687455a8b2ff9031b72fd8c7ac6f66f73ed2ab6c3939",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/actual-original-owner-catalog.json": "302ebb43c3c75fd45f5f60462146aedfeec022eac02e17246befe712a577077d",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/advance-candidate.sql": "f7b602b8b29fa04c8a54c2e60db2d0ba6cdec54ee0a2771dcb85866927b502a7",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/advance-original.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/build-candidate.py": "919b5d1548ee9771704426d05e7f13e88f838a4ab23fd8fca630bead1b5655f1",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/candidate-contract.json": "a213199838dbcf2b9dc8fae2124ca6aeb8e29a178cea5f2150346e4b38d8f2b6",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/candidate-query.sql": "a7ac69eaec3ba15b74e64395c88e64c971cafea7204bd5d84d0a63f0c1ae2767",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/composed-candidate.sql": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_satellite_seat_owner.sql": "968faca9be18c9796e36464817778c02d1092cfe38e8892ba78d8307771cab9d",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_touched_registrations.sql": "950eb995c9c087ff6e2b04643a4dcf3a778354f0e5f77d3b87b5aea979d9b58f",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_tournament_entry_club_of.sql": "2705df64d1279c4529b1573c9ba3c783d374b8bbc0c3cf7a45d6d75618bf3358",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/fn_union_pnl_tournament_in_union.sql": "4b664765060e0e848bb5e718c09d72ea7fe119ba7ffb404171f597335486f25d",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/guard-candidate.sql": "39897e178464f6a584552af2fdd8f71fef8489530f532286969949ad9eea05f9",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/guard-original.sql": "15a5972271043235532fa333a1da0ec61d7e4a0e63c00a160c2928e1c8a7a133",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/membership-expression.sql": "1005e38b36e44d32c42c7351543246c69a9d7ff44f8cee56b34d441835dcca17",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-after.sql": "d0a737e4f7d28e571574e5c8e61d86d0efe80fbadd2ba0c5af0df0bfe3faf154",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-before.sql": "9c65bc0af7e602c2319a07782fdf35ae54b96790120fb3f6e8dc94b39502c3d1",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-report-extension.py": "d83413882c08afe956ce39e8b53dc18462e991aa12480163bc0abf955f43d863",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch-result.json": "c4e1688b661de4076244387f7457241b031156aa9fc91b20245cc723e36abf3f",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch.py": "08ae5f21eaedf4fb2c9cb6b395a543696e8e7a67f03c4f53f2a25f8b9682e3b6",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/original-query.sql": "74f6951af4b3673ce4be8cf6a0f2d98834f2c184da35a9cf114809bb5c2bd9ab",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-complete-report-result.json": "0fba74270c7b71144beecd7f13487971e2bc03422a3124495881b1cf9966ba28",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-manifest.json": "1993d3a0d4dde1b9f4f68f087002ebb9eb35cd1296149707549a5c8fc76c5656",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-result.json": "d15a5c6cbac2744655e36f6211ac4431b857851ea3fccdd50b8aaa0df11e4c3a",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/report-candidate.sql": "7c6999828a1e9d43710ead2ebc2442b14bfbcc388f3117fde415a8b4761639be",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/report-original.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/runtime-input-manifest.json": "ef4186b8c88f59f4547336425a227b6922142b057e78201593ffc46c38ff1896",
+    "supabase/migrations/20261028033359_original_weekly_report_reads_tournament_membership_as_a_set.sql": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555"
   },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
@@ -212,11 +268,333 @@
     "retiredDelivery": "03208 was uninstalled; its exactqualified SQL is an archivefixture, not migration history.",
     "queuedOldProducerBoundary": "Real PG17 original old compiled outer queued behind installer gate resumes through the same-OID atomic common leaf; actual current cutover, original outer bytes and private money-core prosrc preserved, rollback/replay/NULL key and subtransaction cases qualified."
   },
+  "workflowPlayerWeekIndexMergeAudit20261027": {
+    "reason": "Exact old workflow9ed701 was recovered at Gitb78abb1fbdffeb761d98bcf888cdce7a0dddce37 and compared with merged74d5c808. Only three player-week-index path triggers and one additional native player-index test step changed in protected8288; no original financial source, guard, command or assertion was removed. This repairs inherited required-CI drift, not financial qualification.",
+    "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "sourceProtectedMerge": "eed8fe1565045c6704cfc557e03b76b8f83fff2e"
+  },
+  "weekClubCoverWorkflowAudit": {
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d",
+    "review": "Reviewed additive workflow differences from exact qualified treasury6cc1c1d376: retained original player-index qualification and added only the unchanged-original weekly-club covering-index native proof/path triggers. Every original245/treasury/hand/clock runner command is unchanged. No financial source/body or monetary assertion changes.",
+    "qualifiedInputs": "Original weekly-club whole owner72cases and11installer/refusal cases, real invalid concurrent build and MVCC heap fallback; actual qualified files retained in this PR. Existing player-index original calculator/check/write native proof retained from protected8288.",
+    "boundary": "Workflow binding only; native enforcement and exact installer proofs, not new financial qualification or production payment certificate."
+  },
+  "rakebackConsolidationLightningWorkflowAudit20261027": {
+    "reason": "Qualified8331 adds only matching week-club source-cover path triggers and native step. Preserve all protected-main and player-index commands; exact additive patch reviewed in consolidation. No original financial source pin changed; final candidate awaits other qualified additive steps.",
+    "previousWorkflowPins": [
+      "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+      "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
+    ],
+    "currentWorkflowPin": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
+  },
+  "cashRefusalIntegrationWorkflowAudit": {
+    "reviewed": "2026-10-27",
+    "reason": "Integrating current main adds only existing qualified player-week-index paths and native step to the unpaid funding workflow; original finite245 commands and financial source pins remain byte-identical. Original workflow diff reviewed against6cc1c1d376; matches separately reviewed cdcb2c162bac workflow correction. No financial function or fixture pin renewed."
+  },
+  "rakebackConsolidationCashRefusalWorkflowAudit20261027": {
+    "reason": "Normal same-task source consolidation preserves all original financial/native commands and all non-workflow source pins. Additive workflow changes reviewed; only exact resulting workflow identity is rebound. All distinct prior qualification audits retained.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d",
+        "incoming": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+        "combined": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d"
+      }
+    ]
+  },
+  "weeklyFeePreparationWorkflowAudit": {
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "e5df49185b86c4e812352ebce1b2e58dd0c598ca28a04cecd63c89ac9b843c52",
+    "review": "Reviewed additive workflow merge from qualified treasury6cc1c1d376: all original financial/treasury commands and runner retained byte-identical; keep existing qualified player-index native step/paths and add only the qualified original coordinator pre-four fee-preparation native40 step/paths. No financial source/body or monetary assertion changed.",
+    "qualifiedEvidence": "Original whole coordinator40cases with current/older/standalone/DST/freeze/source-failure/deadline and actual original nonfinancial R2/R3 pending-window owner; zero current-week financial calls before04. Player-index original calculator/check/write parity from protected8288 retained.",
+    "boundary": "Workflow enforcement binding only, not cold-week capacity or production installation/payment certificate."
+  },
+  "rakebackConsolidationClockWorkflowAudit20261027": {
+    "reason": "Normal same-task source consolidation preserves all original financial/native commands and all non-workflow source pins. Additive workflow changes reviewed; only exact resulting workflow identity is rebound. All distinct prior qualification audits retained.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "2150bb82b671f57ac4df03c872a8a4b41e37ccc912e46da58cfab682d8e6706d",
+        "incoming": "e5df49185b86c4e812352ebce1b2e58dd0c598ca28a04cecd63c89ac9b843c52",
+        "combined": "b6899b098829a3eab86240346df2b55abefe04dad0afcddd5a2cff2431c549fb"
+      }
+    ]
+  },
+  "additiveWorkflowQualificationAudit": {
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "493330fb72213bf83695cf0ec1e5d1047cf916883f234f5714d2081f450604b3",
+    "reason": "Reviewed the complete workflow diff from the qualified treasury workflow. Preserve every original financial command and runner; retain the already qualified matching-player-index native step from protected main and add only the zero-rakeback actual whole-financial-family regression wrapper and its path triggers. No original fixture, source body, financial assertion or proof pin changed.",
+    "preservedOriginalFamily": "Existing sealed245/treasury78/common-leaf and earning source proof commands remain byte-identical.",
+    "addedQualifiedCases": {
+      "rakebackPlayerIndexes": "Original whole allocation/check/write before-after native parity and matching index installer refusal qualification from protected PR8288; no runtime source change.",
+      "zeroRakebackWallets": "Actual original R2main/v3/cached/R3/invoice/discharge family46cases, old zero/missing-wallet refusal then new zero receipt without wallet or chips, positive invalid guards, metadata/installer rollback/replay and concurrent no-double behavior."
+    },
+    "boundary": "Workflow wiring qualification only; no production install/payment/whole4AM capacity certificate."
+  },
+  "rakebackConsolidationPositivePayerAndDeadlineWorkflowAudit20261027": {
+    "reason": "Normal same-task source consolidation preserves all original financial/native commands and all non-workflow source pins. Additive workflow changes reviewed; only exact resulting workflow identity is rebound. All distinct prior qualification audits retained.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "b6899b098829a3eab86240346df2b55abefe04dad0afcddd5a2cff2431c549fb",
+        "incoming": "493330fb72213bf83695cf0ec1e5d1047cf916883f234f5714d2081f450604b3",
+        "combined": "b6653c5e4330d8b6d1a8480f0cea28ea874ac0b1fce754dbb15586ee28fa6278"
+      }
+    ]
+  },
+  "additiveOccupancyQualifierAudit": {
+    "changes": [
+      [
+        "scripts/qualification/original-retirement-boundary/run-native.py",
+        "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+        "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      ],
+      [
+        "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+        "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
+      ]
+    ],
+    "scope": "Qualified optional exact184348 followup after immutable31649 baseline. Original245/BBJ/treasury bodies/assertions preserved; no cryptographic trust helper replaced or mocked.",
+    "workflow_change": {
+      "previousSHA256": ["9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826"],
+      "currentSHA256": "df54a8dc147afa1fb6a69ed2bbd98c906fc3a9e1a4e0a3aeb2bfbde92e5cc8c8",
+      "reason": "Append only optional exact184348 followup to the existing original245/31649 native command. Immutable31649 baseline, every existing command/assertion and cryptographic source helper remain unchanged."
+    },
+    "qualification": {
+      "status": "passed",
+      "original_cases": 245,
+      "original_wallet_bbj": 84,
+      "original_treasury": 7,
+      "native_witness_variants": 7,
+      "read_only_context": true,
+      "changed_financial_source_pins": 3,
+      "original_ret_predicate_unchanged": true,
+      "migrationSHA256": "c78c8717e76186225d0fc480977af3171df55795b69c194af8e9c6b6c8db640c",
+      "native_resultSHA256": "78c5efff0ece8905c3b215ee3acbdacabe2fa8c23c50a38c1e8f18ed218191a6",
+      "boundary": "Finite isolated original-family qualification. Actual first-window production rollback-only parity is separate; no universal fullweek timing guarantee.",
+      "fixtureGuard": "Dedicated original_source_refs database, PostgreSQL17, Unix socket, port55931 only; never production."
+    },
+    "newNativeInputs": [
+      "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql",
+      "scripts/ci/fixtures/original-flow-occupancy/original-authorities.json",
+      "scripts/ci/fixtures/original-flow-occupancy/expected-postimages.json",
+      "scripts/qualification/original-retirement-boundary/original-flow-occupancy/native-input.py",
+      "scripts/qualification/original-retirement-boundary/original-flow-occupancy/witness-cases.sql"
+    ]
+  },
+  "rakebackConsolidationOriginalOccupancyAudit20261027": {
+    "reason": "Exact qualified184348 native wrappers retained byte-identical from installed-recorded c6c448a8; reviewed additive optional occupancy fixture and output identity only. Combined workflow preserves all qualified existing steps including zero-wallet and fee preparation. Other financial source pins unchanged.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "prior": "b6653c5e4330d8b6d1a8480f0cea28ea874ac0b1fce754dbb15586ee28fa6278",
+        "qualifiedIncoming": "df54a8dc147afa1fb6a69ed2bbd98c906fc3a9e1a4e0a3aeb2bfbde92e5cc8c8",
+        "combined": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-native.py",
+        "prior": "8a64e693257d1466f8ff982f8cad57abc6b1b91b2dc6f6218eceb3789478241f",
+        "qualifiedIncoming": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3",
+        "combined": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "prior": "52b10f4ca70507cc0389596953c1a717bc39a957a6a0cbaf54c0194e65e0ba20",
+        "qualifiedIncoming": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880",
+        "combined": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
+      }
+    ]
+  },
   "protectedWorkflowQualificationAudit": {
     "reason": "Publication exposed a stale workflow pin after protected PR #8296. Reviewed its additive treasury-seat-gift input and original-hand/queued-entry native qualification steps, preserving the indexed rakeback qualification from PR #8288. No workflow, financial source, fixture, assertion or production status is changed by this binding correction.",
     "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
     "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
     "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
     "qualificationEvidence": "Existing Unpaid Lightning qualification run 40465468742 job 122059675777 passed the sealed inventory, original treasury gifts and old queued treasury entry steps; this pin correction does not claim production accounting closure."
+  },
+  "wholeHandCoverIntegrationWorkflowAudit": {
+    "reviewed": "2026-10-27",
+    "reason": "Current main adds only existing qualified player-index paths/native step to unpaid workflow; original finite245 commands unchanged. Same reviewed9ed-to74d5 correction as8336, no financial function/fixture pin changed."
+  },
+  "foreignCertificateCoverWorkflowQualificationAudit": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "currentSHA256": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
+    "reason": "Add only the maintained index-only foreign certificate native lane and its triggers. All previous qualification steps retained; no original financial function, source authority, certificate, cache, generation, fixture pin or production verdict retagged.",
+    "qualification": "Exact194250 concurrent installer, original zero/foreign monetary family, unchanged154b8 helper/views, natural covering projection, source bags, boundaries and MVCC. Native timing is not production runtime."
+  },
+  "rakebackConsolidationForeignCertificate194250WorkflowAudit20261027": {
+    "reason": "Normal same-task merge retains every prior native command and original financial/source pin. Only additive qualified foreign-certificate lane and resulting workflow identity integrated. Incoming stale merge-base pins never overwrite qualified184348 source.",
+    "changes": [
+      {
+        "file": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+        "ours": "7c0200b6b9f91d70f8412b67b871b50de53f1667dca033e5d0e3707c05b64a0f",
+        "incoming": "9b05678d6ac22e8b5fcf9abcec8b29db717393da1f330896fc4fa2b2292c413d",
+        "combined": "84d7a7327d1d1270cd7d20e34c09f731da7c122a0354f3703bc99d71c2f3632e"
+      }
+    ],
+    "retained_later_pins": [
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-native.py",
+        "reason": "incoming pin is unchanged merge-base; preserve already-qualified local later source",
+        "retained": "b16e3d5efcda6bff5fdbab5bd641b706153bc70bc40a1cf9e5b3f9fe4c3acea3"
+      },
+      {
+        "file": "scripts/qualification/original-retirement-boundary/run-wrapper-native.py",
+        "reason": "incoming pin is unchanged merge-base; preserve already-qualified local later source",
+        "retained": "8fa7ab20e35fe8571143f8a17ce9b2d44422ab739e801c8267df02135adc7880"
+      }
+    ]
+  },
+  "workflowCompositionAudit20261027": {
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "reviewedPreimageRevision": "b78abb1fbdffeb761d98bcf888cdce7a0dddce37",
+    "change": "Protected #8288 adds three rakeback-player-week path triggers and one additional isolated PostgreSQL step; all original financial qualification commands, cases, constraints and assertions remain byte-identical. Pin correction repairs required merge-composition failure, not financial qualification or production proof."
+  },
+  "rakebackConsolidationLinkedOutcomeWindowAudit20261027": {
+    "reason": "Add only three matching path triggers and one qualified native linked-outcome-recognition-window index step. Every prior workflow line and native command preserved in original order; no original financial source, assertion, fixture pin, source65 or production verdict changed.",
+    "previousSHA256": "84d7a7327d1d1270cd7d20e34c09f731da7c122a0354f3703bc99d71c2f3632e",
+    "currentSHA256": "6c2c0f86f0ec0c47f1ab25d56a0d3a8e1402b74799d467a5658470752103a999",
+    "qualifiedIncomingHead": "4bd3999d3553bb4ca18e3f63768a214eafd1a550",
+    "qualifiedMigrationSHA256": "5a744e2fa61360c1cb75074b4798249829862e3544016150ff7a8aa125da6b2c",
+    "qualification": "17 real PostgreSQL17 original-full-row/reducer/witness/catalog/freeze/CCI refusal cases passed in released candidate; inherited exact source and evidence retained. Local qualification is not production installation or closed84-window books."
+  },
+  "rakebackConsolidationStandaloneEntryCoverAudit20261027": {
+    "reason": "Add only three matching triggers and one qualified native standalone-entry domain-cover step. Every preceding workflow line and command remains in original order. Index-only SQL changes no function, financial source pin, original historical first-week domain, budget, ACL or schedule.",
+    "previousSHA256": "6c2c0f86f0ec0c47f1ab25d56a0d3a8e1402b74799d467a5658470752103a999",
+    "currentSHA256": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
+    "qualifiedIncomingHead": "9266fbef38a7e8fb7b0bcf584f56089bf51ee108",
+    "qualifiedMigrationSHA256": "175e3ac2756500e92c43fa92b5c1100b017011f143714231f3c39c36ee204a20",
+    "qualification": "Released nativePG17 56cases with actual entry/allhelpers/fullsixdefinition+metadata/11tablecatalog/58existingindex context; local evidence is not installation, closed books or future4AM capacity."
+  },
+  "rakebackScalarOutcomeJoinCoverWorkflowAudit20261027": {
+    "reason": "Only three matching path triggers and one independently qualified scalar-cover native command added. Every parent workflow line and command retained in original order. No financial source, fixture, function, generation, source65, assertion, budget, ACL or production verdict changed.",
+    "previousSHA256": "3fffab3d50377f7f5b8575a581718d25ecaaf5d371daf63caf04a7e0466c68a6",
+    "currentSHA256": "51c3117b1ae62c79d741b5065a56105baac7a4e6125716a99b28ee5ff835c6f4",
+    "qualifiedIncomingHead": "63c1e91a59e5c49f1cea21158dac59e3c97e97e8",
+    "migrationSHA256": "b228abb85c4449d6542ef00150b1bd09c567c7a7a3b666816043c39b4e411c3b",
+    "qualification": "24 real PG17 cases with five complete core owners/metadata plus original generation and source65; all84-window/wholeweek reducer parity. Local evidence is not installation or full production book closure."
+  },
+  "workflowBindingAudit20261027": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "reviewedCommit": "60f9fe0a31a1ed47366164dfd58dbe298244863c",
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "change": "Protected main added the treasury-seat-gift migration argument plus native original-owner and queued-common-leaf qualification steps. Reviewed full workflow and commit diff; retained those checks unchanged. Repair stale binding that failed PR8351; no new financial qualification claim."
+  },
+  "rakebackProtectedMainBudgetIntegration20261028": {
+    "review": "Preserves all protected-main changes including measured Accounting2 50 minute budget and every rakeback native step. Only combined active workflow binding changes; historical audits, source pins, financial assertions and installation records retained. Not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
+    },
+    "execution_performed": false
+  },
+  "weeklyQualityNativeWorkflowBinding20261028": {
+    "review": "Reviewed exact additive C2 workflow diff: three path triggers and one native PostgreSQL quality-source-bag step. All existing commands and assertions retained. Corrects the missed active workflow identity detected by hosted source-binding verification; no SQL, fixture, generation, assertion or production record changes.",
+    "previous": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "current": "cc9fea0c90f30d332aeb8615155315f5cb9c10225ffff24ada644a8d4916cf86",
+    "execution_performed": false
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "workflowSummaryScopeAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "currentSHA256": "edaf58fa20ae5f525956d1633ffe9a7f81c453a4e64f75f7192593d548ca6350",
+    "change": "Adds only three exact summary source paths and one maintained PG17 current-summary/current-view NULL and non-NULL scope native step. All existing qualification steps and source assertions remain unchanged. Reviewed exact workflow diff; no production closure claim."
+  },
+  "workflowPrivateDepositCoverAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "currentSHA256": "bba16848ad0adb7d646a3c43b42258c71403de7ccc62c946ca266e98503eb090",
+    "change": "Only three new private-deposit source-cover paths and one isolated PG17 physical index qualification step. All prior original financial qualification commands, cases and assertions retained. Physical native plan evidence is not production book closure."
+  },
+  "combinedOccupancyReportNativeOrdering20261028": {
+    "review": "When both qualified options run, occupancy already executed full rollback/replay/metadata/ACL/source65 proofs. Require the captured report authority prefix to equal the exact occupancy migration body byte-for-byte, then retain the entire remaining report setup and all original assertions; avoid replaying only that already-proved prefix. No production SQL or financial expectations changed.",
+    "execution_performed": false
+  },
+  "workflowPrivateCashRecordCoverAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "b109de5c6ede08c2aa13daee091cd1dac7a22a91a69e4adf6e6126d0154aff16",
+    "currentSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
+    "change": "Exactly three new qualification paths and one new isolated PG17 cash-record scalar-cover step; removing these additions recovers prior workflow byte-for-byte. Every prior financial qualification command/assertion/input remains unchanged. New exact official migration/native guard cases qualify only additive physical access; no production runtime or book closure claim."
+  },
+  "cashierMainIntegration20261027": {
+    "reason": "Repair stale input identity inherited from protected main PR8296 after reviewing its workflow diff: adds the treasury migration argument and two original-treasury native qualification steps. No test, financial body, assertion or historical certification is changed; this records workflow input identity only.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928"
+  },
+  "workflowTournamentFeeScopeUnionCoverAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
+    "currentSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "change": "Exactly three new qualification paths and one isolated PG17 global tournament/union scalar-cover step. Removing these additions recovers prior workflow bytes exactly, including all cash23500 and previous native financial commands/assertions. All other source pins/objects unchanged. New official migration native27 qualifies physical access and installer guards only; no production runtime or book closure claim."
+  },
+  "workflowPrivateVerdictAdditiveAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "currentSHA256": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
+    "change": "Exactly five qualification paths (including both consumed shared fixture families) and one new isolated PG17 exact official private-verdict step. Reverse-removal recovers prior workflow byte-for-byte; every previous native financial command/assertion and every other pinned source byte remains unchanged. Exact existing four-patch C2 is qualified by the new guarded full installer/native92; no new bulk rewrite or production closure claim."
+  },
+  "reportMembershipCapacityQualificationAudit": {
+    "reason": "Reviewed additive exact membership48 native step and current-report/real84 plus actual65 finite245 extension. Existing financial/native steps retained; no monetary source, raw fixtures, economic assertions or installed history changed. Explicit empty tournament boundary uses actual TEXT tournament IDs; exact nonempty membership semantics separately qualified.",
+    "changes": {
+      "scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py": {
+        "before": "2a26aadeec6a4116b011179135ed18ff24209cf8801b5172846857ed32a86f5d",
+        "after": "5fb487cc8c72bf3d0d6cf94f551757e286fd9a6ef0c7babe9b3de6ef259cdb41"
+      },
+      "scripts/qualification/original-retirement-boundary/run-wrapper-native.py": {
+        "before": "94f2fe8b578c8555c896f4108a972a43759e81f29fd456a9a804634a09277863",
+        "after": "cccb5de7b5b8d0c6d47dac13ddd8e0f7b6e5cedc4a50f97b7c0f7a4ff409bd83"
+      },
+      "scripts/qualification/original-retirement-boundary/run-native.py": {
+        "before": "99c0a45846946a1f99d1b3ba2f6b8fd3e4541282044fa344e163c4964293ffbb",
+        "after": "4d611a7631aadf3537882aa23891477cf41a6d67603af08d769ed6da21219e28"
+      },
+      "scripts/qualification/original-retirement-boundary/report-reader-composition/qualified-manifest.json": {
+        "before": "ec30cba52a4bdeed6b2ec2b276f4f1f3aa6c5d381f125093072a72e46ed6ce34",
+        "after": "28ab49dc0167d3478ac1220d54b8cf532c8c579aabec85989a7e2f5d144e8857"
+      },
+      ".github/workflows/unpaid-lightning-funding-contracts.yml": {
+        "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+        "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
+      }
+    },
+    "formatting": "Ordinary commit hook formatted captured metadata JSON and native result JSON only; parsed metadata/gen and native result values verified unchanged. Native runner now prints results without mutating retained source inputs."
+  },
+  "combinedC2MembershipWorkflow20261028": {
+    "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
+    "execution_performed": false
+  },
+  "originalTournamentCreditCoverWorkflowAudit20261028": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
+    "after": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "change": "Only3 additive qualification paths and one original2-field creditSUM physical-cover native step. Every existing native command/assertion preserved; no query, function, GEN, financial source/fixture or installed recording changed."
+  },
+  "groupedPrivateSourceWorkflowAudit20261028": {
+    "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
+    "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  },
+  "orderedPrivateKeyWorkflowAudit20261028": {
+    "review": "Only adds ordered-key native97 path/lane; every existing native command and input retained. Prior valid source evidence remains separate.",
+    "priorWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "currentWorkflowSHA256": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
+    "prior_commands_preserved": true
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
+    "prior_commands_preserved": true
   }
 }

@@ -1,0 +1,5 @@
+{
+  "_owner": "horse-brain-consolidation-01a17dc2",
+  "_comment": "Source only, not installed. Additive service-only bounded two/four-node sidecar for validated original public history. Existing v3 definition remains unchanged; missing or stale sidecar leaves original history intact. Require exact native MD5 and service-only ACL readback.",
+  "functions": ["fn_horse_multiway_river_nodes_v1"]
+}

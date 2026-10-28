@@ -330,6 +330,7 @@ export function tableRefusal(table: TalkTable): TableRefusal | null {
 export type Street = 'preflop' | 'flop' | 'turn' | 'river';
 
 export interface TalkFacts {
+  /** Event thresholds only. Never expose this amount in chat or template filling. */
   potBB?: number;
   street?: Street;
   hand?: string;
@@ -383,6 +384,10 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
       : undefined;
   const street = streetOf(input.communityCards.length);
   const winnerIds = new Set(input.winners.map((w) => w.userId));
+  // Multiple recipients can be a chop, hi/lo, multiple boards or side pots.
+  // A payout alone cannot tell us who won or lost the hand. Stay quiet rather
+  // than celebrate the whole pot or invent a bad beat from incomplete facts.
+  if (winnerIds.size !== 1) return out;
   const seatOf = (userId: string): number | undefined =>
     input.seated.find((s) => s.userId === userId)?.seat;
   // A hand is "shown" only when its showdown record is unmucked. A fold-win
@@ -544,10 +549,6 @@ export function lineIndexFor(
 
 function factValue(key: string, facts: TalkFacts): string | undefined {
   switch (key) {
-    case 'potBB':
-      return facts.potBB !== undefined && Number.isFinite(facts.potBB)
-        ? String(Math.round(facts.potBB))
-        : undefined;
     case 'street':
       return facts.street;
     case 'hand':
@@ -659,8 +660,20 @@ const EMOJI = new RegExp(
   'u'
 );
 
+// Owner: never narrate BB amounts in horse chat, including future/styled lines.
+// Also refuse the unit written out, so spelling out the amount cannot bypass it.
+const FORBIDDEN_BB_CHAT =
+  /\d[\d.,]*[\s-]*(?:bbs?|big[\s-]*blinds?)\b|\bbbs?\b|\bbig[\s-]+blinds?\b/i;
+
 export type SanitizeRefusal =
-  'empty' | 'too_long' | 'dash' | 'emoji' | 'at_sign' | 'placeholder' | 'names_a_player';
+  | 'bb_amount'
+  | 'empty'
+  | 'too_long'
+  | 'dash'
+  | 'emoji'
+  | 'at_sign'
+  | 'placeholder'
+  | 'names_a_player';
 
 export type SanitizeVerdict = { ok: true; line: string } | { ok: false; reason: SanitizeRefusal };
 
@@ -685,6 +698,7 @@ export function sanitizeLine(
   usernames: readonly (string | null | undefined)[]
 ): SanitizeVerdict {
   const trimmed = line.trim();
+  if (FORBIDDEN_BB_CHAT.test(trimmed)) return { ok: false, reason: 'bb_amount' };
   if (trimmed.length === 0) return { ok: false, reason: 'empty' };
   if (trimmed.length > TALK_LINE_MAX_CHARS) return { ok: false, reason: 'too_long' };
   if (BANNED_DASH.test(trimmed)) return { ok: false, reason: 'dash' };
@@ -896,7 +910,9 @@ function noteStreaks(mem: TableMemory, input: TableTalkInput): void {
   for (const r of input.showdownResults) {
     if (!horses.has(r.userId)) continue;
     const cur = mem.streak.get(r.userId) ?? 0;
-    if (winners.has(r.userId)) mem.streak.set(r.userId, cur > 0 ? cur + 1 : 1);
+    if (winners.has(r.userId) && winners.size > 1) {
+      mem.streak.delete(r.userId);
+    } else if (winners.has(r.userId)) mem.streak.set(r.userId, cur > 0 ? cur + 1 : 1);
     else mem.streak.set(r.userId, cur < 0 ? cur - 1 : -1);
   }
 }
@@ -1207,6 +1223,12 @@ export async function writeChatRow(
   horseId: string,
   line: string
 ): Promise<boolean> {
+  if (FORBIDDEN_BB_CHAT.test(line)) {
+    reportError(new Error('Horse chat refused: bb_amount'), 'HorseTableTalk.chat_refused', {
+      tableId,
+    });
+    return false;
+  }
   const { error } = await supabase.from('table_chat').insert({
     table_id: tableId,
     user_id: horseId,

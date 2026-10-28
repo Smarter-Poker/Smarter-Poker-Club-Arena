@@ -61,8 +61,20 @@ function useBreakRemaining(active: boolean, breakEndsAtMs: number | null): numbe
   useEffect(() => {
     if (!active) return;
     setRemaining(read());
-    const timer = setInterval(() => setRemaining(read()), 1000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setRemaining(read());
+    }, 1000);
+
+    const onVisible = () => {
+      if (!document.hidden) setRemaining(read());
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [active, read]);
   return remaining;
 }

@@ -1,0 +1,7 @@
+# Cash accrual status cover
+
+The exact production cash-completeness assertion spent166.440seconds across two calls. Its actual plan already read the raw week's IDs through a compact index, but scanned all3.7million accrual-batch heap rows (roughly4GiB) merely to obtain rake_record_id and status. No existing batch index covered both fields;99.66% of heap pages were all-visible.
+
+Add only the nonpartial batch index on rake_record_id INCLUDE(status), through the maintained concurrent-preamble installer. Preserve the exact original assertion body0df1c3e9fe3e1a0e53a043baf57127d7, metadata, authorization, both fresh raw completeness checks, ghost/launch/scope/null predicates, source pins, all paid math, cache identities and budgets. No function, source row, receipt or financial rule changes.
+
+Native PostgreSQL qualifies full original before/after candidate-ID sets and function outcomes across scope/calendar/generic/custom cases, invalid input and authorization, natural index-only access without planner hints, actual invalid concurrent-build refusal, malformed catalog refusal, frozen/rollback/replay behavior and real two-session MVCC visibility fallback. Controlled auth/ghost/launch/platform helpers remain explicit fixture boundaries. Native RAM timings are not production speed proof; root must verify the exact installed index and unchanged original function and measure the original owner before claiming payout capacity or completion.

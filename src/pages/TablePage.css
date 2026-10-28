@@ -139,6 +139,8 @@
   -webkit-touch-callout: none;
   user-select: none;
   overscroll-behavior: none;
+  /* Thermal & battery: isolate table page layout/paint recalculations from global DOM tree */
+  contain: layout paint;
 }
 
 /* ─── STATIC RESERVES / HISTORICAL ONE-SIZE PRESENTATION (2026-08-28) ─────
@@ -877,16 +879,22 @@
    today's dvh behaviour instead of losing the table. */
 @supports (height: 100svh) {
   .table-container {
-    --sp-page-h: 100svh;
+    --sp-page-h: var(--sp-table-stable-viewport-h, 100svh);
   }
 
   .table-page--embedded .table-container {
-    --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
+    --sp-page-h: calc(
+      var(--sp-table-stable-viewport-h, 100svh) -
+        var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px)))
+    );
   }
 
   @media (max-width: 480px) {
     .table-page--embedded .table-container {
-      --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+      --sp-page-h: calc(
+        var(--sp-table-stable-viewport-h, 100svh) -
+          var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px)))
+      );
     }
   }
 }
@@ -3706,6 +3714,21 @@
   transition: none !important;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UNDER-MODAL ANIMATION SUSPENSION — Freeze felt & background loops when
+   a modal/overlay covers the table, eliminating GPU shader load & heat.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--modal-active .table-art,
+.table-page--modal-active .table-surface,
+.table-page--modal-active .table-brand,
+.table-page--modal-active .pot-area,
+.table-page--modal-active .pot-area *,
+.table-page--modal-active .dealer-button,
+.table-page--modal-active .table-page__stars {
+  animation-play-state: paused !important;
+}
+
 /* ══════════════════════════════════════════════════════════════
    PHASE 2: TOP & BOTTOM UI BUTTONS 
    ══════════════════════════════════════════════════════════════ */
@@ -5048,9 +5071,7 @@ button.post-bb-overlay-button {
     --sp-page-h: 100dvh;
     --sp-hero-clear: clamp(60px, calc(12vw + 8px), 68px);
     /* Compact upper pods use the empty rail band below the jackpot. */
-    --sp-table-top: calc(
-      var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top) + var(--sp-bar-drop, 0px)
-    );
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
   .table-page--embedded .table-container {
     /* Reserve the ticker's maximum band even when it is absent. A promotion
@@ -5087,13 +5108,13 @@ button.post-bb-overlay-button {
 }
 @media (max-width: 480px) {
   .table-page {
-    --sp-game-tool-size: 34px;
+    --sp-game-tool-size: 48px;
   }
 }
 /* Compact viewports still reserve the top pod below the jackpot. */
 @media (max-width: 480px) and (max-height: 650px) and (orientation: portrait) {
   .table-container {
-    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
 }
 
@@ -5153,7 +5174,8 @@ button.post-bb-overlay-button {
     /* Small rings retain their declared downward offset; it cannot also
        consume the bottom observer seat's clearance. */
     height: calc(
-      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - var(--sp-observer-clear, 42px) -
+        var(--sp-short-table-drop, 0px)
     );
     max-height: none;
     flex-shrink: 0;
@@ -5181,5 +5203,48 @@ button.post-bb-overlay-button {
   .table-page[data-seats='6'] .table-scaler {
     --sp-seat-h-scale: 0.96;
     margin-top: calc(var(--sp-table-h, 100svh) * 0.02);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREFERS-REDUCED-TRANSPARENCY — Low-power fallback for heavy glassmorphism blur
+   Replaces expensive 20px real-time backdrop blur filters with opaque dark glass
+   when requested by the OS, cutting GPU composition heat and conserving battery.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-transparency: reduce) {
+  .spectator-footer-bar,
+  .footer-action-bar,
+  .header-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(12, 15, 22, 0.98) !important;
+  }
+}
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 4px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-container {
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-hero-clear: clamp(52px, calc(10vw + 24px), 56px);
+  }
+}
+@media (max-width: 380px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 2px;
+  }
+}
+
+/* Short notched phones lift the cards three pixels inside the existing hero lane. */
+@media (min-width: 341px) and (max-width: 480px) and (max-height: 700px) and (orientation: portrait) {
+  .seat .seat__cards--hero {
+    translate: 0 -3px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page[data-hero='false'] .table-scaler {
+    --sp-observer-clear: 38px;
   }
 }

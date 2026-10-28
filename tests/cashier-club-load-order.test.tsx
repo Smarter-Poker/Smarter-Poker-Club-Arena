@@ -623,7 +623,7 @@ describe('CashierTradePage club load ordering', () => {
       p_club_id: CLUB_ID,
       p_scope: 'club',
       p_kind: 'all',
-      p_from: null,
+      p_from: expect.any(String),
       p_to: null,
       p_person: null,
     });
@@ -631,7 +631,7 @@ describe('CashierTradePage club load ordering', () => {
       p_club_id: CLUB_ID,
       p_scope: 'club',
       p_kind: 'all',
-      p_from: null,
+      p_from: expect.any(String),
       p_to: null,
       p_person: null,
       p_search: null,
@@ -647,7 +647,7 @@ describe('CashierTradePage club load ordering', () => {
         p_club_id: CLUB_ID,
         p_scope: 'mine',
         p_kind: 'all',
-        p_from: null,
+        p_from: expect.any(String),
         p_to: null,
         p_person: null,
         p_search: null,
@@ -683,7 +683,7 @@ describe('CashierTradePage club load ordering', () => {
     await waitFor(() =>
       expect(supabase.rpc).toHaveBeenCalledWith(
         'fn_cashier_history_feed',
-        expect.objectContaining({ p_scope: 'mine', p_kind: 'cashout', p_from: null })
+        expect.objectContaining({ p_scope: 'mine', p_kind: 'cashout', p_from: expect.any(String) })
       )
     );
     fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
@@ -749,7 +749,7 @@ describe('CashierTradePage club load ordering', () => {
     ).not.toBeInTheDocument();
     expect(panel).toHaveAttribute('aria-busy', 'true');
     await act(async () => mine.resolve({ data: [], error: null }));
-    await within(panel).findByText('No Transactions Recorded Yet.');
+    await within(panel).findByText('No Transactions Match These Filters.');
   });
 
   it.each([
@@ -809,7 +809,7 @@ describe('CashierTradePage club load ordering', () => {
     const panel = await openHistory();
     fireEvent.click(await within(panel).findByRole('button', { name: 'Load 50 Older Entries' }));
     fireEvent.click(within(panel).getByRole('button', { name: 'My Transactions' }));
-    await within(panel).findByText('No Transactions Recorded Yet.');
+    await within(panel).findByText('No Transactions Match These Filters.');
     await act(async () => older.reject(new Error('Old book unavailable')));
     expect(toastMocks.error).not.toHaveBeenCalled();
   });

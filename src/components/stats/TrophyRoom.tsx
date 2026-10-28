@@ -66,6 +66,8 @@ interface TournLike {
 }
 
 interface Props {
+  aggressionAvailable?: boolean;
+  hoursAvailable?: boolean;
   /** The ALL-TIME overall block. Never the range-windowed one. */
   overall?: OverallLike | null;
   tournaments?: TournLike | null;
@@ -284,6 +286,8 @@ export default function TrophyRoom({
   overall,
   tournaments,
   lifetimeHands = 0,
+  aggressionAvailable = true,
+  hoursAvailable = true,
   userId,
   scope = CHIP_STATS,
   clubId = null,
@@ -301,11 +305,19 @@ export default function TrophyRoom({
 
   // Shared with the share card on PlayerStatsPage, so the two surfaces can
   // never disagree about a player's style. Returns null below STYLE_MIN_HANDS.
-  const style = useMemo(() => playerStyleFromStats(overall), [overall]);
+  const style = useMemo(
+    () => playerStyleFromStats(overall, aggressionAvailable),
+    [overall, aggressionAvailable]
+  );
 
   const milestones = useMemo(
-    () => (overall ? buildMilestones(overall, tournaments ?? null, lifetimeHands) : []),
-    [overall, tournaments, lifetimeHands]
+    () =>
+      overall
+        ? buildMilestones(overall, tournaments ?? null, lifetimeHands).filter(
+            (milestone) => hoursAvailable || milestone.id !== 'marathon'
+          )
+        : [],
+    [overall, tournaments, lifetimeHands, hoursAvailable]
   );
 
   const unlocked = milestones.filter((m) => m.unlocked);
@@ -391,9 +403,11 @@ export default function TrophyRoom({
             <div className="trophy-style-body">
               <span className="trophy-style-label is-forming">Style Forming</span>
               <p className="trophy-style-note">
-                {overall.total_hands < STYLE_MIN_HANDS
-                  ? `${(STYLE_MIN_HANDS - overall.total_hands).toLocaleString()} More Hands And There Will Be Enough To Read Your Style Honestly. Guessing From ${overall.total_hands.toLocaleString()} Would Mostly Be Describing Variance.`
-                  : 'Your Numbers Do Not Yet Sit Clearly In One Style. That Is Common, And Not A Bad Thing.'}
+                {!aggressionAvailable
+                  ? 'Exact Call Data Is Not Yet Available To Assess Your Style.'
+                  : overall.total_hands < STYLE_MIN_HANDS
+                    ? `${(STYLE_MIN_HANDS - overall.total_hands).toLocaleString()} More Hands And There Will Be Enough To Read Your Style Honestly. Guessing From ${overall.total_hands.toLocaleString()} Would Mostly Be Describing Variance.`
+                    : 'Your Numbers Do Not Yet Sit Clearly In One Style. That Is Common, And Not A Bad Thing.'}
               </p>
             </div>
           </div>

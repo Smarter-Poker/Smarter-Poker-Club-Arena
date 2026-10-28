@@ -10,12 +10,18 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / "supabase/migrations/20261026231712_halve_cash_capacity_and_rank_cash_horses_by_performance.sql"
 sql = MIGRATION.read_text()
+# The maintained latest scope guard must qualify in the existing accounting job.
+SCOPE = ROOT / "supabase/migrations/20261027152318_scope_the_horse_cash_roster_to_club_arena.sql"
+scope_sql = SCOPE.read_text()
 def definition(name):
     match = re.search(r"CREATE OR REPLACE FUNCTION public\." + name + r"\([\s\S]*?AS \$function\$[\s\S]*?\$function\$;", sql)
     assert match, name
     return match.group(0)
 
 bootstrap = """
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role;
 CREATE TYPE public.cash_cluster_census_row AS (id uuid,role text,main_index integer,lifecycle text,status text,created_at timestamptz,max_players integer,seated integer,reserved integer,open_unreserved integer,breaking boolean);
 CREATE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS 'SELECT true';
 CREATE TABLE cash_games(enabled boolean,closed_at timestamptz,state text);
@@ -41,7 +47,8 @@ CREATE TABLE ca_horse_roster_cash_tag_backup(
  persona_cash text,persona_mtt text,variants text[] NOT NULL,preferred_stakes numeric[] NOT NULL,max_tables smallint NOT NULL,
  saved_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(horse_id,club_id));
 CREATE TABLE ca_horse_roster_log(size integer,demand integer,active uuid[],plo uuid[],result jsonb);
-CREATE TABLE tables(id uuid primary key,tournament_id uuid);
+CREATE TABLE clubs(id uuid primary key,asset text,is_platform boolean,union_id uuid);
+CREATE TABLE tables(id uuid primary key,tournament_id uuid,club_id uuid,union_id uuid);
 CREATE TABLE table_seats(user_id uuid,table_id uuid,left_at timestamptz,active_game_scope uuid,stack numeric);
 INSERT INTO profiles SELECT lpad(i::text,32,'0')::uuid,true,'active',case when i=13 then 'disabled' else 'available' end FROM generate_series(1,14) i;
 INSERT INTO ca_horse_fleet_register SELECT id,case when id=lpad('14',32,'0')::uuid then now() else null end FROM profiles;
@@ -69,6 +76,13 @@ IF (fn_cash_cluster_tick(lpad('1',32,'0')::uuid)->>'skipped') <> 'frozen' THEN R
 END $proof$;
 """
 assertions = """
+DO $proof$ BEGIN
+ IF has_function_privilege('anon','public.fn_ca_horse_roster_seat_guard()','EXECUTE')
+    OR has_function_privilege('authenticated','public.fn_ca_horse_roster_seat_guard()','EXECUTE')
+    OR NOT has_function_privilege('service_role','public.fn_ca_horse_roster_seat_guard()','EXECUTE')
+    OR NOT (SELECT prosecdef FROM pg_proc WHERE oid='public.fn_ca_horse_roster_seat_guard()'::regprocedure)
+ THEN RAISE EXCEPTION 'scope migration changed service-role-only security definer contract'; END IF;
+END $proof$;
 SELECT fn_ca_horse_roster_refresh(999);
 DO $proof$ BEGIN
   IF (SELECT demand FROM ca_horse_roster_log ORDER BY size LIMIT 1)<>1 THEN RAISE EXCEPTION 'live game demand was fabricated'; END IF;
@@ -90,7 +104,15 @@ SELECT fn_ca_horse_roster_refresh();
 DO $proof$ BEGIN
  IF (SELECT count(*) FROM ca_horse_roster_cash_tag_backup)<>8 THEN RAISE EXCEPTION 'duplicate backup'; END IF;
 END $proof$;
-INSERT INTO tables VALUES(lpad('101',32,'0')::uuid,null),(lpad('102',32,'0')::uuid,lpad('1001',32,'0')::uuid);
+INSERT INTO clubs VALUES(lpad('99',32,'0')::uuid,'chips',false,null),
+ (lpad('98',32,'0')::uuid,'diamonds',true,null),
+ (lpad('97',32,'0')::uuid,'diamonds',false,null);
+INSERT INTO tables VALUES(lpad('101',32,'0')::uuid,null,lpad('99',32,'0')::uuid,null),
+ (lpad('102',32,'0')::uuid,lpad('1001',32,'0')::uuid,lpad('99',32,'0')::uuid,null),
+ (lpad('103',32,'0')::uuid,null,lpad('98',32,'0')::uuid,null),
+ (lpad('104',32,'0')::uuid,null,lpad('98',32,'0')::uuid,lpad('88',32,'0')::uuid),
+ (lpad('105',32,'0')::uuid,null,lpad('97',32,'0')::uuid,null);
+
 CREATE TRIGGER roster BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_horse_roster_seat_guard();
 INSERT INTO table_seats VALUES(lpad('1',32,'0')::uuid,lpad('101',32,'0')::uuid,null,null,100);
 INSERT INTO table_seats VALUES(lpad('8',32,'0')::uuid,lpad('102',32,'0')::uuid,null,null,100);
@@ -100,6 +122,22 @@ DO $proof$ BEGIN
   RAISE EXCEPTION 'benched cash admission succeeded';
  EXCEPTION WHEN insufficient_privilege THEN NULL;
  END;
+END $proof$;
+-- The same off-roster horse may buy a Diamond seat, but not fake/union arenas.
+INSERT INTO table_seats VALUES(lpad('8',32,'0')::uuid,lpad('103',32,'0')::uuid,null,null,100);
+DO $proof$ DECLARE target integer;horse integer; BEGIN
+ FOREACH target IN ARRAY ARRAY[104,105] LOOP
+  BEGIN
+   INSERT INTO table_seats VALUES(lpad('8',32,'0')::uuid,lpad(target::text,32,'0')::uuid,null,null,100);
+   RAISE EXCEPTION 'malformed Diamond scope bypassed Club roster';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ END LOOP;
+ FOREACH horse IN ARRAY ARRAY[13,14] LOOP
+  BEGIN
+   INSERT INTO table_seats VALUES(lpad(horse::text,32,'0')::uuid,lpad('103',32,'0')::uuid,null,null,100);
+   RAISE EXCEPTION 'disabled/retired horse gained new Diamond admission';
+  EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+ END LOOP;
 END $proof$;
 -- Bench the already-seated horse through a genuine performance reorder.
 UPDATE horse_daily_nets SET net_bb=-9999 WHERE horse_user_id=lpad('1',32,'0')::uuid;
@@ -111,7 +149,7 @@ SELECT fn_ca_horse_roster_refresh();
 DO $proof$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM stable_hand_membership_tags t JOIN original_tags o USING(horse_id,club_id) WHERE t.horse_id=lpad('1',32,'0')::uuid AND to_jsonb(t)=to_jsonb(o))
  THEN RAISE EXCEPTION 'returned performer lost original tag'; END IF;
- IF (SELECT count(*) FROM table_seats)<>2 THEN RAISE EXCEPTION 'existing seats changed'; END IF;
+ IF (SELECT count(*) FROM table_seats)<>3 THEN RAISE EXCEPTION 'existing seats changed'; END IF;
  IF (SELECT count(*) FROM profiles WHERE horse_status='disabled')<>1 THEN RAISE EXCEPTION 'global horse state changed'; END IF;
 END $proof$;
 """
@@ -124,7 +162,7 @@ with tempfile.TemporaryDirectory(prefix="cash-half-pg-", dir=work) as directory:
     subprocess.run([str(bindir/"initdb"), "-D", str(d/"data"), "-A", "trust", "--no-locale"], check=True, stdout=subprocess.DEVNULL)
     subprocess.run([str(bindir/"pg_ctl"), "-D", str(d/"data"), "-l", str(d/"postgres.log"), "-o", f"-k {d} -p 55439 -c listen_addresses='' -c fsync=off", "start"], check=True, stdout=subprocess.DEVNULL)
     try:
-        subprocess.run([str(bindir/"psql"), "-X", "-v", "ON_ERROR_STOP=1"], input=bootstrap+definition("fn_ca_horse_roster_refresh")+definition("fn_ca_horse_roster_seat_guard")+definition("fn_cash_cluster_tick")+capacity_proof+assertions, text=True, env=env, check=True, stdout=subprocess.DEVNULL)
-        print("PASS: native ranking/sample/disabled/retired, idempotency, bench/restore, truthful PLO metrics, cash denial, tournament admission, existing-seat update/exit")
+        subprocess.run([str(bindir/"psql"), "-X", "-v", "ON_ERROR_STOP=1"], input=bootstrap+definition("fn_ca_horse_roster_refresh")+definition("fn_ca_horse_roster_seat_guard")+scope_sql+definition("fn_cash_cluster_tick")+capacity_proof+assertions, text=True, env=env, check=True, stdout=subprocess.DEVNULL)
+        print("PASS: native ranking/sample/disabled/retired, idempotency, bench/restore, truthful PLO metrics, Club cash denial, Diamond off-roster admission, malformed Diamond/disabled/retired refusal, tournament admission, existing-seat update/exit")
     finally:
         subprocess.run([str(bindir/"pg_ctl"), "-D", str(d/"data"), "stop", "-m", "fast"], check=True, stdout=subprocess.DEVNULL)

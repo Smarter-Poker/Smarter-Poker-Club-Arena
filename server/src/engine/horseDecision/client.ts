@@ -1,3 +1,7 @@
+import {
+  liveHorseFeatureAuthority,
+  horseFeatureAcceptanceUsable,
+} from '../HorseFeatureAuthority.js';
 import { liveHorsePhase8GuardAuthority } from '../HorseTournamentCatastropheGuardAuthority.js';
 import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
 import {
@@ -599,6 +603,7 @@ export class LiveHorseDecisionWorkerClient {
   private phase8GuardWorkerEpoch: string | null = null;
   /** P10.3: epoch of this client's worker Phase 10 authority. */
   private phase10WorkerEpoch: string | null = null;
+  private featureWorkerEpoch: string | null = null;
   /** P11.3: epoch of this client's worker Phase 11 holders (one per worker). */
   private phase11WorkerEpoch: string | null = null;
   /** P12.3: epoch of this client's worker Phase 12 holders (one per worker). */
@@ -621,6 +626,7 @@ export class LiveHorseDecisionWorkerClient {
     // never a withdrawal and never a renewal.
     liveHorsePhase8Authority.refresh();
     liveHorsePhase10Authority.refresh();
+    liveHorseFeatureAuthority.refresh();
     for (const variant of HORSE_PHASE11_VARIANTS) liveHorsePhase11Authorities[variant].refresh();
     for (const variant of HORSE_PHASE12_VARIANTS) liveHorsePhase12Authorities[variant].refresh();
     for (const variant of HORSE_PHASE13_VARIANTS) liveHorsePhase13Authorities[variant].refresh();
@@ -895,6 +901,10 @@ export class LiveHorseDecisionWorkerClient {
       return Promise.reject(new Error('Horse plan commit has no available client ownership'));
     // Effect acceptance rechecks authority for a selected Phase 8 candidate.
     // Effects issued beside a withdrawn selection retire instead of applying.
+    if (!horseFeatureAcceptanceUsable(result.decision)) {
+      this.retireDecisionEffects(result, 'decision_finalized');
+      return Promise.reject(new Error('Horse plan commit refused: feature authority'));
+    }
     const guard = result.decision.tournamentCatastropheGuard;
     if (guard?.applied && liveHorsePhase8GuardAuthority.check(guard.authority) !== 'usable') {
       this.retireDecisionEffects(result, 'decision_finalized');
@@ -1838,6 +1848,20 @@ export class LiveHorseDecisionWorkerClient {
         );
         return;
       }
+      const feature = message.decision.featureAuthority;
+      if (
+        feature &&
+        (!message.featureAuthority ||
+          horseJournalJson(feature.authority) !== horseJournalJson(message.featureAuthority))
+      ) {
+        this.refuseDecision(active, message, new Error('horse feature authority was not mirrored'));
+        return;
+      }
+      if (message.featureAuthority) {
+        this.featureWorkerEpoch = message.featureAuthority.epoch;
+        liveHorseFeatureAuthority.observeWorker(message.featureAuthority);
+      }
+      if (feature) feature.authority = liveHorseFeatureAuthority.stamp(feature.authority);
       // FIFO order makes worker receipts monotonic. Observe before the
       // witness so a withdrawal reported here already binds this decision.
       if (message.phase8Authority) {
@@ -2092,6 +2116,7 @@ export class LiveHorseDecisionWorkerClient {
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    liveHorseFeatureAuthority.forgetWorker(this.featureWorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)
@@ -2249,6 +2274,7 @@ export class LiveHorseDecisionWorkerClient {
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);
+    liveHorseFeatureAuthority.forgetWorker(this.featureWorkerEpoch);
     for (const variant of HORSE_PHASE11_VARIANTS)
       liveHorsePhase11Authorities[variant].forgetWorker(this.phase11WorkerEpoch);
     for (const variant of HORSE_PHASE12_VARIANTS)

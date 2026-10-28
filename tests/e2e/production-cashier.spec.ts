@@ -710,8 +710,35 @@ test.describe('Production Cashier Certification', () => {
       p_before_id: null,
     });
     expect(request).not.toHaveProperty('p_offset');
+    await expect(panel.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(
+      panel.getByRole('button', { name: 'Chip Movements', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      panel.getByRole('button', { name: 'Latest Transactions', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.getByRole('button', { name: 'Managed', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Games', exact: true })).toHaveCount(0);
+    expect(request.p_from).toEqual(expect.any(String));
+    await attachCashierScreenshot(page, testInfo, 'transaction-history-today-default-393');
+
     const rows = await feed.json();
     expect(Array.isArray(rows)).toBe(true);
+    expect(
+      rows.some((row: { transaction_type: string }) =>
+        [
+          'buyin',
+          'cashout',
+          'tournament_buyin',
+          'tournament_rebuy',
+          'tournament_addon',
+          'tournament_ticket_redeem',
+        ].includes(row.transaction_type)
+      )
+    ).toBe(false);
     const summary = await firstSummary;
     expect(summary.status()).toBe(200);
     expect(summary.request().postDataJSON()).toMatchObject({
@@ -764,9 +791,11 @@ test.describe('Production Cashier Certification', () => {
       await page.keyboard.press('Escape');
       await expect(receipt).toBeHidden();
     } else {
-      await expect(panel.getByText('No Transactions Recorded Yet.', { exact: true })).toBeVisible();
+      await expect(
+        panel.getByText('No Transactions Match These Filters.', { exact: true })
+      ).toBeVisible();
     }
-    const allClub = panel.getByRole('button', { name: 'All Club Transactions', exact: true });
+    const allClub = panel.getByRole('button', { name: 'Club Transactions', exact: true });
     let approvedReceiptChecked = false;
     if (await allClub.count()) {
       expect(request.p_scope).toBe('club');
@@ -774,6 +803,9 @@ test.describe('Production Cashier Certification', () => {
       expect(totals.mode).toBe('club');
       await expect(panel.getByLabel('Club Totals For These Filters')).toBeVisible();
       await expect(panel.getByLabel('Club Totals For These Filters')).not.toContainText('--');
+      const historyRange = read('fn_cashier_history_feed', 'club');
+      await panel.getByRole('button', { name: '30 Days', exact: true }).click();
+      expect((await historyRange).status()).toBe(200);
       const cashouts = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
@@ -905,5 +937,94 @@ test.describe('Production Cashier Certification', () => {
       ),
       contentType: 'application/json',
     });
+  });
+  test('offers reclaim return wallets and keeps promo in promo without moving chips', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 393, height: 852 });
+    const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+    await page.goto(`clubs/${clubId}/cashier`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    const recipient = page.getByRole('checkbox', { name: /^Include / }).first();
+    await expect(recipient).toBeVisible({ timeout: 60_000 });
+    await recipient.check();
+    await page.getByRole('button', { name: 'Claim Back', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Claim Back', exact: true });
+    const source = dialog.getByRole('combobox', { name: 'Claim From', exact: true });
+    const destination = dialog.getByRole('combobox', { name: 'Claim Back To', exact: true });
+    await expect(source).toBeVisible();
+    await source.selectOption('agent_wallet');
+    await expect(destination.locator('option[value="agent_wallet"]')).toHaveCount(1);
+    await expect(destination.locator('option[value="club_bank"]')).toHaveCount(1);
+    await destination.selectOption('agent_wallet');
+    await expect(destination).toHaveValue('agent_wallet');
+    await attachCashierScreenshot(page, testInfo, 'claim-selected-agent-return-wallet-393');
+    await source.selectOption('promo_wallet');
+    await expect(destination.locator('option')).toHaveText([
+      'My Promo Wallet',
+      'Club Promo Wallet',
+    ]);
+    await expect(destination).toHaveValue('promo_wallet');
+    await destination.selectOption('club_promo_wallet');
+    await expect(destination).toHaveValue('club_promo_wallet');
+    await attachCashierScreenshot(page, testInfo, 'claim-promo-return-wallets-393');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    // The Advanced Cashier entry opens cashier-classic, whose wallet strip
+    // exposes these cashier buttons. The club home's My Wallets is collapsed.
+    // Opening and switching accounts submits no chip movement.
+    await page.goto(`clubs/${clubId}/cashier-classic`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    const openPromo = page.getByRole('button', { name: 'Open Promo Wallet', exact: true });
+    await expect(openPromo).toBeVisible({ timeout: 60_000 });
+    const promoRead = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith('/rpc/fn_club_money_panel') &&
+        response.request().postDataJSON()?.p_club_id === clubId
+    );
+    await openPromo.click();
+    const promoResponse = await promoRead;
+    expect(promoResponse.status()).toBe(200);
+    const money = await promoResponse.json();
+    expect(money.authorized).toBe(true);
+    expect(money.club_promo_wallet).not.toBeNull();
+    const expectedPromo = Number(money.club_promo_wallet);
+    expect(Number.isFinite(expectedPromo)).toBe(true);
+    const promoDialog = page.getByRole('dialog', { name: 'PROMO WALLET Cashier', exact: true });
+    const promoFigure = promoDialog.locator('.cbc-bank strong');
+    const printedPromo = expectedPromo.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    await expect(promoFigure).toHaveText(printedPromo, { timeout: 30_000 });
+    const ownPromo = promoDialog.getByRole('radio').filter({ hasText: 'My Promo Float' });
+    if (await ownPromo.count()) {
+      const ownFigure = await ownPromo.locator('strong').innerText();
+      await ownPromo.click();
+      await expect(promoFigure).toHaveText(ownFigure);
+      await promoDialog.getByRole('radio').filter({ hasText: 'Club Promo Wallet' }).click();
+      await expect(promoFigure).toHaveText(printedPromo);
+    }
+    await attachCashierScreenshot(page, testInfo, 'live-promo-account-balances-393');
+    await page.keyboard.press('Escape');
+    await expect(promoDialog).toBeHidden();
+    await page.getByRole('button', { name: 'Open Agent Wallet', exact: true }).click();
+    const agentDialog = page.getByRole('dialog', { name: 'AGENT WALLET Cashier', exact: true });
+    await agentDialog.getByRole('tab', { name: 'Claim Back', exact: true }).click();
+    await agentDialog.getByRole('button', { name: 'Claim From My Wallets', exact: true }).click();
+    const personal = agentDialog.getByRole('region', { name: 'Selected Player' });
+    await expect(personal).toContainText('My Account');
+    // The maintained zero-balance admin has an agent wallet, not a player wallet.
+    // All three agent tiers are qualified separately against PostgreSQL 17.
+    await personal.getByRole('combobox', { name: 'Claim From' }).selectOption('agent_wallet');
+    await expect(personal.locator('strong').last()).toHaveText(/^\d[\d,]*\.\d{2}$/, {
+      timeout: 30_000,
+    });
+    await expect(agentDialog.getByRole('textbox', { name: 'Chips To Claim Back' })).toBeVisible();
+    await attachCashierScreenshot(page, testInfo, 'personal-wallet-claim-any-time-393');
+    await page.keyboard.press('Escape');
+    await expect(agentDialog).toBeHidden();
   });
 });

@@ -24,7 +24,7 @@ describe('cashier Phase 1 critical integrity contracts', () => {
   });
 
   it('asks the server for all safe cents and reports the returned amount', () => {
-    const start = page.indexOf("supabase.rpc('fn_agent_wallet_claim_back'");
+    const start = page.indexOf("supabase.rpc('fn_club_wallet_claim_back'");
     const end = page.indexOf('});', start);
     const call = page.slice(start, end + 3);
     expect(call).toContain('p_amount: null');

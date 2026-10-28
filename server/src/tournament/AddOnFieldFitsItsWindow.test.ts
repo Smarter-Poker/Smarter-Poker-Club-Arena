@@ -92,7 +92,7 @@ function field(count: number, fail?: string) {
     (id) =>
       createHash('sha256').update(`${id}|${eventId}|addon-participation`).digest().readUInt32BE(0) %
         1000 <
-      1000
+      740
   );
   return { ids, receipts, calls, selected, load };
 }

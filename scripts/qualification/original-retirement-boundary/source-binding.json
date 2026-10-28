@@ -242,6 +242,12 @@
     "retiredDelivery": "03208 was uninstalled; its exactqualified SQL is an archivefixture, not migration history.",
     "queuedOldProducerBoundary": "Real PG17 original old compiled outer queued behind installer gate resumes through the same-OID atomic common leaf; actual current cutover, original outer bytes and private money-core prosrc preserved, rollback/replay/NULL key and subtransaction cases qualified."
   },
+  "cashierMainIntegration20261027": {
+    "reason": "Repair stale input identity inherited from protected main PR8296 after reviewing its workflow diff: adds the treasury migration argument and two original-treasury native qualification steps. No test, financial body, assertion or historical certification is changed; this records workflow input identity only.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSha256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSha256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928"
+  },
   "workflowCompositionAudit20261027": {
     "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
     "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",

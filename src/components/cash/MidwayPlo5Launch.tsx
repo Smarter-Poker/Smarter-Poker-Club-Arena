@@ -4,7 +4,6 @@ import { useUserStore } from '../../stores/useUserStore';
 import { useToast } from '../common/Toast';
 import { titleCase } from '../../utils/titleCase';
 import { reportError } from '../../utils/errorReporter';
-import { masterBus } from '../../core/MasterBus';
 import { launchMidwayPlo5 } from '../../services/MidwayPlo5LaunchService';
 import { cashGameCreateRefusalText } from '../../config/cashGames';
 import {
@@ -12,12 +11,6 @@ import {
   MIDWAY_PLO5_LAUNCH_ID,
   MIDWAY_PLO5_LINEUP,
 } from '../../config/midwayPlo5Launch';
-import {
-  GAME_CREATED_MEMBERS_ONLY,
-  GAME_CREATED_SEATED_ONLY,
-  GAME_CREATED_STILL_STARTING,
-  wakeTableEngine,
-} from './CashGameCreateFlow';
 import './CashGameCreateFlow.css';
 
 export default function MidwayPlo5Launch({
@@ -73,27 +66,8 @@ export default function MidwayPlo5Launch({
     try {
       const result = await launchMidwayPlo5(clubId, assertOwner);
       assertOwner();
-      masterBus.emit('TABLE_CREATED', {
-        tableId: result.tableId,
-        clubId: MIDWAY_PLO5_CLUB_ID,
-      });
-      const wake = await wakeTableEngine(result.tableId);
-      assertOwner();
-      if (wake.status === 'awake') {
-        toast.success('Game Created And Started');
-        navigate(`/table/${result.tableId}`);
-      } else {
-        const message =
-          wake.status === 'not_awake'
-            ? GAME_CREATED_STILL_STARTING
-            : wake.code === 'CLUB_MEMBERSHIP_REQUIRED'
-              ? GAME_CREATED_MEMBERS_ONLY
-              : GAME_CREATED_SEATED_ONLY;
-        setStatus(message);
-        toast.info(message);
-        if (onSaved) onSaved();
-        else navigate(`/clubs/${clubId}`);
-      }
+      toast.info('Selected Lineup Applies To New Arrivals. Existing Seats Stay In Place');
+      navigate(`/table/${result.tableId}`);
     } catch (error) {
       if (stillOwner()) {
         reportError(error, 'MidwayPlo5Launch.start');
@@ -101,6 +75,13 @@ export default function MidwayPlo5Launch({
           error && typeof error === 'object' && 'message' in error ? String(error.message) : '';
         const missingContract =
           error && typeof error === 'object' && 'code' in error && error.code === 'PGRST202';
+        const attachmentRefusal = /ARRIVAL_ATTACHMENT_BUSY/.test(rawMessage)
+          ? 'The Game Is Busy. The Lineup Was Not Applied. Try Again'
+          : /ARRIVAL_TARGET_CHANGED|ARRIVAL_NO_ACTIVE_TABLE/.test(rawMessage)
+            ? 'The Existing Game Changed. The Lineup Was Not Applied'
+            : /ARRIVAL_EXISTING_SELECTED_EXCEED_INITIAL/.test(rawMessage)
+              ? 'More Than Four Selected Players Are Already Seated. The Lineup Was Not Applied'
+              : null;
         const approvedRefusal = missingContract
           ? 'The Approved Launch Is Not Available Yet'
           : /LIVE_SESSION_REQUIRED/.test(rawMessage)
@@ -115,6 +96,7 @@ export default function MidwayPlo5Launch({
                     ? 'The Approved Lineup Was Refused'
                     : null;
         const message =
+          attachmentRefusal ||
           approvedRefusal ||
           cashGameCreateRefusalText(error) ||
           (error instanceof Error ? error.message : null) ||
@@ -137,17 +119,17 @@ export default function MidwayPlo5Launch({
       ) : (
         <>
           <section className="cash-create__step">
-            <h2 className="cash-create__title">2/5 PLO5 Madness</h2>
+            <h2 className="cash-create__title">CHET'S GAME: 2/5 PLO5</h2>
             <p className="cash-create__note">
               Midway Union. Six Seats. Automated Main And Feeder Tables.
             </p>
             <p className="cash-create__note">
-              Four Selected Players To Start, Then One New Player Every Ten Minutes. Delayed
+              Up To Four Selected Players Initially, Then One New Player Every Ten Minutes. Delayed
               Arrivals Never Catch Up In A Burst.
             </p>
             <p className="cash-create__note">
-              Humans May Join Normally. Normal Bankroll, Availability, Table Limits And Minimum
-              Players Still Apply.
+              Existing Seats Stay In Place. Humans May Join Normally. Normal Bankroll, Availability,
+              Table Limits And Minimum Players Still Apply.
             </p>
           </section>
           <section className="cash-create__step" aria-label="Selected Lineup">
@@ -173,7 +155,7 @@ export default function MidwayPlo5Launch({
               disabled={busy}
               onClick={() => void start()}
             >
-              {busy ? 'Starting...' : 'Start'}
+              {busy ? 'Applying...' : 'Apply Lineup'}
             </button>
           </footer>
         </>

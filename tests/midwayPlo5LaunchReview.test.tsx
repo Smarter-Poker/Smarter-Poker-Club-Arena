@@ -48,7 +48,7 @@ describe('the approved launch is an explicit reviewed operator action', () => {
     mocks.wake.mockResolvedValue({ status: 'awake', state: {} });
   });
 
-  it('prints the exact lineup and starts only after the operator clicks, then awaits the normal wake', async () => {
+  it('prints the exact lineup and applies only after the operator clicks without recreating or waking the existing game', async () => {
     render(
       <MidwayPlo5Launch
         clubId={MIDWAY_PLO5_CLUB_ID}
@@ -57,21 +57,22 @@ describe('the approved launch is an explicit reviewed operator action', () => {
       />
     );
     expect(mocks.launch).not.toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: '2/5 PLO5 Madness' })).toBeTruthy();
-    expect(screen.getByText(/Four Selected Players To Start/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: "CHET'S GAME: 2/5 PLO5" })).toBeTruthy();
+    expect(screen.getByText(/Four Selected Players Initially/)).toBeTruthy();
     expect(screen.getByText(/Humans May Join Normally/)).toBeTruthy();
     for (const player of MIDWAY_PLO5_LINEUP)
       expect(screen.getByText(new RegExp(player.name))).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
-    await waitFor(() => expect(mocks.wake).toHaveBeenCalledWith('table'));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Lineup' }));
+    expect(mocks.wake).not.toHaveBeenCalled();
+    expect(mocks.emit).not.toHaveBeenCalled();
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/table/table'));
     expect(mocks.launch).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a friendly unavailable message when the guarded creator is not installed', async () => {
+  it('shows a friendly unavailable message when the guarded attachment is not installed', async () => {
     mocks.launch.mockRejectedValue({
       code: 'PGRST202',
-      message: 'Could Not Find fn_cash_game_create_horse_arrivals',
+      message: 'Could Not Find fn_cash_game_attach_horse_arrivals',
     });
     render(
       <MidwayPlo5Launch
@@ -80,11 +81,34 @@ describe('the approved launch is an explicit reviewed operator action', () => {
         canBuildHere
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Lineup' }));
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith('The Approved Launch Is Not Available Yet')
     );
     expect(screen.getByRole('status').textContent).not.toContain('fn_cash_game_create');
+    expect(mocks.wake).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ARRIVAL_ATTACHMENT_BUSY', 'The Game Is Busy. The Lineup Was Not Applied. Try Again'],
+    ['ARRIVAL_TARGET_CHANGED', 'The Existing Game Changed. The Lineup Was Not Applied'],
+    [
+      'ARRIVAL_EXISTING_SELECTED_EXCEED_INITIAL',
+      'More Than Four Selected Players Are Already Seated. The Lineup Was Not Applied',
+    ],
+  ])('explains %s without claiming a new game or moving anyone', async (message, expected) => {
+    mocks.launch.mockRejectedValue(new Error(message));
+    render(
+      <MidwayPlo5Launch
+        clubId={MIDWAY_PLO5_CLUB_ID}
+        launchId={MIDWAY_PLO5_LAUNCH_ID}
+        canBuildHere
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Lineup' }));
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(expected));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.emit).not.toHaveBeenCalled();
     expect(mocks.wake).not.toHaveBeenCalled();
   });
 
@@ -102,7 +126,7 @@ describe('the approved launch is an explicit reviewed operator action', () => {
     },
   ])('refuses an invalid, wrong-club, or unauthorized request without falling back', (props) => {
     render(<MidwayPlo5Launch {...props} />);
-    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Apply Lineup' })).toBeNull();
     expect(screen.getByRole('alert')).toBeTruthy();
     expect(mocks.launch).not.toHaveBeenCalled();
   });

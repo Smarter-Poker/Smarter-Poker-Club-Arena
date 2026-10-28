@@ -11,6 +11,7 @@
     "fn_cash_game_horse_arrival_snapshots",
     "fn_cash_game_horse_arrival_reserve",
     "fn_cash_game_horse_arrival_admit",
-    "fn_cash_game_create_horse_arrivals"
+    "fn_cash_game_create_horse_arrivals",
+    "fn_cash_game_attach_horse_arrivals"
   ]
 }

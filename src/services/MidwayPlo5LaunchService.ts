@@ -3,6 +3,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { isCashGameHorseArrivalsReady } from './GameServerAPI';
 import {
   MIDWAY_PLO5_CLUB_ID,
+  MIDWAY_PLO5_GAME_ID,
   MIDWAY_PLO5_LINEUP,
   MIDWAY_PLO5_REQUEST_ID,
   MIDWAY_PLO5_STARTS_AT,
@@ -37,27 +38,27 @@ export async function launchMidwayPlo5(
   const engineReady = await isCashGameHorseArrivalsReady();
   assertOwner();
   if (!engineReady) throw new Error('The Selected Lineup Is Not Ready To Launch Yet');
-  const { data, error } = await supabase.rpc('fn_cash_game_create_horse_arrivals', {
+  const { data, error } = await supabase.rpc('fn_cash_game_attach_horse_arrivals', {
     p_request_id: MIDWAY_PLO5_REQUEST_ID,
-    p_club_id: MIDWAY_PLO5_CLUB_ID,
+    p_game_id: MIDWAY_PLO5_GAME_ID,
     p_starts_at: MIDWAY_PLO5_STARTS_AT,
     p_ranked_horse_ids: MIDWAY_PLO5_LINEUP.map((player) => player.id),
   });
   assertOwner();
   if (error) throw error;
   const receipt = object(data);
-  if (receipt?.ok !== true || !uuid(receipt.game_id)) {
-    throw new Error('The Launch Was Not Confirmed. Retry Uses The Same Request');
+  if (receipt?.ok !== true || receipt.game_id !== MIDWAY_PLO5_GAME_ID) {
+    throw new Error('The Lineup Was Not Confirmed. Retry Uses The Same Request');
   }
   const gameId = receipt.game_id;
 
-  // The replay response intentionally has no table_id. Read authoritative game
+  // The attachment response intentionally has no table_id. Read authoritative game
   // and anchor rows for BOTH responses; an RPC acknowledgement alone is not a
   // persisted launch, and no unrestricted anchor can stand in for this policy.
   const { data: gameData, error: gameError } = await supabase
     .from('cash_games')
     .select(
-      'id,club_id,template_name,variant,sb,bb,handedness,must_move,enabled,closed_at,ruleset_snapshot'
+      'id,name,club_id,template_name,variant,sb,bb,handedness,must_move,enabled,closed_at,ruleset_snapshot'
     )
     .eq('id', gameId)
     .maybeSingle();
@@ -69,8 +70,9 @@ export async function launchMidwayPlo5(
   if (
     !game ||
     game.id !== gameId ||
+    game.name !== "CHET'S GAME" ||
     game.club_id !== MIDWAY_PLO5_CLUB_ID ||
-    game.template_name !== 'madness' ||
+    game.template_name !== 'classic' ||
     game.variant !== 'plo5' ||
     Number(game.sb) !== 2 ||
     Number(game.bb) !== 5 ||
@@ -81,7 +83,7 @@ export async function launchMidwayPlo5(
     !gameMarker ||
     (receiptMarker && receiptMarker.policy_id !== gameMarker.policy_id)
   ) {
-    throw new Error('The Approved Game Could Not Be Verified. Retry Uses The Same Request');
+    throw new Error('The Existing Game Could Not Be Verified. Retry Uses The Same Request');
   }
   const { data: tables, error: tableError } = await supabase
     .from('tables')

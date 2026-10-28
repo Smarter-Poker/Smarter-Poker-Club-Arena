@@ -1,6 +1,7 @@
 /** One explicitly selected, idempotent operator launch. Never a default for other games. */
 export const MIDWAY_PLO5_LAUNCH_ID = 'midway-plo5-20261028';
 export const MIDWAY_PLO5_CLUB_ID = 'fade0000-0000-0000-0000-000000000001';
+export const MIDWAY_PLO5_GAME_ID = '68c3d744-dba6-4de2-9db3-8c1beb711963';
 export const MIDWAY_PLO5_REQUEST_ID = '9e8059e6-40ae-462b-b02f-53ad4b514ac9';
 export const MIDWAY_PLO5_STARTS_AT = '2026-10-28T20:00:00.000Z';
 export const MIDWAY_PLO5_LINEUP = [

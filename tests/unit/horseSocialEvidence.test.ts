@@ -6,11 +6,30 @@ import { timeoutBudgetMinutes } from '../productionJobBudget';
 import { describe, expect, it } from 'vitest';
 import {
   horseSocialFrames,
+  horseSocialTableEligible,
   postHandChatDelay,
   sharedPayout,
 } from '../e2e/support/horseSocialEvidence';
 
 describe('natural horse social evidence', () => {
+  it('observes only the ordinary chips cash cohort that can actually emit chat', () => {
+    const cash = { max_players: 6, ban_chat: false, tournament_id: null, game_type: 'cash' };
+    expect(horseSocialTableEligible(cash, 'chips')).toBe(true);
+    expect(horseSocialTableEligible(cash, 'diamonds')).toBe(false);
+    expect(horseSocialTableEligible(cash, undefined)).toBe(false);
+    expect(horseSocialTableEligible({ ...cash, max_players: 2 }, 'chips')).toBe(false);
+    expect(horseSocialTableEligible({ ...cash, ban_chat: true }, 'chips')).toBe(false);
+    expect(horseSocialTableEligible({ ...cash, tournament_id: 'natural-mtt' }, 'chips')).toBe(
+      false
+    );
+    const workflow = readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8');
+    const lane = workflow
+      .split('      - name: Observe natural horse chat, reactions and throwables')[1]
+      ?.split('      - name: Retain natural horse social evidence')[0];
+    expect(lane).toContain('E2E_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4');
+    expect(lane).not.toContain('E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81');
+  });
+
   it.each(['failure', 'skipped', 'cancelled', ''])(
     'the actual certificate refuses a requested horse observation with outcome %s',
     (outcome) => {

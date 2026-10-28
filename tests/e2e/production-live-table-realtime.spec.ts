@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { execFileSync } from 'node:child_process';
 import {
   horseSocialFrames,
+  horseSocialTableEligible,
   postHandChatDelay,
   sharedPayout,
   type HorseSocialFrame,
@@ -2299,8 +2300,66 @@ test('natural horse social behavior reaches the live table', async ({
     'The hosted read-only verifier needs its configured database access'
   ).toBe(true);
   const db = createClient(url!, key!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const modes = await db
+    .from('horse_post_modes')
+    .select('mode,enabled')
+    .in('mode', ['table_talk', 'table_gestures']);
+  expect(modes.error).toBeNull();
+  expect(modes.data?.length, 'Both social modes must exist').toBe(2);
+  expect(
+    modes.data?.every((mode) => mode.enabled === true),
+    'Restore the text hold only after guarded engine adoption before observing'
+  ).toBe(true);
+  const content = await db.from('content_settings').select('engine_enabled').limit(2);
+  expect(content.error).toBeNull();
+  expect(content.data).toEqual([{ engine_enabled: true }]);
   const selected = await selectOccupiedRunningCashTables(page, request);
-  const candidate = selected.tables[0].candidate;
+  const candidateIds = selected.tables.map(({ candidate }) => candidate.id);
+  const metadata = await db
+    .from('tables')
+    .select('id,club_id,max_players,ban_chat,tournament_id,game_type')
+    .in('id', candidateIds);
+  expect(metadata.error).toBeNull();
+  const clubs = await db
+    .from('clubs')
+    .select('id,asset')
+    .in('id', [...new Set((metadata.data || []).map((table) => table.club_id))]);
+  expect(clubs.error).toBeNull();
+  const seatsAtSelection = await db
+    .from('table_seats')
+    .select('table_id,user_id')
+    .is('left_at', null)
+    .in('table_id', candidateIds)
+    .gt('stack', 0);
+  expect(seatsAtSelection.error).toBeNull();
+  const occupants = [
+    ...new Set((seatsAtSelection.data || []).map((seat) => seat.user_id).filter(Boolean)),
+  ];
+  expect(occupants.length, 'No seated natural subjects were discoverable').toBeGreaterThan(0);
+  const horseProfiles = await db
+    .from('profiles')
+    .select('id')
+    .in('id', occupants)
+    .eq('is_horse', true);
+  expect(horseProfiles.error).toBeNull();
+  const selectionHorses = new Set((horseProfiles.data || []).map((row) => row.id));
+  const eligible = selected.tables
+    .flatMap((entry) => {
+      const table = metadata.data?.find((row) => row.id === entry.candidate.id);
+      const asset = clubs.data?.find((club) => club.id === table?.club_id)?.asset;
+      const horseCount = (seatsAtSelection.data || []).filter(
+        (seat) => seat.table_id === entry.candidate.id && selectionHorses.has(seat.user_id)
+      ).length;
+      return table && horseSocialTableEligible(table, asset) && horseCount > 0
+        ? [{ ...entry, horseCount }]
+        : [];
+    })
+    .sort((a, b) => b.horseCount - a.horseCount);
+  expect(
+    eligible.length,
+    'No eligible ordinary chips cash table with a natural horse subject was visible'
+  ).toBeGreaterThan(0);
+  const candidate = eligible[0].candidate;
   const began = new Date().toISOString();
   const frames: HorseSocialFrame[] = [];
   const forbidden: string[] = [];
@@ -2424,12 +2483,11 @@ test('natural horse social behavior reaches the live table', async ({
           if (!rendered || (reactionProof && throwProof)) continue;
           const seats = await db
             .from('table_seats')
-            .select('seat_number,user_id,player_id')
+            .select('seat_number,user_id')
+            .is('left_at', null)
             .eq('table_id', candidate.id);
           expect(seats.error).toBeNull();
-          const ownSeat = seats.data?.find(
-            (seat) => seat.user_id === frame.sender || seat.player_id === frame.sender
-          );
+          const ownSeat = seats.data?.find((seat) => seat.user_id === frame.sender);
           if (!ownSeat) continue;
           if (reaction && Number(reaction[2]) !== ownSeat.seat_number) continue;
           if (

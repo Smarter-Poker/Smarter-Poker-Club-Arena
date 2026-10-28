@@ -40,3 +40,22 @@ export function sharedPayout(winners: unknown): boolean {
   }
   return new Set(winners.map((winner) => winner.userId)).size > 1;
 }
+
+/** Same table class that permits the cash chat UI and its horse input device. */
+export function horseSocialTableEligible(
+  table: {
+    max_players: number;
+    ban_chat: boolean | null;
+    tournament_id: string | null;
+    game_type: string;
+  },
+  asset: string | undefined
+): boolean {
+  return (
+    asset === 'chips' &&
+    table.max_players > 2 &&
+    table.ban_chat !== true &&
+    table.tournament_id === null &&
+    table.game_type !== 'tournament'
+  );
+}

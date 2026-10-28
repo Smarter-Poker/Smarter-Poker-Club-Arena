@@ -1,7 +1,7 @@
 import { qualifiedReplayAdmissions } from './replay/qualifiedAuthority.js';
 import { HorseFleetPhaseInterpreter } from '../../services/horseDecisionJournal/phaseProof.js';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   makeHorseJournalRecord,
@@ -813,10 +813,7 @@ describe('real worker tournament v2 and selected Phase8 dependency, local fixtur
       requestLifecycleVerified: true,
     });
     const directory = mkdtempSync(
-      join(
-        process.platform === 'darwin' ? resolve(process.cwd(), '../../tmp') : tmpdir(),
-        'phase14-native-fleet-'
-      )
+      join(process.platform === 'darwin' ? process.cwd() : tmpdir(), 'phase14-native-fleet-')
     );
     try {
       const store = new HorseDecisionJournalStore(directory, {

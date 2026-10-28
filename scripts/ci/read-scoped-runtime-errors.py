@@ -107,7 +107,9 @@ def log_window(value, now=None):
     start = datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
     now = now or datetime.datetime.now(datetime.timezone.utc)
     end = start + datetime.timedelta(minutes=15)
-    if start < now - datetime.timedelta(hours=24) or end > now:
+    # A next-day digest can name yesterday morning more than 24 hours later.
+    # Keep one completed 15-minute interval and every existing transport bound.
+    if start < now - datetime.timedelta(hours=48) or end > now:
         raise ValueError('Observation window is not a completed recent interval')
     return {'since': value, 'until': end.strftime('%Y-%m-%dT%H:%M:%SZ')}
 

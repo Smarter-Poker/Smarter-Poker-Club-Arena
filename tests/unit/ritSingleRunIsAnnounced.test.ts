@@ -56,28 +56,15 @@ describe('a Run It Twice offer that ends in one board says so', () => {
     expect(fn).toMatch(/if \(this\.ritSingleRunNotifiedHand === this\.handCount\) return;/);
   });
 
-  it('the client turns each reason into its own message', () => {
+  it('the client clears the settled single-run offer without a card-covering announcement', () => {
+    // October 28 owner instruction removes the former outcome overlay.
+    // The engine reason announcements above remain authoritative.
     const block = TABLE_PAGE.slice(
       TABLE_PAGE.indexOf("if (eventType === 'rit_single_run')"),
-      TABLE_PAGE.indexOf("if (eventType === 'rit_single_run')") + 1800
+      TABLE_PAGE.indexOf("if (eventType === 'rit_result')")
     );
-    expect(block).toContain('chooser_chose_one');
-    expect(block).toContain('player_declined');
-    expect(block).toContain('Not Everyone Agreed In Time');
-    // 2026-09-13: one silent seat is named, the way a decliner is.
-    expect(block).toContain("reason === 'no_answer' && name");
-    expect(block).toContain('Did Not Answer In Time');
-
-    // House popup rules: Title Case, no em dashes. Scoped to the MESSAGE
-    // strings - a first draft scanned the whole slice and failed on an em dash
-    // in the neighbouring comment, which is prose and not popup text.
-    const messages = [...block.matchAll(/`Running It Once\.[^`]*`|'Running It Once\.[^']*'/g)].map(
-      (m) => m[0]
-    );
-    expect(messages.length).toBeGreaterThanOrEqual(3);
-    for (const m of messages) {
-      expect(m, m).not.toMatch(/—/);
-      expect(m, m).not.toMatch(/\b(a|an|the|in|on|of|to)\b [a-z]/);
-    }
+    expect(block).toContain('setShowRIT(false)');
+    expect(block).toContain('resetRitPanelState()');
+    expect(block).not.toContain('showRitFeltBanner(');
   });
 });

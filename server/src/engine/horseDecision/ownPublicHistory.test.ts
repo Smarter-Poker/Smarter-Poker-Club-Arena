@@ -495,3 +495,60 @@ it('keeps acknowledgements independent between worker-client caches of the same 
   expect(right.forSnapshot(context(), 202)).toBeUndefined();
   expect(load).toHaveBeenCalledTimes(2);
 });
+
+it('reports only bounded main-cache scalar counts through ACK, recovery and eviction', async () => {
+  const load = vi.fn(async (c: any) => {
+    const w = window();
+    w.context = c;
+    for (const h of w.hands) {
+      h.observerId = c.observerId;
+      h.actions[0]!.userId = c.observerId;
+      h.results[0]!.user_id = c.observerId;
+    }
+    return w;
+  });
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200, 1);
+  expect(cache.status()).toMatchObject({
+    owner: 'main',
+    entries: 0,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  cache.forSnapshot(context(), 200);
+  expect(cache.status()).toMatchObject({ entries: 1, pendingCount: 1, decodedPacketCount: 0 });
+  await new Promise<void>((done) => setImmediate(done));
+  const p = cache.forSnapshot(context(), 200)!;
+  expect(cache.status()).toMatchObject({
+    pendingCount: 0,
+    decodedPacketCount: 1,
+    serializedPacketCount: 0,
+  });
+  cache.acknowledge(context(), p.digest);
+  const expected = Buffer.byteLength(JSON.stringify(p));
+  expect(cache.status()).toMatchObject({
+    decodedPacketCount: 0,
+    serializedPacketCount: 1,
+    acknowledgedCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
+    throw Error('status must not serialize');
+  });
+  try {
+    expect(cache.status().retainedSerializedUtf8Bytes).toBe(expected);
+  } finally {
+    stringify.mockRestore();
+  }
+  cache.acknowledge(context(), null);
+  expect(cache.status()).toMatchObject({
+    acknowledgedCount: 0,
+    serializedPacketCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  cache.forSnapshot({ ...context(), observerId: opponentId }, 201);
+  expect(cache.status()).toMatchObject({
+    entries: 1,
+    pendingCount: 1,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  expect(JSON.stringify(cache.status())).not.toMatch(/11111111|22222222|digest|hands|cards/);
+});

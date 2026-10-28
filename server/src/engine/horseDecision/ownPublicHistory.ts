@@ -292,12 +292,23 @@ export function ownPublicHistoryIsValid(
 
 /** A finite cache loaded by actual requests. The current turn never waits for
  * I/O; a response can enter only a later original snapshot. No timer or repair. */
+export interface HorseOwnPublicHistoryCacheStatus {
+  owner: 'main';
+  entries: number;
+  maxEntries: number;
+  decodedPacketCount: number;
+  serializedPacketCount: number;
+  acknowledgedCount: number;
+  pendingCount: number;
+  retainedSerializedUtf8Bytes: number;
+}
+
 export class HorseOwnPublicHistoryCache {
   private readonly entries = new Map<
     string,
     {
       packet?: HorseOwnPublicHistoryPacket;
-      serialized?: { json: string; digest: string; availableAtMs: number };
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -335,7 +346,7 @@ export class HorseOwnPublicHistoryCache {
       this.entries.delete(this.entries.keys().next().value!);
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
-      serialized?: { json: string; digest: string; availableAtMs: number };
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -373,6 +384,29 @@ export class HorseOwnPublicHistoryCache {
     }
     return undefined;
   }
+  /** Only bounded scalar entry metadata is visited; payloads are not serialized here. */
+  status(): HorseOwnPublicHistoryCacheStatus {
+    const result: HorseOwnPublicHistoryCacheStatus = {
+      owner: 'main',
+      entries: this.entries.size,
+      maxEntries: this.maxEntries,
+      decodedPacketCount: 0,
+      serializedPacketCount: 0,
+      acknowledgedCount: 0,
+      pendingCount: 0,
+      retainedSerializedUtf8Bytes: 0,
+    };
+    for (const entry of this.entries.values()) {
+      if (entry.packet) result.decodedPacketCount++;
+      if (entry.serialized) {
+        result.serializedPacketCount++;
+        result.retainedSerializedUtf8Bytes += entry.serialized.utf8Bytes;
+      }
+      if (entry.acknowledged) result.acknowledgedCount++;
+      if (!entry.settled) result.pendingCount++;
+    }
+    return result;
+  }
   state(context: HorseObserverReadContext): 'pending' | 'available' | 'unavailable' {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
@@ -392,8 +426,10 @@ export class HorseOwnPublicHistoryCache {
       // Keep the exact original window for a worker's later null ACK (eviction
       // or restart), but stop retaining its decoded graph after delivery.
       // Each client owns its ACK; another worker never acknowledges this one.
+      const json = JSON.stringify(entry.packet);
       entry.serialized = {
-        json: JSON.stringify(entry.packet),
+        json,
+        utf8Bytes: Buffer.byteLength(json),
         digest: entry.packet.digest,
         availableAtMs: entry.packet.availableAtMs,
       };

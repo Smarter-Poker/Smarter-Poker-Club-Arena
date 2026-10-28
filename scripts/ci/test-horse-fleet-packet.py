@@ -297,6 +297,18 @@ class PacketContracts(unittest.TestCase):
    self.assertEqual(summary['observedHorses'],1);self.assertFalse(summary['completeCapture'])
    self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertNotIn('PRIVATE',json.dumps(summary))
    self.assertEqual(summary['gaps'],{'partition_observation_unavailable':1})
+   self.assertEqual(summary['partitionFailure'],{'code':'partition_cli_unclassified','completedPartitions':1})
+ def test_partition_failure_projection_is_closed_and_never_echoes_private_output(self):
+  for code in module.FLEET_FAILURE_CODES:
+   run=subprocess.CompletedProcess([],2,json.dumps({'qualifiedExecution':False,'failureCode':code,'private':'secret'}).encode(),b'UUID TOKEN PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('opaque'),run),code)
+  for raw in [b'PRIVATE',b'{"qualifiedExecution":false,"failureCode":"secret"}',b'x'*4097]:
+   run=subprocess.CompletedProcess([],3,raw,b'PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('secret'),run),'partition_cli_unclassified')
+  self.assertEqual(module.partition_failure_code(subprocess.TimeoutExpired(['PRIVATE'],115,stderr=b'SECRET')),'partition_timeout')
+  self.assertEqual(module.partition_failure_code(FileNotFoundError('SECRET')),'partition_process_unavailable')
+  self.assertEqual(module.partition_failure_code(ValueError('partition_deadline')),'partition_deadline')
+  self.assertEqual(module.partition_failure_code(ValueError('SECRET')),'partition_result_unverified')
  def with_partition_reads(self,result,independent_actor=None):
   o=result['execution']['observation'];fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
   for h in o['horses']:

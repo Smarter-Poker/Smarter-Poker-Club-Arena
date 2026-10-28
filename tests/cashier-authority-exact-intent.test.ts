@@ -105,10 +105,10 @@ describe('cashier authority and exact intent', () => {
       ],
       [
         'fn_club_bank_claim_core_20261004',
-        // 20261020210238 restricts agent banks inside the retained core.
+        // 20261027160320 preserves the bank boundary and returns promo to promo.
         'fn_club_bank_claim_core_20261004',
         '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
-        '976208c9e650e2a706a41eeea60b641c',
+        'fcfeeb86ff63e1a4e4c01315d851a1e8',
       ],
       [
         'fn_club_bank_reverse_core_20261004',
@@ -168,6 +168,32 @@ describe('cashier authority and exact intent', () => {
       const bodyEnd = definition.indexOf(delimiter, bodyStart);
       expect(bodyEnd).toBeGreaterThan(bodyStart);
       let installedBody = definition.slice(bodyStart, bodyEnd);
+      if (name === 'fn_club_bank_claim_core_20261004') {
+        expect(createHash('md5').update(installedBody).digest('hex')).toBe(
+          '976208c9e650e2a706a41eeea60b641c'
+        );
+        const promo = readFileSync(
+          resolve(
+            import.meta.dirname,
+            '../supabase/migrations/20261027160320_cashier_claim_destination_and_movement_history.sql'
+          ),
+          'utf8'
+        );
+        const patchStart = promo.indexOf(
+          " SELECT pg_get_functiondef('public.fn_club_bank_claim_core_20261004("
+        );
+        const patch = promo.slice(patchStart, promo.indexOf(' EXECUTE d;', patchStart));
+        const replacements = [
+          ...patch.matchAll(/d:=replace\(d,('(?:''|[^'])*'),('(?:''|[^'])*')\);/g),
+        ];
+        expect(replacements).toHaveLength(4);
+        for (const replacement of replacements) {
+          const decode = (quoted: string) => quoted.slice(1, -1).replaceAll("''", "'");
+          const before = decode(replacement[1]);
+          expect(installedBody).toContain(before);
+          installedBody = installedBody.replaceAll(before, decode(replacement[2]));
+        }
+      }
       if (name === 'fn_request_chips_core_20261004') {
         const blockDelimiter = '$block$';
         const blockStart = requestNotificationMigration.indexOf(blockDelimiter);

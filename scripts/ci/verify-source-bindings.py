@@ -91,6 +91,20 @@ def is_pin_map(value: object) -> bool:
     return True
 
 
+
+def is_sized_pin_map(value: object) -> bool:
+    """Current qualification files bind SHA256 plus optional size/metadata."""
+    return isinstance(value, dict) and bool(value) and all(
+        isinstance(pin, dict)
+        and "sha256" in pin
+        and ("bytes" not in pin or (type(pin["bytes"]) is int and pin["bytes"] >= 0))
+        and isinstance(pin["sha256"], str)
+        and len(pin["sha256"]) == DIGEST_LENGTH
+        and set(pin["sha256"]).issubset(HEX_CHARACTERS)
+        for pin in value.values()
+    )
+
+
 def absent_under(root: Path, section: dict) -> list:
     return [name for name in section if not (root / name).is_file()]
 
@@ -127,7 +141,12 @@ def main() -> int:
             continue
 
         for name, value in document.items():
-            if not is_pin_map(value):
+            if name == "files" and isinstance(value, dict) and any(
+                isinstance(pin, dict) for pin in value.values()
+            ) and not is_sized_pin_map(value):
+                findings.append(rel + " :: files: malformed byte-count/SHA256 source pin map")
+                continue
+            if not (is_pin_map(value) or is_sized_pin_map(value)):
                 continue
             sections += 1
             candidates = {
@@ -161,13 +180,17 @@ def main() -> int:
 
             label, root = next(iter(resolved.items()))
             for pinned, expected in sorted(value.items()):
+                expected_bytes = expected.get("bytes") if isinstance(expected, dict) else None
+                expected_hash = expected["sha256"] if isinstance(expected, dict) else expected
                 actual = digest(root / pinned)
-                if actual == expected:
+                size_matches = expected_bytes is None or (root / pinned).stat().st_size == expected_bytes
+                if actual == expected_hash and size_matches:
                     verified += 1
                     continue
                 findings.append(
                     rel + " :: " + name + " :: " + pinned + " (" + label + ")\n"
-                    "    pinned bytes sha256 " + expected + "\n"
+                    "    pinned bytes sha256 " + expected_hash + "\n"
+                    "    pinned size " + str(expected_bytes) + "; actual size " + str((root / pinned).stat().st_size) + "\n"
                     "    actual bytes sha256 " + actual
                 )
 

@@ -429,8 +429,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                   this.persistEntryHold(p.user_id, { hold: 'waiting', agreed: true });
                 }
               } else if (this.isTournamentTable()) {
-                // B2 2026-08-27: a tournament arrival cannot be held out for a
-                // hand, so it is classified instead — see noteTournamentArrival.
+                // Tournament arrival: discard legacy entry debt; the natural
+                // blind rotation alone determines the blinds owed.
                 this.noteTournamentArrival(p.seat_number, p.user_id);
               }
               this.knownPlayerIds.add(p.user_id);
@@ -3114,21 +3114,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
-      // B2 2026-08-27: the seats posting a live-big-blind-only this hand. Two
-      // sources, one list — cash "post BB to enter", and tournament arrivals that
-      // took a seat the big blind had just passed (see `mustPostBB`). Both are a
-      // single live big blind into the pot, so chips are conserved; HandController
-      // skips anyone who is the small or big blind this hand, which is what makes
-      // "never two big blinds in one orbit" true by construction.
+      // Entry posting belongs exclusively to cash games. Tournament moves and
+      // late registration never add a live BB outside the natural blind seats,
+      // even if an old in-memory arrival marker remains.
       const bbOnlyPostSeats: { seat: number }[] = [];
       if (!this.isTournamentTable() && this.postingBBToEnter.size > 0) {
         for (const p of players) {
           if (this.postingBBToEnter.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
-        }
-      }
-      if (this.isTournamentTable() && this.mustPostBB.size > 0) {
-        for (const p of players) {
-          if (this.mustPostBB.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
         }
       }
 
@@ -3225,7 +3217,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 .map((p) => ({ seat: p.seat_number }))
             : undefined,
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
-        // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
+        // Cash only: tournament arrivals never post to enter.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
         /**
          * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
@@ -3442,16 +3434,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         this.postingBBToEnter.clear();
       }
-      // B2 2026-08-27: a tournament arrival's entry is settled by the first hand
-      // it is dealt. Every arrival dealt this hand has paid a blind to be here:
-      // the live big blind bbOnlyPosts charged, or the small or big blind of the
-      // seat it is in (bbOnlyPosts skips both, never a blind on top of a blind).
-      //
-      // Dan 2026-10-21: the small blind seat used to stay "on the hook" for a big
-      // blind the next hand. Under the tournament dead button the small blind
-      // seat is the BUTTON next hand, so that debt was billed as a second live
-      // big blind straight after the small blind - a moved-in player paid the
-      // small blind and then the big blind again. A paid small blind settles it.
+      // Retire legacy tournament arrival markers without billing them.
       if (this.mustPostBB.size > 0) {
         for (const p of players) {
           if (this.mustPostBB.has(p.user_id)) {

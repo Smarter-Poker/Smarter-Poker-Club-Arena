@@ -79,6 +79,8 @@ export const SATELLITE_COLUMNS = [
   'guaranteed_prize',
   'prize_pool',
   'max_players',
+  'min_players',
+  'table_size',
   'current_players',
   'start_time',
   'started_at',

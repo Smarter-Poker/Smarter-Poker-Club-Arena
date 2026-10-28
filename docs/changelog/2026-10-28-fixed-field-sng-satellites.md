@@ -1,0 +1,11 @@
+# Two-seat Sit & Go satellites
+
+The owner requested fixed six- or nine-player satellites for every Midway event over 25 chips, plus the new 25-chip 6 PM series. First and second receive target entries; third receives the full satellite entry plus rounding residue. Rake is exactly 10% of the whole-chip entry.
+
+The existing SNG product tick asks a service-only, target-bound database transaction to create each field. The transaction locks its target/field identity, checks target scope, availability, deck capacity and maintenance, derives a funded price in exact numeric arithmetic, and returns an existing board on duplicate requests. It refuses repeatable snapshots. Only the exact two-seat fixed SNG shape receives the existing recorded SNG contract; ordinary scheduled satellites remain unlimited MTTs. Field launch uses its actual full-field start rather than an advertised future timestamp. No registered historical event changes.
+
+NLH and supported nine-seat games offer nine-player fields; PLO5/PLO6 use six-player fields. A 40-chip target costs 12 chips nine-handed or 19 six-handed, with third-place payouts of 17.20 and 22.60 respectively. The existing atomic satellite settlement remains the sole seat/remainder money writer. No new settlement repair or release timer is introduced.
+
+Native PostgreSQL tests exercise actual capacity normalization, recorded-format assignment, creation, exact pricing/refunds, concurrency, duplicate identities, authorization, isolation and target/deck refusals. Server tests cover classification and the original SNG tick wiring. The existing required native CI step invokes the new regression. Source delivery, migration installation and engine publication/live proof remain distinct in the task checkpoint.
+
+The qualifier stop, settlement admission, immutable-target guard, durable receipt reader and results presentation recognize only the recorded exact fixed SNG shape alongside existing MTT cohorts. The full owned PostgreSQL fixture retains the legacy controls and tests six actual paid entries (114 gross, 11.40 fee), two 40-chip seats and the 22.60 refund, including late-failure rollback, duplicate settlement, lost-response resolution and authenticated result privacy. Synthetic opening wallets, membership history and final-hand standings are disclosed fixture data; no live player spends chips.

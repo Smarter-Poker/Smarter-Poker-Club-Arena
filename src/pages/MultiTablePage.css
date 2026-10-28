@@ -249,6 +249,8 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+  /* Containment isolates layout recalculations and repaint passes to the slot */
+  contain: layout paint;
 }
 
 /* Inactive tables are pointer-inert and pause CSS animation churn */

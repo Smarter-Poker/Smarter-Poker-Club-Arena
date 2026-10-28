@@ -3,6 +3,7 @@ import importlib.util
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -21,6 +22,31 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
+        config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
+        job = config.split('  - job_name: engine_game_server\n', 1)[1].split('    scrape_interval:', 1)[0]
+        target_labels = dict(re.findall(r'^          (host|role|app): ([a-z0-9-]+)$', job, re.MULTILINE))
+        self.assertEqual(target_labels, {'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine'})
+        window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
+        start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00')).timestamp()
+        metric = {'__name__': 'poker_lease_heartbeat_outcomes_total', 'scope': 'tournament',
+                  'state': 'kept', 'job': 'engine_game_server', 'instance': 'PRIVATE_HOST', **target_labels}
+        source = {'status': 'success', 'data': {'resultType': 'matrix', 'result': [
+            {'metric': metric, 'values': [[start, '12']]}]}}
+        result = reader.extract_lease_metrics(source, window)
+        self.assertEqual(result['series'][0]['labels'], {'scope': 'tournament', 'state': 'kept'})
+        self.assertNotIn('PRIVATE_HOST', json.dumps(result))
+        for key in target_labels:
+            self.assertNotIn(key, result['series'][0]['labels'])
+            original = metric[key]
+            metric[key] = 'unexpected-target'
+            with self.assertRaises(ValueError):
+                reader.extract_lease_metrics(source, window)
+            metric[key] = original
+        metric['arbitrary_label'] = 'unexpected'
+        with self.assertRaises(ValueError):
+            reader.extract_lease_metrics(source, window)
+
     def test_lease_metrics_requires_explicit_original_window(self):
         self.assertFalse(reader.lease_metrics_requested(None, None))
         window = {'since': '2026-10-27T09:05:00Z', 'until': '2026-10-27T09:20:00Z'}
@@ -455,6 +481,17 @@ class NativeLogReader(unittest.TestCase):
         self.assertEqual(result['records'][0]['attempt'], 4)
         self.assertEqual(reader.extract_mux_timings(b'')['records'], [])
 
+    def test_yesterdays_morning_and_exact_48_hour_boundary_remain_readable(self):
+        now = datetime.datetime(2026, 10, 28, 16, tzinfo=datetime.timezone.utc)
+        for value in ['2026-10-27T09:05:00Z', '2026-10-26T16:00:00Z']:
+            result = reader.log_window(value, now)
+            self.assertEqual(result['since'], value)
+            end = datetime.datetime.fromisoformat(result['until'].replace('Z', '+00:00'))
+            start = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            self.assertEqual(end-start, datetime.timedelta(minutes=15))
+        with self.assertRaises(ValueError):
+            reader.log_window('2026-10-26T15:59:59Z', now)
+
     def test_historical_window_is_exactly_fifteen_minutes_and_recent(self):
         now = datetime.datetime(2026, 9, 27, 16, tzinfo=datetime.timezone.utc)
         start = '2026-09-27T14:25:00Z'
@@ -462,7 +499,7 @@ class NativeLogReader(unittest.TestCase):
             'since': start, 'until': '2026-09-27T14:40:00Z'})
         self.assertEqual(reader.log_window(None, now), None)
         for value in ['', {}, '2026-09-27T14:25:00Z; reboot', '2026-09-27T14:25:00+00:00',
-                      '2026-09-27T15:46:00Z', '2026-09-26T15:59:59Z', '2026-02-30T01:00:00Z']:
+                      '2026-09-27T15:46:00Z', '2026-09-25T15:59:59Z', '2026-02-30T01:00:00Z']:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 reader.log_window(value, now)
         command = reader.log_command(reader.log_window(start, now))

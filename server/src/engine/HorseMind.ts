@@ -2093,13 +2093,15 @@ export class HorseMind {
     // an opponent's BETS get, so it must be measured where the bets are.
     // Falls back to the all-streets ratio until the postflop sample exists,
     // so a fresh opponent is never read from three hands of noise.
-    const afLifetime =
-      s.postPassive + s.postAggr >= 10
-        ? s.postAggr / Math.max(1, s.postPassive)
-        : s.aggr / Math.max(1, s.passive);
+    const hasPostflopSample = s.postPassive + s.postAggr >= 10;
+    const afLifetime = hasPostflopSample
+      ? s.postAggr / Math.max(1, s.postPassive)
+      : s.aggr / Math.max(1, s.passive);
     let af = afLifetime;
     const rN = rec.rAggr + rec.rPassive;
-    if (recencyBlend && rN >= 8) {
+    // Recent counters include preflop actions. Blend them only with the
+    // all-street fallback; otherwise preflop style can invert a postflop read.
+    if (recencyBlend && !hasPostflopSample && rN >= 8) {
       const recentAf = rec.rAggr / Math.max(1, rec.rPassive);
       if (Math.abs(recentAf - afLifetime) > Math.max(0.6, 0.5 * afLifetime)) {
         const wa = Math.min(0.5, rN / 40);

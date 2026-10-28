@@ -155,6 +155,7 @@ export function buildLightningHorseSnapshot(turn: LightningHorseTurn): LiveHorse
     minRaise: state.minRaise,
     stage: state.stage,
     gameVariant: turn.variant,
+    smallBlind: turn.smallBlind,
     bigBlind: turn.bigBlind,
     dealerSeat: state.dealerSeat,
     lastRaise: state.lastRaise,

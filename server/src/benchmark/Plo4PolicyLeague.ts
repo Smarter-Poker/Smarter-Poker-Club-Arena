@@ -1,3 +1,4 @@
+import { publishedCashPricing as publishedLeagueCashPricing } from '../config/leagueCashPricing.js';
 import {
   REMAINING_VARIANT_PACKS,
   REMAINING_VARIANT_DOMAIN,
@@ -47,7 +48,7 @@ import {
   uniqueCards,
 } from './OmahaReference.js';
 import { effectiveBbjDrop, effectiveRake } from '../config/rakeSpec.js';
-import { getFullRakeConfig, getPlayerCountCaps } from '../config/RakeConfig.js';
+import { getFullRakeConfig } from '../config/RakeConfig.js';
 import {
   PLO4_DIVERGENCE_STREETS,
   PLO4_STRENGTH_BB,
@@ -104,7 +105,20 @@ export interface Plo4AblationPopulation {
     profile: Readonly<Plo4LeagueProfile>
   ): void;
 }
-export type Plo4AblationFlags = Readonly<Pick<HorseDecideOpts, 'v24PloDefense' | 'v53Pressure'>>;
+export type Plo4AblationFlags = Readonly<
+  Pick<
+    HorseDecideOpts,
+    | 'v24PloDefense'
+    | 'v53Pressure'
+    | 'comboDrawPressure'
+    | 'v54RiverBluff'
+    | 'riverPositionDefense'
+    | 'riverBluffCheckRaise'
+    | 'barrelContinuationOutlook'
+    | 'smallPotNearNutRiverValue'
+    | 'multiwayRiverBluffCheckRaise'
+  >
+>;
 /** A maintained current-brain adapter owns admission. The physical league must
  * never substitute the older phase-off/candidate league options for it. */
 export interface Plo4AblationBrain {
@@ -544,6 +558,11 @@ export async function playPlo4PolicyHand(
         format: profile.tournament ? 'sng' : 'cash',
         gameVariant: variant,
         bigBlind: BB,
+        ...(profile.ablation &&
+        ('smallPotNearNutRiverValue' in profile.ablation.heroOpts ||
+          'multiwayRiverBluffCheckRaise' in profile.ablation.heroOpts)
+          ? { smallBlind: config.smallBlind }
+          : {}),
         ante: config.ante,
         straddleActive: profile.straddle,
         ...(!profile.jointPolicy ? { boardCount: 1 } : {}),
@@ -745,6 +764,16 @@ export async function playPlo4PolicyHand(
       }
       if (ablation && !(hero.seat !== heroSeat && ablation.population)) {
         await ablation.brain.accepted?.(selected, acceptedRecords);
+        // Accepted-effect evidence is emitted only after the controller and
+        // original worker ACK agree. The pre-action drain already consumed
+        // ordinary evaluation counters, so these cannot be counted twice.
+        const acceptedCounters = ablation.brain.takeEvaluationFires?.() ?? {};
+        const acceptedTarget =
+          hero.seat === heroSeat
+            ? receipt.ablationEvaluationFires!.hero
+            : receipt.ablationEvaluationFires!.opponents;
+        for (const [feature, count] of Object.entries(acceptedCounters))
+          acceptedTarget[feature] = (acceptedTarget[feature] ?? 0) + count;
         for (const [disposition, count] of Object.entries(
           ablation.brain.takePlanDispositions?.() ?? {}
         ))
@@ -995,26 +1024,13 @@ export function runPlo4PolicyLeague(
 /** The engine's own cash pricing for the published 1/2 game of the profile's
  * variant (PLO4 when the profile names none), built the way
  * ServerTableEngineBase builds a cash hand config. */
+
 function publishedCashPricing(
   profile: Plo4LeagueProfile
 ): Pick<HandConfig, 'rakeConfig' | 'bbjConfig'> {
   if (profile.tournament || BB !== PLO4_STRENGTH_BB)
     throw new Error('Published PLO4 pricing is the cash 1/2 game only');
-  const full = getFullRakeConfig(1, BB, profile.variant ?? 'plo4');
-  return {
-    rakeConfig: {
-      percent: full.rakePercent,
-      cap: full.rakeCap,
-      noFlopNoDrop: true,
-      playerCountCaps: getPlayerCountCaps(full.rakeCap, profile.tableSeats ?? profile.seats),
-    },
-    bbjConfig: {
-      enabled: full.bbjEnabled,
-      feeBB: full.bbjFeeBB,
-      minPotBB: full.rules.minPotBB,
-      minPlayersDealt: full.rules.minPlayersDealt,
-    },
-  };
+  return publishedLeagueCashPricing(profile);
 }
 
 /** Independent per-hand settlement and deduction checks (Phase 9 rules). The

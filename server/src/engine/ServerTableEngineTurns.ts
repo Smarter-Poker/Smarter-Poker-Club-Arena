@@ -1,3 +1,4 @@
+import { horseFeatureAcceptanceUsable } from './HorseFeatureAuthority.js';
 import { recheckHorsePhase8GuardBeforeAcceptance } from './HorsePhase8GuardAcceptance.js';
 import { liveHorsePhase8GuardAuthority } from './HorseTournamentCatastropheGuardAuthority.js';
 /**
@@ -3639,6 +3640,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
       // — PLO equity on a PLO bomb hand, whatever the table's label says.
       gameVariant: activeVariant,
+      smallBlind: handBlinds.smallBlind,
       bigBlind: handBlinds.bigBlind,
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -4509,6 +4511,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             attemptedAmount: number | undefined,
             origin: 'horse_policy' | 'horse_fallback'
           ): boolean => {
+            if (origin === 'horse_policy' && !horseFeatureAcceptanceUsable(decision)) {
+              noteFire('horse_feature_authority_withdrawn_before_acceptance');
+              return false;
+            }
             const receiptsBefore = acceptedActions.length;
             let returned = false;
             try {

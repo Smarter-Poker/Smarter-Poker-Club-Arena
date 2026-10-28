@@ -134,6 +134,19 @@ describe('horse river value alarm: what it catches', () => {
 });
 
 describe('horse river value alarm: what it never flags', () => {
+  it.each(['nlh', 'short_deck'])(
+    'does not mistake shared-board nuts for private value in %s',
+    (variant) => {
+      const input = hand(
+        'check',
+        0,
+        { ...checkedTo, variant, structure: 'no_limit', boards: ['AcKsQsTdJd'] },
+        '8c 7h'
+      );
+      expect(auditHorseRiverValue(input).findings).toEqual([]);
+    }
+  );
+
   it.each([
     ['a full-size nut raise', hand('raise', 269)],
     ['a full-size nut bet', hand('bet', 169, checkedTo)],

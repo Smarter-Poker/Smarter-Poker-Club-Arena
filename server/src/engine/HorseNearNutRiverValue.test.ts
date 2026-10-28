@@ -538,6 +538,9 @@ describe('default-off small-pot near-nut river value', () => {
           const messages: HorseDecisionWorkerResponse[] = [];
           const deps = {
             ...defaultHorseDecisionWorkerDependencies,
+            // This synthetic physical regression evaluates the explicit candidate;
+            // caller flags alone intentionally cannot admit a live strategy.
+            offlineFeatureFlags: true,
             startServices: async () => defaultHorseDecisionWorkerDependencies.workerReadiness(),
             stopServices: async () => {},
             journalDecision: undefined,

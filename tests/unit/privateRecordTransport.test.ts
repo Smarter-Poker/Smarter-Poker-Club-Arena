@@ -16,7 +16,13 @@ vi.mock('../../src/services/EngineStateClient', () => {
     disconnect() {
       this.closes++;
     }
+    resetListeners = new Set<(allow: boolean) => void>();
+    onSessionReset(callback: (allow: boolean) => void) {
+      this.resetListeners.add(callback);
+      return () => this.resetListeners.delete(callback);
+    }
     resetSession() {
+      for (const reset of this.resetListeners) reset(true);
       this.callbacks.clear();
       this.disconnect();
     }
@@ -64,7 +70,7 @@ describe('configured private record fallback lifecycle', () => {
       ready.push(message)
     );
     const standby = state.clients[1];
-    module.resetPrivateRecordFallbackSession(true);
+    state.clients[0].resetSession();
     const next = module.privateRecordTransport.onPrivateRecord(topic, (message) =>
       ready.push(message)
     );

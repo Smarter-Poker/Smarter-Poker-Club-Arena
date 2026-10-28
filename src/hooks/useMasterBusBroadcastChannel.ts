@@ -1,4 +1,3 @@
-import { privateRecordTransport as engineChannelClient } from '../services/PrivateRecordTransport';
 /**
  * Private Supabase Broadcast subscription owned by the MasterBus registry.
  *
@@ -76,7 +75,13 @@ export function useMasterBusBroadcastChannel({
     let generation = 0;
     let degraded = false;
     let remove = () => {};
+    let identityAllowsBind = true;
+    let engineChannelClient:
+      | (typeof import('../services/PrivateRecordTransport'))['privateRecordTransport']
+      | null = null;
     const bind = () => {
+      const client = engineChannelClient;
+      if (!client || !identityAllowsBind) return;
       remove();
       const scope = ++generation;
       degraded = false;
@@ -86,7 +91,7 @@ export function useMasterBusBroadcastChannel({
         degraded = true;
         errorCallbackRef.current?.('CHANNEL_ERROR');
       };
-      remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
+      remove = client.onPrivateRecord(channelName, (message) => {
         if (!alive || scope !== generation) return;
         if (message.type === 'PRIVATE_RECORD_STATUS') {
           engineReadyRef.current = message.ready === true;
@@ -96,7 +101,7 @@ export function useMasterBusBroadcastChannel({
             engineWasReady.current = true;
             statusCallbackRef.current?.('SUBSCRIBED');
           } else {
-            const status = engineChannelClient.getStatus();
+            const status = client.getStatus();
             // Initial socket/listener startup and identity idle are normal.
             // Explicit listener failure or actual transport loss is unavailable.
             if (
@@ -113,13 +118,12 @@ export function useMasterBusBroadcastChannel({
       // Its topic readiness takes authority over the primary's coarse status.
       if (
         !engineReadyRef.current &&
-        ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(
-          engineChannelClient.getStatus()
-        )
+        ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(client.getStatus())
       )
         markUnavailable();
     };
     const stopIdentity = masterBus.subscribe('AUTH_STATE_CHANGED', (change) => {
+      identityAllowsBind = change.payload.isAuthenticated;
       const scope = ++generation;
       remove();
       engineReadyRef.current = false;
@@ -133,7 +137,17 @@ export function useMasterBusBroadcastChannel({
           if (alive && scope === generation) bind();
         });
     });
-    bind();
+    void import('../services/PrivateRecordTransport')
+      .then((module) => {
+        if (!alive) return;
+        engineChannelClient = module.privateRecordTransport;
+        bind();
+      })
+      .catch((error) => {
+        if (!alive) return;
+        reportError(error, 'useMasterBusBroadcastChannel.private_record_load');
+        errorCallbackRef.current?.('CHANNEL_ERROR');
+      });
     return () => {
       alive = false;
       generation++;

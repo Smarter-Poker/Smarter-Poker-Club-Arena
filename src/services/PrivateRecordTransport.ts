@@ -70,3 +70,5 @@ export function resetPrivateRecordFallbackSession(allowReconnect: boolean): void
   retained = 0;
   fallback?.resetSession(allowReconnect);
 }
+
+engineChannelClient.onSessionReset(resetPrivateRecordFallbackSession);

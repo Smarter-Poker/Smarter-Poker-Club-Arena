@@ -6,6 +6,8 @@ The manual provider-only read path checks the currently healthy serving revision
 
 Missing workers, unmatched hands, malformed records, source changes and read limits refuse proof. No raw cards or journal bodies leave the host. No engine code, credentials, privileges, release path, corpus gate or timer changes. The receipt establishes loaded data before matched natural decisions, not that V31 caused their final actions and not new qualification or activation authority.
 
-Eight focused regressions, including the real maintained journal/reconciler/binder fixture, run for relevant pull requests and main changes. Decision and execution records must share the maintained producer-plus-turn identity. The owning operator reads the manual job result; the existing main-health detector reads verification failures on main.
+Nine focused regressions, including the real maintained journal/reconciler/binder fixture, run for relevant pull requests and main changes. Decision and execution records must share the maintained producer-plus-turn identity. The owning operator reads the manual job result; the existing main-health detector reads verification failures on main.
 
 The aggregate decoded-byte and elapsed budgets are checked between bounded existing-reader calls. One call itself caps a hand at 256 records and 8 MiB; the provider's 75-second timeout is the hard outer deadline. No claim of instantaneous 30-second preemption or a preemptive aggregate read cap is made.
+
+Incomplete and unavailable outcomes retain only validated, closed metadata schemas with fixed reason names, including the missing worker index. The job preserves failure status and never treats a negative outcome as a positive receipt. The always-running artifact step uploads only the locally validated metadata file; malformed or private diagnostics are refused.

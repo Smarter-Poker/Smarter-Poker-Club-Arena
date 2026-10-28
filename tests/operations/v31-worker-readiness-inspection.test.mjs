@@ -15,6 +15,7 @@ import {
   candidateHandKeys,
   loadedAcceptedWitness,
   receiptMatches,
+  outcomeMatches,
   LIMITS,
   inspect,
 } from '../../scripts/ci/inspect-v31-worker-readiness.mjs';
@@ -293,6 +294,31 @@ test('unavailable identity emits only named sanitized refusal, never private exc
   assert.equal(r.reason, 'serving_identity_refused');
   assert.equal(JSON.stringify(r).includes('NEVER_EMIT'), false);
 });
+test('negative outcomes preserve only fixed metadata and cannot publish private diagnostics', () => {
+  const base = {
+    version: 1,
+    scope: 'v31_loaded_before_natural_accepted_decisions',
+    status: 'incomplete',
+    reason: 'matching_accepted_decision_unobserved',
+    missingWorker: 7,
+    qualified: false,
+    activationAllowed: false,
+    policyApplicationProven: false,
+  };
+  assert.equal(outcomeMatches(base, p), true);
+  assert.equal(outcomeMatches({ ...base, missingWorker: 8 }, p), false);
+  assert.equal(outcomeMatches({ ...base, privateCards: ['As', 'Ah'] }, p), false);
+  const { missingWorker, ...negative } = base;
+  assert.equal(
+    outcomeMatches({ ...negative, status: 'unavailable', reason: 'journal_read_failed' }, p),
+    true
+  );
+  assert.equal(
+    outcomeMatches({ ...negative, status: 'unavailable', reason: 'secret exception' }, p),
+    false
+  );
+  assert.equal(receiptMatches(base, p), false);
+});
 test('provider reader has fixed pinned authority, read-only compiled APIs and no release path', () => {
   const workflow = readFileSync(
     new URL('../../.github/workflows/inspect-v31-worker-readiness.yml', import.meta.url),
@@ -311,6 +337,9 @@ test('provider reader has fixed pinned authority, read-only compiled APIs and no
     'org.opencontainers.image.revision',
     '--health',
     '--receipt',
+    '--outcome',
+    'if: always()',
+    'exit "$INSPECTION_STATUS"',
   ])
     assert.ok(workflow.includes(part), part);
   for (const part of [

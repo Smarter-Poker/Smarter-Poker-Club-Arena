@@ -188,6 +188,51 @@ export function receiptMatches(r, p) {
     )
   );
 }
+/** Closed negative outcomes can be retained without exposing private diagnostics. */
+export function outcomeMatches(r, p) {
+  if (receiptMatches(r, p)) return true;
+  if (
+    r?.version !== 1 ||
+    r.scope !== 'v31_loaded_before_natural_accepted_decisions' ||
+    r.qualified !== false ||
+    r.activationAllowed !== false ||
+    r.policyApplicationProven !== false
+  )
+    return false;
+  const keys = [
+    'version',
+    'scope',
+    'status',
+    'reason',
+    'qualified',
+    'activationAllowed',
+    'policyApplicationProven',
+  ];
+  if (r.status === 'incomplete')
+    return (
+      exact(r, [...keys, 'missingWorker']) &&
+      r.reason === 'matching_accepted_decision_unobserved' &&
+      Number.isInteger(r.missingWorker) &&
+      r.missingWorker >= 0 &&
+      r.missingWorker < p.workerCount
+    );
+  return (
+    exact(r, keys) &&
+    r.status === 'unavailable' &&
+    [
+      'request_refused',
+      'serving_identity_refused',
+      'module_load_failed',
+      'journal_configuration_missing',
+      'worker_archive_unavailable',
+      'catalog_read_failed',
+      'inspection_bound',
+      'journal_read_failed',
+      'accepted_binding_failed',
+      'output_refused',
+    ].includes(r.reason)
+  );
+}
 export async function inspect(p, environment = process.env) {
   let stage = 'request_refused';
   const stores = [];
@@ -308,10 +353,17 @@ if (
       throw Error();
     const p = validateRequest(JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')));
     if (mode === '--validate') process.exitCode = 0;
-    else if (mode === '--health' || mode === '--receipt') {
+    else if (mode === '--health' || mode === '--receipt' || mode === '--outcome') {
       const value = JSON.parse(readFileSync(process.argv[4], 'utf8'));
-      if (!(mode === '--health' ? healthMatches(value, p) : receiptMatches(value, p)))
+      if (
+        !(mode === '--health'
+          ? healthMatches(value, p)
+          : mode === '--outcome'
+            ? outcomeMatches(value, p)
+            : receiptMatches(value, p))
+      )
         throw Error();
+      if (mode === '--outcome') console.log(JSON.stringify(value));
     } else {
       const result = await inspect(p);
       console.log(JSON.stringify(result));

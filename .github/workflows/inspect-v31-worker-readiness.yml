@@ -71,6 +71,7 @@ jobs:
           ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
           curl --fail --silent --show-error --max-time 15 https://engine.smarter.poker/health > "$RUNNER_TEMP/v31-health-before.json"
           node scripts/ci/inspect-v31-worker-readiness.mjs --health "$REQUEST_BASE64" "$RUNNER_TEMP/v31-health-before.json"
+          INSPECTION_STATUS=0
           timeout --signal=TERM --kill-after=5s 75s ssh \
             -i "$SSH_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_DIR/known_hosts" \
@@ -78,14 +79,21 @@ jobs:
             -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "root@$HETZNER_HOST" \
             "test -f /var/lock/club-arena-engine-up.lock || { echo inspection_lock_missing >&2; exit 1; }; exec 9>/var/lock/club-arena-engine-up.lock || exit 1; flock -n 9 || { echo inspection_lock_busy >&2; exit 1; }; test \"\$(docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' club-arena-engine)\" = '$EXPECTED_ENGINE_SHA' || { echo inspection_image_mismatch >&2; exit 1; }; docker exec -i club-arena-engine node --input-type=module - '$REQUEST_BASE64'" \
-            < scripts/ci/inspect-v31-worker-readiness.mjs > "$RUNNER_TEMP/v31-worker-readiness.json"
+            < scripts/ci/inspect-v31-worker-readiness.mjs > "$RUNNER_TEMP/v31-worker-readiness-candidate.json" || INSPECTION_STATUS=$?
+          node scripts/ci/inspect-v31-worker-readiness.mjs --outcome "$REQUEST_BASE64" "$RUNNER_TEMP/v31-worker-readiness-candidate.json" > "$RUNNER_TEMP/v31-worker-readiness-validated.json"
+          mv "$RUNNER_TEMP/v31-worker-readiness-validated.json" "$RUNNER_TEMP/v31-worker-readiness.json"
+          if [ "$INSPECTION_STATUS" -ne 0 ]; then
+            cat "$RUNNER_TEMP/v31-worker-readiness.json"
+            exit "$INSPECTION_STATUS"
+          fi
           node scripts/ci/inspect-v31-worker-readiness.mjs --receipt "$REQUEST_BASE64" "$RUNNER_TEMP/v31-worker-readiness.json"
           curl --fail --silent --show-error --max-time 15 https://engine.smarter.poker/health > "$RUNNER_TEMP/v31-health-after.json"
           node scripts/ci/inspect-v31-worker-readiness.mjs --health "$REQUEST_BASE64" "$RUNNER_TEMP/v31-health-after.json"
           cat "$RUNNER_TEMP/v31-worker-readiness.json"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: v31-worker-readiness-${{ github.run_id }}
           path: ${{ runner.temp }}/v31-worker-readiness.json
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 7

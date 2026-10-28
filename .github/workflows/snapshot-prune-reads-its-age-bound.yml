@@ -17,6 +17,9 @@ on:
       - scripts/ci/fixtures/snapshot-prune-age-bound/**
       - scripts/ci/test-snapshot-prune-reads-its-age-bound.py
       - .github/workflows/snapshot-prune-reads-its-age-bound.yml
+      - supabase/migrations/*_snapshot_retention_traverses_bounded_candidates_before_eligi.sql
+      - scripts/ci/fixtures/snapshot-prune-bounded-preimage.sql
+      - scripts/ci/test-snapshot-prune-bounded-candidates.py
 
 permissions:
   contents: read
@@ -65,3 +68,15 @@ jobs:
           path: artifacts/snapshot-prune-reads-its-age-bound/RESULTS.json
           retention-days: 7
           if-no-files-found: warn
+      - name: Snapshot retention bounds candidates and commits cursor atomically
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-snapshot-prune-bounded-candidates.py
+      - name: Retain bounded scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-prune-bounded-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/snapshot-prune-bounded/RESULTS.json
+          retention-days: 7
+          if-no-files-found: error

@@ -57,8 +57,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      "bytes": 244607,
+      "sha256": "6b90ecc07e3a940b6bd6c78ec73cb0d76b45a68f79a7ab3626cda7d5f3613470"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -699,5 +699,19 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "weeklyPayoutOwnedPauseEnforcement20261028": {
+    "reason": "Only add two directly triggered native PG17 weekly-owned-pause protocol/financial concurrency checks and their evidence upload to existing required accounting shard1. Every existing test command, assertion, native financial input, timeout, matrix and required aggregate remains unchanged. Reviewed full workflow diff against protected main; binding updates current workflow identity only, not historical financial recertification or production installation.",
+    "previousWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244607,
+      "sha256": "6b90ecc07e3a940b6bd6c78ec73cb0d76b45a68f79a7ab3626cda7d5f3613470"
+    },
+    "existing_financial_qualification_reexecuted": false,
+    "new_weekly_native_checks_locally_passed": true,
+    "hosted_execution_performed": false
   }
 }

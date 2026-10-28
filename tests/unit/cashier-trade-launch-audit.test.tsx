@@ -2323,3 +2323,46 @@ describe('management claims from the selected member wallet', () => {
     expect(state.rpcCalls.some((call) => call.name === 'fn_club_wallet_claim_back')).toBe(false);
   });
 });
+
+it.each(
+  ['super_agent', 'agent', 'sub_agent'].flatMap((role) =>
+    ['agent_wallet', 'player_wallet'].map((source) => [role, source])
+  )
+)(
+  '%s can directly transfer from their %s without finding their roster row',
+  async (role, sourceWallet) => {
+    state.myRole = role;
+    state.roster = [{ ...player(0, 250, 'My Account'), user_id: USER_ID, role }];
+    mountCashier();
+    await synchronized();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Someone Else' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer Between My Wallets' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
+    const source = within(dialog).getByRole('combobox', { name: 'Send From' });
+    const destination = within(dialog).getByRole('combobox', {
+      name: 'Recipient Wallet For My Account',
+    });
+    expect(source).toHaveValue('agent_wallet');
+    expect(destination).toHaveValue('player_wallet');
+    expect(within(source).queryByRole('option', { name: /Your Promo Wallet/ })).toBeNull();
+    fireEvent.change(source, { target: { value: 'player_wallet' } });
+    expect(destination).toHaveValue('agent_wallet');
+    expect(within(destination).queryByRole('option', { name: /Player Wallet/ })).toBeNull();
+    fireEvent.change(source, { target: { value: sourceWallet } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '5' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+    await waitFor(() =>
+      expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+    );
+    expect(
+      state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')?.args.p_items
+    ).toEqual([
+      expect.objectContaining({
+        user_id: USER_ID,
+        source: sourceWallet,
+        destination: sourceWallet === 'agent_wallet' ? 'player_wallet' : 'agent_wallet',
+        amount: 5,
+      }),
+    ]);
+  }
+);

@@ -134,10 +134,23 @@ function files(root, dir) {
 // Resolve source reads without executing tests. A computed path, directory
 // scan or unresolved local import retains the test. Package imports are fixed
 // by the lockfile, which is excluded from the focused route.
-export function consumedInputs(root, entry, seen = new Set()) {
+export function consumedInputs(root, entry, seen = new Set(), cache = new Map()) {
   if (seen.has(entry)) return { paths: [], unknown: false };
   seen.add(entry);
   const path = resolve(root, entry);
+  // Cache each file's own analysis, not a closure computed inside another
+  // traversal: caching a partial cyclic closure could omit a later reader.
+  const expand = (own) => {
+    const result = { paths: [...own.paths], unknown: own.unknown };
+    for (const childPath of own.imports) {
+      const child = consumedInputs(root, childPath, seen, cache);
+      result.paths.push(...child.paths);
+      result.unknown ||= child.unknown;
+    }
+    return result;
+  };
+  if (cache.has(path)) return expand(cache.get(path));
+  const imports = [];
   const source = readFileSync(path, 'utf8');
   const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   const vars = new Map();
@@ -233,9 +246,7 @@ export function consumedInputs(root, entry, seen = new Set()) {
           .map((e) => candidate + e)
           .find((p) => existsSync(p) && /\.(?:tsx?|mjs|js)$/.test(p));
         if (file) {
-          const child = consumedInputs(root, relative(root, file), seen);
-          paths.push(...child.paths);
-          unknown ||= child.unknown;
+          imports.push(relative(root, file));
         } else if (!/\.(?:css|json)$/.test(spec)) unknown = true;
         else paths.push(relative(root, candidate));
       } else if (
@@ -277,11 +288,14 @@ export function consumedInputs(root, entry, seen = new Set()) {
   };
   visit(ast);
   if (/(?:node:fs|['"]fs(?:\/promises)?['"])/.test(source) && ioCalls === 0) unknown = true;
-  return { paths, unknown };
+  const own = { paths, unknown, imports };
+  cache.set(path, own);
+  return expand(own);
 }
 const overlaps = (inputs, changed) =>
   changed.some((c) => inputs.some((p) => c === p || c.startsWith(p.replace(/\/$/, '') + '/')));
 export function contractTests(root, changed) {
+  const cache = new Map();
   return files(root, 'tests')
     .filter((p) => /\.test\.tsx?$/.test(p) && !p.startsWith('tests/_archive/'))
     .filter((p) => {
@@ -289,7 +303,7 @@ export function contractTests(root, changed) {
       // Preserve the established source-contract basename selection, including
       // deleted sources, alongside imports and conservative dynamic readers.
       if (changed.some((c) => source.includes(basename(c)))) return true;
-      const footprint = consumedInputs(root, p);
+      const footprint = consumedInputs(root, p, new Set(), cache);
       return (
         footprint.unknown ||
         overlaps(footprint.paths, changed) ||
@@ -298,12 +312,13 @@ export function contractTests(root, changed) {
     });
 }
 export function browserSpecs(root, changed, specs) {
+  const cache = new Map();
   return specs.filter((p) => {
     const source = readFileSync(resolve(root, p), 'utf8');
     // A built-page fixture can consume the application indirectly. Keep it.
     if (/(?:goto\s*\(|fetch\s*\(|request\.)/i.test(source)) return true;
     if (changed.some((c) => source.includes(basename(c)))) return true;
-    const footprint = consumedInputs(root, p);
+    const footprint = consumedInputs(root, p, new Set(), cache);
     return footprint.unknown || overlaps(footprint.paths, changed);
   });
 }

@@ -140,6 +140,19 @@ test('source readers retain computed inputs and imported network helpers; omit o
     ];
     assert.deepEqual(browserSpecs(root, ['src/components/B.module.css'], specs), specs.slice(1));
     assert.deepEqual(browserSpecs(root, ['src/components/A.module.css'], specs), specs);
+    write(
+      root,
+      'tests/e2e/a.ts',
+      "import './b';import {readFileSync} from 'node:fs';readFileSync('src/components/A.module.css');"
+    );
+    write(root, 'tests/e2e/b.ts', "import './a';");
+    const cache = new Map();
+    consumedInputs(root, 'tests/e2e/a.ts', new Set(), cache);
+    assert.ok(
+      consumedInputs(root, 'tests/e2e/b.ts', new Set(), cache).paths.includes(
+        'src/components/A.module.css'
+      )
+    );
   }));
 
 test('real locked Vitest runs related tests and source contracts, excludes unrelated tests and propagates failure', () =>

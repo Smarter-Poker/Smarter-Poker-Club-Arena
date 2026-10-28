@@ -4,8 +4,12 @@ export function timeoutBudgetMinutes(value: string): { ordinary: number; optIn: 
   const selected = value.match(
     /^\$\{\{ github\.event_name == 'repository_dispatch' && toJSON\(github\.event\.client_payload\.mobile_multirun\) == 'true' && (\d+) \|\| (\d+) \}\}$/
   );
-  if (!selected) throw new Error(`Unrecognized Fixture Job Budget: ${value}`);
-  return { ordinary: Number(selected[2]), optIn: Number(selected[1]) };
+  const sharedObservation = value.match(
+    /^\$\{\{ github\.event_name == 'repository_dispatch' && \(toJSON\(github\.event\.client_payload\.mobile_multirun\) == 'true' \|\| toJSON\(github\.event\.client_payload\.horse_social\) == 'true'\) && (\d+) \|\| (\d+) \}\}$/
+  );
+  const admitted = selected || sharedObservation;
+  if (!admitted) throw new Error(`Unrecognized Fixture Job Budget: ${value}`);
+  return { ordinary: Number(admitted[2]), optIn: Number(admitted[1]) };
 }
 
 export function workflowJobBudget(source: string, job: string) {

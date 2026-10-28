@@ -1,0 +1,18 @@
+{
+  "_owner": "codex/approved-agent-adjustment-20261028",
+  "_qualification": "Exact original owners and deterministic synthetic data; focused native33. Actual production proof is separate.",
+  "sources": {
+    ".github/workflows/approved-agent-adjustment.yml": "904c44cac85b0e3186deb76f45712daa3423afb245de079d992f10a8016a679c",
+    "docs/changelog/2026-10-28-approved-agent-adjustments-execute-once.md": "bf2fef786c25299e45b7c19abc3c8bfb6c3dd797597bcea6c816113c512039b4",
+    "docs/laws.d/approved-agent-adjustments-settle-once.md": "8b6910ae09f1978ab4bd02a5e42e5edda35a5237c5f61aaa7667b215d392c328",
+    "scripts/ci/schema-manifest.d/approved-agent-adjustment.json": "bdb7712e06c3b15ff22e34dd960d239b9c1e2ca5f29a6f08908706b9e4b1ffc4",
+    "scripts/qualification/approved-agent-adjustment/README.md": "d6d86f86e89809ab5aa744038bc8cd4125b8252c17a8581d611c7bc52ca5ae06",
+    "scripts/qualification/approved-agent-adjustment/fixtures/adjustment-report-owner.json": "c421384dfa2c0e34a91ab9b8ee0736ec984dbbc1ee142ba1bf6770dfcbcaa37b",
+    "scripts/qualification/approved-agent-adjustment/fixtures/money-component-owners.json": "2a69c8f04b5dcd4b8221065a2d82ebcd56e51cd7e7b713b869ea47020f8da7ea",
+    "scripts/qualification/approved-agent-adjustment/fixtures/tally-owners.json": "15893d878091cb8f26c5adf349c4d775ef412f8cff3e90062a304ba5517565af",
+    "scripts/qualification/approved-agent-adjustment/fixtures/write-authorization-owners.json": "279677f25c7cf09281fd1638438fa975c49e11aba31f535dc61f388b56e0a6c2",
+    "scripts/qualification/approved-agent-adjustment/native.py": "664a8fdf615e0eacb0f8a9f2e4dc18aa606f3a9541dc6542573ec134ef503ed7",
+    "supabase/migrations/20261028153553_approved_agent_adjustments_settle_once_from_the_club_bank.sql": "68280ed7dd81ce3eeca11a7e789866f22051697ff26da5c52bc6d009a843de79",
+    "tests/approved-agent-adjustments-settle-once.law.test.ts": "d0e0cffb2290788f54f314612b11b42d5ed16b47fec2932cbba442c04663c57a"
+  }
+}

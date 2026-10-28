@@ -10,7 +10,7 @@
     "scripts/ci/fixtures/private-cash-record-cover/qualification-evidence.json": "a131bfb246bf48ce1daf2bfda1be0b0b059086c14ac8129a69e7071dcfc32bf6",
     "tests/private-cash-record-index-retains-original-facts.law.test.ts": "48859baa852c128692de47a217c833b9426188975f5d20fbe32997abf856e5a4",
     "docs/laws.d/private-cash-record-index-retains-original-facts.md": "950ec27047e671d4c9b5463aeb39a15c58da7ba0d5425b94acd01e1147a03360",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064",
     "docs/changelog/2026-10-28-original-cash-deposit-records-read-scalar-facts.md": "838bc0d7d4c198c46f950bfeddc2f6b9ee8d78e252a691c5c1dcf0815dccfe78"
   },
   "workflowTournamentFeeScopeAdditiveAudit": {
@@ -24,5 +24,22 @@
     "previousSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
     "currentSHA256": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b",
     "change": "Exactly five qualification paths (including both consumed shared fixture families) and one new isolated PG17 exact official private-verdict step. Reverse-removal recovers prior workflow byte-for-byte; every previous native financial command/assertion and every other pinned source byte remains unchanged. Exact existing four-patch C2 is qualified by the new guarded full installer/native92; no new bulk rewrite or production closure claim."
+  },
+  "reportMembershipCapacityQualificationAudit": {
+    "reason": "Reviewed additive exact membership48 native step and current-report/real84 plus actual65 finite245 extension. Existing financial/native steps retained; no monetary source, raw fixtures, economic assertions or installed history changed. Explicit empty tournament boundary uses actual TEXT tournament IDs; exact nonempty membership semantics separately qualified.",
+    "changes": {
+      ".github/workflows/unpaid-lightning-funding-contracts.yml": {
+        "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+        "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
+      }
+    }
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "combinedC2MembershipWorkflow20261028": {
+    "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
+    "execution_performed": false
   }
 }

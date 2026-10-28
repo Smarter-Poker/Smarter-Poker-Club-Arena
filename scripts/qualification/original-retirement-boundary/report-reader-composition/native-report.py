@@ -40,8 +40,10 @@ CREATE OR REPLACE FUNCTION public.fn_union_pnl_boundary(p_union_id uuid,p_at tim
 CREATE OR REPLACE FUNCTION public.fn_union_pnl_week_shaped_hands(uuid,timestamptz,timestamptz,boolean) RETURNS SETOF public.union_pnl_cash_outcomes LANGUAGE sql AS $$SELECT o.* FROM public.union_pnl_cash_outcomes o WHERE o.game_scope->>'game_union_id'=$1::text AND o.recognized_at>=$2 AND o.recognized_at<$3$$;
 CREATE OR REPLACE FUNCTION public.fn_union_pnl_cash_outcome_link(public.union_pnl_cash_outcomes) RETURNS SETOF jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb WHERE false$$;
 CREATE TABLE IF NOT EXISTS public.cash_funding_application_receipts(applied_at timestamptz,transaction_id uuid);
-CREATE OR REPLACE FUNCTION public.fn_union_pnl_touched_registrations(timestamptz,timestamptz,boolean) RETURNS TABLE(registration_id uuid,touched_tournament_id uuid) LANGUAGE sql AS $$SELECT NULL::uuid,NULL::uuid WHERE false$$;
-CREATE OR REPLACE FUNCTION public.fn_union_pnl_tournament_in_union(uuid,uuid,boolean) RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
+CREATE OR REPLACE FUNCTION public.fn_union_pnl_touched_registrations(timestamptz,timestamptz,boolean) RETURNS TABLE(registration_id uuid,touched_tournament_id text) LANGUAGE sql AS $$SELECT NULL::uuid,NULL::text WHERE false$$;
+CREATE OR REPLACE FUNCTION public.fn_union_pnl_tournament_in_union(text,uuid,boolean) RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
+CREATE TABLE IF NOT EXISTS public.union_pnl_inventory_touches(source_name text,row_id uuid,union_id text);
+CREATE TABLE IF NOT EXISTS public.union_pnl_inventory_events(source_name text,row_id uuid,after_row jsonb,before_row jsonb);
 CREATE TABLE IF NOT EXISTS public.tournament_participant_funding_receipts(registration_id uuid,asset text,amount numeric,funding_club_id uuid,ledger_id uuid,entitlement_id uuid,registration_snapshot jsonb,id uuid,user_id uuid);
 CREATE OR REPLACE FUNCTION public.fn_union_pnl_tournament_entry_club_of(text,numeric,uuid,uuid,uuid,jsonb) RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
 CREATE OR REPLACE FUNCTION public.fn_union_pnl_week_union_credits(uuid,timestamptz,timestamptz,boolean) RETURNS TABLE(credit_id uuid) LANGUAGE sql AS $$SELECT NULL::uuid WHERE false$$;
@@ -117,6 +119,9 @@ cases.append('actual_full_report_bad_original_source_authority_uncertified_fallb
 # Restore mutable external cache harness for later retained regression.
 q('TRUNCATE native_report_certificates;')
 (O/'actual-composed-report-result.json').write_text(json.dumps({'cold':r,'cachehit':r2,'warming':w,'limits':'Full original report SQL, real84 advance/reduce/witness/read; explicit empty tournament/capture/ECO external populations. Actual65 source authority is separately qualified, never rebound to these controlled helpers.'},indent=2)+'\n')
+
+if os.environ.get('ORB_REPORT_MEMBERSHIP_NATIVE'):
+ exec(Path(os.environ['ORB_REPORT_MEMBERSHIP_NATIVE']).joinpath('native-report-extension.py').read_text())
 
 for body in restore_readers.values():q(body)
 q(original_report)

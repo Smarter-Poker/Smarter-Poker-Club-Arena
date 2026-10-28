@@ -117,14 +117,18 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-daily-reporting-attribution-change-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Original tournament membership preserves the complete touched financial bag
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch.py
       - name: Sealed inventory retains the complete original financial proof
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --report-reader-composition-migration supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --treasury-seat-gift-migration supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql --original-occupancy-flow-migration supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --report-reader-composition-migration supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql --report-membership-migration supabase/migrations/20261028033359_original_weekly_report_reads_tournament_membership_as_a_set.sql --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --treasury-seat-gift-migration supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql --original-occupancy-flow-migration supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql
       - name: Original treasury gifts retain hand ownership and future admission
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: ORB_REPORT_COMPOSITION_NATIVE="$PWD/scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py" python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py --reader-composition scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-readers.py --output "${{ runner.temp }}/treasury-financial-owners"
+        run: ORB_REPORT_MEMBERSHIP_NATIVE="$PWD/scripts/qualification/original-retirement-boundary/membership-capacity" ORB_REPORT_COMPOSITION_NATIVE="$PWD/scripts/qualification/original-retirement-boundary/report-reader-composition/native-report.py" python3 -B scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-original-hands.py --reader-composition scripts/qualification/original-retirement-boundary/treasury-gifts/targeted/native-readers.py --output "${{ runner.temp }}/treasury-financial-owners"
       - name: Old queued treasury entry resumes through the current atomic leaf
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

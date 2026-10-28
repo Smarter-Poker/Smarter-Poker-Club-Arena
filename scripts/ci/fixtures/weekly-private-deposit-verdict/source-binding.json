@@ -18,6 +18,10 @@
     "tests/weekly-private-deposits-retain-original-verdicts.law.test.ts": "5fa75e9b2da5605251f1bb29a71e622a72386911a1c7d512120ec9d70b4d72b1",
     "docs/laws.d/weekly-private-deposits-retain-original-verdicts.md": "331834902cb5746105ec6647c4678ef5212c7cefaeb9f74ae308c5374f998a2b",
     "docs/changelog/2026-10-28-weekly-statements-evaluate-private-deposit-verdicts-once.md": "ecd966010f81773fbc45e8065dbc6c78e89705411c84929e00522c2498403ece",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "3f47dc8debcf50d5b79fce44e55eb582bab53986dd19e9138025ce639249888b"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "51aca951e5a74a00a0ed40071d40dd8f492fd741076ee4b09758909d11875064"
+  },
+  "combinedC2MembershipWorkflow20261028": {
+    "review": "Additive C2 native92 lane and original membership63/245/48 routes retain all prior financial lanes and flags; workflow binding renewed after actual diff review.",
+    "execution_performed": false
   }
 }

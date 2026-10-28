@@ -92,6 +92,13 @@ import {
   type EngineHudLevel,
 } from './support/engineHudLevelWitness';
 
+async function expectNoOpponentHud(page: Page): Promise<void> {
+  await expect(
+    page.locator('.mini-hud, .seat__style-badge, .ft-player__style'),
+    'Opponent statistics and playing-style classifications must never render'
+  ).toHaveCount(0);
+}
+
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const UNION_ID = process.env.E2E_UNION_ID || 'fade0000-0000-0000-0000-000000000001';
@@ -1322,6 +1329,8 @@ async function observeTournamentBoard(
     );
 
     await expect(banner).toBeHidden();
+
+    await expectNoOpponentHud(page);
     if (gameFormat === 'mtt') {
       const browser = context.browser();
       if (!browser) throw new Error('HUD witness needs the existing isolated WebKit browser');
@@ -1403,6 +1412,7 @@ async function observeTournamentBoard(
     expect(cycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
     await expectNextHandPresentation(page, cycle, `${candidate.name} live gameplay`);
     await expect(banner).toBeHidden();
+    await expectNoOpponentHud(page);
 
     expect(
       journal.openTransportUrls().every((url) => new URL(url).pathname === '/ws/multi'),
@@ -1538,6 +1548,7 @@ async function observeTournamentBoard(
         `${candidate.name} did not recover exactly one multiplexed transport`
       ).toBe(1);
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
     } finally {
       if (offline) {
         await context.setOffline(false).catch(() => {});
@@ -2104,6 +2115,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         'initial live-table connection'
       );
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
       expect(
         journal.openTransportUrls().every((url) => new URL(url).pathname === '/ws/multi'),
         'the production table bypassed the one-owner multiplexed transport'
@@ -2140,6 +2152,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       expect(initialCycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
       await expectNextHandPresentation(page, initialCycle, 'live gameplay before the outage');
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
 
       const preOutageTransports = journal.transportIdsOpenAt(Date.now());
       expect(
@@ -2203,6 +2216,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         expect(recoveredCycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
         await expectNextHandPresentation(page, recoveredCycle, 'live gameplay after reconnect');
         await expect(banner).toBeHidden();
+        await expectNoOpponentHud(page);
 
         /* Give a delayed StrictMode cleanup/reconnect ladder time to expose
            itself, then assert the exact ownership shape rather than merely a
@@ -2244,6 +2258,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           `expected one live game transport, got ${journal.openTransportUrls().join(', ')}`
         ).toBe(1);
         await expect(banner).toBeHidden();
+        await expectNoOpponentHud(page);
         // Layout proof follows continuity; its UI reads do not extend any hand deadline.
         testInfo.setTimeout(testInfo.timeout + 45_000);
         await certifyMobileAwardJournal(page, testInfo);

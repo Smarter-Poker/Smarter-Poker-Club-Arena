@@ -1,0 +1,46 @@
+{
+  "status": "passed_local_source_qualification_not_installed",
+  "migration": "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql",
+  "migration_sha256": "9eb8db9a0cfe2af970c6865db5d41d19755424eecbca3b05d1048422877d0881",
+  "whole_function_postimages": {
+    "report": "49b47361e2ccd195968d293b1bb7c3c0",
+    "advance": "736539c3d60fd047c352e127f18d54bb",
+    "guard": "edc8545a57d017a7cce79550dd0520f9"
+  },
+  "generation_owner_unchanged": "58dc20e1ba380ccb9b9dee8809731d33",
+  "source65_changed_entries": 2,
+  "source65_other_entries_unchanged": 63,
+  "actual_catalog_observed_at": "2026-10-28T00:18:03.638929+00:00",
+  "targeted_native": {
+    "status": "passed",
+    "cases": 62,
+    "report_cases": [
+      "actual_full_report_before_composition_refuses_current_real84_reader",
+      "actual_report_source_change_naturally_invalidates_GEN_original84flow_and_hand_rebuild_no_retag_earned_R2_preserved",
+      "actual_full_report_after_composition_cold_and_cachehit_reaches_real84_typed_reader",
+      "actual_full_report_warming_never_authorizes_payment",
+      "actual_full_report_stale_hand_part_rebuilt_by_original_advance_returns_warming",
+      "actual_full_report_changed_reader_whole_owner_refused",
+      "actual_full_report_bad_original_source_authority_uncertified_fallback_preserved"
+    ],
+    "evidence": "/Volumes/SmarterArchives/agent-evidence/rakeback-recovery-20261026-01a17898/report-composition-native-final-0036",
+    "explicit_boundaries": "Real full report/current2627/full and window flow owners/real84 hand reduce/read/witness and real GEN58dc. Unrelated finite-source cryptographic families and empty tournament/capture/ECO populations are controlled local boundaries. Report output correctly blocked for absent full boundary/rake universe; no ready-production claim."
+  },
+  "actual65_authority_native": {
+    "status": "passed",
+    "finite_cases": 245,
+    "evidence": "/Volumes/SmarterArchives/agent-evidence/rakeback-recovery-20261026-01a17898/report-composition-authority-native-0122",
+    "proofs": [
+      "exact_atomic_three_owner_DDL_rollback",
+      "full_metadata_ACL_preserved",
+      "four_authority_drift_refusals",
+      "exact_replay_refusal",
+      "actual65_true_other63_unchanged",
+      "GEN58dc_bytes_unchanged_naturally_new_generation",
+      "old_generation_actual_cache_read_refused",
+      "finite245_and_prior_wallet_BBJ_treasury_invariants_preserved"
+    ],
+    "same_tested_bytes": "Native executed byte-exact composed candidate SHA above before official reserved pathname copy; source bytes unchanged."
+  },
+  "delivery": "Root sole production owner. No push/merge/install/live or book-close claim. New generation requires original84 flow+hand rebuild, never retag; all paid financial identities must remain unchanged."
+}

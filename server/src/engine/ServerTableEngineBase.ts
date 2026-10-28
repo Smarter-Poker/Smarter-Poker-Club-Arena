@@ -20,6 +20,8 @@ import type { F06MovementAdmission } from '../tournament/f06MovementAdmission.js
  */
 
 import { HandController } from './HandController.js';
+import { CooperativeHandPause } from './CooperativeHandPause.js';
+import { CooperativeHandTimers } from './CooperativeHandTimers.js';
 import {
   LifecycleDiagnostics,
   type LifecycleDetail,
@@ -729,7 +731,12 @@ export abstract class ServerTableEngineBase {
       this.operatorCloseRequest?.operation_id !== this.operatorClosureOnlyId
     )
       throw new Error('operator_cash_close_authority_changed');
-    if (this.operatorCloseRequest && !this.maintenancePaused && this.isBetweenHands()) {
+    if (
+      this.operatorCloseRequest &&
+      this.weeklyPayoutPauseOwners.size === 0 &&
+      !this.maintenancePaused &&
+      this.isBetweenHands()
+    ) {
       await this.closeOperatorCashAtBoundary();
     }
     return true;
@@ -1458,7 +1465,7 @@ export abstract class ServerTableEngineBase {
 
   protected clearHandSafetyTimer(): void {
     if (this.handSafetyTimer) {
-      clearTimeout(this.handSafetyTimer);
+      this.clearHandTimeout(this.handSafetyTimer);
       this.handSafetyTimer = null;
     }
   }
@@ -1482,7 +1489,7 @@ export abstract class ServerTableEngineBase {
    */
   protected armPineappleDiscardSweep(controllerRef: unknown): void {
     if (this.pineappleDiscardTimer) {
-      clearTimeout(this.pineappleDiscardTimer);
+      this.clearHandTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
     }
     this.pruneSettledPineappleDeadlines();
@@ -1491,7 +1498,7 @@ export abstract class ServerTableEngineBase {
     const next = Math.min(...this.pineappleDiscardDeadlines.values());
     const wait = Math.max(0, next - Date.now());
 
-    this.pineappleDiscardTimer = setTimeout(() => {
+    this.pineappleDiscardTimer = this.setHandTimeout(() => {
       this.pineappleDiscardTimer = null;
       if (!this.handController || this.handController !== controllerRef) return;
 
@@ -1721,7 +1728,7 @@ export abstract class ServerTableEngineBase {
     this.handController?.cancelPineappleSettle?.();
     this.cancelHorseDecisionWork();
     if (this.pineappleDiscardTimer) {
-      clearTimeout(this.pineappleDiscardTimer);
+      this.clearHandTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
     }
     this.pineappleDiscardDeadlines.clear();
@@ -2176,6 +2183,16 @@ export abstract class ServerTableEngineBase {
    * is set.
    */
   protected maintenancePaused: boolean = false;
+  /** Weekly payout is an independent pause owner, never a deployment gate. */
+  protected weeklyPayoutPauseOwners = new Set<string>();
+  protected readonly weeklyHandPause = new CooperativeHandPause();
+  private readonly weeklyHandTimers = new CooperativeHandTimers();
+  private weeklyHandPausedAt = 0;
+  private readonly weeklyPayoutOriginalWork = new Set<Promise<unknown>>();
+  private weeklyPayoutDrain: Promise<void> | null = null;
+  private readonly deferredWeeklyPayoutReleases = new Set<string>();
+  protected weeklyPayoutStartedController: HandController | null = null;
+  private weeklyPayoutBoundaryListeners = new Set<() => void>();
 
   /**
    * A unanimous final-table deal owns its own between-hands pause.
@@ -2962,6 +2979,7 @@ export abstract class ServerTableEngineBase {
   protected engineTelemetry: EngineTelemetry;
 
   constructor(tableId: string, leaseAuthority: EngineLeaseAuthority | null = null) {
+    this.weeklyHandPause.onStable(() => this.observeWeeklyPayoutDrain());
     this.operatorClosureOnlyId =
       leaseAuthority?.scope === 'cash' && leaseAuthority.verified
         ? (leaseAuthority.closureOperationId ?? null)
@@ -3901,6 +3919,7 @@ export abstract class ServerTableEngineBase {
          * it most.
          */
         if (
+          this.weeklyPayoutPauseOwners.size > 0 ||
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
@@ -4281,6 +4300,8 @@ export abstract class ServerTableEngineBase {
       ...this.readContinuationTasks,
     ]
   ): Promise<void> {
+    this.weeklyHandPause.stop();
+    this.weeklyHandTimers.stop();
     const failures: unknown[] = [];
 
     // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
@@ -7394,6 +7415,7 @@ export abstract class ServerTableEngineBase {
     if (
       this.tournamentMovePauseOwners.size > 0 ||
       this.handForHandPaused ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused
@@ -7551,6 +7573,7 @@ export abstract class ServerTableEngineBase {
     if (
       this.tournamentMovePauseOwners.size > 0 ||
       this.handForHandPaused ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused
     )
@@ -7568,6 +7591,7 @@ export abstract class ServerTableEngineBase {
       // start no other. Sits with the two locks above because it is polled
       // like them and, like them, no gate in this process releases it.
       this.dealingHaltLock ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
@@ -8203,11 +8227,185 @@ export abstract class ServerTableEngineBase {
     this.pushPreActionToPlayer(userId, { reason: 'resync' });
   }
 
+  pauseForWeeklyPayout(owner: string): void {
+    if (!owner || owner.length > 512) throw new Error('weekly_payout_owner_invalid');
+    this.weeklyPayoutPauseOwners.add(owner);
+    this.holdBeforeNextHand = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /** The DB-relative 04:00 edge freezes the current hand without replacing it. */
+  engageWeeklyPayoutHandPause(owner: string): void {
+    if (!this.weeklyPayoutPauseOwners.has(owner))
+      throw new Error('weekly_payout_owner_unannounced');
+    if (!this.weeklyHandPause.held()) this.weeklyHandPausedAt = Date.now();
+    this.weeklyHandPause.hold(owner);
+    this.weeklyHandTimers.hold(owner);
+    this.preciseTimer.pauseForWeeklyPayout(this.tableId, owner);
+    this.timeBankEngine.pauseForWeeklyPayout(this.tableId, owner);
+    this.disconnectEngine.pauseForWeeklyPayout(this.tableId, owner);
+    this.insuranceEngine.pauseForWeeklyPayout(this.tableId, owner);
+    this.runItTwiceEngine.pauseForWeeklyPayout(this.tableId, owner);
+    this.handController?.pauseForWeeklyPayout(owner);
+    this.observeWeeklyPayoutDrain();
+  }
+
+  resumeFromWeeklyPayout(owner: string): void {
+    if (!this.weeklyPayoutPauseOwners.has(owner)) return;
+    if (this.maintenancePaused && this.weeklyHandPause.held()) {
+      this.deferredWeeklyPayoutReleases.add(owner);
+      return;
+    }
+    this.deferredWeeklyPayoutReleases.delete(owner);
+    if (!this.weeklyPayoutPauseOwners.delete(owner)) return;
+    this.handController?.resumeFromWeeklyPayout(owner);
+    this.insuranceEngine.resumeFromWeeklyPayout(this.tableId, owner);
+    this.runItTwiceEngine.resumeFromWeeklyPayout(this.tableId, owner);
+    this.timeBankEngine.resumeFromWeeklyPayout(this.tableId, owner);
+    this.disconnectEngine.resumeFromWeeklyPayout(this.tableId, owner);
+    this.preciseTimer.resumeFromWeeklyPayout(this.tableId, owner);
+    if (this.weeklyPayoutPauseOwners.size === 0 && this.weeklyHandPause.held()) {
+      const elapsed = Math.max(0, Date.now() - this.weeklyHandPausedAt);
+      if (this.playerTurnStartTime > 0) this.playerTurnStartTime += elapsed;
+      for (const [seat, deadline] of this.pineappleDiscardDeadlines)
+        this.pineappleDiscardDeadlines.set(seat, deadline + elapsed);
+      this.weeklyHandPausedAt = 0;
+      this.markProgress();
+    }
+    this.weeklyHandTimers.release(owner);
+    this.weeklyHandPause.release(owner);
+    if (
+      this.weeklyPayoutPauseOwners.size > 0 ||
+      this.maintenancePaused ||
+      this.handForHandPaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      this.tournamentMovePauseOwners.size > 0
+    ) {
+      // The remaining independent authority starts its own pause-age budget.
+      if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
+      return;
+    }
+    this.releasePauseGate();
+  }
+
+  isParkedForWeeklyPayout(owner: string): boolean {
+    return (
+      this.weeklyPayoutPauseOwners.has(owner) &&
+      this.weeklyHandPause.stable(owner) &&
+      !this.hasWeeklyPayoutMutationInFlight() &&
+      !this.hasUnresolvedF06Preparation() &&
+      this.preciseTimer.isParkedForWeeklyPayout(this.tableId, owner) &&
+      this.timeBankEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
+      this.disconnectEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
+      this.insuranceEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
+      this.runItTwiceEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
+      ((this.handForHandResolve !== null && this.isBetweenHands()) ||
+        (this.handController !== null &&
+          this.weeklyPayoutStartedController === this.handController &&
+          this.handController.isParkedForWeeklyPayout(owner)))
+    );
+  }
+
+  hasWeeklyPayoutMutationInFlight(): boolean {
+    return (
+      this.weeklyHandPause.pending() ||
+      this.terminalBoundaryPersistenceFailed ||
+      this.hasSettlementInFlight() ||
+      this.postHandTasksPromise !== null ||
+      this.weeklyPayoutOriginalWork.size > 0 ||
+      this.timeBankAccountingPending.size > 0 ||
+      this.timeBankAccountingUnconfirmed ||
+      this.entryHoldWriteChains.size > 0 ||
+      this.readContinuationTasks.size > 0 ||
+      this.tournamentMoveOperations.size > 0 ||
+      this.snapshotFlushPromise !== null
+    );
+  }
+
+  protected trackWeeklyPayoutOriginalWork(work: Promise<unknown>): void {
+    const release = this.weeklyHandPause.enterMutation();
+    this.weeklyPayoutOriginalWork.add(work);
+    const finish = () => {
+      this.weeklyPayoutOriginalWork.delete(work);
+      release?.();
+      if (this.weeklyHandPause.held()) this.observeWeeklyPayoutDrain();
+    };
+    void work.then(finish).catch(finish);
+  }
+
+  /** Join the already admitted writers once, to a fixed point. No payer,
+   * replay, polling timer or new side effect runs from this observer.
+   */
+  private observeWeeklyPayoutDrain(): void {
+    if (this.weeklyPayoutDrain || !this.weeklyHandPause.held()) return;
+    const run = async () => {
+      let previous = new Set<Promise<unknown>>();
+      for (;;) {
+        const pending = new Set<Promise<unknown>>([
+          ...this.weeklyPayoutOriginalWork,
+          ...this.settlementInFlight,
+          ...this.timeBankAccountingPending,
+          ...this.entryHoldWriteChains.values(),
+          ...this.readContinuationTasks,
+          ...this.tournamentMoveOperations,
+          ...(this.postHandTasksPromise ? [this.postHandTasksPromise] : []),
+          ...(this.snapshotFlushPromise ? [this.snapshotFlushPromise] : []),
+        ]);
+        if (pending.size === 0 || [...pending].every((work) => previous.has(work))) break;
+        previous = pending;
+        await Promise.allSettled(pending);
+      }
+    };
+    const original = run().finally(() => {
+      if (this.weeklyPayoutDrain === original) this.weeklyPayoutDrain = null;
+      if (this.weeklyHandPause.held())
+        for (const listener of this.weeklyPayoutBoundaryListeners) listener();
+    });
+    this.weeklyPayoutDrain = original;
+  }
+
+  onWeeklyPayoutBoundary(listener: () => void): () => void {
+    this.weeklyPayoutBoundaryListeners.add(listener);
+    return () => this.weeklyPayoutBoundaryListeners.delete(listener);
+  }
+
+  /** Keep original async call stacks parked on both success and failure.
+   * A rejected worker/read must not enter a catch-path fallback during money.
+   */
+  protected async weeklyPayoutContinuation<T>(work: T | PromiseLike<T>): Promise<T> {
+    let result: T;
+    try {
+      result = await work;
+    } catch (error) {
+      if (!(await this.weeklyHandPause.checkpoint()))
+        throw new Error('weekly_payout_original_hand_stopped');
+      throw error;
+    }
+    if (!(await this.weeklyHandPause.checkpoint()))
+      throw new Error('weekly_payout_original_hand_stopped');
+    return result;
+  }
+
+  protected setHandTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout> {
+    return this.weeklyHandTimers.set(callback, ms);
+  }
+
+  protected sleepHand(ms: number): Promise<void> {
+    return this.weeklyHandTimers.sleep(ms);
+  }
+
+  protected clearHandTimeout(timer: ReturnType<typeof setTimeout> | null | undefined): void {
+    this.weeklyHandTimers.clear(timer);
+  }
+
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
     this.maintenanceCheckpointGeneration++;
     this.maintenancePaused = false;
+    for (const owner of [...this.deferredWeeklyPayoutReleases]) this.resumeFromWeeklyPayout(owner);
     if (
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.tournamentMovePauseOwners.size > 0 ||
       this.handForHandPaused ||
       this.finalTableDealPaused ||
@@ -8236,6 +8434,7 @@ export abstract class ServerTableEngineBase {
     if (
       this.tournamentMovePauseOwners.size > 0 ||
       this.handForHandPaused ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.terminalCloseoutPaused
     )
@@ -8467,6 +8666,7 @@ export abstract class ServerTableEngineBase {
     // through. See the `maintenancePaused` field.
     if (
       this.tournamentMovePauseOwners.size > 0 ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused
@@ -8532,6 +8732,7 @@ export abstract class ServerTableEngineBase {
     // Either authority holds the gate; see the `maintenancePaused` field.
     if (
       (!this.handForHandPaused &&
+        this.weeklyPayoutPauseOwners.size === 0 &&
         !this.maintenancePaused &&
         !this.finalTableDealPaused &&
         !this.terminalCloseoutPaused &&
@@ -8551,6 +8752,15 @@ export abstract class ServerTableEngineBase {
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
+      if (this.weeklyPayoutPauseOwners.size > 0) {
+        for (const listener of this.weeklyPayoutBoundaryListeners) {
+          try {
+            listener();
+          } catch (error) {
+            reportError(error, 'ServerTableEngine.weekly_payout_boundary');
+          }
+        }
+      }
       this.armUnclaimedTournamentMovePauseExpiry();
       this.notifyBoundaryPauseWaiters();
       /**
@@ -8599,7 +8809,7 @@ export abstract class ServerTableEngineBase {
            * whichever authority still holds the table after the break lets
            * go (resumeFromMaintenance defers to hand-for-hand and friends).
            */
-          if (this.maintenancePaused && this.running) {
+          if ((this.maintenancePaused || this.weeklyPayoutPauseOwners.size > 0) && this.running) {
             this.pauseGateTimer = setTimeout(onSafetyTimeout, maxWaitMs);
             (this.pauseGateTimer as { unref?: () => void }).unref?.();
             return;
@@ -8797,6 +9007,7 @@ export abstract class ServerTableEngineBase {
     // reaped, exactly as the 2026-09-11 note below demands.
     return (
       this.handForHandPaused ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused ||
@@ -8849,6 +9060,7 @@ export abstract class ServerTableEngineBase {
    * open - the draft shielded a frozen MTT hand again.)
    */
   isParkedByDesign(): boolean {
+    if (this.weeklyHandPause.held()) return true;
     if (this.isBetweenHands()) return this.isPausedByDesign();
     return (
       this.finalTableDealPaused || this.terminalCloseoutPaused || this.tableFSM.state === 'paused'
@@ -9089,7 +9301,9 @@ export abstract class ServerTableEngineBase {
     const meta = this.timeBankMeta.get(userId);
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     if (!meta || !bank || bank.isActive) return false;
-    const extras = await this.fetchTimeBankExtras([userId], options?.timeoutMs);
+    const extras = await this.weeklyPayoutContinuation(
+      this.fetchTimeBankExtras([userId], options?.timeoutMs)
+    );
     if (!extras.has(userId)) return false;
     const usedTotal = Math.max(0, meta.initialSeconds - bank.remainingSeconds);
     const baseLeft = Math.max(0, meta.baseSeconds - Math.min(usedTotal, meta.baseSeconds));
@@ -9119,10 +9333,12 @@ export abstract class ServerTableEngineBase {
   protected async revalidateUnlimitedTimeBank(userId: string): Promise<void> {
     if (!this.timeBankEngine.isUnlimited(this.tableId, userId)) return;
 
-    const refreshed = await this.refreshTimeBankFromDb(userId, {
-      timeoutMs: 1_500,
-      requireExplicitUnlimitedState: true,
-    });
+    const refreshed = await this.weeklyPayoutContinuation(
+      this.refreshTimeBankFromDb(userId, {
+        timeoutMs: 1_500,
+        requireExplicitUnlimitedState: true,
+      })
+    );
     if (refreshed) return;
 
     this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
@@ -9295,11 +9511,11 @@ export abstract class ServerTableEngineBase {
     this.horseDecisionAbortController?.abort();
     this.horseDecisionAbortController = null;
     if (this.horseSecondLookTimer) {
-      clearTimeout(this.horseSecondLookTimer);
+      this.clearHandTimeout(this.horseSecondLookTimer);
       this.horseSecondLookTimer = null;
     }
     if (this.horseActionTimer) {
-      clearTimeout(this.horseActionTimer);
+      this.clearHandTimeout(this.horseActionTimer);
       this.horseActionTimer = null;
     }
   }

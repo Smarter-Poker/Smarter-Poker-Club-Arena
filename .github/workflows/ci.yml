@@ -2305,6 +2305,25 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-unified-weekly-accounting.sh
+      - name: Original weekly payout owns its complete fleet pause and fixed deadlines
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-owned-phase-postgres.py --scratch "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/protocol.log
+      - name: Original weekly financial rounds wait for the concurrent physical fleet ACK
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-financial-phase-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/financial.log
+      - name: Preserve original weekly payout qualification evidence
+        if: always() && matrix.shard == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-payout-owned-pause-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/weekly-payout-owned-pause
+          retention-days: 7
       - name: Push health uses exact addressable counts and receipt confirmations
         if: matrix.shard == 1
         env:

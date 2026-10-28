@@ -633,6 +633,35 @@ describe('the countdown', () => {
   });
 });
 
+describe('weekly financial admission remains separate from cutover', () => {
+  it('does not demand restart checkpoints or no cards in air by itself', async () => {
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    e.deal();
+    Object.assign(e, { isMaintenanceStateDurable: () => false });
+    expect(mb.financialDrainReady()).toBe(false);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    // This predicate supplies ONLY durable freeze/custody authority. The
+    // connected WeeklyPayoutPause still refuses this engine until its actual
+    // serialized park event; this is never an ACK that a live hand is safe.
+    expect(mb.financialDrainReady()).toBe(true);
+    expect(mb.readyForRestart()).toBe(false);
+  });
+  it('refuses unresolved retained money even after its engine stops', async () => {
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    e.running = false;
+    let unresolved = true;
+    Object.assign(e, { hasUnretiredStoppedTimeBankCustody: () => unresolved });
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.financialDrainReady()).toBe(false);
+    unresolved = false;
+    expect(mb.financialDrainReady()).toBe(true);
+  });
+});
+
 describe('the restart gate', () => {
   /**
    * PHASE 2 (2026-09-02): THE GATE COUNTS A LIVE HAND, NOT A RAISED HAND.

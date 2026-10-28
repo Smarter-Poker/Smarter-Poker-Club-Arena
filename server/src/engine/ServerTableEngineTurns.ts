@@ -1265,6 +1265,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   public async activateTimeBank(
     userId: string
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     this.noteOwnClientClaim(userId); // POST /timebank is the client's door
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
     // so they are Title Case with no em dashes.
@@ -1292,7 +1293,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // account entitlement. Revalidate a cached Lifetime flag here as well so
       // a downgrade cannot keep manufacturing banks through the early return.
       if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
-        await this.revalidateUnlimitedTimeBank(userId);
+        await this.weeklyPayoutContinuation(this.revalidateUnlimitedTimeBank(userId));
         if (this.handController?.getState().stage !== 'pineapple_discard') {
           return { success: false, error: 'Not In The Discard Round' };
         }
@@ -1311,7 +1312,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Lifetime is not sticky session state. A downgrade or revocation while
     // seated must take effect before another manual activation is granted.
     if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
-      await this.revalidateUnlimitedTimeBank(userId);
+      await this.weeklyPayoutContinuation(this.revalidateUnlimitedTimeBank(userId));
       const stateAfterRefresh = this.handController?.getState();
       if (!stateAfterRefresh || stateAfterRefresh.currentPlayerSeat !== player.seat) {
         return { success: false, error: 'Not Your Turn' };
@@ -1326,7 +1327,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // VIP time banks 2026-08-17: a diamond top-up purchased mid-session
       // lives only in the DB. Refresh once before rejecting, then re-validate
       // the turn - the await may have raced the action.
-      const refreshed = await this.refreshTimeBankFromDb(userId);
+      const refreshed = await this.weeklyPayoutContinuation(this.refreshTimeBankFromDb(userId));
       if (!refreshed || !this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
         return { success: false, error: 'No Time Bank Uses Remaining' };
       }
@@ -1918,6 +1919,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     actionContext?: string | null,
     trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.weeklyHandPause.held())
+      return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     // HTTP always supplies a context; trusted in-process callers omit it.
     if (actionContext !== undefined) this.noteOwnClientClaim(userId);
     if (!this.lifecycleCanMutate()) {
@@ -1969,6 +1972,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.weeklyHandPause.held())
+      return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -2799,7 +2804,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // race (#2318): a delayed continuation acting on whatever controller
       // the table holds when it wakes.
       const controllerAtBeat = this.handController;
-      await this.sleep(this.preActionVisibleMs);
+      await this.weeklyPayoutContinuation(this.sleepHand(this.preActionVisibleMs));
       // The hand can be replaced while we hold that beat.
       if (
         !this.lifecycleCanMutate() ||
@@ -3973,7 +3978,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // acted on from here; its owner already retired it.
           if (!thinkTimeElapsed || decisionCommitted || abortController.signal.aborted) return;
           if (secondLookHoldTimer) {
-            clearTimeout(secondLookHoldTimer);
+            this.clearHandTimeout(secondLookHoldTimer);
             if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
             secondLookHoldTimer = null;
           }
@@ -3986,7 +3991,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         if (secondLook.ok) {
           secondLookPending = true;
-          this.horseSecondLookTimer = setTimeout(() => {
+          this.horseSecondLookTimer = this.setHandTimeout(() => {
             this.horseSecondLookTimer = null;
             if (!fenceIsCurrent('deep_start')) {
               settleSecondLook();
@@ -4064,7 +4069,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // re-entry used to orphan the previous setTimeout (it still fired; only
         // the identity guards below kept it harmless).
         if (this.horseActionTimer) {
-          clearTimeout(this.horseActionTimer);
+          this.clearHandTimeout(this.horseActionTimer);
           this.horseActionTimer = null;
         }
         commitDecision = (): void => {
@@ -4906,7 +4911,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             );
           }
         };
-        const thinkTimer = setTimeout(() => {
+        const thinkTimer = this.setHandTimeout(() => {
           if (this.horseActionTimer === thinkTimer) this.horseActionTimer = null;
           thinkTimeElapsed = true;
           if (!secondLookPending) {
@@ -4918,7 +4923,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // moment it lands; this timer acts on the fast answer if it never
           // does.
           noteFire('v44_second_look_awaited');
-          secondLookHoldTimer = setTimeout(
+          secondLookHoldTimer = this.setHandTimeout(
             () => {
               if (this.horseActionTimer === secondLookHoldTimer) this.horseActionTimer = null;
               secondLookHoldTimer = null;

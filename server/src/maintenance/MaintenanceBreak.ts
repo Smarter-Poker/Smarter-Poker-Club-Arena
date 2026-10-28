@@ -223,6 +223,10 @@ export interface ResumeWavesProgress {
 export interface MaintenanceBreakDeps {
   /** Synchronous clock release before the first table wakes; no awaited I/O. */
   onReleased?: (freezeStartedAt: number) => void;
+  /** Discrete original business-boundary wake; never starts a release. */
+  onAnnounced?: () => void;
+  onFinancialDrainChanged?: () => void;
+  financialPayoutActive?: () => boolean;
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
   /** Operator intent joins the existing hourly owner; no new scheduler. */
@@ -1155,6 +1159,7 @@ export class MaintenanceBreak {
     // The player-visible promise comes only after the database boundary is
     // durable. A process kill after this frame can therefore be adopted.
     this.broadcast('last_hand');
+    this.deps.onAnnounced?.();
 
     if (this.countdownTimer) this.clearTimer(this.countdownTimer);
     /* The database save is allowed to wait behind an entry transaction that
@@ -2553,6 +2558,7 @@ export class MaintenanceBreak {
       await this.deps.store.save(state);
       this.durableConfirmed = true;
       this.lastDurableState = { ...state };
+      this.deps.onFinancialDrainChanged?.();
       return;
     } catch (saveError) {
       /* A timed-out HTTP response can hide a committed upsert. Read the row
@@ -2567,6 +2573,7 @@ export class MaintenanceBreak {
           );
           this.durableConfirmed = true;
           this.lastDurableState = { ...state };
+          this.deps.onFinancialDrainChanged?.();
           return;
         }
       } catch (readError) {
@@ -2690,7 +2697,28 @@ export class MaintenanceBreak {
    * inside it. A workflow that restarts on anything less is restarting on live
    * tables again, which is where we started.
    */
+  financialDrainReady(): boolean {
+    // This is a financial pause, not an engine replacement. The payout
+    // controller separately requires every live engine's actual serialized
+    // park gate and no settlement in flight. Restart checkpoint durability,
+    // hands-in-flight cutover accounting and the 285s certificate remain
+    // exclusively in readyForRestart(). Unresolved retained money custody is
+    // still a refusal and must never disappear from this fleet census.
+    if (!this.isActive() || !this.durableConfirmed) return false;
+    if ((this.deps.retainedPreparationBlockers?.() ?? []).length > 0) return false;
+    for (const [, engine] of this.deps.engines()) {
+      try {
+        if (engine.hasUnresolvedF06Preparation?.() || engine.hasUnretiredStoppedTimeBankCustody?.())
+          return false;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
   readyForRestart(): boolean {
+    if (this.deps.financialPayoutActive?.()) return false;
     if (this.phase !== 'counting_down') return false;
     if (!this.durableConfirmed) return false;
     if (this.unparkedTables().length > 0) return false;

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Native PG17 original rebuy read-proof and ACL; no financial owner is mocked or called.
-Uses recorded current catalog column types and anonymous actual two-generation shapes.
-Full empty-catalog guards were separately qualified in isolated DR; this is scoped helper enforcement.
+"""Native PG17 original rebuy read-proof and ACL, followed by Lightning expiry proof.
+The original read-helper qualification calls no financial owner and retains its
+recorded catalog types, two-generation shapes and artifacts unchanged.
+Full empty-catalog guards were separately qualified in isolated DR. The separate
+Lightning proof then uses isolated retained canonical zero-cashout bodies and real
+seat-lock races; it never connects to production or invokes a real credit/refund.
 """
 import argparse,hashlib,json,os,signal,subprocess,sys
 from pathlib import Path

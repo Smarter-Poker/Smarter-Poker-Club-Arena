@@ -73,22 +73,27 @@ function NavigateClub() {
     <button onClick={() => navigate(`/clubs/${ID.otherClub}/cashier`)}>Switch Fixture Club</button>
   );
 }
-function mountCashier() {
-  return render(
-    <MemoryRouter initialEntries={[`/clubs/${ID.club}/cashier`]}>
-      <Routes>
-        <Route
-          path="/clubs/:clubId/cashier"
-          element={
-            <>
-              <CashierTradePage />
-              <NavigateClub />
-            </>
-          }
-        />
-      </Routes>
-    </MemoryRouter>
-  );
+async function mountCashier() {
+  // Resolve the initial mocked identity/club/balance promise chain inside act.
+  // A busy related-suite run otherwise races the query's one-second default
+  // against an unflushed mount rather than the weekly read being tested.
+  await act(async () => {
+    render(
+      <MemoryRouter initialEntries={[`/clubs/${ID.club}/cashier`]}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/cashier"
+            element={
+              <>
+                <CashierTradePage />
+                <NavigateClub />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+  });
 }
 async function openWeeklyStatements() {
   await screen.findByText('Balances Synchronized');
@@ -179,7 +184,7 @@ describe('cashier club weekly statement boundary', () => {
       weeklyStatementRow({ club_id: ID.otherClub, net_amount: '777.00' }),
       weeklyStatementRow(),
     ];
-    mountCashier();
+    await mountCashier();
     const panel = await openWeeklyStatements();
     // #ClubArenaConsole forward display (launch audit 2026-10-09, P-09 / R-08):
     // the reader keeps 40.05 / 100.25 / 60.20 exactly; the rows print whole
@@ -213,7 +218,7 @@ describe('cashier club weekly statement boundary', () => {
     'shows unavailable for a bad read instead of a zero balance or empty history: %j',
     async (reply) => {
       state.reply = async () => reply;
-      mountCashier();
+      await mountCashier();
       const panel = await openWeeklyStatements();
       expect(await within(panel).findByRole('alert')).toHaveTextContent(
         'Weekly Statements Are Unavailable.'
@@ -224,7 +229,7 @@ describe('cashier club weekly statement boundary', () => {
   );
   it('retries an unavailable weekly read through the same scoped reader', async () => {
     state.reply = async () => ({ data: null, error: { message: 'offline' } });
-    mountCashier();
+    await mountCashier();
     const panel = await openWeeklyStatements();
     await within(panel).findByRole('alert');
     state.reply = null;
@@ -242,7 +247,7 @@ describe('cashier club weekly statement boundary', () => {
       ++reads === 1
         ? old.promise
         : Promise.resolve({ data: null, error: { message: 'new epoch unavailable' } });
-    mountCashier();
+    await mountCashier();
     const panel = await openWeeklyStatements();
     await waitFor(() => expect(reads).toBe(1));
     await act(async () => {
@@ -263,7 +268,7 @@ describe('cashier club weekly statement boundary', () => {
   });
   it('removes the first club statement on navigation while the next club read is unresolved', async () => {
     state.rows = [weeklyStatementRow()];
-    mountCashier();
+    await mountCashier();
     const first = await openWeeklyStatements();
     await within(first).findByText('Retained 40 Chips');
     const pending = deferred<unknown>();
@@ -294,7 +299,7 @@ describe('cashier club weekly statement boundary', () => {
   });
   it('preserves the existing player tab restriction without fetching weekly club documents', async () => {
     state.role = 'player';
-    mountCashier();
+    await mountCashier();
     await screen.findByText('Balances Synchronized');
     expect(screen.queryByRole('tab', { name: 'Settlement Record' })).not.toBeInTheDocument();
     expect(state.calls.some((call) => call.table === 'settlement_invoices')).toBe(false);

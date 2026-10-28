@@ -166,6 +166,13 @@
     "scripts/ci/probes/chip-journal-atomicity/test_rebuy_receipts.py": "01d5d47ca7974c1fbb98eb3b5aa6be957c7f6160329faaa954aa6a3ac747d0a8",
     "scripts/ci/probes/chip-journal-atomicity/treasury-entry-fixture.sql": "08ae030e5bc8b2aeb9252c5b2a1be5fea08e4445dc21fc4b9d81732859e334a8"
   },
+  "workflowBindingAudit20261027": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "reviewedCommit": "60f9fe0a31a1ed47366164dfd58dbe298244863c",
+    "previousSHA256": "9ed701c04e9541ad028939c007a04873c66c3093a9f94ef828a748b369b81826",
+    "currentSHA256": "74d5c808ad4350b5b955dbbce5b3d784462883a72488d316916f158817816928",
+    "change": "Protected main added the treasury-seat-gift migration argument plus native original-owner and queued-common-leaf qualification steps. Reviewed full workflow and commit diff; retained those checks unchanged. Repair stale binding that failed PR8351; no new financial qualification claim."
+  },
   "normalMergeFormatterAudit": {
     "reason": "Normal merge hook formatted four owned JSON/Markdown inputs; independently compared parsed JSON/body strings and prose words to exact qualified1834368c. No original economic value, SQL function body, assertion or status changed.",
     "changes": [

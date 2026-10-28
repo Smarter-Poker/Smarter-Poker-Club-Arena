@@ -18,10 +18,12 @@ import { ordinal } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { benchmark, type BenchmarkResult } from './statBenchmarks';
 import './BenchmarkPanel.css';
+import { CHIP_STATS, type StatsScope } from '../../services/statsScope';
 
 type MetricKey = 'bb100' | 'vpip' | 'pfr' | 'three_bet' | 'win_rate';
 
 interface Props {
+  scope?: StatsScope;
   /** Hero values as PERCENTAGES (rates) and bb/100 — already converted. */
   values: Partial<Record<MetricKey, number>>;
   /** Hands behind the hero's own numbers, for the small-sample caveat. */
@@ -74,9 +76,15 @@ function Bar({ result }: { result: BenchmarkResult }) {
   );
 }
 
-export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }: Props) {
+export default function BenchmarkPanel({
+  values,
+  handsPlayed = 0,
+  days = null,
+  scope = CHIP_STATS,
+}: Props) {
   const [rows, setRows] = useState<DistributionRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedScope, setLoadedScope] = useState<StatsScope | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -85,10 +93,11 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
     // mounted-ref this used to carry could not change any outcome.
     let cancelled = false;
     setLoading(true);
-    StatsFactsService.getDistribution('field')
+    StatsFactsService.getDistribution(`field:${scope}`)
       .then((d) => {
         if (cancelled) return;
         setRows(d.rows);
+        setLoadedScope(scope);
         setReadError(d.error ?? null);
       })
       .finally(() => {
@@ -97,7 +106,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, scope]);
 
   // Depend on the individual numbers, not the object: the parent passes a fresh
   // literal on every render, so keying the memo on `values` never hit.
@@ -121,7 +130,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
     return out;
   }, [rows, bb100, winRate, vpip, pfr, threeBet]);
 
-  if (loading) {
+  if (loading || loadedScope !== scope) {
     return (
       <div className="bench-panel">
         <div className="bench-skeleton" />
@@ -148,7 +157,12 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
   }
 
   if (results.length === 0) {
-    return null;
+    return (
+      <div className="bench-panel">
+        <h3 className="bench-title">How You Compare</h3>
+        <p className="bench-note">Comparable Field Data Is Not Yet Available For This Asset.</p>
+      </div>
+    );
   }
 
   // Largest cohort across the rendered metrics. Quoting the first metric's
@@ -165,8 +179,8 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
         <h3 className="bench-title">How You Compare</h3>
         <p className="bench-sub">
           {sample > 0
-            ? `Measured Against ${sample.toLocaleString()} Players In The Field With 1,000 Or More Hands.`
-            : 'Measured Against The Range Winning Players Hold.'}
+            ? `Field Comparisons Use Recent Action Samples With At Least 1,000 Hands Per Player For Each Metric.`
+            : 'Measured Against General Reference Ranges.'}
         </p>
       </div>
 
@@ -201,6 +215,9 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
               )}
             </div>
             <Bar result={r} />
+            {r.barPosition !== null && (
+              <p className="bench-note">Compared With {r.sampleSize.toLocaleString()} Players.</p>
+            )}
             <p className="bench-readout">{titleCase(r.readout)}</p>
           </li>
         ))}
@@ -208,13 +225,14 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
 
       {days !== null && (
         <p className="bench-note">
-          Your Figures Cover The Last {days} Days; The Field Is Measured Over Its Full History.
+          Your Figures Cover The Last {days} Days; The Field Uses Recent Recorded Action Samples.
           Short Ranges Swing A Long Way, So A Wide Gap Here May Be The Range Rather Than Your Game.
         </p>
       )}
       <p className="bench-note">
-        The Comparison Group Includes Every Qualifying Player In The Field Above The Hands
-        Threshold. It Is Not A Sample Of Human Players Only.
+        The Comparison Group Includes Every Qualifying Player In The Field For The Selected Asset
+        Above The Hands Threshold. Its Figures Are Reconstructed From Recorded Actions And Can
+        Differ From Exact Settlement Figures. It Is Not A Sample Of Human Players Only.
       </p>
       {results.some((r) => r.barPosition === null) && (
         <p className="bench-note">
@@ -223,7 +241,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
             .map((r) => r.def.label)
             .join(', ')}{' '}
           {results.filter((r) => r.barPosition === null).length === 1 ? 'Is' : 'Are'} Judged Against
-          The Range Winning Players Hold Rather Than Against The Field. For These, Both Extremes Are
+          General Reference Ranges Rather Than Against The Field. For These, Both Extremes Are
           Leaks, So Where The Club Happens To Sit Says Nothing About Where You Should Be.
         </p>
       )}

@@ -37,6 +37,12 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import type { MiniHUDStats } from '../components/table/MiniHUD';
+import {
+  observePublicHandStats,
+  resetPublicObservedHandStats,
+  publicObservedReceiptKeys,
+  restorePublicObservedReceiptKeys,
+} from './publicObservedHandStats';
 
 interface PlayerStatsMap {
   [playerId: string]: MiniHUDStats;
@@ -65,6 +71,15 @@ function hydrate(): PlayerStatsMap {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     const parsed = saved ? JSON.parse(saved) : {};
+    if (
+      parsed?.version === 2 &&
+      parsed.stats &&
+      typeof parsed.stats === 'object' &&
+      !Array.isArray(parsed.stats)
+    ) {
+      restorePublicObservedReceiptKeys(parsed.receipts);
+      return parsed.stats;
+    }
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
@@ -88,7 +103,10 @@ function mutate(playerId: string, patch: (s: MiniHUDStats) => MiniHUDStats): voi
 
 function flush(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(statsMap));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ version: 2, stats: statsMap, receipts: publicObservedReceiptKeys() })
+    );
   } catch {
     /* quota exceeded — ignore */
   }
@@ -135,49 +153,105 @@ function getSnapshot(): PlayerStatsMap {
   return statsMap;
 }
 
-export function usePlayerStats() {
+export function usePlayerStats(observerId?: string) {
+  const playerKey = useCallback(
+    (id: string) => (observerId ? JSON.stringify([observerId, id]) : id),
+    [observerId]
+  );
   const map = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const getStats = useCallback((playerId: string): MiniHUDStats | null => {
-    return statsMap[playerId] || null;
-  }, []);
+  const getStats = useCallback(
+    (playerId: string): MiniHUDStats | null => {
+      return statsMap[playerKey(playerId)] || null;
+    },
+    [playerKey]
+  );
 
-  const recordHandPlayed = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, handsPlayed: s.handsPlayed + 1 }));
-  }, []);
+  const recordHandPlayed = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, handsPlayed: s.handsPlayed + 1 }));
+    },
+    [playerKey]
+  );
 
-  const recordVPIP = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, vpipCount: s.vpipCount + 1 }));
-  }, []);
+  const recordVPIP = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, vpipCount: s.vpipCount + 1 }));
+    },
+    [playerKey]
+  );
 
-  const recordPFR = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, pfrCount: s.pfrCount + 1 }));
-  }, []);
+  const recordPFR = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, pfrCount: s.pfrCount + 1 }));
+    },
+    [playerKey]
+  );
 
-  const recordThreeBet = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, threeBetCount: s.threeBetCount + 1 }));
-  }, []);
+  const recordThreeBet = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, threeBetCount: s.threeBetCount + 1 }));
+    },
+    [playerKey]
+  );
 
-  const recordWTSD = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, wtsdCount: s.wtsdCount + 1 }));
-  }, []);
+  const recordWTSD = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, wtsdCount: s.wtsdCount + 1 }));
+    },
+    [playerKey]
+  );
 
-  const recordWin = useCallback((playerId: string) => {
-    mutate(playerId, (s) => ({ ...s, wonCount: s.wonCount + 1 }));
-  }, []);
+  const recordWin = useCallback(
+    (playerId: string) => {
+      mutate(playerKey(playerId), (s) => ({ ...s, wonCount: s.wonCount + 1 }));
+    },
+    [playerKey]
+  );
+
+  const observePublicEvent = useCallback(
+    (tableId: string, type: string, data: Record<string, unknown>) => {
+      const observed = observePublicHandStats(observerId ?? 'legacy', tableId, type, data);
+      if (!observed.length) return;
+      const next = { ...statsMap };
+      for (const row of observed) {
+        const key = playerKey(row.playerId);
+        const previous = next[key] ?? createEmptyStats();
+        next[key] = {
+          ...previous,
+          handsPlayed: previous.handsPlayed + 1,
+          vpipCount: previous.vpipCount + Number(row.vpip),
+          pfrCount: previous.pfrCount + Number(row.pfr),
+          wonCount: previous.wonCount + Number(row.won),
+          aggressiveActions: (previous.aggressiveActions ?? 0) + (row.aggressiveActions ?? 0),
+          callActions: (previous.callActions ?? 0) + (row.callActions ?? 0),
+          aggressionMeasured:
+            (previous.handsPlayed === 0 || previous.aggressionMeasured === true) &&
+            row.aggressiveActions !== undefined &&
+            row.callActions !== undefined,
+        };
+      }
+      statsMap = next;
+      flush();
+      emit();
+    },
+    [observerId, playerKey]
+  );
 
   const clearStats = useCallback(() => {
     statsMap = {};
+    resetPublicObservedHandStats();
     emit();
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [playerKey]);
 
   return {
     getStats,
+    observePublicEvent,
     recordHandPlayed,
     recordVPIP,
     recordPFR,
@@ -191,6 +265,7 @@ export function usePlayerStats() {
 
 /** Test-only reset so a suite can start from a clean map. */
 export function __resetPlayerStatsForTests(): void {
+  resetPublicObservedHandStats();
   statsMap = {};
   listeners.clear();
   if (interval) clearInterval(interval);

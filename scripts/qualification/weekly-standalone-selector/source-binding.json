@@ -125,8 +125,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      "bytes": 243753,
+      "sha256": "6cf319073d3a6e5a4023986fa99a6e82143882801a9387d910ed5d16dde79d90"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -727,5 +727,17 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "horseMttTimingRegression20261028": {
+    "reason": "Add one disposable PostgreSQL horse MTT T-10 boundary regression to accounting shard 2. All existing suites, financial assertions, timeouts, shard assignments and required aggregate remain unchanged. Current workflow binding only; historical qualification receipts remain historical. The new timing suite locally passed 23 assertions; no claim to rerun other native qualifications.",
+    "previousWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflowPin": {
+      "bytes": 243753,
+      "sha256": "6cf319073d3a6e5a4023986fa99a6e82143882801a9387d910ed5d16dde79d90"
+    },
+    "historical_qualification_unchanged": true
   }
 }

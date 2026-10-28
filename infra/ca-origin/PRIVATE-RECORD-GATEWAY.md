@@ -236,3 +236,18 @@ wrong-password/untrusted-CA refusal, a committed LISTEN notification, replay
 refusal and no-rotation re-entry. Production role installation and credential
 provider outcomes remain pending. Bootstrap now verifies that dedicated session
 and its effective privileges before touching the origin.
+
+### Read-only aggregate routing prerequisite
+
+Before first installation, the existing protected publisher accepts component
+`private-record-inspect` with an exact full current-main `ref_sha`. Its fixed
+inspector uses only canonical origin SSH bindings, sends the reviewed inspector
+through stdin, and writes nothing on the host. The bounded JSON artifact reports
+aggregate Caddy SHA256, exact reviewed static-preimage occurrence count, normalized
+machine identity, available capacity and fixed prerequisite metadata. It never
+returns aggregate configuration, environment contents or keys. Unknown metadata
+fails the operation; inspection does not certify bootstrap or playability.
+
+If the reviewed aggregate preimage differs, retain the read-only result and
+qualify a protected composition before bootstrap. Never overwrite other routes
+or weaken the bootstrap comparison. Inspection is not an activation component.

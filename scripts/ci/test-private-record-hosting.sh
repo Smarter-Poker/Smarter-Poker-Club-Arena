@@ -19,7 +19,7 @@ if [ "$(uname -s)" = Linux ]; then
 fi
 bash "$repo/scripts/ci/test-private-record-credentials-postgres.sh"
 bash "$repo/scripts/ci/test-private-record-bootstrap-linux.sh"
-node --test "$repo/scripts/ci/private-record-compatibility.test.mjs" "$repo/scripts/ci/private-record-gateway-bootstrap.test.mjs" "$repo/scripts/ci/private-record-gateway-credentials.test.mjs"
+node --test "$repo/scripts/ci/private-record-compatibility.test.mjs" "$repo/scripts/ci/private-record-gateway-bootstrap.test.mjs" "$repo/scripts/ci/private-record-gateway-credentials.test.mjs" "$repo/scripts/ci/private-record-gateway-inspect.test.mjs"
 "$CADDY_BIN" adapt --config "$repo/infra/ca-origin/Caddyfile" --adapter caddyfile > "$work/caddy.json"
 "$repo/server/node_modules/.bin/tsx" "$repo/server/scripts/privateRecordGatewayCaddy.mts"
 MEMBER_RECORD_PG_PARENT="$parent" bash "$repo/scripts/dev/test-member-record-live-postgres.sh"

@@ -252,7 +252,10 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
     expect(publish).not.toContain('vars.CI_RUNNER');
-    expect(publish).not.toContain('self-hosted');
+    // Attestation verification explicitly denies self-hosted provenance.
+    // Runner selection itself remains strictly hosted.
+    expect(runners.join('\n')).not.toContain('self-hosted');
+    expect(publish).toContain('--deny-self-hosted-runners');
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {
@@ -457,7 +460,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
       Number(match[1])
     );
-    expect(jobTimeouts).toHaveLength(6);
+    expect(jobTimeouts).toHaveLength(11);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = originJob();
     expect(origin).toContain('timeout 35s ssh');

@@ -141,7 +141,7 @@ jobs:
 
           COMPONENT=client
           if [ "$GITHUB_EVENT_NAME" = repository_dispatch ]; then COMPONENT="$REQUESTED_COMPONENT"; fi
-          case "$COMPONENT" in client|private-record-gateway|private-record-bootstrap|private-record-credentials) ;; *) echo '::error::Unknown publication component'; exit 1;; esac
+          case "$COMPONENT" in client|private-record-gateway|private-record-bootstrap|private-record-credentials|private-record-inspect) ;; *) echo '::error::Unknown publication component'; exit 1;; esac
           echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
           echo "sha=$TARGET" >> "$GITHUB_OUTPUT"
           echo "Publishing target: ${TARGET:0:7}; current main: ${TIP:0:7}; trigger: ${GITHUB_SHA:0:7}"
@@ -1296,7 +1296,7 @@ jobs:
         run: |
           npm ci --ignore-scripts
           node_modules/.bin/tsc -p tsconfig.private-record-gateway.json
-          node_modules/.bin/vitest run src/transport/PrivateRecordGateway.test.ts src/transport/privateRecordGatewayRuntime.test.ts src/services/supabase/privateRecordListener.test.ts src/transport/PrivateRecordSubscriptions.test.ts src/transport/AuthorizedPrivateSend.test.ts --maxWorkers=2 --minWorkers=1
+          node_modules/.bin/vitest run src/transport/PrivateRecordGateway.test.ts src/transport/privateRecordGatewaySocket.test.ts src/transport/privateRecordGatewayRuntime.test.ts src/services/supabase/privateRecordListener.test.ts src/transport/PrivateRecordSubscriptions.test.ts src/transport/AuthorizedPrivateSend.test.ts --maxWorkers=2 --minWorkers=1
       - name: Seal the independent runtime
         run: bash scripts/ci/build-private-record-gateway.sh "$RUNNER_TEMP/gateway-artifact" "${{ needs.publish-needed.outputs.target_sha }}"
       - name: Package immutable gateway subject
@@ -1349,7 +1349,7 @@ jobs:
           HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
         run: |
           set -euo pipefail
-          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ]
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ] || { echo "::error::Dedicated gateway host, key or pinned host key is missing or invalid"; exit 1; }
           umask 077
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$KEY" > "$HOME/.ssh/ca_origin"
@@ -1358,24 +1358,24 @@ jobs:
       - name: Activate only the prepared independent service
         run: |
           set -euo pipefail
-          SSH=(ssh -i "$HOME/.ssh/ca_origin" -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
+          SSH=(timeout 180s ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -i "$HOME/.ssh/ca_origin" -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
           gh attestation verify gateway-artifact/runtime.tar.gz --bundle gateway-artifact/attestation.jsonl --repo Smarter-Poker/Smarter-Poker-Club-Arena --signer-workflow Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml --source-ref refs/heads/main --deny-self-hosted-runners
           STAGE="$REVISION.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
           "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" <<'REMOTE'
           set -euo pipefail
-          [[ "$1" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
-          test -x /usr/local/libexec/ca-private-record-gateway-activate
+          [[ "$1" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid gateway staging identity" >&2; exit 1; }
+          test -x /usr/local/libexec/ca-private-record-gateway-activate || { echo "Root-owned gateway activation helper is absent or not executable" >&2; exit 1; }
           sudo -n -l /usr/local/libexec/ca-private-record-gateway-activate >/dev/null
           mkdir "/srv/ca-private-record-gateway/incoming/$1"
           REMOTE
           RSYNC_RSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes"
-          rsync -a --fsync -e "$RSYNC_RSH" gateway-artifact/ "ca-record-publisher@$ORIGIN_HOST:/srv/ca-private-record-gateway/incoming/$STAGE/"
+          timeout 240s rsync -a --fsync -e "$RSYNC_RSH" gateway-artifact/ "ca-record-publisher@$ORIGIN_HOST:/srv/ca-private-record-gateway/incoming/$STAGE/"
           "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" "$REVISION" "$GITHUB_RUN_ID" <<'REMOTE'
           set -euo pipefail
           OLD=none
           if [ -L /run/ca-private-record-gateway/active.sock ]; then
             TARGET=$(readlink /run/ca-private-record-gateway/active.sock)
-            [[ "$TARGET" =~ ^[0-9a-f]{40}/listener\.sock$ ]]
+            [[ "$TARGET" =~ ^[0-9a-f]{40}/listener\.sock$ ]] || { echo "Current gateway socket target is not a sealed generation" >&2; exit 1; }
             OLD="${TARGET%%/*}"
           fi
           sudo -n /usr/local/libexec/ca-private-record-gateway-activate "$1" "$2" "$OLD" "$3"
@@ -1429,7 +1429,7 @@ jobs:
           API_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
-          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$ENGINE_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$ENGINE_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::Canonical gateway origin or engine host is absent or invalid"; exit 1; }
           for name in ADMIN_KEY ADMIN_HOST_KEY ENGINE_KEY ENGINE_HOST_KEY GATEWAY_KEY CANONICAL_DATABASE_URL PRIVATE_RECORD_GATEWAY_DB_PASSWORD API_URL API_KEY; do
             [ -n "${!name}" ] || { echo "::error::Required canonical configuration $name is absent; no host operation admitted."; exit 1; }
           done
@@ -1441,7 +1441,7 @@ jobs:
           printf '%s\n' "$ENGINE_HOST_KEY" > "$RUNNER_TEMP/gateway-bootstrap/engine-host"
           printf '%s\n' "$GATEWAY_KEY" > "$RUNNER_TEMP/gateway-bootstrap/gateway-key"
           ssh-keygen -y -f "$RUNNER_TEMP/gateway-bootstrap/gateway-key" > "$RUNNER_TEMP/gateway-bootstrap/publisher.pub"
-          ssh -i "$RUNNER_TEMP/gateway-bootstrap/engine-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/gateway-bootstrap/engine-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$ENGINE_HOST" 'cat /etc/machine-id' > "$RUNNER_TEMP/gateway-bootstrap/engine-machine-id"
+          timeout 35s ssh -i "$RUNNER_TEMP/gateway-bootstrap/engine-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/gateway-bootstrap/engine-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 "root@$ENGINE_HOST" 'cat /etc/machine-id' > "$RUNNER_TEMP/gateway-bootstrap/engine-machine-id"
           gh attestation trusted-root > "$RUNNER_TEMP/gateway-bootstrap/trusted-root.jsonl"
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
@@ -1455,7 +1455,7 @@ jobs:
         run: |
           set -euo pipefail
           PRIVATE="$RUNNER_TEMP/gateway-bootstrap"
-          SSH=(ssh -i "$PRIVATE/admin-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$PRIVATE/admin-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20)
+          SSH=(timeout 180s ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -i "$PRIVATE/admin-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$PRIVATE/admin-host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20)
           REMOTE="/var/lib/ca-private-record-bootstrap-$GITHUB_RUN_ID"
           "${SSH[@]}" "ci@$ORIGIN_HOST" sudo -n mkdir -m 0700 "$REMOTE"
           tar -czf "$PRIVATE/source.tar.gz" infra/ca-origin scripts/ci/private-record-gateway-activate.mjs scripts/ci/private-record-gateway-artifact.mjs scripts/ci/private-record-gateway-boot.mjs scripts/ci/private-record-gateway-bootstrap.mjs scripts/ci/private-record-gateway-host-identity.mjs
@@ -1493,3 +1493,68 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
         run: node scripts/ci/private-record-gateway-credentials.mjs
+
+  inspect-record-gateway-host:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'private-record-inspect'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+    steps:
+      - name: Checkout exact protected read-only controls
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Qualify the fixed metadata inspector
+        run: node --test scripts/ci/private-record-gateway-inspect.test.mjs
+      - name: Read fixed gateway host metadata without changing host state
+        env:
+          KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [ -n "$KEY" ] && [ -n "$HOST_KEY" ] || { echo '::error::Canonical origin host, key or pinned host key unavailable'; exit 1; }
+          umask 077
+          WORK="$RUNNER_TEMP/private-record-inspect"
+          mkdir "$WORK"
+          printf '%s\n' "$KEY" > "$WORK/key"
+          printf '%s\n' "$HOST_KEY" > "$WORK/host"
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const path=process.env.RUNNER_TEMP+'/private-record-inspect/';
+          const identity=readFileSync('scripts/ci/private-record-gateway-host-identity.mjs').toString('base64');
+          const needle="'./private-record-gateway-host-identity.mjs'";
+          const source=readFileSync('scripts/ci/private-record-gateway-inspect.mjs','utf8');
+          if(source.split(needle).length!==2) throw Error('Reviewed inspector import binding changed');
+          writeFileSync(path+'transport.mjs',source.replace(needle,JSON.stringify('data:text/javascript;base64,'+identity))+'\nrunInspectionCli(process.argv.slice(2));\n');
+          writeFileSync(path+'preimage',readFileSync('infra/ca-origin/private-record-gateway.caddy-preimage').toString('base64'));
+          NODE
+          PREIMAGE=$(cat "$WORK/preimage")
+          timeout 45s ssh -i "$WORK/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$WORK/host" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 "ci@$ORIGIN_HOST" sudo -n /usr/bin/node --input-type=module - "$PREIMAGE" < "$WORK/transport.mjs" > "$WORK/metadata.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const text=readFileSync(process.env.RUNNER_TEMP+'/private-record-inspect/metadata.json','utf8');
+          if(text.length>16384) throw Error('Inspector output bound exceeded');
+          const result=JSON.parse(text);
+          if(result.schema!==1 || result.component!=='private-record-host-inspection' || result.status!=='observed') throw Error('Host metadata is incomplete');
+          console.log(JSON.stringify(result));
+          NODE
+      - name: Retain nonsecret host metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-host-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/private-record-inspect/metadata.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove only this runner's inspection inputs
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/private-record-inspect"

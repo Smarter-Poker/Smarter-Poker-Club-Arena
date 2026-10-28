@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { preparePrivateRecordGatewaySocket } from './transport/privateRecordGatewaySocket.js';
 import {
   gatewayListenTarget,
   PRIVATE_RECORD_GATEWAY_ORIGINS,
@@ -74,6 +75,7 @@ const server = createServer((req, res) => {
     })
   );
 });
+if ('socket' in listenTarget) await preparePrivateRecordGatewaySocket(listenTarget.socket);
 gateway.attach(server);
 if ('socket' in listenTarget) server.listen(listenTarget.socket);
 else server.listen(listenTarget.port, listenTarget.host);

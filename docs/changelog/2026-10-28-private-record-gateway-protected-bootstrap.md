@@ -38,3 +38,9 @@ A real failover-plus-hook regression also reproduced synchronous standby READY
 being demoted by the reconnecting primary status. The hook now honors the
 acknowledged topic readiness. Four primary failure statuses fail before the fix
 and pass afterward, retaining paid compatibility whenever neither source is ready.
+
+Same-generation restart after SIGKILL/OOM is now qualified with a real subprocess.
+Startup removes only an unchanged socket owned by its generation user after an
+explicit connection refusal. Live listeners, symlinks, ordinary files, foreign
+owners and ambiguous paths remain untouched. Publisher refusals now name their
+missing prerequisites, with bounded SSH/rsync transports.

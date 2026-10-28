@@ -160,6 +160,13 @@ jobs:
           // source run's own top-level conclusion is still never consulted -
           // an optional Capgo failure must not suppress web E2E.
           if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const inspection = payload.jobs.filter(entry => entry?.name === 'inspect-record-gateway-host');
+          if (inspection.length === 1 && inspection[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const read = (inspection[0].steps ?? []).filter(entry => entry.name === 'Read fixed gateway host metadata without changing host state');
+            if (inspection[0].status !== 'completed' || inspection[0].conclusion !== 'success' || read.length !== 1 || read[0].conclusion !== 'success') throw new Error('Gateway host inspection is incomplete; no installation or publication certified.');
+            console.log('Read-only host inspection; no installation or publication certified.');
+            process.exit(0);
+          }
           const credential = payload.jobs.filter(entry => entry?.name === 'install-record-gateway-credentials');
           if (credential.length === 1 && credential[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
             const install = (credential[0].steps ?? []).filter(entry => entry.name === 'Install only the dedicated listener credential');

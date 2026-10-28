@@ -166,3 +166,26 @@ describe('a gateway component is not a static client publication', () => {
     expect(result.output).not.toContain('should_run=true');
   });
 });
+
+describe('read-only gateway inspection is not publication', () => {
+  it.each(['success', 'failure'])(
+    'preserves the actual %s result without certifying a client',
+    (conclusion) => {
+      const inspection = job('inspect-record-gateway-host', conclusion);
+      inspection.steps = [
+        {
+          name: 'Read fixed gateway host metadata without changing host state',
+          status: 'completed',
+          conclusion,
+        },
+      ];
+      const result = runGate([
+        job('publish-needed', 'success', 8),
+        inspection,
+        job('publish-to-origin', 'skipped'),
+      ]);
+      expect(result.error === null).toBe(conclusion === 'success');
+      expect(result.output).not.toContain('should_run=true');
+    }
+  );
+});

@@ -52,3 +52,36 @@ test('invalid cash qualification pins stop before expensive test execution', () 
     assert.doesNotMatch(result.stdout, /EXPENSIVE_TESTS_STARTED/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+const serverGate = hook.slice(hook.indexOf('SERVER_VITEST='), hook.indexOf('\nif [ "$FAIL" -ne 0 ]; then'));
+for (const failure of [false, true]) {
+  test(`workflow edits execute server readers once and propagate failure=${failure}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'server-workflow-reader-'));
+    try {
+      for (const [file, body] of Object.entries({
+        'server/package.json': '{}',
+        '.github/workflows/ci.yml': 'jobs: {}',
+        'server/src/reader.test.ts': '// reads ci.yml and widget.ts\n',
+        'server/src/unrelated.test.ts': '// unrelated fixture\n',
+        'server/src/widget.ts': 'export const widget = 1;\n',
+        'server/node_modules/.bin/vitest': `#!${process.execPath}\nimport('node:fs').then(fs => { fs.appendFileSync(process.env.TRACE, JSON.stringify(process.argv.slice(2))+'\\n'); process.exit(process.env.FAIL_DIRECT === 'true' && process.argv[2] === 'run' ? 1 : 0); });\n`,
+      })) {
+        const target = join(dir, file);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, body, { mode: file.endsWith('/vitest') ? 0o755 : 0o644 });
+      }
+      for (const files of ['.github/workflows/ci.yml', '.github/workflows/ci.yml server/src/reader.test.ts server/src/widget.ts']) {
+        const trace = join(dir, 'trace');
+        rmSync(trace, { force: true });
+        const result = spawnSync('bash', ['-c', `set -e\nFAIL=0\n${serverGate}\nexit "$FAIL"`], {
+          cwd: dir, encoding: 'utf8', env: { ...process.env, CA_TREE_TOP: dir, SERVER_DEPENDENCY_MODE: 'local', FILES: files, TRACE: trace, FAIL_DIRECT: String(failure) },
+        });
+        assert.equal(result.status, failure ? 1 : 0, result.stderr);
+        const calls = readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse);
+        assert.deepEqual(calls[0], ['run', 'src/reader.test.ts']);
+        assert.equal(calls.length, files.includes('widget.ts') ? 2 : 1);
+        if (calls.length === 2) assert.deepEqual(calls[1], ['related', '--run', 'src/widget.ts', '--exclude', 'src/reader.test.ts', '--passWithNoTests']);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+}

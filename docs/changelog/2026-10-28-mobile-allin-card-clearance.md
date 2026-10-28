@@ -4,4 +4,4 @@ Top-cap opponent reveals on viewports through 768px retain headroom below the vi
 
 Mobile all-in win-percentage badges use half the previous text size, padding, track dimensions, spacing, corners and glow. Their actual layout shrinks, so the existing equity placement measures the smaller footprint. Desktop styling and all animation timing remain intact. No engine change is required.
 
-Validation: focused protected-card/equity tests, rendered cash/tournament cap checks for 2/4/5/6 cards at 320/375/393/430/600/768px, exact half-size badge assertions, and occupied six/nine-seat browser scenes. Delivery evidence is retained in the owning task checkpoint; source validation is distinct from publication and live proof.
+Validation: focused protected-card/equity tests, exact half-size badge assertions at 320/375/393/430/600/768px, and 16 occupied six/nine-seat browser matrix cases through 768px plus a 1024px desktop control. Additional isolated tournament renders confirmed visible top-card rows across 320–768px. Delivery evidence is retained in the owning task checkpoint; source validation is distinct from publication and live proof.

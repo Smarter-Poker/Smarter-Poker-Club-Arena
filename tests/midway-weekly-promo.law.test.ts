@@ -26,7 +26,7 @@ describe('Midway weekly promo is an atomic step in the existing due weekly tick'
 
 describe('Midway promo shares the existing player-stats lock protocol', () => {
   const repair = readFileSync(
-    'supabase/migrations/20261028012516_midway_promo_takes_its_existing_player_keys_before_wallet_rows.sql',
+    'supabase/migrations/20261028012516_midway_promo_orders_player_keys_before_wallet_rows.sql',
     'utf8'
   );
   const native = readFileSync('scripts/qualification/midway-weekly-promo/run-native.py', 'utf8');

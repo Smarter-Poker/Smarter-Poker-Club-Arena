@@ -49,3 +49,5 @@ and agreement-change paths for these counter-only updates.
 administrative identity changes are not asserted immutable or universally
 covered. This change adds no blanket profile locks or altered retention,
 source65/GEN, accounting budgets, scheduling or payer behavior.
+
+The first hosted consolidated invariant run rejected the uninstalled62-character migration basename. The official allocated version12516 and exact SQL bytes remain unchanged; the maintained file is now `20261028012516_midway_promo_orders_player_keys_before_wallet_rows.sql`, with a50-character slug. Both native/law callers use this name, and the actual migration-version/naming guard and native financial/lock qualification are rerun. No installed migration is renamed.

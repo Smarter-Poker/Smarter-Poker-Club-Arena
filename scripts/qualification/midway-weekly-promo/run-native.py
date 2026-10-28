@@ -51,7 +51,7 @@ try:
  assert sql("SELECT to_regclass('union_weekly_horse_promo_runs') IS NULL;",'rollback-absence')=='t'
  sql(migration,'exact-installer')
  sql(migration,'installer-replay','midway_promo_install_replay')
- lock_migration=(R/'supabase/migrations/20261028012516_midway_promo_takes_its_existing_player_keys_before_wallet_rows.sql').read_text()
+ lock_migration=(R/'supabase/migrations/20261028012516_midway_promo_orders_player_keys_before_wallet_rows.sql').read_text()
  sql(lock_migration.replace('COMMIT;','ROLLBACK;'),'lock-installer-rollback')
  assert sql("SELECT md5(pg_get_functiondef('fn_midway_weekly_horse_promo(timestamptz,timestamptz)'::regprocedure));",'lock-rollback-original')=='3e159a80564f2860bed8041dbcd55263'
  # Source, full metadata and privilege drift refuse before any replacement.

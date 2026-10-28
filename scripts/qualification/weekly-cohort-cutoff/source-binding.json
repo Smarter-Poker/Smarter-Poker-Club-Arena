@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+      "bytes": 243586,
+      "sha256": "2e08dc1ff0e5bbb0f9a76aef32a51da9dab862ff9bfd7e84fe48ca2e3b8da563"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -687,5 +687,17 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "playerRecordDeliveryBudget20261028": {
+    "reason": "PR #8462 required delivery recovery: classifier checkout exhausted five minutes; compiler exhausted fifteen after TypeScript and executed qualifications passed. Increase only existing outer budgets to ten and twenty minutes. All commands, checks, classifiers, assertions, runner labels, financial inputs and historical receipts remain unchanged. Current workflow identity only; no new financial qualification or production proof claimed.",
+    "previousWorkflow": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflow": {
+      "bytes": 243586,
+      "sha256": "2e08dc1ff0e5bbb0f9a76aef32a51da9dab862ff9bfd7e84fe48ca2e3b8da563"
+    },
+    "execution_performed": false
   }
 }

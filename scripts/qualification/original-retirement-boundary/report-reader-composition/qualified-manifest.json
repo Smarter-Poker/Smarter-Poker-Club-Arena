@@ -6,9 +6,9 @@
     "actual-original-owner-catalog.json": "b872a0285d1c5ce2f22df5b11bbff4f85700e5aa6f50b9ae84c994c9adfab74e",
     "advance-candidate.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
     "advance-original.sql": "fa9dc9d0ddd15e4415b5c9bf39823fcd994dd2d364722c966c5799ee99c793a5",
-    "build-candidate.py": "9ea0048aceca7d91df248cd36ac15df2173318c68e29c6e8fa724826381f5897",
-    "candidate-contract.json": "e65d6830c176170d57b042c8a77f843a0102dfdf3f811d7635d82841f5e79289",
-    "composed-candidate.sql": "9eb8db9a0cfe2af970c6865db5d41d19755424eecbca3b05d1048422877d0881",
+    "build-candidate.py": "59d675a61d42719f55d897e2f2b7637d223e415b8a9bf51b99d57bfb830618b7",
+    "candidate-contract.json": "1e63365f65e03dcbebeb9cb7fe1e5b596890725cf18cb7ea71302ff94978dd07",
+    "composed-candidate.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
     "guard-candidate.sql": "15a5972271043235532fa333a1da0ec61d7e4a0e63c00a160c2928e1c8a7a133",
     "guard-original.sql": "809806842af07372e2994df024a3a56f1d7f3edbc6f50a90f3523020c8b49615",
     "native-authority-after.sql": "81270af2f0e53e0395c96a3df25c1c8f2d73a04e9e7fc90bb1327cfbaa498a60",
@@ -16,7 +16,7 @@
     "native-report.py": "2a26aadeec6a4116b011179135ed18ff24209cf8801b5172846857ed32a86f5d",
     "occupancy-owner0.sql": "2056850c935d69fb68d2325fdcc7844ac26d6c19468b40a4ddac1c61808e4dd2",
     "occupancy-owner1.sql": "21dfab5c7b8035987b715ebc3abe08ef141f539ac50e0fc265a8707edc6a681b",
-    "qualified-result.json": "de4f3d8b6097522aa60102aa5724ef4121b5fc3a710e2527499cbe43d0dd0369",
+    "qualified-result.json": "da5de80d0ffc0aebf9b65e7aeb64b6fad249409ddcc3828cdc6aabd913d44749",
     "report-candidate.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
     "report-original.sql": "fb61a741e21726cce96083a8094501a018f2ae6b875c8c8bf35933335e3746ed"
   }

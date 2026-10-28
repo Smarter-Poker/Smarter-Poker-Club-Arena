@@ -525,6 +525,8 @@ $qualified_guard$;
  SELECT to_jsonb(p)-'prosrc'INTO after_meta FROM pg_proc p WHERE p.oid=v_oid;
  IF after_meta IS DISTINCT FROM before_meta OR md5(pg_get_functiondef(v_oid))IS DISTINCT FROM 'edc8545a57d017a7cce79550dd0520f9' THEN RAISE EXCEPTION 'original_report_composition_postimage_changed:guard';END IF;
 END$owner_guard$;
+-- Preserve the actual PostgreSQL-only report ACL explicitly for source authorization checks.
+REVOKE ALL ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
 DO $final$BEGIN
  IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'original_report_composition_final_source65_not_qualified';END IF;
  IF md5(pg_get_functiondef('smarter_private.original_inventory_basis_generation()'::regprocedure))IS DISTINCT FROM '58dc20e1ba380ccb9b9dee8809731d33' THEN RAISE EXCEPTION 'original_report_composition_generation_owner_altered';END IF;

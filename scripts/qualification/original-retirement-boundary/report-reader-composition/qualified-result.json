@@ -1,7 +1,7 @@
 {
   "status": "passed_local_source_qualification_not_installed",
   "migration": "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql",
-  "migration_sha256": "9eb8db9a0cfe2af970c6865db5d41d19755424eecbca3b05d1048422877d0881",
+  "migration_sha256": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
   "whole_function_postimages": {
     "report": "49b47361e2ccd195968d293b1bb7c3c0",
     "advance": "736539c3d60fd047c352e127f18d54bb",
@@ -29,7 +29,7 @@
   "actual65_authority_native": {
     "status": "passed",
     "finite_cases": 245,
-    "evidence": "/Volumes/SmarterArchives/agent-evidence/rakeback-recovery-20261026-01a17898/report-composition-authority-native-0122",
+    "evidence": "/Volumes/SmarterArchives/agent-evidence/rakeback-recovery-20261026-01a17898/report-composition-authority-native-explicit-ACL-0038",
     "proofs": [
       "exact_atomic_three_owner_DDL_rollback",
       "full_metadata_ACL_preserved",
@@ -40,7 +40,7 @@
       "old_generation_actual_cache_read_refused",
       "finite245_and_prior_wallet_BBJ_treasury_invariants_preserved"
     ],
-    "same_tested_bytes": "Native executed byte-exact composed candidate SHA above before official reserved pathname copy; source bytes unchanged."
+    "same_tested_bytes": "Exact reserved migration8a bytes executed after explicit preservation of existing PostgreSQL-only report ACL. Prior9eb installer proof is superseded; report/advance/guard postimages and focused62 inputs unchanged."
   },
   "delivery": "Root sole production owner. No push/merge/install/live or book-close claim. New generation requires original84 flow+hand rebuild, never retag; all paid financial identities must remain unchanged."
 }

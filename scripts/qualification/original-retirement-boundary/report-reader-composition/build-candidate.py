@@ -48,7 +48,9 @@ for n in ['report','advance','guard']:
  IF after_meta IS DISTINCT FROM before_meta OR md5(pg_get_functiondef(v_oid))IS DISTINCT FROM '{md5(post[n])}' THEN RAISE EXCEPTION 'original_report_composition_postimage_changed:{n}';END IF;
 END$owner_{n}$;
 '''
-head+='''DO $final$BEGIN
+head+='''-- Preserve the actual PostgreSQL-only report ACL explicitly for source authorization checks.
+REVOKE ALL ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+DO $final$BEGIN
  IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'original_report_composition_final_source65_not_qualified';END IF;
  IF md5(pg_get_functiondef('smarter_private.original_inventory_basis_generation()'::regprocedure))IS DISTINCT FROM '58dc20e1ba380ccb9b9dee8809731d33' THEN RAISE EXCEPTION 'original_report_composition_generation_owner_altered';END IF;
 END$final$;

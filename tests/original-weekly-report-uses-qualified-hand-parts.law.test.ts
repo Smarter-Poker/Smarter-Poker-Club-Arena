@@ -59,7 +59,7 @@ describe('the original weekly report consumes its qualified hand readers', () =>
   it('preserves authority and atomically installs the exact qualified bodies', () => {
     const sql = read(migration);
     expect(createHash('sha256').update(sql).digest('hex')).toBe(
-      '9eb8db9a0cfe2af970c6865db5d41d19755424eecbca3b05d1048422877d0881'
+      '8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5'
     );
     for (const name of ['report', 'advance', 'guard']) {
       expect(sql).toContain(`EXECUTE $qualified_${name}$${next[name]}$qualified_${name}$`);

@@ -527,7 +527,7 @@ def private_json(path,limit=2097152):
 
 FLEET_FAILURE_CODES=frozenset(('fleet_private_paths','fleet_packet','fleet_window','fleet_setup_unavailable',
     'transport_timeout','transport_unavailable','transport_nonzero','transport_output_invalid',
-    'remote_observer_unavailable','observer_oom','serving_identity_unverified','observer_cleanup_unverified',
+    'remote_observer_unavailable','observer_oom','observer_v8_heap_exhausted','serving_identity_unverified','observer_cleanup_unverified',
     'journal_mount_unverified','observer_exit_unverified','observation_contract_unverified'))
 
 def partition_failure_code(error,run=None):

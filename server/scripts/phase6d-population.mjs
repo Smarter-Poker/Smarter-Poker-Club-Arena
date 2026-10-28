@@ -998,6 +998,7 @@ try:
  r=command(["docker","start","-ai",name],input=source,timeout=deadline_s-20)
  result["exitCode"]=r.returncode
  result["stderrBytes"]=len(r.stderr)
+ if fleet: result["v8HeapExhausted"]=(r.returncode==134 and b"FATAL ERROR:" in r.stderr and b"Allocation failed - JavaScript heap out of memory" in r.stderr)
  if not fleet: result["stderrTail"]=r.stderr.decode(errors="replace")[-400:]
  state=command(["docker","inspect","--format","{{json .State}}",name]); assert state.returncode==0
  state=json.loads(state.stdout);result["oomKilled"]=state["OOMKilled"];result["containerExitCode"]=state["ExitCode"]
@@ -1029,6 +1030,7 @@ export function fleetFailureCode(run, execution) {
   if (run.status !== 0) return 'transport_nonzero';
   if (!execution) return 'transport_output_invalid';
   if (execution.oomKilled === true) return 'observer_oom';
+  if (execution.v8HeapExhausted === true) return 'observer_v8_heap_exhausted';
   if (execution.executionStatus) return 'remote_observer_unavailable';
   if (execution.sameServingIdentityAfter !== true) return 'serving_identity_unverified';
   if (execution.observerRemoved !== true || execution.cleanupExitCode !== 0)

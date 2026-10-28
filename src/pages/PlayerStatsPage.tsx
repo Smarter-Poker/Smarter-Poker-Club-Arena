@@ -95,7 +95,8 @@ import {
   buildStatsCashEvidencePath,
   restoreStatsEvidenceScroll,
 } from '../lib/statsEvidenceNavigation';
-import SharedClubStatsView from './stats/SharedClubStatsView';
+// The shared-profile branch is not part of the owner's overview route.
+const SharedClubStatsView = lazy(() => import('./stats/SharedClubStatsView'));
 import ClubScopeConsole from './stats/ClubScopeConsole';
 import StatsHeadlineDeck from './stats/StatsHeadlineDeck';
 import {
@@ -1482,16 +1483,18 @@ export default function PlayerStatsPage() {
     ) : null;
   if (!isOwnProfile) {
     return (
-      <SharedClubStatsView
-        targetUserId={targetUserId!}
-        asset={statsScope}
-        timezone={statsTimezone}
-        rangeKey={rangeKey}
-        windowDays={windowDays}
-        initialClubId={searchParams.get('statsClub')}
-        onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
-        onRangeChange={changeRange}
-      />
+      <Suspense fallback={<PageSkeleton variant="stats" />}>
+        <SharedClubStatsView
+          targetUserId={targetUserId!}
+          asset={statsScope}
+          timezone={statsTimezone}
+          rangeKey={rangeKey}
+          windowDays={windowDays}
+          initialClubId={searchParams.get('statsClub')}
+          onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
+          onRangeChange={changeRange}
+        />
+      </Suspense>
     );
   }
   if (loading) {

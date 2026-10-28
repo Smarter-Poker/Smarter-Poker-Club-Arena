@@ -1398,6 +1398,11 @@ jobs:
     # Lightning steps took 692s while shard 3 finished in 878s. Moving only
     # that unchanged family to shard 3 balances observed work (~1570s on 3),
     # preserving the 40m cap, every suite, financial deadline and artifact.
+    # October 28 run 40628889736: shard 1 took 2203s, shard 2 827s,
+    # shard 3 1462s and shard 4 1198s. The isolated weekly recompute took
+    # 766s on shard 1. Move that unchanged proof AND artifact to shard 2:
+    # measured workload predicts a ~1593s maximum instead of 2203s,
+    # with the same four runners, every assertion and all evidence retained.
     # tests/ci-tells-the-truth-faster.law.test.ts pins the split:
     # every suite step belongs to exactly one shard.
     strategy:
@@ -1952,7 +1957,7 @@ jobs:
         run: bash scripts/dev/test-union-weekly-accounting.sh
       - name: Weekly recompute commits bounded parts and preserves real payouts
         id: weekly_recompute_split
-        if: matrix.shard == 1
+        if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
           ACCOUNTING_FIXTURE_PARENT: ${{ runner.temp }}/weekly-recompute
@@ -1960,7 +1965,7 @@ jobs:
           mkdir -p "$ACCOUNTING_FIXTURE_PARENT"
           python3 -B scripts/dev/test-union-weekly-basis.py --split-recompute-only
       - name: Retain exact weekly recompute qualification
-        if: always() && matrix.shard == 1 && steps.weekly_recompute_split.outcome != 'skipped'
+        if: always() && matrix.shard == 2 && steps.weekly_recompute_split.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: weekly-recompute-${{ github.run_id }}-${{ github.run_attempt }}

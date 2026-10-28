@@ -34,3 +34,21 @@ for (const failure of [false, true]) {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+test('invalid cash qualification pins stop before expensive test execution', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'delivery-input-preflight-'));
+  try {
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'node'), '#!/bin/bash\necho yes\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'python3'), '#!/bin/bash\nexit 1\n', { mode: 0o755 });
+    const start = hook.indexOf('CASH_INPUT_CHANGED=');
+    const end = hook.indexOf('# BEGIN TARGETED CLIENT PREFLIGHT', start);
+    const result = spawnSync('bash', ['-c', 'set -e\nFAIL=0\n' + hook.slice(start, end) + '\necho EXPENSIVE_TESTS_STARTED'], {
+      cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: bin + ':' + process.env.PATH, FILES: '.github/workflows/ci.yml' },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /cash qualification input checks failed/);
+    assert.doesNotMatch(result.stdout, /EXPENSIVE_TESTS_STARTED/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

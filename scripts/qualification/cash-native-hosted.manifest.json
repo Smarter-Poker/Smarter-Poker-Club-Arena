@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240125,
-      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4019,5 +4019,16 @@
       "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
     },
     "execution_performed": false
+  },
+  "deliveryGuardSetupReuse20261028": {
+    "reason": "Share unchanged PR source/artwork guards with the existing compiler install and retain scheduled checks. Rebalance unchanged weekly recompute and its evidence 1->2 using run40628889736 measured 2203s vs827s shard load and766s proof. Same four financial shards, commands, SQL, assertions, timeouts, required join and qualification states. Current source identity only, not financial certification.",
+    "previousWorkflowPin": {
+      "bytes": 240125,
+      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+    },
+    "currentWorkflowPin": {
+      "bytes": 242644,
+      "sha256": "1493b4a43fc0ffc2c7afc271076c2f62d915904c18488abc90d1d36e5fad7a62"
+    }
   }
 }

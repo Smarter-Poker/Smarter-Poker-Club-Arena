@@ -145,6 +145,10 @@ node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
 node --test "$CA_TREE_TOP/tests/explicit-table-access.test.mjs"
 node "$CA_TREE_TOP/scripts/ci/check-explicit-table-access.mjs"
 
+# Source pins are cheap prerequisites. Reject inconsistent current inputs
+# before installing/running their expensive qualification suites.
+python3 "$CA_TREE_TOP/scripts/ci/verify-source-bindings.py"
+
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local
 if [ -f "$CA_TREE_TOP/server/package.json" ]; then
@@ -766,7 +770,9 @@ CASH_INPUT_CHANGED=$(node --input-type=module -e '
 if [ "$CASH_INPUT_CHANGED" = yes ]; then
   if ! python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py; then
     echo "[club-arena pre-push] BLOCKED: cash qualification input checks failed."
-    FAIL=1
+    # An invalid input manifest cannot qualify this candidate. Stop before
+    # the expensive suites so repairing its pins does not run them twice.
+    exit 1
   fi
 fi
 

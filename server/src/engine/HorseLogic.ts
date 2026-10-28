@@ -8170,12 +8170,19 @@ export class HorseLogic {
           // runout read that strengthens the other range. In Omaha a range
           // that called two pot-sized barrels is not capped unless the river
           // moved the ranges hero's way (the V40 third-barrel rule).
+          // Static range advantage cannot reopen a range that called twice.
+          // Only an actual favorable river runout can supply that exception.
           const capped54 =
             !oppTurnAggr54 &&
             !oppRaised54 &&
             runoutFavorsOpponent !== true &&
             rangeAdvantage?.disadvantage !== true &&
-            !(vi.isOmaha && calledBarrels40 >= 2 && !rangeFavors54);
+            !(
+              vi.isOmaha &&
+              calledBarrels40 >= 2 &&
+              rangeChange?.improves !== true &&
+              rangeChange?.nutAdvantage !== true
+            );
           // Blockers: Omaha needs the nut blocker (two-card flush blocker or
           // the top-straight card); Hold'em also takes the missed-flush
           // unblocker (none of a two-suited river's suit: hero holds none of
@@ -10081,6 +10088,9 @@ export class HorseLogic {
       !gs.bombPot &&
       !multiBoard36 &&
       opponents.length === 1 &&
+      // This candidate requires measured aggression; the common starting
+      // prior still informs the reference, but cannot qualify a new raise.
+      HorseMind.opponentRead(opponents[0].user_id)?.presumed !== true &&
       !opponents[0].is_all_in &&
       opponents[0].stack > 0 &&
       !planCallOnly23 &&

@@ -348,7 +348,7 @@
     ]
   },
   "plo4_two_barrels_called": {
-    "sha256": "978371f3ceedae15f3bc506a3fbb555b25addf06cc8a92ffbe30e76902c53be9",
+    "sha256": "3e8f7078816666e1e632859762f14876c180741b062e923869c180ccec2b9b2c",
     "actions": [
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":354,\"rngState\":841646199}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":379,\"rngState\":3230078393}",
@@ -356,10 +356,10 @@
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":394,\"rngState\":3403155420}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":389,\"rngState\":3345080723}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":5491,\"rngState\":3295030922}",
-      "{\"action\":\"bet\",\"amount\":53,\"thinkTime\":402,\"rngState\":3494018994}",
+      "{\"action\":\"bet\",\"amount\":32,\"thinkTime\":402,\"rngState\":3494018994}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":368,\"rngState\":550767425}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":374,\"rngState\":2405564926}",
-      "{\"action\":\"bet\",\"amount\":56,\"thinkTime\":356,\"rngState\":1872038409}",
+      "{\"action\":\"bet\",\"amount\":35,\"thinkTime\":356,\"rngState\":1872038409}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":393,\"rngState\":2556054990}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":412,\"rngState\":727349162}",
       "{\"action\":\"check\",\"amount\":null,\"thinkTime\":416,\"rngState\":3667809560}",

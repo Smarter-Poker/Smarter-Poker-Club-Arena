@@ -398,6 +398,52 @@ describe('heartbeatTournaments - "could not ask" is not "lost everything"', () =
 });
 
 describe('releaseTournaments', () => {
+  it.each(['immediate', 'lazy'])(
+    'releases at the process boundary from a fenced manager with a %s transport',
+    async (transport) => {
+      const { releaseTournaments } = await load();
+      const { runWithTournamentDataAuthority, dataActorHeaders } =
+        await import('./supabase/dataActorContext.js');
+      const seen: string[] = [];
+      const answer = () => {
+        const actor = dataActorHeaders().get('x-smarter-data-actor');
+        seen.push(actor!);
+        return actor === 'service'
+          ? { data: 1, error: null }
+          : {
+              data: null,
+              error: {
+                message: 'TOURNAMENT_MANAGER_FENCED: lease generation is no longer current',
+              },
+            };
+      };
+      // The SDK defers its HTTP request to then(). Observe authority there,
+      // rather than merely when the builder was constructed.
+      rpc.mockImplementation(() =>
+        transport === 'lazy'
+          ? { then: (resolve: (value: ReturnType<typeof answer>) => void) => resolve(answer()) }
+          : answer()
+      );
+      await runWithTournamentDataAuthority({ tournamentId: T, leaseGeneration: G }, async () => {
+        await expect(
+          releaseTournaments([{ tournamentId: T, leaseGeneration: G }])
+        ).resolves.toEqual({
+          status: 'confirmed',
+          releasedCount: 1,
+          attempts: 1,
+        });
+        // Releasing one lease must never strip authority from the caller's next write.
+        expect(dataActorHeaders().get('x-smarter-data-actor')).toBe('tournament-manager');
+        expect(dataActorHeaders().get('x-smarter-tournament-lease-generation')).toBe(G);
+      });
+      expect(seen).toEqual(['service']);
+      expect(rpc).toHaveBeenCalledWith('release_tournament_leases_v2', {
+        p_instance_id: 'me',
+        p_claims: [{ tournament_id: T, lease_generation: G }],
+      });
+    }
+  );
+
   it('releases only one exact tournament generation', async () => {
     rpc.mockResolvedValue({ data: 1, error: null });
     const { releaseTournaments } = await load();

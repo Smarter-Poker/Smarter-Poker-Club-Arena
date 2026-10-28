@@ -28,6 +28,9 @@ on:
       - scripts/ci/test-weekly-private-deposit-verdict-postgres.py
       - tests/weekly-private-deposits-retain-original-verdicts.law.test.ts
       - scripts/ci/fixtures/tournament-fee-scope-union-cover/**
+      - scripts/ci/fixtures/tournament-source-credit-cover/**
+      - scripts/ci/test-tournament-source-credit-cover-postgres.py
+      - tests/tournament-credit-sum-index-keeps-original-records.law.test.ts
       - scripts/ci/test-tournament-fee-scope-union-cover-postgres.py
       - tests/tournament-fee-scope-index-retains-every-union.law.test.ts
       - scripts/ci/fixtures/private-cash-record-cover/**
@@ -196,6 +199,10 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-tournament-fee-scope-union-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/tournament-fee-scope-union-cover.json"
+      - name: Original tournament credits retain every source record
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-tournament-source-credit-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/tournament-source-credit-cover.json"
       - name: Weekly private deposits retain every original relevant verdict
         env:
           PG_BIN: /usr/lib/postgresql/17/bin

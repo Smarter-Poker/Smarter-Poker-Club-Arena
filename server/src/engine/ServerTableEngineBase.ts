@@ -2254,6 +2254,7 @@ export abstract class ServerTableEngineBase {
       receipt.table_id !== this.tableId ||
       receipt.tournament_id !== this.engineLeaseTournamentId ||
       receipt.lease_generation !== this.engineLeaseGeneration ||
+      (this.f06TableLifecycle !== null && receipt.lifecycle !== this.f06TableLifecycle) ||
       !current() ||
       !this.engineLeaseAuthorityIsCurrent()
     )
@@ -2295,9 +2296,17 @@ export abstract class ServerTableEngineBase {
     current: () => boolean,
     lifecycle?: string
   ): void {
-    if (this.running || this.f06Allocator || this.f06MovementAdmission || !epoch)
+    if (
+      this.running ||
+      this.f06Allocator ||
+      this.f06MovementAdmission ||
+      !epoch ||
+      (lifecycle !== undefined &&
+        this.f06TableLifecycle !== null &&
+        lifecycle !== this.f06TableLifecycle)
+    )
       throw new Error('f06_allocator_install_invalid');
-    this.f06TableLifecycle = lifecycle ?? null;
+    this.f06TableLifecycle = lifecycle ?? this.f06TableLifecycle;
     this.f06AllocationEpoch = epoch;
     this.f06Allocator = allocate;
     this.f06AllocationCurrent = current;
@@ -7775,6 +7784,10 @@ export abstract class ServerTableEngineBase {
   adoptStoppedTimeBankCustody(original: ServerTableEngineBase): boolean {
     const custody = original.stoppedTimeBankCustody;
     if (!custody) return !original.hasUnretiredStoppedTimeBankCustody();
+    const originalLifecycle =
+      original.f06TableLifecycle ?? original.f06MovementAdmission?.receipt.lifecycle ?? null;
+    const lifecycle =
+      this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle ?? null;
     /*
      * A TEARDOWN THAT REPORTED A FAILURE STILL HANDS ITS BANKS ON (2026-10-01).
      *
@@ -7812,11 +7825,18 @@ export abstract class ServerTableEngineBase {
       this.engineLeaseScope !== original.engineLeaseScope ||
       this.engineLeaseGeneration !== original.engineLeaseGeneration ||
       this.engineLeaseTournamentId !== original.engineLeaseTournamentId ||
+      (originalLifecycle !== null &&
+        (!/^[1-9][0-9]{0,18}$/.test(originalLifecycle) ||
+          (lifecycle !== null && lifecycle !== originalLifecycle))) ||
       (this.tableInfo !== null &&
         this.tableInfo.tournament_id !== original.tableInfo?.tournament_id) ||
       !this.engineLeaseAuthorityIsCurrent()
     )
       return false;
+    // The replacement owns these exact banks before its first admission read.
+    // Carry their original lifecycle inside the same CAS so an interrupted
+    // startup cannot leave a stopped bank owner with an unreadable identity.
+    if (originalLifecycle !== null) this.f06TableLifecycle = originalLifecycle;
     this.inheritedStoppedTimeBankCustody = custody;
     this.parkedTimeBanks = structuredClone(custody.banks);
     this.handCount = custody.handNumber;

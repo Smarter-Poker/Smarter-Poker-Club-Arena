@@ -18,6 +18,9 @@ export interface MiniHUDStats {
   handsPlayed: number;
   vpipCount: number; // Voluntarily Put In Pot
   pfrCount: number; // Pre-Flop Raise
+  aggressiveActions?: number;
+  callActions?: number;
+  aggressionMeasured?: boolean;
   threeBetCount: number; // 3-bet frequency
   cBetCount: number; // Continuation bet
   wtsdCount: number; // Went To ShowDown

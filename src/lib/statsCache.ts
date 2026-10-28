@@ -8,6 +8,7 @@
 /** localStorage prefix retained for sign-out's user-cache purge. */
 export const STATS_CACHE_PREFIX = 'ps_stats_v5_scope_';
 export const STATS_CACHE_CONTRACT_VERSION = 2 as const;
+const STATS_CALCULATION_REVISION = 'recorded-opportunities-20261027';
 export const RANGE_MEMO_TTL_MS = 60_000;
 
 export type StatsCacheVisibility = 'owner' | 'shared_club';
@@ -34,6 +35,7 @@ const rangeMemo = new Map<string, { payload: unknown; at: number }>();
 
 export function statsCacheIdentityKey(identity: StatsCacheIdentity): string {
   return JSON.stringify([
+    STATS_CALCULATION_REVISION,
     identity.contractVersion,
     identity.viewerId,
     identity.targetUserId,

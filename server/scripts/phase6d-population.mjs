@@ -999,10 +999,10 @@ try:
  result["exitCode"]=r.returncode
  result["stderrBytes"]=len(r.stderr)
  if not fleet: result["stderrTail"]=r.stderr.decode(errors="replace")[-400:]
- assert len(r.stdout)<=16777216
- result["observation"]=json.loads(r.stdout)
  state=command(["docker","inspect","--format","{{json .State}}",name]); assert state.returncode==0
  state=json.loads(state.stdout);result["oomKilled"]=state["OOMKilled"];result["containerExitCode"]=state["ExitCode"]
+ assert len(r.stdout)<=16777216
+ result["observation"]=json.loads(r.stdout)
  result["sameServingIdentityAfter"]=serving()==identity
 except Exception as error:
  result["executionStatus"]="unavailable";result["errorClass"]=type(error).__name__;result["errorText"]="fleet_observer_unavailable" if fleet else str(error)[:300]
@@ -1028,8 +1028,8 @@ export function fleetFailureCode(run, execution) {
   if (run.error) return 'transport_unavailable';
   if (run.status !== 0) return 'transport_nonzero';
   if (!execution) return 'transport_output_invalid';
-  if (execution.executionStatus) return 'remote_observer_unavailable';
   if (execution.oomKilled === true) return 'observer_oom';
+  if (execution.executionStatus) return 'remote_observer_unavailable';
   if (execution.sameServingIdentityAfter !== true) return 'serving_identity_unverified';
   if (execution.observerRemoved !== true || execution.cleanupExitCode !== 0)
     return 'observer_cleanup_unverified';

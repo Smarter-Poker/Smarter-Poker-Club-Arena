@@ -739,3 +739,42 @@ it('projects fleet failure metadata to closed diagnostic codes without raw trans
   ] as any[])
     expect(selector.fleetFailureCode(run, execution)).toBe(expected);
 });
+
+it.each([true, false])(
+  'retains actual Docker OOM=%s metadata before malformed observer output is parsed',
+  async (oomKilled) => {
+    const { spawnSync } = await import('node:child_process');
+    const program = `import json,subprocess,sys,io,types
+calls=[]
+class R:
+ def __init__(self,out=b'',code=0): self.stdout=out;self.stderr=b'';self.returncode=code
+def run(args,**kw):
+ calls.append(args)
+ if args[1]=='inspect' and args[3]=='{{json .Mounts}}': return R(json.dumps([{'Destination':'/var/lib/club-arena/horse-decisions','Type':'bind','Source':'/var/lib/club-arena/horse-decisions','RW':True}]).encode())
+ if args[1]=='inspect' and '.Config.Env' in args[3]: return R(b'HORSE_DECISION_JOURNAL_DIR=/var/lib/club-arena/horse-decisions\\n')
+ if args[1]=='inspect' and args[-1]=='club-arena-engine': return R(('a'*64+' sha256:'+'b'*64+' true '+'c'*40+' 2026-10-28T00:00:00Z').encode())
+ if args[1:3]==['image','inspect']: return R(('c'*40).encode())
+ if args[1]=='start': return R(b'NOT JSON PRIVATE',137)
+ if args[1]=='inspect': return R(json.dumps({'OOMKilled':${oomKilled ? 'True' : 'False'},'ExitCode':137}).encode())
+ return R()
+subprocess.run=run
+import base64
+sys.stdin=io.StringIO(json.dumps({'release':'c'*40,'name':'horse-phase6d-fleet-1t1z','deadline':90,'mode':'fleet','packet':base64.b64encode(json.dumps({'sourceSha':'c'*40}).encode()).decode()}))
+exec(${JSON.stringify(selector.REMOTE_OBSERVER)})
+`;
+    const result = spawnSync('python3', ['-c', program], { encoding: 'utf8', timeout: 5000 });
+    expect(result.status, result.stderr).toBe(0);
+    const execution = JSON.parse(result.stdout);
+    expect(execution).toMatchObject({
+      oomKilled,
+      containerExitCode: 137,
+      executionStatus: 'unavailable',
+      observerRemoved: true,
+      cleanupExitCode: 0,
+    });
+    expect(selector.fleetFailureCode({ status: 0 }, execution)).toBe(
+      oomKilled ? 'observer_oom' : 'remote_observer_unavailable'
+    );
+    expect(result.stdout).not.toContain('NOT JSON PRIVATE');
+  }
+);

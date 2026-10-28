@@ -1,3 +1,4 @@
+import { HORSE_FEATURE_FLAGS } from '../HorseFeatureAuthority.js';
 import { CATASTROPHE_GUARD_VERSION } from '../HorseTournamentCatastropheGuard.js';
 import { correctiveKernelReceiptIsValid } from '../../services/horseCorrectiveReview/kernelReceipt.js';
 import { plo4LiveReceiptBindingIsValid } from '../plo4/Plo4LivePolicy.js';
@@ -936,6 +937,25 @@ export function horseDecisionReceiptRefusal(
       value.tournamentUtilityRefusal !== undefined)
   )
     return 'exception_fallback';
+  if (value.featureAuthority !== undefined) {
+    const f = value.featureAuthority;
+    if (
+      !record(f) ||
+      !exact(f, ['version', 'authority', 'compositionDigest', 'flags', 'domain']) ||
+      f.version !== 'horse-feature-decision-v1' ||
+      !horseAuthorityReceiptIsWellFormed(f.authority) ||
+      f.authority.state !== 'usable' ||
+      typeof f.compositionDigest !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(f.compositionDigest) ||
+      !record(f.flags) ||
+      !exact(f.flags, HORSE_FEATURE_FLAGS) ||
+      !Object.values(f.flags).every((v) => typeof v === 'boolean') ||
+      !Object.values(f.flags).some(Boolean) ||
+      !record(f.domain) ||
+      f.domain.variant !== expectedVariant
+    )
+      return 'feature_authority';
+  }
   if (!policyGraphIsValid(value, expectedVariant, context)) return 'policy_graph';
   if (!correctiveKernelReceiptIsValid(value as unknown as HorseDecision))
     return 'corrective_kernel';

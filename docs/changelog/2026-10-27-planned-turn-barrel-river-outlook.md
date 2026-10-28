@@ -1,0 +1,7 @@
+# Planned turn barrels retain their river outlook
+
+A planned turn continuation returned before recording the turn's next-card outlook. The river lookup asks for the turn entry, so that accepted line lost its good/scare/blank classification. On protected e9725f3, the actual NLH brain with seed1, own9c8c on Kd7s2c5h and pot21 chose bet10 but emitted only a raise-response plan. The regression first failed on the absent outlook.
+
+The default-off `barrelContinuationOutlook` option records that private outlook through the existing speculative decision-effect path. It does not re-roll the barrel plan, add a bet, change sizing or change turn RNG. A fixed32-seed control card in each of NLH/PLO4/PLO5/PLO6 compares omitted/false/true options, exact decisions excluding runtime durations, RNG and unchanged existing effects. The real next river decision reads the committed turn outlook; another player/hand cannot read it. Existing exact-action controller/worker acceptance rules remain authoritative.
+
+This is a wiring repair, not a strength certificate. It can change later river decisions when enabled, so remains off pending an independently declared current-brain incremental qualification. Preserve cash35% planning,52% turn/35% river continuation and80% unplanned give-up, the existing tournament settings, and historical adverse higher-frequency evidence. Existing turn probes and PLO EV betting already work; this does not force a second barrel or enable the negatively measured river-probe option. No heldout batch or production mutation was performed.

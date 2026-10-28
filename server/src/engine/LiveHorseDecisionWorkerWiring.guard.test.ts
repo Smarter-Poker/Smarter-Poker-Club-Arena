@@ -81,8 +81,10 @@ describe('live horse decisions stay outside the table event loop', () => {
     const schedule = sliceMethod(turns, '  protected scheduleHorseAction(');
 
     expect(schedule).toContain('const remainingThinkMs = Math.min(');
-    expect(schedule).toContain('Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))');
-    expect(schedule).toContain('Math.max(0, protectedDeadlineMs - Date.now() - 100)');
+    expect(schedule).toContain(
+      'Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs - decisionPauseShift()))'
+    );
+    expect(schedule).toContain('Math.max(0, protectedClockDeadline()! - Date.now() - 100)');
     // 2026-10-16: the second look is budgeted from the turn clock, not from
     // the worker's governor, and the action may wait for it inside that clock.
     expect(schedule).not.toContain('fastResult.governorScale');

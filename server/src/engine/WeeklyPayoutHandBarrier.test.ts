@@ -43,11 +43,37 @@ function liveHand() {
 }
 
 describe('the real live hand is retained across the original weekly financial edge', () => {
+  it('retains countdown pulses and publishes the same unspent display clock after release', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const { engine, hand } = liveHand();
+    const emitEvent = vi.fn();
+    engine.hub = { emitEvent };
+    const actor = hand
+      .getState()
+      .players.find((player) => player.seat === hand.getState().currentPlayerSeat)!;
+    engine.startTurnTimer(actor.user_id, actor.seat, 10);
+    await vi.advanceTimersByTimeAsync(2000);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    await vi.advanceTimersByTimeAsync(240000);
+    expect(emitEvent).not.toHaveBeenCalled();
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(emitEvent).toHaveBeenCalledWith(
+      't',
+      expect.objectContaining({
+        type: 'timer_countdown',
+        remaining_ms: 5000,
+      })
+    );
+  });
   it('announcement allows the current decision; the financial edge retains cards, pot, turn and residual', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(100000);
     const { engine, hand } = liveHand();
     const expiry = vi.fn();
+    engine.playerTurnStartTime = 100000;
     engine.preciseTimer.startTimer('t', 'p1', 10000, expiry);
     engine.pauseForWeeklyPayout('weekly');
     await vi.advanceTimersByTimeAsync(2000);
@@ -63,6 +89,8 @@ describe('the real live hand is retained across the original weekly financial ed
     engine.resumeFromWeeklyPayout('foreign');
     expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
     engine.resumeFromWeeklyPayout('weekly');
+    expect(engine.playerTurnStartTime).toBe(340000);
+    expect(engine.broadcastCurrentState).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(7999);
     expect(expiry).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);

@@ -32,7 +32,10 @@ export class CooperativeHandTimers {
   clear(identity: ReturnType<typeof setTimeout> | null | undefined): void {
     if (!identity) return;
     const entry = this.timers.get(identity);
-    if (!entry) return;
+    if (!entry) {
+      clearTimeout(identity);
+      return;
+    }
     clearTimeout(entry.current);
     this.timers.delete(identity);
   }

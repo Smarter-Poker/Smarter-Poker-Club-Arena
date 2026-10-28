@@ -2184,15 +2184,38 @@ export abstract class ServerTableEngineBase {
    */
   protected maintenancePaused: boolean = false;
   /** Weekly payout is an independent pause owner, never a deployment gate. */
-  protected weeklyPayoutPauseOwners = new Set<string>();
-  protected readonly weeklyHandPause = new CooperativeHandPause();
-  private readonly weeklyHandTimers = new CooperativeHandTimers();
+  private weeklyPayoutOwnerSet?: Set<string>;
+  protected get weeklyPayoutPauseOwners(): Set<string> {
+    return (this.weeklyPayoutOwnerSet ??= new Set());
+  }
+  private weeklyHandPauseValue?: CooperativeHandPause;
+  protected get weeklyHandPause(): CooperativeHandPause {
+    if (!this.weeklyHandPauseValue) {
+      this.weeklyHandPauseValue = new CooperativeHandPause();
+      this.weeklyHandPauseValue.onStable(() => this.observeWeeklyPayoutDrain());
+    }
+    return this.weeklyHandPauseValue;
+  }
+  private weeklyHandTimersValue?: CooperativeHandTimers;
+  private get weeklyHandTimers(): CooperativeHandTimers {
+    return (this.weeklyHandTimersValue ??= new CooperativeHandTimers());
+  }
   private weeklyHandPausedAt = 0;
-  private readonly weeklyPayoutOriginalWork = new Set<Promise<unknown>>();
+  private weeklyHandPausedTotalMs = 0;
+  private weeklyPayoutOriginalWorkSet?: Set<Promise<unknown>>;
+  private get weeklyPayoutOriginalWork(): Set<Promise<unknown>> {
+    return (this.weeklyPayoutOriginalWorkSet ??= new Set());
+  }
   private weeklyPayoutDrain: Promise<void> | null = null;
-  private readonly deferredWeeklyPayoutReleases = new Set<string>();
+  private deferredWeeklyPayoutReleaseSet?: Set<string>;
+  private get deferredWeeklyPayoutReleases(): Set<string> {
+    return (this.deferredWeeklyPayoutReleaseSet ??= new Set());
+  }
   protected weeklyPayoutStartedController: HandController | null = null;
-  private weeklyPayoutBoundaryListeners = new Set<() => void>();
+  private weeklyPayoutBoundaryListenerSet?: Set<() => void>;
+  private get weeklyPayoutBoundaryListeners(): Set<() => void> {
+    return (this.weeklyPayoutBoundaryListenerSet ??= new Set());
+  }
 
   /**
    * A unanimous final-table deal owns its own between-hands pause.
@@ -2979,7 +3002,6 @@ export abstract class ServerTableEngineBase {
   protected engineTelemetry: EngineTelemetry;
 
   constructor(tableId: string, leaseAuthority: EngineLeaseAuthority | null = null) {
-    this.weeklyHandPause.onStable(() => this.observeWeeklyPayoutDrain());
     this.operatorClosureOnlyId =
       leaseAuthority?.scope === 'cash' && leaseAuthority.verified
         ? (leaseAuthority.closureOperationId ?? null)
@@ -4458,6 +4480,12 @@ export abstract class ServerTableEngineBase {
 
       // Step 4: Dispose ported core modules
       for (const dispose of [
+        () => {
+          for (const threshold of [10000, 5000, 3000, 2000, 1000])
+            deadlineScheduler.cancel(this.tableId, `timer_countdown:${threshold}`);
+          for (const owner of this.weeklyPayoutPauseOwners)
+            deadlineScheduler.resumeFromWeeklyPayout(this.tableId, owner, 'timer_countdown:');
+        },
         () => this.preciseTimer.dispose(),
         () => this.actionValidator.dispose(),
         () => this.stateVerifier.dispose(),
@@ -8242,6 +8270,7 @@ export abstract class ServerTableEngineBase {
     this.weeklyHandPause.hold(owner);
     this.weeklyHandTimers.hold(owner);
     this.preciseTimer.pauseForWeeklyPayout(this.tableId, owner);
+    deadlineScheduler.pauseForWeeklyPayout(this.tableId, owner, 'timer_countdown:');
     this.timeBankEngine.pauseForWeeklyPayout(this.tableId, owner);
     this.disconnectEngine.pauseForWeeklyPayout(this.tableId, owner);
     this.insuranceEngine.pauseForWeeklyPayout(this.tableId, owner);
@@ -8266,6 +8295,7 @@ export abstract class ServerTableEngineBase {
     this.preciseTimer.resumeFromWeeklyPayout(this.tableId, owner);
     if (this.weeklyPayoutPauseOwners.size === 0 && this.weeklyHandPause.held()) {
       const elapsed = Math.max(0, Date.now() - this.weeklyHandPausedAt);
+      this.weeklyHandPausedTotalMs = (this.weeklyHandPausedTotalMs ?? 0) + elapsed;
       if (this.playerTurnStartTime > 0) this.playerTurnStartTime += elapsed;
       for (const [seat, deadline] of this.pineappleDiscardDeadlines)
         this.pineappleDiscardDeadlines.set(seat, deadline + elapsed);
@@ -8274,6 +8304,11 @@ export abstract class ServerTableEngineBase {
     }
     this.weeklyHandTimers.release(owner);
     this.weeklyHandPause.release(owner);
+    deadlineScheduler.resumeFromWeeklyPayout(this.tableId, owner, 'timer_countdown:');
+    if (this.weeklyPayoutPauseOwners.size === 0 && this.running)
+      void this.broadcastCurrentState().catch((error) =>
+        reportError(error, 'ServerTableEngine.weekly_payout_resume_state_failed')
+      );
     if (
       this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
@@ -8296,6 +8331,7 @@ export abstract class ServerTableEngineBase {
       !this.hasWeeklyPayoutMutationInFlight() &&
       !this.hasUnresolvedF06Preparation() &&
       this.preciseTimer.isParkedForWeeklyPayout(this.tableId, owner) &&
+      deadlineScheduler.isParkedForWeeklyPayout(this.tableId, owner, 'timer_countdown:') &&
       this.timeBankEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
       this.disconnectEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
       this.insuranceEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
@@ -8393,6 +8429,14 @@ export abstract class ServerTableEngineBase {
 
   protected sleepHand(ms: number): Promise<void> {
     return this.weeklyHandTimers.sleep(ms);
+  }
+
+  /** Captured async decision clocks exclude only this hand owner's held time. */
+  protected weeklyPayoutPausedMilliseconds(): number {
+    return (
+      (this.weeklyHandPausedTotalMs ?? 0) +
+      (this.weeklyHandPause.held() ? Math.max(0, Date.now() - this.weeklyHandPausedAt) : 0)
+    );
   }
 
   protected clearHandTimeout(timer: ReturnType<typeof setTimeout> | null | undefined): void {

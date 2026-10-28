@@ -382,7 +382,7 @@ describe('all-in equity lands AFTER the street, and every street gets its second
     // This computation sits between the reveal gate and the percentages
     // appearing, so a serial loop pushes the numbers further from the card.
     const fn = sliceMethod(RUNOUT, 'protected async broadcastAllInEquity');
-    expect(fn).toMatch(/await Promise\.all\(/);
+    expect(fn).toMatch(/await this\.weeklyPayoutContinuation\(\s*Promise\.all\(/);
     expect(fn).not.toMatch(/for \(const b of allBoards\) \{\s*perBoard\.push\(\s*await/);
   });
 });

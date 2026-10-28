@@ -219,6 +219,7 @@ import {
 import { qualifiedTestAdmission } from './HorseQualifiedAuthority.test-support.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { CooperativeHandPause } from './CooperativeHandPause.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
 import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
@@ -284,12 +285,16 @@ function harness(intendedActionAccepted: boolean) {
   };
   const performAction = vi.fn().mockReturnValueOnce(intendedActionAccepted).mockReturnValue(true);
   const engine = new ServerTableEngine(TABLE) as any;
+  const controllerPause = new CooperativeHandPause();
   engine.running = true;
   engine.isCurrentEngine = () => true;
   engine.handCount = 12;
   engine.tableInfo = { action_time_seconds: 15, big_blind: 2, game_variant: 'nlh' };
   engine.seatedPlayers = [player];
   engine.handController = {
+    pauseForWeeklyPayout: (owner: string) => controllerPause.hold(owner),
+    resumeFromWeeklyPayout: (owner: string) => controllerPause.release(owner),
+    isParkedForWeeklyPayout: (owner: string) => controllerPause.stable(owner),
     getState: () => state,
     getAuthoritativeActionState: () => ({
       schemaVersion: 1,
@@ -330,12 +335,12 @@ function harness(intendedActionAccepted: boolean) {
       return applied;
     },
   };
-  engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
-  engine.timeBankEngine = {
+  Object.assign(engine.disconnectEngine, { isSittingOut: () => false, recordPlayerActed: vi.fn() });
+  Object.assign(engine.timeBankEngine, {
     isAutoActivateEnabled: () => true,
     isArmed: () => false,
     getPlayerBank: () => null,
-  };
+  });
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'lease-9' });
   engine.humansSeated = () => 0;
   engine.tableFormat = () => 'cash';
@@ -367,6 +372,35 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it('retains a worker reply across the weekly pause without expiring its protected clock or think beat', async () => {
+    vi.setSystemTime(100000);
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    engine.playerTurnStartTime = Date.now();
+    engine.broadcastCurrentState = vi.fn(async () => {});
+    let reply!: (result: FastHorseDecisionResult) => void;
+    let request!: Parameters<typeof decisionWorker.defaultDecideFast>[0];
+    decisionWorker.decideFast.mockImplementationOnce((snapshot) => {
+      request = snapshot;
+      return new Promise((resolve) => {
+        reply = resolve;
+      });
+    });
+    engine.scheduleHorseAction(player, 1, enginePlayer, state, Date.now() + 15000);
+    await vi.advanceTimersByTimeAsync(300);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    await vi.advanceTimersByTimeAsync(240000);
+    const result = await decisionWorker.defaultDecideFast(request);
+    reply({ ...result, decision: { ...result.decision, thinkTime: 1000 } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(performAction).not.toHaveBeenCalled();
+    engine.resumeFromWeeklyPayout('weekly');
+    await vi.advanceTimersByTimeAsync(699);
+    expect(performAction).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(performAction).toHaveBeenCalledTimes(1);
+    expect(decisionWorker.decideFast).toHaveBeenCalledTimes(1);
+  });
   it.each([
     { capped: false, discarded: false },
     { capped: true, discarded: false },

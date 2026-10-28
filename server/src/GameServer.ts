@@ -3898,6 +3898,9 @@ export class GameServer {
   });
 
   private adoptWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may attach tables before this owner exists.
+    // No financial phase can be admitted without the initialized controller.
+    if (!this.weeklyPayoutPause) return;
     if (!this.weeklyPayoutTableListeners.has(engine)) {
       this.weeklyPayoutTableListeners.set(
         engine,

@@ -1029,6 +1029,48 @@ export function reviewHorsePlanEffects(
   }
 }
 
+/** Attribute durable effects only to this exact original producer/turn.
+ * Callers separately bind the controller action to the committed hand. This
+ * proves a retained application receipt, never restart reconstruction or EV. */
+export function reviewHorseOwnTurnEffects(
+  records: readonly HorseJournalRecord[],
+  handKey: string,
+  decisionRecord: HorseJournalRecord
+): 'not_applicable' | 'applied' | 'failed' | 'unknown' {
+  try {
+    validateHorseJournalRecord(decisionRecord);
+    if (decisionRecord.kind !== 'decision' || decisionRecord.handKey !== handKey) return 'unknown';
+    const own = records.filter(
+      (r) =>
+        r.kind === 'accepted_hand' ||
+        (r.producerId === decisionRecord.producerId && r.turnKey === decisionRecord.turnKey)
+    );
+    const decisions = own.filter((r) => r.kind === 'decision');
+    if (decisions.length !== 1 || !same(decisions[0], decisionRecord)) return 'unknown';
+    const capture = JSON.parse(decisionRecord.body);
+    const effects = qualifyHorseRetainedDecisionEffects(capture, capture.snapshot);
+    if (effects.status !== 'qualified') return 'unknown';
+    const reviewed = reviewHorsePlanEffects(own, handKey);
+    if (effects.batchSize === 0)
+      return reviewed.acceptedHandRetained && reviewed.gaps.length === 0
+        ? 'not_applicable'
+        : 'unknown';
+    if (reviewed.applicationVerified && reviewed.accepted === 1 && reviewed.applied === 1)
+      return 'applied';
+    if (
+      reviewed.accepted === 1 &&
+      reviewed.durable === 1 &&
+      reviewed.failed === 1 &&
+      reviewed.unknown === 0 &&
+      reviewed.gaps.length === 0
+    )
+      return 'failed';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** Explicit offline reader for the plan-effect ledger of one retained hand. */
 export function readHorsePlanEffects(directory: string, handKey: string): HorsePlanEffectsReview {
   try {

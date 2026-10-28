@@ -430,8 +430,9 @@ export async function recoverFromStaleChunk(
  * document, and it does not distinguish a link that LOADED from one that
  * ERRORED. So after one failed CSS fetch, every retry of that route "found"
  * its stylesheet and rendered without it. Removing the failed link clears the
- * DOM entry, but Vite also remembers it in an internal seen-dependency map.
- * The guarded document recovery below resets that map for the next load.
+ * DOM entry. The maintained Vite preload-helper transform also invalidates
+ * the failed dependency memo before rejection, so a later import waits for
+ * the stylesheet again. Document replacement below needs stale-build evidence.
  */
 function failedStylesheetHref(error: unknown): string | undefined {
   const message = (error as { message?: string } | null)?.message ?? '';

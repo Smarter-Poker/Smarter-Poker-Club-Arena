@@ -1,0 +1,26 @@
+{
+  "_owner": "codex/weekly-payout-owned-pause-20261028",
+  "_comment": "Public objects created by migration 20261028162126 for the engine's durable weekly payout pause subscription, boundary read and fleet acknowledgement.",
+  "tables": ["weekly_accounting_payout_pauses"],
+  "functions": ["fn_weekly_accounting_payout_pause_state", "fn_weekly_accounting_payout_pause_ack"],
+  "columns": {
+    "weekly_accounting_payout_pauses": [
+      "run_id",
+      "ownership_token",
+      "period_start",
+      "period_end",
+      "announced_at",
+      "money_starts_at",
+      "money_deadline_at",
+      "expires_at",
+      "scope_plan",
+      "scope_fingerprint",
+      "phase",
+      "instance_id",
+      "lease_claims",
+      "acknowledged_at",
+      "result",
+      "created_at"
+    ]
+  }
+}

@@ -79,7 +79,10 @@ const f1 = (n: number): string => n.toFixed(1);
  */
 export function findLeaks(
   overall: LeakOverall | null | undefined,
-  positions: LeakPosition[] | null | undefined
+  positions: LeakPosition[] | null | undefined,
+  metricAvailability?: Partial<
+    Record<'fold_to_three_bet' | 'aggression_factor' | 'cbet_flop', boolean>
+  >
 ): { leaks: Leak[]; analysed: boolean; handsShort: number } {
   if (!overall || !Number.isFinite(overall.total_hands)) {
     return { leaks: [], analysed: false, handsShort: LEAK_MIN_HANDS };
@@ -92,6 +95,8 @@ export function findLeaks(
     };
   }
 
+  const measured = (key: 'fold_to_three_bet' | 'aggression_factor' | 'cbet_flop') =>
+    metricAvailability === undefined || metricAvailability[key] === true;
   const leaks: Leak[] = [];
   const vpip = pct(overall.vpip);
   const pfr = pct(overall.pfr);
@@ -174,7 +179,7 @@ export function findLeaks(
 
   // ── 4. Exploitable fold to 3-bet ────────────────────────────────────────
   // Only meaningful once the player raises preflop often enough to face them.
-  if (pfr >= 8 && overall.total_hands >= 1000) {
+  if (measured('fold_to_three_bet') && pfr >= 8 && overall.total_hands >= 1000) {
     if (f3b > 70) {
       leaks.push({
         id: 'folds_to_3bet',
@@ -198,6 +203,7 @@ export function findLeaks(
 
   // ── 5. Passive after the flop ───────────────────────────────────────────
   if (
+    measured('aggression_factor') &&
     overall.aggression_factor > 0 &&
     overall.aggression_factor < 1 &&
     overall.total_hands >= 1000
@@ -215,7 +221,7 @@ export function findLeaks(
   }
 
   // ── 6. C-betting on autopilot ───────────────────────────────────────────
-  if (cbet > 0 && overall.total_hands >= 1000) {
+  if (measured('cbet_flop') && cbet > 0 && overall.total_hands >= 1000) {
     if (cbet > 85) {
       leaks.push({
         id: 'cbet_too_high',

@@ -4,11 +4,11 @@ import {
   type HorseTournamentCatastropheGuardLedger,
 } from '../engine/HorseTournamentCatastropheGuard.js';
 import { HandController } from '../engine/HandController.js';
-import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import { HorseLogic, type HorseGameStateV2, type HorseDecideOpts } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { saveFastRandom, restoreFastRandom, seedFastRandom } from '../engine/HorseEval.js';
 import { calculateContestablePot, RANKS, SUITS } from '../engine/PokerEngine.js';
-import { horseVariantRulesFor } from '../engine/VariantRules.js';
+import { holeCardCount, horseVariantRulesFor } from '../engine/VariantRules.js';
 import { buildTournamentMState } from '../engine/HorseTournamentPreflop.js';
 import { attributeKnockout, type KnockoutClaimant } from '../tournament/knockoutAttribution.js';
 import {
@@ -24,6 +24,13 @@ import {
   humanCalibratedDecide,
   type HumanCalibratedSpot,
 } from './HumanCalibratedPopulation.js';
+
+import {
+  tournamentFlagCard,
+  validateTournamentFlagRequest,
+  type TournamentFlagVariant,
+  type TournamentFlagAdmission,
+} from './HorseTournamentFlagContract.js';
 
 export const TOURNAMENT_LEAGUE_OBJECTIVES = [
   'mtt',
@@ -122,6 +129,9 @@ export function tournamentPolicyWorkKind(family: TournamentPolicyFamily) {
 }
 
 export interface TournamentLeagueRequest {
+  flagCard?: string;
+  firstPair?: number;
+  flagQualification?: TournamentFlagAdmission;
   objective: TournamentLeagueObjective;
   phase8PolicyFamily?: TournamentPolicyFamily;
   pairs: number;
@@ -307,6 +317,13 @@ export function recordTournamentCompletion(
 }
 
 export interface TournamentLeagueResult extends TournamentCompletionCounts {
+  flagCard?: string;
+  gameVariant?: TournamentFlagVariant;
+  firstPair?: number;
+  cardDecisions?: number;
+  cardChanged?: number;
+  cardPairs?: Array<{ index: number; candidate: number; reference: number }>;
+
   version: ReturnType<typeof tournamentPolicyVersion>;
   phase8PolicyFamily?: TournamentPolicyFamily;
   workKind?: ReturnType<typeof tournamentPolicyWorkKind>;
@@ -403,6 +420,8 @@ interface Receipt extends TournamentCompletionCounts {
   regret: number;
   latency: number[];
   humanResponses: Record<string, Record<string, number>>;
+  cardDecisions?: number;
+  cardChanged?: number;
 }
 
 /** A human-calibrated entrant's decision from the authoritative menu and public state. */
@@ -410,10 +429,11 @@ function humanCalibratedEntrantDecision(
   seatPlayer: SeatPlayer,
   state: ReturnType<HandController['getState']>,
   menu: NonNullable<ReturnType<HandController['getAuthoritativeActionState']>>,
-  receipt: Receipt
+  receipt: Receipt,
+  variant: string = 'nlh'
 ): HorseDecision {
   const spot: HumanCalibratedSpot = {
-    variant: 'nlh',
+    variant,
     stage: state.stage,
     cards: seatPlayer.cards,
     board: state.communityCards,
@@ -447,8 +467,15 @@ async function playTournament(
   mode: Phase8Mode,
   shouldContinue: () => boolean,
   opponentPopulation: typeof HUMAN_CALIBRATED_POPULATION_ID | null = null,
-  family: TournamentPolicyFamily = 'continuation_v2'
+  family: TournamentPolicyFamily = 'continuation_v2',
+  flag: {
+    variant: TournamentFlagVariant;
+    hero: HorseDecideOpts;
+    counterfactual: HorseDecideOpts | null;
+  } | null = null
 ): Promise<Receipt> {
+  const variant: TournamentFlagVariant | 'nlh' = flag?.variant ?? 'nlh';
+  const holeCount = holeCardCount(variant);
   const count = tournamentLeagueEntrants(objective);
   const startStack = 2000;
   const players = Array.from({ length: count }, (_, i) =>
@@ -489,6 +516,7 @@ async function playTournament(
     regret: 0,
     latency: [],
     humanResponses: {},
+    ...(flag ? { cardDecisions: 0, cardChanged: 0 } : {}),
   };
   let alive = players;
   const buttons = new Map<number, number>();
@@ -514,7 +542,7 @@ async function playTournament(
     const config = {
       tableId: 'phase8-tournament-league',
       handNumber: hand + 1,
-      gameVariant: 'nlh' as const,
+      gameVariant: variant,
       isTournament: true,
       smallBlind: current.smallBlind,
       bigBlind,
@@ -523,16 +551,20 @@ async function playTournament(
     };
     const controller = new HandController(config, tablePlayers, dealerSeat);
     // Replace methods only on this isolated controller's deck instance. No
-    // production shuffle, prototype, flag or live object is changed. Every
-    // original seat retains identical holes and board even after paths diverge.
+    // production shuffle, prototype, flag or live object is changed. NLH keeps
+    // original entrant holes across divergent arms; Omaha keeps table-slot draws
+    // under the same per-hand seed, not entrant holes after membership changes.
     const full = cardsFor((seed ^ Math.imul(hand + 1, 2654435761)) >>> 0);
-    const fixedBoard = full.slice(count * 2, count * 2 + 5);
+    // Preserve the NLH entrant assignment exactly. Omaha uses six table slots:
+    // eighteen PLO6 entrants cannot each reserve six cards from one deck.
+    const boardStart = flag ? 6 * holeCount : count * 2;
+    const fixedBoard = full.slice(boardStart, boardStart + 5);
     const deck = tablePlayers
-      .flatMap((p) => {
-        const i = originalIds.indexOf(p.user_id);
-        return full.slice(i * 2, i * 2 + 2);
+      .flatMap((p, slot) => {
+        const i = flag ? slot : originalIds.indexOf(p.user_id);
+        return full.slice(i * holeCount, i * holeCount + holeCount);
       })
-      .concat(fixedBoard, full.slice(count * 2 + 5));
+      .concat(fixedBoard, full.slice(boardStart + 5));
     const instance = controller.getState().deck as unknown as {
       deal: (n?: number) => Card[];
       dealOne: () => Card;
@@ -655,7 +687,7 @@ async function playTournament(
         currentPlayerSeat: hero.seat,
         gameMode: 'tournament',
         format: objective === 'spin' ? 'spin' : objective === 'sng' ? 'sng' : 'mtt',
-        gameVariant: 'nlh',
+        gameVariant: variant,
         bigBlind,
         ante,
         boardCount: 1,
@@ -666,7 +698,7 @@ async function playTournament(
         bettingStructure: menu.structure,
         pots: controller.computeLivePots(),
         contestablePot: calculateContestablePot(state.players, hero.user_id, menu.toCall),
-        variantRules: horseVariantRulesFor('nlh'),
+        variantRules: horseVariantRulesFor(variant),
         rakeConfig: config.rakeConfig,
         tournament,
         actionHistory: state.actionHistory.map((a, i) => ({
@@ -677,24 +709,41 @@ async function playTournament(
       seedFastRandom(
         (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
       );
+      const decideWith = (extra: HorseDecideOpts): HorseDecision =>
+        HorseMind.runInSandbox(sandbox, () =>
+          HorseLogic.decide(
+            hero,
+            gs,
+            'balanced',
+            {},
+            {
+              ...extra,
+              phase8Postflop: flag ? 'off' : hero.user_id === heroId ? mode : 'off',
+              phase8PolicyFamily: family,
+              mind: false,
+              telemetry: false,
+              decisionTimeMs: 0,
+            }
+          )
+        );
       let decision: HorseDecision =
         opponentPopulation !== null && hero.user_id !== heroId
-          ? humanCalibratedEntrantDecision(hero, state, menu, receipt)
-          : HorseMind.runInSandbox(sandbox, () =>
-              HorseLogic.decide(
-                hero,
-                gs,
-                'balanced',
-                {},
-                {
-                  phase8Postflop: hero.user_id === heroId ? mode : 'off',
-                  phase8PolicyFamily: family,
-                  mind: false,
-                  telemetry: false,
-                  decisionTimeMs: 0,
-                }
-              )
-            );
+          ? humanCalibratedEntrantDecision(hero, state, menu, receipt, variant)
+          : decideWith(hero.user_id === heroId && flag ? flag.hero : {});
+      if (flag?.counterfactual && hero.user_id === heroId) {
+        const live = saveFastRandom();
+        seedFastRandom(
+          (seed ^ Math.imul(hand + 1, 104729) ^ Math.imul(action + 1, 1009) ^ hero.seat) >>> 0
+        );
+        const other = decideWith(flag.counterfactual);
+        restoreFastRandom(live);
+        receipt.cardDecisions!++;
+        if (
+          other.action !== decision.action ||
+          (other.amount ?? null) !== (decision.amount ?? null)
+        )
+          receipt.cardChanged!++;
+      }
       receipt.decisions++;
       const layer = decision.tournamentCatastropheGuard ?? decision.tournamentPostflop;
       recordTournamentOpportunity(receipt, hero.user_id === heroId, gs, layer);
@@ -831,11 +880,28 @@ export async function runTournamentLeague(
     request.seed <= 0
   )
     throw new Error('Invalid tournament league request');
+  const card = validateTournamentFlagRequest(request);
+  if (request.flagQualification) {
+    const { authenticateTournamentFlagExecution } =
+      await import('./HorseTournamentFlagQualification.js');
+    await authenticateTournamentFlagExecution(request);
+  }
+  const firstPair = request.firstPair ?? 0;
   const family = tournamentPolicyFamily(request.phase8PolicyFamily);
   const started = performance.now();
   const saved = saveFastRandom();
   const result: TournamentLeagueResult = {
     ...emptyTournamentCompletionCounts(),
+    ...(card
+      ? {
+          flagCard: card.name,
+          gameVariant: card.variant,
+          firstPair,
+          cardDecisions: 0,
+          cardChanged: 0,
+          cardPairs: [],
+        }
+      : {}),
     version: tournamentPolicyVersion(family),
     phase8PolicyFamily: family,
     workKind: tournamentPolicyWorkKind(family),
@@ -884,8 +950,8 @@ export async function runTournamentLeague(
   try {
     for (let pair = 0; pair < request.pairs; pair++) {
       if (!shouldContinue()) break;
-      const seed = (request.seed ^ Math.imul(pair + 1, 2654435761)) >>> 0 || 1;
-      const hero = pair % tournamentLeagueEntrants(request.objective);
+      const seed = (request.seed ^ Math.imul(firstPair + pair + 1, 2654435761)) >>> 0 || 1;
+      const hero = (firstPair + pair) % tournamentLeagueEntrants(request.objective);
       const a = await playTournament(
         seed,
         request.objective,
@@ -893,7 +959,8 @@ export async function runTournamentLeague(
         request.candidateMode ?? 'candidate',
         shouldContinue,
         request.opponentPopulation ?? null,
-        family
+        family,
+        card ? { variant: card.variant, hero: card.a, counterfactual: card.b } : null
       );
       const b = await playTournament(
         seed,
@@ -902,7 +969,8 @@ export async function runTournamentLeague(
         'off',
         shouldContinue,
         request.opponentPopulation ?? null,
-        family
+        family,
+        card ? { variant: card.variant, hero: card.b, counterfactual: null } : null
       );
       for (const arm of [a, b])
         for (const [node, counts] of Object.entries(arm.humanResponses))
@@ -915,6 +983,15 @@ export async function runTournamentLeague(
       result.truncatedHands += a.truncated + b.truncated;
       if (!a.complete || !b.complete) break;
       result.pairs++;
+      if (card) {
+        result.cardDecisions! += a.cardDecisions ?? 0;
+        result.cardChanged! += a.cardChanged ?? 0;
+        result.cardPairs!.push({
+          index: firstPair + pair,
+          candidate: a.returned,
+          reference: b.returned,
+        });
+      }
       differences.push(a.returned - b.returned);
       result.candidateReturn += a.returned;
       result.baselineReturn += b.returned;
@@ -1048,6 +1125,7 @@ export function tournamentGuardCountsAreValid(r: {
 }
 
 export function tournamentRunCanPromote(r: TournamentLeagueResult): boolean {
+  if (r.flagCard !== undefined) return false; // separate immutable flag-card qualification only
   if (!tournamentGuardCountsAreValid(r)) return false;
   if (
     r.phase8PolicyFamily !== undefined &&

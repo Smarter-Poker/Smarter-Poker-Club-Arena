@@ -20,6 +20,9 @@ interface Props {
   positions?: LeakPosition[] | null;
   /** Suppress entrance animation while the print dossier renders. */
   still?: boolean;
+  metricAvailability?: Partial<
+    Record<'fold_to_three_bet' | 'aggression_factor' | 'cbet_flop', boolean>
+  >;
 }
 
 const SEVERITY_LABEL: Record<string, string> = {
@@ -28,13 +31,18 @@ const SEVERITY_LABEL: Record<string, string> = {
   low: 'Minor',
 };
 
-export default function LeakPanel({ overall, positions, still = false }: Props) {
+export default function LeakPanel({
+  overall,
+  positions,
+  still = false,
+  metricAvailability = {},
+}: Props) {
   const reduceMotionPref = useReducedMotion();
   const reduceMotion = reduceMotionPref || still;
 
   const { leaks, analysed, handsShort } = useMemo(
-    () => findLeaks(overall, positions),
-    [overall, positions]
+    () => findLeaks(overall, positions, metricAvailability),
+    [overall, positions, metricAvailability]
   );
 
   if (!analysed) {
@@ -55,9 +63,10 @@ export default function LeakPanel({ overall, positions, still = false }: Props) 
       <div className="leak-card">
         <h3 className="leak-title">What To Work On</h3>
         <p className="leak-empty-text">
-          Nothing Stands Out As A Clear Leak In Your Numbers Right Now. That Does Not Mean The Game
-          Is Solved, Only That The Obvious Structural Problems Are Not There - The Next Gains Are In
-          Hand-By-Hand Decisions Rather Than In Your Overall Frequencies.
+          Unmeasured Advanced Rates Are Not Assessed. Nothing Stands Out As A Clear Leak In Your
+          Measured Numbers Right Now. That Does Not Mean The Game Is Solved, Only That The Obvious
+          Structural Problems Are Not There - The Next Gains Are In Hand-By-Hand Decisions Rather
+          Than In Your Overall Frequencies.
         </p>
       </div>
     );

@@ -51,6 +51,12 @@ describe('when the table list hits the network', () => {
     ).toBe(false);
   });
 
+  it('re-reads an empty result on an explicit reopen without duplicating an in-flight read', () => {
+    expect(shouldRefetchHandHistory({ ...base, state: 'ready', handCount: 0 })).toBe(true);
+    expect(shouldRefetchHandHistory({ ...base, state: 'ready', handCount: 1 })).toBe(false);
+    expect(shouldRefetchHandHistory({ ...base, state: 'loading', handCount: 0 })).toBe(false);
+  });
+
   it('a stale list refetches, in case an event was missed', () => {
     expect(
       shouldRefetchHandHistory({
@@ -131,7 +137,45 @@ describe('TablePage takes the saved hand as it lands', () => {
     expect(page).toMatch(
       /if \(\s*handHistoryStateRef\.current !== 'ready' \|\|\s*handHistoryTableRef\.current !== tableId\s*\)\s*return;/
     );
-    expect(page).toContain('if (!row || row.table_id !== tableId) return;');
+    // Ordinary tables still require physical table equality. A Lightning room
+    // is a pool session, whose authenticated saved events name physical hands.
+    expect(page).toMatch(
+      /if \(!row \|\| \(!lightningRoom\?\.poolSessionId && row\.table_id !== tableId\)\) return;/
+    );
+  });
+
+  it('uses the pool session for both history hydration and the lazy replay lookup', () => {
+    const hydration = page.slice(page.indexOf('return startHandHistoryHydration({'));
+    expect(hydration).toMatch(
+      /getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+    );
+    expect(page).toMatch(
+      /getPlayerHands\(userId, 1, \{\s*tableId,\s*lightningPoolSessionId: lightningRoom\?\.poolSessionId,\s*throwOnError: true,/
+    );
+  });
+
+  it('rechecks the viewer and room after a saved-hand read before publishing its private record', () => {
+    const savedRead = page.slice(
+      page.indexOf('const takeSavedHand = useCallback('),
+      page.indexOf('const takeSavedHandRef = useRef(')
+    );
+    const continuation = savedRead.split(
+      'const row = await handHistoryService.getHand(savedId);'
+    )[1];
+    expect(continuation).toBeTruthy();
+    const beforeCommit = continuation.split(
+      'const record = adaptServiceHandToPanel(row, userId);'
+    )[0];
+    expect(beforeCommit).toContain('handHistoryScopeRef.current !== savedScope');
+    expect(beforeCommit).toContain('handHistoryViewerRef.current !== userId');
+    expect(beforeCommit).toContain('handHistoryTableRef.current !== tableId');
+    expect(beforeCommit).toContain(
+      'const readStateAfterAwait = () => handHistoryStateRef.current;'
+    );
+    expect(beforeCommit).toContain('const stateAfterAwait = readStateAfterAwait();');
+    expect(beforeCommit).toContain("if (stateAfterAwait === 'loading') {");
+    expect(beforeCommit).toContain("if (stateAfterAwait !== 'ready') return;");
+    expect(beforeCommit).toContain('pendingSavedIdsRef.current.push(savedId)');
   });
 
   it('a hand announced during the page fetch is applied after it, not dropped', () => {

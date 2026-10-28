@@ -45,6 +45,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the authoritative whole-Diamond rake arithmetic used for projected call pricing',
     'src/domain/diamondCashJackpotSchedule.ts':
       'the authoritative whole-Diamond jackpot collection used for projected call pricing',
+    'src/engine/HorseOmahaTournamentPressure.ts':
+      'the default-off Omaha tournament preflop action-risk ICM pricing candidate consumed by reference preflop bars',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':

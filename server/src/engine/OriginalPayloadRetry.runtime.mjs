@@ -10,6 +10,7 @@ import { leavePendingTerminalReason } from '../observability/LeavePendingDiagnos
 import { handStackBefore, requireHandSeatGeneration } from './handSeatGeneration.ts';
 import { KillPotSchedule } from './KillPot.ts';
 import { handRecordsDailyMissionEvents } from './dailyMissionEvents.ts';
+import { publicHandStatsFrame } from './presentation/publicHandStats.ts';
 const readCurrent = (file) => fs.readFileSync(resolve(process.cwd(), 'src', file), 'utf8');
 const base = readCurrent('engine/ServerTableEngineBase.ts'),
   settlement = readCurrent('engine/ServerTableEngineSettlement.ts');
@@ -93,6 +94,7 @@ function harness(sequence, { rootB = false, onSleep, onRpc, retainSequence } = {
     selectRevealedShowdownResults: () => [],
     buildDailyMissionHandEvents: () => [],
     handRecordsDailyMissionEvents,
+    publicHandStatsFrame,
     handStackBefore,
     requireHandSeatGeneration,
     describeError: (e) => e?.message ?? String(e),

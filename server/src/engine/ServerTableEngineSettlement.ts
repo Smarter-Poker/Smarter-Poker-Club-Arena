@@ -2778,6 +2778,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // valid even if the response crossed our proof deadline. Everything
         // below is reflection or a new decision and belongs to the successor.
         if (!this.lifecycleCanMutate()) return;
+        // This summary comes from the accepted, committed facts. The earlier
+        // hand_complete presentation event is not proof that settlement paid.
+        if (result.publicStatsFrame) this.hub?.emitEvent(this.tableId, result.publicStatsFrame);
 
         // Reflect only the actual paid receipt. The transaction owns the money;
         // response-loss replay returns this same receipt without another credit.

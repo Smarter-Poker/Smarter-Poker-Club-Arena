@@ -43,6 +43,10 @@ export default function TrophiesTab({
         {allTimeStats ? (
           <TrophyRoom
             overall={allTimeStats.overall}
+            aggressionAvailable={
+              allTimeStats.contract.quality.metric_availability.aggression_factor
+            }
+            hoursAvailable={allTimeStats.contract.quality.metric_availability.hours_played}
             tournaments={allTimeStats.tournaments}
             lifetimeHands={allTimeStats.lifetime.hands}
             userId={userId}

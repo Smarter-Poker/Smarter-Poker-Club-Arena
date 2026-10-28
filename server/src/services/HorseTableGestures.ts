@@ -70,8 +70,8 @@ export type GestureMoment = 'lost' | 'won' | 'all_in';
 
 /** How often a qualifying horse makes a gesture at all, in percent. */
 export const GESTURE_CHANCE_PCT: Readonly<Record<GestureMoment, number>> = {
-  lost: 14,
-  won: 6,
+  lost: 30,
+  won: 18,
   all_in: 30,
 };
 
@@ -167,6 +167,10 @@ export const ALL_IN_REACTIONS: readonly string[] = [
   REACTION_FIRE,
 ];
 
+// The person's existing quick-reaction glyphs, chosen for the result.
+const LOST_REACTIONS = [REACTION_CLAP, String.fromCodePoint(0x2716), String.fromCodePoint(0x2726)];
+const WON_REACTIONS = [REACTION_FIRE, REACTION_CLAP, String.fromCodePoint(0x25c6)];
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE CHOICES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -202,6 +206,10 @@ export function allInForm(horseId: string, handNumber: number, chatAllowed: bool
   if (roll < 40) return chatAllowed ? 'chat' : 'reaction';
   if (roll < 75) return 'throw';
   return 'reaction';
+}
+
+export function afterHandForm(horseId: string, handNumber: number): 'throw' | 'reaction' {
+  return personaHash(`${horseId}|${handNumber}|after_hand|form`) % 100 < 40 ? 'reaction' : 'throw';
 }
 
 export interface GestureCandidate {
@@ -389,6 +397,16 @@ export const gestureAfterHand = bindToProcessRoot(
       await humanBeat(
         humanBeatMs(`${pick.horse.userId}|${input.handNumber}|${pick.moment}`, 'tap')
       );
+      // Reactions used to exist only on the uncommon all-in path. Ordinary
+      // showdowns should sometimes get the same quick reaction a person taps.
+      if (afterHandForm(pick.horse.userId, input.handNumber) === 'reaction') {
+        const pool = pick.moment === 'lost' ? LOST_REACTIONS : WON_REACTIONS;
+        const glyph =
+          pool[
+            personaHash(`${pick.horse.userId}|${input.handNumber}|after_hand|glyph`) % pool.length
+          ];
+        return await sendReaction(input.table.tableId, pick.horse.userId, glyph, pick.horse.seat);
+      }
       return await throwItem(input.table.tableId, pick.horse.userId, item, pick.targetSeat);
     } catch (err) {
       reportError(err, 'HorseTableGestures.afterHand', { tableId: input.table.tableId });

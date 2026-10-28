@@ -91,7 +91,7 @@ describe('band_optimal metrics never produce a percentile', () => {
     expect(r.bandPosition).toBe('above');
     expect(r.tone).toBe('bad');
     expect(r.readout).not.toMatch(/top/i);
-    expect(r.readout).toMatch(/above the 18-28% range/);
+    expect(r.readout).toMatch(/above the 18-28% general reference range/);
   });
 
   it('flags an over-tight player as a leak too, not as a virtue', () => {

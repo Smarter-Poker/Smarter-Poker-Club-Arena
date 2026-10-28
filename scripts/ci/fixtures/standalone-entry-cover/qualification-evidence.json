@@ -1,0 +1,298 @@
+{
+  "semantic_cases_before_and_after": 56,
+  "semantics": [
+    [
+      "force_custom_plan",
+      "earned",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_custom_plan", "recognition_cancelled", []],
+    ["force_custom_plan", "recognition_deferred", []],
+    ["force_custom_plan", "refunded", []],
+    ["force_custom_plan", "credit_mismatch", []],
+    ["force_custom_plan", "time_mismatch", []],
+    ["force_custom_plan", "union_mismatch", []],
+    [
+      "force_custom_plan",
+      "union_matching",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_custom_plan", "nonnull_coordinator_excluded", []],
+    ["force_custom_plan", "end_exclusive", []],
+    ["force_custom_plan", "cutoff_after_charge", []],
+    [
+      "force_custom_plan",
+      "cutoff_equal_charge",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "cutoff_undone",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "historical_first_week",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-09-21T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "floor_rounds_up",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-26T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "incomplete_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-05T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "completed_latest_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-05T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_custom_plan",
+      "pending_period",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_custom_plan", "union_member_pending_excluded", []],
+    ["force_custom_plan", "union_is_not_standalone", []],
+    ["force_custom_plan", "missing_recognized_source", []],
+    ["force_custom_plan", "empty", []],
+    [
+      "force_custom_plan",
+      "cash_first_week",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_custom_plan", "cash_foreign_coordinator", []],
+    ["force_custom_plan", "cash_cutoff", []],
+    ["force_custom_plan", "cash_end_exclusive", []],
+    [
+      "force_custom_plan",
+      "completed_later_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "earned",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_generic_plan", "recognition_cancelled", []],
+    ["force_generic_plan", "recognition_deferred", []],
+    ["force_generic_plan", "refunded", []],
+    ["force_generic_plan", "credit_mismatch", []],
+    ["force_generic_plan", "time_mismatch", []],
+    ["force_generic_plan", "union_mismatch", []],
+    [
+      "force_generic_plan",
+      "union_matching",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_generic_plan", "nonnull_coordinator_excluded", []],
+    ["force_generic_plan", "end_exclusive", []],
+    ["force_generic_plan", "cutoff_after_charge", []],
+    [
+      "force_generic_plan",
+      "cutoff_equal_charge",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "cutoff_undone",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-19T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "historical_first_week",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-09-21T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "floor_rounds_up",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-26T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "incomplete_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-05T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "completed_latest_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-05T07:00:00+00:00"
+        }
+      ]
+    ],
+    [
+      "force_generic_plan",
+      "pending_period",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_generic_plan", "union_member_pending_excluded", []],
+    ["force_generic_plan", "union_is_not_standalone", []],
+    ["force_generic_plan", "missing_recognized_source", []],
+    ["force_generic_plan", "empty", []],
+    [
+      "force_generic_plan",
+      "cash_first_week",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["force_generic_plan", "cash_foreign_coordinator", []],
+    ["force_generic_plan", "cash_cutoff", []],
+    ["force_generic_plan", "cash_end_exclusive", []],
+    [
+      "force_generic_plan",
+      "completed_later_run",
+      [
+        {
+          "id": "20000000-0000-0000-0000-000000000001",
+          "first_week": "2026-10-12T07:00:00+00:00"
+        }
+      ]
+    ],
+    ["actual_constraint", "legacy_nonprepaid_debt_refused", true],
+    ["actual_constraints", "null_and_duplicate_witnesses_refused", true]
+  ],
+  "whole_scope_md5_unchanged": "72ab1c8c7e8408119bf670db527e8e64",
+  "whole_source65_md5_unchanged": "8734797c6093c7e5a2a72de9b387a6de",
+  "all_six_function_definitions_metadata_unchanged": true,
+  "all_eleven_table_columns_constraints_owner_acl_unchanged": true,
+  "entry_query_matches_full_scope_definition": true,
+  "all_source_rows_unchanged": true,
+  "whole_original_entry_rows_identical": true,
+  "all_original_cutoff_helpers_executed": true,
+  "competing_indexes": 58,
+  "installer_faults": [
+    "expression",
+    "keys",
+    "include",
+    "predicate",
+    "order",
+    "missing_include",
+    "missing",
+    "unique",
+    "actual_invalid_concurrent_build",
+    "freeze",
+    "permission"
+  ],
+  "natural_index_only_heap_fetches": 0,
+  "mvcc_heap_fallback": true,
+  "native_before_ms": 7.784,
+  "native_after_ms": 7.34,
+  "migration_sha256": "175e3ac2756500e92c43fa92b5c1100b017011f143714231f3c39c36ee204a20",
+  "limit": "Native exact ENTRY SELECT/current calendar helpers and constraints, not the full money coordinator or live capacity certificate. Deferred financial triggers and unrelated FK endpoint implementations are controlled; actual CHECK/PK/UNIQUE/FKs retained. Native fixture does not reproduce production285second timeout.",
+  "fixture_sha256": {
+    "scripts/ci/fixtures/standalone-entry-cover/original-entry.sql": "a4cda584d65d041c1665e992160e85c92c5fcadae48dc4c1a8a1ac6fa009b011",
+    "scripts/ci/fixtures/standalone-entry-cover/README.md": "f3bf4a65f2e8a0d46832edf5cab71d8b2c6f9766911c94e24153a2aa1a10feba",
+    "scripts/ci/fixtures/standalone-entry-cover/actual-indexes.json": "68ab57158e67e1fd2269e79bc498976a593372b9bd6a60833a532d5e641b6d4b",
+    "scripts/ci/fixtures/standalone-entry-cover/actual-catalog.json": "0eafc32a4bcf5419ce0d64c31cc7ede4012d0a99b479b785afefe83bc8db6a98"
+  },
+  "enforcement": "Existing unpaid-lightning-funding-contracts.yml pull_request native PostgreSQL17 step and source law",
+  "local_typescript": "npx tsc --noEmit exit0",
+  "local_law_registry": "1183 passed",
+  "production": "NOT_INSTALLED; root sole installer; full live ENTRY and book proof still required",
+  "native_harness_sha256": "16302fdb857186137e450a8ccfc5c7c245944bc15fb44dd32dd6440dd7465d97"
+}

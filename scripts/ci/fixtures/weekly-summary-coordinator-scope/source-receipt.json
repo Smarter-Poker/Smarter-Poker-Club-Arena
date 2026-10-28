@@ -1,0 +1,9 @@
+{
+  "before_md5": "1d1d9f44deea098a45c2b11dd613c858",
+  "after_md5": "5225ca603c36cc72e905c337c94f3eae",
+  "replacement": {
+    "old": " FROM public.accounting_payable_earning_sources s WHERE s.club_id=period.club_id AND s.coordinator_union_id IS NOT DISTINCT FROM period.union_id\n  AND s.earned_at>=period.start_at AND s.earned_at<period.end_at;",
+    "new": " FROM (\n  SELECT * FROM public.accounting_payable_earning_sources a\n   WHERE period.union_id IS NULL AND a.coordinator_union_id IS NULL\n  UNION ALL\n  SELECT * FROM public.accounting_payable_earning_sources a\n   WHERE period.union_id IS NOT NULL AND a.coordinator_union_id=period.union_id\n )s WHERE s.club_id=period.club_id\n  AND s.earned_at>=period.start_at AND s.earned_at<period.end_at;"
+  },
+  "migration_file": "supabase/migrations/20261028005400_weekly_statement_selects_its_exact_coordinator_scope.sql"
+}

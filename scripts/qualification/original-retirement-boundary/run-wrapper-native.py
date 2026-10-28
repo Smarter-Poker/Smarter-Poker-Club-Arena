@@ -43,6 +43,9 @@ if os.environ.get('ORB_WALLET_JACKPOT_FLOW_MIGRATION') or os.environ.get('ORB_TR
  s+=body+'\nSET LOCAL search_path=public;\n'
  if not os.environ.get('NATIVE_GENERATE_ONLY'):
   s+=treasury['admissions_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else ''
+  if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+   occupancy=runpy.run_path(str(p/'original-flow-occupancy/native-input.py'))
+   s+=occupancy['qualification_sql']
   s+=treasury['wallet_after_sql'] if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION') else wallet['after_sql']
   if os.environ.get('ORB_TREASURY_SEAT_GIFT_MIGRATION'):s+=treasury['after_sql']
   s+="DO $wallet_replay$BEGIN BEGIN EXECUTE $wallet_candidate_replay$"+body+"$wallet_candidate_replay$;RAISE EXCEPTION USING ERRCODE='ZX003',MESSAGE='candidate replay unexpectedly admitted';EXCEPTION WHEN SQLSTATE 'P0001' THEN IF SQLERRM NOT LIKE 'wallet_jackpot_original_flow_owner_changed:%' THEN RAISE;END IF;END;RAISE NOTICE 'PASS wallet jackpot exact candidate replay refused';END$wallet_replay$;"
@@ -52,7 +55,16 @@ if os.environ.get('ORB_REPORT_READER_COMPOSITION_MIGRATION') and not os.environ.
  report_path=Path(os.environ['ORB_REPORT_READER_COMPOSITION_MIGRATION'])
  report_candidate=report_path.read_text().strip()
  assert report_candidate.endswith('COMMIT;')
- s+=(p/'report-reader-composition/native-authority-before.sql').read_text()
+ report_authority=(p/'report-reader-composition/native-authority-before.sql').read_text()
+ if os.environ.get('ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION'):
+  # The earlier occupancy lane already ran every exact installer, rollback,
+  # replay, metadata/ACL and source65 check. Reuse that proven authority once.
+  occupancy_candidate=Path(os.environ['ORB_ORIGINAL_OCCUPANCY_FLOW_MIGRATION']).read_text().strip()
+  if not occupancy_candidate.endswith('COMMIT;'):raise RuntimeError('combined occupancy transaction shape changed')
+  occupancy_prefix=occupancy_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
+  if not report_authority.startswith(occupancy_prefix):raise RuntimeError('combined report occupancy authority prefix changed')
+  report_authority=report_authority[len(occupancy_prefix):]
+ s+=report_authority
  report_body=report_candidate.replace('BEGIN;','',1).removesuffix('COMMIT;')
  for fault_sql,expected_reason in [
   ('GRANT EXECUTE ON FUNCTION public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)TO service_role','original_report_composition_owner_or_authority_changed:report'),

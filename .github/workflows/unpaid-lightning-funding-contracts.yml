@@ -5,8 +5,42 @@ on:
     branches: [main]
     paths:
       - supabase/migrations/**
+      - scripts/ci/fixtures/weekly-quality-source-bags/**
+      - scripts/ci/test-weekly-quality-source-bags-postgres.py
+      - tests/weekly-quality-retains-all-original-source-proofs.law.test.ts
+      - scripts/ci/fixtures/foreign-certificate-cash-cover/**
+      - scripts/ci/test-foreign-certificate-cash-cover-postgres.py
+      - scripts/ci/test-zero-standalone-foreign-postgres.py
+      - scripts/ci/fixtures/zero-standalone-foreign/**
+      - tests/foreign-certificates-read-original-cash-cover.law.test.ts
+      - scripts/ci/fixtures/outcome-recognition-join-cover/**
+      - scripts/ci/test-outcome-recognition-join-cover-postgres.py
+      - tests/recognition-window-index-covers-only-hand-join-keys.law.test.ts
+      - scripts/ci/fixtures/linked-outcome-window-index/**
+      - scripts/ci/test-linked-outcome-window-index-postgres.py
+      - tests/linked-outcome-windows-retain-original-proof.law.test.ts
+      - scripts/ci/fixtures/standalone-entry-cover/**
+      - scripts/ci/test-standalone-entry-cover-postgres.py
+      - tests/standalone-entry-retains-historical-first-week.law.test.ts
+      - scripts/ci/fixtures/private-cash-record-cover/**
+      - scripts/ci/test-private-cash-record-cover-postgres.py
+      - tests/private-cash-record-index-retains-original-facts.law.test.ts
+      - scripts/ci/fixtures/private-deposit-source-cover/**
+      - scripts/ci/test-private-deposit-source-cover-postgres.py
+      - tests/private-deposit-key-index-keeps-original-sources.law.test.ts
+      - scripts/ci/fixtures/weekly-summary-coordinator-scope/**
+      - scripts/ci/test-weekly-summary-coordinator-scope-postgres.py
+      - tests/weekly-summary-preserves-nullable-source-scope.law.test.ts
       - scripts/ci/fixtures/fees-before-club-books/**
+      - scripts/ci/fixtures/weekly-fee-preparation/**
+      - scripts/ci/test-weekly-fee-preparation-postgres.py
+      - tests/weekly-fees-prepare-before-the-four-am-payment.law.test.ts
       - scripts/ci/fixtures/rakeback-player-week-indexes/**
+      - scripts/ci/fixtures/original-week-clubs/**
+      - scripts/ci/test-original-week-clubs-cover-postgres.py
+      - tests/original-week-clubs-cover-their-source-witness.law.test.ts
+      - scripts/ci/migration-concurrent-preamble.mjs
+      - scripts/ci/apply-recorded-migration.mjs
       - scripts/ci/test-rakeback-player-week-indexes-postgres.py
       - tests/rakeback-pages-index-player-week.law.test.ts
       - scripts/ci/fixtures/rakeback-counts-bulk-joins/**
@@ -25,6 +59,10 @@ on:
       - scripts/ci/test-daily-reporting-attribution-change-postgres.py
       - scripts/ci/fixtures/daily-reporting-original-owners.sql
       - scripts/ci/test-unpaid-lightning-funding-contracts-postgres.py
+      - scripts/ci/test-zero-rakeback-wallet-postgres.py
+      - scripts/ci/test-existing-transfer-discharge-postgres.py
+      - scripts/ci/fixtures/existing-transfer-discharge/**
+      - tests/zero-rakeback-receipts-need-no-player-wallet.law.test.ts
       - .github/workflows/unpaid-lightning-funding-contracts.yml
       - tests/unpaid-lightning-follows-original-funding.law.test.ts
 
@@ -74,7 +112,7 @@ jobs:
       - name: Sealed inventory retains the complete original financial proof
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --treasury-seat-gift-migration supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql --report-reader-composition-migration supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql
+        run: python3 -B scripts/qualification/original-retirement-boundary/run-native.py --report-reader-composition-migration supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql --output "${{ runner.temp }}/sealed-inventory-read" --inventory-state-read-migration supabase/migrations/20261026224626_sealed_inventory_reads_the_sealed_state_directly.sql --treasury-seat-gift-migration supabase/migrations/20261027031649_original_treasury_seat_gifts_keep_their_recorded_owner.sql --original-occupancy-flow-migration supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql
       - name: Original treasury gifts retain hand ownership and future admission
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
@@ -95,7 +133,50 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-rakeback-counts-bulk-joins-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Closed weekly fees prepare before the four AM payment
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-fee-preparation-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
       - name: Rakeback pages retain exact math with matching player indexes
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-rakeback-player-week-indexes-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/rakeback-player-week-indexes.json"
+      - name: Original weekly club witnesses use the matching source cover
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-original-week-clubs-cover-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Zero rakeback receipts preserve every original positive payment guard
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-zero-rakeback-wallet-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
+      - name: Foreign certificates retain all original sources through the cash cover
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-foreign-certificate-cash-cover-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}/foreign-certificate-cover" --output "${{ runner.temp }}/foreign-certificate-cover/result.json"
+      - name: Original linked hand proof retains every row with recognition-window access
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-linked-outcome-window-index-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/linked-outcome-window-index.json"
+      - name: Standalone entry retains its original historical first week
+        run: python3 -B scripts/ci/test-standalone-entry-cover-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/standalone-entry-cover"
+      - name: Original outcome recognition windows cover scalar hand join keys
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-outcome-recognition-join-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/outcome-recognition-join-cover.json"
+
+      - name: Weekly quality retains every original source and receipt proof
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-quality-source-bags-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-quality-source-bags.json"
+      - name: Weekly statements retain exact NULL and non-NULL earning scope
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-summary-coordinator-scope-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-summary-coordinator-scope.json"
+      - name: Original private deposit key discovery reads scalar source witnesses
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-private-deposit-source-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-deposit-source-cover.json"
+      - name: Original private cash record groups retain every scalar fact
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-private-cash-record-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-cash-record-cover.json"

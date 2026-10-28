@@ -1,0 +1,113 @@
+{
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "not_null": true,
+      "default": "gen_random_uuid()"
+    },
+    {
+      "name": "rake_record_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "not_null": false,
+      "default": null
+    },
+    {
+      "name": "coordinator_union_id",
+      "type": "uuid",
+      "not_null": false,
+      "default": null
+    },
+    {
+      "name": "earned_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "rake_credit",
+      "type": "numeric",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "contract",
+      "type": "jsonb",
+      "not_null": true,
+      "default": null
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "default": "clock_timestamp()"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "accounting_cash_rake_sources_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+    },
+    {
+      "name": "accounting_cash_rake_sources_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "accounting_cash_rake_sources_player_id_fkey",
+      "definition": "FOREIGN KEY (player_id) REFERENCES auth.users(id)"
+    },
+    {
+      "name": "accounting_cash_rake_sources_rake_credit_check",
+      "definition": "CHECK (rake_credit >= 0::numeric AND rake_credit = round(rake_credit, 2) AND (rake_credit::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])))"
+    },
+    {
+      "name": "accounting_cash_rake_sources_rake_record_id_fkey",
+      "definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_cash_accrual_batches(rake_record_id)"
+    },
+    {
+      "name": "accounting_cash_rake_sources_rake_record_id_player_id_key",
+      "definition": "UNIQUE (rake_record_id, player_id)"
+    }
+  ],
+  "indexes": [
+    "CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)",
+    "CREATE INDEX accounting_cash_foreign_certificate_club_week_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (id, player_id, rake_record_id, coordinator_union_id, rake_credit)",
+    "CREATE INDEX accounting_cash_private_deposit_keys_cover ON public.accounting_cash_rake_sources USING btree (club_id, coordinator_union_id, earned_at) INCLUDE (rake_record_id, union_id)",
+    "CREATE INDEX accounting_cash_rake_sources_bank_period ON public.accounting_cash_rake_sources USING btree (union_id, earned_at) WHERE (union_id IS NOT NULL)",
+    "CREATE INDEX accounting_cash_rake_sources_club_coordinator_earned ON public.accounting_cash_rake_sources USING btree (club_id, coordinator_union_id, earned_at)",
+    "CREATE INDEX accounting_cash_rake_sources_club_recorded ON public.accounting_cash_rake_sources USING btree (club_id, recorded_at) INCLUDE (earned_at)",
+    "CREATE INDEX accounting_cash_rake_sources_coordinator_period ON public.accounting_cash_rake_sources USING btree (coordinator_union_id, earned_at, club_id)",
+    "CREATE INDEX accounting_cash_rake_sources_period ON public.accounting_cash_rake_sources USING btree (club_id, earned_at, player_id)",
+    "CREATE INDEX accounting_cash_rakeback_player_week ON public.accounting_cash_rake_sources USING btree (club_id, player_id, earned_at)",
+    "CREATE INDEX idx_cash_rake_sources_player ON public.accounting_cash_rake_sources USING btree (player_id)",
+    "CREATE UNIQUE INDEX accounting_cash_rake_sources_pkey ON public.accounting_cash_rake_sources USING btree (id)",
+    "CREATE UNIQUE INDEX accounting_cash_rake_sources_rake_record_id_player_id_key ON public.accounting_cash_rake_sources USING btree (rake_record_id, player_id)"
+  ],
+  "table": {
+    "owner": "postgres",
+    "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "rls": true,
+    "force_rls": false,
+    "kind": "r",
+    "persistence": "p"
+  },
+  "limits": "Actual scalar schema/defaults/constraints/current12indexdefinitions only. Producer/immutability/diamond triggers retained in private actualcatalog; not installed here. Referenced tables ID-only endpoints. No producer or actual source65/GEN qualification."
+}

@@ -1384,6 +1384,18 @@
       "liveVerdict": "Active weekly rakeback production payout outage: original Round2 rejects burls recorded same-agent role promotion (113 agent sources62.39 plus68 super-agent sources18.99, independently matched181 original contracts81.38). Round1 club banks already credited but all agents and players remain unpaid. Exact53 native cases, original invoice/discharge/concurrency/fault guards, local TSC/law1177/normal hooks passed; required hosted checks queued. Qualified exact three-predicate correction preserves identity, original per-source roles, rates, amounts, parents, edges, fingerprints and all84 proof windows. Installed once through maintained applier under PUBLISHING active-outage exception; no payout or current-book completion is inferred. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Historical same-agent promotion changes no monetary source edges. Immediate next source recording after installation. This does not certify wallet payments or completed books."
     },
     {
+      "version": "20261027173150",
+      "name": "deferred_payout_checks_reuse_validated_payers",
+      "file": "supabase/migrations/20261027173150_deferred_payout_checks_reuse_validated_payers.sql",
+      "md5": "ee2a9c070dffc202a3de6e19a95a5fcb",
+      "appliedToProductionAt": "2026-10-27T17:38:04.099Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and split receipt/cache/validator owners postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8345",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: the original complete R3 attempt and mandatory deferred leg validation exhausted285 seconds; repeated immutable payer calculation consumed106.9 seconds. Only two pure payer computation calls now reuse the installed PostgreSQL-owned transaction cache. Every live payout, transfer, ledger, wallet, invoice and duplicate check remains fresh on every call; native warmed-cache financial and certificate tampering still aborts. Exact split receipt/cache/validator function postimages/metadata/runtime ACLs and original source authority were read back. Only two pure payer reads use existing authoritative request-local reuse; every per-leg payout/wallet/ledger/invoice check remains live. No amounts/certificates/source proofs change. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
       "version": "20261027142050",
       "name": "deleted_reserves_reuse_unchanged_payer_proofs",
       "file": "supabase/migrations/20261027142050_deleted_reserves_reuse_unchanged_payer_proofs.sql",
@@ -1394,6 +1406,150 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8315",
       "refusedBy": [],
       "liveVerdict": "Active weekly rakeback production payout outage: original R2 exhausted285seconds inside deleted-agent reserve validation before any agent or player payment committed. The same875 split-certificate plans were recomputed across every deleted-account claim. Exact74 native cases plus original R2/R3/invoice/discharge/concurrency guards, local TSC/law1178 and normal hooks passed. Qualified request-local original-validator output reuse retains every latest-pending identity, amount, rate, fingerprint, payout conflict and NOWAIT lock; exact certificate command and relation generations plus all small payer-row semantic/version digests invalidate every change. No source reset, new public payer, durable cache or budget change. Hosted required checks queued while human wallets remain unpaid; exact qualified bytes installed once under PUBLISHING active-outage exception. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Original validator output reused only for exact unchanged rowversions within the request; fresh admission and all liabilities preserved. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027174253",
+      "name": "read_only_receipts_keep_the_original_payer_reader",
+      "file": "supabase/migrations/20261027174253_read_only_receipts_keep_the_original_payer_reader.sql",
+      "md5": "4cd5c595f012d246a8529d45b01a4893",
+      "appliedToProductionAt": "2026-10-27T18:06:36.622Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and split receipt/cache/reserve/validator owners postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active rakeback payout outage follow-up: transaction-local payer reuse must preserve the existing STABLE read-only report contract. A native real R2/R3 commit followed by BEGIN READ ONLY reproduced forbidden TEMP creation; the exact three-line read-only branch now delegates unchanged pure payer validation while every read-write cache byte and fresh financial predicate remains intact. Exact split receipt/cache/reserve/validator function postimages/metadata/runtime ACLs and original source authority were read back. The existing private cache returns the original pure validator output in PostgreSQL READ ONLY transactions; every READWRITE cache byte and split receipt check remains unchanged. No amounts/certificates/source proofs change. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027162805",
+      "name": "book_memos_follow_paid_player_round",
+      "file": "supabase/migrations/20261027162805_book_memos_follow_paid_player_round.sql",
+      "md5": "419777585b3322246f469b0e6e5d8447",
+      "appliedToProductionAt": "2026-10-27T16:39:47.651Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and all3 owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8334",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original coordinator timed out before agents and players while optional pre-fee report memo generation read full inventory; qualified helper keeps memo ineligible until canonical R3 and preserves original financial authorities. Exact3 function postimages/metadata/runtime ACLs and original source authority were read back. Optional book memo generation follows canonical R3 eligibility only; original generation after eligibility and all financial/late-book authorities remain unchanged. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027165306",
+      "name": "privilege_changes_do_not_reload_the_schema",
+      "file": "supabase/migrations/20261027165306_privilege_changes_do_not_reload_the_schema.sql",
+      "md5": "0565e2622c9b9a35417d7e73bd303ace",
+      "appliedToProductionAt": "2026-10-27T17:16:14.322Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file atomic installer; full-file history and guard owner postimages/metadata/ACLs, original source40 true read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8337",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback production payout outage: original R2 rolled back at16:50 because its unchanged private temporary payer-proof table REVOKE was mistaken for a schema migration. Native PG17 actual event and original reserve helper reproduced the failure and passed the exact command-tag correction while CREATE ALTER DROP and maintenance/audit authorities stayed intact. Installed once through maintained route outside the DDL window, with no override in any financial session. Exact guard function postimages/metadata/runtime ACLs and original source authority were read back. Only authoritative GRANT/REVOKE event tags classify as non-schema permission churn; all public DDL/advisory/audit branches and private TEMP ACLs remain unchanged. Immediate next source recording after installation. This does not certify wallet payments or completed books."
+    },
+    {
+      "version": "20261027151555",
+      "name": "original_week_clubs_cover_the_coordinator_club_and_event",
+      "file": "supabase/migrations/20261027151555_original_week_clubs_cover_the_coordinator_club_and_event.sql",
+      "md5": "ca35054040153ac3bb8e9a1ec344cc05",
+      "appliedToProductionAt": "2026-10-27T16:10:45.420Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained concurrent-preamble installer; exact full-file history, VALID READY LIVE index shape and original unchanged selector/metadata/40-source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8331",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original coordinator exhausted its statement before reaching current R2 because historical club discovery used incomplete tournament-source indexes and heap witness reads. Actual isolated source-field profile read roughly1.1GB and spent24.3seconds serially. Exact native original-owner before/after72cases,11installer/refusal cases, actual INVALID concurrent build and MVCC heap fallback passed; whole unchanged query naturally used the matching three-key covering index with zero heap fetches. No function, configuration, source pin, cache identity, financial rule, source row, receipt, journal or budget changed. Exact qualified bytes were installed through the maintained concurrent-preamble route under the PUBLISHING active-outage exception while hosted checks were pending. Root verified exact full-file history/index definition and unchanged original selector metadata/source authority. This is the very next source recording after installation. Actual post-install timing, current R2/R3 payment and no-double wallet verification remain separate proof; this recording does not certify them."
+    },
+    {
+      "version": "20261027164000",
+      "name": "cash_refusals_read_the_compact_scope_set_once",
+      "file": "supabase/migrations/20261027164000_cash_refusals_read_the_compact_scope_set_once.sql",
+      "md5": "811c72d73f2c7263f9f85a619ce5154a",
+      "appliedToProductionAt": "2026-10-27T16:47:25.094Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained one-transaction installer; exact full-file history and exact private refusal owner body/metadata/ACL and unchanged original source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8336",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: exact exclusive rollback profile measured182.276seconds inside the original refusal helper, whose37527blocked pointers selected receipt primary-key heap lookups despite an existing valid compact cover. Exact pointer-batch query completed bounded production read-only rollback proof in48385.115ms through that existing cover. Actual original whole-owner native parity and guarded installer frozen/ACL/preimage/rollback/replay cases passed; only lookup keys are deduplicated, then original pointer multiplicity and refusal details are restored. No new index, source pins, data, cache identity, permissions, financial rules or budget changed. Exact qualified source installed through maintained active-outage route while hosted checks were pending. This is the very next source recording after verified installation; actual financial proof, payment and wallet no-double readback remain separate."
+    },
+    {
+      "version": "20261027180331",
+      "name": "cash_evidence_reads_the_accrual_status_cover",
+      "file": "supabase/migrations/20261027180331_cash_evidence_reads_the_accrual_status_cover.sql",
+      "md5": "11068ab8b64973ea000a47edc9a6b58a",
+      "appliedToProductionAt": "2026-10-27T18:13:33.246Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained concurrent-preamble installer; exact full-file history/VALID READY LIVE full index shape/original unchanged assertion metadata and source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8357",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: two original fresh raw completeness assertions totaled166.440seconds and exhausted a guarded remaining-player payout attempt. Actual plan already used the raw positive-week cover but seqscanned all3.7m accrual-batch heap rows (~4GiB) only for identity/status; no existing batch index covered both,99.66percent all-visible. This exact nonpartial nonunique status cover preserves the original0df assertion body, authorization, fresh checks twice, metadata, financial rules, source pins, paid math/cache identity and budgets. Native actual whole owner24cases/full qualifying ID sets,9auth/input cases,7catalog faults including real INVALID CCI, frozen/rollback/replay and real2sessionMVCC visibility fallback passed; unchanged query naturally chose IndexOnlyScan with zero heap fetches in the bounded fixture. Root installed exact qualified bytes once through the maintained active-outage concurrent route while hosted checks pending. This is the very next source recording after verified installation; actual original production timing and remaining player credits/no-double readback remain separate proof."
+    },
+    {
+      "version": "20261027171556",
+      "name": "zero_rakeback_receipts_need_no_player_wallet",
+      "file": "supabase/migrations/20261027171556_zero_rakeback_receipts_need_no_player_wallet.sql",
+      "md5": "01d82114dfe8cfc016f540020663a2bc",
+      "appliedToProductionAt": "2026-10-27T17:22:49.404Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained one-transaction installer; exact full-file history/R3 postimage/all metadata/ACL and unchanged original financial source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8341",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original guarded rollback reached R3 but its player wallet cohort included one certified zero-entitlement pending period without a current membership, blocking every positive payout. This migration changes only that original temporary wallet cohort SELECT to WHERE owed>0. Zero entitlement still closes through the original certificate/source and zero paid-receipt path, without a wallet or chips; positive wallet admission, funding, invoice, conservation, held-player discharge, atomicity and replay remain unchanged. Actual original whole R2/R3/discharge family46cases passed, including old-fails/new-passes regression, no zero wallet or financial leg, original positive monetary assertions and concurrent commits. All original pg_proc metadata/ACL preserved. No R2 reset, source-pin renewal, math/certificate/cache retag or data repair. Exact source installed through maintained active-outage route while hosted checks pending. This is the VERY NEXT source recording after exact verified installation; actual R3 payment/wallet no-double readback remain separate proof."
+    },
+    {
+      "version": "20261027175926",
+      "name": "rakeback_batches_honor_the_original_close_deadline",
+      "file": "supabase/migrations/20261027175926_rakeback_batches_honor_the_original_close_deadline.sql",
+      "md5": "c00c36efb241676ec7fae4ecbddef191",
+      "appliedToProductionAt": "2026-10-27T18:09:45.943Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Maintained exact-file installer; full-file history and R3 owner body/metadata/ACL plus original source authority read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8352",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly rakeback payout outage: original R3 starts a fresh90-second payment slice even when the existing attempt deadline has nearly elapsed, so mandatory postlude/deferred validation can lose all progress at the hard statement timeout. This exact owner now clamps only chunked batches to the original existing deadline. No new budget, reserve, cap, loop, source/math/cache retag or financial condition is introduced; each atomic period and every unchanged postlude/deferred check still completes. Native45 including old-fail/new-partial genuine progress, complete/replay, original money family, invalid chunk deadline and unchanged malformed nonchunk mode passed, with metadata preserved. Installed once via qualified active-outage route, immediate next exact source recording. Actual remaining payment and normal-budget capacity still require live verification."
+    },
+    {
+      "version": "20261027184348",
+      "name": "original_cash_returns_use_their_original_occupancy_keys",
+      "file": "supabase/migrations/20261027184348_original_cash_returns_use_their_original_occupancy_keys.sql",
+      "md5": "d0d91270b7660140029a76bfaf993008",
+      "appliedToProductionAt": "2026-10-27T19:12:08.225Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained qualified-outage installer; full-file history and all4 source postimages/actual before-metadata plus source65 read back",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly book closure outage: first original2hour flow window timed out240seconds. Original whole/window return lookup now selects candidates by the same original seat-event/refund occupancy keys, retaining every original predicate/math/helper. Only the advance whole-reader pin and those3 guard65 pins evolve. Exact qualified source installed; history/all4 postimages/actual before-metadata and source65 TRUE verified. Native245/84BBJ/7treasury/original key variants/READONLY and normal prechecks qualified. No payments, witness admissions, paid earning math or existing receipts changed. Actual installed window timing, original advance progress and all-books completion require separate live observations."
+    },
+    {
+      "version": "20261027192602",
+      "name": "whole_hand_rakeback_reads_the_original_attribution_cover",
+      "file": "supabase/migrations/20261027192602_whole_hand_rakeback_reads_the_original_attribution_cover.sql",
+      "md5": "07cc7a7666c596812731efd98a7c8530",
+      "appliedToProductionAt": "2026-10-27T19:35:38.252Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation and full-file history/index/source readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: Lightning full counts90s and all-club whole-hand attribution phase30s timed out after86197 selected keys. Exact native-qualified nonpartial six-column record-leading index installed through maintained CCI route. Full-file history, complete index metadata, unchanged cc867 original counts body, unchanged original Scope72ab and live65 source authority read back. No functions, earning rows, rate, paid proofs, source pins, ACLs or budgets changed. Native73/bags/catalog/MVCC and local prechecks passed. Actual post-install timing, original Lightning preparation/payment and global closure remain separate unverified work; no new payment or 4AM guarantee claimed."
+    },
+    {
+      "version": "20261027194250",
+      "name": "foreign_certificates_read_their_original_cash_cover",
+      "file": "supabase/migrations/20261027194250_foreign_certificates_read_their_original_cash_cover.sql",
+      "md5": "059a7ca4303b58798f4c33ea9b143560",
+      "appliedToProductionAt": "2026-10-27T20:08:18.036Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained one-shot qualified-outage CCI installation; full-file history, seven-column/two-key complete index metadata and actual pre/post original source metadata readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly accounting outage: the former Deep Stack Society standalone original strict foreign-certificate Round3 timed out285s while its required original club/week rawcash heap scan estimated1328676 rows. The exact native-qualified nonpartial seven-column club/earned covering index was installed through the maintained one-shot CCI route. Full-file history and VALID/READY/LIVE metadata, both default key opclasses/collations/options, original154b8 helper wholemetadata, both original effective/payable views including owner/ACL/definition, all source columns and all earlier indexes were read back against the actual preinstall baseline. Original Scope72ab, countscc867 and65-source authority remain unchanged. Native37/12boundaries/9catalog faults/RR/MVCC and normal809prepush checks passed. No function, earning row, rate, paid certificate, source pin, cache, generation, ACL or budget was changed by this index source. This readback queries no wallet or source data and makes no payment, closure, actual helper timing or4AMcapacity claim; these remain separate live verification."
+    },
+    {
+      "version": "20261027201555",
+      "name": "foreign_certificates_match_their_original_allocations_once",
+      "file": "supabase/migrations/20261027201555_foreign_certificates_match_their_original_allocations_once.sql",
+      "md5": "f50deec65a0d7caf5b424cfe41f6c8eb",
+      "appliedToProductionAt": "2026-10-27T20:22:42.253Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained qualified active-outage install and READ ONLY full-file history/helper wholemetadata/source authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active weekly standalone payout outage: the original strict foreign certificate helper timed out90s after its cash cover. The exact all-allocation materialization query qualified416 original periods in62675.592ms with exact cohort identity; its maintained helper-only migration passed52 isolated native original financial/boundary/installer cases and normal local checks. Actual exact full-file history, helper9f8457664adb8bc0b171ca75d831126b, unchanged complete original metadata including ACL, both original payable/effective views, Scope/count owners and65-source authority were read back against the actual preinstall baseline. No source, rate, wallet, paid receipt, pin, cache, generation, permission or budget was changed. This installation readback is not proof of payment or standalone book closure."
     },
     {
       "version": "20261027150929",
@@ -1408,6 +1564,54 @@
       "liveVerdict": "Active Club Arena production outage: context-specific independent history reads were disk-bound and competing with games and pages. Exact committed covering index installed under the PUBLISHING active-outage exception while required hosted checks were queued. Native PostgreSQL17 passed104 cases including original privacy, context, retirement and access boundaries plus sparse-context custom/generic index-only plans and shape refusal. Production index is VALID READY LIVE; exact source history and helper body/MD5/bytes match; unchanged reader definition2b66063e989c88fa1a9e9f8d13e35965 and service-role-only ACL read back. Actual full-query plan uses the cover in2279.669ms with13473hits/1545reads. No engine replacement, financial write, private cards, shared observer reads or role-timeout change. This exact-byte recording is the next source action. Protected recording merge and clean-window gameplay verification remain pending; initial authenticated page recovery and independent populated history RPCs are measured separately."
     },
     {
+      "version": "20261027220709",
+      "name": "original_linked_outcomes_follow_the_recognition_window",
+      "file": "supabase/migrations/20261027220709_original_linked_outcomes_follow_the_recognition_window.sql",
+      "md5": "f0f42a900ee973bb5083e2958111a306",
+      "appliedToProductionAt": "2026-10-27T22:26:19.517Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained concurrent active-book-outage install and READ ONLY full-file history/index/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active original weekly book closure outage after all player rakeback was paid: the original linked hand reducer timed out240s while scanning and hashing all off-window resolutions before the original recognition predicate. This exact index-only migration passed17 native original linked/full-row/reducer/witness/materialization/catalog/installer cases and normal local checks. Actual full-file history and VALID READY LIVE one nonpartial recognized_at timestamptz key/default opclass/no INCLUDE were read back, with full five original function definitions/metadata including ACL, complete logical outcome/resolution columns/constraints/triggers/owner ACL, Scope/count hashes and source65 TRUE unchanged from the real preinstall baseline. No source pin, function, proof, wallet, paid receipt, admission, generation, cache, permission, budget or accounting math changed. This installation receipt is not proof of the remaining84 hand windows, document closure or future4AM capacity."
+    },
+    {
+      "version": "20261027223143",
+      "name": "standalone_entry_covers_original_tournament_witnesses",
+      "file": "supabase/migrations/20261027223143_standalone_entry_covers_original_tournament_witnesses.sql",
+      "md5": "2a2db2ea4bd22fdfb3fae8761dbe286d",
+      "appliedToProductionAt": "2026-10-27T23:06:34.313Z",
+      "recoveredOn": "2026-10-27",
+      "recoveredFrom": "Exact maintained concurrent active-book-outage install and READ ONLY full-file history/index/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Active original weekly book closure outage after all player rakeback was paid: original standalone Scope ENTRY timed out285seconds on the NULL-coordinator tournament fee source heap scan. This exact physical two-key/four-scalar cover passed56 native exact ENTRY/first-week/current cutoff helper/source metadata/constraint/MVCC/catalog/freeze/permission cases and normal local checks. Full-file history and exact VALID READY LIVE NULL-coordinator cover, six complete original function definitions and metadata including ACL, all eleven original table columns/constraints/triggers/owner ACL, Scope/count hashes and source65 TRUE were read back unchanged from the actual preinstall baseline. No source pin, function, earning witness, receipt, money, generation, cache, permission, budget or accounting math changed. Native fixture did not reproduce production285second timing; this install receipt is not full document closure or future4AM capacity proof."
+    },
+    {
+      "version": "20261027233555",
+      "name": "original_recognition_windows_cover_the_hand_join_keys",
+      "file": "supabase/migrations/20261027233555_original_recognition_windows_cover_the_hand_join_keys.sql",
+      "md5": "854b1f7cfd7f379aac89877ec63ec8a1",
+      "appliedToProductionAt": "2026-10-28T00:06:06.893Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained concurrent active-book-outage install and READ ONLY full-file history/index/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8349",
+      "refusedBy": [],
+      "liveVerdict": "Original weekly book closure remains active after all player payments: original84hand witness reads consumed79seconds, with window41linkcount doing wide outcome heap reads for scalar join keys. This exact scalar recognized_at INCLUDE(table_id,hand_number)cover passed current-schema native full84witness/wholeweek-reducer/owner/catalog/MVCC/role/installer qualification and normal checks. Whole-file history, VALID READY LIVE exactscalarcover/defaulttimekey, seven complete original function definitions+ACLmetadata including all65-source guard and originalgeneration, four logical table catalogs, unchanged actualbasisgeneration, retained originalthin220709index, Scope/count hashes and source65TRUE were read back against the actual baseline. No source65pin, function, generation retagging, cache/admission/payment/permission/budget/math change. This receipt is not full originalbook closure or future4AMcapacity proof."
+    },
+    {
+      "version": "20261028000434",
+      "name": "weekly_statement_quality_reads_original_receipt_bags_once",
+      "file": "supabase/migrations/20261028000434_weekly_statement_quality_reads_original_receipt_bags_once.sql",
+      "md5": "3ee5db8868fd0ff7b45a66f6bc13585f",
+      "appliedToProductionAt": "2026-10-28T00:19:08.410Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained function-only active-book-outage install and READ ONLY full-file history/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8398",
+      "refusedBy": [],
+      "liveVerdict": "Original DSS weekly document closure repeatedly exceeded285seconds in the original quality FOR query. Exact source-bag query replacement retained134941 full typed rows and all113897103 JSON bytes with bidirectional EXCEPT ALL zero; complete temporary candidate function returned READY134941 in167911ms with150 real net-plan calls. Native52 cases qualified all original branches,12 changed-query edges, STABLE snapshot, actor/freeze/concurrency/replay/atomic postcondition, and full metadata/PG-only ACL/source65/GEN preservation. Immediate readback proves exact whole-file history, function5c8b31d9/body16890f9, unchanged whole metadata/ACL, Scope72/countcc867/summary1d1/source65 definition and actual inventory generation. No payment, receipt, accounting math, cache, budget or source65 renewal changed. Sequential raw timings were cache-confounded; this record is not whole Scope closure or future4AM capacity proof."
+    },
+    {
       "version": "20261028002753",
       "name": "original_weekly_report_uses_its_qualified_hand_readers",
       "file": "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql",
@@ -1418,6 +1622,30 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8402",
       "refusedBy": [],
       "liveVerdict": "Continuing original weekly-book closure outage: the complete original report still pinned obsolete pre-treasury hand witness/read owners although the genuine current readers and original advance were qualified. Exact source changes are two report reader bindings, one advance report binding and the two corresponding entries of the actual65 authority; all financial SQL/math/other63 sources and GEN58dc body are unchanged. Full-file history and all seven original definitions/whole metadata/ACL were read back; only report/advance/sourceguard definitions changed to their qualified postimages. The actual inventory generation is legitimately nonNULL and different from the real preinstall B7 generation, derived by the unchanged original generation owner. No old partial/certificate was retagged by this installer. Original84 flow+hand rebuild, all paid financial identity preservation and complete live report/book closure remain separate required proof; this installation receipt does not claim them."
+    },
+    {
+      "version": "20261028005400",
+      "name": "weekly_statement_selects_its_exact_coordinator_scope",
+      "file": "supabase/migrations/20261028005400_weekly_statement_selects_its_exact_coordinator_scope.sql",
+      "md5": "eaf9e4abe3bf7d8915dc8a55fa66ddc2",
+      "appliedToProductionAt": "2026-10-28T01:08:58.612Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained function-only active-book-outage install and READ ONLY full-file history/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8404",
+      "refusedBy": [],
+      "liveVerdict": "Lightning original weekly statement timed out before tournament quality in the source aggregate. Exact NULL/non-NULL coordinator partition preserves every payable source and all original financial summary branches, source contracts, wrong-scope checks, cutoff semantics and full ordered source fingerprint. Actual candidate existing-index/hash-anti plan cost41189 versus original199488; complete READ ONLY candidate aggregate finished under90seconds:308801 sources/private3552.70/union0/bad0/fingerprint48c3d96ec64be3668d106cc120eda8bd. Focused PG17 native72 passed actual current summary/issuer/nativebank and current payable/effective view definitions, full-row EXCEPT ALL NULL/nonNULL/admission/cutoff/refusal cases, concurrent STABLE snapshot and actor/freeze/history/real scheduler/atomic postcondition guards. Immediate whole-file history and complete post5225 summary/sourceguard/report/advance/handreader/quality5c8b/Scope72/countcc867 full owner metadata, ACL and actualGEN2a782 were read back exact. No original view, financial rule, source65 renewal, certificate, cache, budget or permission changes. These are installation/readback facts, not full scope closure or future4AM capacity proof."
+    },
+    {
+      "version": "20261028014525",
+      "name": "original_private_deposit_keys_read_scalar_facts",
+      "file": "supabase/migrations/20261028014525_original_private_deposit_keys_read_scalar_facts.sql",
+      "md5": "58a0ec17bc10324964964076440f036d",
+      "appliedToProductionAt": "2026-10-28T02:10:36.658Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained concurrent physical-index active-book-outage install and READ ONLY full-file history/index/source/whole original authority readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8407",
+      "refusedBy": [],
+      "liveVerdict": "Original weekly standalone document closure remains an active outage after all rakeback payments. Actual raw cash source private deposit key discovery exceeded30seconds before any judged or ledger proof; exact existing club/coordinator/week index required heap access for rake_record_id and union_id. One narrow nonpartial three-key/two-INCLUDE scalar cover qualifies the identical original nullable and explicit NULL/nonNULL selectors without any function/query/math/cache/source65/GEN change. Native13 retained full source column types/NOTNULL/check/PK/unique/FK constraints and existing indexes, independent scope/boundary key sets/full original contracts/metadata/ACL and natural heap-to-IndexOnly zero native heap fetches; domain, freeze, operator, source65 and catalog-fault guards passed. Actual immediate READONLY whole-file history and exact VALID READY LIVE index, full source columns/defaults/constraints/triggers/ACL, all11 prior indexes and all11 current whole function definitions/metadata including summary5225/sourceguardedc/GEN2a782 were read back unchanged from actual preinstall baseline. Native does not reproduce production timing; installation is not complete book closure or future4AM capacity proof."
     }
   ]
 }

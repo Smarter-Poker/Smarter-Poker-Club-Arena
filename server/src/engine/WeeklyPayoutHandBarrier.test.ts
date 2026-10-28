@@ -43,6 +43,71 @@ function liveHand() {
 }
 
 describe('the real live hand is retained across the original weekly financial edge', () => {
+  it('wakes the original idle wait across the money edge and proves its actual pause gate', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const engine = new ServerTableEngine('idle-weekly') as any;
+    engine.running = true;
+    engine.tableFSM.transition('waiting');
+    engine.setLoopPhase('start_wait_for_players');
+    engine.broadcastCurrentState = vi.fn(async () => {});
+    let resumed = false;
+    const original = (async () => {
+      await engine.waitForPlayersPause(60000);
+      await engine.awaitPauseGate();
+      resumed = true;
+    })();
+    await vi.advanceTimersByTimeAsync(999);
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    // A null controller alone never proves the suspended startup loop.
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(engine.handController).toBeNull();
+    expect(engine.handForHandResolve).not.toBeNull();
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+    expect(resumed).toBe(false);
+    engine.resumeFromWeeklyPayout('weekly');
+    await original;
+    expect(resumed).toBe(true);
+  });
+
+  it('refuses unstarted, stopped, unresolved-F06 and accepted-write idle custody', async () => {
+    vi.useFakeTimers();
+    const engine = new ServerTableEngine('idle-guards-weekly') as any;
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    engine.running = true;
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    const parked = engine.awaitPauseGate();
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+    engine.running = false;
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    engine.running = true;
+    engine.f06CurrentPermit = { recoveryState: () => 'reserved' };
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    engine.f06CurrentPermit = null;
+    engine.engineLeaseAuthorityExpired = true;
+    engine.engineLeaseScope = 'cash';
+    engine.engineLeaseVerified = true;
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    engine.engineLeaseScope = null;
+    engine.engineLeaseVerified = false;
+    let finish!: () => void;
+    const writer = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    engine.entryHoldWriteChains.set('original', writer);
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    finish();
+    await writer;
+    engine.entryHoldWriteChains.delete('original');
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+    engine.resumeFromWeeklyPayout('weekly');
+    await parked;
+  });
+
   it('retains only the latest reconnect intent and drops a superseded hand intent', async () => {
     vi.useFakeTimers();
     const { engine, hand } = liveHand();

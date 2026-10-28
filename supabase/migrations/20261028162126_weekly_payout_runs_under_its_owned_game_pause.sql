@@ -1,4 +1,5 @@
--- DRAFT: qualification and original-global-owner wiring are not complete.
+-- Original global-owner wiring qualified in isolated native PostgreSQL.
+-- Protected installation, production capacity and runtime proof remain separate.
 -- Monday financial cascade uses one owned, bounded gameplay pause.
 -- No new scheduler, payer, release worker, rate rewrite, or historical replay.
 BEGIN;

@@ -47,6 +47,17 @@ extra=r'''
     run="SELECT fixture_owned_ack();UPDATE fixture_clock SET n='2026-10-12 09:00Z';UPDATE engine_table_leases SET heartbeat_at='2026-10-12 09:00Z';SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));"
     owned_case('two-clubs-real-all-agent-gross-before-any-player-horse',run+"SET CONSTRAINTS ALL IMMEDIATE;SELECT fixture_owned_assert();")
     owned_case('same-run-replay-no-new-wallet-ledger-invoice',run+"CREATE TEMP TABLE replay_before AS SELECT md5(dr_money()::text)m;SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));SELECT caw_assert((SELECT m FROM replay_before)=md5(dr_money()::text),'same-run-no-new-money');")
+    # Post-money books re-enter the ORIGINAL public rounds after the private
+    # capability is retired. Their canonical duplicate receipts precede the
+    # injected money admission; no new paid-replay bypass is needed.
+    replay="CREATE TEMP TABLE released_replay_before AS SELECT md5(dr_money()::text)m;SELECT caw_assert(NOT EXISTS(SELECT FROM smarter_private.weekly_payout_owned_transactions),'released-replay-has-no-capability');"
+    for club in ["caw_u('club')","caw2_u('club')"]:
+        for owner in ['fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage']:
+            replay+="SELECT caw_assert((public."+owner+"('club',"+club+",'2026-10-05 07:00Z','2026-10-12 07:00Z')->>'duplicate')='true','released-original-round-duplicate');"
+    replay+="SELECT caw_assert((SELECT m FROM released_replay_before)=md5(dr_money()::text),'released-original-rounds-no-new-money-or-invoices');"
+    owned_case('released-original-public-round2-wrapper-v3-round3-replay-without-capability',run+replay)
+    owned_case('unpaid-original-public-round2-still-requires-owned-phase','SELECT '+R2+';','weekly_payout_original_owned_phase_required')
+    owned_case('unpaid-original-public-round3-still-requires-owned-phase','SELECT '+R3+';','weekly_payout_original_owned_phase_required')
     owned_case('ordinary-money-still-refused-during-owned-freeze',"UPDATE clubs SET chip_treasury=chip_treasury+1 WHERE id=caw_u('club');",'PLATFORM_FROZEN')
     owned_case('missing-whole-fleet-ack-refuses-every-wallet-at-original-reserve',"UPDATE fixture_clock SET n='2026-10-12 09:01Z';SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'weekly_payout_not_prepared_and_parked_at_four')
     owned_case('foreign-fresh-engine-refuses-all-money',"SELECT fixture_owned_ack();UPDATE fixture_clock SET n='2026-10-12 09:00Z';UPDATE engine_table_leases SET instance_id='foreign',heartbeat_at='2026-10-12 09:00Z';SELECT smarter_private.weekly_payout_execute(caw_u('owned-run'));",'weekly_payout_not_prepared_and_parked_at_four')

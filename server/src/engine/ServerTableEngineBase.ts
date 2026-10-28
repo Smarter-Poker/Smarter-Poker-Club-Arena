@@ -8264,6 +8264,9 @@ export abstract class ServerTableEngineBase {
     this.weeklyPayoutPauseOwners.add(owner);
     this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+    // Wake the original idle sleeper so a late-adopted empty table reaches
+    // its real pause gate without spending the financial admission reserve.
+    this.waitForPlayersWake?.();
   }
 
   /** The DB-relative 04:00 edge freezes the current hand without replacing it. */
@@ -8330,6 +8333,9 @@ export abstract class ServerTableEngineBase {
 
   isParkedForWeeklyPayout(owner: string): boolean {
     return (
+      this.running &&
+      !this.terminal &&
+      this.engineLeaseAuthorityIsCurrent() &&
       this.weeklyPayoutPauseOwners.has(owner) &&
       this.weeklyHandPause.stable(owner) &&
       !this.hasWeeklyPayoutMutationInFlight() &&

@@ -1,0 +1,6 @@
+{
+  "_owner": "digest-oct27-01a18306",
+  "_comment": "Private atomic scan position for the existing retention transaction; no public grants or new schedule.",
+  "tables": ["smarter_private.snapshot_retention_scan"],
+  "functions": ["public.sp_prune_hand_state_snapshots"]
+}

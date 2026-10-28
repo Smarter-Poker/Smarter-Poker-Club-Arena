@@ -33,6 +33,12 @@ describe('exact weekly recompute qualification reaches required CI', () => {
     );
     expect(artifact.if).toContain('always()');
     expect(artifact.if).toContain('matrix.shard == 2');
+    expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(50);
+    expect(
+      ci.jobs.accounting_postgres.steps.filter(
+        (item: { id?: string }) => item.id === 'weekly_recompute_split'
+      )
+    ).toHaveLength(1);
     expect(artifact.if).toContain("steps.weekly_recompute_split.outcome != 'skipped'");
     expect(artifact.with['if-no-files-found']).toBe('error');
     expect(artifact.with.path).toContain('*.json');

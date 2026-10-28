@@ -178,10 +178,21 @@ export default function AddOnModal({
       onDeclineRef.current();
     };
     tick();
-    if (!decidedRef.current) timerRef.current = setInterval(tick, 1000);
+    if (!decidedRef.current) {
+      timerRef.current = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        tick();
+      }, 1000);
+    }
+
+    const onVisible = () => {
+      if (!document.hidden && !decidedRef.current) tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [isVisible, deadlineMs]);
 

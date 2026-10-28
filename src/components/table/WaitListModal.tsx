@@ -151,8 +151,20 @@ export function WaitListModal({
   // Update wait times every minute
   const [, setTick] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 60000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setTick((t) => t + 1);
+    }, 60000);
+
+    const onVisible = () => {
+      if (!document.hidden) setTick((t) => t + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Handle leave

@@ -103,10 +103,24 @@ export function PineappleDiscard({
        few seconds fast cannot drain this ring early - which, on a round where
        running out FOLDS you, is the difference between a decision and a
        confiscation. */
-    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - serverNow()) / 1000)));
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      setSecondsLeft(Math.max(0, Math.ceil((deadline - serverNow()) / 1000)));
+    };
     tick();
     const id = setInterval(tick, 250);
-    return () => clearInterval(id);
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        setSecondsLeft(Math.max(0, Math.ceil((deadline - serverNow()) / 1000)));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [isOpen, deadline]);
 
   const submit = useCallback(async () => {

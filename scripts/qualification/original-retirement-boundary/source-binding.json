@@ -194,7 +194,7 @@
     "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql": "8a12bc5d85793cc13aafc66d13e85a6204b05f18efab0ee2826131b80e5d93d5",
     "tests/original-weekly-report-uses-qualified-hand-parts.law.test.ts": "df300d1b13c16e0f89ec410dade9ff4bfd4be0ada4c24e0f97e65a9dd9572181",
     "scripts/qualification/original-retirement-boundary/membership-capacity/README.md": "4cc3744d3028893eb474687455a8b2ff9031b72fd8c7ac6f66f73ed2ab6c3939",
-    "scripts/qualification/original-retirement-boundary/membership-capacity/actual-original-owner-catalog.json": "d014fbb8c3488ee72d03de09a1be6e39aee4cd7423ffea0900f9965d2ab2134b",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/actual-original-owner-catalog.json": "302ebb43c3c75fd45f5f60462146aedfeec022eac02e17246befe712a577077d",
     "scripts/qualification/original-retirement-boundary/membership-capacity/advance-candidate.sql": "f7b602b8b29fa04c8a54c2e60db2d0ba6cdec54ee0a2771dcb85866927b502a7",
     "scripts/qualification/original-retirement-boundary/membership-capacity/advance-original.sql": "fef261e9e7c7f5f44b1b580112b2640e3b94d4dc513d399697d1bf7c2f37beaa",
     "scripts/qualification/original-retirement-boundary/membership-capacity/build-candidate.py": "919b5d1548ee9771704426d05e7f13e88f838a4ab23fd8fca630bead1b5655f1",
@@ -211,11 +211,11 @@
     "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-after.sql": "d0a737e4f7d28e571574e5c8e61d86d0efe80fbadd2ba0c5af0df0bfe3faf154",
     "scripts/qualification/original-retirement-boundary/membership-capacity/native-authority-before.sql": "9c65bc0af7e602c2319a07782fdf35ae54b96790120fb3f6e8dc94b39502c3d1",
     "scripts/qualification/original-retirement-boundary/membership-capacity/native-report-extension.py": "d83413882c08afe956ce39e8b53dc18462e991aa12480163bc0abf955f43d863",
-    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch-result.json": "920bc326b797f3621e18b442f8af716a4039e1525c4a5f86bc8b3b066535751e",
-    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch.py": "80d315406e22c3582c4597be83715c4a611ea06e3cdbd8d8cf0e675917699eeb",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch-result.json": "c4e1688b661de4076244387f7457241b031156aa9fc91b20245cc723e36abf3f",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/native-whole-branch.py": "08ae5f21eaedf4fb2c9cb6b395a543696e8e7a67f03c4f53f2a25f8b9682e3b6",
     "scripts/qualification/original-retirement-boundary/membership-capacity/original-query.sql": "74f6951af4b3673ce4be8cf6a0f2d98834f2c184da35a9cf114809bb5c2bd9ab",
     "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-complete-report-result.json": "0fba74270c7b71144beecd7f13487971e2bc03422a3124495881b1cf9966ba28",
-    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-manifest.json": "75e7b59aa4bb622c70cbd76e3d393ef94cec60ca446543b799aca090eb68f7c6",
+    "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-manifest.json": "1993d3a0d4dde1b9f4f68f087002ebb9eb35cd1296149707549a5c8fc76c5656",
     "scripts/qualification/original-retirement-boundary/membership-capacity/qualified-result.json": "d15a5c6cbac2744655e36f6211ac4431b857851ea3fccdd50b8aaa0df11e4c3a",
     "scripts/qualification/original-retirement-boundary/membership-capacity/report-candidate.sql": "7c6999828a1e9d43710ead2ebc2442b14bfbcc388f3117fde415a8b4761639be",
     "scripts/qualification/original-retirement-boundary/membership-capacity/report-original.sql": "f1cdbe32ccecf41b7a67db8baade03056cbd081d42109a354532a9756f149045",
@@ -559,6 +559,7 @@
         "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
         "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
       }
-    }
+    },
+    "formatting": "Ordinary commit hook formatted captured metadata JSON and native result JSON only; parsed metadata/gen and native result values verified unchanged. Native runner now prints results without mutating retained source inputs."
   }
 }

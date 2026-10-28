@@ -62,7 +62,8 @@ try:
   out=q(bind(old,"md5('union')::uuid",'true',arrays[0],start,end)+';'+bind(new,"md5('union')::uuid",'true',arrays[0],start,end)).splitlines();assert json.loads(out[0])==json.loads(out[1]);cases+=1
  base=q(bind(old,"md5('union')::uuid",'true',arrays[0]));q('UPDATE chip_ledger SET row_hash=NULL;');out=q(bind(old,"md5('union')::uuid",'true',arrays[0])+';'+bind(new,"md5('union')::uuid",'true',arrays[0])).splitlines();assert json.loads(out[0])==json.loads(out[1]);assert json.loads(out[0])['bad_count']>json.loads(base)['bad_count']
  result={'passed':True,'whole_materialized_branch_full_union_touched_and_bad_row_bag_cases':cases,'non_vacuous_union_touched_max_rows':positive,'bad_counts':sorted(bad_values),'real_original_touched_membership_entry_satellite_helpers_md5':expected,'original_satellite_economic_proof_pass_and_missing_ledger_hash_refusal_preserved':True,'canonical_uuid_regex_cast_rowid_text_and_both_membership_branches_preserved':True,'source_gen_guard_or_public_function_changed':False,'limits':'Real original4helpers and entire branch; controlled synthetic financial source tables/opening-resolved arrays. Not whole-report/source65/GEN/production qualification.'}
- (p/'native-whole-branch-result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+ if __import__('os').environ.get('ORB_MEMBERSHIP_NATIVE_OUTPUT'):Path(__import__('os').environ['ORB_MEMBERSHIP_NATIVE_OUTPUT']).write_text(json.dumps(result,indent=2)+'\n')
+ print(json.dumps(result))
 finally:
  if started:subprocess.run(list(map(str,[pg/'pg_ctl','-D',d/'db','-m','immediate','-w','stop'])),capture_output=True)
  shutil.rmtree(d,ignore_errors=True)

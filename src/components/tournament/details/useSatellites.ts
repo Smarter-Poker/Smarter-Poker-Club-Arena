@@ -61,9 +61,13 @@ import { totalBuyIn } from '../../../utils/buyIn';
 export const SATELLITE_COLUMNS = [
   'id',
   'format_contract',
+  'club_id',
+  'union_id',
+  'satellite_seats',
   'name',
   'status',
   'tournament_type',
+  'variant',
   'game_type',
   'satellite_target_id',
   'satellite_target',
@@ -143,6 +147,13 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
       typeof sat.satellite_target_id === 'string' ? sat.satellite_target_id : null,
     satellite_target: typeof sat.satellite_target === 'string' ? sat.satellite_target : null,
     id: String(sat.id),
+    club_id: typeof sat.club_id === 'string' ? sat.club_id : null,
+    union_id: typeof sat.union_id === 'string' ? sat.union_id : null,
+    buy_in_amount: num(sat.buy_in_amount),
+    buy_in_fee: num(sat.buy_in_fee),
+    storedStatus: rawStatus,
+    variant: typeof sat.variant === 'string' ? sat.variant : null,
+    tournament_type: typeof sat.tournament_type === 'string' ? sat.tournament_type : null,
     name: String(sat.name || 'Satellite'),
     type,
     /* THE TOTAL A PLAYER PAYS, which is the card's documented contract for this
@@ -235,7 +246,7 @@ export function useSatellites(
         const { data, error: fetchErr } = await supabase
           .from('tournaments')
           .select(SATELLITE_COLUMNS)
-          .eq('satellite_target_id', tournamentId)
+          .or(`satellite_target_id.eq.${tournamentId},satellite_target.eq.${tournamentId}`)
           .in('status', LIVE_STATUSES as unknown as string[])
           .order('start_time', { ascending: true })
           .limit(SATELLITE_LIMIT);

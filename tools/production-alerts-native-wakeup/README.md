@@ -44,7 +44,10 @@ production with DDL or replay an installed version. The credential-authenticated
 exposes only opaque identifiers; client INSERT is restrictively denied even if
 another permissive writer policy is added. Full read/ack RPCs are service-only.
 
-Configure the existing gateway's plugin entry, then use its supported gateway
+The manifest explicitly activates this receive service at Gateway startup.
+Discovery or a plugin listing alone does not execute its service. Configure the
+required plugin entry before linking so the supported installer can validate it;
+then use the supported `plugins install --link` and gateway
 restart only after checking existing service ownership. Require
 `production-alerts-native-wakeup.status`, a SUBSCRIBED private channel, a committed
 native receipt, actual full inbox read and persisted delivery acknowledgement

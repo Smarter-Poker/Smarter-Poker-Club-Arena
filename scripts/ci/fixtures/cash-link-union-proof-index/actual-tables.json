@@ -1,0 +1,235 @@
+[
+  {
+    "name": "union_pnl_cash_outcomes",
+    "owner": "postgres",
+    "acl": ["postgres=arwdDxtm/postgres"],
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "transaction_id",
+        "type": "xid8",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "recognized_at",
+        "type": "timestamp with time zone",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "payload_hash",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "game_scope",
+        "type": "jsonb",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "evidence",
+        "type": "jsonb",
+        "notnull": true,
+        "default": null
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_pnl_cash_outcomes_hand_id_key",
+        "definition": "UNIQUE (hand_id)",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcomes_pkey",
+        "definition": "PRIMARY KEY (table_id, hand_number)",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcomes_transaction_id_fkey",
+        "definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",
+        "validated": true
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX union_pnl_cash_outcomes_expr_recognized_at_idx ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)",
+      "CREATE INDEX union_pnl_cash_outcomes_recognition_join_cover ON public.union_pnl_cash_outcomes USING btree (recognized_at) INCLUDE (table_id, hand_number)",
+      "CREATE INDEX union_pnl_cash_outcomes_recognition_window ON public.union_pnl_cash_outcomes USING btree (recognized_at)",
+      "CREATE INDEX union_pnl_cash_outcomes_scope_missing ON public.union_pnl_cash_outcomes USING btree (recognized_at) WHERE (NOT (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text]))",
+      "CREATE INDEX union_pnl_cash_outcomes_unaccepted ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at) WHERE (((evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'game_scope'::text) IS DISTINCT FROM game_scope))",
+      "CREATE UNIQUE INDEX union_pnl_cash_outcomes_hand_id_key ON public.union_pnl_cash_outcomes USING btree (hand_id)",
+      "CREATE UNIQUE INDEX union_pnl_cash_outcomes_pkey ON public.union_pnl_cash_outcomes USING btree (table_id, hand_number)"
+    ]
+  },
+  {
+    "name": "union_pnl_cash_outcome_link_resolutions",
+    "owner": "postgres",
+    "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "rls": true,
+    "force_rls": false,
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "outcome_payload_hash",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "outcome_evidence_md5",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "roster_source",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "manifest_id",
+        "type": "uuid",
+        "notnull": false,
+        "default": null
+      },
+      {
+        "name": "game_scope",
+        "type": "jsonb",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "evidence",
+        "type": "jsonb",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "proof",
+        "type": "jsonb",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "proof_md5",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "notnull": true,
+        "default": null
+      },
+      {
+        "name": "resolved_by",
+        "type": "text",
+        "notnull": true,
+        "default": "SESSION_USER"
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "notnull": true,
+        "default": "clock_timestamp()"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_pnl_cash_outcome_link_resoluti_outcome_evidence_md5_check",
+        "definition": "CHECK ((outcome_evidence_md5 ~ '^[0-9a-f]{32}$'::text))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check",
+        "definition": "CHECK ((proof_md5 = md5((proof)::text)))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check1",
+        "definition": "CHECK (((roster_source = 'manifest'::text) = (manifest_id IS NOT NULL)))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check2",
+        "definition": "CHECK ((((proof ->> 'status'::text) = 'proven'::text) AND ((proof ->> 'resolution_kind'::text) = 'cash_outcome_provenance_link'::text) AND ((proof ->> 'table_id'::text) = (table_id)::text) AND (((proof ->> 'hand_number'::text))::bigint = hand_number) AND ((proof ->> 'hand_id'::text) = (hand_id)::text) AND ((proof ->> 'outcome_payload_hash'::text) = outcome_payload_hash) AND ((proof ->> 'outcome_evidence_md5'::text) = outcome_evidence_md5) AND ((proof ->> 'roster_source'::text) = roster_source) AND (NOT ((proof ->> 'manifest_id'::text) IS DISTINCT FROM (manifest_id)::text)) AND ((proof -> 'game_scope'::text) = game_scope) AND ((proof -> 'evidence'::text) = evidence) AND ((evidence -> 'game_scope'::text) = game_scope)))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_evidence_check",
+        "definition": "CHECK (((jsonb_typeof(evidence) = 'object'::text) AND ((evidence ->> 'provenance_link'::text) = 'resolved'::text)))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_game_scope_check",
+        "definition": "CHECK (((jsonb_typeof(game_scope) = 'object'::text) AND (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text])))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_hand_id_key",
+        "definition": "UNIQUE (hand_id)",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_pkey",
+        "definition": "PRIMARY KEY (table_id, hand_number)",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_reason_check",
+        "definition": "CHECK ((length(btrim(reason)) >= 20))",
+        "validated": true
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_roster_source_check",
+        "definition": "CHECK ((roster_source = ANY (ARRAY['manifest'::text, 'seat_inventory'::text, 'lightning_pool'::text])))",
+        "validated": true
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX union_pnl_cash_links_valid_proof_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id) INCLUDE (table_id, hand_number) WHERE (proof_md5 = md5((proof)::text))",
+      "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_hand_id_key ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id)",
+      "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_pkey ON public.union_pnl_cash_outcome_link_resolutions USING btree (table_id, hand_number)"
+    ]
+  }
+]

@@ -201,10 +201,45 @@ try:
   formed=json.loads(running.result())
   check('real-formation-revalidates-after-uncommitted-request-commits',formed.get('reason')=='top_up_pending' and formed.get('formed') is False)
  check('all-money-remains-wallet-plus-seat',q('SELECT (SELECT chip_balance FROM club_members)+(SELECT stack FROM table_seats)')=='120')
+ # The real trigger was invoker; production's service role cannot read its
+ # private top-up table. All prior fixtures above intentionally ran as owner.
+ terminal=json.loads((fixtures/'lightning-terminal-authority-preimage.json').read_text())
+ q(terminal['definition']+';')
+ check('exact-current-terminal-trigger',q("SELECT md5(pg_get_functiondef('public.fn_lightning_instance_releases_its_reservations()'::regprocedure))")==terminal['md5'])
+ q("REVOKE ALL ON FUNCTION fn_lightning_instance_releases_its_reservations() FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION fn_lightning_instance_releases_its_reservations() TO service_role; GRANT USAGE ON SCHEMA public,smarter_private TO service_role; GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA public TO service_role;")
+ reset();request();before=funding()
+ denied=subprocess.run(list(map(str,psql)),input=f"SET ROLE service_role; UPDATE lightning_instance SET state='complete' WHERE id='{H}';",text=True,capture_output=True,env=env,timeout=10)
+ check('old-service-terminal-transition-fails-on-private-intents',denied.returncode!=0 and 'permission denied for table lightning_top_up_intents' in denied.stderr and funding()==before and q(f"SELECT state FROM lightning_instance WHERE id='{H}'")=='dealing')
+ authority=list((ROOT/'supabase/migrations').glob('*_lightning_terminal_trigger_keeps_its_private_top_up_authorit.sql'))
+ if len(authority)!=1: raise RuntimeError('one terminal authority migration required')
+ finisher_acl=q("SELECT proacl::text FROM pg_proc WHERE oid='smarter_private.lightning_top_up_finish(uuid,uuid,text)'::regprocedure")
+ q(authority[0].read_text())
+ q(f"SET ROLE service_role; UPDATE lightning_instance SET state='complete' WHERE id='{H}';")
+ check('service-completion-funds-original-intent-once',json.loads(funding())==[70,50,50,1,1,1])
+ q(f"SET ROLE service_role; UPDATE lightning_instance SET state='complete' WHERE id='{H}';")
+ check('service-terminal-replay-does-not-charge-again',json.loads(funding())==[70,50,50,1,1,1])
+ reset();request();q(f"SET ROLE service_role; UPDATE lightning_instance SET state='abandoned' WHERE id='{H}';")
+ check('service-abandonment-cancels-without-charging',json.loads(funding())==[100,20,20,0,0,0] and q("SELECT reason FROM smarter_private.lightning_top_up_intents")=='hand_abandoned')
+ reset();q(f"SET ROLE service_role; UPDATE lightning_instance SET state='abandoned' WHERE id='{H}';")
+ check('service-empty-intent-abandonment-is-not-blocked',q(f"SELECT state FROM lightning_instance WHERE id='{H}'")=='abandoned' and json.loads(funding())==[100,20,20,0,0,0])
+ for role in ['service_role','anon','authenticated']:
+  q(f"SET ROLE {role}; SELECT * FROM smarter_private.lightning_top_up_intents;",True)
+  q(f"SET ROLE {role}; UPDATE smarter_private.lightning_top_up_intents SET status='applied';",True)
+ check('private-table-stays-denied-to-all-callers',True)
+ check('original-service-finisher-execute-contract-unchanged',q("SELECT proacl::text FROM pg_proc WHERE oid='smarter_private.lightning_top_up_finish(uuid,uuid,text)'::regprocedure")==finisher_acl)
+ for role in ['anon','authenticated']:
+  q(f"SET ROLE {role}; SELECT smarter_private.lightning_top_up_finish('{T}','{U}');",True)
+  q(f"SET ROLE {role}; UPDATE lightning_instance SET state='complete' WHERE id='{H}';",True)
+ check('browser-cannot-enter-the-terminal-transition',True)
+ check('only-security-mode-changed',q("SELECT prosecdef AND pg_get_functiondef(oid)=replace($original$"+terminal['definition']+"$original$,E' LANGUAGE plpgsql\\n',E' LANGUAGE plpgsql\\n SECURITY DEFINER\\n') FROM pg_proc WHERE oid='public.fn_lightning_instance_releases_its_reservations()'::regprocedure")=='t')
+ refused=subprocess.run(list(map(str,psql)),input=authority[0].read_text(),text=True,capture_output=True,env=env,timeout=10)
+ check('changed-preimage-refuses-reapplication',refused.returncode!=0 and 'Lightning terminal trigger authority preimage changed' in refused.stderr and q("SELECT prosecdef FROM pg_proc WHERE oid='public.fn_lightning_instance_releases_its_reservations()'::regprocedure")=='t')
  print(json.dumps({'passed':len(results),'output':str(out/'RESULTS.json')}))
 finally:
  if (cluster/'d/postmaster.pid').exists(): cmd(owner+[PG/'pg_ctl','-D',cluster/'d','-m','fast','-w','stop'])
  shutil.rmtree(cluster,ignore_errors=True)
  (out/'RESULTS.json').write_text(json.dumps({'checks':results,'production_mutations':False,'cluster_removed':not cluster.exists(),
    'migration':str(migration.relative_to(ROOT)) if 'migration' in globals() else None,
-   'migration_sha256':hashlib.sha256(sql.encode()).hexdigest() if 'sql' in globals() else None},indent=2)+'\n')
+   'migration_sha256':hashlib.sha256(sql.encode()).hexdigest() if 'sql' in globals() else None,
+   'authority_migration':str(authority[0].relative_to(ROOT)) if 'authority' in globals() else None,
+   'authority_migration_sha256':hashlib.sha256(authority[0].read_bytes()).hexdigest() if 'authority' in globals() else None},indent=2)+'\n')

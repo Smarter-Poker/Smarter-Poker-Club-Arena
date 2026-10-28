@@ -3082,6 +3082,33 @@
   transition: width 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+/* Mobile all-in percentages: half the badge's desktop dimensions, including
+   the track and spacing. Real layout dimensions keep card avoidance accurate. */
+@media (max-width: 768px) {
+  .equity-layer .equity-overlay {
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    gap: 2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .equity-overlay__track {
+    width: 44px;
+    height: 3px;
+    border-radius: 1.5px;
+  }
+  .equity-overlay__bar {
+    border-radius: 1.5px;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+  }
+  .equity-overlay--ahead {
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+  }
+  .equity-overlay--behind {
+    box-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN BANNER — COMPETITOR-PARITY 2026-08-19
    Table-level splash the moment the runout locks in (first equity broadcast).

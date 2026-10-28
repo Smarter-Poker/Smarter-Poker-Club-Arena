@@ -17,17 +17,19 @@ describe('run confirmation and winning card timing', () => {
     expect(update).toContain('setRitAcceptedIds');
     expect(update).not.toContain('showRitFeltBanner(');
   });
+  // October 28 owner correction supersedes the former 1500ms confirmation.
   it.each([
     ['rit_all_accepted', 'rit_mandatory'],
     ['rit_mandatory', 'rit_single_run'],
-  ])('confirms %s once for 1500ms', (event, next) => {
+    ['rit_single_run', 'rit_result'],
+  ])('removes %s from the felt immediately', (event, next) => {
     const body = handler(event, next);
-    expect(body).toContain('if (!ritConfirmationShownRef.current)');
-    expect(body).toContain('ritConfirmationShownRef.current = true');
-    expect(body).toMatch(/showRitFeltBanner\([\s\S]*?,\s*1500\s*\)/);
+    expect(body).not.toContain('showRitFeltBanner(');
+    expect(body).toMatch(/clearRitWaitingStrip\(\)|resetRitPanelState\(\)/);
   });
-  it('resets the once-per-hand guard', () => {
-    expect(source).toContain('ritConfirmationShownRef.current = false');
+  it('has no outcome timer or delayed confirmation to survive the decision', () => {
+    expect(source).not.toContain('ritConfirmationShownRef');
+    expect(source).not.toContain('ritFeltBannerTimerRef');
   });
   it('adds exactly 1500ms to ordinary and capped showdown reads and each RIT result', () => {
     expect(H.SHOWDOWN_READ_BASE_MS).toBe(1400);
@@ -44,41 +46,28 @@ describe('run confirmation and winning card timing', () => {
   });
 });
 
-it('the actual banner timer clears at 1500ms and never restores the waiting strip', () => {
+it('the actual waiting-strip clear is immediate and never restores itself', () => {
   vi.useFakeTimers();
-  const start = source.indexOf('  const showRitFeltBanner = useCallback(');
-  const end = source.indexOf('  }, []);', start) + '  }, []);'.length;
+  const start = source.indexOf('  const clearRitWaitingStrip = useCallback(');
+  const end = source.indexOf('  const showRitFeltBanner = useCallback(', start);
   expect(start).toBeGreaterThan(0);
-  const code = ts.transpile(source.slice(start, end) + '; return showRitFeltBanner;', {
-    target: ts.ScriptTarget.ES2022,
-  });
-  let state: string | null = null;
-  const ref = { current: null };
-  const show = new Function(
+  let state: string | null = 'Waiting For Players.';
+  const clear = new Function(
     'useCallback',
-    'ritFeltBannerTimerRef',
     'setRitFeltBanner',
-    'formatPopupText',
-    'setTimeout',
-    'clearTimeout',
-    code
+    'RIT_WAITING_BANNER_RENDERED',
+    'RIT_WAITING_BANNER',
+    ts.transpile(source.slice(start, end) + '; return clearRitWaitingStrip;')
   )(
     (fn: unknown) => fn,
-    ref,
-    (value: string | null) => {
-      state = value;
+    (update: (previous: string | null) => string | null) => {
+      state = update(state);
     },
-    (text: string) => text,
-    setTimeout,
-    clearTimeout
+    state,
+    state
   );
-  show('Waiting For Players To Run It Multiple Times.');
-  show('Players Have Accepted Running It 3 Times.', 1500);
-  vi.advanceTimersByTime(1499);
-  expect(state).toBe('Players Have Accepted Running It 3 Times.');
-  vi.advanceTimersByTime(1);
+  clear();
   expect(state).toBeNull();
-  expect(ref.current).toBeNull();
   vi.advanceTimersByTime(25000);
   expect(state).toBeNull();
 });

@@ -4849,23 +4849,23 @@ button.post-bb-overlay-button {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RIT STATUS STRIP (2026-08-26, parity pass)
-   A wide dark strip across the felt while a Run It Multiple Times question
-   is open, and for the accepted/rejected outcome. Not a toast: it rides the
-   table like the ALL IN banner, visible to players AND spectators.
+   Only while the run choice is unanswered. Anchor to the board's top edge,
+   below the pot, so its height cannot cover board or player cards.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .rit-felt-banner {
   position: absolute;
-  top: 58%;
+  top: auto;
+  bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(92%, 420px);
+  width: min(100%, 280px);
   z-index: 58;
   pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 14px;
+  padding: 6px 8px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -4880,6 +4880,7 @@ button.post-bb-overlay-button {
   color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 @keyframes ritFeltBannerIn {

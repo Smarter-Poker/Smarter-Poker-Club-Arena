@@ -41,6 +41,7 @@
  */
 
 import { supabase } from './supabase/client.js';
+import { bindToProcessRoot } from './supabase/dataActorContext.js';
 import { leaseHeartbeatRpc } from './leaseHeartbeatSession.js';
 /* Counted, not merely returned: every branch below that declines to renew a
    lease used to be silent, and repeated silent declines are exactly how a
@@ -540,6 +541,19 @@ async function heartbeatTournamentBatch(
   }
 }
 
+/** Lease retirement is owned by the process, not the manager being retired.
+ * An inherited manager actor may already be fenced by the request hook before
+ * the exact instance/generation DELETE can run. Consume the lazy RPC here too:
+ * returning its thenable would defer the fetch until outside this boundary.
+ * The service-only RPC still compares every exact claim in the database.
+ */
+const releaseExactTournamentClaimsAtProcessRoot = bindToProcessRoot(
+  async (payload: {
+    p_instance_id: string;
+    p_claims: Array<{ tournament_id: string; lease_generation: string }>;
+  }) => await supabase.rpc('release_tournament_leases_v2', payload)
+);
+
 /**
  * Hand exact generations back on the way out. Confirmed zero means the exact
  * row was already absent; uncertainty is returned so shutdown cannot issue a
@@ -579,7 +593,7 @@ export async function releaseTournaments(
   };
   for (let attempt = 1; attempt <= LEASE_RELEASE_MAX_ATTEMPTS; attempt++) {
     try {
-      const { data, error } = await supabase.rpc('release_tournament_leases_v2', payload);
+      const { data, error } = await releaseExactTournamentClaimsAtProcessRoot(payload);
       if (error) {
         lastFailure = {
           status: 'uncertain',

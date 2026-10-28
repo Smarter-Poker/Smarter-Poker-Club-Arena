@@ -1,0 +1,3 @@
+# tests/original-week-clubs-cover-their-source-witness.law.test.ts
+
+The original weekly club selector retains every historical source witness and ordered club result. Its coordinator, club and tournament predicates use a matching covering index, with unchanged functions, permissions, contracts, source fingerprints and financial rules. The maintained concurrent installer refuses invalid or conflicting index identities. Native PostgreSQL qualification compares the complete original owner before and after installation and requires natural index-only reads with no heap fetches. Local timing does not certify production capacity or wallet payment.

@@ -1,0 +1,5 @@
+# Private deposit keys follow source order
+
+Original full cash-group diagnostics exceeded60 and90 seconds, while the first1000 deterministic keys exposed source index reads and no sample spills. The existing complete DISTINCT key CTE now emits keys ordered by type, UUID and bank time. No key filter/LIMIT, sourceSUM, originalsource predicates, financial rules, budgets, source65/generation or view changes.
+
+Focused native28 retains exactsixfield cashgroups/JUDGED/visibleverdict bags and completeordered aggregates across missing/zero/mixed/cutoff/duplicate cases. Official native97 adds fullinstaller preimage/post/fullmetadata/ACL/operator/freeze/scheduler/history/replay/atomicity and original119 financialfixture doors, with explicitcontrolledcollaborator boundaries. Actual full86197orderedIDs/3552.70 parity and mandatoryrollback wholeSummary168.379s READY passed; sourceSUM83.47s/quality15.83/private68.76s. These cacheconfounded times are not causal speed, stablecapacity, fullScope or future4AM certification. Exact installation/readback and actual guardedScope/document closure remain separate.

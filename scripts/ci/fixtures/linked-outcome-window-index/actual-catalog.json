@@ -1,0 +1,359 @@
+{
+  "owners": [
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "0c3a826553e9ef65a03030c3ef78eaaf",
+      "cost": 100,
+      "rows": 1000,
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "strict": false,
+      "language": "sql",
+      "parallel": "u",
+      "signature": "fn_union_pnl_linked_cash_outcomes(uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "s",
+      "security_definer": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "a3b1c75ad2b122dc0b0fede8a66813c8",
+      "cost": 100,
+      "rows": 0,
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "strict": false,
+      "language": "plpgsql",
+      "parallel": "u",
+      "signature": "smarter_private.weekly_hand_parts_witness(uuid,timestamp with time zone,timestamp with time zone,boolean)",
+      "volatility": "s",
+      "security_definer": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "97fc255997a2faeac593b5b1f5420d4c",
+      "cost": 100,
+      "rows": 0,
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "strict": false,
+      "language": "sql",
+      "parallel": "u",
+      "signature": "smarter_private.weekly_hand_parts_reduce(uuid,timestamp with time zone,timestamp with time zone,boolean)",
+      "volatility": "s",
+      "security_definer": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "md5": "d427fd27d163ba72a7dc3cd50866163d",
+      "cost": 100,
+      "rows": 0,
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog, public, smarter_private"],
+      "strict": false,
+      "language": "plpgsql",
+      "parallel": "u",
+      "signature": "smarter_private.weekly_hand_parts_read(uuid,timestamp with time zone,timestamp with time zone,text,boolean)",
+      "volatility": "s",
+      "security_definer": false
+    }
+  ],
+  "relations": [
+    {
+      "kind": "r",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "attnum": 1,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "attnum": 2,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "attnum": 3,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "transaction_id",
+          "type": "xid8",
+          "attnum": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "recognized_at",
+          "type": "timestamp with time zone",
+          "attnum": 5,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "payload_hash",
+          "type": "text",
+          "attnum": 6,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "game_scope",
+          "type": "jsonb",
+          "attnum": 7,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "evidence",
+          "type": "jsonb",
+          "attnum": 8,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "relation": "union_pnl_cash_outcomes",
+      "constraints": [
+        {
+          "kind": "u",
+          "name": "union_pnl_cash_outcomes_hand_id_key",
+          "validated": true,
+          "definition": "UNIQUE (hand_id)"
+        },
+        {
+          "kind": "p",
+          "name": "union_pnl_cash_outcomes_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (table_id, hand_number)"
+        },
+        {
+          "kind": "f",
+          "name": "union_pnl_cash_outcomes_transaction_id_fkey",
+          "validated": true,
+          "definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)"
+        }
+      ],
+      "partitioned": false,
+      "partition_key": null
+    },
+    {
+      "kind": "r",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "attnum": 1,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "hand_number",
+          "type": "bigint",
+          "attnum": 2,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "attnum": 3,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "outcome_payload_hash",
+          "type": "text",
+          "attnum": 4,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "outcome_evidence_md5",
+          "type": "text",
+          "attnum": 5,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "roster_source",
+          "type": "text",
+          "attnum": 6,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "manifest_id",
+          "type": "uuid",
+          "attnum": 7,
+          "default": null,
+          "identity": "",
+          "not_null": false,
+          "generated": ""
+        },
+        {
+          "name": "game_scope",
+          "type": "jsonb",
+          "attnum": 8,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "evidence",
+          "type": "jsonb",
+          "attnum": 9,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "proof",
+          "type": "jsonb",
+          "attnum": 10,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "proof_md5",
+          "type": "text",
+          "attnum": 11,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "attnum": 12,
+          "default": null,
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "resolved_by",
+          "type": "text",
+          "attnum": 13,
+          "default": "SESSION_USER",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "attnum": 14,
+          "default": "clock_timestamp()",
+          "identity": "",
+          "not_null": true,
+          "generated": ""
+        }
+      ],
+      "relation": "union_pnl_cash_outcome_link_resolutions",
+      "constraints": [
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resoluti_outcome_evidence_md5_check",
+          "validated": true,
+          "definition": "CHECK ((outcome_evidence_md5 ~ '^[0-9a-f]{32}$'::text))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_check",
+          "validated": true,
+          "definition": "CHECK ((proof_md5 = md5((proof)::text)))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_check1",
+          "validated": true,
+          "definition": "CHECK (((roster_source = 'manifest'::text) = (manifest_id IS NOT NULL)))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_check2",
+          "validated": true,
+          "definition": "CHECK ((((proof ->> 'status'::text) = 'proven'::text) AND ((proof ->> 'resolution_kind'::text) = 'cash_outcome_provenance_link'::text) AND ((proof ->> 'table_id'::text) = (table_id)::text) AND (((proof ->> 'hand_number'::text))::bigint = hand_number) AND ((proof ->> 'hand_id'::text) = (hand_id)::text) AND ((proof ->> 'outcome_payload_hash'::text) = outcome_payload_hash) AND ((proof ->> 'outcome_evidence_md5'::text) = outcome_evidence_md5) AND ((proof ->> 'roster_source'::text) = roster_source) AND (NOT ((proof ->> 'manifest_id'::text) IS DISTINCT FROM (manifest_id)::text)) AND ((proof -> 'game_scope'::text) = game_scope) AND ((proof -> 'evidence'::text) = evidence) AND ((evidence -> 'game_scope'::text) = game_scope)))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_evidence_check",
+          "validated": true,
+          "definition": "CHECK (((jsonb_typeof(evidence) = 'object'::text) AND ((evidence ->> 'provenance_link'::text) = 'resolved'::text)))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_game_scope_check",
+          "validated": true,
+          "definition": "CHECK (((jsonb_typeof(game_scope) = 'object'::text) AND (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text])))"
+        },
+        {
+          "kind": "u",
+          "name": "union_pnl_cash_outcome_link_resolutions_hand_id_key",
+          "validated": true,
+          "definition": "UNIQUE (hand_id)"
+        },
+        {
+          "kind": "p",
+          "name": "union_pnl_cash_outcome_link_resolutions_pkey",
+          "validated": true,
+          "definition": "PRIMARY KEY (table_id, hand_number)"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_reason_check",
+          "validated": true,
+          "definition": "CHECK ((length(btrim(reason)) >= 20))"
+        },
+        {
+          "kind": "c",
+          "name": "union_pnl_cash_outcome_link_resolutions_roster_source_check",
+          "validated": true,
+          "definition": "CHECK ((roster_source = ANY (ARRAY['manifest'::text, 'seat_inventory'::text, 'lightning_pool'::text])))"
+        }
+      ],
+      "partitioned": false,
+      "partition_key": null
+    }
+  ],
+  "observed_at": "2026-10-27T22:06:59.021411+00:00"
+}

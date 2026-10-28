@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "scope": "Original2field creditSUM physical cover native28; no production/fullquality certificate",
+  "sourceFiles": {
+    "supabase/migrations/20261028042250_original_tournament_credits_read_their_record_cover.sql": "9e07f5570eed98cd2aab1037639e68b4e2b74b89295c148af2cb5cdb466af8cb",
+    "scripts/ci/test-tournament-source-credit-cover-postgres.py": "fd2b562ece5a8300dd593c21c5a2f6e7b2a7991c4645d5bb16d7e661b574e73b",
+    "scripts/ci/fixtures/tournament-source-credit-cover/README.md": "9d08604fd72ae2a10a90182693db30f4592251817f73bfcec12e25c27be85f0f",
+    "scripts/ci/fixtures/tournament-source-credit-cover/actual-source-contract30330.json": "f290fcffbf76846a6f2548e02352f0eb38dedcc3228086af8c1e6fac02b6f7c4",
+    "scripts/ci/fixtures/tournament-source-credit-cover/original-src-sum.sql": "040fb83e4e25ec281a096745dd11f59ee0562417d112549d276668625cc35d6a",
+    "scripts/ci/fixtures/tournament-source-credit-cover/qualification-evidence.json": "ce6c58d5d9468f5b5460d16500a8b7d7aae198f52ec9b9d07ea1473748fe9859",
+    "scripts/ci/fixtures/tournament-source-credit-cover/source-receipt.json": "d389bdfd86b027ed30ff471d8dd7905d91001fecd8f213c14eb1143eae6d6aab",
+    "scripts/ci/fixtures/tournament-source-credit-cover/source-table.json": "d7e9570d975375188494b41c64a392068b02c52869c5e454f9717053629e9049",
+    "tests/tournament-credit-sum-index-keeps-original-records.law.test.ts": "3d4bf43756ade0bccc92d4b4c9feaae9912efa2d79cfe460a31f72efb843934c",
+    "docs/laws.d/tournament-credit-sum-index-keeps-original-records.md": "98f344ce134c5977b73d421b193749bc551de508853cd7b3a75ed0aaa4e5f758",
+    "docs/changelog/2026-10-28-tournament-credit-sum-record-cover.md": "05fc97f80559a6166710c8768e7037dce34582fadb0289d7f1f1bb171373d302",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979"
+  },
+  "groupedPrivateSourceWorkflowAudit20261028": {
+    "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
+    "priorWorkflowSHA256": "a77221da9cd62942641a5f814e7d3ed1e5655e05a6d93b004d6d2e70732dca6b",
+    "currentWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "prior_commands_preserved": true
+  },
+  "orderedPrivateKeyWorkflowAudit20261028": {
+    "review": "Only adds ordered-key native97 path/lane; every existing native command and input retained. Prior valid source evidence remains separate.",
+    "priorWorkflowSHA256": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "currentWorkflowSHA256": "12eabb60b540aefc4a4cbf6a01bbbcf77b1c4cc08033a9ce307fb889522ad999",
+    "prior_commands_preserved": true
+  },
+  "cashLinkProofPhysicalIndexWorkflow20261028": {
+    "review": "Only adds cash-link physical-index native22 path filters and explicit PG17 step. Every previous qualification command/financial source/fixture is byte-unchanged. New native22 passed; no repeated evidence claimed for unchanged families.",
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "before": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
+    "after": "1bb766a7f7e99a7bdf54b0f91135382b0dc1665ac28de9d098f009b5f36e4b2a",
+    "prior_commands_preserved": true
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  }
+}

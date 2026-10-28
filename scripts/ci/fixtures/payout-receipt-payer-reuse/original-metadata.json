@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-27T17:31:24.823196+00:00",
+  "acl": "{postgres=X/postgres}",
+  "md5": "501d4a3187573289db69d6d7ec286406",
+  "set": false,
+  "owner": "postgres",
+  "config": ["search_path=pg_catalog, public"],
+  "strict": false,
+  "definer": true,
+  "parallel": "u",
+  "source40": true,
+  "volatility": "s"
+}

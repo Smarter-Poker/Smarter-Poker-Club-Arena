@@ -1,0 +1,6 @@
+{
+  "migration_file": "supabase/migrations/20261028014525_original_private_deposit_keys_read_scalar_facts.sql",
+  "index_name": "accounting_cash_private_deposit_keys_cover",
+  "exact_columns": ["club_id", "coordinator_union_id", "earned_at", "rake_record_id", "union_id"],
+  "source_query": "Original5225 and explicitC2 cash private source distinct rake_record_id keyset; no function rewrite"
+}

@@ -113,8 +113,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 243443,
-      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+      "bytes": 243725,
+      "sha256": "24a99a18ee5a6d4d6bcc56e1fd4f941e9f085682c8d51e4360fb325df73759dc"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -725,6 +725,34 @@
     "current": {
       "bytes": 243443,
       "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+    },
+    "execution_performed": false
+  },
+  "compilerJobCleanupBudget20261028": {
+    "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
+    "previousWorkflowPin": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "execution_performed": false
+  },
+  "arrivalCompilerComposition20261028": {
+    "reason": "Preserve protected-main compiler cleanup headroom and this branch additive native arrival qualification. Reviewed workflow diff; no suite/assertion/financial qualification removed or re-certified. Current combined workflow identity only.",
+    "previousBranchWorkflow": {
+      "bytes": 243443,
+      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflow": {
+      "bytes": 243725,
+      "sha256": "24a99a18ee5a6d4d6bcc56e1fd4f941e9f085682c8d51e4360fb325df73759dc"
     },
     "execution_performed": false
   }

@@ -1,0 +1,9 @@
+# Tournament inspector sanitizer binding after protected main integration
+
+The tournament predicate wiring check retained the earlier sanitizer hash after merging protected main f61e6b3cb3 (#8360). That change permits bounded selection-category counts only on two unknown-result reasons. The maintained inspector already carries those exact merged bytes; this correction updates only the reviewed source pin, from 2c382f048797f6e692bffaebc2e17b3a3ea0075aca8b4793cc42943b050ad369 to 560fd66bde654a23933989342565d7da366b91e216cacec69715fa266bcf1d03.
+
+Review confirmed that source, hand key, exact record hash, observed-result key sets and all eight success guards are unchanged. New counts have a closed key set, integer 0..256 bounds, count conservation, zero matching shapes and exact explicit-record constraints. Existing negative tests reject private fields, booleans, oversized or inconsistent counts, wrong reasons and false observed status. No runtime validator, private-output permission, qualification plan or source comparison is relaxed.
+
+The failed pre-push check is retained as reproduction. The predicate wiring and inspector suites are rerun on the composed source. A future inspector change, including an unmerged postflop version, must be reviewed and rebound separately; this pin does not anticipate it.
+
+The embedded JavaScript pin also changes from 679417485571a7ab4c8659d1b2e30e43ee8b881717918d26cf6f636fea843f21 to d9d3b2dd3fa0e634422748f439c44ee9783bb99315d58c690d7d08486eaec6c2 for the same reviewed #8360 diagnostic producer. Compared with protected main, the composed helper differs only by this branch's original awaited stdout flush. All canonical record validation, snapshot anchors, same-turn intended acceptance and complete-hand reconciliation remain enforced. The first focused run exposed this second old pin (139 passed, one failed); both exact pins are now reviewed together.

@@ -39,6 +39,9 @@ class DatabaseReservation(unittest.TestCase):
         self.git('config', 'user.name', 'Native Fixture')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'core.hooksPath', str(self.root / 'no-hooks'))
+        # Explicitly opted-in maintenance must finish before fixture cleanup.
+        self.git('config', 'maintenance.autoDetach', 'false')
+        self.git('config', 'gc.autoDetach', 'false')
         (self.repo / 'served.txt').write_text('served\n')
         self.git('add', '.'); self.git('commit', '-qm', 'serving boundary')
         self.serving = self.git('rev-parse', 'HEAD').strip()
@@ -78,6 +81,26 @@ class DatabaseReservation(unittest.TestCase):
         self.git('add', '.'); self.git('commit', '--allow-empty', '-qm', 'reviewed database boundary')
         self.control = self.git('rev-parse', 'HEAD').strip()
         self.git('update-ref', 'refs/remotes/origin/main', self.control)
+
+    def test_fetch_maintenance_finishes_before_fixture_cleanup(self):
+        # The controller really fetches. Git 2.55 no longer runs maintenance
+        # from commit, while fetch still does; exercise that actual trigger.
+        trace = self.root / 'fetch-trace.jsonl'
+        env = {**os.environ, 'GIT_TRACE2_EVENT': str(trace)}
+        subprocess.check_output(['git', '-C', str(self.repo), '-c', 'maintenance.auto=true',
+                                 'fetch', '--no-tags',
+                                 str(self.repo), 'main'], env=env, stderr=subprocess.PIPE)
+        events = [json.loads(line) for line in trace.read_text().splitlines()]
+        maintenance = [event for event in events if event.get('event') == 'child_start'
+                       and event.get('argv', [])[:3] == ['git', 'maintenance', 'run']]
+        self.assertTrue(maintenance, 'real fetch must exercise automatic Git maintenance')
+        for child in maintenance:
+            self.assertNotIn('--detach', child['argv'])
+            self.assertTrue(any(event.get('event') == 'child_exit'
+                                and event.get('sid') == child['sid']
+                                and event.get('child_id') == child['child_id']
+                                and event.get('code') == 0 for event in events),
+                            'fetch must reap its maintenance child before returning')
 
     def request(self, run='100-1'):
         return {'runId': run, 'controlSha': self.control, 'servingSha': self.serving, 'windowId': 'native-db'}

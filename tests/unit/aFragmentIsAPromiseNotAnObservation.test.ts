@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { loadSchemaManifest } from '../../scripts/ci/schema-manifest.mjs';
 
@@ -93,4 +96,146 @@ describe('a fragment is a promise, not an observation', () => {
     expect(GATE).toMatch(/process\.env\.SUPABASE_DB_URL \|\| process\.env\.DATABASE_URL/);
     expect(GATE).not.toMatch(/postgres(ql)?:\/\/[^\s'"`]*:[^\s'"`@]+@/);
   });
+});
+
+// Fixtures must never inherit a pre-push hook's repository or injected config.
+// An explicit small environment also excludes credentials and global config.
+function fixtureEnvironment(inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of [
+    'PATH',
+    'TMPDIR',
+    'TEMP',
+    'TMP',
+    'LANG',
+    'LC_ALL',
+    'TZ',
+    'SYSTEMROOT',
+    'WINDIR',
+    'COMSPEC',
+  ])
+    if (inherited[key] !== undefined) env[key] = inherited[key];
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  return env;
+}
+
+describe('protected-main migration submission', () => {
+  it.each(['ordinary environment', 'inherited pre-push environment'])(
+    'isolates %s and preserves strict submission results',
+    (scenario) => {
+      const root = mkdtempSync(join(tmpdir(), 'migration-submission-'));
+      const directory = join(root, 'candidate');
+      const foreign = join(root, 'foreign');
+      mkdirSync(directory);
+      mkdirSync(foreign);
+      const safe = fixtureEnvironment(process.env);
+      const foreignGit = (...args: string[]) =>
+        execFileSync('git', args, {
+          cwd: foreign,
+          env: safe,
+          stdio: 'pipe',
+          encoding: 'utf8',
+        }).trim();
+      foreignGit('init');
+      foreignGit('config', 'user.name', 'Foreign fixture owner');
+      foreignGit('config', 'user.email', 'foreign@example.invalid');
+      writeFileSync(join(foreign, 'retained.txt'), 'retained');
+      foreignGit('add', '.');
+      foreignGit('commit', '-m', 'retained foreign work');
+      const foreignConfig = readFileSync(join(foreign, '.git/config'));
+      const foreignHead = foreignGit('rev-parse', 'HEAD');
+      const foreignIndex = readFileSync(join(foreign, '.git/index'));
+      const inherited =
+        scenario === 'ordinary environment'
+          ? process.env
+          : {
+              ...process.env,
+              GIT_DIR: join(foreign, '.git'),
+              GIT_WORK_TREE: foreign,
+              GIT_COMMON_DIR: join(foreign, '.git'),
+              GIT_INDEX_FILE: join(foreign, '.git/index'),
+              GIT_CONFIG_COUNT: '1',
+              GIT_CONFIG_KEY_0: 'core.bare',
+              GIT_CONFIG_VALUE_0: 'true',
+              GIT_CONFIG_PARAMETERS: "'user.name'='Injected owner'",
+            };
+      const env = fixtureEnvironment(inherited);
+      const git = (...args: string[]) =>
+        execFileSync('git', args, { cwd: directory, env, stdio: 'pipe', encoding: 'utf8' }).trim();
+      const migration = 'supabase/migrations/20261027000000_new_retention.sql';
+      const existing = 'supabase/migrations/20261026000000_existing.sql';
+      const body =
+        'CREATE FUNCTION public.fn_retention() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;';
+      const write = (file: string, text: string) => writeFileSync(join(directory, file), text);
+      const run = (base: string) => {
+        return spawnSync(process.execPath, ['scripts/ci/check-migrations-applied.mjs', base], {
+          cwd: directory,
+          encoding: 'utf8',
+          env,
+        });
+      };
+      try {
+        mkdirSync(join(directory, 'scripts/ci'), { recursive: true });
+        mkdirSync(join(directory, 'supabase/migrations'), { recursive: true });
+        for (const name of [
+          'check-migrations-applied',
+          'schema-manifest',
+          'sql-manifest-identifiers',
+          'recording-only',
+          'maintenance-window-migrations',
+          'owner-window-migration',
+        ])
+          cpSync(`scripts/ci/${name}.mjs`, join(directory, `scripts/ci/${name}.mjs`));
+        write(
+          'scripts/ci/supabase-schema-manifest.json',
+          JSON.stringify({ tables: [], functions: [] })
+        );
+        write('scripts/ci/supabase-columns-manifest.json', '{}');
+        write('scripts/ci/recorded-migrations.manifest.json', '{"recordings":[]}');
+        write(existing, '-- existing installed migration history');
+        git('init');
+        git('config', 'user.name', 'Isolated migration contract');
+        git('config', 'user.email', 'fixture@example.invalid');
+        git('add', '.');
+        git('commit', '-m', 'base');
+        const base = git('rev-parse', 'HEAD');
+        write(migration, body);
+        git('add', '.');
+        git('commit', '-m', 'new migration');
+        const pending = run(base);
+        expect(pending.status, pending.stderr).toBe(0);
+        expect(pending.stdout).toContain('PENDING PROTECTED-MAIN INSTALLATION, NOT INSTALLED');
+        expect(pending.stdout).not.toContain('every object these migrations declare exists');
+        expect(pending.stdout).toContain('dispatch apply-merged-migration');
+        expect(pending.stdout).toContain('1 pending protected-main installation');
+        expect(pending.stdout).not.toContain('0 unapplied object');
+        write(existing, body);
+        git('add', '.');
+        git('commit', '-m', 'modified old version');
+        const changedOld = run(base);
+        expect(changedOld.status, changedOld.stderr).toBe(1);
+        expect(changedOld.stderr).toContain('fn_retention');
+        // A rename of an old version cannot masquerade as a newly admitted file.
+        git('mv', existing, existing.replace('existing.sql', 'renamed.sql'));
+        git('commit', '-m', 'rename old version');
+        expect(run(base).status).toBe(1);
+        expect(run('does-not-exist').status).toBe(2);
+        // New SQL still undergoes strict schema validation before pending admission.
+        write(
+          migration,
+          'CREATE FUNCTION invalid_schema.fn_retention() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;'
+        );
+        git('add', '.');
+        git('commit', '-m', 'invalid schema');
+        expect(run(base).status).toBe(2);
+        expect(readFileSync(join(foreign, '.git/config'))).toEqual(foreignConfig);
+        expect(foreignGit('rev-parse', 'HEAD')).toBe(foreignHead);
+        expect(readFileSync(join(foreign, '.git/index'))).toEqual(foreignIndex);
+        expect(readFileSync(join(foreign, 'retained.txt'), 'utf8')).toBe('retained');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 });

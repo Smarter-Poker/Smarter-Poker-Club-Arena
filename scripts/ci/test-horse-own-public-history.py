@@ -170,8 +170,8 @@ def main():
             # Realistic sparse-context regression: v2 must filter context before
             # its horizon, without fetching the observer's other contexts' heap.
             # Include a wide private canary to expose scattered heap work, never
-            # include it in the index or reader projection. Its hand IDs use
-            # a distinct namespace from the v3 equivalence corpus above.
+            # include it in the index or reader projection.
+            # Keep these 100k sparse-only facts distinct from v3's 20k skew hands.
             run(f"INSERT INTO ca_hand_facts SELECT ('00000000-0000-0000-0005-'||lpad(n::text,12,'0'))::uuid,'{uid(1)}','{uid(100)}',NULL,'2026-10-25T01:15:00Z'::timestamptz+n*interval '0.01 second','plo6',1,'BTN',6,0,to_jsonb(repeat('secret_private_canary',32)) FROM generate_series(1,100000) n; ANALYZE ca_hand_facts;")
             sparse_before=read(variant='plo5')
             empty_before=read(variant='plo8')

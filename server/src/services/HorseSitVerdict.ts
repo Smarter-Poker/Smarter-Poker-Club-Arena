@@ -46,6 +46,7 @@ import {
 /** The table fields the verdict reads. Every cash table row carries them. */
 export interface SitTable {
   id: string;
+  arena?: unknown;
   name?: string | null;
   club_id?: string | null;
   union_id?: string | null;
@@ -93,7 +94,7 @@ export interface BuyInSizing {
 }
 
 export interface SitVerdictContext {
-  bankrollOnlyCashHorse?: (horseId: string) => boolean;
+  bankrollOnlyCashHorse?: (horseId: string, table: SitTable) => boolean;
   /** Which wallet pays for this horse at this table (resolveSeatClub):
    *  a club id, null for "no membership can pay: not a candidate", undefined
    *  for "the membership map did not load: the database decides". */
@@ -244,7 +245,7 @@ export function sitVerdictFor(
     const storedRoll = ctx.bankrolls.get(`${seatClub}:${horseId}`);
     const balance = ctx.bankrollsLoaded && storedRoll !== undefined ? storedRoll : null;
     const verdict = evaluateSit({
-      bankrollOnly: ctx.bankrollOnlyCashHorse?.(horseId) === true,
+      bankrollOnly: ctx.bankrollOnlyCashHorse?.(horseId, table) === true,
       activeClubId: ctx.activeClubOf.get(horseId) ?? null,
       activeHostId: ctx.activeHostOf.get(horseId) ?? null,
       activeSeatCount: ctx.horseTables.get(horseId)?.size ?? 0,

@@ -1,0 +1,145 @@
+name: Horse Tournament Flag Cards
+run-name: Tournament card ${{ inputs.card }} at ${{ inputs.source_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact protected source containing the separately locked tournament plan
+        required: true
+        type: string
+      card:
+        required: true
+        type: choice
+        options:
+          [
+            plo4_v53_icm_mtt,
+            plo4_v53_icm_sng,
+            plo5_v53_icm_mtt,
+            plo5_v53_icm_sng,
+            plo6_v53_icm_mtt,
+            plo6_v53_icm_sng,
+          ]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: horse-strength-hosted-capacity
+  queue: max
+  cancel-in-progress: false
+env:
+  SUPABASE_URL: https://supabase.invalid
+  SUPABASE_SERVICE_ROLE_KEY: tournament-card-offline-placeholder
+  EQUITY_GOVERNOR: 'off'
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0, persist-credentials: false }
+      - name: Admit protected source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          git checkout --detach "$SOURCE_SHA"
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+        working-directory: server
+      - name: Read immutable matrix without dealing
+        id: plan
+        working-directory: server
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CARD: ${{ inputs.card }}
+        run: |
+          npx tsx src/scripts/horseTournamentCardEvaluate.ts --plan=true --source-sha="$SOURCE_SHA" --card="$CARD" --output="$RUNNER_TEMP/plan.json"
+          node --input-type=module - "$RUNNER_TEMP/plan.json" <<'JS'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          if(p.matrix.length!==48||new Set(p.matrix.map(c=>c.key)).size!==48||!p.matrix.every(c=>/^[a-z0-9_]+-[0-9]+-[0-9]+$/.test(c.key)))throw Error('Invalid matrix');
+          appendFileSync(process.env.GITHUB_OUTPUT,'matrix='+JSON.stringify({include:p.matrix})+'\n');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          {
+            name: tfc-plan-a1,
+            path: '${{ runner.temp }}/plan.json',
+            if-no-files-found: error,
+            retention-days: 30,
+          }
+  card:
+    name: Card ${{ matrix.key }}
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.source_sha }}', fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+        working-directory: server
+      - name: Bind original provider job then execute once
+        working-directory: server
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CARD: ${{ inputs.card }}
+          CELL: ${{ matrix.key }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx tsx src/scripts/horseTournamentCardEvaluate.ts --source-sha="$SOURCE_SHA" --card="$CARD" --cell="$CELL" --output="$RUNNER_TEMP/card"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          {
+            name: 'tfc-${{ matrix.key }}-a1',
+            path: '${{ runner.temp }}/card/',
+            if-no-files-found: error,
+            retention-days: 30,
+          }
+  assemble:
+    needs: [plan, card]
+    if: always() && github.ref == 'refs/heads/main' && github.run_attempt == 1 && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.source_sha }}', fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
+      - run: npm ci
+        working-directory: server
+      - uses: actions/download-artifact@v4
+        with:
+          {
+            pattern: 'tfc-${{ inputs.card }}-*-a1',
+            path: '${{ runner.temp }}/cards',
+            merge-multiple: false,
+          }
+      - name: Verify original jobs, source, field and every pair
+        working-directory: server
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CARD: ${{ inputs.card }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx tsx src/scripts/horseTournamentCardSummarize.ts --source-sha="$SOURCE_SHA" --card="$CARD" --input="$RUNNER_TEMP/cards" --output="$RUNNER_TEMP/assembled"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          {
+            name: 'tfc-verdict-${{ inputs.card }}-a1',
+            path: '${{ runner.temp }}/assembled/',
+            if-no-files-found: error,
+            retention-days: 30,
+          }

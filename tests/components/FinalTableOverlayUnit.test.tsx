@@ -81,3 +81,28 @@ describe('the final table prints its pool at the event unit', () => {
     }
   });
 });
+
+it('never classifies opponents even when an old event includes populated statistics', () => {
+  const { container } = render(
+    <FinalTableOverlay tournamentId="t-1" unitCents={CHIP_UNIT_CENTS} />
+  );
+  act(() =>
+    bus.handlers.get('FINAL_TABLE_REACHED')!({
+      tournamentId: 't-1',
+      players: PLAYERS.map((p) => ({
+        ...p,
+        stats: {
+          handsPlayed: 100,
+          vpipCount: 80,
+          pfrCount: 60,
+          aggressiveActions: 80,
+          passiveActions: 5,
+        },
+      })),
+    })
+  );
+  expect(container.textContent).toContain('Alice');
+  expect(container.textContent).toContain('Bob');
+  expect(container.querySelector('.ft-player__style')).toBeNull();
+  expect(container.textContent).not.toMatch(/Shark|Fish|Rock|Maniac|TAG|LAG|Nit|REG|VPIP|PFR/);
+});

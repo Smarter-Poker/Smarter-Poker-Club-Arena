@@ -124,6 +124,52 @@ try:
   if holder.poll()is None:holder.kill();holder.communicate()
  rr=json.loads(q(call(20)));assert rr['replayed']is True
  assert q("SELECT count(*)FROM chip_ledger WHERE idempotency_key='manual-agent-adjustment:"+u(20)+"'")=='1';checks.append('concurrent_original_operation_replay_uses_one_durable_leg')
+ # The connected accounting document trigger is essential: a financial-only
+ # fixture cannot qualify a new journal category against production documents.
+ from document_pipeline import install
+ document_owners=install(q,ROOT,F)
+ q(insert(131))
+ before_documents=state()
+ q('BEGIN;'+call(131)+'ROLLBACK;','correction_document_source_unverified')
+ assert state()==before_documents
+ checks.append('real_document_trigger_reproduces_original_incident_category_failure_atomically')
+ earned=(ROOT/'supabase/migrations/20261028193243_approved_earned_agent_commissions_issue_paid_transfer_receip.sql').read_text()
+ q(earned.replace("'6eec29205765cd38ca9e0f6f9bfb8ed5'","'00000000000000000000000000000000'"),'earned_agent_document_preimage_changed')
+ checks.append('earned_document_installer_wrong_helper_preimage_refused_atomically')
+ q(earned)
+ args.output.with_suffix('.postimages.json').write_text(q("SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'md5',md5(pg_get_functiondef(p.oid)),'metadata',to_jsonb(p)-'prosrc')ORDER BY p.proname)FROM pg_proc p WHERE p.oid IN('fn_ca_settle_approved_agent_adjustment(uuid,uuid,jsonb)'::regprocedure,'fn_ca_adjustments_report(timestamptz)'::regprocedure)")+'\n')
+ q(earned,'earned_agent_document_preimage_changed')
+ checks.append('earned_commission_document_installer_strict_transition_and_replay_refusal')
+ q('BEGIN;'+call(131)+'SET CONSTRAINTS ALL IMMEDIATE;ROLLBACK;')
+ assert state()==before_documents and q('SELECT count(*) FROM settlement_invoices')=='0'
+ checks.append('complete_real_document_pipeline_rollback_has_no_credit_invoice_or_counter_effect')
+ doc_receipt=json.loads(q('BEGIN;'+call(131)+'SET CONSTRAINTS ALL IMMEDIATE;COMMIT;').splitlines()[0])
+ doc_row=json.loads(q("SELECT to_jsonb(i) FROM settlement_invoices i WHERE source_ledger_id="+lit(doc_receipt['ledger_id'])))
+ assert doc_row['invoice_type']=='club_to_agent' and doc_row['status']=='paid' and doc_row['chips_transferred'] is True and doc_row['message_sent'] is True and doc_row['invoice_number'] and doc_row['gross_amount']==6.43 and doc_row['net_amount']==6.43
+ assert q('SELECT count(*) FROM accounting_invoice_deliveries')=='0'
+ assert q("SELECT category FROM chip_ledger WHERE id="+lit(doc_receipt['ledger_id']))=='commission'
+ assert q("SELECT single_actor FROM fn_ca_adjustments_report('2025-11-20')WHERE row_id="+lit(doc_receipt['ledger_id']))=='t'
+ checks.append('real_commission_document_paid_transferred_numbered_history_only_and_truthful_audit')
+ checks.append('actual_flow_terminal_satellite_cancellation_launch_and_freeze_trigger_early_returns_executed')
+ doc_state=state();doc_invoice=q('SELECT to_jsonb(i) FROM settlement_invoices i');doc_counter=q('SELECT to_jsonb(c) FROM accounting_invoice_counters c')
+ assert json.loads(q(call(131)))['replayed'] is True and state()==doc_state and q('SELECT to_jsonb(i) FROM settlement_invoices i')==doc_invoice and q('SELECT to_jsonb(c) FROM accounting_invoice_counters c')==doc_counter
+ checks.append('commission_replay_preserves_exact_credit_invoice_counter_and_empty_messenger_deliveries')
+ q("BEGIN;UPDATE agents SET status='suspended' WHERE id="+lit(u(2))+';'+insert(134)+call(134)+'SET CONSTRAINTS ALL IMMEDIATE;ROLLBACK;')
+ assert state()==doc_state and q('SELECT to_jsonb(i) FROM settlement_invoices i')==doc_invoice
+ checks.append('suspended_earned_commission_uses_real_paid_document_without_reactivation')
+ # Original old-format settled receipts retain their exact replay ABI.
+ assert json.loads(q(call()))['replayed'] is True
+ checks.append('legacy_settled_correction_receipt_replay_remains_unchanged')
+ q("BEGIN;UPDATE settlement_invoices SET net_amount=net_amount+.01;ROLLBACK;",'issued_accounting_invoice_is_immutable')
+ checks.append('real_issued_invoice_immutable_owner_refuses_tampering')
+ # An omitted trigger may never produce a false-success financial receipt.
+ q('DROP TRIGGER accounting_transfer_document ON chip_ledger;')
+ q('BEGIN;'+insert(132)+call(132)+'ROLLBACK;','approved_agent_adjustment_paid_document_unverified')
+ assert state()==doc_state
+ checks.append('missing_document_trigger_refuses_and_rolls_back_credit')
+ doc_catalog=json.loads((F/'correction-document-owners.json').read_text())
+ doc_gl=next(t for t in doc_catalog['relations']if t['name']=='chip_ledger')
+ q(next(z['definition'] for z in doc_gl['triggers']if z['metadata']['tgname']=='accounting_transfer_document')+';')
  (B/'adjustment-native-postimages.json').write_text(q("SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'definition',pg_get_functiondef(p.oid),'md5',md5(pg_get_functiondef(p.oid)),'metadata',to_jsonb(p)-'prosrc')ORDER BY p.proname)FROM pg_proc p WHERE p.oid IN('fn_ca_settle_approved_agent_adjustment(uuid,uuid,jsonb)'::regprocedure,'fn_ca_adjustments_report(timestamptz)'::regprocedure)")+'\n')
  out={'passed':len(checks),'checks':checks,'receipt':receipt,'limitations':['All4 current table columns/checks/PK preserved; external foreign keys except actual performed_by FK and unrelated business notification/report triggers are not recreated.','Original autoledger/enrichment/sync/actor guard/key claim/balance and leg tally/deferred refusal bodies are real; external refusal recorder is controlled non-network observer.','Tally helpers use exact current71217 capture; unrelated table/tournament helper branches are not invoked.','No production database or financial RPC invoked.']};args.output.write_text(json.dumps(out,indent=2)+'\n');print(json.dumps({'passed':out['passed'],'output':str(args.output)}))
 finally:

@@ -62,7 +62,7 @@ import { TournamentLateRegCallToAction } from '../components/table/TournamentLat
  * Removed: BadBeatJackpot, BBJCelebration, BombPotOverlay, ChipStack,
  * ConfettiCanvas, FinalTableOverlay, HandHistoryPanel (the default export —
  * the HandRecord type it also exports is still used), HandNotation,
- * HandReveal, HeadsUpOverlay, LeaveTableConfirm, MiniHUD, ParticleSystem,
+ * HandReveal, HeadsUpOverlay, LeaveTableConfirm, ParticleSystem,
  * PresenceIndicator, QuickActionsBar, RealTimeResults, SessionHUD,
  * SettingsPanel, SpectatorOverlay, ThrowableSelector, TimerBar,
  * TournamentAnnouncementOverlay, TournamentBreakScreen,
@@ -609,7 +609,6 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // IMPROVEMENT PASS 2026-08-19: PremiumCard, PlayerCard, HoleCardReveal and
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
-import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -9612,8 +9611,8 @@ function LiveTablePage({
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Only committed, card-free public summaries enter the Mini-HUD.
-  const { getStats: getPlayerHUDStats, observePublicEvent } = usePlayerStats(userId);
+  // Preserve committed, card-free public hand-stat recording; opponent HUDs are retired.
+  const { observePublicEvent } = usePlayerStats(userId);
   const observePublicEventRef = useRef(observePublicEvent);
   observePublicEventRef.current = observePublicEvent;
 
@@ -24763,7 +24762,6 @@ function LiveTablePage({
     onAllIn: () => void handleActionPanelAction('allin'),
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
-    onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
       //Use tableState.pot instead of local engine state
@@ -27711,26 +27709,6 @@ function LiveTablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
-            /* PERF 2026-08-25. This map body runs for every seat on every
-               render of TablePage. When it was written, TablePage re-rendered
-               once a second for the whole of anybody's turn (and, before the
-               pass that preceded it, about thirty times a second), so anything
-               computed per seat here was really being computed nine times over,
-               continuously, on a phone. The action clock no longer renders this
-               component at all — but the map body is still the hottest loop on
-               the page whenever anything else does render it, so the savings
-               below stay.
-
-               `getPlayerHUDStats(player.id)` was called TWICE per seat: once
-               for `hudStats` and again inside the `playerStyle` IIFE below.
-               Called once now and shared. Nothing about the values changes —
-               it is the same function with the same argument in the same
-               render — so the memo comparator downstream sees exactly what it
-               saw before. `bigBlind` and `holeCardCount` moved out of the map
-               entirely for the same reason (see seatBigBlind /
-               seatHoleCardCount above the return). */
-            const seatHudStats = player && !player.isHero ? getPlayerHUDStats(player.id) : null;
-
             // SPOTLIGHT (Dan 2026-08-15, verbatim: "spotlight on the player's
             // turn isn't working, even if hero folds — that functionality must
             // always be ON AT ALL TIMES").
@@ -28261,8 +28239,6 @@ function LiveTablePage({
                       : undefined
                   }
                   bbjCreditAmount={player ? bbjSeatCredits[player.id] : undefined}
-                  hudStats={seatHudStats}
-                  showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
                   /* Dan 2026-08-23: an opponent's hidden hand drew exactly two
@@ -28306,19 +28282,6 @@ function LiveTablePage({
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
-                  playerStyle={
-                    userSettings.showHUD &&
-                    seatHudStats?.aggressionMeasured &&
-                    (seatHudStats.callActions ?? 0) > 0
-                      ? playerStyleClassifier.classify({
-                          handsPlayed: seatHudStats.handsPlayed,
-                          vpipCount: seatHudStats.vpipCount,
-                          pfrCount: seatHudStats.pfrCount,
-                          aggressiveActions: seatHudStats.aggressiveActions,
-                          passiveActions: seatHudStats.callActions,
-                        })
-                      : null
-                  }
                   onSit={() => handleSeatClick(seatNumber)}
                   /* Dan 2026-08-15: "when a player is seated at the table, the
                      open seats that were a + should now say EMPTY. A user
@@ -30785,7 +30748,6 @@ function LiveTablePage({
         onCloseSessionHUD={handleCloseSessionHUD}
         // Helpers
         safeBB={safeBB}
-        getPlayerHUDStats={getPlayerHUDStats}
       />
       {/* Dan 2026-08-23: "when players are seated at the table, or are on
           break, there should be a countdown clock."

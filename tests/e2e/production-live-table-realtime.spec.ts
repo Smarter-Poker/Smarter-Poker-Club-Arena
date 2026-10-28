@@ -2472,7 +2472,15 @@ test('natural horse social behavior reaches the live table', async ({
             .select('table_id,hand_number,horse_id,event,said_at')
             .eq('table_id', candidate.id)
             .gte('said_at', began)
-            .neq('event', 'all_in')
+            .in('event', [
+              'big_pot_won',
+              'showdown_loss',
+              'big_hand_shown',
+              'pot_lost',
+              'pot_won',
+              'tilt',
+              'heater',
+            ])
             .order('said_at', { ascending: true })
             .limit(20)
         : { data: [], error: null };

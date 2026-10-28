@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 239886,
-      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+      "bytes": 240182,
+      "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -373,33 +373,6 @@
       "sha256": "6b67e4d53eb7849c3639434d47766b9b519eee7a1f73fb3a37b316949fde3c3a"
     }
   },
-  "cashHalfInputBinding20261026": {
-    "reason": "The reviewed cash-capacity change adds one native Accounting2 step and its exact runner routing. Update current enforcement source identity only; preserve historical receipts, qualification verdicts and financial fixtures/assertions. Not an execution or production certificate.",
-    "changes": {
-      ".github/workflows/ci.yml": {
-        "previous": {
-          "bytes": 238487,
-          "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
-        },
-        "current": {
-          "bytes": 238718,
-          "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
-        }
-      }
-    }
-  },
-  "accountingJobBudgetAudit20261027": {
-    "previous": {
-      "bytes": 238718,
-      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
-    },
-    "current": {
-      "bytes": 239646,
-      "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
-    },
-    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
-    "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
-  },
   "horseRiverCallPersistenceNative20261026": {
     "reason": "Add the exact river-call persistence migration and legacy-writer PostgreSQL 17 qualification to existing required accounting shard 4. Refresh only the reviewed additive workflow input identity; preserve historical receipts, source pins, financial assertions and qualification verdicts. Source binding is not production installation evidence.",
     "changes": {
@@ -445,6 +418,21 @@
       "sha256": "f4c210f0934fcb941a4d3ab5979a2b8c59d7a0f4c8e595c6960c02443f21b67b"
     }
   },
+  "cashHalfInputBinding20261026": {
+    "reason": "The reviewed cash-capacity change adds one native Accounting2 step and its exact runner routing. Update current enforcement source identity only; preserve historical receipts, qualification verdicts and financial fixtures/assertions. Not an execution or production certificate.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 238487,
+          "sha256": "74320725973f7d2196ba871587086ff349284228835a9394311f792e5b58524b"
+        },
+        "current": {
+          "bytes": 238718,
+          "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+        }
+      }
+    }
+  },
   "pooledRiverCashHalfSourceIntegration20261027": {
     "reason": "Preserve additive river-call Accounting4 qualification and protected-main half-cash Accounting2 qualification together. Only the active combined CI source identity changes; both historical audit records, qualification flags, financial fixtures and assertions are preserved. This is not execution or production evidence.",
     "execution_performed": false,
@@ -473,11 +461,42 @@
     },
     "execution_performed": false
   },
+  "rakebackConsolidationWorkflowIntegration20261027": {
+    "reason": "Normal8349 consolidation retains protected-main native qualification and the qualified runtime privilege regression on existing accounting shard4. Reviewed additive workflow patch; no command/assertion/financial source pin removed. Candidate finalization awaits remaining qualified source heads.",
+    "priorWorkflowPin": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "currentWorkflowPin": {
+      "bytes": 239882,
+      "sha256": "671e085878be9f3775aecbeb930837bec4e24d9743e0c133f7607eeaca6a7fee"
+    }
+  },
+  "accountingJobBudgetAudit20261027": {
+    "previous": {
+      "bytes": 238718,
+      "sha256": "2d281b8712c9ed68ca92a7e2080b11b338bd4b9e5eaaeb5a42c947f30df00a38"
+    },
+    "current": {
+      "bytes": 239646,
+      "sha256": "32d7bebc69d6147ffc71c5183f09d4939da7437ddd842beee0bf1ac9ad1e1469"
+    },
+    "review": "Only accounting job40\u219250minutes and measured rationale; every step selector, command, assertion, statement deadline and cleanup unchanged. Canceled40528107352 remains failed; last successful comparable Spin40520906517 took323seconds. No qualification or production proof inferred.",
+    "composition": "Preserves all current protected-main CI steps plus the measured50minute job budget; only this workflow pin conflicted."
+  },
   "riverPersistenceBudgetIntegration20261027": {
     "review": "Retains protected-main river persistence Accounting4 step and existing measured Accounting2 50-minute budget. Both historical audits and all financial assertions preserved; active CI pin binds their additive composition.",
     "combinedWorkflowPin": {
       "bytes": 239886,
       "sha256": "39814da9e66dfdac6b20093c8b5527069ccc1948b7e800db5afdb2a2a9eeaeeb"
+    },
+    "execution_performed": false
+  },
+  "rakebackProtectedMainBudgetIntegration20261028": {
+    "review": "Preserves all protected-main changes including measured Accounting2 50 minute budget and every rakeback native step. Only combined active workflow binding changes; historical audits, source pins, financial assertions and installation records retained. Not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "bf231a8304b6f72970cd72d552ffe3ae8f9352f6a141c52108f750774ce0f08a"
     },
     "execution_performed": false
   },
@@ -505,6 +524,18 @@
     "combinedWorkflowPin": {
       "bytes": 239886,
       "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    },
+    "execution_performed": false
+  },
+  "rakebackQualifiedFollowupComposition20261028": {
+    "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "rakebackProtectedServerBudgetIntegration20261028": {
+    "review": "Preserve protected-main211ebe5 server shard outer budget15 to25 minutes and all source/tests unchanged. Combined workflow retains every existing rakeback/native command; only the reviewed active CI source identity changes. All historical audits and financial pins retained, not execution or production proof.",
+    "combinedWorkflowPin": {
+      "bytes": 240182,
+      "sha256": "62ecf67e2b5b3911fb5b050e145bf32b9051a8179f02a21ee9aec547273e99d2"
     },
     "execution_performed": false
   }

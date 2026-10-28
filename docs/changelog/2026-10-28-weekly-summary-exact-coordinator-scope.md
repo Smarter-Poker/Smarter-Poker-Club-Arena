@@ -1,0 +1,7 @@
+# Weekly statements select their exact coordinator scope
+
+Lightning statement closure timed out in the original source aggregate before tournament quality. Its nullable coordinator predicate estimated one source and chose a nested anti join scanning 7,887 funding admissions for each cash source. The exact NULL/non-NULL partition exposes existing index conditions; the actual candidate plan uses a hash anti join and reduces estimated cost from 199,488 to 41,189. No view, source contract, earning rule, rate, receipt, metadata, permission, certificate or time budget changes.
+
+The full candidate aggregate completed read-only within 90 seconds: 308,801 sources, private rake 3,552.70, union rake zero, bad sources zero, fingerprint `48c3d96ec64be3668d106cc120eda8bd`. It is candidate read evidence, not installed full statement or coordinator capacity proof.
+
+Native PG17 qualification uses the actual current full summary, original issuer and native bank lineage with captured current payable/effective views. Admission/cutoff schemas and external authorization, quality, epoch, routing and delivery collaborators are explicit fixture boundaries. It verifies NULL/non-NULL full-row parity, original financial report/refusals, immutable issued history, exact metadata/ACL/STABLE, atomic installer guards, current-view source contracts and a concurrent writer crossing one observed caller snapshot. Protected merge, exact installation/history readback and original scope closure remain separate delivery requirements.

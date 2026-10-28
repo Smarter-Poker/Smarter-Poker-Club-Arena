@@ -1,0 +1,30 @@
+{
+  "captured_at": "2026-10-27T22:06:59.021411+00:00",
+  "sources": [
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-linked-window-schema-owner-metadata-2208.log",
+      "sha256": "279874d778873e177346c61b2529006f8233e0d63ab64ff3c2f912779d0e9792"
+    },
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-original-linked-cash-outcomes-2203.sql",
+      "sha256": "8216b2d2446f16d24816735d2886f17d125d1684871c465d267795c4462419a9"
+    },
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-original-weekly-hand-part-owners-2202.sql",
+      "sha256": "b4449534ebd30f97f2e6d8bf66ba4981b4962043afd38397d17bfae68883d6b7"
+    },
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-original-week-hand-lines-owner-2211.sql",
+      "sha256": "eafac93b1286327756f27621494e001075e5c391e32151544baad606395521be"
+    },
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-original-inventory-proof-source-owner-2209.sql",
+      "sha256": "3f8a2e7941fe1502763380614541b14ae49b58894c6ad2fbdf0002ba6331cd47"
+    },
+    {
+      "path": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/actual-hand-part-linked-indexes-2203.log",
+      "sha256": "fd182520dd6b131f73c68691300c3c224be311fd866c4e4c2a155f59bc0faacb"
+    }
+  ],
+  "limits": "Catalog/function fixtures only; no player/source rows, production execution or financial proof."
+}

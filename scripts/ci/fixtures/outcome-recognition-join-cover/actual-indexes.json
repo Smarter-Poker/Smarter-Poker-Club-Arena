@@ -1,0 +1,74 @@
+[
+  {
+    "schemaname": "smarter_private",
+    "tablename": "posthand_escrow_certificates",
+    "indexname": "posthand_escrow_certificates_hand_id_key",
+    "indexdef": "CREATE UNIQUE INDEX posthand_escrow_certificates_hand_id_key ON smarter_private.posthand_escrow_certificates USING btree (hand_id)"
+  },
+  {
+    "schemaname": "smarter_private",
+    "tablename": "posthand_escrow_certificates",
+    "indexname": "posthand_escrow_certificates_pkey",
+    "indexdef": "CREATE UNIQUE INDEX posthand_escrow_certificates_pkey ON smarter_private.posthand_escrow_certificates USING btree (table_id, hand_number)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcome_link_resolutions",
+    "indexname": "union_pnl_cash_outcome_link_resolutions_hand_id_key",
+    "indexdef": "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_hand_id_key ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcome_link_resolutions",
+    "indexname": "union_pnl_cash_outcome_link_resolutions_pkey",
+    "indexdef": "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_pkey ON public.union_pnl_cash_outcome_link_resolutions USING btree (table_id, hand_number)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcome_touches",
+    "indexname": "union_pnl_cash_outcome_touches_pkey",
+    "indexdef": "CREATE UNIQUE INDEX union_pnl_cash_outcome_touches_pkey ON public.union_pnl_cash_outcome_touches USING btree (table_id, hand_number)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcome_touches",
+    "indexname": "union_pnl_cash_outcome_touches_week",
+    "indexdef": "CREATE INDEX union_pnl_cash_outcome_touches_week ON public.union_pnl_cash_outcome_touches USING btree (game_union_id, recognized_at)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_expr_recognized_at_idx",
+    "indexdef": "CREATE INDEX union_pnl_cash_outcomes_expr_recognized_at_idx ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_hand_id_key",
+    "indexdef": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_hand_id_key ON public.union_pnl_cash_outcomes USING btree (hand_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_pkey",
+    "indexdef": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_pkey ON public.union_pnl_cash_outcomes USING btree (table_id, hand_number)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_recognition_window",
+    "indexdef": "CREATE INDEX union_pnl_cash_outcomes_recognition_window ON public.union_pnl_cash_outcomes USING btree (recognized_at)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_scope_missing",
+    "indexdef": "CREATE INDEX union_pnl_cash_outcomes_scope_missing ON public.union_pnl_cash_outcomes USING btree (recognized_at) WHERE (NOT (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text]))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "union_pnl_cash_outcomes",
+    "indexname": "union_pnl_cash_outcomes_unaccepted",
+    "indexdef": "CREATE INDEX union_pnl_cash_outcomes_unaccepted ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at) WHERE (((evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'game_scope'::text) IS DISTINCT FROM game_scope))"
+  }
+]

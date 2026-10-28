@@ -1,0 +1,31 @@
+{
+  "status": "passed_local_source_qualification_not_installed",
+  "nonempty_touched_branch_cases": 48,
+  "actual65_finite_cases": 245,
+  "source65_total": 65,
+  "changed_bindings": 2,
+  "unchanged_bindings": 63,
+  "GEN_owner": "58dc20e1ba380ccb9b9dee8809731d33",
+  "production_readonly_comparison": {
+    "original_auto_ms": 143373.686,
+    "candidate_auto_ms": 44389.987,
+    "bad_count_both": 0,
+    "opening_generation_same": true,
+    "logs": [
+      "midway-whole-original-touched-branch-AUTO180-root.log",
+      "midway-whole-membership-candidate-AUTO180-root.log"
+    ]
+  },
+  "production_installation": "not_performed",
+  "original84_rebuild_in_production": "required_after_actual_new_GEN_observed",
+  "limits": "Complete real report/original84 lane has explicit empty tournament/capture/ECO boundaries; independent48 nonempty branch covers membership. Actual65/finite245 separate genuine authority lane. No child production calls.",
+  "complete_report_targeted_native_case_count": 63,
+  "actual65_native_result": {
+    "path": "supabase/migrations/20261028033359_original_weekly_report_reads_tournament_membership_as_a_set.sql",
+    "sha256": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555",
+    "actual65_other63_unchanged": true,
+    "actual_three_owner_metadata_ACL_atomic_replay_drift": true,
+    "generation58dc_unchanged_naturally_invalidates_old_cache": true
+  },
+  "native_freeze_refusal": "passed_real_maintenance_owner_with_rollback_fixture"
+}

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scope": "Original scalar-only cash record cover, exact official migration native28; no production runtime or book closure qualification",
+  "sourceFiles": {
+    "supabase/migrations/20261028023500_original_cash_deposit_groups_read_scalar_facts.sql": "3679f13e3b155cf9b3e589469a81fc18919d9595008f526483be4c6fbf8a2d74",
+    "scripts/ci/test-private-cash-record-cover-postgres.py": "180174dd55cd76eb2949716a2e0d957bad0788ed9c799cb51988ea9afd859395",
+    "scripts/ci/fixtures/private-cash-record-cover/source-table.json": "2be0868e6e83e4f548c49e3dcf2b8c0495adbf3c6d82d8ff1e634a9a31f16885",
+    "scripts/ci/fixtures/private-cash-record-cover/source-receipt.json": "3cb0f031497559baeab196140070f1ba544455b869eea118020299353f99a8c0",
+    "scripts/ci/fixtures/private-cash-record-cover/original-cg.sql": "366cb6f493e82042dc2bbe649ee767a1ccccb958d1d94b6140d1fd15ee465271",
+    "scripts/ci/fixtures/private-cash-record-cover/qualification-evidence.json": "a131bfb246bf48ce1daf2bfda1be0b0b059086c14ac8129a69e7071dcfc32bf6",
+    "tests/private-cash-record-index-retains-original-facts.law.test.ts": "48859baa852c128692de47a217c833b9426188975f5d20fbe32997abf856e5a4",
+    "docs/laws.d/private-cash-record-index-retains-original-facts.md": "950ec27047e671d4c9b5463aeb39a15c58da7ba0d5425b94acd01e1147a03360",
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162",
+    "docs/changelog/2026-10-28-original-cash-deposit-records-read-scalar-facts.md": "838bc0d7d4c198c46f950bfeddc2f6b9ee8d78e252a691c5c1dcf0815dccfe78"
+  },
+  "workflowTournamentFeeScopeAdditiveAudit": {
+    "path": ".github/workflows/unpaid-lightning-funding-contracts.yml",
+    "previousSHA256": "68fd166dc8ed6c39ce261bd5eeda9fd7b586afbd97907dfa47c4a381f2e5f237",
+    "currentSHA256": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+    "change": "Exactly three new fee-scope qualification paths and one new isolated PG17 step. Reverse-removal was checked to recover prior workflow byte-for-byte; cash23500 exactSQL, runner, fixture, native28 evidence and every other original source pin remain unchanged. No repeat cash physical test is needed because only additive workflow enforcement metadata changed."
+  },
+  "reportMembershipCapacityQualificationAudit": {
+    "reason": "Reviewed additive exact membership48 native step and current-report/real84 plus actual65 finite245 extension. Existing financial/native steps retained; no monetary source, raw fixtures, economic assertions or installed history changed. Explicit empty tournament boundary uses actual TEXT tournament IDs; exact nonempty membership semantics separately qualified.",
+    "changes": {
+      ".github/workflows/unpaid-lightning-funding-contracts.yml": {
+        "before": "26b6692f7fb24dbc5eebecf788740cf0d6ad4edc714f68e2f4c957f5ed9ab86f",
+        "after": "b2803373323f9d914e7be482c1ae4e7cec622bcd275571c83710ea74efd0d162"
+      }
+    }
+  }
+}

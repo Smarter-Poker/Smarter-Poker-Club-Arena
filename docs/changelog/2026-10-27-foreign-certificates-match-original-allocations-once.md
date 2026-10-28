@@ -1,0 +1,7 @@
+# Foreign certificates match their original allocations once
+
+The former Deep Stack Society standalone close validates 416 player periods already paid through Midway, so it must prove those foreign payments and issue no second personal credit. Its strict original helper still timed out after the raw cash source covering index was installed. The actual plan estimated one certificate and placed a complete source-bag scan inside each certificate's allocation join.
+
+The maintained helper now materializes the complete original candidate allocation bag once, then applies the identical source-identity, club, player, coordinator, source-time, rake, record, payer and rate predicates in one join. Original source population, NULL-coordinator own-source exclusion, latest certificate selection, full fingerprint and aggregate checks remain byte unchanged. No financial row, receipt, source pin, cache generation, permission, scheduled limit or payout route is changed.
+
+A production READ ONLY uninstalled query returned exactly the original 416 period IDs in 62.676 seconds, compared with the unchanged helper's 90-second timeout. This is query qualification, not installation or book completion. The isolated native family preserves real original payments, zero-book exclusion, all foreign receipt guards, replay and concurrency; additional direct old/new helper cases preserve malformed-source errors and NULL/duplicate/rate boundaries. Installation, exact full-file history/metadata readback and actual original close remain the root operator's separate obligations.

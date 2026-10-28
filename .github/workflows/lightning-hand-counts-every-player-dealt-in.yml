@@ -28,6 +28,8 @@ on:
       - server/src/services/supabase/handFacts.ts
       - supabase/migrations/*_lightning_top_up_original_intents_finish_at_the_final_hand_*.sql
       - scripts/ci/test-lightning-topup-postgres.py
+      - supabase/migrations/*_lightning_terminal_trigger_keeps_its_private_top_up_authorit.sql
+      - scripts/ci/fixtures/lightning-terminal-authority-preimage.json
       - supabase/migrations/*_lightning_retains_the_anchor_until_every_original_hand_is_te.sql
       - scripts/ci/test-lightning-unsettled-anchor-exit.py
       - scripts/ci/fixtures/lightning-unsettled-anchor-preimages.json

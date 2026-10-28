@@ -6449,13 +6449,10 @@ function LiveTablePage({
   const [ritHeroAccepted, setRitHeroAccepted] = useState(false);
   const [ritChooserHasDecided, setRitChooserHasDecided] = useState(false);
   const ritDeadlineRef = useRef(0);
-  // Reference behavior: a wide status strip rides the felt through the RIT
-  // question — "waiting" persists while the offer is open (spectators and
-  // folded players see it too), the accepted/rejected outcome replaces it for
-  // a few seconds. NOT a toast: the reference renders it over the table.
+  // Owner correction October 28: only an unanswered offer has a strip.
+  // Any final choice removes it immediately, before the runout resumes.
   const [ritFeltBanner, setRitFeltBanner] = useState<string | null>(null);
-  const ritFeltBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const RIT_WAITING_BANNER = 'Waiting For Players To Run It Multiple Times.';
+  const RIT_WAITING_BANNER = 'Waiting For Players.';
   /* The waiting strip as RENDERED. Every banner goes through formatPopupText,
      so comparing state against the raw constant only worked because that
      sentence happened to be a fixed point of the transform. Compare against
@@ -6468,26 +6465,14 @@ function LiveTablePage({
       ),
     [RIT_WAITING_BANNER_RENDERED]
   );
-  const showRitFeltBanner = useCallback((text: string, ms?: number) => {
-    if (ritFeltBannerTimerRef.current) {
-      clearTimeout(ritFeltBannerTimerRef.current);
-      ritFeltBannerTimerRef.current = null;
-    }
+  const showRitFeltBanner = useCallback((text: string) => {
     // HOUSE RULE (Dan 2026-08-26): "on all displays the first letter of
     // every word is capitalized" — this strip bypasses the Toast layer, so
     // it applies the SAME central transform here, at the one choke point
     // every banner text flows through. Player names keep their interior
     // capitals (the transform never lowercases).
     setRitFeltBanner(formatPopupText(text));
-    if (ms && ms > 0) {
-      ritFeltBannerTimerRef.current = setTimeout(() => {
-        ritFeltBannerTimerRef.current = null;
-        setRitFeltBanner(null);
-      }, ms);
-    }
   }, []);
-  /** Final run-count confirmation is shown once until the hand resets. */
-  const ritConfirmationShownRef = useRef(false);
   // Reference behavior: the panel slides in a beat AFTER the table settles
   // into "waiting" — not in the same frame as the all-in.
   const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -6674,7 +6659,6 @@ function LiveTablePage({
     ritFaceUpBoardsRef.current.clear();
     pendingRitAwardsRef.current.clear();
     ritRunRibbonAtRef.current = [];
-    ritConfirmationShownRef.current = false;
     ritDeadlineRef.current = 0;
     ritTimelineEndsAtRef.current = 0;
     ritRevealEndsAtRef.current = 0;
@@ -6687,10 +6671,6 @@ function LiveTablePage({
     if (ritPanelOpenTimerRef.current) {
       clearTimeout(ritPanelOpenTimerRef.current);
       ritPanelOpenTimerRef.current = null;
-    }
-    if (ritFeltBannerTimerRef.current) {
-      clearTimeout(ritFeltBannerTimerRef.current);
-      ritFeltBannerTimerRef.current = null;
     }
     setRitFeltBanner(null);
     setPotShipView(null);
@@ -8273,7 +8253,6 @@ function LiveTablePage({
       for (const t of ritRevealTimersRef.current) clearTimeout(t);
       if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
       if (ritPanelOpenTimerRef.current) clearTimeout(ritPanelOpenTimerRef.current);
-      if (ritFeltBannerTimerRef.current) clearTimeout(ritFeltBannerTimerRef.current);
       // 2026-08-27: the two deferred teardowns added with the RIT-reveal and
       // Rabbit-Hunt floors. Both call setState, so both must die with the page.
       if (ritBoundaryClearTimerRef.current) clearTimeout(ritBoundaryClearTimerRef.current);
@@ -12804,12 +12783,9 @@ function LiveTablePage({
         return;
       }
 
-      // POKERBROS PARITY 2026-08-26: unanimous consent — the panel closes for
-      // everyone at once and the accept banner rides over the felt while the
-      // first board starts dealing (toast layer enforces the popup style).
+      // Consent settles the offer for everyone. Remove its UI before dealing.
       if (eventType === 'rit_all_accepted') {
-        // The panel closes for everyone at once and a pending pre-open beat
-        // is cancelled; the accept strip rides the felt while board 1 deals.
+        // A pending pre-open beat cannot reopen a settled offer.
         if (ritPanelOpenTimerRef.current) {
           clearTimeout(ritPanelOpenTimerRef.current);
           ritPanelOpenTimerRef.current = null;
@@ -12835,22 +12811,17 @@ function LiveTablePage({
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
         ritExpectedRunsRef.current = runs;
         setRitRunsThisHand(runs);
-        // One final confirmation per hand, including duplicate/replayed events.
-        if (!ritConfirmationShownRef.current) {
-          ritConfirmationShownRef.current = true;
-          showRitFeltBanner(
-            runs === 3
-              ? 'Players Have Accepted Running It 3 Times.'
-              : 'Players Have Accepted Running It Twice.',
-            1500
-          );
-        }
         return;
       }
 
-      // POKERBROS PARITY 2026-08-26: the host compelled the runs — no panel,
-      // just the announcement.
+      // Mandatory runs have no outstanding player decision or status strip.
       if (eventType === 'rit_mandatory') {
+        if (ritPanelOpenTimerRef.current) {
+          clearTimeout(ritPanelOpenTimerRef.current);
+          ritPanelOpenTimerRef.current = null;
+        }
+        setShowRIT(false);
+        setRitHeroAccepted(false);
         const runs = (handState.runs as number) || 2;
         ritExpectedRunsRef.current = runs;
         setRitRunsThisHand(runs);
@@ -12858,15 +12829,7 @@ function LiveTablePage({
         // must not keep a clock or a waiting strip alive (see rit_all_accepted).
         ritDeadlineRef.current = 0;
         setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
-        if (!ritConfirmationShownRef.current) {
-          ritConfirmationShownRef.current = true;
-          showRitFeltBanner(
-            runs === 3
-              ? 'Mandatory Run It 3 Times This Hand.'
-              : 'Mandatory Run It Twice This Hand.',
-            1500
-          );
-        }
+        clearRitWaitingStrip();
         return;
       }
 
@@ -12885,32 +12848,9 @@ function LiveTablePage({
        * All three are legitimate poker. Say which one happened.
        */
       if (eventType === 'rit_single_run') {
-        // Any decline (or the chooser picking one board, or a timeout) kills
-        // the panel INSTANTLY for everyone — reference behavior — and the
-        // banner below names who ended it. The hand then runs once, paced.
+        // The choice is settled. No outcome strip may cover the runout.
         setShowRIT(false);
         resetRitPanelState();
-        const reason = handState.reason as string;
-        const who = handState.player_id as string | null;
-        const name = who
-          ? tableStateRef.current?.players?.find((pp) => pp?.id === who)?.name || 'A Player'
-          : '';
-        const message =
-          reason === 'chooser_chose_one'
-            ? `Running It Once. ${name} Chose One Board.`
-            : reason === 'player_declined'
-              ? `Running It Once. ${name} Declined.`
-              : /* 2026-09-13: the engine's expiry now says which ONE seat was
-                   still silent when the clock ran out, the way it names a
-                   decliner. Two or more silent seats keep the collective line. */
-                reason === 'no_answer' && name
-                ? `Running It Once. ${name} Did Not Answer In Time.`
-                : 'Running It Once. Not Everyone Agreed In Time.';
-        // Felt strip, not a toast — the reference rides the rejection over
-        // the table and leaves it up through the start of the single runout.
-        // (resetRitPanelState above cleared the waiting strip; this replaces
-        // it in the same commit of state.)
-        showRitFeltBanner(message, 5500);
         return;
       }
 
@@ -27148,6 +27088,12 @@ function LiveTablePage({
                     directly on the table felt with run badges, winning hand names,
                     winner labels, and winning card highlights. */}
                 <div className="community-area">
+                  {/* The offer belongs above the board, never over player cards. */}
+                  {ritFeltBanner && (
+                    <div className="rit-felt-banner" role="status" aria-live="polite">
+                      <span className="rit-felt-banner__text">{ritFeltBanner}</span>
+                    </div>
+                  )}
                   {ritBoardsView.length >= 2 ? (
                     ritBoardsView.map((board) => (
                       <div
@@ -27577,15 +27523,6 @@ function LiveTablePage({
           {showAllInBanner && (
             <div className="allin-banner" role="status" aria-label="All In">
               <span className="allin-banner__text">ALL IN</span>
-            </div>
-          )}
-
-          {/* POKERBROS PARITY 2026-08-26: the RIT status strip — "waiting"
-              persists while the offer hangs (spectators see it too), the
-              accepted/rejected outcome replaces it for a few seconds. */}
-          {ritFeltBanner && (
-            <div className="rit-felt-banner" role="status" aria-live="polite">
-              <span className="rit-felt-banner__text">{ritFeltBanner}</span>
             </div>
           )}
 

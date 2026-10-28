@@ -1,0 +1,14 @@
+{
+  "owners": [
+    {
+      "signature": "fn_ca_caller_is_management()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_caller_is_management()\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_uid uuid := auth.uid();\n  v_ok  boolean;\nBEGIN\n  IF v_uid IS NULL THEN\n    RETURN true;\n  END IF;\n  SELECT EXISTS (\n    SELECT 1 FROM public.ca_incident_recipients r WHERE r.user_id = v_uid AND r.active\n    UNION ALL\n    SELECT 1 FROM public.club_members cm WHERE cm.user_id = v_uid AND cm.role = 'owner'\n    UNION ALL\n    SELECT 1 FROM public.unions u WHERE u.owner_id = v_uid\n    UNION ALL\n    SELECT 1 FROM public.profiles p WHERE p.id = v_uid AND p.role IN ('admin','god')\n  ) INTO v_ok;\n  RETURN COALESCE(v_ok, false);\nEND $function$\n",
+      "md5": "ea6a4a1c40257b663d099f8925a593d8"
+    },
+    {
+      "signature": "fn_cashier_assert_active_actor(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_cashier_assert_active_actor(p_club uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_actor uuid := auth.uid();\n  v_role text;\n  v_status text;\nBEGIN\n  IF auth.role() = 'service_role' THEN RETURN; END IF;\n  IF v_actor IS NULL OR p_club IS NULL THEN RETURN; END IF;\n  IF EXISTS (SELECT 1 FROM public.clubs WHERE id = p_club AND owner_id = v_actor) THEN\n    RETURN;\n  END IF;\n\n  SELECT role INTO v_role\n    FROM public.club_members\n   WHERE club_id = p_club\n     AND user_id = v_actor\n     AND coalesce(status, 'active') IN ('active', 'approved')\n   LIMIT 1;\n\n  IF v_role IN ('super_agent', 'agent', 'sub_agent') THEN\n    -- Serialize against status changes without taking a row lock ahead of the\n    -- retained money core's established wallet/club lock order. The matching\n    -- agents trigger below takes this same mutex before status/update/delete.\n    PERFORM pg_advisory_xact_lock(hashtextextended(\n      'cashier-agent-authority:' || p_club || ':' || v_actor, 0));\n    SELECT a.status INTO v_status\n      FROM public.agents a\n     WHERE a.club_id = p_club AND a.user_id = v_actor;\n    IF v_status IS DISTINCT FROM 'active' THEN\n      RAISE EXCEPTION 'cashier_agent_inactive' USING ERRCODE = '42501';\n    END IF;\n  END IF;\nEND\n$function$\n",
+      "md5": "3ceb097db1a05a550e8b2a42fe931d36"
+    }
+  ]
+}

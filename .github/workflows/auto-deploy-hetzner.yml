@@ -24,7 +24,8 @@ jobs:
     name: Observe One Private Natural Horse Cohort
     if: github.event.action == 'observe-club-arena-horse-fleet'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # At most sixteen 115-second read-only partitions plus setup and cleanup.
+    timeout-minutes: 35
     permissions:
       contents: read
     concurrency:
@@ -96,13 +97,8 @@ jobs:
       - name: Observe the installed CLI without release or maintenance actions
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=5s 115s node server/scripts/phase6d-population.mjs fleet \
-            --packet "$PRIVATE_DIR/packet.json" --ssh-command "$HSSH" --out "$PRIVATE_DIR/result.json"
-      - name: Reconcile canonical cohort and retained capture witnesses
-        run: |
-          set -euo pipefail
-          python3 -B scripts/ci/horse-fleet-packet.py --summarize \
-            "$PRIVATE_DIR/attestation.json" "$PRIVATE_DIR/result.json" "$PRIVATE_DIR/packet.json"
+          timeout --signal=TERM --kill-after=5s 1900s python3 -B scripts/ci/horse-fleet-packet.py --observe-bounded \
+            "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json" "$HSSH" "$PRIVATE_DIR/result.json"
       - name: Remove private packet and exact ephemeral transport
         if: always()
         run: |

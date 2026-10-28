@@ -1,0 +1,9 @@
+{
+  "migration_file": "supabase/migrations/20261028023500_original_cash_deposit_groups_read_scalar_facts.sql",
+  "index_name": "accounting_cash_private_record_facts_cover",
+  "actual_source_catalog_sha256": "7cc54c77dc9ee64357efbcf9a183e552baceedd2415c98b951b95f8fa41b4c2b",
+  "original_whole_private_query_sha256": "83be356cf30c5da2e65e2987f4749cbeb137a855d053db2827a589306f7da9aa",
+  "exact_original_cg_sha256": "d661f8c2efcf05e88f6579206cd6f265693cee437f83d25f2e3a6b73625bcd16",
+  "expected_key_count": 1,
+  "expected_attribute_count": 6
+}

@@ -100,7 +100,7 @@ it('runs the old rejection and repaired stake matrix in isolated PostgreSQL', ()
       ['-X', '-v', 'ON_ERROR_STOP=1'],
       `CREATE TABLE public.cash_games (club_id uuid,variant text,sb numeric,bb numeric,enabled boolean);
 ${readFileSync(resolve(root, 'supabase/migrations/20261023160959_cash_game_stake_cap_allows_one_two_for_every_variant.sql'), 'utf8')}
-CREATE TRIGGER guard BEFORE INSERT OR UPDATE ON public.cash_games FOR EACH ROW EXECUTE FUNCTION public.fn_cash_game_max_stake_guard();`
+CREATE TRIGGER guard BEFORE INSERT OR UPDATE OF enabled, bb, variant ON public.cash_games FOR EACH ROW EXECUTE FUNCTION public.fn_cash_game_max_stake_guard();`
     );
     expect(() =>
       run(

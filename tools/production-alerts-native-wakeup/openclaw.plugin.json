@@ -1,0 +1,14 @@
+{
+  "id": "production-alerts-native-wakeup",
+  "name": "Production Alerts Native Wakeup",
+  "description": "Opaque committed inbox events wake the canonical Codex intake. No releases or schedules.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["publishableKey", "stateDirectory"],
+    "properties": {
+      "publishableKey": { "type": "string", "minLength": 20 },
+      "stateDirectory": { "type": "string", "pattern": "^/Volumes/SmarterWork/agent-work/" }
+    }
+  }
+}

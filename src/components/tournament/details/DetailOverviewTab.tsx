@@ -81,7 +81,7 @@ import {
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
 import TournamentDealReview from '../TournamentDealReview';
-import TournamentLobbyCard from '../TournamentLobbyCard';
+import SatelliteCard from './SatelliteCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import MultiDayStagePanel from './MultiDayStagePanel';
 import { isBaggedStatus } from '../../../utils/multiDaySchedule';
@@ -1183,8 +1183,9 @@ export default function DetailOverviewTab({
             ) : (
               <div className="dov-band__sats">
                 {satellites.map((sat) => (
-                  <TournamentLobbyCard
+                  <SatelliteCard
                     key={sat.id}
+                    onRegistered={satRetry}
                     tournament={sat}
                     knownRegistration={satRegistration ? Boolean(satRegistration[sat.id]) : null}
                   />

@@ -105,3 +105,7 @@ DROP TRIGGER refuse_stamp ON operational_alert_events;''')
 finally:
     subprocess.run([str(PG/'pg_ctl'),'-D',str(BASE/'db'),'-m','immediate','-w','stop'],capture_output=True)
     shutil.rmtree(BASE)
+
+# Same operational-alert producer/reader contract, qualified by the existing
+# isolated-PostgreSQL alert qualification job. No production credentials.
+print(command([os.environ.get('PYTHON', 'python3'), ROOT/'scripts/ci/test-native-alert-event.py']))

@@ -1,4 +1,6 @@
 import { describe, it, vi, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { WeeklyPayoutPause } from './WeeklyPayoutPause.js';
 const rpc = vi.hoisted(() => vi.fn());
 vi.mock('../services/supabase/client.js', () => ({ supabase: { rpc } }));
 import {
@@ -6,6 +8,77 @@ import {
   createWeeklyPayoutPauseStore,
 } from './weeklyPayoutPauseStore.js';
 describe('database-relative payout clock and original operation readback', () => {
+  it('native future reader seeds the original announcement and money timers without maintenance', async () => {
+    vi.useFakeTimers();
+    const expected = {
+      contract: 'weekly-payout-owned-phase-v1',
+      observed_at: '2026-11-02T08:00:00+00:00',
+      boundary: {
+        run_id: 'cae00000-0000-0000-0000-000000000003',
+        ownership_token: 'cae00000-0000-0000-0000-000000000004',
+        scope_kind: 'global',
+        scope_id: 'cae00000-0000-0000-0000-000000000003',
+        period_start: '2026-10-26T07:00:00+00:00',
+        period_end: '2026-11-02T08:00:00+00:00',
+        announced_at: '2026-11-02T09:58:00+00:00',
+        money_starts_at: '2026-11-02T10:00:00+00:00',
+        money_deadline_at: '2026-11-02T10:04:00+00:00',
+        expires_at: '2026-11-02T10:05:00+00:00',
+        phase: 'draining',
+      },
+    };
+    // The native PG suite supplies its actual default RPC response here.
+    // Ordinary engine tests retain the same synthetic contract independently.
+    const payload = process.env.WEEKLY_PAYOUT_NATIVE_STATE
+      ? JSON.parse(readFileSync(process.env.WEEKLY_PAYOUT_NATIVE_STATE, 'utf8'))
+      : expected;
+    expect(payload).toEqual(expected);
+    vi.setSystemTime(new Date(payload.observed_at));
+    rpc.mockReset();
+    rpc.mockResolvedValueOnce({ data: payload, error: null });
+    const store = createWeeklyPayoutPauseStore('instance-one', () => []);
+    const early = await store.readCurrent();
+    expect(early).not.toBeNull();
+    expect(rpc).toHaveBeenCalledWith('fn_weekly_accounting_payout_pause_state', {
+      p_run_id: null,
+      p_ownership_token: null,
+    });
+    // The monotonic clock has separate jump/late-response proof below;
+    // deterministic fake elapsed time drives the original operation timers.
+    vi.spyOn(store.clock, 'now').mockImplementation(() => Date.now());
+    const engine = {
+      isRunning: () => true,
+      pauseForWeeklyPayout: vi.fn(),
+      engageWeeklyPayoutHandPause: vi.fn(),
+      resumeFromWeeklyPayout: vi.fn(),
+      isParkedForWeeklyPayout: () => false,
+    };
+    const control = new WeeklyPayoutPause({
+      now: () => store.clock.now(),
+      engines: () => [engine],
+      admit: store.admit,
+      read: store.read,
+      onChanged: vi.fn(),
+    });
+    try {
+      control.accept(early!);
+      expect(engine.pauseForWeeklyPayout).not.toHaveBeenCalled();
+      expect(engine.engageWeeklyPayoutHandPause).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(118 * 60000 - 1);
+      expect(engine.pauseForWeeklyPayout).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(engine.pauseForWeeklyPayout).toHaveBeenCalledTimes(1);
+      expect(engine.engageWeeklyPayoutHandPause).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(120000);
+      expect(engine.engageWeeklyPayoutHandPause).toHaveBeenCalledTimes(1);
+    } finally {
+      control.stop();
+      vi.restoreAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('uses monotonic elapsed time and survives host clock jumps and late replies', () => {
     let monotonic = 10;
     const clock = new WeeklyPayoutDatabaseClock(() => monotonic);

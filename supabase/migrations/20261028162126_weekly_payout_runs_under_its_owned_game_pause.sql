@@ -70,7 +70,10 @@ BEGIN
   RAISE EXCEPTION 'weekly_payout_exact_owner_required' USING ERRCODE='22023';END IF;
  IF p_run_id IS NULL THEN
   SELECT * INTO r FROM public.weekly_accounting_payout_pauses p
-   WHERE p.announced_at<=smarter_private.weekly_payout_clock()
+   -- R0/boot discovers this closed week's precomputed boundary before the
+   -- announcement. The engine owns its finite deferred edge timers; it must
+   -- not depend on an unrelated maintenance announcement to discover it.
+   WHERE p.period_end=public.fn_union_week_start(smarter_private.weekly_payout_clock())
     AND p.expires_at>smarter_private.weekly_payout_clock() AND p.phase<>'released'
    ORDER BY p.money_starts_at DESC LIMIT 1;
  ELSE

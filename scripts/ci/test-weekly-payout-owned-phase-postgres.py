@@ -57,6 +57,33 @@ try:
  INSERT INTO public.weekly_accounting_payout_pauses(run_id,ownership_token,period_start,period_end,announced_at,money_starts_at,money_deadline_at,expires_at,scope_plan)
  VALUES('cae00000-0000-0000-0000-000000000003','cae00000-0000-0000-0000-000000000004','2026-10-26 07:00Z','2026-11-02 08:00Z','2026-11-02 09:58Z','2026-11-02 10:00Z','2026-11-02 10:04Z','2026-11-02 10:05Z','[{"kind":"union","id":"cae00000-0000-0000-0000-000000000005","period_start":"2026-10-26T07:00:00Z","period_end":"2026-11-02T08:00:00Z"}]');
  """)
+ # A boot/R0 realtime wake at the close must discover this week's future
+ # boundary, even without any unrelated maintenance announcement. Export the
+ # ACTUAL RPC bytes into the maintained store/controller timer test.
+ sql("UPDATE fixture_clock SET n='2026-11-02 08:00Z';")
+ early=json.loads(sql("SELECT public.fn_weekly_accounting_payout_pause_state();"))
+ assert early['boundary'] is not None,'precomputed current-week boundary was hidden before announcement'
+ original_id=early['boundary']['run_id']
+ # A later, valid calendar row must not hide this week's operation. An old
+ # expired row and an arbitrary future week never become default authority.
+ state_with_other_weeks=json.loads(sql("""BEGIN;
+ INSERT INTO weekly_accounting_payout_pauses(run_id,ownership_token,period_start,period_end,announced_at,money_starts_at,money_deadline_at,expires_at,scope_plan)
+ SELECT gen_random_uuid(),gen_random_uuid(),s,e,public.fn_union_accounting_run_at(e)-interval '2 minutes',public.fn_union_accounting_run_at(e),public.fn_union_accounting_run_at(e)+interval '240 seconds',public.fn_union_accounting_run_at(e)+interval '5 minutes',p.scope_plan
+ FROM weekly_accounting_payout_pauses p CROSS JOIN LATERAL(VALUES(public.fn_union_prev_week_start(p.period_start),p.period_start),(p.period_end,public.fn_union_week_start(p.period_end+interval '8 days')))v(s,e);
+ SELECT public.fn_weekly_accounting_payout_pause_state();ROLLBACK;
+ """))
+ assert state_with_other_weeks['boundary']['run_id']==original_id
+ assert json.loads(sql("BEGIN;UPDATE weekly_accounting_payout_pauses SET phase='released';SELECT public.fn_weekly_accounting_payout_pause_state();ROLLBACK;"))['boundary'] is None
+ # Before the current week closes even its valid precomputed row is future;
+ # after its original lease expires the default reader must expose nothing.
+ for outside in ['2026-11-02 07:59:59Z','2026-11-02 10:05Z']:
+  assert json.loads(sql("BEGIN;UPDATE fixture_clock SET n='"+outside+"';SELECT public.fn_weekly_accounting_payout_pause_state();ROLLBACK;"))['boundary'] is None
+ early_path=W/'actual-future-boundary.json';early_path.write_text(json.dumps(early))
+ timer_env=dict(E,WEEKLY_PAYOUT_NATIVE_STATE=str(early_path))
+ timer=subprocess.run([str(R/'server/node_modules/.bin/vitest'),'run','src/maintenance/weeklyPayoutPauseStore.test.ts','-t','native future reader'],cwd=R/'server',env=timer_env,text=True,capture_output=True,timeout=60)
+ assert timer.returncode==0,timer.stdout+timer.stderr
+ print('PASS actual SQL default RPC -> original store -> deferred announcement/money timers; no maintenance announcement',flush=True)
+ sql("UPDATE fixture_clock SET n='2026-11-02 09:58Z';")
  # The exact original engine's eight-second probe must still defer before
  # touching the financial helper or any expensive original scope owner.
  probe=json.loads(sql("SET statement_timeout='8s';SELECT public.fn_union_settlement_cascade_due();"))

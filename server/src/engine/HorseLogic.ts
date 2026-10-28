@@ -2638,8 +2638,17 @@ function maniacCallDown(
     // with a fresh one, biases recovery toward continuation. A noisy false
     // negative does not justify another attempt selected by that outcome.
     // Keep the existing price, range and total original sampling allowance.
+    // The already selected variant capabilities own the game, including
+    // default NLH callers whose optional game-state tag is absent or empty.
+    const fixedHoldemRecovery =
+      vi.holeCount === 2 &&
+      !vi.isOmaha &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      !vi.isPotLimit &&
+      !vi.isShortDeck;
     const fixedRecovery =
-      gs.gameVariant === 'nlh' || (vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount));
+      fixedHoldemRecovery || (vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount));
     const canRefineRecovery =
       !fixedRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {

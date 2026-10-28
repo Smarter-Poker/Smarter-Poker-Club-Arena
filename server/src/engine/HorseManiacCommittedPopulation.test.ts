@@ -122,6 +122,37 @@ describe('NLH recovery does not select extra samples after seeing a low estimate
     expect(eq).toHaveBeenCalledTimes(1);
     expect(eq.mock.calls[0][4]).toBe(360);
   });
+  it.each([undefined, ''])('uses the selected NLH capabilities with gameVariant %s', (tag) => {
+    const { hero, gs } = spot({ is_folded: true });
+    if (tag === undefined) delete (gs as Partial<HorseGameStateV2>).gameVariant;
+    else gs.gameVariant = tag;
+    const selected = Eval.variantInfo(tag as string);
+    expect(selected).toMatchObject({
+      holeCount: 2,
+      isOmaha: false,
+      isShortDeck: false,
+      isFixedLimit: false,
+      isPotLimit: false,
+    });
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(0.48).mockReturnValue(0.9);
+    const run = () =>
+      HorseLogic.__testables.maniacCallDown(
+        { action: 'fold', thinkTime: 0 },
+        hero,
+        gs,
+        selected,
+        {}
+      );
+    expect(run().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+    // A cold-read early return would falsely pass the negative assertion.
+    // Prove this same default-tag path actually prices and admits a valid call.
+    eq.mockReset().mockReturnValueOnce(0.58).mockReturnValue(0.01);
+    expect(run().action).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+  });
   it('does not replace two selected low estimates with a favorable fresh mean', () => {
     const eq = vi
       .spyOn(Eval, 'simulateEquity')

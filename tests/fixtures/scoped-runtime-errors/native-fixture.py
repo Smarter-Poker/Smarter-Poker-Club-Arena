@@ -253,6 +253,37 @@ class NativeLogReader(unittest.TestCase):
             self.assertFalse(result['archiveRead']['fullWindowCoverageProven'])
             self.assertNotIn('PRIVATE_SECRET', output.getvalue())
 
+    def test_archive_owner_admits_yesterday_and_exact_shared_age_boundary(self):
+        now = datetime.datetime(2026, 10, 28, 21, tzinfo=datetime.timezone.utc)
+        class FixedDateTime(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        with patch.object(reader.datetime, 'datetime', FixedDateTime):
+            for hours in [36, 48]:
+                start = now-datetime.timedelta(hours=hours)
+                window = reader.log_window(start.strftime('%Y-%m-%dT%H:%M:%SZ'), now)
+                ended = start+datetime.timedelta(minutes=15)
+                with tempfile.TemporaryDirectory() as name:
+                    directory = Path(name)
+                    filename = ('engine-'+ended.strftime('%Y%m%dT%H%M%SZ')+'-started'+
+                        (start-datetime.timedelta(hours=1)).strftime('%Y%m%dT%H%M%S')+
+                        '-abcdef123456-c3ed8648.log.gz')
+                    line = start.strftime('%Y-%m-%dT%H:%M:%SZ')+' [Tournament.read] F06_ORIGINAL_CHANGED '+EVENT+' PRIVATE_SECRET\n'
+                    with gzip.open(directory/filename, 'wb') as out:
+                        out.write(line.encode())
+                    with patch.object(reader, 'ARCHIVE_DIRECTORY', directory):
+                        sources, metadata = reader.archived_window(window, b'', scopes=SCOPES)
+                    self.assertEqual(len(sources), 1)
+                    self.assertEqual(sources[0][0], line.encode())
+                    self.assertFalse(metadata['fullWindowCoverageProven'])
+                    self.assertNotIn('PRIVATE_SECRET', json.dumps(reader.extract_sources(b'', sources, SCOPES)))
+            old = {'since': '2026-10-26T20:59:59Z', 'until': '2026-10-26T21:14:59Z'}
+            with patch.object(reader.os, 'open') as opened:
+                with self.assertRaises(ValueError):
+                    reader.archived_window(old, b'')
+                opened.assert_not_called()
+
     def test_archive_fallback_recovers_original_window_without_current_identity(self):
         now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
         start = now-datetime.timedelta(hours=1)

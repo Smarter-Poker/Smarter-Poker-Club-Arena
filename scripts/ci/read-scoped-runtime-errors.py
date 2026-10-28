@@ -95,6 +95,7 @@ LEASE_METRIC_LABELS = {
 LEASE_METRIC_TARGET_LABELS = {
     'host': 'engine-01', 'role': 'engine', 'app': 'club-arena-engine',
 }
+MAX_WINDOW_AGE = datetime.timedelta(hours=48)
 COMMAND = ['docker', 'logs', '--since', '15m', '--tail', '20000', '--timestamps', 'club-arena-engine']
 
 
@@ -109,7 +110,7 @@ def log_window(value, now=None):
     end = start + datetime.timedelta(minutes=15)
     # A next-day digest can name yesterday morning more than 24 hours later.
     # Keep one completed 15-minute interval and every existing transport bound.
-    if start < now - datetime.timedelta(hours=48) or end > now:
+    if start < now - MAX_WINDOW_AGE or end > now:
         raise ValueError('Observation window is not a completed recent interval')
     return {'since': value, 'until': end.strftime('%Y-%m-%dT%H:%M:%SZ')}
 
@@ -513,7 +514,7 @@ def archived_window(window, current, seconds=10, scopes=None):
     now = datetime.datetime.now(datetime.timezone.utc)
     start = datetime.datetime.fromisoformat(window['since'].replace('Z', '+00:00'))
     until = datetime.datetime.fromisoformat(window['until'].replace('Z', '+00:00'))
-    if start < now-datetime.timedelta(hours=24) or until > now or until-start != datetime.timedelta(minutes=15):
+    if start < now-MAX_WINDOW_AGE or until > now or until-start != datetime.timedelta(minutes=15):
         raise ValueError('Invalid archive observation window')
     sources, candidates = [], []
     size, lines = len(current), len(current.splitlines())
@@ -538,7 +539,7 @@ def archived_window(window, current, seconds=10, scopes=None):
                 try:
                     ended = datetime.datetime.strptime(match[1], '%Y%m%dT%H%M%SZ').replace(tzinfo=datetime.timezone.utc)
                     started = datetime.datetime.strptime(match[2], '%Y%m%dT%H%M%S').replace(tzinfo=datetime.timezone.utc)
-                    if not (now-datetime.timedelta(hours=24) <= ended <= now and started <= ended
+                    if not (now-MAX_WINDOW_AGE <= ended <= now and started <= ended
                             and started < until and ended >= start):
                         continue
                     candidates.append((ended, entry.name, match[3], match[4]))

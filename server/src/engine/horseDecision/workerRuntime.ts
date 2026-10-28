@@ -1,4 +1,8 @@
 import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
+import {
   HORSE_FEATURE_AUTHORITY_VERSION,
   HORSE_FEATURE_FLAGS,
   admitHorseFeatureReleaseAuthority,
@@ -259,6 +263,7 @@ export type HorseDecisionWorkerAuthorityHolderFactory = (
 ) => HorseQualifiedAuthorityHolder;
 
 export interface HorseDecisionWorkerDependencies {
+  isolateMemory?(): IsolateMemorySample | null;
   admitFeatureAuthority?(): HorseAuthorityAdmission;
   /** Trusted isolated benchmark construction only; never accepted from IPC. */
   offlineFeatureFlags?: boolean;
@@ -3373,8 +3378,17 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeStatus(request: HorseDecisionStatusRequest): void {
+    let isolateMemory: IsolateMemorySample | null = null;
+    try {
+      const sample = this.deps.isolateMemory?.();
+      if (isolateMemoryIsValid(sample)) isolateMemory = sample;
+    } catch {
+      /* diagnostic unavailable must never fail a worker */
+    }
+
     this.send({
       type: 'STATUS_RESULT',
+      isolateMemory,
       requestId: request.requestId,
       generation: request.generation,
       fence: request.fence,

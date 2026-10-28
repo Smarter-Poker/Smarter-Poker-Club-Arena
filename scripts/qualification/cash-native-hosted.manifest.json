@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+      "bytes": 243443,
+      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4164,5 +4164,17 @@
       "8326 comparable same qualifier inputs completedshard1 in27minutes",
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
+  },
+  "horseArrivalQualification20261028": {
+    "reason": "Reviewed additive required accounting shard3 native horse-arrival regression. Existing cash sources, commands, assertions, deadlines and historical qualification evidence unchanged. This refresh records workflow input identity only.",
+    "previous": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "current": {
+      "bytes": 243443,
+      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+    },
+    "execution_performed": false
   }
 }

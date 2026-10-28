@@ -155,9 +155,13 @@ describe('the buy-in brings the floor', () => {
     );
     expect(CLAIM).toContain('if (rejoin.barred.has(offerDoorKey)) continue;');
     expect(CLAIM).toMatch(/seatClub,\s*rejoin\.rejoinFloor\.get\(offerDoorKey\)\s*\)/);
-    // and the cycle passes what it read
+    // The cycle retains every door input and passes its game-scoped arrivals
+    // snapshot as the new final argument. Neither guard may replace the other.
     expect(SEED).toMatch(
-      /surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds,\s*readIsCurrent\s*\)/
+      /surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds,\s*readIsCurrent,\s*gameArrivals\s*\)/
+    );
+    expect(CLAIM).toContain(
+      'if (gameArrivals && !gameArrivals.admissionAllowed(table, offer.user_id)) continue;'
     );
   });
 });

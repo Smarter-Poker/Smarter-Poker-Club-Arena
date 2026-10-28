@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244685,
-      "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+      "bytes": 244923,
+      "sha256": "4ceca5efcf155074ad63406f5280bcd7cc81771fdea840e3a7e5444d71751d19"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -988,6 +988,42 @@
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
   },
+  "horseArrivalQualification20261028": {
+    "reason": "Add isolated PostgreSQL17 game-specific horse arrival qualification to required accounting shard3. Existing qualification commands, assertions, deadlines, joins and historical evidence remain unchanged. This pin records the reviewed workflow bytes, not hosted execution or production adoption.",
+    "previous": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "current": {
+      "bytes": 243443,
+      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+    },
+    "execution_performed": false
+  },
+  "arrivalCompilerComposition20261028": {
+    "reason": "Preserve protected-main compiler cleanup headroom and this branch additive native arrival qualification. Reviewed workflow diff; no suite/assertion/financial qualification removed or re-certified. Current combined workflow identity only.",
+    "previousBranchWorkflow": {
+      "bytes": 243443,
+      "sha256": "104111653aa3792fa8cfe26ac803e7058345b240ac82af1d7b06068b901c4607"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflow": {
+      "bytes": 243725,
+      "sha256": "24a99a18ee5a6d4d6bcc56e1fd4f941e9f085682c8d51e4360fb325df73759dc"
+    },
+    "execution_performed": false
+  },
+  "arrivalCurrentMainComposition20261028": {
+    "reason": "Preserve both parent audit histories and all protected-main CI changes. Only active combined workflow binding refreshed; no financial or live certification claimed.",
+    "workflow": {
+      "bytes": 244691,
+      "sha256": "2659e224119d5b0e78b9ecc26742b561be833e8f45de3f2f06e3efdf8da8a860"
+    },
+    "execution_performed": false
+  },
   "opponentHudClassifierCheckout20261028": {
     "reason": "The metadata-only changes job checks out scripts and .github in cone mode, retaining root configs and full Git history, instead of hydrating the full artwork tree that timed out in job123044104875. Test commands, assertions, financial qualification and deployment routes are unchanged. Source identity only; not execution or live proof. Integrated current protected main, preserving its compiler cleanup budget and every other workflow change.",
     "previousWorkflowPin": {
@@ -997,6 +1033,14 @@
     "currentWorkflowPin": {
       "bytes": 244685,
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+    },
+    "execution_performed": false
+  },
+  "arrivalHudMainComposition20261028": {
+    "reason": "Preserve both parent audit records and protected-main checkout optimization. Refresh only current combined workflow source identity; no execution or production certification claimed.",
+    "workflow": {
+      "bytes": 244923,
+      "sha256": "4ceca5efcf155074ad63406f5280bcd7cc81771fdea840e3a7e5444d71751d19"
     },
     "execution_performed": false
   }

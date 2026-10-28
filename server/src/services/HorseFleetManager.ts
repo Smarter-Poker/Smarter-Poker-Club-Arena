@@ -17,6 +17,7 @@ import { horseSitsWithAutoTopUp } from './HorseTopUpStyle.js';
 import { tableHeldByRetainedHand } from '../engine/retainedHandHolds.js';
 import { compareCashPopulation, isHoldemOrPlo } from './CashHorseAllocation.js';
 import { supabase, seedingSupabase } from './supabase.js';
+import { HorseGameArrivals } from './HorseGameArrivals.js';
 import { randomUUID } from 'node:crypto';
 import {
   isChipFleetTable,
@@ -1488,6 +1489,12 @@ export class HorseFleetManager {
         return;
       }
       const validHorses = horsePage.rows;
+      const gameArrivals = new HorseGameArrivals(
+        (name, args) => seedingSupabase.rpc(name, args),
+        (error) => reportError(error, 'HorseFleet.game_arrivals_failed')
+      );
+      await gameArrivals.load([...tables, ...diamondTables]);
+      if (!readIsCurrent()) return;
 
       /**
        * BANKROLLS (Dan 2026-08-31). A horse's `club_members.chip_balance` is
@@ -2638,7 +2645,8 @@ export class HorseFleetManager {
             seatBudget,
             rejoin,
             disabledGameIds,
-            readIsCurrent
+            readIsCurrent,
+            gameArrivals
           );
       seatBudget -= claimed;
       beat.seatsFilled += claimed;
@@ -3139,6 +3147,7 @@ export class HorseFleetManager {
              stake gate and the seat's idempotency key below; nothing else. */
           const arenaTable = diamondTableIds.has(String(table.id));
           const candidateHorses = validHorses.filter((h) => {
+            if (!gameArrivals.candidateAllowed(table, h.id)) return false;
             // Supersedes variant, stake and activity persona gates below.
             // The roster still bounds the pool; bankroll and normal player
             // admission rules still decide whether each seat is affordable.
@@ -3574,6 +3583,11 @@ export class HorseFleetManager {
              from the pool actually used, so a widened hour counts zero. */
           asleepDropped += sittable.length - pool.length;
           const asleepHere = sittable.length - pool.length;
+          // Reserve only normally eligible arrivals. Unreserved identities
+          // never enter buyer census or seat selection, even on a rescue.
+          await gameArrivals.reserveEligible(table, pool);
+          if (!readIsCurrent()) break;
+          pool = pool.filter((h) => gameArrivals.admissionAllowed(table, h.id));
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
@@ -3670,6 +3684,11 @@ export class HorseFleetManager {
             table,
             getPloPerformance()
           );
+          if (gameArrivals.scoped(table)) {
+            weighted.sort(
+              (a, b) => gameArrivals.rank(table, a.h.id) - gameArrivals.rank(table, b.h.id)
+            );
+          }
           const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);
           if (diag) diag.selected = selectedHorses.length;
 
@@ -4779,7 +4798,8 @@ export class HorseFleetManager {
     /* Games the operator has switched off (18.4), read this cycle. Empty
        when the read failed: fail open, same as the seeding loop. */
     disabledGameIds: ReadonlySet<string> = new Set<string>(),
-    shouldContinue?: () => boolean
+    shouldContinue?: () => boolean,
+    gameArrivals?: HorseGameArrivals
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -4840,6 +4860,7 @@ export class HorseFleetManager {
         if (claimed >= budget) break;
         const table = tableById.get(offer.table_id);
         if (!table || table.tournament_id) continue;
+        if (gameArrivals && !gameArrivals.admissionAllowed(table, offer.user_id)) continue;
         /* A DRAINING TABLE TAKES NOBODY BACK (2026-09-03). This path seats a
            horse from a waitlist offer and never consulted surplusTableIds, so
            a horse holding a `notified` row for a retiring table would be

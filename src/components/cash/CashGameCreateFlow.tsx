@@ -121,7 +121,7 @@ const GAME_CREATED_BUT_REFUSED: Record<TableViewRefusal, string> = {
   OBSERVERS_RESTRICTED: GAME_CREATED_SEATED_ONLY,
 };
 
-async function wakeTableEngine(tableId: string): Promise<TableWakeResult> {
+export async function wakeTableEngine(tableId: string): Promise<TableWakeResult> {
   for (let attempt = 0; attempt <= WAKE_RETRY_DELAYS_MS.length; attempt++) {
     if (attempt > 0) {
       const delay = WAKE_RETRY_DELAYS_MS[attempt - 1];

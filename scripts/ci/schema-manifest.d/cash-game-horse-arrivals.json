@@ -1,0 +1,17 @@
+{
+  "_comment": "Declarations backed by 20261028174728_cash_game_horse_arrivals.sql; pending protected-main installation, not a live-schema observation.",
+  "tables": [
+    "cash_game_horse_arrivals",
+    "cash_game_horse_releases",
+    "cash_game_horse_reservations",
+    "cash_game_horse_release_requests"
+  ],
+  "functions": [
+    "fn_cash_game_horse_arrival_snapshot",
+    "fn_cash_game_horse_arrival_snapshots",
+    "fn_cash_game_horse_arrival_reserve",
+    "fn_cash_game_horse_arrival_admit",
+    "fn_cash_game_create_horse_arrivals",
+    "fn_cash_game_attach_horse_arrivals"
+  ]
+}

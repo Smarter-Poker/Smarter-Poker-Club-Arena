@@ -370,7 +370,9 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Run40726879893 passed every guard but exceeded15m during cleanup;
+    # comparable successful run40714001791 took13m45. Preserve execution headroom.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout

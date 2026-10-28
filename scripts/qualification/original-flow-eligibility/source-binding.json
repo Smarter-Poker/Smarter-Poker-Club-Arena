@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244016,
-      "sha256": "27ca4aa2e5ffb3d34058db44bb63ab56234944c5bd48042c21d3bc18bb0b3eef"
+      "bytes": 244171,
+      "sha256": "e918fba4b0691d7fd2d209522dec2fda7961b6476b401b84a4c8ca0e4c898c07"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -739,5 +739,16 @@
     "review": "Composed both parents accounting timeout and retention qualification audit records without dropping either. Only additive superseded-actions qualification changes workflow/classifier identities; financial source and assertions remain unchanged. Exact protected-main source integration is not a financial certificate.",
     "main": "ecf65a7a2fffb3f80b0a6a1ead6d538249cdb033",
     "candidateBeforeMerge": "59f0798b30be1eac984a1eb12f1d1c63c95d9dd1"
+  },
+  "typecheckExecutionHeadroom20261028": {
+    "reason": "CI40726879893 exact head a9b1e9d86b82ab558272dbcc9f529f2b1aa75125 passed every compiler/repository guard and cleanup step, but its check was cancelled at15m03 against15m. Prior successful equivalent40714001791 took13m45. Only this outer job budget increases15 to20 minutes; assertions, commands, financial sources, native suite deadlines, historical evidence and qualification statuses remain unchanged. Current source binding is not renewed financial or production certification.",
+    "previousWorkflowPin": {
+      "bytes": 244016,
+      "sha256": "27ca4aa2e5ffb3d34058db44bb63ab56234944c5bd48042c21d3bc18bb0b3eef"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244171,
+      "sha256": "e918fba4b0691d7fd2d209522dec2fda7961b6476b401b84a4c8ca0e4c898c07"
+    }
   }
 }

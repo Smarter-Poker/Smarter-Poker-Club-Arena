@@ -44,6 +44,14 @@ with tempfile.TemporaryDirectory(prefix='bounty-', dir=parent) as folder:
         sql(next((root/'supabase/migrations').glob('*allow_explicitly_authored_bounty_freezeouts.sql')).read_text())
         assert event(exact)=='false,false,0'
         assert event(future,schedule,is_rebuy='true',is_reentry='true',max_rebuys='NULL')=='false,false,0'
+        assert event(future,schedule,buy_in_amount='31.5',buy_in_fee='3.5')=='false,false,0'
+        assert sql('SELECT (buy_in_amount+buy_in_fee)::integer FROM tournaments;')=='40'
+        event(future,'a70c1028-1200-4000-9000-000000000001',is_bounty='false',buy_in_amount='31.5',buy_in_fee='3.5')
+        assert sql('SELECT (buy_in_amount+buy_in_fee)::integer FROM tournaments;')=='40'
+        event(future,'a70c1028-1600-4000-9000-000000000001',is_bounty='false',buy_in_amount='31.5',buy_in_fee='3.5')
+        assert sql('SELECT (buy_in_amount+buy_in_fee)::integer FROM tournaments;')=='40'
+        event(future,is_bounty='false',buy_in_amount='31.5',buy_in_fee='3.5')
+        assert sql('SELECT (buy_in_amount+buy_in_fee)::integer FROM tournaments;')=='35'
         assert event(future).startswith('true,true,')
         assert event(future,schedule,club="'22222222-2222-4222-8222-222222222222'").startswith('true,true,')
         assert event(future,schedule,bounty_amount='11').startswith('true,true,')

@@ -21,6 +21,18 @@ AS $fn$
 DECLARE
   v_total numeric;
 BEGIN
+  -- The existing generator snaps an authored 40-chip entry to its 35-chip
+  -- ladder. Preserve the owner's exact price on NEW occurrences of these
+  -- three explicitly configured daily series, before any entry can be sold.
+  IF TG_OP = 'INSERT'
+     AND NEW.club_id = 'fade0000-0000-0000-0000-000000000001'::uuid
+     AND NEW.union_id = NEW.club_id
+     AND NEW.schedule_id IN ('a70c1028-1200-4000-9000-000000000001'::uuid,
+       'a70c1028-1600-4000-9000-000000000001'::uuid,
+       'a70c1028-2000-4000-9000-000000000001'::uuid) THEN
+    NEW.buy_in_amount := 36;
+    NEW.buy_in_fee := 4;
+  END IF;
   IF NOT (COALESCE(NEW.is_bounty, false) OR COALESCE(NEW.is_pko, false)
           OR COALESCE(NEW.is_mystery_bounty, false)) THEN
     RETURN NEW;

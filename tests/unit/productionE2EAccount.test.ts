@@ -1163,7 +1163,7 @@ describe('post-deploy production account', () => {
     expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T21:23:00.000Z' });
   });
 
-  it('keeps the ordinary job ceiling and grants only the explicit multirun observation its extra time', () => {
+  it('keeps the ordinary job ceiling and grants only explicit natural observations their extra time', () => {
     expect(workflowJobBudget(POST_DEPLOY_WORKFLOW, 'live-table-e2e')).toEqual({
       ordinary: 121,
       optIn: 143,

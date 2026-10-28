@@ -1,0 +1,5 @@
+# Preserve Phase 1 in retained candidate integration
+
+Compose protected `211ebe5d8ce3fe3c1e8845976925f436dcbf3895` with this previously submitted candidate. Preserve the common opponent prior, priced fold protections, original sample batch and nut-out accounting. Conditional river recovery retains measured-only evidence. The dormant combo-draw candidate now explicitly excludes presumed aggression, preserving its existing no-read contract: integration reproduced three failed PLO4/PLO5/PLO6 cases before the gate correction. This does not change baseline policy or enable a feature.
+
+Preserve all historical workflow bindings while retaining the actual current workflow bytes and both parent audit records. Lightning, where present, composes the protected qualified action-door recheck with feature authority checks and retains the unqualified free-check refusal before all-in-or-fold shaping. No strategy is activated, qualification selected, release requested or real wager forced by this integration.

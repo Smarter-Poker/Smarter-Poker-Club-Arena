@@ -1533,6 +1533,34 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.frozenSnapshots).toEqual([true]);
   });
 
+  it.each([
+    ['preflop', 1, false],
+    ['flop', 4, false],
+    ['turn', 5, false],
+    ['river', 4, false],
+    ['showdown', 5, false],
+    ['preflop', 0, true],
+    ['flop', 3, true],
+    ['turn', 4, true],
+    ['river', 5, true],
+  ] as const)('single-board street binding %s/%i valid=%s', async (stage, count, valid) => {
+    const h = harness();
+    const request = structuredClone(fastRequest());
+    request.gameState.stage = stage;
+    request.gameState.communityCards = ['2', '3', '4', '5', '6']
+      .slice(0, count)
+      .map((rank) => ({ rank, suit: 'clubs' }) as Card);
+    h.runtime.receive(rekey(request));
+    await h.runtime.drain();
+    expect(h.decisionsAtRng).toHaveLength(valid ? 1 : 0);
+    if (!valid)
+      expect(h.messages.at(-1)).toMatchObject({
+        type: 'ERROR',
+        message: 'horse state board does not match betting street',
+      });
+    else expect(h.messages.at(-1)?.type).not.toBe('ERROR');
+  });
+
   it('rejects any private seat card before HorseLogic can read it', async () => {
     const h = harness();
     h.runtime.receive({

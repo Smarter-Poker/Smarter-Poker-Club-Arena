@@ -50,3 +50,62 @@ describe('Omaha flush draws respect board blockers', () => {
     expect(omahaDrawQuality(cards('Ks Js 3h 4c'), cards('As 9s 2d')).nutFlushDraw).toBe(true);
   });
 });
+
+describe('raw wraps are distinct from usable nut straight draws', () => {
+  for (const extra of ['', ' Ac', ' Ac Kd']) {
+    it(`does not promote a monotone-board wrap to nut quality (${4 + extra.split(' ').filter(Boolean).length} cards)`, () => {
+      const hole = cards(`4h 5c 6s 7d${extra}`);
+      const board = cards('8h 9h 2h');
+      const draw = omahaDrawQuality(hole, board);
+      expect(draw.straightOuts).toBe(13);
+      expect(draw.bigWrap).toBe(true);
+      // Concrete legal opposing flush beats a representative straight hit;
+      // this is a physical witness, not a claim about an opponent's cards.
+      const completed = [...board, ...cards('5d')];
+      expect(scoreOmahaHiPartial(cards('Ah Kh Qc Jd'), completed)).toBeGreaterThan(
+        scoreOmahaHiPartial(hole, completed)
+      );
+      expect(draw.nutty).toBe(false);
+      expect(draw.nutStraightOuts).toBe(0);
+    });
+    it(`retains a clean high wrap and rejects paired-board/low-wrap nut claims (${extra.length})`, () => {
+      const high = cards(`9c Td Jh Qs${extra}`);
+      expect(omahaDrawQuality(high, cards('8s 7d 2c'))).toMatchObject({
+        bigWrap: true,
+        nutty: true,
+      });
+      expect(omahaDrawQuality(high, cards('8s 7d 2c 2s'))).toMatchObject({
+        bigWrap: true,
+        nutStraightOuts: 0,
+        nutty: false,
+      });
+      const pairedHit = cards('8s 7d 2c 2s 6c');
+      expect(scoreOmahaHiPartial(cards('2h 2d 4c 5h'), pairedHit)).toBeGreaterThan(
+        scoreOmahaHiPartial(high, pairedHit)
+      );
+      const low = cards(`4h 5c 6s 7d${extra}`);
+      expect(omahaDrawQuality(low, cards('8h 9d 2c'))).toMatchObject({
+        bigWrap: true,
+        nutty: false,
+      });
+      const completed = cards('8h 9d 2c Tc');
+      expect(scoreOmahaHiPartial(cards('Jh Qh 3c 4d'), completed)).toBeGreaterThan(
+        scoreOmahaHiPartial(low, completed)
+      );
+    });
+  }
+});
+
+it('grades the shown aces flop as one pair with a four-out nut gutshot, not a wrap', () => {
+  const hole = cards('Ac As Td 8h 7c');
+  const board = cards('3s Jh Kd');
+  expect(Math.floor(scoreOmahaHiPartial(hole, board) / 0x100000)).toBe(2);
+  expect(omahaDrawQuality(hole, board)).toMatchObject({
+    straightOuts: 4,
+    nutStraightOuts: 4,
+    bigWrap: false,
+    nutty: false,
+    nutFlushDraw: false,
+    dominatedFlushDraw: false,
+  });
+});

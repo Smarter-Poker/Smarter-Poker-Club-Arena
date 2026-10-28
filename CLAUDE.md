@@ -573,15 +573,15 @@ RPCs, and sits in the same seat as anybody else. Therefore a horse:
   table liveness, conservation and reconciliation totals;
 - **IS NEVER** silently filtered out of a report, a total, or a ledger.
 
-### Owner exception, October 25, 2026: PLO horses read every PERSON as aggressive
+### Owner update, October 27, 2026: one policy for every opponent
 
-Dan: "TAG THEM ALL FROM THE START, UNLESS OTHERWISE PROVEN DIFFERENTLY" and
-"FOR PLO, NOT FOR HOLDEM". In Omaha games only, the horse brain presumes a
-seat the engine roster says a person plays is an aggressive raiser until the
-person's own hands prove otherwise (`presumedAggressorRead`). It reads a
-person differently from a horse; it denies a horse nothing. It is the owner's
-deliberate choice, not a 10.5 violation. Change it only on a later owner
-instruction. `docs/changelog/2026-10-25-plo-every-person-is-an-aggressive-raiser-until-proven-otherwise.md`.
+Dan: "HORSES SHOULD BE PLAYING AGAINST EACH OTHER AND OTHER HUMANS THE SAME
+WAY THEY ARE PLAYING AGAINST WOOWOO OR EMO". This supersedes the October 25
+human-only Omaha presumption. Every unknown Omaha opponent receives the same
+aggressive-raiser prior until that opponent's public play disproves it.
+Observed play and game context drive adaptations; player names and human/horse
+labels do not select a strategy. Hold'em retains its existing common prior.
+Private opponent cards and coordinated horse decisions remain forbidden.
 
 ### What is still allowed
 

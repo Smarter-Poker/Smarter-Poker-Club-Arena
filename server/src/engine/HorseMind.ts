@@ -496,8 +496,6 @@ export class HorseMind {
   private static durableOpponentMemory = false;
   private static durableOpponentVersions = new Map<string, number>();
   private static decisionVariant: string | null = null;
-  /** PLO PRESUMPTION: the people at the decision's table; null outside one. */
-  private static decisionHumans: ReadonlySet<string> | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -1007,18 +1005,18 @@ export class HorseMind {
       siblings
     );
     if (read?.corroborated) noteFire('opponent_exploit_corroborated');
-    // PLO PRESUMPTION (Dan 2026-10-25): "TAG THEM ALL FROM THE START, UNLESS
-    // OTHERWISE PROVEN DIFFERENTLY" - every person at an Omaha table is read
-    // as an aggressive raiser until their own hands prove otherwise.
-    if (family === 'omaha' && this.decisionHumans?.has(userId)) {
+    // Owner update 2026-10-27: the same public-information policy applies
+    // against people and horses. Every unknown Omaha opponent receives the
+    // same presumption, withdrawn by that opponent's actual evidence.
+    if (family === 'omaha') {
       const presumed = presumedAggressorRead(
         read,
         durable ?? this.exploitCounters.get(`${scope}|${userId}`),
         scope,
         this.decisionVariant
       );
-      if (presumed.outcome === 'presumed') noteFire('plo_human_presumed_aggressive');
-      else if (presumed.outcome === 'disproved') noteFire('plo_human_presumption_disproved');
+      if (presumed.outcome === 'presumed') noteFire('plo_opponent_presumed_aggressive');
+      else if (presumed.outcome === 'disproved') noteFire('plo_opponent_presumption_disproved');
       return presumed.read;
     }
     return read;
@@ -1069,12 +1067,11 @@ export class HorseMind {
     scope: ReadScope | null,
     variant: string | null = null,
     mode: MemoryMode = 'cash',
-    humans: readonly string[] | null = null
+    _legacyHumanRoster: readonly string[] | null = null
   ): void {
     this.decisionMode = mode;
     this.decisionScope = scope;
     this.decisionVariant = scope ? variant : null;
-    this.decisionHumans = scope && humans ? new Set(humans) : null;
   }
 
   static currentScope(): ReadScope | null {

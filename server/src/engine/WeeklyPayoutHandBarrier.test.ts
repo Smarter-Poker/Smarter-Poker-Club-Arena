@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
+import * as errorReporter from '../services/errorReporter.js';
 
 afterEach(() => {
   vi.clearAllTimers();
@@ -43,6 +44,27 @@ function liveHand() {
 }
 
 describe('the real live hand is retained across the original weekly financial edge', () => {
+  it('reports a rejected weekly runout checkpoint without an unhandled continuation', async () => {
+    const { engine, hand } = liveHand();
+    const failure = new Error('weekly checkpoint refused');
+    const reported = vi.spyOn(errorReporter, 'reportError').mockImplementation(() => {});
+    vi.spyOn(engine.weeklyHandPause, 'held').mockReturnValue(true);
+    vi.spyOn(engine.weeklyHandPause, 'checkpoint').mockRejectedValue(failure);
+    try {
+      engine.safeContinueRunout('weekly-regression', hand);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(reported).toHaveBeenCalledWith(
+        failure,
+        'ServerTableEngine.t.weekly_runout_continuation_failed',
+        expect.objectContaining({ reason: 'weekly-regression' })
+      );
+      expect(engine.handController).toBe(hand);
+    } finally {
+      reported.mockRestore();
+    }
+  });
+
   it('wakes the original idle wait across the money edge and proves its actual pause gate', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(100000);

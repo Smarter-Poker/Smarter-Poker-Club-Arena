@@ -1676,10 +1676,22 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected safeContinueRunout(reason: string, controller: HandController | null): void {
     if (this.weeklyHandPause.held()) {
-      void this.weeklyHandPause.checkpoint().then((current) => {
-        if (current && this.handController === controller)
-          this.safeContinueRunout(reason, controller);
-      });
+      void this.weeklyHandPause
+        .checkpoint()
+        .then((current) => {
+          if (current && this.handController === controller)
+            this.safeContinueRunout(reason, controller);
+        })
+        .catch((error) => {
+          reportError(
+            error,
+            'ServerTableEngine.' + this.tableId + '.weekly_runout_continuation_failed',
+            {
+              reason,
+              handNumber: this.handCount,
+            }
+          );
+        });
       return;
     }
     if (this.runoutPayoutMutationUnsafe) {

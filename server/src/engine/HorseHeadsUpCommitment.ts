@@ -88,7 +88,9 @@ export function headsUpCashCommitment(
   );
   const max = Number(
     (
-      Math.floor((Math.min(gs.maxRaiseTo!, hero.bet + hero.stack, potCeiling) + unit * 1e-8) / unit) * unit
+      Math.floor(
+        (Math.min(gs.maxRaiseTo!, hero.bet + hero.stack, potCeiling) + unit * 1e-8) / unit
+      ) * unit
     ).toFixed(2)
   );
   // PLO may reach only the canonical pot ceiling on this action. A bounded

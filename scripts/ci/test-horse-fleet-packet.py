@@ -297,6 +297,18 @@ class PacketContracts(unittest.TestCase):
    self.assertEqual(summary['observedHorses'],1);self.assertFalse(summary['completeCapture'])
    self.assertFalse(summary['completeCanonicalHorseCoverage']);self.assertNotIn('PRIVATE',json.dumps(summary))
    self.assertEqual(summary['gaps'],{'partition_observation_unavailable':1})
+   self.assertEqual(summary['partitionFailure'],{'code':'partition_cli_unclassified','completedPartitions':1})
+ def test_partition_failure_projection_is_closed_and_never_echoes_private_output(self):
+  for code in module.FLEET_FAILURE_CODES:
+   run=subprocess.CompletedProcess([],2,json.dumps({'qualifiedExecution':False,'failureCode':code,'private':'secret'}).encode(),b'UUID TOKEN PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('opaque'),run),code)
+  for raw in [b'PRIVATE',b'{"qualifiedExecution":false,"failureCode":"secret"}',b'x'*4097]:
+   run=subprocess.CompletedProcess([],3,raw,b'PRIVATE')
+   self.assertEqual(module.partition_failure_code(ValueError('secret'),run),'partition_cli_unclassified')
+  self.assertEqual(module.partition_failure_code(subprocess.TimeoutExpired(['PRIVATE'],115,stderr=b'SECRET')),'partition_timeout')
+  self.assertEqual(module.partition_failure_code(FileNotFoundError('SECRET')),'partition_process_unavailable')
+  self.assertEqual(module.partition_failure_code(ValueError('partition_deadline')),'partition_deadline')
+  self.assertEqual(module.partition_failure_code(ValueError('SECRET')),'partition_result_unverified')
  def with_partition_reads(self,result,independent_actor=None):
   o=result['execution']['observation'];fields={'qualifiedReadDecisions':'qualifiedReadHorses','ownHistoryLoadedDecisions':'ownHistoryLoadedHorses','positiveSampleDecisions':'positiveSampleHorses','positiveSampleWithHistoryDecisions':'positiveSampleWithHistoryHorses','retainedHistoryRiverSampleDecisions':'retainedHistoryRiverSampleHorses'}
   for h in o['horses']:
@@ -424,6 +436,23 @@ class PacketContracts(unittest.TestCase):
   summary=module.bounded_summary(p,a,[r]);self.assertFalse(summary['completeCapture'])
   self.assertIsNotNone(summary['indexedEvidenceLedger'])
   empty=module.bounded_summary(p,a,[]);self.assertIsNone(empty['indexedEvidenceLedger'])
+ def test_indexed_own_turn_counts_require_closed_validated_schema(self):
+  p,a,r,_=self.indexed_fixture((0,))
+  o=r['execution']['observation'];h=o['horses'][0]
+  values={k:0 for k in module.EXECUTION_FIELDS};values.update(selectedMatch=1,effectsUnknown=1)
+  h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values}
+  row=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']['rows'][0]
+  self.assertEqual(row['ownTurnExecution']['selectedMatch'],1)
+  self.assertEqual(row['ownTurnExecution']['effectsUnknown'],1)
+  for mutation in [lambda v:v.update(effectsApplied=1),lambda v:v.update(selectedMatch=True),lambda v:v.update(secret='PRIVATE'),lambda v:v.update(version='unknown')]:
+   h['executionEvidence']={'version':'horse-own-turn-execution-v1',**values};mutation(h['executionEvidence'])
+   with self.assertRaises(ValueError):module.bounded_summary(p,a,[r])
+ def test_indexed_legacy_own_turn_evidence_is_unknown_and_union_does_not_promote_it(self):
+  _,_,_,old=self.indexed_fixture((0,))
+  for row in old['rows']:row.pop('ownTurnExecution',None)
+  parsed=module.validate_indexed_ledger(old)
+  self.assertTrue(all(v is None for v in parsed['rows'][0]['ownTurnExecution'].values()))
+  self.assertEqual(parsed['planEffectPersistence'],'unknown')
 if __name__=='__main__':
  import sys
  unittest.main(argv=[sys.argv[0],'PacketContracts'] if '--contracts' in sys.argv else None)

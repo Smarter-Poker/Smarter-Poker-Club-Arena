@@ -45,4 +45,17 @@ describe('Approved agent adjustments settle once through their original club ban
       'python3 -B scripts/qualification/approved-agent-adjustment/native.py'
     );
   });
+  it('keeps earned credits payable to suspended wallets without activating them', () => {
+    const source = read(
+      'supabase/migrations/20261028183252_suspended_agents_receive_approved_past_earned_chips.sql'
+    );
+    expect(source).toContain("g.status NOT IN('active','suspended')");
+    expect(source).toContain('1edc12539a8b79db0614bf0470a3cf23');
+    expect(source).toContain('6eec29205765cd38ca9e0f6f9bfb8ed5');
+    expect(source).toContain("to_jsonb(p)-'prosrc'");
+    expect(source).not.toMatch(/UPDATE\s+(?:public\.)?agents/i);
+    expect(read('scripts/qualification/approved-agent-adjustment/native.py')).toContain(
+      'suspended_existing_wallet_receives_past_earned_credit_without_reactivation_rollback'
+    );
+  });
 });

@@ -96,6 +96,18 @@ describe('accepted-hand Stats fact payload', () => {
       p.facts.map(({ all_in_equity_owed: _flag, ...rest }) => rest);
     expect(withoutFlag(after!)).toEqual(withoutFlag(before!));
     expect(after!.transfers).toEqual(before!.transfers);
+    captureAllInEquity(input.tableId, {
+      type: 'all_in_equity',
+      hand_number: 1003,
+      board: [],
+      exact: true,
+      equities: [
+        { userId: 'hero', equity: 0.1, equityRaw: 100 / 990 },
+        { userId: 'villain', equity: 99.9, equityRaw: 100 - 100 / 990 },
+      ],
+    });
+    const raw = await writeHandFacts({ ...input, handNumber: 1003 });
+    expect(raw!.facts.find((f) => f.user_id === 'hero')!.all_in_equity).toBeCloseTo(1 / 990, 12);
   });
 
   it('uses atomic stack_before instead of arithmetic corrupted by side inflows', () => {

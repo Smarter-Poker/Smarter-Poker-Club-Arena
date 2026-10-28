@@ -316,35 +316,61 @@ describe('cash heads-up matched commitment', () => {
   });
 });
 
-
 function omahaSpot(variant: 'plo4' | 'plo5' | 'plo6', stack: number, hole: string, board: string) {
   const base = spot(stack);
   const controller = new HandController(
-    { tableId: 'isolated-plo-matched-risk', handNumber: 1, gameVariant: variant,
-      smallBlind: 1, bigBlind: 2, rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true } },
-    [ { ...base.hero, stack: stack + 18, bet: 0, totalInvested: 0, cards: [] },
-      { ...base.gs.players[1], stack: 53, bet: 0, totalInvested: 0, cards: [] } ], 2
+    {
+      tableId: 'isolated-plo-matched-risk',
+      handNumber: 1,
+      gameVariant: variant,
+      smallBlind: 1,
+      bigBlind: 2,
+      rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+    },
+    [
+      { ...base.hero, stack: stack + 18, bet: 0, totalInvested: 0, cards: [] },
+      { ...base.gs.players[1], stack: 53, bet: 0, totalInvested: 0, cards: [] },
+    ],
+    2
   );
   controller.start();
   for (const [seat, action, amount] of [
-    [2, 'raise', 6], [1, 'call', 4], [1, 'check', undefined], [2, 'bet', 12],
-    [1, 'call', 12], [1, 'check', undefined], [2, 'bet', 20],
-  ] as const) expect(controller.performAction(seat, action, amount, 'player')).toBe(true);
+    [2, 'raise', 6],
+    [1, 'call', 4],
+    [1, 'check', undefined],
+    [2, 'bet', 12],
+    [1, 'call', 12],
+    [1, 'check', undefined],
+    [2, 'bet', 20],
+  ] as const)
+    expect(controller.performAction(seat, action, amount, 'player')).toBe(true);
   const state = controller.getState();
   const auth = controller.getAuthoritativeActionState('hero')!;
   // Natural controller establishes chip/action geometry; fixed cards below
   // exercise the chooser separately, without injecting its private deck.
-  const hero = { ...state.players.find(p => p.seat === 1)!, cards: cards(hole) };
-  const gs: HorseGameStateV2 = { ...base.gs, ...auth,
-    players: state.players.map(p => ({ ...p, cards: [] })),
-    communityCards: cards(board), pot: state.pot,
+  const hero = { ...state.players.find((p) => p.seat === 1)!, cards: cards(hole) };
+  const gs: HorseGameStateV2 = {
+    ...base.gs,
+    ...auth,
+    players: state.players.map((p) => ({ ...p, cards: [] })),
+    communityCards: cards(board),
+    pot: state.pot,
     contestablePot: controller.getContestablePotForCall('hero')!,
-    currentBet: state.currentBet, lastRaise: state.lastRaise,
+    currentBet: state.currentBet,
+    lastRaise: state.lastRaise,
     minRaise: auth.minRaiseTo == null ? state.lastRaise : auth.minRaiseTo - state.currentBet,
-    stage: 'turn', gameVariant: variant, bettingStructure: auth.structure,
-    actionHistory: state.actionHistory.map((a, i) => ({ stage: a.stage, seat: a.seat,
-      userId: a.userId, action: a.action, amount: a.amount, isFullRaise: a.isFullRaise,
-      timestamp: i + 1 })),
+    stage: 'turn',
+    gameVariant: variant,
+    bettingStructure: auth.structure,
+    actionHistory: state.actionHistory.map((a, i) => ({
+      stage: a.stage,
+      seat: a.seat,
+      userId: a.userId,
+      action: a.action,
+      amount: a.amount,
+      isFullRaise: a.isFullRaise,
+      timestamp: i + 1,
+    })),
   };
   return { hero, gs, controller };
 }
@@ -355,85 +381,159 @@ describe('high-only cash Omaha matched commitment', () => {
     ['plo5', 'Ad Kd Qh Jc 3c', '9d 6d 2s 3d', 2],
     ['plo5', '9h 9c Ad Kd 3c', '9d 2d 2s 5c', 1],
   ] as const)('preserves matched-risk pressure for %s %s', (variant, hole, board, seed) => {
-    const results = [35, 1000].map(stack => {
+    const results = [35, 1000].map((stack) => {
       const s = omahaSpot(variant, stack, hole, board);
-      HorseMind.reset(); seedFastRandom(seed);
+      HorseMind.reset();
+      seedFastRandom(seed);
       const d = HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false });
-      expect(d).toMatchObject(stack === 35 ? { action: 'all_in' } : { action: 'raise', amount: 40 });
+      expect(d).toMatchObject(
+        stack === 35 ? { action: 'all_in' } : { action: 'raise', amount: 40 }
+      );
       let accepted: { action: string; amount?: number } | undefined;
-      expect(s.controller.performAction(1, d.action, d.amount, 'horse_policy', a => {
-        accepted = { action: a.action, amount: a.amount };
-      })).toBe(true);
+      expect(
+        s.controller.performAction(1, d.action, d.amount, 'horse_policy', (a) => {
+          accepted = { action: a.action, amount: a.amount };
+        })
+      ).toBe(true);
       expect(accepted?.action).toBe(d.action);
       if (d.action === 'raise') expect(accepted?.amount).toBe(d.amount);
-      expect(s.controller.performAction(2, 'call', s.controller.getAuthoritativeActionState('villain')!.toCall, 'player')).toBe(true);
+      expect(
+        s.controller.performAction(
+          2,
+          'call',
+          s.controller.getAuthoritativeActionState('villain')!.toCall,
+          'player'
+        )
+      ).toBe(true);
       const end = s.controller.getState();
       expect(end.pot).toBe(106);
-      expect(end.players.map(p => p.totalInvested)).toEqual([53, 53]);
+      expect(end.players.map((p) => p.totalInvested)).toEqual([53, 53]);
       return d;
     });
     expect(results[0].action).toBe('all_in');
     expect(results[1]).toMatchObject({ action: 'raise', amount: 40 });
   });
-  it.each(['plo4', 'plo5', 'plo6'] as const)('preserves dominated-flush flats in %s', variant => {
+  it.each(['plo4', 'plo5', 'plo6'] as const)('preserves dominated-flush flats in %s', (variant) => {
     for (const stack of [35, 1000]) {
-      const hole = ('7d 5d Ah Kc 3c 2h').split(' ').slice(0, Number(variant.slice(3))).join(' ');
+      const hole = '7d 5d Ah Kc 3c 2h'
+        .split(' ')
+        .slice(0, Number(variant.slice(3)))
+        .join(' ');
       const s = omahaSpot(variant, stack, hole, 'Kd 9d 2s 3d');
-      HorseMind.reset(); seedFastRandom(1);
-      expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action).toBe('call');
+      HorseMind.reset();
+      seedFastRandom(1);
+      expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action).toBe(
+        'call'
+      );
     }
   });
 
-  it.each(['plo4', 'plo5', 'plo6'] as const)('bounds %s intent to the canonical pot ceiling', variant => {
-    const s = omahaSpot(variant, 1000, 'Qc Qd Ah Kh', 'Qs 8h 3d 2c');
-    s.gs.players[1].stack = 162;
-    expect(headsUpCashCommitment(s.hero, s.gs)).toMatchObject({ exposure: 182, wager: { action: 'raise', amount: 96 } });
-    s.hero.stack = 182;
-    expect(headsUpCashCommitment(s.hero, s.gs)?.wager).toMatchObject({ action: 'raise', amount: 96 });
-    s.gs.maxRaiseTo = 95.995;
-    expect(headsUpCashCommitment(s.hero, s.gs)?.wager.amount).toBe(95.99);
-    s.gs.legalActions = ['fold', 'call']; s.gs.minRaiseTo = null; s.gs.maxRaiseTo = null;
-    expect(headsUpCashCommitment(s.hero, s.gs)?.wager.action).toBe('call');
-    s.gs.players[1].is_all_in = true; s.gs.players[1].stack = 0;
-    expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
-  });
-
-  it.each(['plo4', 'plo5', 'plo6'] as const)('preserves genuine short-allin no-reopen exclusion in %s', variant => {
-    const s = spot(1018);
-    const controller = new HandController({ tableId: 'isolated-plo-no-reopen', handNumber: 1,
-      gameVariant: variant, smallBlind: 1, bigBlind: 2,
-      rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true } }, [
-      { ...s.hero, stack: 1018, bet: 0, totalInvested: 0, cards: [] },
-      { ...s.gs.players[1], stack: 24, bet: 0, totalInvested: 0 },
-      { ...s.hero, seat: 3, user_id: 'third', stack: 1018, bet: 0, totalInvested: 0, cards: [] },
-    ], 3);
-    controller.start();
-    for (const [seat, action, amount] of [ [3, 'raise', 6], [1, 'call', 5], [2, 'call', 4],
-      [1, 'check', undefined], [2, 'check', undefined], [3, 'bet', 12], [1, 'call', 12], [2, 'all_in', undefined],
-    ] as const) expect(controller.performAction(seat, action, amount, 'player')).toBe(true);
-    const state = controller.getState(); const auth = controller.getAuthoritativeActionState('third')!;
-    expect(auth.legalActions).toEqual(['fold', 'call']);
-    expect(headsUpCashCommitment(state.players.find(p => p.seat === 3)!, {
-      ...s.gs, ...auth, players: state.players, gameVariant: variant, bettingStructure: auth.structure,
-    })).toBeNull();
-  });
-
-  it.each(['plo4', 'plo5', 'plo6'] as const)('honors retained callOnce in %s before commitment', variant => {
-    for (const stack of [35, 1000]) {
-      const hole = ('Qc Qd Ah Kh 3c 2h').split(' ').slice(0, Number(variant.slice(3))).join(' ');
-      const s = omahaSpot(variant, stack, hole, 'Qs 8h 3d 2c');
-      s.hero.bet = 5;
-      s.gs.players[0] = { ...s.hero, cards: [] };
-      s.gs.toCall = 15;
-      s.gs.pot += 5; s.gs.contestablePot = s.gs.pot;
-      s.gs.actionHistory = [
-        { stage: 'turn', seat: 1, userId: 'hero', action: 'bet', amount: 5, timestamp: 1 },
-        { stage: 'turn', seat: 2, userId: 'villain', action: 'raise', amount: 20, timestamp: 2 },
-      ];
-      HorseMind.reset(); seedFastRandom(1);
-      HorseMind.noteRaisePlan(horsePlanHandKey(s.gs.actionHistory), 'hero', 'turn', 'callOnce');
-      expect(HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action).toBe('call');
+  it.each(['plo4', 'plo5', 'plo6'] as const)(
+    'bounds %s intent to the canonical pot ceiling',
+    (variant) => {
+      const s = omahaSpot(variant, 1000, 'Qc Qd Ah Kh', 'Qs 8h 3d 2c');
+      s.gs.players[1].stack = 162;
+      expect(headsUpCashCommitment(s.hero, s.gs)).toMatchObject({
+        exposure: 182,
+        wager: { action: 'raise', amount: 96 },
+      });
+      s.hero.stack = 182;
+      expect(headsUpCashCommitment(s.hero, s.gs)?.wager).toMatchObject({
+        action: 'raise',
+        amount: 96,
+      });
+      s.gs.maxRaiseTo = 95.995;
+      expect(headsUpCashCommitment(s.hero, s.gs)?.wager.amount).toBe(95.99);
+      s.gs.legalActions = ['fold', 'call'];
+      s.gs.minRaiseTo = null;
+      s.gs.maxRaiseTo = null;
+      expect(headsUpCashCommitment(s.hero, s.gs)?.wager.action).toBe('call');
+      s.gs.players[1].is_all_in = true;
+      s.gs.players[1].stack = 0;
+      expect(headsUpCashCommitment(s.hero, s.gs)).toBeNull();
     }
-  });
+  );
 
+  it.each(['plo4', 'plo5', 'plo6'] as const)(
+    'preserves genuine short-allin no-reopen exclusion in %s',
+    (variant) => {
+      const s = spot(1018);
+      const controller = new HandController(
+        {
+          tableId: 'isolated-plo-no-reopen',
+          handNumber: 1,
+          gameVariant: variant,
+          smallBlind: 1,
+          bigBlind: 2,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        },
+        [
+          { ...s.hero, stack: 1018, bet: 0, totalInvested: 0, cards: [] },
+          { ...s.gs.players[1], stack: 24, bet: 0, totalInvested: 0 },
+          {
+            ...s.hero,
+            seat: 3,
+            user_id: 'third',
+            stack: 1018,
+            bet: 0,
+            totalInvested: 0,
+            cards: [],
+          },
+        ],
+        3
+      );
+      controller.start();
+      for (const [seat, action, amount] of [
+        [3, 'raise', 6],
+        [1, 'call', 5],
+        [2, 'call', 4],
+        [1, 'check', undefined],
+        [2, 'check', undefined],
+        [3, 'bet', 12],
+        [1, 'call', 12],
+        [2, 'all_in', undefined],
+      ] as const)
+        expect(controller.performAction(seat, action, amount, 'player')).toBe(true);
+      const state = controller.getState();
+      const auth = controller.getAuthoritativeActionState('third')!;
+      expect(auth.legalActions).toEqual(['fold', 'call']);
+      expect(
+        headsUpCashCommitment(state.players.find((p) => p.seat === 3)!, {
+          ...s.gs,
+          ...auth,
+          players: state.players,
+          gameVariant: variant,
+          bettingStructure: auth.structure,
+        })
+      ).toBeNull();
+    }
+  );
+
+  it.each(['plo4', 'plo5', 'plo6'] as const)(
+    'honors retained callOnce in %s before commitment',
+    (variant) => {
+      for (const stack of [35, 1000]) {
+        const hole = 'Qc Qd Ah Kh 3c 2h'
+          .split(' ')
+          .slice(0, Number(variant.slice(3)))
+          .join(' ');
+        const s = omahaSpot(variant, stack, hole, 'Qs 8h 3d 2c');
+        s.hero.bet = 5;
+        s.gs.players[0] = { ...s.hero, cards: [] };
+        s.gs.toCall = 15;
+        s.gs.pot += 5;
+        s.gs.contestablePot = s.gs.pot;
+        s.gs.actionHistory = [
+          { stage: 'turn', seat: 1, userId: 'hero', action: 'bet', amount: 5, timestamp: 1 },
+          { stage: 'turn', seat: 2, userId: 'villain', action: 'raise', amount: 20, timestamp: 2 },
+        ];
+        HorseMind.reset();
+        seedFastRandom(1);
+        HorseMind.noteRaisePlan(horsePlanHandKey(s.gs.actionHistory), 'hero', 'turn', 'callOnce');
+        expect(
+          HorseLogic.decide(s.hero, s.gs, 'balanced', {}, { v7AdaptiveMC: false }).action
+        ).toBe('call');
+      }
+    }
+  );
 });

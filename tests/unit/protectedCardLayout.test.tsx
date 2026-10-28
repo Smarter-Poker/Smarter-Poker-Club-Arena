@@ -13,6 +13,7 @@ function Fixture({
   seats = 9,
   width = 393,
   avatarSource = '',
+  topCap = false,
 }: {
   revealed: boolean;
   revision?: string;
@@ -22,6 +23,7 @@ function Fixture({
   seats?: number;
   width?: number;
   avatarSource?: string;
+  topCap?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useProtectedCardLayout(ref, revision);
@@ -32,15 +34,22 @@ function Fixture({
         <div className="community-area" data-box={`60,${boardTop},280,90`} />
         <div className="pot-display" data-box={`160,${potTop},80,30`} />
         <div className="seat__info" data-box="10,410,100,40" />
-        <div className="seat-wrapper--top">
+        <div className={`seat-wrapper--top${topCap ? ' seat-wrapper--cap' : ''}`}>
           <img
             className="seat__avatar-img"
             src={avatarSource || undefined}
             data-box="180,100,50,50"
             alt=""
           />
+          {revealed && topCap && (
+            <div className="seat__cards--revealed">
+              {Array.from({ length: count }, (_, i) => (
+                <div key={i} className="seat__card" data-box={`${80 + i * 10},0,20,35`} />
+              ))}
+            </div>
+          )}
         </div>
-        {revealed && (
+        {revealed && !topCap && (
           <div className="seat__cards--revealed">
             {Array.from({ length: count }, (_, i) => (
               <div key={i} className="seat__card" data-box={`${80 + i * 10},330,20,35`} />
@@ -252,3 +261,14 @@ it.each([320, 375, 393, 430, 480])(
     expect(h.container.querySelector('.seat__avatar-img')!.getBoundingClientRect().top).toBe(42);
   }
 );
+
+it('mobile top-cap cards stay below the visible page edge', async () => {
+  stubGeometry();
+  vi.stubGlobal('innerWidth', 393);
+  const h = render(<Fixture revealed topCap />);
+  const row = h.container.querySelector<HTMLElement>('.seat__cards--revealed')!;
+  await settle(row);
+  const page = h.container.querySelector('.table-page')!.getBoundingClientRect();
+  const card = row.querySelector('.seat__card')!.getBoundingClientRect();
+  expect(card.top).toBeGreaterThanOrEqual(page.top + 8);
+});

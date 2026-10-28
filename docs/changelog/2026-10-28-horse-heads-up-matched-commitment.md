@@ -60,7 +60,6 @@ Fixed cards are independent chooser fixtures, never injected into the controller
 Dominated flush, retained callOnce, no-reopen, pot ceiling, invalid chip/cap and
 excluded-domain controls remain covered. No new feature flag or prior is enabled.
 
-
 The historical October16 opponent-exploit neutrality replay isolates this
 independent repair at its pure helper boundary, as it does other later policy
 repairs. Its original before-layer corpus, random-draw comparisons, every

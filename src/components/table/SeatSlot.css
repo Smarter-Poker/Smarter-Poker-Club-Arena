@@ -238,6 +238,10 @@
     opacity 0.3s ease,
     filter 0.3s ease;
   will-change: transform, opacity;
+  /* iPhone mobile energy: isolate seat updates (stack changes, VIP rings,
+     decision timers) so changes within a seat do not trigger whole-table
+     style and layout recalculation across the remaining 8 seats or the felt. */
+  contain: layout style;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -3862,38 +3866,11 @@
   .seat {
   --seat-avatar-base: var(--seat-avatar-full);
 }
-/* THE BUST ON A PORTRAIT PHONE (measured 2026-10-24). The slot above is full
-   at every width. The bust overhang is not, on a phone only: with six PLO6
-   hands tabled at once, a 1.45x top bust is wide enough that the protected
-   card layout pushes BOTH neighbouring shown hands off their own players
-   (tests/e2e/table-proportions.spec.ts, "occupied portrait rings", 375 and
-   480 wide) and parks the top player's bet beside the next chair. 1.3x passes
-   every occupied state at 375, 393, 430 and 480 - nine-tenths of the side
-   villains' art. The first-generation SE (<=620px tall), where every villain
-   is already a 40px pod, keeps 1.05x: 1.3x there put the dealer button on the
-   board. */
+/* The phone table reserves headroom for the same bust scale at every chair.
+   Do not shrink the top player to compensate for missing top clearance. */
 @media (max-width: 480px) and (orientation: portrait) {
-  .table-page:where(
-      [data-seats='2'],
-      [data-seats='3'],
-      [data-seats='4'],
-      [data-seats='5'],
-      [data-seats='6']
-    )
-    .seat-wrapper--top {
-    --sp-bust-scale: 1.3;
-  }
-}
-@media (max-width: 480px) and (max-height: 620px) and (orientation: portrait) {
-  .table-page:where(
-      [data-seats='2'],
-      [data-seats='3'],
-      [data-seats='4'],
-      [data-seats='5'],
-      [data-seats='6']
-    )
-    .seat-wrapper--top {
-    --sp-bust-scale: 1.05;
+  .table-page .seat-wrapper--top {
+    --sp-bust-scale: 1.45;
   }
 }
 
@@ -4669,6 +4646,18 @@
   padding-block: 3px;
 }
 
+/* The whole phone player pod matches: artwork, name and stack plate. Dense
+   rings further below apply the same compact plate to every villain. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .seat-wrapper--top .seat {
+    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
+  }
+  .table-page .seat-wrapper--top .seat__info {
+    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
+  }
+}
+
 /* A top pod that drops below the jackpot frame takes its bet with it
    (Dan 2026-10-25: a bet is always in front of the player who made it). The
    bet used to be held back at the rail, and the dropped plate and its tag then
@@ -4718,70 +4707,6 @@
   }
 }
 
-/* The upper player uses a compact rail pod instead of consuming a full
-   avatar lane above the phone table. Cards and stack remain upright.
-   7-9 max only since Dan 2026-10-24: a 2-6 ring's single top-centre seat is
-   full size on a phone too (see "THE SHORT RINGS' TOP SEAT IS FULL SIZE").
-   :not(:where()) adds no specificity, so these stay 0-3-0. */
-@media (max-width: 480px) and (orientation: portrait) {
-  .table-page:not(
-      :where(
-        [data-seats='2'],
-        [data-seats='3'],
-        [data-seats='4'],
-        [data-seats='5'],
-        [data-seats='6']
-      )
-    )
-    .seat-wrapper--top
-    .seat {
-    --seat-avatar-base: 36px;
-    --seat-avatar-full: 36px;
-    --seat-plate-min-width: 58px;
-    width: 58px;
-  }
-  .table-page:not(
-      :where(
-        [data-seats='2'],
-        [data-seats='3'],
-        [data-seats='4'],
-        [data-seats='5'],
-        [data-seats='6']
-      )
-    )
-    .seat-wrapper--top
-    .seat__info {
-    min-height: 30px;
-    padding: 2px 3px;
-  }
-  .table-page:not(
-      :where(
-        [data-seats='2'],
-        [data-seats='3'],
-        [data-seats='4'],
-        [data-seats='5'],
-        [data-seats='6']
-      )
-    )
-    .seat-wrapper--top
-    .seat__name {
-    font-size: 10px;
-  }
-  .table-page:not(
-      :where(
-        [data-seats='2'],
-        [data-seats='3'],
-        [data-seats='4'],
-        [data-seats='5'],
-        [data-seats='6']
-      )
-    )
-    .seat-wrapper--top
-    .seat__stack {
-    font-size: 12px;
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    DENSE RINGS ON A PHONE (Dan 2026-10-22, from a real phone)
    ═══════════════════════════════════════════════════════════════════════════
@@ -4801,7 +4726,7 @@
    numbers for chip and button clearance; change both together. */
 @media (max-width: 480px) and (orientation: portrait) {
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat {
     --seat-avatar-full: clamp(
       34px,
@@ -4811,18 +4736,18 @@
     --seat-avatar-base: var(--seat-avatar-full);
   }
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat__info {
     min-height: 36px;
     padding: 2px 4px;
   }
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat__name {
     font-size: 0.6875rem;
   }
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat__stack {
     font-size: 0.8125rem;
   }
@@ -4860,13 +4785,13 @@
     right: calc(100% - 8px);
   }
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat {
     --seat-avatar-full: 32px;
     --seat-avatar-base: 32px;
   }
   .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
-    .seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top)
+    .seat-wrapper:not(.seat-wrapper--hero)
     .seat__info {
     min-height: 32px;
     padding: 1px 3px;
@@ -4999,4 +4924,31 @@
 .seat--fold-hidden > .seat__bounty {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* The scaled desktop phone layout leaves a subpixel CALL-pill intrusion at
+   the board-side edge (0.875px remained after the first pixel on Linux).
+   Move each outboard caption two CSS pixels toward its own lane. Keep type, full amounts, pill size,
+   seat positions and every existing pop/gesture transform unchanged. */
+@media (min-width: 481px) and (max-width: 768px) and (orientation: portrait) {
+  .seat--cards-left > .seat__action {
+    left: calc(50% - 2px);
+  }
+  .seat--cards-right > .seat__action {
+    left: calc(50% + 2px);
+  }
+}
+
+/* A 320px first-generation phone has no full-size avatar lane at any chair.
+   Apply the same artwork scale to every villain rather than singling out top. */
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page .seat-wrapper:not(.seat-wrapper--hero) {
+    --sp-bust-scale: 1.05;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page:where([data-seats='7'], [data-seats='8'], [data-seats='9'])
+    .seat-wrapper:not(.seat-wrapper--hero) {
+    --sp-bust-scale: 1.3;
+  }
 }

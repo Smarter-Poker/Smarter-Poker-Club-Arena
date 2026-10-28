@@ -105,3 +105,20 @@ it('the existing daily refresh no longer restores the obsolete fifty-horse roste
   expect(migration).toContain("WHERE jobname='ca-horse-roster-refresh'");
   expect(migration).not.toContain('cron.schedule(');
 });
+
+it('limits the cash selection to Club Arena, keeping funded Diamond eligibility for all registered horses', () => {
+  const G = flat(lastDefinition('fn_ca_horse_roster_seat_guard').body);
+  expect(G).toContain("c.asset='diamonds'");
+  expect(G).toContain('c.is_platform is true');
+  expect(G).toContain('t.union_id is null');
+  expect(G).toContain('c.union_id is null');
+  expect(G).toContain('r.retired_at is null');
+  expect(G).toContain("coalesce(p.horse_status,'available') <> 'disabled'");
+  const manager = readFileSync(resolve(REPO, 'server/src/services/HorseFleetManager.ts'), 'utf8');
+  const rotator = readFileSync(resolve(REPO, 'server/src/services/HorseSessionRotator.ts'), 'utf8');
+  expect(manager).toContain('const bankrollOnly = cashRosterAllows(h.id, table) === true;');
+  expect(manager).toContain('cashRosterAllows(h.id, table) === false');
+  expect(rotator).toContain('cashRosterAllows(uid, t) === false');
+  expect(rotator).toContain('arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)');
+  expect(rotator).toContain('benchedIds.has(uid) ||');
+});

@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "migration": "supabase/migrations/20261027194250_foreign_certificates_read_their_original_cash_cover.sql",
+  "migrationSHA256": "c2e733fc24253ee84621638266f1789d5e522c0d4b90d37bf12e2483e1c7faf6",
+  "originalHelperMD5": "154b8afb11b7a9c7617d16fd047c9918",
+  "helperAndViewsUnchanged": true,
+  "originalMonetaryFamilyCases": 37,
+  "sourceBag": {
+    "md5": "f466fd203de4b72147594841eab50ed8",
+    "rake": 22000,
+    "count": 20006
+  },
+  "acceptedPeriods": 5,
+  "nativeVolumeRows": 200000,
+  "sourceBoundaryCases": 12,
+  "exactInstallerFreezeRollbackReplay": true,
+  "catalogFaults": [
+    "missing-include",
+    "reversed-keys",
+    "wrong-include-order",
+    "descending-key",
+    "partial-predicate",
+    "expression-key",
+    "wrong-table",
+    "wrong-method",
+    "actual-invalid-concurrent-index"
+  ],
+  "naturalIndexOnly": true,
+  "noPlannerForcing": true,
+  "concurrentSnapshotAndHotPageHeapFallback": true,
+  "productionRuntime": "UNPROVEN",
+  "limitations": "Native launch/platform/full-inventory boundaries remain explicit controlled fixtures from the existing original zero/foreign family. No production payment, installation or book closure is inferred."
+}

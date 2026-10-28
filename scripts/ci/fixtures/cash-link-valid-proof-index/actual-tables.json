@@ -1,0 +1,761 @@
+[
+  {
+    "acl": ["postgres=arwdDxtm/postgres"],
+    "rls": true,
+    "kind": "r",
+    "bytes": 10983751680,
+    "owner": "postgres",
+    "pages": 1334106,
+    "stats": {
+      "relid": "35411230",
+      "relname": "union_pnl_cash_outcomes",
+      "idx_scan": 17808678,
+      "seq_scan": 19,
+      "n_tup_del": 0,
+      "n_tup_ins": 5283491,
+      "n_tup_upd": 5,
+      "n_dead_tup": 0,
+      "n_live_tup": 8083500,
+      "schemaname": "public",
+      "last_vacuum": null,
+      "last_analyze": null,
+      "seq_tup_read": 31171786,
+      "vacuum_count": 0,
+      "analyze_count": 0,
+      "idx_tup_fetch": 86800005,
+      "last_idx_scan": "2026-10-28T06:13:55.41413+00:00",
+      "last_seq_scan": "2026-10-28T00:05:49.189872+00:00",
+      "n_tup_hot_upd": 0,
+      "last_autovacuum": "2026-10-27T12:54:08.589384+00:00",
+      "autovacuum_count": 9,
+      "last_autoanalyze": "2026-10-27T08:25:54.47913+00:00",
+      "autoanalyze_count": 11,
+      "n_tup_newpage_upd": 4,
+      "n_ins_since_vacuum": 167917,
+      "n_mod_since_analyze": 213294
+    },
+    "table": "union_pnl_cash_outcomes",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "number": 1,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "number": 2,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "number": 3,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "transaction_id",
+        "type": "xid8",
+        "number": 4,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "recognized_at",
+        "type": "timestamp with time zone",
+        "number": 5,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "payload_hash",
+        "type": "text",
+        "number": 6,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "game_scope",
+        "type": "jsonb",
+        "number": 7,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "evidence",
+        "type": "jsonb",
+        "number": 8,
+        "default": null,
+        "notnull": true
+      }
+    ],
+    "indexes": [
+      {
+        "kind": "i",
+        "bytes": 566910976,
+        "owner": "postgres",
+        "pages": 67310,
+        "tuples": 7662150,
+        "catalog": {
+          "indkey": [1, 2],
+          "indpred": null,
+          "indclass": ["10065", "3124"],
+          "indexprs": null,
+          "indnatts": 2,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0, 0],
+          "indexrelid": "35411235",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": true,
+          "indnkeyatts": 2,
+          "indcheckxmin": false,
+          "indcollation": ["0", "0"],
+          "indimmediate": true,
+          "indisprimary": true,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_pkey ON public.union_pnl_cash_outcomes USING btree (table_id, hand_number)"
+      },
+      {
+        "kind": "i",
+        "bytes": 314056704,
+        "owner": "postgres",
+        "pages": 37701,
+        "tuples": 7662150,
+        "catalog": {
+          "indkey": [3],
+          "indpred": null,
+          "indclass": ["10065"],
+          "indexprs": null,
+          "indnatts": 1,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0],
+          "indexrelid": "35411237",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": true,
+          "indnkeyatts": 1,
+          "indcheckxmin": false,
+          "indcollation": ["0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_hand_id_key ON public.union_pnl_cash_outcomes USING btree (hand_id)"
+      },
+      {
+        "kind": "i",
+        "bytes": 752672768,
+        "owner": "postgres",
+        "pages": 89928,
+        "tuples": 7662150,
+        "catalog": {
+          "indkey": [0, 5],
+          "indpred": null,
+          "indclass": ["3126", "3127"],
+          "indexprs": "({OPEXPR :opno 3477 :opfuncid 3214 :opresulttype 25 :opretset false :opcollid 100 :inputcollid 100 :args ({VAR :varno 1 :varattno 7 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 7 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 17 [ 68 0 0 0 103 97 109 101 95 117 110 105 111 110 95 105 100 ]}) :location -1})",
+          "indnatts": 2,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0, 0],
+          "indexrelid": "35411245",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": false,
+          "indnkeyatts": 2,
+          "indcheckxmin": false,
+          "indcollation": ["100", "0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE INDEX union_pnl_cash_outcomes_expr_recognized_at_idx ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)"
+      },
+      {
+        "kind": "i",
+        "bytes": 389767168,
+        "owner": "postgres",
+        "pages": 47175,
+        "tuples": 7803110,
+        "catalog": {
+          "indkey": [5, 1, 2],
+          "indpred": null,
+          "indclass": ["3127"],
+          "indexprs": null,
+          "indnatts": 3,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0],
+          "indexrelid": "269251131",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": false,
+          "indnkeyatts": 1,
+          "indcheckxmin": false,
+          "indcollation": ["0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE INDEX union_pnl_cash_outcomes_recognition_join_cover ON public.union_pnl_cash_outcomes USING btree (recognized_at) INCLUDE (table_id, hand_number)"
+      },
+      {
+        "kind": "i",
+        "bytes": 70983680,
+        "owner": "postgres",
+        "pages": 8236,
+        "tuples": 2161490,
+        "catalog": {
+          "indkey": [0, 5],
+          "indpred": "{BOOLEXPR :boolop or :args ({DISTINCTEXPR :opno 98 :opfuncid 67 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 100 :args ({OPEXPR :opno 3477 :opfuncid 3214 :opresulttype 25 :opretset false :opcollid 100 :inputcollid 100 :args ({VAR :varno 1 :varattno 8 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 8 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 10 [ 40 0 0 0 115 116 97 116 117 115 ]}) :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 9 [ 36 0 0 0 114 101 97 100 121 ]}) :location -1} {DISTINCTEXPR :opno 3240 :opfuncid 4043 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 0 :args ({OPEXPR :opno 3211 :opfuncid 3478 :opresulttype 3802 :opretset false :opcollid 0 :inputcollid 100 :args ({VAR :varno 1 :varattno 8 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 8 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 19 [ 76 0 0 0 98 97 115 105 115 95 99 101 114 116 105 102 105 101 100 ]}) :location -1} {CONST :consttype 3802 :consttypmod -1 :constcollid 0 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 12 [ 48 0 0 0 1 0 0 80 0 0 0 176 ]}) :location -1} {DISTINCTEXPR :opno 3240 :opfuncid 4043 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 0 :args ({OPEXPR :opno 3211 :opfuncid 3478 :opresulttype 3802 :opretset false :opcollid 0 :inputcollid 100 :args ({VAR :varno 1 :varattno 8 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 8 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 24 [ 96 0 0 0 97 108 108 95 112 108 97 121 101 114 115 95 105 110 99 108 117 100 101 100 ]}) :location -1} {CONST :consttype 3802 :consttypmod -1 :constcollid 0 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 12 [ 48 0 0 0 1 0 0 80 0 0 0 176 ]}) :location -1} {DISTINCTEXPR :opno 3240 :opfuncid 4043 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 0 :args ({OPEXPR :opno 3211 :opfuncid 3478 :opresulttype 3802 :opretset false :opcollid 0 :inputcollid 100 :args ({VAR :varno 1 :varattno 8 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 8 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 14 [ 56 0 0 0 103 97 109 101 95 115 99 111 112 101 ]}) :location -1} {VAR :varno 1 :varattno 7 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 7 :location -1}) :location -1}) :location -1}",
+          "indclass": ["3126", "3127"],
+          "indexprs": "({OPEXPR :opno 3477 :opfuncid 3214 :opresulttype 25 :opretset false :opcollid 100 :inputcollid 100 :args ({VAR :varno 1 :varattno 7 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 7 :location -1} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 17 [ 68 0 0 0 103 97 109 101 95 117 110 105 111 110 95 105 100 ]}) :location -1})",
+          "indnatts": 2,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0, 0],
+          "indexrelid": "68959601",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": false,
+          "indnkeyatts": 2,
+          "indcheckxmin": false,
+          "indcollation": ["100", "0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": "(((evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'game_scope'::text) IS DISTINCT FROM game_scope))",
+        "definition": "CREATE INDEX union_pnl_cash_outcomes_unaccepted ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at) WHERE (((evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'game_scope'::text) IS DISTINCT FROM game_scope))"
+      },
+      {
+        "kind": "i",
+        "bytes": 18038784,
+        "owner": "postgres",
+        "pages": 1897,
+        "tuples": 708494,
+        "catalog": {
+          "indkey": [5],
+          "indpred": "{BOOLEXPR :boolop not :args ({OPEXPR :opno 3249 :opfuncid 4049 :opresulttype 16 :opretset false :opcollid 0 :inputcollid 100 :args ({VAR :varno 1 :varattno 7 :vartype 3802 :vartypmod -1 :varcollid 0 :varnullingrels (b) :varlevelsup 0 :varnosyn 1 :varattnosyn 7 :location -1} {ARRAYEXPR :array_typeid 1009 :array_collid 100 :element_typeid 25 :elements ({CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 17 [ 68 0 0 0 103 97 109 101 95 117 110 105 111 110 95 105 100 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 16 [ 64 0 0 0 104 111 115 116 95 99 108 117 98 95 105 100 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 17 [ 68 0 0 0 116 111 117 114 110 97 109 101 110 116 95 105 100 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 14 [ 56 0 0 0 105 115 95 112 114 105 118 97 116 101 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 9 [ 36 0 0 0 97 115 115 101 116 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 14 [ 56 0 0 0 117 110 105 116 95 115 99 97 108 101 ]}) :multidims false :location -1}) :location -1}) :location -1}",
+          "indclass": ["3127"],
+          "indexprs": null,
+          "indnatts": 1,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0],
+          "indexrelid": "68965246",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": false,
+          "indnkeyatts": 1,
+          "indcheckxmin": false,
+          "indcollation": ["0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": "(NOT (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text]))",
+        "definition": "CREATE INDEX union_pnl_cash_outcomes_scope_missing ON public.union_pnl_cash_outcomes USING btree (recognized_at) WHERE (NOT (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text]))"
+      },
+      {
+        "kind": "i",
+        "bytes": 176791552,
+        "owner": "postgres",
+        "pages": 21341,
+        "tuples": 7782320,
+        "catalog": {
+          "indkey": [5],
+          "indpred": null,
+          "indclass": ["3127"],
+          "indexprs": null,
+          "indnatts": 1,
+          "indrelid": "35411230",
+          "indislive": true,
+          "indoption": [0],
+          "indexrelid": "268761690",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": false,
+          "indnkeyatts": 1,
+          "indcheckxmin": false,
+          "indcollation": ["0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE INDEX union_pnl_cash_outcomes_recognition_window ON public.union_pnl_cash_outcomes USING btree (recognized_at)"
+      }
+    ],
+    "policies": null,
+    "force_rls": false,
+    "allvisible": 1313515,
+    "constraints": [
+      {
+        "name": "union_pnl_cash_outcomes_hand_id_key",
+        "validated": true,
+        "definition": "UNIQUE (hand_id)"
+      },
+      {
+        "name": "union_pnl_cash_outcomes_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (table_id, hand_number)"
+      },
+      {
+        "name": "union_pnl_cash_outcomes_transaction_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)"
+      }
+    ],
+    "column_stats": [
+      {
+        "attname": "table_id",
+        "avg_width": 16,
+        "null_frac": 0,
+        "n_distinct": 2813,
+        "correlation": 0.0781071
+      },
+      {
+        "attname": "hand_number",
+        "avg_width": 8,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.979314
+      },
+      {
+        "attname": "hand_id",
+        "avg_width": 16,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": -0.00143852
+      },
+      {
+        "attname": "transaction_id",
+        "avg_width": 8,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.979314
+      },
+      {
+        "attname": "recognized_at",
+        "avg_width": 8,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.979314
+      },
+      {
+        "attname": "payload_hash",
+        "avg_width": 65,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.00407032
+      },
+      {
+        "attname": "game_scope",
+        "avg_width": 148,
+        "null_frac": 0,
+        "n_distinct": 4,
+        "correlation": 0.629546
+      },
+      {
+        "attname": "evidence",
+        "avg_width": 1006,
+        "null_frac": 0,
+        "n_distinct": 297338,
+        "correlation": 0.228975
+      }
+    ],
+    "rows_estimate": 7803110
+  },
+  {
+    "acl": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "rls": true,
+    "kind": "r",
+    "bytes": 511590400,
+    "owner": "postgres",
+    "pages": 59305,
+    "stats": {
+      "relid": "69166011",
+      "relname": "union_pnl_cash_outcome_link_resolutions",
+      "idx_scan": 118922309,
+      "seq_scan": 8117,
+      "n_tup_del": 0,
+      "n_tup_ins": 778404,
+      "n_tup_upd": 0,
+      "n_dead_tup": 0,
+      "n_live_tup": 759133,
+      "schemaname": "public",
+      "last_vacuum": null,
+      "last_analyze": null,
+      "seq_tup_read": 164581270,
+      "vacuum_count": 0,
+      "analyze_count": 0,
+      "idx_tup_fetch": 40630161,
+      "last_idx_scan": "2026-10-28T06:13:55.41413+00:00",
+      "last_seq_scan": "2026-10-27T23:31:41.993488+00:00",
+      "n_tup_hot_upd": 0,
+      "last_autovacuum": "2026-10-27T18:39:54.830819+00:00",
+      "autovacuum_count": 29,
+      "last_autoanalyze": "2026-10-27T21:38:23.884586+00:00",
+      "autoanalyze_count": 44,
+      "n_tup_newpage_upd": 0,
+      "n_ins_since_vacuum": 75490,
+      "n_mod_since_analyze": 59955
+    },
+    "table": "union_pnl_cash_outcome_link_resolutions",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "number": 1,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "number": 2,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "number": 3,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "outcome_payload_hash",
+        "type": "text",
+        "number": 4,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "outcome_evidence_md5",
+        "type": "text",
+        "number": 5,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "roster_source",
+        "type": "text",
+        "number": 6,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "manifest_id",
+        "type": "uuid",
+        "number": 7,
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "game_scope",
+        "type": "jsonb",
+        "number": 8,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "evidence",
+        "type": "jsonb",
+        "number": 9,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "proof",
+        "type": "jsonb",
+        "number": 10,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "proof_md5",
+        "type": "text",
+        "number": 11,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "number": 12,
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "resolved_by",
+        "type": "text",
+        "number": 13,
+        "default": "SESSION_USER",
+        "notnull": true
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "number": 14,
+        "default": "clock_timestamp()",
+        "notnull": true
+      }
+    ],
+    "indexes": [
+      {
+        "kind": "i",
+        "bytes": 52879360,
+        "owner": "postgres",
+        "pages": 5918,
+        "tuples": 699178,
+        "catalog": {
+          "indkey": [1, 2],
+          "indpred": null,
+          "indclass": ["10065", "3124"],
+          "indexprs": null,
+          "indnatts": 2,
+          "indrelid": "69166011",
+          "indislive": true,
+          "indoption": [0, 0],
+          "indexrelid": "69166045",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": true,
+          "indnkeyatts": 2,
+          "indcheckxmin": false,
+          "indcollation": ["0", "0"],
+          "indimmediate": true,
+          "indisprimary": true,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_pkey ON public.union_pnl_cash_outcome_link_resolutions USING btree (table_id, hand_number)"
+      },
+      {
+        "kind": "i",
+        "bytes": 32301056,
+        "owner": "postgres",
+        "pages": 3569,
+        "tuples": 699178,
+        "catalog": {
+          "indkey": [3],
+          "indpred": null,
+          "indclass": ["10065"],
+          "indexprs": null,
+          "indnatts": 1,
+          "indrelid": "69166011",
+          "indislive": true,
+          "indoption": [0],
+          "indexrelid": "69166047",
+          "indisready": true,
+          "indisvalid": true,
+          "indisunique": true,
+          "indnkeyatts": 1,
+          "indcheckxmin": false,
+          "indcollation": ["0"],
+          "indimmediate": true,
+          "indisprimary": false,
+          "indisclustered": false,
+          "indisexclusion": false,
+          "indisreplident": false,
+          "indnullsnotdistinct": false
+        },
+        "predicate": null,
+        "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_hand_id_key ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id)"
+      }
+    ],
+    "policies": null,
+    "force_rls": false,
+    "allvisible": 56911,
+    "constraints": [
+      {
+        "name": "union_pnl_cash_outcome_link_resoluti_outcome_evidence_md5_check",
+        "validated": true,
+        "definition": "CHECK ((outcome_evidence_md5 ~ '^[0-9a-f]{32}$'::text))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check",
+        "validated": true,
+        "definition": "CHECK ((proof_md5 = md5((proof)::text)))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check1",
+        "validated": true,
+        "definition": "CHECK (((roster_source = 'manifest'::text) = (manifest_id IS NOT NULL)))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_check2",
+        "validated": true,
+        "definition": "CHECK ((((proof ->> 'status'::text) = 'proven'::text) AND ((proof ->> 'resolution_kind'::text) = 'cash_outcome_provenance_link'::text) AND ((proof ->> 'table_id'::text) = (table_id)::text) AND (((proof ->> 'hand_number'::text))::bigint = hand_number) AND ((proof ->> 'hand_id'::text) = (hand_id)::text) AND ((proof ->> 'outcome_payload_hash'::text) = outcome_payload_hash) AND ((proof ->> 'outcome_evidence_md5'::text) = outcome_evidence_md5) AND ((proof ->> 'roster_source'::text) = roster_source) AND (NOT ((proof ->> 'manifest_id'::text) IS DISTINCT FROM (manifest_id)::text)) AND ((proof -> 'game_scope'::text) = game_scope) AND ((proof -> 'evidence'::text) = evidence) AND ((evidence -> 'game_scope'::text) = game_scope)))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_evidence_check",
+        "validated": true,
+        "definition": "CHECK (((jsonb_typeof(evidence) = 'object'::text) AND ((evidence ->> 'provenance_link'::text) = 'resolved'::text)))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_game_scope_check",
+        "validated": true,
+        "definition": "CHECK (((jsonb_typeof(game_scope) = 'object'::text) AND (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text])))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_hand_id_key",
+        "validated": true,
+        "definition": "UNIQUE (hand_id)"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (table_id, hand_number)"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_reason_check",
+        "validated": true,
+        "definition": "CHECK ((length(btrim(reason)) >= 20))"
+      },
+      {
+        "name": "union_pnl_cash_outcome_link_resolutions_roster_source_check",
+        "validated": true,
+        "definition": "CHECK ((roster_source = ANY (ARRAY['manifest'::text, 'seat_inventory'::text, 'lightning_pool'::text])))"
+      }
+    ],
+    "column_stats": [
+      {
+        "attname": "table_id",
+        "avg_width": 16,
+        "null_frac": 0,
+        "n_distinct": 24,
+        "correlation": -0.255708
+      },
+      {
+        "attname": "hand_number",
+        "avg_width": 8,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.995278
+      },
+      {
+        "attname": "hand_id",
+        "avg_width": 16,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": -8.88424e-5
+      },
+      {
+        "attname": "outcome_payload_hash",
+        "avg_width": 65,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": -0.00671145
+      },
+      {
+        "attname": "outcome_evidence_md5",
+        "avg_width": 33,
+        "null_frac": 0,
+        "n_distinct": 425,
+        "correlation": 0.257893
+      },
+      {
+        "attname": "roster_source",
+        "avg_width": 14,
+        "null_frac": 0,
+        "n_distinct": 3,
+        "correlation": 0.9994
+      },
+      {
+        "attname": "manifest_id",
+        "avg_width": 16,
+        "null_frac": 0.999967,
+        "n_distinct": -3.3319e-5,
+        "correlation": null
+      },
+      {
+        "attname": "game_scope",
+        "avg_width": 157,
+        "null_frac": 0,
+        "n_distinct": 3,
+        "correlation": 0.242091
+      },
+      {
+        "attname": "evidence",
+        "avg_width": 104,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": null
+      },
+      {
+        "attname": "proof",
+        "avg_width": 18,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": null
+      },
+      {
+        "attname": "proof_md5",
+        "avg_width": 33,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.00328499
+      },
+      {
+        "attname": "reason",
+        "avg_width": 112,
+        "null_frac": 0,
+        "n_distinct": 4,
+        "correlation": 1
+      },
+      {
+        "attname": "resolved_by",
+        "avg_width": 13,
+        "null_frac": 0,
+        "n_distinct": 2,
+        "correlation": 0.8496
+      },
+      {
+        "attname": "resolved_at",
+        "avg_width": 8,
+        "null_frac": 0,
+        "n_distinct": -1,
+        "correlation": 0.995292
+      }
+    ],
+    "rows_estimate": 699178
+  }
+]

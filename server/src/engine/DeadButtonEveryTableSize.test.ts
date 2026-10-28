@@ -159,15 +159,14 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
-    name: 'a new arrival into the dead button seat takes the button and posts to enter',
+    name: 'a new arrival into the dead button seat takes the button without an entry post',
     last: OPENING,
     hands: [
       { seats: [1, 2, 3, 4, 5, 6], expect: [2, 3, 4] },
       // Seat 3 busts and a moved-in player takes the seat before the next
       // deal. The button is owed to that seat, so the arrival holds it, and
-      // the arrival rule (B2) bills them a live big blind to enter rather
-      // than most of an orbit for free. Seats 4 and 5 post as the rule says.
-      { seats: [1, 2, 3, 4, 5, 6], arrival: 3, expect: [3, 4, 5], postsToEnter: [3] },
+      // no entry blind is owed. Seats 4 and 5 alone post the natural blinds.
+      { seats: [1, 2, 3, 4, 5, 6], arrival: 3, expect: [3, 4, 5], postsToEnter: [] },
       { seats: [1, 2, 3, 4, 5, 6], expect: [4, 5, 6] },
       { seats: [1, 2, 3, 4, 5, 6], expect: [5, 6, 1] },
       { seats: [1, 2, 3, 4, 5, 6], expect: [6, 1, 2] },
@@ -217,8 +216,8 @@ const SCENARIOS: Scenario[] = [
       // A player is balanced in to seat 3. The big blind advances past 5 to
       // seat 2, the old button/small-blind seat, so the button cannot follow
       // it there: it goes to the arrival, the seat before the small blind,
-      // and the arrival rule bills them a live big blind to enter.
-      { seats: [2, 3, 5], arrival: 3, expect: [3, 5, 2], postsToEnter: [3] },
+      // and the arrival owes no entry blind.
+      { seats: [2, 3, 5], arrival: 3, expect: [3, 5, 2], postsToEnter: [] },
       { seats: [2, 3, 5], expect: [5, 2, 3] },
       { seats: [2, 3, 5], expect: [2, 3, 5] },
       { seats: [2, 3, 5], expect: [3, 5, 2] },
@@ -417,6 +416,32 @@ describe('the real deal: (button, small blind, big blind) over several hands', (
       }
     });
   }
+
+  for (let size = 2; size <= 9; size++) {
+    for (let arrival = 1; arrival <= size; arrival++) {
+      it(`${size}-handed arrival at seat ${arrival} pays only natural blinds and antes`, async () => {
+        const engine = tableEngine('tournament', OPENING);
+        const seats = Array.from({ length: size }, (_, index) => index + 1);
+        engine.tableInfo.ante = 10;
+        engine.seatedPlayers = seats.map(seatRow);
+        engine.noteTournamentArrival(arrival, `u${arrival}`);
+        const got = await dealOne(engine, seats);
+        expect(got.postsToEnter).toEqual([]);
+        expect(got.pot).toBe(SB + BB + seats.length * 10);
+      });
+    }
+  }
+
+  it.each([1, 2, 3, 4, 5, 6])('never bills stale arrival debt at seat %s', async (seat) => {
+    const engine = tableEngine('tournament', OPENING);
+    engine.mustPostBB.add(`u${seat}`);
+    engine.postingBBToEnter.add(`u${seat}`);
+    engine.returningFromSitout.add(`u${seat}`);
+    const got = await dealOne(engine, [1, 2, 3, 4, 5, 6]);
+    expect(got.postsToEnter).toEqual([]);
+    expect(got.pot).toBe(SB + BB);
+    expect([got.button, got.sb, got.bb]).toEqual([2, 3, 4]);
+  });
 
   it('the predictors name the same seats the deal uses, dead or live', async () => {
     const engine = tableEngine('tournament', OPENING);

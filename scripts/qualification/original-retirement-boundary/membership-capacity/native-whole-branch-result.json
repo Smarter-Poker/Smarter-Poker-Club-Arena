@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "whole_materialized_branch_full_union_touched_and_bad_row_bag_cases": 48,
+  "non_vacuous_union_touched_max_rows": 27,
+  "bad_counts": [0, 6, 9, 12, 14, 15, 16, 19],
+  "real_original_touched_membership_entry_satellite_helpers_md5": {
+    "fn_union_pnl_touched_registrations(timestamp with time zone,timestamp with time zone,boolean)": "e45d89f53048f070a3ddc9264d1ecdff",
+    "fn_union_pnl_tournament_in_union(text,uuid,boolean)": "e46d1253e8fc17f3fb8616d8a3e13793",
+    "fn_union_pnl_tournament_entry_club_of(text,numeric,uuid,uuid,uuid,jsonb)": "b875ae9c879c65cd1db5ae207af9f3c3",
+    "fn_union_pnl_satellite_seat_owner(uuid,uuid)": "3beddbfe1e3d204d1907b428d9358f08"
+  },
+  "original_satellite_economic_proof_pass_and_missing_ledger_hash_refusal_preserved": true,
+  "canonical_uuid_regex_cast_rowid_text_and_both_membership_branches_preserved": true,
+  "source_gen_guard_or_public_function_changed": false,
+  "limits": "Real original4helpers and entire branch; controlled synthetic financial source tables/opening-resolved arrays. Not whole-report/source65/GEN/production qualification."
+}

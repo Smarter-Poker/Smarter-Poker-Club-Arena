@@ -151,14 +151,18 @@ describe('a parked table never freezes on an unproven move', () => {
     expect(code).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_f06_withdraw_unproven_movement_park(uuid,uuid,uuid,bigint,uuid,uuid,bigint) TO service_role;'
     );
-    expect(code).toMatch(/LANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path = pg_catalog, public, smarter_private/);
+    expect(code).toMatch(
+      /LANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path = pg_catalog, public, smarter_private/
+    );
     expect(code).toContain("ARRAY['postgres=X/postgres','service_role=X/postgres']");
     // A refusal is never 40001 (PostgREST re-runs it): 20261012061427.
     expect(code).not.toMatch(/ERRCODE\s*=\s*'40001'/);
   });
 
   it('ranks a table with a hand in flight after every table between hands, never excludes it', () => {
-    expect(code).toContain("v_marker constant text := 'A REBUY IS NOT SEATED UNDER A HAND IN FLIGHT';");
+    expect(code).toContain(
+      "v_marker constant text := 'A REBUY IS NOT SEATED UNDER A HAND IN FLIGHT';"
+    );
     const start = code.indexOf('v_new constant text');
     const v_new = code.slice(start, code.indexOf('\nBEGIN', start));
     expect(v_new).toMatch(
@@ -174,8 +178,13 @@ describe('a parked table never freezes on an unproven move', () => {
   });
 
   it('the engine calls the door it installs, and treats its absence as no withdrawal', () => {
-    const rpc = readFileSync(join(ROOT, 'server/src/tournament/tournamentTableBreakRpc.ts'), 'utf8');
-    expect(rpc).toContain("supabase.rpc('fn_f06_withdraw_unproven_movement_park'");
+    const rpc = readFileSync(
+      join(ROOT, 'server/src/tournament/tournamentTableBreakRpc.ts'),
+      'utf8'
+    );
+    expect(rpc).toContain("this.request('fn_f06_withdraw_unproven_movement_park'");
+    expect(rpc).toContain('runWithTournamentDataAuthority(');
+    expect(rpc).toContain('async () => await supabase.rpc(name, parameters)');
     expect(rpc).toContain("'F06_WITHDRAWAL_MOVEMENT_PROVEN'");
     expect(rpc).toContain("row.state !== 'withdrawn_unproven_movement'");
     expect(rpc).toMatch(/error\.code === 'PGRST202' \|\| error\.code === '42883'\) return false;/);

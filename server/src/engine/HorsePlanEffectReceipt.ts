@@ -31,6 +31,7 @@ export const HORSE_PLAN_POLICY_OWNERS = [
   'phase11',
   'phase12',
   'phase13',
+  'features',
 ] as const;
 export type HorsePlanPolicyOwner = (typeof HORSE_PLAN_POLICY_OWNERS)[number];
 
@@ -283,6 +284,8 @@ export function horsePlanPolicyGenerationFromDecision(
   add('phase11', decision.omahaVariantPolicy as never);
   add('phase12', decision.remainingVariantPolicy as never);
   add('phase13', decision.jointPolicy as never);
+  if (decision.featureAuthority)
+    add('features', { applied: true, authority: decision.featureAuthority.authority });
   const graph = decision.policyGraph?.version;
   return Object.freeze({
     graph: typeof graph === 'string' && graph.length <= 64 ? graph : null,

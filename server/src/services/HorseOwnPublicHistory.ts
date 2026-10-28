@@ -1,3 +1,7 @@
+import {
+  attachRiverNodeSidecar,
+  riverNodeBindings,
+} from '../engine/horseDecision/riverNodeSidecar.js';
 import { supabase } from './supabase/client.js';
 import {
   horseObserverReadContextIsValid,
@@ -36,13 +40,14 @@ export async function readHorseOwnPublicHistory(
   if (!horseObserverReadContextIsValid(context)) return null;
   try {
     const deadline = AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS);
+    const before = new Date().toISOString();
     const { data, error } = await supabase
       .rpc('fn_horse_own_public_history_read_v3', {
         p_observer: context.observerId,
         p_variant: context.variant,
         p_format: context.format,
         p_dealt_count: context.dealtCount,
-        p_before: new Date().toISOString(),
+        p_before: before,
       })
       .abortSignal(deadline);
     if (error || !data || typeof data !== 'object' || Array.isArray(data)) {
@@ -103,6 +108,28 @@ export async function readHorseOwnPublicHistory(
         'HorseOwnPublicHistory.river_calls',
         'Public river-call evidence unavailable'
       );
+    }
+    if (
+      context.format === 'cash' &&
+      context.dealtCount >= 3 &&
+      ['nlh', 'plo4', 'plo5', 'plo6'].includes(context.variant)
+    ) {
+      try {
+        const { data: sidecar, error: nodeError } = await supabase
+          .rpc('fn_horse_multiway_river_nodes_v1', {
+            p_observer: context.observerId,
+            p_variant: context.variant,
+            p_dealt_count: context.dealtCount,
+            p_before: before,
+            p_hands: riverNodeBindings(packet),
+          })
+          .abortSignal(deadline);
+        const enriched = nodeError ? null : attachRiverNodeSidecar(window, sidecar, Date.now());
+        if (enriched?.status === 'captured') return enriched.window;
+        noteFire('horse_river_nodes_unavailable');
+      } catch {
+        noteFire('horse_river_nodes_unavailable');
+      }
     }
     return window;
   } catch {

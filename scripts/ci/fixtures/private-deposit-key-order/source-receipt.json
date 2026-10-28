@@ -1,0 +1,12 @@
+{
+  "before_md5": "61cbf136ccaa855d7e1a41fe483a1b5f",
+  "after_md5": "2f04687065b767f826d08a822cc3174d",
+  "migration_file": "supabase/migrations/20261028063816_weekly_private_deposits_traverse_their_original_source_keys.sql",
+  "replacements": [
+    {
+      "old": "  SELECT DISTINCT source_type,source_group,banked_at FROM deposits\n",
+      "new": "  SELECT DISTINCT source_type,source_group,banked_at FROM deposits\n  ORDER BY source_type,source_group,banked_at\n"
+    }
+  ],
+  "scope": "ONE ORDERBY traversal of existing DISTINCT MATERIALIZED keys; no filtering/economics/ledger/sourceSUM/source65/GEN change"
+}

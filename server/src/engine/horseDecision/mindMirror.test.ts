@@ -271,6 +271,10 @@ describe('addHandContribution', () => {
       tankBetSDStrong: 0,
       riverCallSD: 0,
       riverCallSDWeak: 0,
+      riverLastToActOpps: 0,
+      riverLastToActBets: 0,
+      riverTripleCheckRaiseOpps: 0,
+      riverTripleCheckRaiseFolds: 0,
     };
     const one = {
       ...Object.fromEntries(Object.keys(live).map((k) => [k, 0])),

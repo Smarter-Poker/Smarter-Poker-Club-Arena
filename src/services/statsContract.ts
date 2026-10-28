@@ -169,7 +169,8 @@ export const STATS_METRIC_DEFINITIONS: Readonly<Record<string, StatsMetricDefini
     unit: 'percent',
     source: 'hand_facts',
     minimumSample: 50,
-    definition: 'Accepted 3-bets divided by exact opportunities to make the third full raise.',
+    definition:
+      'Accepted Preflop Re-Raises Over An Opening Raise Divided By Recorded Opportunities To Re-Raise.',
   },
   cbet_flop: {
     key: 'cbet_flop',

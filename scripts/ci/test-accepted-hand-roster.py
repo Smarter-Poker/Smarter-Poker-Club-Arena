@@ -31,6 +31,9 @@ DOOR = 'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,te
 CORE = 'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'
 DOOR_PREIMAGE = 'ad4eadeb4df8113db0ba2b598d219aaf'
 ROSTER_PASSES = 56
+LIGHTNING_FIX = Path('supabase/migrations/20261028100820_lightning_accepted_rosters_bind_original_hand_seats.sql')
+LIGHTNING_FIXTURE = Path('scripts/ci/probes/lightning-accepted-roster-fixture.sql')
+LIGHTNING_PROBE = Path('scripts/ci/probes/lightning-accepted-roster-native.sql')
 EXISTING_PASSES = 50
 
 
@@ -117,7 +120,7 @@ def main():
     (out / 'current-chain.sql').write_text(current_chain(ROOT))
     native = module(ROOT / 'scripts/ci/test-mtt-unlimited.py', 'accepted_roster_execution')
     e = native.Execution(ROOT, out, args.pg_bin.resolve(), out, 900)
-    inputs = [Path(__file__).relative_to(ROOT), MIGRATION, SUBMISSION, LIGHTNING, RETIRED_CASH, RAKED_DIAMOND, CAPTURE, FIXTURE, PROBE, EXISTING_PROBE]
+    inputs = [Path(__file__).relative_to(ROOT), MIGRATION, SUBMISSION, LIGHTNING, RETIRED_CASH, RAKED_DIAMOND, CAPTURE, FIXTURE, PROBE, EXISTING_PROBE, LIGHTNING_FIX, LIGHTNING_FIXTURE, LIGHTNING_PROBE]
     e.report['source_sha256'] = {**m['source_sha256'], **{str(f): sha(ROOT / f) for f in inputs}}
     e.report['cases'] = []
     for s in native.CANCELLATION_SIGNALS:
@@ -200,6 +203,24 @@ def main():
         if before != e.snapshot(db, 'after-data') or catalog != e.catalog_snapshot(db, 'after-catalog') or private != hs.private_snapshot(e, db, 'after-private'):
             raise RuntimeError('roster cases did not roll back completely')
         e.report['cases'].append({'case': 'existing-probe-after-migration', 'passes': existing_probe(e, db, 'existing-probe-after')})
+        # A real original formation roster fails before the corrective owner.
+        fixture = ('BEGIN;\n' + (out / 'opening.sql').read_text() + (ROOT / FIXTURE).read_text()
+                   + (ROOT / LIGHTNING_FIXTURE).read_text())
+        baseline = fixture + "\nDO $$ DECLARE r jsonb; BEGIN r:=pg_temp.lightning_roster_result(); IF r->>'status'<>'unavailable' OR r->'reasons'<>'[\"lightning_seat_positions_unbound\"]'::jsonb THEN RAISE EXCEPTION 'old Lightning limitation not reproduced'; END IF; RAISE NOTICE 'LIGHTNING_BASELINE_UNAVAILABLE'; END $$; ROLLBACK;"
+        _, _, err = e.sql(db, baseline, label='lightning-before-correction', seconds=120)
+        if 'LIGHTNING_BASELINE_UNAVAILABLE' not in err:
+            raise RuntimeError('Lightning baseline not observed')
+        e.sql(db, file=ROOT / LIGHTNING_FIX, label='lightning-original-seat-install')
+        _, _, err = e.sql(db, fixture + (ROOT / LIGHTNING_PROBE).read_text() + '\nROLLBACK;', label='lightning-original-seats', seconds=120)
+        if err.count('LIGHTNING ROSTER PASS:') != 3:
+            raise RuntimeError('Lightning original binding probes incomplete')
+        e.report['cases'].append({'case': 'lightning-original-seats-before-unavailable-after-captured', 'passes': 3})
+        # Same file cannot be installed twice, even with identical parameters.
+        code, _, err = e.sql(db, file=ROOT / LIGHTNING_FIX, label='lightning-replay-refused', check=False)
+        if code == 0 or 'LIGHTNING_ACCEPTED_ROSTER_PREIMAGE_DRIFT' not in err:
+            raise RuntimeError('Lightning correction replay not refused')
+        e.report['cases'].append({'case': 'existing-probe-after-lightning-correction', 'passes': existing_probe(e, db, 'existing-probe-after-lightning')})
+
         for path, digest in e.report['source_sha256'].items():
             if sha(ROOT / path) != digest:
                 raise RuntimeError('source changed during qualification: ' + path)

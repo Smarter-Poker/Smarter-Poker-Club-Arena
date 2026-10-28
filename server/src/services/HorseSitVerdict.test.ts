@@ -482,3 +482,19 @@ describe('the fleet: an opening feeder says what happened', () => {
     expect(CODE).toMatch(/if \(unsittable\.size > 0\) \{/);
   });
 });
+
+it('passes the exact arena row into the shared cash-roster verdict for both count and chair', () => {
+  const table = { ...TABLE, arena: { id: TABLE.club_id, asset: 'chips', is_platform: false } };
+  const seen: SitTable[] = [];
+  const context = ctxWith({
+    bankrollOnlyCashHorse: (_id, row) => {
+      seen.push(row);
+      return true;
+    },
+    book: bookWith(),
+  });
+  expect(sitVerdictFor(HORSE, table, context).ok).toBe(true);
+  expect(sitVerdictFor(HORSE, table, context).ok).toBe(true);
+  expect(seen).toEqual([table, table]);
+  expect(seen.every((row) => row === table)).toBe(true);
+});

@@ -97,23 +97,25 @@ export function TableReactions({
         </div>
       )}
 
-      {/* Floating Reactions — rendered at seat positions */}
-      <div className="tr-floating-container" aria-hidden="true">
-        {activeReactions.map((event) => (
-          <div
-            key={event.id}
-            className="tr-float"
-            style={
-              {
-                // Position based on seat index (simplified — consumer can override via CSS var)
-                '--seat-index': event.seatIndex,
-              } as React.CSSProperties
-            }
-          >
-            <span className="tr-float__emoji">{event.emoji}</span>
-          </div>
-        ))}
-      </div>
+      {/* Floating Reactions — rendered at seat positions (mounted only when reactions exist) */}
+      {activeReactions.length > 0 && (
+        <div className="tr-floating-container" aria-hidden="true">
+          {activeReactions.map((event) => (
+            <div
+              key={event.id}
+              className="tr-float"
+              style={
+                {
+                  // Position based on seat index (simplified — consumer can override via CSS var)
+                  '--seat-index': event.seatIndex,
+                } as React.CSSProperties
+              }
+            >
+              <span className="tr-float__emoji">{event.emoji}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

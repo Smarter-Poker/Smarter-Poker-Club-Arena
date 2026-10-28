@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "original_catalog_observed_at": "2026-10-28T18:52:58.54895Z",
+  "source_only": true,
+  "phase_dependency": "20261028162126",
+  "preimages": [
+    {
+      "signature": "ca_player_stats_financial_report(uuid,uuid,integer,text,text)",
+      "md5": "79d56064bddddd2025c17310127a62e5",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone)",
+      "md5": "440c0bc501e1c2094b8d4c947533c08d",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_accounting_tournament_commission_source_guard()",
+      "md5": "7bfe57c82e08e6a939a16c0c27c7a28d",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "01abfa84da1dbe701503ad1da7585d0b",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public", "enable_indexscan=off"]
+    },
+    {
+      "signature": "fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "d4cac33feea3669be963d453fa82eb0f",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public", "enable_indexscan=off", "enable_nestloop=off"]
+    },
+    {
+      "signature": "fn_ca_rakeback_payout_leg_is_documented()",
+      "md5": "acd6934686f69e1647302357cfd99a3f",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_ca_settlement_correctness_check()",
+      "md5": "aff58a0089c75f8e152e77e9d96fb7c8",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])",
+      "md5": "4a835bd96653c977e5519f6dcfd7a7c6",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=public", "statement_timeout=300s"]
+    },
+    {
+      "signature": "fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "62c444b0953cced8a4f3144fc86af51b",
+      "acl": ["postgres=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_rakeback_split_check(uuid,date,date,uuid[])",
+      "md5": "4255ae4df6902f370d13dc69632277bb",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_rakeback_split_write(uuid,date,date,uuid[])",
+      "md5": "d7d52bfca1f480a869ca8018efe3a854",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "c69a291c3347a6b27fbc62016411d7b2",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "5b50ed269444dfe82b2bb15782ad50c0",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    },
+    {
+      "signature": "fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "236228d068e90194a306b81d0f6c88fd",
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "config": ["search_path=public"]
+    }
+  ],
+  "postimages": [
+    {
+      "signature": "smarter_private.admit_own_agent_source(text,uuid)",
+      "md5": "327d4bee29bc848b0c429466d434cfa6"
+    },
+    {
+      "signature": "smarter_private.assert_own_agent_scope_interpreted(text,uuid,timestamp with time zone,timestamp with time zone,integer)",
+      "md5": "22d56d8a4aef6bc445a5eee3696045a1"
+    },
+    {
+      "signature": "ca_player_stats_financial_report(uuid,uuid,integer,text,text)",
+      "md5": "30452e1de3d5c3a5bb0d63b4c803b3db"
+    },
+    {
+      "signature": "fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamp with time zone)",
+      "md5": "62bd1db4a493c3f86ca90f32eaca456a"
+    },
+    {
+      "signature": "fn_accounting_tournament_commission_source_guard()",
+      "md5": "a27f5faacd2c469df32f4b5e9692113c"
+    },
+    {
+      "signature": "fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "dce90bd407404e6bf8e135874b7b9209"
+    },
+    {
+      "signature": "fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "737ffac96388517d170c9962174f0222"
+    },
+    {
+      "signature": "fn_ca_rakeback_payout_leg_is_documented()",
+      "md5": "27b613b98de1d922d0ee65e9259c0cea"
+    },
+    {
+      "signature": "fn_ca_settlement_correctness_check()",
+      "md5": "295c3580a4f411fe18b33a3c8486b0e6"
+    },
+    {
+      "signature": "fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])",
+      "md5": "ced29c928d73b73be75d9e94604a2f7a"
+    },
+    {
+      "signature": "fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "9960208f5b5398132a8e702497bbb3ba"
+    },
+    {
+      "signature": "fn_rakeback_split_check(uuid,date,date,uuid[])",
+      "md5": "1d8486415e6213f4ec848de0b1dba74b"
+    },
+    {
+      "signature": "fn_rakeback_split_write(uuid,date,date,uuid[])",
+      "md5": "487fb5a310d17a1464d87211e7d9dd54"
+    },
+    {
+      "signature": "fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "acc58329cf6eb0e50ca47afea3bdf60f"
+    },
+    {
+      "signature": "fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "cbf5dc2e01fada46b4f04625f00282f9"
+    },
+    {
+      "signature": "fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "md5": "3e86c68bae02fb88d651ba5498620db8"
+    },
+    {
+      "signature": "smarter_private.own_agent_destination_contract(jsonb,uuid,uuid,timestamp with time zone)",
+      "md5": "65d809f307db4bea0ead0dcd7a3d1534"
+    },
+    {
+      "signature": "smarter_private.own_agent_interpreted_contract(jsonb,uuid,uuid,numeric,uuid,timestamp with time zone)",
+      "md5": "038e7a69161b7d9b8434fe270fe45f59"
+    },
+    {
+      "signature": "smarter_private.prepare_own_agent_interpretation(uuid,uuid,timestamp with time zone,timestamp with time zone,integer)",
+      "md5": "93ce2f66b07fbd533e4702cd1131532f"
+    },
+    {
+      "signature": "smarter_private.rakeback_certificate_wallets(bigint)",
+      "md5": "984721591c0295a6ca5c5552ec7bfae0"
+    },
+    {
+      "signature": "smarter_private.rakeback_wallet_payout_complete(uuid,bigint)",
+      "md5": "0f5fbe00efb06f9a49dcfae37d5830cc"
+    },
+    {
+      "signature": "smarter_private.rakeback_wallet_plan(jsonb,numeric)",
+      "md5": "48f1c18a1e83272bad0d0b1e1371ce42"
+    },
+    {
+      "signature": "smarter_private.record_rakeback_wallet_contracts()",
+      "md5": "e0ba664285b5b6cc885fd6a2357d8596"
+    }
+  ],
+  "source_sha256": {
+    "earning-contract.sql": "a7f05a2060768205b592c2ddf3b63fdda090b9cf38aa00d6a1cfbed9e3b601f5",
+    "destination-contract.sql": "5620785718867a3fd2e87375687fc5be4f924037f50f81e4020b9e59bd5cc262",
+    "unpaid-interpretation.sql": "080d51392725c2868af1fb23c5af391bea308c6da2d4fd609a270dd178f1979d",
+    "effective-views.sql": "aed88f71ff0e364e3bfcea48eaace496e4ddde84dff911af77142b4ee140951a",
+    "typed-receipts.sql": "2fe7a5394011160fc5fa9363d295c04f82cb236a68cb1261eaf85726c17ee343",
+    "fn_accounting_tournament_commission_source_guard.sql": "8a679b2e6d0cec3771946e726b7b544f7f8f99a30badc419faf3cd3f3c425407",
+    "fn_accounting_union_earned_plan_sets.sql": "31b098ecf8bdd7d7c0ed5e1d2a6e81abc8eebe0d3ea9f8de5d71a9521a7cf5a3",
+    "fn_accounting_union_earned_plan_window.sql": "507d7c83cf72abb4d9d53793ad50d1a7290468e8bb946e765275f6fce6ca62bb",
+    "fn_calculate_cash_rakeback_periods.sql": "786df8c40f731d40c71cc819351c1ff9edcd982fc6fdf41a5a3fe104fc06b698",
+    "fn_rakeback_split_check.sql": "2f9c8d8081cc0f1e0571cfc7ea490ac32add83f2998e4db22e565fc9a7356e78",
+    "fn_rakeback_split_write.sql": "84f927004c1ffae857b986b5cc30505560ed5c87765961a95817eff606812cb3",
+    "fn_prepare_accounting_week.sql": "20092eec7558309d0f92797451e53ad400885e31d8a1730ba8e76a670c270bf2",
+    "fn_settle_accounting_commission_stage.sql": "9e787aced4b3b6cb64cd8abe79538bd9d190f054b60f7ee36c51cf217852e18b",
+    "fn_settle_accounting_commission_stage_v3.sql": "5f9bde55f68d5445c524a99749d3de35e6e56f0ae27f92a5b62564c75115acdb",
+    "fn_settle_accounting_rakeback_stage.sql": "b59bbcf6a0fdea6bb5402d99647c9fdd1c06e7d5d0021e610f482a4971859638",
+    "deferred-proof.sql": "19e370867cb6c63b5ff2123fe1ff15efbe7462e53db621f7c908743d065fba5f",
+    "ca_player_stats_financial_report.sql": "c8146ed6a5654d69022c3a8c5ed232e36a68d44726859a8780b10abfb29ec53e",
+    "fn_ca_settlement_correctness_check.sql": "0c2a0a52e1a53dcb0404b1d4e328ba485a6841308a6ba1b92c37fc43c6542943"
+  }
+}

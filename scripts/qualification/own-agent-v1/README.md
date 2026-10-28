@@ -3,7 +3,11 @@
 This is maintained source qualification, not production installation or payment evidence.
 The reserved migration is `supabase/migrations/20261028184531_own_playing_agent_earnings_keep_typed_wallet_receipts.sql`.
 It changes 15 existing owners and adds nine private owners, five immutable cold
-sidecars and an effective tournament-fee view. `source-binding.json` records
+sidecars and an effective tournament-fee view. The complete maintained owner
+SQL remains readable. The original calculator and preparation runtime locks
+are retained through exact preimage-guarded deltas in `original-owner-deltas.json`;
+no such lock executes during installation. New private R0 locks refuse busy
+state without cache invalidation or false readiness. `source-binding.json` records
 all exact function preimages/postimages and the maintained SQL SHA256 inputs.
 `build-migration.py --check` enforces the generated migration against those files.
 For a maintained source edit, native `--compile-fragments` emits compiler body

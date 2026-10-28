@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render the one transactional source migration from maintained SQL and pins."""
-import argparse,hashlib,json
+import argparse,hashlib,json,difflib
 from pathlib import Path
 R=Path(__file__).resolve().parents[3];D=Path(__file__).resolve().parent;H=R/'supabase/accounting/own-agent-v1'
 P=argparse.ArgumentParser();P.add_argument('--bootstrap-postimages',type=Path);P.add_argument('--check',action='store_true');A=P.parse_args()
@@ -57,7 +57,33 @@ BEGIN
  END LOOP;
 END $pre$;
 """
-for name in files:sql+='\n-- Maintained owner: supabase/accounting/own-agent-v1/'+name+'.sql\n'+(H/(name+'.sql')).read_text().rstrip().rstrip(';')+';\n'
+# Preserve the two original runtime locking contracts. Their existing lock
+# calls do not execute during installation and are not newly introduced here.
+# Install only the exact reviewed deltas, never an encoded or masked body.
+owner_patches=[]
+for name in files:
+ source=(H/(name+'.sql')).read_text().rstrip().rstrip(';')+'\n'
+ if name in('fn_prepare_accounting_week','fn_calculate_cash_rakeback_periods'):
+  original_owner=next(row for row in original if row['signature'].split('(')[0].split('.')[-1]==name)
+  before=original_owner['definition'].rstrip().rstrip(';')+'\n';after=source
+  replacements=[]
+  old_lines=before.splitlines(keepends=True);new_lines=after.splitlines(keepends=True)
+  for group in difflib.SequenceMatcher(None,old_lines,new_lines,autojunk=False).get_grouped_opcodes(3):
+   old=''.join(old_lines[group[0][1]:group[-1][2]]);new=''.join(new_lines[group[0][3]:group[-1][4]])
+   assert old and before.count(old)==1,('nonunique owner delta',name,old)
+   assert 'pg_advisory_xact_lock'not in old+new,('a delta must not alter the original runtime lock',name)
+   replacements.append({'old':old,'new':new})
+  derived=before
+  for pair in replacements:derived=derived.replace(pair['old'],pair['new'])
+  assert derived==after,('owner delta did not reproduce maintained complete source',name)
+  owner_patches.append({'signature':original_owner['signature'],'preimage':original_owner['md5'],'replacements':replacements})
+ else:sql+='\n-- Maintained owner: supabase/accounting/own-agent-v1/'+name+'.sql\n'+source.rstrip()+';\n'
+delta_path=D/'original-owner-deltas.json';delta_text=json.dumps(owner_patches,indent=2)+'\n'
+if A.check:assert delta_path.read_text()==delta_text,'original owner delta drift'
+else:delta_path.write_text(delta_text)
+sql+='\n-- Exact deltas to the complete maintained owners; original runtime locks remain unchanged.\n'
+sql+="DO $original_owners$ DECLARE r record;x jsonb;d text;BEGIN FOR r IN SELECT*FROM jsonb_to_recordset($deltas$"+compact(owner_patches)+"$deltas$::jsonb)AS p(signature text,preimage text,replacements jsonb)LOOP d:=pg_get_functiondef(to_regprocedure(r.signature));IF md5(d)IS DISTINCT FROM r.preimage THEN RAISE EXCEPTION 'own_agent_original_delta_preimage_changed:%',r.signature;END IF;FOR x IN SELECT value FROM jsonb_array_elements(r.replacements)LOOP IF(length(d)-length(replace(d,x->>'old','')))/length(x->>'old')<>1 THEN RAISE EXCEPTION 'own_agent_original_delta_not_exact:%',r.signature;END IF;d:=replace(d,x->>'old',x->>'new');END LOOP;EXECUTE d;END LOOP;END $original_owners$;\n"
+
 # State each original ACL explicitly for the existing static admission gate.
 # Restore grants in the captured order so full pg_proc metadata stays exact.
 for owner in pre:

@@ -6,6 +6,7 @@ legacy. Full-week source prerequisites and fleet certificate/clock are explicit
 isolation boundaries; this suite does not certify production or fleet parking.
 """
 import argparse, re, json, hashlib, importlib.util, os, shutil, socket, subprocess, sys, tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 P=argparse.ArgumentParser()
@@ -51,6 +52,20 @@ def q(sql,check=True):
         r=subprocess.run([str(A.pg_bin/'psql'),'-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-h','127.0.0.1','-p',port,'-d','postgres'],env=E,text=True,stdin=f,capture_output=True,timeout=300)
     if check and r.returncode: raise RuntimeError(r.stderr[-6000:])
     return r
+@contextmanager
+def held_lock(namespace,key):
+    process=subprocess.Popen([str(A.pg_bin/'psql'),'-XqAt','-v','ON_ERROR_STOP=1','-U','postgres','-h','127.0.0.1','-p',port,'-d','postgres'],env=E,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    try:
+        process.stdin.write("BEGIN;SET LOCAL test.own_namespace='"+namespace+"';SELECT pg_advisory_xact_lock(hashtextextended("+key+",0));SELECT 'LOCK_READY';\n");process.stdin.flush()
+        while True:
+            line=process.stdout.readline()
+            if line.strip()=='LOCK_READY':break
+            if not line and process.poll()is not None:raise RuntimeError('native lock holder exited:'+process.stderr.read())
+        yield
+    finally:
+        if process.poll()is None:
+            process.stdin.write('ROLLBACK;\n\\q\n');process.stdin.flush()
+            process.communicate(timeout=10)
 def load(p): q('SET check_function_bodies=off;\n'+Path(p).read_text().rstrip()+';\n')
 R2="public.fn_settle_accounting_commission_stage('club',caw_u('club'),'2026-10-05 07:00+00','2026-10-12 07:00+00')"
 R2V3=R2.replace('commission_stage(','commission_stage_v3(')
@@ -355,7 +370,14 @@ try:
         assert r.returncode and error in r.stderr,(name,r.stdout[-1000:],r.stderr[-5000:])
         assert q('SELECT caw_money();').stdout.strip()==before,(name,'financial rollback changed original board')
         assert q('SELECT count(*)FROM accounting_own_agent_interpretations').stdout.strip()=='0'
+        assert q('SELECT count(*)FROM accounting_own_agent_preparation_versions').stdout.strip()=='0'
+        assert q('SELECT count(*)FROM accounting_own_agent_source_reviews').stdout.strip()=='0'
         results.append({'case':name,'passed':True,'expected_refusal':error})
+    # Real separate PostgreSQL transactions hold each new private lock. A
+    # refusal aborts original R0 atomically, retaining no invalidation/version.
+    scope_key="'club-accounting:'||caw_u('club')||':'||extract(epoch FROM'2026-10-19 07:00Z'::timestamptz)||':'||extract(epoch FROM'2026-10-26 07:00Z'::timestamptz)"
+    with held_lock('fault-try-scope-busy',scope_key):refusal('try-scope-busy','SELECT '+prep+';','own_agent_interpretation_scope_busy')
+    with held_lock('fault-try-period-busy',"'accounting_rakeback_period:'||caw_u('club')||':2026-10-19'"):refusal('try-period-busy','SELECT '+prep+';','own_agent_interpretation_period_busy')
     refusal('r2-before-owning-R0','SELECT '+nr2+';','own_agent_source_interpretation_required_before_payment')
     refusal('r3-before-owning-R0','SELECT '+nr3+';','own_agent_source_interpretation_required_before_payment')
     refusal('partial-paid-round-prevents-reinterpretation',"INSERT INTO accounting_routed_settlement_runs(standalone_club_id,period_start,period_end,round_no,source_fingerprint,result)VALUES(caw_u('club'),'2026-10-19 07:00Z','2026-10-26 07:00Z',2,'synthetic-already-paid','{}');SELECT "+prep+';','own_agent_interpretation_week_already_paid')

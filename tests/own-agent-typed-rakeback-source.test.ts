@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { validateWindowMigration } from '../scripts/ci/maintenance-window-migrations.mjs';
 
 const read = (p: string) => readFileSync(p, 'utf8');
 const folder = 'scripts/qualification/own-agent-v1';
@@ -14,7 +15,10 @@ describe('own playing earnings source qualification stays connected', () => {
     for (const [file, hash] of Object.entries(binding.source_sha256)) {
       const source = read(`supabase/accounting/own-agent-v1/${file}`);
       expect(createHash('sha256').update(source).digest('hex')).toBe(hash);
-      expect(migration).toContain(source.trim().replace(/;$/, '') + ';');
+      if (
+        !['fn_prepare_accounting_week.sql', 'fn_calculate_cash_rakeback_periods.sql'].includes(file)
+      )
+        expect(migration).toContain(source.trim().replace(/;$/, '') + ';');
     }
     expect(binding.preimages).toHaveLength(15);
     expect(binding.postimages).toHaveLength(24);
@@ -26,6 +30,30 @@ describe('own playing earnings source qualification stays connected', () => {
     expect(migration).not.toMatch(
       /REFERENCES\s+(?:public\.)?(?:clubs|tournaments|hand_history|tables)\b/i
     );
+  });
+
+  it('installs exact readable public owner deltas while preserving their original runtime locks', () => {
+    const patches = JSON.parse(read(`${folder}/original-owner-deltas.json`));
+    const originals = JSON.parse(read(`${folder}/original-owners.json`));
+    expect(patches).toHaveLength(2);
+    for (const patch of patches) {
+      const original = originals.find(
+        (p: { signature: string }) => p.signature === patch.signature
+      );
+      expect(patch.preimage).toBe(original.md5);
+      let derived = original.definition.trimEnd().replace(/;$/, '') + '\n';
+      for (const pair of patch.replacements) {
+        expect(derived.split(pair.old)).toHaveLength(2);
+        expect(pair.old + pair.new).not.toContain('pg_advisory_xact_lock');
+        derived = derived.replace(pair.old, pair.new);
+      }
+      const name = patch.signature.split('(')[0].split('.').pop();
+      expect(derived).toBe(
+        read(`supabase/accounting/own-agent-v1/${name}.sql`).trimEnd().replace(/;$/, '') + '\n'
+      );
+      expect(migration).toContain(JSON.stringify(patch.replacements));
+    }
+    expect(validateWindowMigration('own-agent-v1.sql', migration)).toBe(true);
   });
 
   it('composes every original financial phase guard without retagging the inventory', () => {

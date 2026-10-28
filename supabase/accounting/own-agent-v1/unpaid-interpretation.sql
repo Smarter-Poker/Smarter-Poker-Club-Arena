@@ -48,7 +48,7 @@ BEGIN
  IF canonical IS NULL THEN RETURN false;END IF;
  w_from:=public.fn_union_week_start(s.earned_at);w_to:=public.fn_union_week_start(w_from+interval '8 days');
  key:=CASE WHEN s.coordinator_union_id IS NULL THEN'club-accounting:'ELSE'union-accounting:'END||coalesce(s.coordinator_union_id,s.club_id)||':'||extract(epoch FROM w_from)||':'||extract(epoch FROM w_to);
- PERFORM pg_advisory_xact_lock(hashtextextended(key,0));
+ IF NOT pg_try_advisory_xact_lock(hashtextextended(key,0))THEN RAISE EXCEPTION 'own_agent_interpretation_scope_busy' USING ERRCODE='55000';END IF;
  -- Take the same original producer lock without reversing its lock order.
  IF p_type='cash_rake_accrual' THEN
   SELECT to_jsonb(x)INTO raw FROM public.accounting_cash_rake_sources x WHERE x.id=p_source;
@@ -76,7 +76,7 @@ BEGIN
  SELECT coalesce(jsonb_agg(to_jsonb(a)ORDER BY a.id),'[]')INTO old_rows FROM public.agent_commissions a WHERE a.source_type=p_type AND a.source_id=p_source;
  SELECT count(*)INTO expected FROM jsonb_array_elements(s.contract->'tiers')t WHERE(t->>'amount')::numeric>0;
  IF jsonb_array_length(old_rows)<>expected OR EXISTS(SELECT FROM jsonb_array_elements(old_rows)a WHERE a->>'settled_at'IS NOT NULL OR a->>'club_id'IS DISTINCT FROM s.club_id::text OR(a->>'created_at')::timestamptz IS DISTINCT FROM s.earned_at OR NOT EXISTS(SELECT FROM jsonb_array_elements(s.contract->'tiers')t WHERE t->>'user_id'=a->>'user_id'AND(t->>'amount')::numeric=(a->>'amount')::numeric AND(t->>'rate')::numeric=(a->>'commission_rate')::numeric))THEN RAISE EXCEPTION 'own_agent_interpretation_original_commissions_changed' USING ERRCODE='23514';END IF;
- PERFORM pg_advisory_xact_lock(hashtextextended('accounting_rakeback_period:'||s.club_id||':'||(w_from AT TIME ZONE'America/Los_Angeles')::date,0));
+ IF NOT pg_try_advisory_xact_lock(hashtextextended('accounting_rakeback_period:'||s.club_id||':'||(w_from AT TIME ZONE'America/Los_Angeles')::date,0))THEN RAISE EXCEPTION 'own_agent_interpretation_period_busy' USING ERRCODE='55000';END IF;
  -- These are the original unpaid proof records, never copied or retagged.
  DELETE FROM public.accounting_close_partials WHERE union_id=coalesce(s.coordinator_union_id,s.club_id)AND period_start=w_from AND period_end=w_to;
  DELETE FROM public.accounting_close_certificates WHERE union_id=coalesce(s.coordinator_union_id,s.club_id)AND period_start=w_from AND period_end=w_to;
@@ -127,7 +127,7 @@ BEGIN
  IF NOT public.fn_caller_is_engine()OR p_from IS NULL OR p_to IS NULL OR(p_union IS NULL)=(p_club IS NULL)OR p_limit IS NULL OR p_limit<1 OR p_limit>1024
  OR p_from IS DISTINCT FROM public.fn_union_week_start(p_from)OR p_to IS DISTINCT FROM public.fn_union_week_start(p_from+interval '8 days')OR p_to>now()THEN RAISE EXCEPTION 'own_agent_preparation_scope_invalid' USING ERRCODE='22023';END IF;
  kind:=CASE WHEN p_union IS NULL THEN'club'ELSE'union'END;identity:=coalesce(p_union,p_club);
- PERFORM pg_advisory_xact_lock(hashtextextended(CASE WHEN p_union IS NULL THEN'club-accounting:'ELSE'union-accounting:'END||identity||':'||extract(epoch FROM p_from)||':'||extract(epoch FROM p_to),0));
+ IF NOT pg_try_advisory_xact_lock(hashtextextended(CASE WHEN p_union IS NULL THEN'club-accounting:'ELSE'union-accounting:'END||identity||':'||extract(epoch FROM p_from)||':'||extract(epoch FROM p_to),0))THEN RAISE EXCEPTION 'own_agent_interpretation_scope_busy' USING ERRCODE='55000';END IF;
  -- Original completed books remain authoritative, including manual correction
  -- receipts made later. Replaying them cannot create a v1 source or new delta.
  IF EXISTS(SELECT FROM public.accounting_routed_settlement_runs r WHERE r.scope_kind=kind AND r.scope_id=identity AND r.period_start=p_from AND r.period_end=p_to AND r.round_no=3)THEN RETURN jsonb_build_object('ready',true,'legacy_paid',true,'admitted',0);END IF;

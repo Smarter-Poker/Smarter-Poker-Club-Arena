@@ -22672,6 +22672,7 @@ function LiveTablePage({
 
     let cancelled = false;
     const check = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       /* 2026-08-28: the DATABASE's own primary-table election (see
          resolveTournamentLiveTable), so this watch can never follow a
          duplicate's empty newer table away from the one the players are on.
@@ -22684,9 +22685,15 @@ function LiveTablePage({
     };
 
     const id = window.setInterval(() => void check(), 20_000);
+    const onVisible = () => {
+      if (!document.hidden) void check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [
     seatFirstBuyIn,
@@ -23007,13 +23014,22 @@ function LiveTablePage({
     // cadence regardless. 10s keeps a dead channel's staleness bounded at a
     // fraction of a fill cycle without meaningfully loading the database.
     void reloadRoster();
-    const pollId = window.setInterval(() => void reloadRoster(), 10_000);
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void reloadRoster();
+    }, 10_000);
+
+    const onVisible = () => {
+      if (!document.hidden) void reloadRoster();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       cancelled = true;
       if (reloadTimer) window.clearTimeout(reloadTimer);
       if (fullRecheckTimer) window.clearTimeout(fullRecheckTimer);
       window.clearInterval(pollId);
+      document.removeEventListener('visibilitychange', onVisible);
       void supabase.removeChannel(channel);
     };
   }, [tableId, seatFirstBuyIn, playHasBegun, tableState.tournamentId, userId]);
@@ -23339,12 +23355,21 @@ function LiveTablePage({
     void reload();
     // Realtime drops silently. A slow poll bounds how stale the tag can get
     // without meaningfully loading the database — one narrow two-column read.
-    const pollId = window.setInterval(() => void reload(), 10_000);
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void reload();
+    }, 10_000);
+
+    const onVisible = () => {
+      if (!document.hidden) void reload();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       cancelled = true;
       if (debounce) window.clearTimeout(debounce);
       window.clearInterval(pollId);
+      document.removeEventListener('visibilitychange', onVisible);
       void supabase.removeChannel(channel);
     };
   }, [tableId, userId, applySeatRemoved, lightningRoom]);
@@ -24832,6 +24857,7 @@ function LiveTablePage({
   // Safety cleanup: remove chip animations older than 5 seconds (e.g. if CSS event missed)
   useEffect(() => {
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       setChipAnimations((prev) => {
         if (prev.length === 0) return prev;
         const cutoff = Date.now() - 5000;
@@ -25809,6 +25835,26 @@ function LiveTablePage({
     getPlayerAtSeat,
   ]);
 
+  const isModalActive = Boolean(
+    tournamentWinner ||
+    showMustMoveLobby ||
+    showSettings ||
+    showInsurance ||
+    showRIT ||
+    showBuyInModal ||
+    showHandHistory ||
+    showHandDetail ||
+    showHandReplay ||
+    showPlayerNotes ||
+    showWaitList ||
+    showCashier ||
+    showDiamondWallet ||
+    showLeaveConfirm ||
+    bustRebuyOpen ||
+    showRebuyModal ||
+    postOrWaitOpen
+  );
+
   const tablePage = (
     <div
       ref={pageRootRef}
@@ -25828,7 +25874,7 @@ function LiveTablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${tableState.isTournament && (tournamentFormat === 'spin' || (tournamentFormat === 'sng' && Number(tableState.maxPlayers) === 2)) ? ' table-page--short-match' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}${isModalActive ? ' table-page--modal-active' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */

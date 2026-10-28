@@ -129,6 +129,7 @@ describe('Lightning rebuy expiry', () => {
       undefined
     );
     e.lifecycleCanMutate = () => true;
+    e.usersWithPendingLedgerChips.mockResolvedValue(new Set(['lucky']));
     e.processPendingAddOns = vi.fn(async () => {
       e.seatedPlayers[0].stack = 400;
     });

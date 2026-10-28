@@ -4136,10 +4136,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected override async passWhileDealingHalted(): Promise<void> {
     await super.passWhileDealingHalted();
     if (!this.lifecycleCanMutate() || this.isTournamentTable() || isMaintenanceFrozen()) return;
-    // A paid rebuy must land even though this anchor never deals another hand.
+    // Only a busted anchor can need this boundary. Funded parked tables keep
+    // their existing halt contract; a paid bust rebuy must not await a deal.
+    const busted = this.seatedPlayers.filter((p) => p.user_id && Number(p.stack) === 0);
+    if (busted.length === 0) return;
+    const owed = await this.usersWithPendingLedgerChips(busted.map((p) => p.user_id));
+    if (owed === null) return;
     // The existing resolver owns lease checks, live-hand refusal and receipts.
-    await this.usersWithPendingLedgerChips(this.seatedPlayers.map((p) => p.user_id));
-    await this.processPendingAddOns(this.seatedPlayers);
+    if (owed.size > 0) await this.processPendingAddOns(this.seatedPlayers);
     if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
     await this.standUpBustedCashPlayers();
   }
@@ -4164,7 +4168,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';
     const lightning = this.clusterLightningEnabled === true || Boolean(this.dealingHaltLock);
     const seated = this.seatedPlayers.filter(
-      (p) => p.user_id && (!p.is_horse || diamondCash || lightning)
+      (p) => p.user_id && (!p.is_horse || lightning || diamondCash)
     );
     const broke = seated.filter(
       (p) => p.stack !== null && p.stack !== undefined && Number(p.stack) === 0

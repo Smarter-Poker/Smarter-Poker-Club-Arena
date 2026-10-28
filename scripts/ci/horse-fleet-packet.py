@@ -420,7 +420,7 @@ def validate_indexed_ledger(value):
             or not re.fullmatch('[0-9a-f]{64}',b.get('servingContainer',''))
             or not re.fullmatch('sha256:[0-9a-f]{64}',b.get('imageId',''))
             or not isinstance(b.get('servingStartedAt'),str)
-            or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z',b['servingStartedAt'])):raise ValueError('indexed_ledger_binding')
+            or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z',b['servingStartedAt'])):raise ValueError('indexed_ledger_binding')
         packets.add(b['packetDigest']);parts=b['partitionDigests'];window=b['window']
         if not isinstance(parts,list) or not 1<=len(parts)<=16 or len(set(parts))!=len(parts) or any(not isinstance(p,str) or not re.fullmatch('[0-9a-f]{64}',p) for p in parts):raise ValueError('indexed_ledger_partitions')
         if not isinstance(window,dict) or set(window)!={'startUtc','endUtc'}:raise ValueError('indexed_ledger_window')
@@ -560,6 +560,20 @@ FLEET_FAILURE_CODES=frozenset(('fleet_private_paths','fleet_packet','fleet_windo
     'remote_observer_unavailable','observer_oom','observer_v8_heap_exhausted','serving_identity_unverified','observer_cleanup_unverified',
     'journal_mount_unverified','observer_exit_unverified','observation_contract_unverified'))
 
+# Only literal labels from maintained validation sites may leave the private boundary.
+PARTITION_VALIDATION_CODES=frozenset((
+    'capture_counts','capture_gaps','indexed_ledger_binding','indexed_ledger_bindings',
+    'indexed_ledger_count','indexed_ledger_header','indexed_ledger_overlap','indexed_ledger_partitions',
+    'indexed_ledger_phase','indexed_ledger_read_count','indexed_ledger_row','indexed_ledger_rows',
+    'indexed_ledger_window','partition_canonical_binding','partition_capture_unknown','partition_execution_binding',
+    'partition_horse_counts','partition_horse_phase_counts','partition_horse_phases','partition_horses',
+    'partition_packet_bounds','partition_phase_unknown','partition_results','partition_serving_changed',
+    'phase_axes','phase_counts','phase_keys','phase_provenance_counts',
+    'phase_reasons','phase_schema','private_result','read_cohort',
+    'read_counts','read_packet','river_basis','river_counts',
+    'river_schema','river_totals',
+))
+
 def partition_failure_code(error,run=None):
     if isinstance(error,subprocess.TimeoutExpired):return 'partition_timeout'
     if isinstance(error,OSError):return 'partition_process_unavailable'
@@ -573,6 +587,8 @@ def partition_failure_code(error,run=None):
         except (ValueError,TypeError):pass
         return 'partition_cli_unclassified'
     if isinstance(error,ValueError) and str(error)=='partition_deadline':return 'partition_deadline'
+    if isinstance(error,json.JSONDecodeError):return 'partition_result_json_invalid'
+    if isinstance(error,ValueError) and str(error) in PARTITION_VALIDATION_CODES:return str(error)
     return 'partition_result_unverified'
 
 def observe_bounded(packet_path,attestation_path,ssh_command,output_path):

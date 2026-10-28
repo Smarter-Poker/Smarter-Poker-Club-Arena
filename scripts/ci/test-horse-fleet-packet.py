@@ -372,6 +372,21 @@ class PacketContracts(unittest.TestCase):
   p,a=self.partition_fixture(1);p['window']={'startUtc':start,'endUtc':end};a['packetDigest']=module.digest(p)
   part=module.partition_packets(p,a)[0];r=self.partition_result(part,actors)
   return p,a,r,module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+ def test_indexed_ledger_preserves_docker_nanosecond_identity(self):
+  p,a,r,_=self.indexed_fixture()
+  for timestamp in ['2026-10-28T16:09:46Z','2026-10-28T16:09:46.603Z','2026-10-28T16:09:46.603123456Z']:
+   r['execution']['servingStartedAt']=timestamp
+   ledger=module.bounded_summary(p,a,[r])['indexedEvidenceLedger']
+   self.assertEqual(ledger['observations'][0]['servingStartedAt'],timestamp)
+  for timestamp in ['2026-10-28T16:09:46.6031234567Z','2026-10-28T16:09:46.Z','PRIVATE']:
+   r['execution']['servingStartedAt']=timestamp
+   with self.assertRaisesRegex(ValueError,'indexed_ledger_binding'):module.bounded_summary(p,a,[r])
+ def test_partition_validation_refusal_projection_is_closed(self):
+  run=subprocess.CompletedProcess([],0,stdout=b'',stderr=b'PRIVATE')
+  for reason in ['indexed_ledger_binding','partition_execution_binding','partition_horse_phases','river_counts','phase_counts','read_counts','private_result']:
+   self.assertEqual(module.partition_failure_code(ValueError(reason),run),reason)
+  self.assertEqual(module.partition_failure_code(json.JSONDecodeError('PRIVATE','PRIVATE',0),run),'partition_result_json_invalid')
+  self.assertEqual(module.partition_failure_code(ValueError('PRIVATE'),run),'partition_result_unverified')
  def test_indexed_ledger_retains_private_ordinal_evidence_and_explicit_unknowns(self):
   p,a,r,ledger=self.indexed_fixture((0,0,1))
   self.assertEqual(ledger['rows'][0]['acceptedDecisions'],2)

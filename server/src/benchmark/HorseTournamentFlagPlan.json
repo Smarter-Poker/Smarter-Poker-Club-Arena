@@ -1,0 +1,9 @@
+{
+  "schema": "horse-tournament-flag-plan-v1",
+  "state": "awaiting_protected_source_lock",
+  "designDigest": "62c5cbe9fa230a57596c7d8252ee6aab0dae816ae33397a8428d1e73361bb7f3",
+  "runtimeSourceDigest": null,
+  "dependencyDigest": null,
+  "workflowDigest": null,
+  "baselineReferenceRevision": "e9725f3a7a3adda30de2bca8f6ec510bac2a22a5"
+}

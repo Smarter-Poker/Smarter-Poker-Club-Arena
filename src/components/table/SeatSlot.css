@@ -238,6 +238,10 @@
     opacity 0.3s ease,
     filter 0.3s ease;
   will-change: transform, opacity;
+  /* iPhone mobile energy: isolate seat updates (stack changes, VIP rings,
+     decision timers) so changes within a seat do not trigger whole-table
+     style and layout recalculation across the remaining 8 seats or the felt. */
+  contain: layout style;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -4999,4 +5003,17 @@
 .seat--fold-hidden > .seat__bounty {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* The scaled desktop phone layout leaves a subpixel CALL-pill intrusion at
+   the board-side edge (0.875px remained after the first pixel on Linux).
+   Move each outboard caption two CSS pixels toward its own lane. Keep type, full amounts, pill size,
+   seat positions and every existing pop/gesture transform unchanged. */
+@media (min-width: 481px) and (max-width: 768px) and (orientation: portrait) {
+  .seat--cards-left > .seat__action {
+    left: calc(50% - 2px);
+  }
+  .seat--cards-right > .seat__action {
+    left: calc(50% + 2px);
+  }
 }

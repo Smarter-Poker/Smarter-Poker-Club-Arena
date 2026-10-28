@@ -742,6 +742,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'River position defense'
   ),
   flag(
+    'v53PloTourneyIcm',
+    'default-off candidate: PLO4/5/6 standard tournament preflop action-risk ICM shifts, requires independently qualified whole-tournament comparison',
+    'V53'
+  ),
+  flag(
     'v53Pressure',
     'read-gated pressure on a credibly aggressive human: wider in-position 3-bets, flop/turn value and semi-bluff raises of a wide bettor, river bluffs into a credible over-folder (league v53_pressure)',
     'V53'

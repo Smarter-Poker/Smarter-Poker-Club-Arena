@@ -487,6 +487,9 @@
   padding: 2.4cqw 0.5cqw;
   border-top: 1px solid #000;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  /* Mobile energy: skip off-screen rendering for long hand histories */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 54px;
 }
 
 .hdm-sd__who {

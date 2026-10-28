@@ -22,6 +22,11 @@ on:
       - scripts/ci/fixtures/standalone-entry-cover/**
       - scripts/ci/test-standalone-entry-cover-postgres.py
       - tests/standalone-entry-retains-historical-first-week.law.test.ts
+      - scripts/ci/fixtures/standalone-weekly-statement-funding/**
+      - tests/fixtures/weekly-close-scale/**
+      - scripts/ci/fixtures/weekly-private-deposit-verdict/**
+      - scripts/ci/test-weekly-private-deposit-verdict-postgres.py
+      - tests/weekly-private-deposits-retain-original-verdicts.law.test.ts
       - scripts/ci/fixtures/tournament-fee-scope-union-cover/**
       - scripts/ci/test-tournament-fee-scope-union-cover-postgres.py
       - tests/tournament-fee-scope-index-retains-every-union.law.test.ts
@@ -187,3 +192,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-tournament-fee-scope-union-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --out "${{ runner.temp }}/tournament-fee-scope-union-cover.json"
+      - name: Weekly private deposits retain every original relevant verdict
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-weekly-private-deposit-verdict-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-private-deposit-verdict.json"

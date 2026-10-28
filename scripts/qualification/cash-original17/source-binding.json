@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 243420,
-      "sha256": "58dd37d0f2be1dbc53ee2a5f9330a2fa877e4c85429459c12dae358b67dd5fbf"
+      "bytes": 243571,
+      "sha256": "d7535f96375f5f37540c7e2ad2be991687366f7fbb97207843e3e9cfc6c27a85"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -953,6 +953,23 @@
         "current": {
           "bytes": 243420,
           "sha256": "58dd37d0f2be1dbc53ee2a5f9330a2fa877e4c85429459c12dae358b67dd5fbf"
+        }
+      }
+    ]
+  },
+  "typecheckCompletionBudget20261028": {
+    "reason": "Required typecheck job122952418582 passed all recorded checks but exceeded 15m at terminal cleanup (15m03; previous successful equivalent13m45). Increase only existing job outer timeout to20m for measured completion headroom. Commands, checks, assertions, matrix, qualification state and historical evidence unchanged; current input identity only.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 243420,
+          "sha256": "58dd37d0f2be1dbc53ee2a5f9330a2fa877e4c85429459c12dae358b67dd5fbf"
+        },
+        "current": {
+          "bytes": 243571,
+          "sha256": "d7535f96375f5f37540c7e2ad2be991687366f7fbb97207843e3e9cfc6c27a85"
         }
       }
     ]

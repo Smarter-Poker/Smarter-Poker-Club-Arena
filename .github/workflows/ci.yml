@@ -370,7 +370,9 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The qualified source/native/TSC checks took 15m03 including cleanup on Oct28.
+    # Preserve every check and leave measured completion headroom.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout

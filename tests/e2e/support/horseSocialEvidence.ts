@@ -59,3 +59,20 @@ export function horseSocialTableEligible(
     table.game_type !== 'tournament'
   );
 }
+
+/** Prefer observed natural showdown opportunity, never a predicted/forced gesture. */
+export function rankHorseSocialCohorts<T extends { candidate: { id: string }; horseCount: number }>(
+  cohorts: readonly T[],
+  showdowns: readonly { table_id: string; ended_at: string }[],
+  since: string
+): (T & { showdownCount: number })[] {
+  const floor = Date.parse(since);
+  return cohorts
+    .map((entry) => ({
+      ...entry,
+      showdownCount: showdowns.filter(
+        (row) => row.table_id === entry.candidate.id && Date.parse(row.ended_at) >= floor
+      ).length,
+    }))
+    .sort((a, b) => b.showdownCount - a.showdownCount || b.horseCount - a.horseCount);
+}

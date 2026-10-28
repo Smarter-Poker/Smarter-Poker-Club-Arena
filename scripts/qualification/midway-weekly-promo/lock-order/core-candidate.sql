@@ -51,8 +51,8 @@ BEGIN
  -- Lock and snapshot each eligible CLUB wallet before calculating shares.
  -- No union-wide balance aggregate and no duplicate membership expansion.
  -- Coverage and every row lock use the same fresh statement snapshot.
- -- An expanded cohort takes no club/member/profile row locks and is retried
- -- only by the existing business caller's serialization handling.
+ -- An expanded cohort takes no club/member/profile row locks and refuses
+ -- with a non-retryable state; PostgREST must not spin on this refusal.
  WITH eligible AS MATERIALIZED (
   SELECT m.club_id,m.user_id,m.chip_balance AS opening_balance
    FROM public.club_members m JOIN public.profiles p ON p.id=m.user_id
@@ -91,7 +91,7 @@ BEGIN
  SELECT k.covered,COALESCE((SELECT jsonb_agg(to_jsonb(w) ORDER BY w.club_id,w.user_id)
   FROM locked_wallets w),'[]'::jsonb) INTO v_covered,v_wallets FROM coverage k;
  IF NOT v_covered THEN
-  RAISE EXCEPTION 'midway_promo_eligible_cohort_changed' USING ERRCODE='40001';
+  RAISE EXCEPTION 'midway_promo_eligible_cohort_changed' USING ERRCODE='55000';
  END IF;
  v_n:=jsonb_array_length(v_wallets); v_run:=gen_random_uuid();
  v_note:='Midway Weekly Promo Distribution: '||to_char(p_from AT TIME ZONE 'America/Los_Angeles','YYYY-MM-DD');

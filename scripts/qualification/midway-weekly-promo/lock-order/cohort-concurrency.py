@@ -3,7 +3,7 @@ import subprocess,threading,queue,time,json,hashlib
 
 def qualify(sql,q,O,env,L,critical_only=False):
  assert hashlib.md5((L/'core-original.sql').read_bytes()).hexdigest()=='3e159a80564f2860bed8041dbcd55263'
- assert hashlib.md5((L/'core-candidate.sql').read_bytes()).hexdigest()=='9392dcce1e135b7df89ebd6646cd36af'
+ assert hashlib.md5((L/'core-candidate.sql').read_bytes()).hexdigest()=='59918abbad797f7fc4e5c4a095b150c3'
  class S:
   def __init__(self,name):
    self.p=subprocess.Popen([str(x) for x in q]+['-v','ON_ERROR_STOP=0'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1,env=env);self.lines=queue.Queue();self.n=0
@@ -44,12 +44,12 @@ def qualify(sql,q,O,env,L,critical_only=False):
      x.run('BEGIN;SELECT id FROM profiles WHERE id='+h+' FOR UPDATE;')
      xh=x.send('SELECT pg_advisory_xact_lock('+key+');');blocked(x,p)
     t.run('COMMIT;');result=p.wait(sent)
-    assert '40001' in result and 'midway_promo_eligible_cohort_changed' in result,result
+    assert '55000' in result and 'midway_promo_eligible_cohort_changed' in result,result
     p.run('ROLLBACK;')
     if xh:x.wait(xh);x.run('ROLLBACK;')
     x.run('UPDATE profiles SET is_horse=false WHERE id='+h+';')
     assert sql("SELECT jsonb_build_object('bank',(SELECT promo_wallet FROM union_wallets),'runs',(SELECT count(*)FROM union_weekly_horse_promo_runs),'ledger',(SELECT count(*)FROM chip_ledger),'recipients',(SELECT count(*)FROM union_weekly_horse_promo_recipients));",'cohort-after')==before
-    out.append({'case':'newly-eligible-horse-profile-waits-known-key' if held_profile else 'newly-eligible-horse-while-bank-blocked','sqlstate':'40001','no_financial_changes':True,'no_deadlock':True})
+    out.append({'case':'newly-eligible-horse-profile-waits-known-key' if held_profile else 'newly-eligible-horse-while-bank-blocked','sqlstate':'55000','no_financial_changes':True,'no_deadlock':True})
    finally:
     for s in [t,p,x]:s.close()
   # Fresh cohort shrink and new membership for an already covered user.

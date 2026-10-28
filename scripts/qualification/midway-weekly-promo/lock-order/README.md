@@ -5,7 +5,7 @@ migration and runs the original real financial fixture plus an independent local
 database copy for the13 lock/cohort scenarios. No production connection is read.
 The owned cluster is stopped and removed in finally.
 
-core-original.sql is actual3e159; core-candidate.sql is9392, byte-identical to
+core-original.sql is actual3e159; core-candidate.sql is5991, byte-identical to
 what the migration installs. The harness checks both source hashes and the
 actual current1c9/460/151/886/b09/cee critical owner hashes before the scenarios.
 Current complete0057/0120 catalog captures and metadata are retained in the
@@ -40,8 +40,12 @@ are not asserted immutable or universally covered.
 Original source must deadlock40P01 against the real disburser, current projector
 and multi-hand batch profile path. Repaired source must complete or use the
 batch's existing deferred result before rows. New uncovered users must receive
-40001 before unknown club/member/profile locks and before run/ledger writes.
+55000 before unknown club/member/profile locks and before run/ledger writes.
 Shrink, lifecycle departure and new wallets for covered users use the fresh
 cohort and original cents. Real member-role/MFA overlap and disjoint users in
 the same clubs also run. Every financial race transaction is rolled back;
 setup identities, venues and balances exist only in this private cluster.
+
+The uncovered-cohort refusal uses55000, a supported non-retryable state.
+PostgREST14.5 retries40001 without a finite bound; this abort remains before
+unknown locks and every money/run write and does not start a retry loop.

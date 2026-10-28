@@ -22,6 +22,9 @@ on:
       - scripts/ci/fixtures/standalone-entry-cover/**
       - scripts/ci/test-standalone-entry-cover-postgres.py
       - tests/standalone-entry-retains-historical-first-week.law.test.ts
+      - scripts/ci/fixtures/private-cash-record-cover/**
+      - scripts/ci/test-private-cash-record-cover-postgres.py
+      - tests/private-cash-record-index-retains-original-facts.law.test.ts
       - scripts/ci/fixtures/private-deposit-source-cover/**
       - scripts/ci/test-private-deposit-source-cover-postgres.py
       - tests/private-deposit-key-index-keeps-original-sources.law.test.ts
@@ -173,3 +176,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-private-deposit-source-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-deposit-source-cover.json"
+      - name: Original private cash record groups retain every scalar fact
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-private-cash-record-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/private-cash-record-cover.json"

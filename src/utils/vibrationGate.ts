@@ -374,6 +374,9 @@ function fireNativeHaptic(pattern: number | number[]): void {
 }
 
 export function fireVibration(pattern: number | number[]): boolean {
+  // Mobile thermal & battery optimization: never fire haptic buzzes when the tab/screen is hidden
+  if (typeof document !== 'undefined' && document.hidden) return false;
+
   /* THE PREFERENCE, not the capability. This used to ask
      `isVibrationAllowed()`, which is preference AND `navigator.vibrate`
      existing - so on iOS, where it never exists, every caller was refused

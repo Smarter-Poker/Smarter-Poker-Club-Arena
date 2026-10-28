@@ -116,9 +116,13 @@ export function ParticleSystem({
       const sparks: Spark[] = [];
       const burstSpeed = 6 * intensity;
 
-      for (let i = 0; i < count; i++) {
+      // Mobile thermal & battery optimization: cap particle count on narrow screens
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 480;
+      const targetCount = isMobile ? Math.min(count, 35) : count;
+
+      for (let i = 0; i < targetCount; i++) {
         // Radial burst pattern
-        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+        const angle = (Math.PI * 2 * i) / targetCount + (Math.random() - 0.5) * 0.5;
         const speed = Math.random() * burstSpeed + burstSpeed * 0.3;
 
         sparks.push({
@@ -205,6 +209,13 @@ export function ParticleSystem({
 
     const animate = (now: number) => {
       if (completed) return;
+
+      // Mobile thermal & battery optimization: pause drawing loop while tab is hidden
+      if (typeof document !== 'undefined' && document.hidden) {
+        animFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
       const elapsed = now - startTimeRef.current;
       // UI-AUDIT #12: delta-time the loop so motion is refresh-rate independent.
       // Clamp the delta so a hidden/janky tab doesn't teleport particles.

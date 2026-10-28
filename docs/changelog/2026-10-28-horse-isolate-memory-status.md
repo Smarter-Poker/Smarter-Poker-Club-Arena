@@ -1,0 +1,9 @@
+# Horse memory ownership is visible at the existing status boundary
+
+The engine health report exposed whole-process RSS and main-isolate V8 heap, while historical fatal-GC records could not identify the exhausting isolate. The Horse pool also owns one public-history cache per client on the main thread; cache counts and retained serialized bytes were not observable.
+
+Existing worker STATUS requests now carry optional, closed diagnostic scalars: Node V8 source, worker thread and shard, sample time, used and total heap, and heap limit. The bootstrap binds the shard. The client checks that identity and numeric shape, drops missing, malformed or future diagnostics to unknown without changing readiness or policy authority, and reports sample age. Pool status preserves separate worker samples instead of treating their heap limits as one limit. Main-owned history-cache metadata reports bounded entry/decoded/serialized/acknowledged/pending counts and retained serialized UTF-8 bytes per client and in an explicitly counted aggregate. Byte lengths are computed once during acknowledgement serialization; status never traverses or serializes history payloads.
+
+This adds no timer, monitor, heap dump, forced GC, restart, memory-limit change, credentials or player data. Health already publishes the existing pool status, so no new route is introduced. It supplies missing HB134 diagnostic evidence; it does not identify the historical allocation owner or fix the OOM.
+
+Focused tests cover a real Node worker sampler, real runtime-to-client STATUS round trip, optional/malformed/missing/wrong-shard/future compatibility, distinct worker ownership, aggregate cache counts, acknowledgement/recovery/eviction accounting and privacy. The final focused suites passed 536 tests; server and client TypeScript checks passed. Required hosted checks remain separate from deployment and live diagnostic verification.

@@ -1610,6 +1610,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8398",
       "refusedBy": [],
       "liveVerdict": "Original DSS weekly document closure repeatedly exceeded285seconds in the original quality FOR query. Exact source-bag query replacement retained134941 full typed rows and all113897103 JSON bytes with bidirectional EXCEPT ALL zero; complete temporary candidate function returned READY134941 in167911ms with150 real net-plan calls. Native52 cases qualified all original branches,12 changed-query edges, STABLE snapshot, actor/freeze/concurrency/replay/atomic postcondition, and full metadata/PG-only ACL/source65/GEN preservation. Immediate readback proves exact whole-file history, function5c8b31d9/body16890f9, unchanged whole metadata/ACL, Scope72/countcc867/summary1d1/source65 definition and actual inventory generation. No payment, receipt, accounting math, cache, budget or source65 renewal changed. Sequential raw timings were cache-confounded; this record is not whole Scope closure or future4AM capacity proof."
+    },
+    {
+      "version": "20261028002753",
+      "name": "original_weekly_report_uses_its_qualified_hand_readers",
+      "file": "supabase/migrations/20261028002753_original_weekly_report_uses_its_qualified_hand_readers.sql",
+      "md5": "a1efeca43178b415ff9bf4fc1ea08bb7",
+      "appliedToProductionAt": "2026-10-28T00:48:31.458Z",
+      "recoveredOn": "2026-10-28",
+      "recoveredFrom": "Exact maintained original-report composition install and immediate READ ONLY full-file history/seven whole owner definitions+metadata+ACL and naturally changed inventory generation readback",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/8402",
+      "refusedBy": [],
+      "liveVerdict": "Continuing original weekly-book closure outage: the complete original report still pinned obsolete pre-treasury hand witness/read owners although the genuine current readers and original advance were qualified. Exact source changes are two report reader bindings, one advance report binding and the two corresponding entries of the actual65 authority; all financial SQL/math/other63 sources and GEN58dc body are unchanged. Full-file history and all seven original definitions/whole metadata/ACL were read back; only report/advance/sourceguard definitions changed to their qualified postimages. The actual inventory generation is legitimately nonNULL and different from the real preinstall B7 generation, derived by the unchanged original generation owner. No old partial/certificate was retagged by this installer. Original84 flow+hand rebuild, all paid financial identity preservation and complete live report/book closure remain separate required proof; this installation receipt does not claim them."
     }
   ]
 }

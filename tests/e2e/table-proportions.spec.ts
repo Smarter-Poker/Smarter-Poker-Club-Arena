@@ -1177,7 +1177,9 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
           // Preserve breathing, tense and celebration poses around the
           // two-pixel resting crop; only the crown may cross the bar.
           expect(crown.gap).toBeGreaterThan(-12 * crown.scale);
-          expect(crown.gap).toBeLessThan(2 * crown.scale);
+          // A mobile revealed hand now owns a full card-height lane above
+          // its plate. Only face-down and desktop crowns retain the crop.
+          if (!revealed || width > 768) expect(crown.gap).toBeLessThan(2 * crown.scale);
           if (state === 'normal' && revealed && villainCards === 6 && jackpot === 'mini') {
             // A reload/new hand used to cache the image box mid-gesture. When
             // the avatar later folded it left a permanent gap under the bar.
@@ -1233,8 +1235,22 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
               return { raisedShift, restingShift, foldedShift, gap };
             }, AVATAR_CROWN_TOP);
             expect(anchoring.restingShift).toBeCloseTo(anchoring.raisedShift, 1);
-            expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
-            expect(anchoring.gap).toBeLessThan(0);
+            if (width > 768) {
+              expect(anchoring.foldedShift).toBeLessThan(anchoring.restingShift);
+              expect(anchoring.gap).toBeLessThan(0);
+            } else {
+              // Folding may reclaim crown space, but cannot consume the
+              // newly reserved revealed-hand lane.
+              expect(anchoring.foldedShift).toBeLessThanOrEqual(anchoring.restingShift + 0.05);
+              const shownTop = await page
+                .locator('.seat-wrapper--top .seat__cards--revealed')
+                .evaluate(
+                  (el) =>
+                    el.getBoundingClientRect().top -
+                    document.querySelector('.table-page')!.getBoundingClientRect().top
+                );
+              expect(shownTop).toBeGreaterThanOrEqual(7.5);
+            }
             expect(anchoring.gap).toBeGreaterThan(-12 * crown.scale);
           }
         }
@@ -1253,6 +1269,14 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          // Top all-in hands must stay below the visible mobile clipping edge.
+          const pageTop = box(document.querySelector('.table-page')!).top;
+          for (const row of document.querySelectorAll(
+            '.seat-wrapper--cap .seat__cards--revealed'
+          )) {
+            if (box(row).top < pageTop + 7.5)
+              violations.push('Top Revealed Hand Clips Mobile Header');
+          }
           // Above 480px the seat pods keep their tablet sizes and ring: the
           // phone-only pod rules (compact 7-9 max top pod, outboard lanes off
           // the painted felt, dense-ring pods clear of the board) are not

@@ -324,3 +324,36 @@ test('side and bottom seats keep the full-size avatar and 1.45x bust', async ({ 
   );
   expect(t).toContain('1.45');
 });
+
+// Measure the real badge cascade: its layout footprint must shrink together
+// with the text, so EquityBadgeLayer still avoids the displayed cards.
+test('mobile all-in equity badges are half size', async ({ page }) => {
+  const tableCss = fs.readFileSync(path.join(process.cwd(), 'src/pages/TablePage.css'), 'utf8');
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.setContent(
+    `<style>${tableCss}</style><div class="equity-layer"><div class="equity-layer__slot"><div class="equity-overlay equity-overlay--ahead">100%<span class="equity-overlay__track"><span class="equity-overlay__bar"></span></span></div></div></div>`
+  );
+  await page
+    .locator('.equity-overlay')
+    .evaluate((el) => el.getAnimations().forEach((a) => a.finish()));
+  const measure = () =>
+    page.locator('.equity-overlay').evaluate((el) => {
+      const badge = el.getBoundingClientRect();
+      const track = el.querySelector('.equity-overlay__track')!.getBoundingClientRect();
+      return {
+        width: badge.width,
+        height: badge.height,
+        trackW: track.width,
+        trackH: track.height,
+      };
+    });
+  const desktop = await measure();
+  for (const width of [320, 375, 393, 430, 600, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    const mobile = await measure();
+    expect(mobile.width).toBeCloseTo(desktop.width / 2, 1);
+    expect(mobile.height).toBeCloseTo(desktop.height / 2, 1);
+    expect(mobile.trackW).toBe(44);
+    expect(mobile.trackH).toBe(3);
+  }
+});

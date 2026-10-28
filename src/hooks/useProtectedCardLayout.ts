@@ -119,8 +119,21 @@ export function useProtectedCardLayout(
         const settled = dealerSettledBox(scaler, dealer);
         if (settled) protectedBoxes.push(settled);
       }
-      const bounds = page.getBoundingClientRect();
+      const pageBounds = page.getBoundingClientRect();
       for (const row of rows) {
+        // Top-cap reveals need daylight below the mobile page's clipping
+        // edge. Jackpot rectangles remain individual keep-outs: reserving
+        // their entire horizontal band would push a centred hand to a neighbour.
+        const mobileTop =
+          pageBounds.top +
+          (row.closest('.seat-wrapper--cap') && window.innerWidth <= 768 ? 8 * scale : 0);
+        const bounds = {
+          left: pageBounds.left,
+          top: mobileTop,
+          width: pageBounds.width,
+          height: Math.max(0, pageBounds.bottom - mobileTop),
+        };
+
         const fixed = settled.current.rows.get(row);
         if (fixed !== undefined) {
           row.style.translate = fixed;
@@ -341,7 +354,7 @@ export function useProtectedCardLayout(
       topPods().forEach((pod) => {
         if (sixMax) {
           const avatar = pod.querySelector<HTMLImageElement>('.seat__avatar-img');
-          const pose = avatar ? avatarRestPose(avatar) : '';
+          const pose = `${avatar ? avatarRestPose(avatar) : ''}:${window.innerWidth <= 768 && Boolean(pod.querySelector('.seat__cards--revealed'))}`;
           // Folded/resting posture is a layout input. Gesture frames are not.
           if (settled.current.podPoses.get(pod) !== pose) settled.current.pods.delete(pod);
           settled.current.podPoses.set(pod, pose);
@@ -400,9 +413,21 @@ export function useProtectedCardLayout(
             // tab/action bar, with only the crown clipped. Corner jackpot
             // plates do not reserve a band across this centred seat. Anchor
             // the actual art, not its transparent slot or position badge.
-            const target = sixMax ? pageBox.top - 2 * scale : chromeBottom + clearance * scale;
-            const shift =
-              (target - (sixMax && avatar ? restingAvatarTop(avatar, scale) : highest)) / scale;
+            const anchorTop = sixMax && avatar ? restingAvatarTop(avatar, scale) : highest;
+            const naturalTarget = sixMax
+              ? pageBox.top - 2 * scale
+              : chromeBottom + clearance * scale;
+            // A revealed top hand needs its full height above its own plate.
+            // Lower the pod as one unit instead of forcing the cards sideways
+            // into a neighbour when the compact crown anchor clips that lane.
+            const target =
+              window.innerWidth <= 768 && pod.querySelector('.seat__cards--revealed')
+                ? Math.max(
+                    naturalTarget,
+                    pageBox.top + (cardHeight + 9) * scale - (plateTop - anchorTop)
+                  )
+                : naturalTarget;
+            const shift = (target - anchorTop) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.

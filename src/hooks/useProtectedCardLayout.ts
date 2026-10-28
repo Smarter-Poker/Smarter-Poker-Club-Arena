@@ -942,7 +942,7 @@ function placeDealerButton(
     if (best) break;
     let cost = Infinity;
     for (const point of points) {
-      if (point.depth < 10) continue; // off the rail band, wholly on the felt
+      if (point.depth < 0) continue; // include the clear rail band before covering protected content
       if (!owned(point.x, point.y) || !clear(boxAt(point.x, point.y))) continue;
       const next = Math.hypot(point.x - own.x, point.y - own.y);
       if (next < cost) {

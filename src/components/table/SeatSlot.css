@@ -4646,6 +4646,18 @@
   padding-block: 3px;
 }
 
+/* The whole phone player pod matches: artwork, name and stack plate. Dense
+   rings further below apply the same compact plate to every villain. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .seat-wrapper--top .seat {
+    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
+  }
+  .table-page .seat-wrapper--top .seat__info {
+    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
+  }
+}
+
 /* A top pod that drops below the jackpot frame takes its bet with it
    (Dan 2026-10-25: a bet is always in front of the player who made it). The
    bet used to be held back at the rail, and the dropped plate and its tag then

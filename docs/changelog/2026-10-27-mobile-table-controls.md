@@ -7,3 +7,5 @@ The portrait table starts lower, leaving space for full-size top artwork. Dense 
 Occupied-ring and real action-component browser coverage checks visible tool size, equal villain size, home-indicator clearance, hero/board/card/wager separation and static felt geometry. Client-only change; no new engine API, database migration or financial behavior.
 
 A crowded shown-hand lane now tries zero extra padding at its owner before the existing distant fallback; protected rectangles still cannot overlap. This keeps tabled PLO6 cards with their own player after equalizing top artwork. Geometry baselines record the intended 44px-to-52px action increase and 30–42px reduction in available phone felt height (42px on the short SE), with unchanged felt width and card sizes.
+
+Phone top name/stack plates now use the same width, height and padding as the other villains. When the enlarged plate fills an interior dealer-button lane, placement searches the clear rail band before falling back to protected content; ownership and non-overlap remain checked on occupied rings.

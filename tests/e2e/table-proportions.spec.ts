@@ -1440,6 +1440,22 @@ for (const width of [320, 375, 393, 430, 480, 600, 768, 1024])
               Math.abs(box(e).width - Math.max(...villainAvatars)) > 1.5
             )
               violations.push('Top Avatar Is Not Full Size');
+          if (innerWidth <= 480) {
+            const plates = [
+              ...document.querySelectorAll(
+                '.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__info'
+              ),
+            ].map(box);
+            for (const plate of document.querySelectorAll('.seat-wrapper--top .seat__info')) {
+              const measured = box(plate);
+              if (
+                plates.length &&
+                (Math.abs(measured.width - plates[0].width) > 1.5 ||
+                  Math.abs(measured.height - plates[0].height) > 1.5)
+              )
+                violations.push('Top Name And Stack Plate Is Smaller Than Other Villains');
+            }
+          }
           if (!largePortrait) {
             const scales = [
               ...document.querySelectorAll(

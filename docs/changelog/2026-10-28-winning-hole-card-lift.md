@@ -5,3 +5,5 @@ Hero and opponent winning hole cards now hold a vertical lift of one fifth of th
 Regression coverage extends the real SeatSlot render for both hero and opponent, empty winner indexes, hidden cards and cleared winner state. The existing live showdown browser spec measures winning-versus-resting card rectangles at mobile/desktop widths and both motion preferences.
 
 Client-only presentation using existing engine fields; no engine replacement or new contract required. Separate reported all-in Unknown percentages trace to the already merged exact-equity producer in PR #8463 awaiting the owner's explicitly chosen October 29 04:00 Chicago activation. This card lift does not alter equity values or claim that pending engine behavior is live.
+
+The percentage layer also remeasures on individual hole-card class changes, so a badge moves away when winning cards rise and returns when they lower. The connected regression reproduces the missed geometry update before the repair.

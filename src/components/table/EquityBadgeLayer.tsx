@@ -221,6 +221,7 @@ export function EquityBadgeLayer({
           const key = String(badge.seatNumber);
           const at = placements[key];
           const isAhead = badge.equity >= 50;
+          const label = formatAllInEquity(badge.equity, badge.exact);
           return (
             <div
               key={key}
@@ -243,13 +244,16 @@ export function EquityBadgeLayer({
                 key={`eq-${badge.equity}`}
                 className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
               >
-                {formatAllInEquity(badge.equity, badge.exact)}
+                {label}
                 {/* Fixed-width track (AUDIT-2 2026-08-20) so every seat's bar is
                   drawn on the same scale. */}
                 <span className="equity-overlay__track">
                   <span
                     className="equity-overlay__bar"
-                    style={{ width: `${Math.max(2, Math.min(100, badge.equity))}%` }}
+                    style={{
+                      width:
+                        label === 'Unknown' ? '0%' : `${Math.max(0, Math.min(100, badge.equity))}%`,
+                    }}
                   />
                 </span>
               </div>

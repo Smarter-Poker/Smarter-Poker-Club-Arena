@@ -541,6 +541,7 @@ describe('exact equity reaches the rendered badge without inventing endpoints', 
     installLayout();
     const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
     expect(container.querySelector('.equity-overlay')?.textContent).toBe('Unknown');
+    expect((container.querySelector('.equity-overlay__bar') as HTMLElement).style.width).toBe('0%');
   });
   it('does not render a malformed percentage', () => {
     installLayout();

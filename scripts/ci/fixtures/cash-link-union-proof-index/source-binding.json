@@ -1,20 +1,33 @@
 {
   "schemaVersion": 1,
-  "scope": "Physical proof-valid hash union selector; native22, unchanged original SQL and table contracts; production performance unverified",
+  "scope": "Physical cheap non-null HASH union selector, exact failed-OID recovery and obsolete proof-hand retirement; native55; unchanged original SQL, source65/generation and table contracts; production performance unverified",
   "sourceFiles": {
-    "scripts/ci/fixtures/cash-link-union-proof-index/qualification-evidence.json": "0248ffd5b8c945bc7c94a646e50a1fea13de3f2d96b8864ed0818ac3ea442350",
-    "scripts/ci/fixtures/cash-link-union-proof-index/README.md": "d2c121645b713bb23f15f6868360299fa95ed088e0a1a36a6d8f3f1cc65003ac",
+    "scripts/ci/fixtures/cash-link-union-proof-index/qualification-evidence.json": "8a8fdd0e85957dd1a468c73519b79a8d2addb317ea5ea5ec57e5e57f7b3f3e69",
+    "scripts/ci/fixtures/cash-link-union-proof-index/README.md": "a21389763619ce7cb18d04697be9ca2bad7af10944e75d4115b670cc33221c52",
     "scripts/ci/fixtures/cash-link-union-proof-index/native-fixture.sql": "acd04c5318794f9c4898aab3b374bc7b8a8752f7bd5dbd9940a04c9f0193d5c6",
     "scripts/ci/fixtures/cash-link-union-proof-index/actual-tables.json": "acf9794b9ac845d78a153fbc150b63aa134a5f669deedc66e83f56cfc8291180",
     "scripts/ci/fixtures/cash-link-union-proof-index/original-linked.sql": "b85a3e318732bffd9543853a9ca31cdfd2967f8d37fd1383cd82798e0b7dfd66",
-    "supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql": "98649045001fdb8872159d0f311d8f8a4209fdb3f1a09cfd563cf4ec2a82be3a",
-    "scripts/ci/test-cash-link-union-proof-index-postgres.py": "98edb97d1b5ef551e3014d1dd36ba7fd3583a9c1c88ecd94ac2773e8fd274da9",
-    "tests/cash-link-union-index-keeps-original-proof.law.test.ts": "7bfca97bd4245918f789f0ea57d2c1e397800d03e88baa37a8c3374b477b4dee",
+    "supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql": "dc7196271facd28499f5b6a56413d0ced4ccc4230fd9a5428a606db00b8dcce9",
+    "scripts/ci/test-cash-link-union-proof-index-postgres.py": "d3683fcaba8e7e9f020cbff188d27642aced2c0a6ffdb5b95a05d0213506507e",
+    "tests/cash-link-union-index-keeps-original-proof.law.test.ts": "95247ad8af2f8bd2812c2abd3875d2c4bf3fa91905a98e54aec387019dd05c67",
     "docs/laws.d/cash-link-union-index-keeps-original-proof.md": "e1034936d88a46c9d0e59a786f238183b933d25d1d8fb59d905f4d99d2e41dbb",
     "docs/changelog/2026-10-28-cash-link-union-proof-index.md": "d85de7845b24f6dbecaa56a934001822336a5e2dc52cbd690f7fc1c2d008c6cf",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639",
+    "scripts/ci/contract-index-recovery.mjs": "2867f5a50224f98ed93bb5a61e76e866cc4e4a1bc7b89238fe6d0972edc7ed51",
+    "scripts/ci/contract-index-recovery.test.mjs": "c8f09af1ecbcdfdd74594ea79276a5d1721fd8122a7db5ea22bc32481e3ba55e",
+    "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
+    ".github/workflows/apply-merged-migration.yml": "32a882652058f3be483b2ca81a9624310f29178bd4b9579d62003e2e290fdbef",
+    "docs/changelog/2026-10-28-cash-selector-bounded-build-recovery.md": "400e0c58c2eac64c5a629e3b28b775e70d9d2430ed7aeef19dcf717dc078895b"
   },
   "formattingComposition20261028": {
     "review": "Normal pre-commit formatted actual-tables JSON; parsed table metadata equals the exact SQL installer expected catalog. Native evidence JSON equals retained native03 result. Only formatted input byte pins renewed; no SQL, qualification assertion or financial proof changed."
+  },
+  "boundedRecovery20261028": {
+    "failedOriginalSHA256": "98649045001fdb8872159d0f311d8f8a4209fdb3f1a09cfd563cf4ec2a82be3a",
+    "failedSelectorOID": "275975891",
+    "retiredProofHandOID": "271236984",
+    "ordering": "Exact invalid selector removal; new cheap HASH build/validity; old proof-hand retirement last; one shared 600s. Valid-selector continuations never rebuild/drop it. Completed physical state resumes only pure qualification and same-byte atomic history.",
+    "sourceOwners": "All functions including original 0c3 linked reader and all source65/generation owners unchanged.",
+    "capacityLimit": "Native counter and plans only; production duration not certified."
   }
 }

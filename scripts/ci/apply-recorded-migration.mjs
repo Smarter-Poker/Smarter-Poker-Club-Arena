@@ -51,7 +51,11 @@ import { readOwnerMigrationWindow, ownerWindowState } from './owner-window-migra
  * on the owning backend before CREATE INDEX. No global setting is changed.
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { validateSerialJournalIndex, serialJournalConnection, bindSerialJournalIndex } from './serial-journal-index.mjs';
+import {
+  validateSerialJournalIndex,
+  serialJournalConnection,
+  bindSerialJournalIndex,
+} from './serial-journal-index.mjs';
 import { join } from 'node:path';
 import { supersededBy } from './check-migrations-are-live.mjs';
 import { minutesBeforeBreakWindow } from './migration-concurrent-preamble.mjs';
@@ -59,6 +63,14 @@ import { migrationTransactionShape } from './migration-transaction-shape.mjs';
 
 import {
   recoveryRequest,
+  isCashHashRecovery,
+  isCashHashMigration,
+  cashHashRetirementRequest,
+  cashHashSelectorStateCatalog,
+  validateCashHashSelectorState,
+  cashHashRetirementCatalog,
+  validateCashHashRetirement,
+  cashHashRetirementStatement,
   recoveryCatalog,
   cleanupStatement,
   RECOVERY_TRANSIENT_CATALOG,
@@ -160,7 +172,8 @@ try {
     argValue('--recover-index'),
     argValue('--recover-oid'),
     argValue('--recover-before'),
-    argValue('--recover-transient-oid')
+    argValue('--recover-transient-oid'),
+    argValue('--recover-selector-oid')
   );
 } catch (e) {
   refused(e.message);
@@ -207,10 +220,22 @@ const preamble = shape.indexes;
 let serialJournalIndex;
 try {
   serialJournalIndex = validateSerialJournalIndex({
-    enabled: args.includes('--serial-journal-index'), file, sql, preamble,
-    otherModes: Boolean(recovery || batches || SETTLEMENT_LANE || MAINTENANCE_THAW_REPAIR || MAINTENANCE_WINDOW || rakeHistory),
+    enabled: args.includes('--serial-journal-index'),
+    file,
+    sql,
+    preamble,
+    otherModes: Boolean(
+      recovery ||
+      batches ||
+      SETTLEMENT_LANE ||
+      MAINTENANCE_THAW_REPAIR ||
+      MAINTENANCE_WINDOW ||
+      rakeHistory
+    ),
   });
-} catch (e) { refused(e.message); }
+} catch (e) {
+  refused(e.message);
+}
 
 // A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
 // (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
@@ -305,7 +330,11 @@ try {
 if (!['postgres:', 'postgresql:'].includes(connectionURL.protocol))
   refused('database connection protocol is invalid');
 if (serialJournalIndex) {
-  try { connectionURL = serialJournalConnection(connectionURL); } catch (e) { refused(e.message); }
+  try {
+    connectionURL = serialJournalConnection(connectionURL);
+  } catch (e) {
+    refused(e.message);
+  }
 }
 if (connectionURL.searchParams.has('sslcert') || connectionURL.searchParams.has('sslkey'))
   refused('client-certificate transport requires its maintained qualified route');
@@ -441,7 +470,9 @@ function shorterOrDefault(name, fallback) {
 async function waitForDdlAdmission(first) {
   const deadline = Date.now() + DDL_ADMISSION_WAIT_MS;
   let last = first;
-  console.log(`[apply]   the database refuses DDL now: ${first}. Waiting up to ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it to admit the file; nothing is sent meanwhile.`);
+  console.log(
+    `[apply]   the database refuses DDL now: ${first}. Waiting up to ${Math.round(DDL_ADMISSION_WAIT_MS / 1000)} s for it to admit the file; nothing is sent meanwhile.`
+  );
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, DDL_ADMISSION_POLL_MS));
     last = await refusalNow();
@@ -525,10 +556,65 @@ if (DRY_RUN && !recovery) {
 
 // Explicit source-bound recovery is a single operation within this existing installer.
 // Unknown acknowledgment never triggers another attempt or proceeds to the body.
-if (recovery) {
+const cashHashMigration = isCashHashMigration(file, sql);
+let cashHashRecoveryDeadline = cashHashMigration ? performance.now() + 600000 : null;
+let cashHashExistingSelectorOid = null;
+let cashHashStartingOldAbsent = false;
+if (cashHashMigration && (!recovery || recovery.retirementOnly)) {
+  try {
+    await client.query("SET statement_timeout = '3s'");
+    const rows = (await client.query(cashHashSelectorStateCatalog())).rows;
+    if (rows.length === 1 && rows[0].new_selector_valid === true) {
+      const observed = recovery?.retirementOnly
+        ? recovery
+        : cashHashRetirementRequest(file, sql, rows[0].selector_oid, new Date().toISOString());
+      const current = validateCashHashSelectorState(rows, observed);
+      cashHashExistingSelectorOid = current.selector_oid;
+      cashHashStartingOldAbsent = current.old_proof_present === false;
+    } else if (recovery?.retirementOnly)
+      throw new Error('retirement-only continuation requires a valid observed selector');
+  } catch (e) {
+    await client.end().catch(() => {});
+    refused('cash HASH physical-state admission: ' + e.message + '; no DDL sent');
+  }
+}
+
+if (recovery?.retirementOnly) {
+  // Explicit continuation of an already VALID replacement. It never sends CCI
+  // or touches the replacement index; fresh old/new exact identity is required.
+  try {
+    await client.query("SET statement_timeout = '3s'");
+    if (cashHashStartingOldAbsent)
+      validateCashHashSelectorState(
+        (await client.query(cashHashSelectorStateCatalog())).rows,
+        recovery,
+        true
+      );
+    else
+      validateCashHashRetirement(
+        (await client.query(cashHashRetirementCatalog(recovery))).rows,
+        recovery
+      );
+    const refusal = await refusalNow();
+    if (refusal || minutesBeforeBreakWindow(new Date()) < PREAMBLE_MINUTES_NEEDED)
+      refused('retirement-only recovery lacks full maintenance runway');
+    validateRecoverySnapshots((await client.query(RECOVERY_SNAPSHOTS)).rows);
+    if (DRY_RUN) {
+      console.log(
+        '[apply] DRY RUN: exact retirement-only old/new catalog passed; no DROP or CCI sent.'
+      );
+      await client.end();
+      process.exit(EXIT_OK);
+    }
+  } catch (e) {
+    await client.end().catch(() => {});
+    refused('retirement-only admission: ' + e.message + '; no DROP or CCI sent');
+  }
+} else if (recovery) {
   let recoverySent = false;
   try {
     const deadline = performance.now() + 600000;
+    if (isCashHashRecovery(recovery)) cashHashRecoveryDeadline = deadline;
     async function freshAdmission(withTransient) {
       await client.query("SET statement_timeout = '3s'");
       const original = (await client.query(recoveryCatalog(recovery))).rows;
@@ -577,6 +663,10 @@ if (recovery) {
       );
       await freshAdmission(false);
     }
+    // The observed invalid HASH is removed only after a final fresh exact
+    // OID/catalog read. Its replacement CCI shares this same 600-second cap.
+    if (isCashHashRecovery(recovery))
+      validateRecoveryCatalog((await client.query(recoveryCatalog(recovery))).rows, recovery);
     await sendOnce(recoveryStatement(recovery));
     await client.query("SET statement_timeout = '3s'");
     const replacement = validateRecoveryCatalog(
@@ -598,7 +688,11 @@ if (recovery) {
   }
 }
 
-for (const ix of preamble) {
+let cashHashBuiltSelectorOid = recovery?.retirementOnly
+  ? recovery.selectorOid
+  : cashHashExistingSelectorOid;
+const indexPreamble = recovery?.retirementOnly || cashHashExistingSelectorOid ? [] : preamble;
+for (const ix of indexPreamble) {
   const refusal = await refusalNow();
   if (refusal || minutesBeforeBreakWindow(new Date()) < 5) {
     await client.end().catch(() => {});
@@ -609,7 +703,11 @@ for (const ix of preamble) {
   const t0 = Date.now();
   try {
     // Session-level and outside any transaction block: CONCURRENTLY requires it.
-    await client.query("SET statement_timeout = '600s'");
+    if (cashHashRecoveryDeadline !== null) {
+      const remaining = Math.floor(cashHashRecoveryDeadline - performance.now());
+      if (remaining <= 0) throw new Error('shared 600s cash HASH recovery/build budget exhausted');
+      await client.query("SELECT set_config('statement_timeout',$1,false)", [remaining + 'ms']);
+    } else await client.query("SET statement_timeout = '600s'");
     if (serialJournalIndex) {
       try {
         await bindSerialJournalIndex(client);
@@ -637,12 +735,13 @@ for (const ix of preamble) {
   let valid;
   try {
     const { rows } = await client.query(
-      `SELECT i.indisvalid AND i.indisready AS valid FROM pg_index i
+      `SELECT i.indexrelid::text AS oid, i.indisvalid AND i.indisready AS valid FROM pg_index i
          JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = $1 AND c.relname = $2`,
       [ix.schema, ix.name]
     );
     valid = rows.length === 1 && rows[0].valid === true;
+    if (cashHashMigration && valid) cashHashBuiltSelectorOid = rows[0].oid;
   } catch (e) {
     await client.end().catch(() => {});
     console.error(
@@ -660,6 +759,65 @@ for (const ix of preamble) {
     );
   }
   console.log(`[apply]   ${ix.name} valid (${Date.now() - t0}ms)`);
+}
+
+// Retire the misleading old global predicate index only AFTER the new
+// selector is valid. The exact old OID, all dependencies/constraints and every
+// surviving index are fresh-read; both drops and CCI share the same 600s cap.
+if (cashHashRecoveryDeadline !== null) {
+  const retirement = recovery?.retirementOnly
+    ? recovery
+    : cashHashRetirementRequest(file, sql, cashHashBuiltSelectorOid, new Date().toISOString());
+  let retirementSent = false;
+  try {
+    await client.query("SET statement_timeout = '3s'");
+    const completed = (await client.query(cashHashSelectorStateCatalog())).rows;
+    if (completed.length === 1 && completed[0].old_proof_present === false) {
+      validateCashHashSelectorState(completed, retirement, true);
+      console.log(
+        '[apply] exact selector complete and old proof index absent; no CCI or DROP replayed'
+      );
+    } else {
+      validateCashHashRetirement(
+        (await client.query(cashHashRetirementCatalog(retirement))).rows,
+        retirement
+      );
+      const refusal = await refusalNow();
+      if (refusal || minutesBeforeBreakWindow(new Date()) < 5)
+        throw new Error('proof-hand retirement lacks maintenance runway');
+      validateRecoverySnapshots((await client.query(RECOVERY_SNAPSHOTS)).rows);
+      // Final exact OID/dependency read immediately before the sole retirement.
+      validateCashHashRetirement(
+        (await client.query(cashHashRetirementCatalog(retirement))).rows,
+        retirement
+      );
+      const remaining = Math.floor(cashHashRecoveryDeadline - performance.now());
+      if (remaining <= 0) throw new Error('shared 600s cash HASH recovery/build budget exhausted');
+      await client.query("SELECT set_config('statement_timeout',$1,false)", [remaining + 'ms']);
+      retirementSent = true;
+      await client.query(cashHashRetirementStatement(retirement));
+      await client.query("SET statement_timeout = '3s'");
+      validateCashHashRetirement(
+        (await client.query(cashHashRetirementCatalog(retirement))).rows,
+        retirement,
+        true
+      );
+      await client.query('RESET statement_timeout');
+      console.log(
+        '[apply] exact obsolete proof-hand index retired after replacement selector validation'
+      );
+    }
+  } catch (e) {
+    await client.end().catch(() => {});
+    console.error(
+      '[apply] proof-hand retirement ' +
+        (retirementSent ? 'SENT; inspect durable outcome' : 'NOT SENT') +
+        ': ' +
+        e.message
+    );
+    console.error('[apply] Migration transaction/history NOT sent. No automatic retry or cleanup.');
+    process.exit(retirementSent ? EXIT_UNKNOWN : EXIT_REFUSED);
+  }
 }
 
 // Keep exact file bytes in history inside the SAME owning transaction as

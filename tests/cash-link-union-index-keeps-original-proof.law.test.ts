@@ -6,13 +6,19 @@ const base = 'scripts/ci/fixtures/cash-link-union-proof-index/';
 const migration =
   'supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql';
 describe('cash link union index keeps the original proof', () => {
-  it('stores only fixed-width keys while maintaining the exact original predicate', () => {
+  it('stores fixed-width non-null union keys while retaining every original reader proof check', () => {
     const sql = readFileSync(migration, 'utf8');
     const shape = migrationTransactionShape(migration.split('/').at(-1), sql);
     expect(shape.ok).toBe(true);
     expect(shape.ok && shape.indexes.length).toBe(1);
     expect(sql).toContain("USING hash((game_scope->>'game_union_id'))");
-    expect(sql).toContain('WHERE proof_md5=md5(proof::text)');
+    expect(sql).toContain("WHERE game_scope->>'game_union_id' IS NOT NULL");
+    expect(readFileSync(base + 'original-linked.sql', 'utf8')).toContain(
+      'AND r.proof_md5=md5(r.proof::text)'
+    );
+    const ddl = shape.ok ? shape.indexes[0].statement : '';
+    expect(ddl).not.toContain('proof::text');
+    expect(sql).toContain("SET LOCAL statement_timeout='15s'");
     expect(sql).not.toMatch(
       /CREATE (?:OR REPLACE )?FUNCTION|ALTER TABLE|INSERT INTO|UPDATE public\.|DELETE FROM|DROP INDEX/i
     );
@@ -40,7 +46,7 @@ describe('cash link union index keeps the original proof', () => {
         .digest('hex')
     ).toBe('0c3a826553e9ef65a03030c3ef78eaaf');
     const evidence = JSON.parse(readFileSync(base + 'qualification-evidence.json', 'utf8'));
-    expect(evidence.case_count).toBe(22);
+    expect(evidence.case_count).toBe(55);
     expect(evidence.qualification).toBe('passed');
     expect(evidence.candidate_sha256).toBe(
       createHash('sha256').update(readFileSync(migration)).digest('hex')
@@ -50,6 +56,25 @@ describe('cash link union index keeps the original proof', () => {
       'valid_16KB_payload_and_foreign_union_text_accepted_hash_index'
     );
     expect(evidence.cases).toContain('real_two_backend_RR_snapshot_index_maintained_valid_write');
+    expect(evidence.build_cost.old_global_proof_serializations).toBe(6000);
+    expect(evidence.build_cost.new_global_proof_serializations).toBe(0);
+    expect(evidence.cases).toContain(
+      'original_hand_id_lookup_uses_surviving_unique_constraint_index'
+    );
+    expect(evidence.cases).toContain(
+      'real_valid_proof_DROP_CONCURRENTLY_after_new_selector_valid_exact_absence'
+    );
+    expect(evidence.cases).toContain(
+      'explicit_retirement_only_resume_binds_fresh_valid_selector_OID_without_rebuild'
+    );
+    const target = JSON.parse(readFileSync(migration, 'utf8').split('$tables$')[1]);
+    for (let i = 0; i < 2; i++)
+      expect({ ...target[i], indexes: tables[i].indexes }).toEqual(tables[i]);
+    expect(target[1].indexes).toEqual(
+      tables[1].indexes.filter(
+        (x: string) => !x.startsWith('CREATE INDEX union_pnl_cash_links_valid_proof_hand ')
+      )
+    );
   });
   it('binds every maintained qualified input', () => {
     const binding = JSON.parse(readFileSync(base + 'source-binding.json', 'utf8'));

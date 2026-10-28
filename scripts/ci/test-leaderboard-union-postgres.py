@@ -19,6 +19,10 @@ try:
  q((fixture/'schema.sql').read_text())
  for name in ['fn_refuse_leaderboard_basis_mutation','fn_leaderboard_program_commitment','fn_enforce_leaderboard_program_funding','fn_get_leaderboard_reward_plan','fn_leaderboard_complete_round_basis','fn_club_leaderboard_by_dates','fn_payout_leaderboard','fn_get_leaderboard_settlement_status']:
   q((fixture/(name+'.sql')).read_text())
+ # Mirror the actual production grants before testing metadata preservation.
+ for sig in ['fn_leaderboard_complete_round_basis(uuid,text,date,date)','fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz)','fn_get_leaderboard_settlement_status(uuid,text,date)']:
+  q('REVOKE ALL ON FUNCTION '+sig+' FROM PUBLIC,anon,authenticated,service_role;GRANT EXECUTE ON FUNCTION '+sig+' TO service_role')
+ q('REVOKE ALL ON FUNCTION fn_get_leaderboard_settlement_status(uuid,text,date) FROM service_role;GRANT EXECUTE ON FUNCTION fn_get_leaderboard_settlement_status(uuid,text,date) TO authenticated,service_role')
  q("CREATE TRIGGER funding BEFORE INSERT ON leaderboard_reward_program_versions FOR EACH ROW EXECUTE FUNCTION fn_enforce_leaderboard_program_funding()")
  club='2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'
  basis_call=f"fn_leaderboard_complete_round_basis('{club}','weekly','2026-10-18','2026-10-25')"

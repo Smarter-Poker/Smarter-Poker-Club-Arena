@@ -609,6 +609,15 @@ $function$$definition$;
 END;
 $leaderboard_union_replay$;
 
+-- State the existing service/read-only grants explicitly as well as preserving
+-- object identity in CREATE OR REPLACE; no browser gains money authority.
+REVOKE ALL ON FUNCTION public.fn_leaderboard_complete_round_basis(uuid,text,date,date) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_leaderboard_complete_round_basis(uuid,text,date,date) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_payout_leaderboard(uuid,text,text,timestamptz,timestamptz) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_get_leaderboard_settlement_status(uuid,text,date) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_get_leaderboard_settlement_status(uuid,text,date) TO authenticated,service_role;
+
 -- The affiliated club's future rounds use its union Promo Wallet. Append a
 -- funding-only program version; keep original published prizes and version1.
 DO $funding$

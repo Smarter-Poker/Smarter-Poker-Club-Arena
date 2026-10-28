@@ -1,5 +1,8 @@
 import { featureLiveDomainRefusals as validateLiveDeclaration } from '../engine/HorseFeatureLiveDomain.js';
-import { incrementalDevelopmentProfiles } from './IncrementalPressureDevelopment.js';
+import {
+  incrementalDevelopmentProfiles,
+  isSeparateRiverTarget,
+} from './IncrementalPressureDevelopment.js';
 import { publishedCashPricing } from '../config/leagueCashPricing.js';
 export function featureLiveDomainRefusals(plan: FeatureAblationQualificationPlan): string[] {
   const reasons = validateLiveDeclaration(plan);
@@ -187,7 +190,11 @@ const equal = (a: unknown, b: unknown) =>
     ? a === b
     : featureQualificationCanonical(a) === featureQualificationCanonical(b);
 const variants = (target: FeatureAblationTarget): FeatureVariant[] =>
-  target === 'plo6_v24' ? ['plo6'] : ['nlh', 'plo4', 'plo5', 'plo6'];
+  target === 'plo6_v24'
+    ? ['plo6']
+    : target === 'small_pot_near_nut_value_raise'
+      ? ['plo4', 'plo5', 'plo6']
+      : ['nlh', 'plo4', 'plo5', 'plo6'];
 const SHAPES = ['2:100', '4:100', '6:40', '6:100', '6:200'];
 const BINDINGS = [
   'policyDigestsDigest',
@@ -426,9 +433,11 @@ export function qualificationPlan(
   if (!isIncrementalQualificationTarget(target) && !['plo6_v24', 'v53_pressure'].includes(target))
     throw Error('Unknown feature qualification target');
   const file = new URL(
-    isIncrementalQualificationTarget(target)
-      ? './IncrementalPressureQualificationPlans.json'
-      : './FeatureAblationQualificationPlans.json',
+    isSeparateRiverTarget(target)
+      ? './SeparateRiverQualificationPlans.json'
+      : isIncrementalQualificationTarget(target)
+        ? './IncrementalPressureQualificationPlans.json'
+        : './FeatureAblationQualificationPlans.json',
     import.meta.url
   );
   let registry: Record<string, FeatureAblationQualificationPlan>;
@@ -467,7 +476,9 @@ export function assertProtectedFeatureAblationSource(
     '--format=%H',
     '-1',
     '--',
-    'src/benchmark/FeatureAblationQualificationPlans.json'
+    isSeparateRiverTarget(plan.target)
+      ? 'src/benchmark/SeparateRiverQualificationPlans.json'
+      : 'src/benchmark/FeatureAblationQualificationPlans.json'
   );
   if (!/^[0-9a-f]{40}$/.test(introduction)) throw Error('Locked contract introduction unproven');
   git('merge-base', '--is-ancestor', introduction, 'origin/main');

@@ -17,6 +17,8 @@ on:
             river_bluff_checkraise,
             barrel_continuation_outlook,
             pressure_package,
+            small_pot_near_nut_value_raise,
+            multiway_river_bluff_checkraise,
           ]
       source_sha:
         description: Exact protected-main commit containing the locked contract
@@ -47,7 +49,7 @@ jobs:
           TARGET: ${{ inputs.target }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
-          [[ "$TARGET" =~ ^(plo6_v24|v53_pressure|combo_draw_pressure|targeted_river_bluff|river_position_defense|river_bluff_checkraise|barrel_continuation_outlook|pressure_package)$ ]] || exit 1
+          [[ "$TARGET" =~ ^(plo6_v24|v53_pressure|combo_draw_pressure|targeted_river_bluff|river_position_defense|river_bluff_checkraise|barrel_continuation_outlook|pressure_package|small_pot_near_nut_value_raise|multiway_river_bluff_checkraise)$ ]] || exit 1
       - uses: actions/checkout@v4
         with:
           ref: main

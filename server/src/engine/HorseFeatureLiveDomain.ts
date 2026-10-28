@@ -22,6 +22,8 @@ const targets = [
   'river_bluff_checkraise',
   'barrel_continuation_outlook',
   'pressure_package',
+  'small_pot_near_nut_value_raise',
+  'multiway_river_bluff_checkraise',
 ];
 /** Optional prospective declaration. No old locked plan is widened or rewritten.
  * A single exact starting profile bounds its intrahand states, not other stakes
@@ -42,11 +44,14 @@ export function featureLiveDomainRefusals(plan: any): string[] {
   )
     return ['live_domain_profile'];
   const shapes =
-    plan.target === 'river_bluff_checkraise'
-      ? ['2:100']
-      : ['2:100', '4:100', '6:40', '6:100', '6:200'];
+    plan.target === 'multiway_river_bluff_checkraise'
+      ? ['4:100', '6:100']
+      : plan.target === 'river_bluff_checkraise'
+        ? ['2:100']
+        : ['2:100', '4:100', '6:40', '6:100', '6:200'];
   if (
     !['nlh', 'plo4', 'plo5', 'plo6'].includes(p.variant) ||
+    (plan.target === 'small_pot_near_nut_value_raise' && p.variant === 'nlh') ||
     !shapes.includes(`${p.seats}:${p.stackBB}`) ||
     p.id !== `${plan.target}-${p.variant}-6max-${p.seats}dealt-${p.stackBB}bb`
   )

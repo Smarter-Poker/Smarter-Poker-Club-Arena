@@ -1,5 +1,6 @@
 import { recheckHorseFeaturesBeforeAcceptance } from '../engine/HorseFeatureAuthority.js';
 import { recheckHorseQualifiedBeforeAcceptance } from '../engine/HorseQualifiedAcceptance.js';
+
 import { publicHandStatsFrame } from '../engine/presentation/publicHandStats.js';
 import {
   recheckHorsePhase14BeforeAcceptance,
@@ -2231,9 +2232,11 @@ export class LightningHandHost {
         toCall: auth.toCall,
       } as import('../engine/HorseLogic.js').HorseGameStateV2,
     });
-    const checked = recheckHorsePhase14BeforeAcceptance(qualified);
+    const beforeFeatureCheck = recheckHorsePhase14BeforeAcceptance(qualified);
+    const checked = recheckHorseFeaturesBeforeAcceptance(beforeFeatureCheck, auth.toCall);
+    const featureRefused = checked !== beforeFeatureCheck && !!checked.featureAuthority;
     decision.fast.decision = checked;
-    return { checked };
+    return { checked, featureRefused };
   }
 
   /**
@@ -2264,16 +2267,11 @@ export class LightningHandHost {
     if (decision.fast) {
       const result = this.recheckHorseDecisionAtDoor(userId, decision);
       if (!result) return;
-      const checked = recheckHorseFeaturesBeforeAcceptance(
-        result.checked,
-        hc.getAuthoritativeActionState(userId)?.toCall ?? 0
-      );
-      featureRefused = checked !== result.checked && !!checked.featureAuthority;
-      decision.fast.decision = checked;
+      featureRefused = result.featureRefused;
       decision = {
         ...decision,
-        action: checked.action,
-        amount: checked.amount,
+        action: result.checked.action,
+        amount: result.checked.amount,
         workerFallback: decision.workerFallback || featureRefused,
       };
     }

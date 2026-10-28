@@ -885,6 +885,8 @@ async function lockedContract(target, sourceSha, cell, assembling = false) {
       'river_bluff_checkraise',
       'barrel_continuation_outlook',
       'pressure_package',
+      'small_pot_near_nut_value_raise',
+      'multiway_river_bluff_checkraise',
     ].includes(target)
   )
     throw new Error('unknown_target');

@@ -2594,9 +2594,7 @@ export class HorseDecisionWorkerRuntime {
           {
             ...request.opts,
             ...features.flags,
-            multiwayRiverBluffCheckRaise:
-              this.deps.offlineFeatureFlags === true &&
-              request.opts?.multiwayRiverBluffCheckRaise === true,
+            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
             observeMind: true,
             mindObservationHand: horseMindHandFromDecision(request),
           }
@@ -2621,9 +2619,7 @@ export class HorseDecisionWorkerRuntime {
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
             ...features.flags,
-            multiwayRiverBluffCheckRaise:
-              this.deps.offlineFeatureFlags === true &&
-              request.opts?.multiwayRiverBluffCheckRaise === true,
+            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
             phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
             phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
             phase10Plo4: phase10.mode,
@@ -2905,9 +2901,7 @@ export class HorseDecisionWorkerRuntime {
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
                 ...features.flags,
-                multiwayRiverBluffCheckRaise:
-                  this.deps.offlineFeatureFlags === true &&
-                  request.opts?.multiwayRiverBluffCheckRaise === true,
+                multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
                 phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
                 phase8PolicyFamily: phase8Guard.selected
                   ? 'catastrophe_guard_v1'

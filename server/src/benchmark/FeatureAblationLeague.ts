@@ -31,6 +31,9 @@ import { V53_PRESSURE_RESERVED_HOLDOUT_SEEDS } from './PressureQualificationCont
 import {
   INCREMENTAL_RESERVED_HOLDOUT_SEEDS,
   ADDITIONAL_RESERVED_HOLDOUT_SEEDS,
+  SEPARATE_RIVER_FLAGS,
+  SEPARATE_RIVER_DESIGNS,
+  MULTIWAY_RIVER_POPULATION,
   PRESSURE_PACKAGE_FLAGS,
   PRESSURE_PACKAGE_POPULATION,
 } from './IncrementalPressureDevelopment.js';
@@ -133,6 +136,27 @@ export interface FeatureAblationResult {
   promotionEligible: false;
 }
 export function assertAblationArms(spec: FeatureAblationSpec): void {
+  if (Object.hasOwn(spec.candidate, 'multiwayRiverBluffCheckRaise')) {
+    const exact = (arm: Plo4AblationFlags, value: boolean) =>
+      Object.keys(arm).length === 2 &&
+      arm.riverBluffCheckRaise === true &&
+      arm.multiwayRiverBluffCheckRaise === value;
+    if (
+      !exact(spec.candidate, true) ||
+      !exact(spec.reference, false) ||
+      spec.population !== MULTIWAY_RIVER_POPULATION ||
+      ![4, 6].includes(spec.profile.seats) ||
+      spec.profile.stackBB !== 100
+    )
+      throw Error('Separate multiway composition refused');
+    return assertAblationArms({
+      ...spec,
+      candidate: { riverBluffCheckRaise: true },
+      reference: { riverBluffCheckRaise: false },
+    });
+  }
+  if (Object.hasOwn(spec.candidate, 'smallPotNearNutRiverValue') && spec.profile.variant === 'nlh')
+    throw Error('Near-nut Omaha only');
   const keys = [...new Set([...Object.keys(spec.candidate), ...Object.keys(spec.reference)])];
   if (
     keys.length !== 1 ||
@@ -144,6 +168,7 @@ export function assertAblationArms(spec: FeatureAblationSpec): void {
       'riverPositionDefense',
       'riverBluffCheckRaise',
       'barrelContinuationOutlook',
+      'smallPotNearNutRiverValue',
     ].includes(keys[0]) ||
     Object.values(spec.candidate).some((v) => typeof v !== 'boolean') ||
     Object.values(spec.reference).some((v) => typeof v !== 'boolean') ||
@@ -231,6 +256,7 @@ export async function runFeatureAblationDevelopment(
     (INCREMENTAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     (ADDITIONAL_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
     (TOURNAMENT_RESERVED_HOLDOUT_SEEDS as readonly number[]).includes(seed) ||
+    Object.values(SEPARATE_RIVER_DESIGNS).some((d) => d.reservedHoldoutSeeds.includes(seed)) ||
     request.reservedSeeds?.includes(seed)
   )
     throw new Error('Development never deals a held-out or invalid seed');
@@ -270,14 +296,17 @@ export async function runFeatureAblationContract(
   } = await import('./FeatureAblationQualification.js');
   const { INCREMENTAL_FLAGS } = await import('./IncrementalPressureDevelopment.js');
   const keys = Object.keys(spec.candidate);
-  const target =
-    keys.length === 5
-      ? 'pressure_package'
-      : keys[0] === 'v24PloDefense'
-        ? 'plo6_v24'
-        : keys[0] === 'v53Pressure'
-          ? 'v53_pressure'
-          : Object.entries(INCREMENTAL_FLAGS).find(([, flag]) => flag === keys[0])?.[0];
+  const target = keys.includes('multiwayRiverBluffCheckRaise')
+    ? 'multiway_river_bluff_checkraise'
+    : keys[0] === 'smallPotNearNutRiverValue'
+      ? 'small_pot_near_nut_value_raise'
+      : keys.length === 5
+        ? 'pressure_package'
+        : keys[0] === 'v24PloDefense'
+          ? 'plo6_v24'
+          : keys[0] === 'v53Pressure'
+            ? 'v53_pressure'
+            : Object.entries(INCREMENTAL_FLAGS).find(([, flag]) => flag === keys[0])?.[0];
   if (
     !target ||
     (!isIncrementalQualificationTarget(target) &&

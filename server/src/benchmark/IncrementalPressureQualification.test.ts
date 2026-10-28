@@ -36,7 +36,9 @@ const hash = (x: unknown) =>
 const H = 'a'.repeat(64);
 function fixture(target: IncrementalTarget): any {
   const rules = incrementalQualificationRules(target);
-  const variants = ['nlh', 'plo4', 'plo5', 'plo6'] as const;
+  const variants = (['nlh', 'plo4', 'plo5', 'plo6'] as const).filter(
+    (v) => target !== 'small_pot_near_nut_value_raise' || v !== 'nlh'
+  );
   const profiles = variants.flatMap((v) =>
     incrementalDevelopmentProfiles(target, v)
       .filter((p) => rules.shapes.includes(`${p.seats}:${p.stackBB}`))
@@ -586,4 +588,22 @@ test('condition(a) producer binds an exact declared profile without a condition(
   const missing = { ...p };
   delete missing.liveAdmission;
   assert.equal(produce(missing).admission.qualified, false);
+});
+
+test('separate river schemas preserve exact components and old families remain unusable', () => {
+  for (const target of [
+    'small_pot_near_nut_value_raise',
+    'multiway_river_bluff_checkraise',
+  ] as const) {
+    const plan = fixture(target);
+    assert.deepEqual(validateLockedFeatureAblationPlan(plan), []);
+    assert.throws(() => qualificationPlan(target), /refused/);
+    const wrong = structuredClone(plan);
+    wrong.heldoutSeeds = [28301109, 28302231, 28303347];
+    assert.ok(validateLockedFeatureAblationPlan(wrong).includes('unregistered_holdout_seeds'));
+    if (target === 'multiway_river_bluff_checkraise') {
+      wrong.flags.reference.riverBluffCheckRaise = false;
+      assert.ok(validateLockedFeatureAblationPlan(wrong).includes('one_flag_contrast'));
+    }
+  }
 });

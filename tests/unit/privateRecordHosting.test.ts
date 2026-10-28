@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   mkdtempSync,
@@ -255,6 +256,20 @@ describe('hosting qualification remains enforced', () => {
     expect(script).toContain('assert_node_version /usr/bin/node');
     expect(script).toContain('major > 20 || (major === 20 && minor >= 19)');
     expect(script).not.toMatch(/ln\s+-[^\n]*f[^\n]*\/usr\/bin\/node/);
+  });
+  it('pipes the exact Caddy preflight input through the maintained child-process helper', () => {
+    const source = readFileSync('scripts/ci/fixtures/private-record-bootstrap-linux.mjs', 'utf8');
+    const helper = source.slice(source.indexOf('const run ='), source.indexOf('const root ='));
+    const call = source.match(
+      /run\('\/usr\/bin\/caddy', \['adapt', '--config', '-', '--adapter', 'caddyfile'\], \{([\s\S]*?)\n {2}\}\);/
+    );
+    expect(call).not.toBeNull();
+    const script = `const { execFileSync } = require('node:child_process');
+${helper}
+const configuration = 'exact Caddy preflight bytes\\n';
+const observed = run(process.execPath, ['-e', "process.stdout.write(require('node:fs').readFileSync(0, 'utf8'))"], {${call![1]}});
+if (observed !== configuration) throw new Error('Caddy preflight stdin was discarded');`;
+    expect(() => execFileSync(process.execPath, ['-e', script], { stdio: 'pipe' })).not.toThrow();
   });
   it('does not accept a different repository identity in a verified signing result', async () => {
     const { verifyAttestationIdentity } =

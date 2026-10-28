@@ -43,6 +43,7 @@ writeFileSync(
 // must fail directly rather than masquerade as an HTTP readiness timeout.
 for (const configuration of [before, replacement])
   run('/usr/bin/caddy', ['adapt', '--config', '-', '--adapter', 'caddyfile'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
     input: configuration,
   });
 const server = spawn('/usr/bin/caddy', ['run', '--config', '/etc/caddy/Caddyfile'], {

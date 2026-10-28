@@ -2283,6 +2283,15 @@ test('natural horse social behavior reaches the live table', async ({
     'f146ea5cbfc39bdc040f31768252a271b9984fb4',
     EXPECTED_ENGINE_SHA,
   ]);
+  const servingTalkSource = execFileSync(
+    'git',
+    ['show', `${EXPECTED_ENGINE_SHA}:server/src/services/HorseTableTalk.ts`],
+    { encoding: 'utf8' }
+  );
+  expect(
+    servingTalkSource,
+    'The deployed engine must include the final BB chat write guard'
+  ).toContain('FORBIDDEN_BB_CHAT.test(line)');
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   expect(
@@ -2493,7 +2502,9 @@ test('natural horse social behavior reaches the live table', async ({
         expect(delayMs, 'Horse spoke less than five seconds after hand end').toBeGreaterThanOrEqual(
           5000
         );
-        expect(row.message).not.toMatch(/\b\d+(?:\.\d+)?\s*bb\b|\bseat\s+\d+/i);
+        expect(row.message).not.toMatch(
+          /\d[\d.,]*\s*bbs?\b|\bbbs?\b|\bbig\s+blinds?\b|\bseat\s+\d+/i
+        );
         if (
           !textProof &&
           dom.some(

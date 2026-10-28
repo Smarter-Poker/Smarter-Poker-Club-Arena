@@ -292,11 +292,23 @@ export function ownPublicHistoryIsValid(
 
 /** A finite cache loaded by actual requests. The current turn never waits for
  * I/O; a response can enter only a later original snapshot. No timer or repair. */
+export interface HorseOwnPublicHistoryCacheStatus {
+  owner: 'main';
+  entries: number;
+  maxEntries: number;
+  decodedPacketCount: number;
+  serializedPacketCount: number;
+  acknowledgedCount: number;
+  pendingCount: number;
+  retainedSerializedUtf8Bytes: number;
+}
+
 export class HorseOwnPublicHistoryCache {
   private readonly entries = new Map<
     string,
     {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -318,15 +330,23 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     if (!key || !clock(cutoffMs)) return undefined;
     const known = this.entries.get(key);
-    if (known && (!known.settled || known.packet || cutoffMs < known.retryAfterMs))
-      return known.packet && !known.acknowledged && known.packet.availableAtMs <= cutoffMs
-        ? structuredClone(known.packet)
-        : undefined;
+    if (
+      known &&
+      (!known.settled || known.packet || known.serialized || cutoffMs < known.retryAfterMs)
+    ) {
+      if (known.acknowledged) return undefined;
+      if (known.packet && known.packet.availableAtMs <= cutoffMs)
+        return structuredClone(known.packet);
+      if (known.serialized && known.serialized.availableAtMs <= cutoffMs)
+        return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
+      return undefined;
+    }
     if (activeLoads >= 16) return undefined;
     if (!known && this.entries.size >= this.maxEntries)
       this.entries.delete(this.entries.keys().next().value!);
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -364,14 +384,56 @@ export class HorseOwnPublicHistoryCache {
     }
     return undefined;
   }
+  /** Only bounded scalar entry metadata is visited; payloads are not serialized here. */
+  status(): HorseOwnPublicHistoryCacheStatus {
+    const result: HorseOwnPublicHistoryCacheStatus = {
+      owner: 'main',
+      entries: this.entries.size,
+      maxEntries: this.maxEntries,
+      decodedPacketCount: 0,
+      serializedPacketCount: 0,
+      acknowledgedCount: 0,
+      pendingCount: 0,
+      retainedSerializedUtf8Bytes: 0,
+    };
+    for (const entry of this.entries.values()) {
+      if (entry.packet) result.decodedPacketCount++;
+      if (entry.serialized) {
+        result.serializedPacketCount++;
+        result.retainedSerializedUtf8Bytes += entry.serialized.utf8Bytes;
+      }
+      if (entry.acknowledged) result.acknowledgedCount++;
+      if (!entry.settled) result.pendingCount++;
+    }
+    return result;
+  }
   state(context: HorseObserverReadContext): 'pending' | 'available' | 'unavailable' {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    return entry?.packet ? 'available' : entry?.settled ? 'unavailable' : 'pending';
+    return entry?.packet || entry?.serialized
+      ? 'available'
+      : entry?.settled
+        ? 'unavailable'
+        : 'pending';
   }
   acknowledge(context: HorseObserverReadContext, digest: string | null): void {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    if (entry) entry.acknowledged = !!entry.packet && digest === entry.packet.digest;
+    if (!entry) return;
+    entry.acknowledged =
+      digest !== null && digest === (entry.packet?.digest ?? entry.serialized?.digest);
+    if (entry.acknowledged && entry.packet) {
+      // Keep the exact original window for a worker's later null ACK (eviction
+      // or restart), but stop retaining its decoded graph after delivery.
+      // Each client owns its ACK; another worker never acknowledges this one.
+      const json = JSON.stringify(entry.packet);
+      entry.serialized = {
+        json,
+        utf8Bytes: Buffer.byteLength(json),
+        digest: entry.packet.digest,
+        availableAtMs: entry.packet.availableAtMs,
+      };
+      entry.packet = undefined;
+    }
   }
 }

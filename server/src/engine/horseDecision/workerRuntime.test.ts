@@ -1,3 +1,4 @@
+import { LiveHorseDecisionWorkerClient } from './client.js';
 import { HORSE_PHASE14_DOMAINS } from '../HorsePhase14Authority.js';
 import { HandController } from '../HandController.js';
 import { priceDiamondCashFees } from '../../domain/diamondCashFeeSnapshot.js';
@@ -277,7 +278,7 @@ const V31_DATASET = {
   checksum: 'a'.repeat(64),
 };
 
-function harness(realDecision = false) {
+function harness(realDecision = false, onMessage?: (message: HorseDecisionWorkerResponse) => void) {
   const messages: HorseDecisionWorkerResponse[] = [];
   const restored: number[] = [];
   const decisionOpts: HorseDecideOpts[] = [];
@@ -372,7 +373,10 @@ function harness(realDecision = false) {
       return value;
     },
   };
-  const runtime = new HorseDecisionWorkerRuntime((message) => messages.push(message), deps);
+  const runtime = new HorseDecisionWorkerRuntime((message) => {
+    messages.push(message);
+    onMessage?.(message);
+  }, deps);
   return {
     runtime,
     deps,
@@ -5676,4 +5680,68 @@ describe('independent live observer reads', () => {
     expect(seen).toEqual([undefined]);
     HorseMind.reset();
   });
+});
+
+it('round-trips isolate provenance through the real runtime STATUS FIFO and client', async () => {
+  let deliver: (m: HorseDecisionWorkerResponse) => void = () => {};
+  const h = harness(false, (m) => deliver(m));
+  const sample = {
+    source: 'node_v8_heap_statistics' as const,
+    threadId: 7,
+    shardIndex: 2,
+    sampledAtMs: Date.now(),
+    heapUsedBytes: 100,
+    heapTotalBytes: 200,
+    heapLimitBytes: 1000,
+  };
+  h.deps.isolateMemory = () => sample;
+  const worker = {
+    on(event: string, fn: any) {
+      if (event === 'message') deliver = fn;
+      return this;
+    },
+    postMessage(m: any) {
+      h.runtime.receive(m);
+    },
+    terminate: async () => 0,
+  };
+  const client = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => worker as any,
+    shard: { index: 2 },
+  });
+  try {
+    await h.runtime.start();
+    await client.ready();
+    await (client as any).enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    expect(client.status().isolateMemory).toEqual(sample);
+    expect(client.status().isolateMemoryAgeMs).toBeGreaterThanOrEqual(0);
+    h.deps.isolateMemory = () => {
+      throw Error('diagnostic only');
+    };
+    await (client as any).enqueue(
+      { type: 'STATUS', requestId: 2, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    expect(client.status().isolateMemory).toBeNull();
+    expect(client.status().phase).toBe('ready');
+  } finally {
+    await client.stop();
+  }
+});
+
+it('samples isolate memory only on the existing STATUS boundary', async () => {
+  const h = harness();
+  const sample = vi.fn(() => null);
+  h.deps.isolateMemory = sample;
+  h.runtime.receive(fastRequest(1));
+  await h.runtime.drain();
+  expect(sample).not.toHaveBeenCalled();
+  h.runtime.receive({ type: 'STATUS', requestId: 2, generation: 0, fence: 'worker:status' });
+  await h.runtime.drain();
+  expect(sample).toHaveBeenCalledTimes(1);
+  h.runtime.receive({ type: 'SHUTDOWN' });
+  await h.runtime.drain();
 });

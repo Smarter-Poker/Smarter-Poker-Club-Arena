@@ -1,3 +1,4 @@
+import { sampleIsolateMemory } from '../../observability/isolateMemory.js';
 /** Worker-thread entry point for the live HorseLogic decision lane. */
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
@@ -69,7 +70,10 @@ if (!isMainThread && parentPort) {
       }
     : defaultHorseDecisionWorkerDependencies;
   const port = parentPort;
-  const runtime = new HorseDecisionWorkerRuntime((message) => port.postMessage(message), deps);
+  const runtime = new HorseDecisionWorkerRuntime((message) => port.postMessage(message), {
+    ...deps,
+    isolateMemory: () => sampleIsolateMemory(shard?.index ?? 0),
+  });
   port.on('message', (message: HorseDecisionWorkerRequest) => runtime.receive(message));
   void runtime.start();
 }

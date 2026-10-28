@@ -1,0 +1,3 @@
+# tests/opponent-hud-is-never-rendered.law.test.ts
+
+Owner direction, 2026-10-28: "REMOVE THE ENTIRE OPPONENT HUD EVERYWHERE". Table and tournament presentation never render opponent VPIP/PFR panels, heat indicators or automatic playing-style classifications. No keyboard shortcut, persisted preference or legacy caller can restore them. Personal statistics recording and tournament level/clock HUDs retain their existing behavior. The retired MiniHUD boundary returns no DOM even with populated statistics and visibility requested; seat and final-table renderers contain no classification path. The existing production live-table certificate asserts those opponent elements are absent after live table readiness.

@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244719,
-      "sha256": "0b722fc6d0e61c800ea7dd3df03c105c2dc72ae36241e2e528b51e8e852dddf8"
+      "bytes": 244951,
+      "sha256": "597df740eb04faeb23eccde71baa4eb856d2b32b66130e24b5a96d0ddfdc0d3c"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -716,6 +716,18 @@
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
   },
+  "opponentHudClassifierCheckout20261028": {
+    "reason": "The metadata-only changes job checks out scripts and .github in cone mode, retaining root configs and full Git history, instead of hydrating the full artwork tree that timed out in job123044104875. Test commands, assertions, financial qualification and deployment routes are unchanged. Source identity only; not execution or live proof. Integrated current protected main, preserving its compiler cleanup budget and every other workflow change.",
+    "previousWorkflowPin": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244685,
+      "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+    },
+    "execution_performed": false
+  },
   "horseMttTimingRegression20261028": {
     "reason": "Add one disposable PostgreSQL horse MTT T-10 boundary regression to accounting shard 2. All existing suites, financial assertions, timeouts, shard assignments and required aggregate remain unchanged. Current workflow binding only; historical qualification receipts remain historical. The new timing suite locally passed 23 assertions; no claim to rerun other native qualifications.",
     "previousWorkflowPin": {
@@ -733,6 +745,13 @@
     "currentWorkflowPin": {
       "bytes": 244719,
       "sha256": "0b722fc6d0e61c800ea7dd3df03c105c2dc72ae36241e2e528b51e8e852dddf8"
+    }
+  },
+  "horseTimingClassifierMainIntegration20261028": {
+    "review": "Preserves protected-main metadata-only sparse classifier checkout and all parent histories. Existing horse timing native step unchanged. Only active combined workflow pin; no financial recertification.",
+    "currentWorkflowPin": {
+      "bytes": 244951,
+      "sha256": "597df740eb04faeb23eccde71baa4eb856d2b32b66130e24b5a96d0ddfdc0d3c"
     }
   }
 }

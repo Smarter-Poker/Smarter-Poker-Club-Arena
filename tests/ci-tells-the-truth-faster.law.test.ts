@@ -370,3 +370,17 @@ describe('the Diamond games visual baseline informs and never gates', () => {
     ).toEqual([]);
   });
 });
+
+it('the metadata-only classifier checks out its scripts and workflow without the full asset tree', () => {
+  const workflow = parse(read('.github/workflows/ci.yml'));
+  const checkout = workflow.jobs.changes.steps[0];
+  expect(checkout.with['fetch-depth']).toBe(0);
+  expect(checkout.with.filter).toBe('blob:none');
+  expect(checkout.with['sparse-checkout'].trim().split(/\s+/)).toEqual(['scripts', '.github']);
+  expect(checkout.with['sparse-checkout-cone-mode']).not.toBe(false);
+  expect(
+    workflow.jobs.changes.steps.some(
+      (step: Step) => step.run === 'node scripts/ci/classify-ci-changes.mjs'
+    )
+  ).toBe(true);
+});

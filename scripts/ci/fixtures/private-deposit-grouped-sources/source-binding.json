@@ -10,7 +10,7 @@
     "scripts/ci/fixtures/private-deposit-grouped-sources/source-receipt.json": "d749cf4ede13398367fdacff1e4a47e22c58d135b269cc569bd0387cb72f984f",
     "scripts/ci/test-private-deposit-grouped-sources-postgres.py": "b4ba2c8861196afbd94ef86993592377d06174d7e9aa8cfa1de49b3a8225a3b7",
     "tests/private-deposit-grouping-retains-source-facts.law.test.ts": "a82c18d6c45bab698761d4c0bc5bf7ba06764f24fb8325cb0982e73ccabf32b8",
-    "docs/laws.d/private-deposit-grouping-retains-source-facts.md": "28216f1f2055723e1dee0fa366801a296f2b56a31addb651259ce37cf8de0601",
+    "docs/laws.d/private-deposit-grouping-retains-source-facts.md": "4e726c98fa3040112a0a82d1f70332e4bbd471514b76cb1b8017b5d6cc3f8689",
     "docs/changelog/2026-10-28-private-deposits-group-original-source-facts.md": "efc84878c4f859d6c761503b76a02895e72bcc357f4e0c88eeb8661b8a0f02bd",
     ".github/workflows/unpaid-lightning-funding-contracts.yml": "fa32ca0d48788524d5f9708b2fd16b84551091162f3cecfc6c7c5826c6a50cdf",
     "supabase/migrations/20261028053643_weekly_private_deposits_group_their_original_source_facts.sql": "e18f1bbc64db63755824a7459f5a55c0e9ae91aeaa69da6f8ca5f050f9153aa3",
@@ -19,5 +19,9 @@
     "tests/fixtures/weekly-close-scale/prelude.sql": "d5f1952bb82f3d9970b70b73d5b78ee65861c70c093118968d4836fc269f9481",
     "tests/fixtures/weekly-close-scale/schema-tables.sql": "1357e005cc1c71045fc7dcbe17f777ac6ecb38c6b2f7dccaa286a68e702ed4fb",
     "tests/fixtures/weekly-close-scale/preimage/fn_union_week_start.sql": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c"
+  },
+  "registryFormattingAudit": {
+    "review": "Normal commit Prettier inserted required blank line after law registry heading; only this newline changed, source/native/evidence inputs unchanged.",
+    "execution_performed": false
   }
 }

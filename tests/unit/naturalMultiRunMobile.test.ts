@@ -600,9 +600,9 @@ it('targets three-run history and permits mandatory three while refusing mandato
   expect(selectNaturalMultiRunSubject(tables, rows).id).toBe('choice');
 });
 
-it('natural timing requires one 1500ms confirmation and the full 4100ms winning-card results', () => {
+it('natural timing forbids settled-choice overlays and keeps the full 4100ms winning-card results', () => {
   const w: any = {
-    confirmations: { '41': [{ shownAt: 0, hiddenAt: 1500 }] },
+    confirmations: {},
     hands: [
       {
         hand: 41,
@@ -615,13 +615,13 @@ it('natural timing requires one 1500ms confirmation and the full 4100ms winning-
   expect(naturalMultiRunTiming(packet, w)).toMatchObject({
     ready: true,
     violations: [],
-    confirmationMs: 1500,
+    confirmationMs: 0,
     resultGapsMs: [4100, 4100],
     lastResultMs: 4100,
   });
-  w.confirmations['41'][0].hiddenAt = 4500;
+  w.confirmations['41'] = [{ shownAt: 0, hiddenAt: 1500 }];
   expect(naturalMultiRunTiming(packet, w).violations).toContain(
-    'Run Confirmation Did Not Clear At 1500ms'
+    'Settled Run Choice Still Covers The Table'
   );
   w.confirmations['41'].push({ shownAt: 6000, hiddenAt: 7500 });
   expect(naturalMultiRunTiming(packet, w).violations).toContain('Run Confirmation Repeated');
@@ -637,7 +637,7 @@ it('natural timing requires one 1500ms confirmation and the full 4100ms winning-
   expect(naturalMultiRunTiming(packet, w).ready).toBe(false);
 });
 
-it('the actual passive DOM witness measures confirmation expiry and both winner windows', async () => {
+it('the actual passive DOM witness rejects a settled strip and preserves both winner windows', async () => {
   let now = 1000;
   vi.spyOn(Date, 'now').mockImplementation(() => now);
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 393, 852));
@@ -650,10 +650,9 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
   await installNaturalMultiRunWitness({
     addInitScript: async (callback: () => void) => callback(),
   } as any);
-  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span><div class="rit-felt-banner">Players Have Accepted Running It Twice.</div>${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}</div>`;
+  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span>${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}${'<div class="community-area__run">' + '<i class="community-cards__card"></i>'.repeat(5) + '</div>'}</div>`;
   tick(1);
   now = 2500;
-  document.querySelector('.rit-felt-banner')!.remove();
   tick(2);
   const lanes = document.querySelectorAll('.community-area__run');
   now = 10000;
@@ -675,7 +674,7 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
   expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read())).toEqual({
     ready: true,
     violations: [],
-    confirmationMs: 1500,
+    confirmationMs: 0,
     resultGapsMs: [4100],
     lastResultMs: 4100,
   });
@@ -687,6 +686,7 @@ it('the actual passive DOM witness measures confirmation expiry and both winner 
     );
   tick(6);
   expect(naturalMultiRunTiming({ ...packet, runs: 2 }, read()).violations).toContain(
-    'Run Confirmation Repeated'
+    'Settled Run Choice Still Covers The Table'
   );
+  expect(read().violations).toContain('41: Settled Run Choice Still Covers The Table');
 });

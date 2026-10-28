@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 240125,
-      "sha256": "0d4a121f97cebb3a8bda035011145a1935c00bc384d0604cf7f5ff582ea005f6"
+      "bytes": 240390,
+      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -569,5 +569,23 @@
       "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
     },
     "execution_performed": false
+  },
+  "midwayFreezeoutRegression20261028": {
+    "reason": "Additive required native bounty-freezeout trigger regression only. Existing CI commands, guards, qualifications and budgets unchanged. Current input identity; no historical/native/live certification restamp.",
+    "previous": {
+      "bytes": 239886,
+      "sha256": "05b3622404fdb60118a014bde5306f33d5dd7a0da566f954ece9aa3ccef84be3"
+    },
+    "current": {
+      "bytes": 240151,
+      "sha256": "bf4de42647ddc7ca050127405fe84ae26bc7bc15dea3c49b1af62ee63fccda33"
+    }
+  },
+  "midwayProtectedMainComposition20261028": {
+    "reason": "Compose the additive Midway native regression with newly protected horse and role-credit work. Both workflow changes and all existing qualifications retained. Current source identity only; no financial/native/live certificate restamp.",
+    "currentWorkflow": {
+      "bytes": 240390,
+      "sha256": "c144856c4326b47b37b145d985d89efb52c7bfa3081c6d9295f2b0314244f6d3"
+    }
   }
 }

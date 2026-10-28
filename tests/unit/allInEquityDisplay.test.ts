@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   allInEquityBoardKey,
+  allInEquityHandMatches,
   formatAllInEquity,
   validAllInEquityEntries,
 } from '../../src/lib/allInEquityDisplay';
 describe('all-in probabilities never invent endpoints', () => {
+  it.each([
+    [0, 17, false],
+    [17, 0, false],
+    [17, 18, false],
+    [18, 17, false],
+    [17, 17, true],
+    [NaN, 17, false],
+  ])('binds replay hand %s to current hand %s only when known', (current, event, expected) => {
+    expect(allInEquityHandMatches(current as number, event as number)).toBe(expected);
+  });
   it('matches wire and client board identities across all boards', () => {
     expect(allInEquityBoardKey([['Ahearts', 'Kspades'], ['Qclubs']])).toBe(
       allInEquityBoardKey([

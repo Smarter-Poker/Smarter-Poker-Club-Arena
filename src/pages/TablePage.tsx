@@ -1,4 +1,8 @@
-import { allInEquityBoardKey, validAllInEquityEntries } from '../lib/allInEquityDisplay';
+import {
+  allInEquityBoardKey,
+  allInEquityHandMatches,
+  validAllInEquityEntries,
+} from '../lib/allInEquityDisplay';
 import { fetchStoppedLightningAnchor } from '../lightning/lightningLeaveAnchor';
 import { useLightningLeaveStop } from '../lightning/useLightningLeaveStop';
 import { LightningLeaveControl } from '../components/lightning/LightningLeaveControl';
@@ -13564,7 +13568,7 @@ function LiveTablePage({
         const currentHand =
           Number(tableStateRef.current.handNumber) || Number(heroHandRef.current) || 0;
         const equityHand = Number(handState.hand_number) || 0;
-        const matchesHand = currentHand === 0 || equityHand === 0 || currentHand === equityHand;
+        const matchesHand = allInEquityHandMatches(currentHand, equityHand);
         if (matchesHand && validAllInEquityEntries(equities)) {
           const boards = Array.isArray(handState.boards) ? handState.boards : [handState.board];
           const boardKey = allInEquityBoardKey(boards);

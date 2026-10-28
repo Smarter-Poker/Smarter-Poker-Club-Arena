@@ -56,3 +56,8 @@ export function allInEquityBoardKey(boards: unknown[]): string {
     )
     .join('|');
 }
+
+/** A missing hand identity must not admit a retained result from a prior hand. */
+export function allInEquityHandMatches(currentHand: number, eventHand: number): boolean {
+  return Number.isSafeInteger(currentHand) && currentHand > 0 && eventHand === currentHand;
+}

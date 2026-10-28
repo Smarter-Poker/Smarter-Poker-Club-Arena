@@ -42,6 +42,7 @@ IDENTITY_TESTS = {
     'test_late_command_preserves_observed_streams_and_exit_without_retry',
     'test_final_teardown_interrupts_cannot_skip_later_owned_stages',
     'test_case_disposal_uses_one_drop_barrier_and_refuses_unproven_backends',
+    'test_transferred_repository_keeps_exact_hosted_runner_and_identity',
     'test_actual_job_start_supplies_finite_caps_without_invocation_time',
     'test_timing_refuses_ambiguous_or_wrong_current_job',
     'test_shallow_pr_checkout_retains_authoritative_parent_identity',

@@ -637,6 +637,8 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         self.assertNotIn('status',disposal)
 
     def test_transferred_repository_keeps_exact_hosted_runner_and_identity(self):
+        from caller import IDENTITY_TESTS
+        self.assertEqual(set(unittest.TestLoader().getTestCaseNames(type(self))), IDENTITY_TESTS)
         env = {**self.env, 'GITHUB_REPOSITORY': ci.TRANSFERRED_REPOSITORY,
                'GITHUB_WORKFLOW_REF': ci.TRANSFERRED_REPOSITORY + '/.github/workflows/ci.yml@' + self.env['GITHUB_REF']}
         event = copy.deepcopy(self.event)

@@ -10,11 +10,11 @@ qualification does not identify it retrospectively.
 The promo now takes only its candidate eligible users' existing
 `player-stats-user` advisory keys in user order before its original union bank
 lock. Its fresh post-bank eligibility snapshot first checks that every eligible
-user is covered by those keys. An expansion raises40001 before any
+user is covered by those keys. An expansion raises55000 before any
 club/member/profile row lock or promo run/ledger write. It never pays a stale
 subset. Shrink and an additional wallet belonging to an already covered user use
-the fresh cohort. Existing business serialization handling remains the caller;
-there is no new retry, job or timer.
+the fresh cohort. The supported55000 refusal avoids PostgREST14.5's unbounded
+serialization retries; there is no new retry, job or timer.
 
 Only clubs in that covered fresh cohort receive the existing SHARE locks first,
 then member/profile rows retain their member-before-profile order and sort by
@@ -51,3 +51,5 @@ covered. This change adds no blanket profile locks or altered retention,
 source65/GEN, accounting budgets, scheduling or payer behavior.
 
 The first hosted consolidated invariant run rejected the uninstalled62-character migration basename. The official allocated version12516 and exact SQL bytes remain unchanged; the maintained file is now `20261028012516_midway_promo_orders_player_keys_before_wallet_rows.sql`, with a50-character slug. Both native/law callers use this name, and the actual migration-version/naming guard and native financial/lock qualification are rerun. No installed migration is renamed.
+
+The first combined client qualification exposed the maintained late-ticket law: PostgREST14.5 retries custom serialization errors without a finite bound. Since12516 remains uninstalled, its uncovered-cohort error now uses55000. The refusal still happens before unknown row locks and all run/ledger writes; every eligibility, lock, amount, receipt and rollback rule is unchanged. The exact installer/real2003-wallet and13cohort regressions are requalified with the new error and postimage.

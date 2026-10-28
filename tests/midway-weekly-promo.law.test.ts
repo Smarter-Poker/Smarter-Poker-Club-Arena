@@ -54,7 +54,7 @@ describe('Midway promo shares the existing player-stats lock protocol', () => {
     expect(repair).toContain('eligible AS MATERIALIZED');
     expect(repair).toContain('coverage AS MATERIALIZED');
     expect(repair).toContain('WHERE b.covered AND b.locked_clubs>=0');
-    expect(repair).toContain("ERRCODE='40001'");
+    expect(repair).toContain("ERRCODE='55000'");
     expect(repair.indexOf('IF NOT v_covered')).toBeLessThan(
       repair.indexOf('INSERT INTO public.union_weekly_horse_promo_runs')
     );

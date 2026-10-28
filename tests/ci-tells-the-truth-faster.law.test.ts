@@ -139,7 +139,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
   it('is a four-way matrix that lets every shard finish', () => {
     expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4] } });
     expect(job.name).toBe('Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4');
-    expect(job['timeout-minutes']).toBe(40);
+    expect(job['timeout-minutes']).toBe(50);
   });
 
   it('gives every suite step exactly one shard, and every shard some suites', () => {
@@ -168,7 +168,7 @@ describe('the PostgreSQL accounting qualification runs as four shards of one job
       expect(step.env?.PG_BIN, step.name).toBe('/usr/lib/postgresql/17/bin');
       expect(step.run, step.name).toMatch(/^bash scripts\/dev\/test-lightning-/);
     }
-    expect(job['timeout-minutes']).toBe(40);
+    expect(job['timeout-minutes']).toBe(50);
   });
 
   it('builds the isolation tester in every shard whose suites use it', () => {

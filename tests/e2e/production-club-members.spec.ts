@@ -309,6 +309,7 @@ test.describe('Production Kings Club Players', () => {
     test.setTimeout(120_000 + HISTORY_ADMISSION_MS + HISTORY_JOIN_ACK_MS);
     const historyJoin = observeHistoryJoin(page);
     const historySignals: Record<string, unknown>[] = [];
+    const rosterReadiness: boolean[] = [];
     page.on('websocket', (socket) =>
       socket.on('framereceived', (frame) => {
         try {
@@ -316,6 +317,11 @@ test.describe('Production Kings Club Players', () => {
           const message = Array.isArray(parsed)
             ? { topic: parsed[2], event: parsed[3], payload: parsed[4] }
             : parsed;
+          if (
+            message.type === 'PRIVATE_RECORD_STATUS' &&
+            String(message.topic).startsWith('club-roster:')
+          )
+            rosterReadiness.push(message.ready === true);
           if (!String(message.topic).startsWith('realtime:player-history:')) return;
           if (message.event === 'broadcast' && message.payload?.event === 'history_changed')
             historySignals.push(message.payload.payload);
@@ -326,6 +332,17 @@ test.describe('Production Kings Club Players', () => {
     );
     const probe = observeMembersPath(page);
     const readyMs = await openMembers(page, probe);
+    await expect
+      .poll(() => rosterReadiness.includes(true), {
+        message: 'the serving engine never authorized the private roster subscription',
+        timeout: 45_000,
+      })
+      .toBe(true);
+    await expect(page.locator('.club-members-page')).toHaveAttribute(
+      'data-roster-connection',
+      'live',
+      { timeout: 45_000 }
+    );
 
     expect(
       readyMs,

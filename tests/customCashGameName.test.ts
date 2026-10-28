@@ -5,7 +5,10 @@ import {
   cashTitleLines,
   type LobbyTableRow,
 } from '../src/components/lobby/lobbyEntries';
-import { cashCardTitle } from '../src/components/lobby/game-cards/arenaGameCardAdapter';
+import {
+  arenaGameCardDataFromEntry,
+  cashCardTitle,
+} from '../src/components/lobby/game-cards/arenaGameCardAdapter';
 
 const table = (name: string, managed = true) =>
   cashEntry({
@@ -33,6 +36,9 @@ describe('host cash-game names survive presentation', () => {
       expect(card.title).toBe('PLO5 2/5');
       expect(card.subtitle).toContain(entry.name);
       expect(card.subtitle).toContain('Classic');
+      const rendered = arenaGameCardDataFromEntry(entry);
+      expect(rendered.subtitle).toBe('Classic');
+      expect(rendered.styleNote).toContain(entry.name);
     }
   );
   it.each([
@@ -46,6 +52,13 @@ describe('host cash-game names survive presentation', () => {
   it('retains custom suffixes in both variant/stakes orders', () => {
     expect(customCashGameName('PLO5 2/5 Late Night')).toBe('Late Night');
     expect(customCashGameName('2/5 PLO5 Late Night')).toBe('Late Night');
+  });
+  it('preserves the whole long host name and existing rule note', () => {
+    const name = 'Friday Night Friends Championship Table Number Twenty';
+    const entry = table(name);
+    const rendered = arenaGameCardDataFromEntry(entry);
+    expect(rendered.styleNote).toContain(name);
+    expect(rendered.subtitle).toBe('Classic');
   });
   it('keeps default style labels without duplicating generated names', () => {
     expect(cashTitleLines(table('PLO5 2/5 Classic')).subtitle).toBe('Classic');

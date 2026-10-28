@@ -137,7 +137,9 @@ jobs:
   changes:
     name: What changed
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # PR #8462: a hosted full-history checkout exhausted the old five-minute
+    # budget before classification. Keep classification and its fallback intact.
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -370,7 +372,10 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # PR #8462: the successful baseline was 13m45s; ordinary checkout and
+    # qualification variance exhausted 15m after TypeScript passed. Reserve
+    # bounded time for the remaining repository guards; omit no checks.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout

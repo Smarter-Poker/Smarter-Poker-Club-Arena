@@ -122,6 +122,13 @@ awk '/^-- node <<.ROLLBACK_JS./ {copy=1;next} /^-- ROLLBACK_JS$/ {copy=0} copy {
 echo V31_V4_CONSUMER_ROLLBACK_RECOVERY_OK
 "${PSQL[@]}" -f "$HERE/v4-version-boundary.sql"
 "${PSQL[@]}" -f "$HERE/physical-position-transition.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261027180942_v31_certification_checks_only_the_selected_dataset.sql"
+"${PSQL[@]}" -f "$HERE/dataset-scoped-certification.sql"
+awk '/  result_checksum:=public.fn_gto_v31_seal_build\(dataset\);/ { print "  PERFORM public.v31_dataset_scope_probe(dataset);"; print "  SELECT dataset_checksum INTO result_checksum FROM public.gto_v31_datasets WHERE dataset_id=dataset;"; next } {print}' \
+ "$HERE/certified-v31.sql" > "$WORK/dataset-scoped-certification-fixture.sql"
+"${PSQL[@]}" -f "$WORK/dataset-scoped-certification-fixture.sql"
+"${PSQL[@]}" -c 'DROP FUNCTION public.v31_dataset_scope_probe(uuid)'
+echo V31_DATASET_SCOPED_CERTIFICATION_OK
 "${PSQL[@]}" -f "$HERE/v4-complete-state.sql"
 awk '
  /PERFORM public.fn_gto_v31_ingest_source_artifact\(dataset,.*train_art\);/ && !called {

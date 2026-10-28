@@ -79,7 +79,7 @@ interface UnionTournament {
   start_time?: string;
   prize_pool?: number;
   club_id?: string;
-  clubs?: { name: string } | null;
+  clubs?: { name: string } | { name: string }[] | null;
   is_xmtt?: boolean;
 }
 
@@ -192,7 +192,7 @@ export default function UnionGamesPage() {
                 supabase
                   .from('tournaments')
                   .select(
-                    'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+                    'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
                   )
                   .eq('union_id', targetUnion)
                   .not('status', 'in', '(COMPLETED,CANCELLED,CANCELED,FAILED)')
@@ -204,7 +204,7 @@ export default function UnionGamesPage() {
             supabase
               .from('tournaments')
               .select(
-                'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
+                'id, name, status, format_contract, tournament_type, variant, buy_in_amount, buy_in_fee, guaranteed_prize, starting_chips, current_players, max_players, start_time, prize_pool, club_id, is_xmtt, is_bounty, is_pko, is_mystery_bounty, bounty_amount, is_rebuy, is_reentry, add_on_available, clubs(name)'
               )
               .eq('union_id', targetUnion)
               .in('status', ['COMPLETED', 'CANCELLED', 'CANCELED', 'FAILED'])
@@ -585,7 +585,7 @@ export default function UnionGamesPage() {
                     <div>
                       <div className={styles.tournName}>{t.name || 'Tournament'}</div>
                       <div className={styles.tournClub}>
-                        {(t.clubs as any)?.name || ''}{' '}
+                        {(Array.isArray(t.clubs) ? t.clubs[0]?.name : t.clubs?.name) || ''}{' '}
                         {t.is_xmtt && <span className={styles.xmttBadge}>XMTT</span>}
                       </div>
                     </div>

@@ -705,8 +705,74 @@ def health(origin='https://engine.smarter.poker'):
     return {k: value[k] for k in ['version', 'instanceId']}
 
 
+# Failure diagnostics contain only fixed categories. Never forward exception
+# text, SSH stderr, URLs, credentials, log content or request parameters.
+FAILURE_STAGE = 'admission'
+FAILURE_STAGES = frozenset({
+    'admission', 'public_health_before', 'key_validation', 'pin_validation',
+    'remote_transport', 'remote_admission', 'host_health_before', 'current_logs',
+    'archives', 'lease_metrics', 'host_health_after', 'response_validation',
+    'public_health_after', 'artifact_write',
+})
+FAILURE_CATEGORIES = frozenset({
+    'refused', 'timeout', 'invalid_json', 'transport_exit', 'ssh_exit_255',
+    'response_bound', 'input_bound', 'identity_mismatch', 'subprocess_exit', 'io_unavailable',
+    'unexpected',
+})
+
+
+class ObservationFailure(RuntimeError):
+    def __init__(self, category, stage):
+        super().__init__('Scoped observation refused')
+        self.category, self.stage = category, stage
+
+
+def failure_diagnostic(error):
+    stage = FAILURE_STAGE if FAILURE_STAGE in FAILURE_STAGES else 'admission'
+    if isinstance(error, ObservationFailure):
+        if (isinstance(error.category, str) and isinstance(error.stage, str)
+                and error.category in FAILURE_CATEGORIES and error.stage in FAILURE_STAGES):
+            return {'schema': 'scoped-runtime-failure/v1', 'stage': error.stage,
+                    'category': error.category, 'readOnly': True}
+    category = ('timeout' if isinstance(error, (TimeoutError, subprocess.TimeoutExpired))
+                else 'invalid_json' if isinstance(error, json.JSONDecodeError)
+                else 'subprocess_exit' if isinstance(error, subprocess.CalledProcessError)
+                else 'io_unavailable' if isinstance(error, OSError)
+                else 'input_bound' if isinstance(error, RuntimeError) and str(error) in {
+                    'Log read exceeded bounded input', 'Log read exceeded bounded physical lines'}
+                else 'identity_mismatch' if isinstance(error, RuntimeError) and str(error) in {
+                    'Host engine changed during observation',
+                    'Public and host engine identity changed or differ'}
+                else 'refused' if isinstance(error, (ValueError, RuntimeError))
+                else 'unexpected')
+    return {'schema': 'scoped-runtime-failure/v1', 'stage': stage,
+            'category': category, 'readOnly': True}
+
+
+def remote_failure(reply):
+    # Only our exact bounded JSON diagnostic may cross the SSH boundary.
+    # Anything else remains a transport category; it is never printed.
+    if len(reply.stderr) <= 4096:
+        for line in reply.stderr.splitlines():
+            try:
+                value = json.loads(line)
+            except (ValueError, UnicodeError):
+                continue
+            if (isinstance(value, dict) and set(value) == {'schema', 'stage', 'category', 'readOnly'}
+                    and value['schema'] == 'scoped-runtime-failure/v1'
+                    and value['readOnly'] is True and isinstance(value['stage'], str)
+                    and isinstance(value['category'], str) and value['stage'] in FAILURE_STAGES
+                    and value['category'] in FAILURE_CATEGORIES):
+                return ObservationFailure(value['category'], value['stage'])
+    return ObservationFailure('ssh_exit_255' if reply.returncode == 255 else 'transport_exit',
+                              'remote_transport')
+
+
 def main():
+    global FAILURE_STAGE
+    FAILURE_STAGE = 'admission'
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
+        FAILURE_STAGE = 'remote_admission'
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
             scopes, window, mux_timing, fold_timing, lease_metrics = selection(request), None, False, False, False
@@ -717,20 +783,25 @@ def main():
             lease_metrics = lease_metrics_requested(request.get('leaseIncidentMetrics'), window)
         else:
             raise ValueError('Invalid observation request')
+        FAILURE_STAGE = 'host_health_before'
         before = health('http://127.0.0.1:8080')
         capture_started = time.monotonic()
+        FAILURE_STAGE = 'current_logs'
         raw = capture(log_command(window))
         # Docker's --tail bounds current physical lines. Enforce the same
         # shared ceiling even if a source violates that contract.
         if len(raw.splitlines()) > MAX_PHYSICAL_LINES:
             raise RuntimeError('Log read exceeded bounded physical lines')
+        FAILURE_STAGE = 'archives'
         archives, archive_metadata = archived_window(
             window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
             # Explicit anonymous timing reads retain their existing framing.
             scopes=None if mux_timing or fold_timing else scopes)
         current_raw = raw
         raw += b''.join(source for source, _identity in archives)
+        FAILURE_STAGE = 'lease_metrics'
         metric_evidence = read_lease_metrics(window) if lease_metrics else None
+        FAILURE_STAGE = 'host_health_after'
         after = health('http://127.0.0.1:8080')
         if before != after:
             raise RuntimeError('Host engine changed during observation')
@@ -761,6 +832,7 @@ def main():
     pin = os.environ.get('HETZNER_HOST_KEY', '')
     if not re.fullmatch('[A-Za-z0-9.-]+', host) or host.startswith('-') or not key.strip() or not pin.strip():
         raise RuntimeError('Configured read transport unavailable')
+    FAILURE_STAGE = 'public_health_before'
     before = health()
     directory = Path(tempfile.mkdtemp(prefix='scoped-engine-read-', dir=os.environ['RUNNER_TEMP']))
     try:
@@ -769,6 +841,7 @@ def main():
             path.write_text(content+'\n')
             path.chmod(0o600)
         for args in [['ssh-keygen', '-y', '-f', str(directory/'key')], ['ssh-keygen', '-l', '-f', str(directory/'known_hosts')]]:
+            FAILURE_STAGE = 'key_validation' if args[1] == '-y' else 'pin_validation'
             subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=5)
         request = {'scopes': scopes, 'windowStart': window['since'] if window else None}
         if mux_timing:
@@ -784,10 +857,14 @@ def main():
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'UserKnownHostsFile='+str(directory/'known_hosts'), '-o', f'ConnectTimeout={CONNECT_TIMEOUT}',
                 'root@'+host, "python3 - --remote '"+encoded+"'"]
+        FAILURE_STAGE = 'remote_transport'
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True,
                                timeout=TRANSPORT_TIMEOUT+(LEASE_METRICS_TIMEOUT if lease_metrics else 0))
-        if reply.returncode or len(reply.stdout) > 262144:
-            raise RuntimeError('Scoped transport unavailable')
+        if reply.returncode:
+            raise remote_failure(reply)
+        if len(reply.stdout) > 262144:
+            raise ObservationFailure('response_bound', 'response_validation')
+        FAILURE_STAGE = 'response_validation'
         result = json.loads(reply.stdout)
         if result.get('schema') != 'scoped-runtime-errors/v1' or result.get('readOnly') is not True:
             raise RuntimeError('Observation contract unavailable')
@@ -799,6 +876,7 @@ def main():
             raise RuntimeError('Lightning timing observation differs')
         if ('leaseIncidentMetrics' in result) != lease_metrics:
             raise RuntimeError('Lease metric observation differs')
+        FAILURE_STAGE = 'public_health_after'
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')
@@ -807,6 +885,7 @@ def main():
         serialized = json.dumps(output, indent=2)+'\n'
         if key in serialized or pin in serialized:
             raise RuntimeError('Observation refused')
+        FAILURE_STAGE = 'artifact_write'
         destination = Path('artifacts/scoped-runtime-errors')
         destination.mkdir(parents=True, exist_ok=True)
         target = destination/'observation.json'
@@ -820,6 +899,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
+    except Exception as error:
+        print(json.dumps(failure_diagnostic(error), sort_keys=True), file=sys.stderr)
         print('Scoped runtime observation unavailable. No production action performed.', file=sys.stderr)
         sys.exit(1)

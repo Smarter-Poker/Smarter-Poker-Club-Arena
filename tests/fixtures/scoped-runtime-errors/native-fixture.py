@@ -22,6 +22,55 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_failure_diagnostics_never_export_exception_or_transport_text(self):
+        cases = [(RuntimeError('PRIVATE host token query'), 'refused'),
+                 (ValueError('PRIVATE payload'), 'refused'),
+                 (OSError('PRIVATE path'), 'io_unavailable'),
+                 (subprocess.TimeoutExpired(['PRIVATE command'], 1, stderr=b'PRIVATE key'), 'timeout'),
+                 (RuntimeError('Log read exceeded bounded input'), 'input_bound'),
+                 (RuntimeError('Public and host engine identity changed or differ'), 'identity_mismatch'),
+                 (Exception('PRIVATE unexpected'), 'unexpected')]
+        with patch.object(reader, 'FAILURE_STAGE', 'current_logs'):
+            for error, expected in cases:
+                result = reader.failure_diagnostic(error)
+                self.assertEqual(result, {'schema': 'scoped-runtime-failure/v1',
+                    'stage': 'current_logs', 'category': expected, 'readOnly': True})
+                self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_remote_failure_only_admits_exact_bounded_fixed_diagnostic(self):
+        valid = {'schema': 'scoped-runtime-failure/v1', 'stage': 'current_logs',
+                 'category': 'input_bound', 'readOnly': True}
+        variants = [valid, {**valid, 'payload': 'PRIVATE'}, {**valid, 'stage': 'PRIVATE'},
+                    {**valid, 'category': 'PRIVATE'}, {**valid, 'readOnly': False},
+                    {**valid, 'stage': []}, {**valid, 'category': {}},
+                    {**valid, 'schema': 'other'}]
+        for i, value in enumerate(variants):
+            reply = subprocess.CompletedProcess(['ssh'], 1, b'', json.dumps(value).encode())
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'input_bound' if i == 0 else 'transport_exit')
+            self.assertEqual(result['stage'], 'current_logs' if i == 0 else 'remote_transport')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+        for code, stderr in [(255, b'PRIVATE auth host'), (1, b'x'*4097)]:
+            reply = subprocess.CompletedProcess(['ssh'], code, b'', stderr)
+            result = reader.failure_diagnostic(reader.remote_failure(reply))
+            self.assertEqual(result['category'], 'ssh_exit_255' if code == 255 else 'transport_exit')
+            self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_actual_failed_entry_emits_only_fixed_category_and_stage(self):
+        import base64
+        encoded = base64.b64encode(json.dumps({'scopes': 'PRIVATE_REQUEST',
+                                              'windowStart': None}).encode()).decode()
+        result = subprocess.run([sys.executable, str(ROOT/'scripts/ci/read-scoped-runtime-errors.py'),
+                                 '--remote', encoded], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(json.loads(lines[0]), {'schema': 'scoped-runtime-failure/v1',
+                         'stage': 'remote_admission', 'category': 'refused', 'readOnly': True})
+        self.assertNotIn('PRIVATE', result.stderr)
+        self.assertNotIn(encoded, result.stderr)
+
     def test_lease_metrics_accepts_and_strips_deployed_target_labels(self):
         config = (ROOT/'infra/monitoring/prometheus.yml').read_text()
         job = config.split('  - job_name: engine_game_server\n', 1)[1].split('    scrape_interval:', 1)[0]

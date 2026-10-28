@@ -5071,9 +5071,7 @@ button.post-bb-overlay-button {
     --sp-page-h: 100dvh;
     --sp-hero-clear: clamp(60px, calc(12vw + 8px), 68px);
     /* Compact upper pods use the empty rail band below the jackpot. */
-    --sp-table-top: calc(
-      var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top) + var(--sp-bar-drop, 0px)
-    );
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
   .table-page--embedded .table-container {
     /* Reserve the ticker's maximum band even when it is absent. A promotion
@@ -5110,13 +5108,13 @@ button.post-bb-overlay-button {
 }
 @media (max-width: 480px) {
   .table-page {
-    --sp-game-tool-size: 34px;
+    --sp-game-tool-size: 48px;
   }
 }
 /* Compact viewports still reserve the top pod below the jackpot. */
 @media (max-width: 480px) and (max-height: 650px) and (orientation: portrait) {
   .table-container {
-    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
 }
 
@@ -5176,7 +5174,8 @@ button.post-bb-overlay-button {
     /* Small rings retain their declared downward offset; it cannot also
        consume the bottom observer seat's clearance. */
     height: calc(
-      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - var(--sp-observer-clear, 42px) -
+        var(--sp-short-table-drop, 0px)
     );
     max-height: none;
     flex-shrink: 0;
@@ -5219,5 +5218,33 @@ button.post-bb-overlay-button {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     background: rgba(12, 15, 22, 0.98) !important;
+  }
+}
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 4px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-container {
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-hero-clear: clamp(52px, calc(10vw + 24px), 56px);
+  }
+}
+@media (max-width: 380px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 2px;
+  }
+}
+
+/* Short notched phones lift the cards three pixels inside the existing hero lane. */
+@media (min-width: 341px) and (max-width: 480px) and (max-height: 700px) and (orientation: portrait) {
+  .seat .seat__cards--hero {
+    translate: 0 -3px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page[data-hero='false'] .table-scaler {
+    --sp-observer-clear: 38px;
   }
 }

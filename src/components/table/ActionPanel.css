@@ -124,35 +124,19 @@
 /* The phone's preselection and decision rows share one compact footprint.
    Keep the 44px controls usable while reserving their exact border/padding
    sum, including when the street or selected pre-action changes. */
-/* THE BAR'S OWN HOME-INDICATOR ALLOWANCE (Dan 2026-10-22: "if you lower and
-   center the fold call raise buttons we can use that extra padding at the
-   bottom to pull the table and everything else down"). Everywhere but a phone
-   the bar clears the whole inset. On a phone it sits 18px into the 34px
-   home-indicator strip, which still leaves the buttons ~10px clear of the
-   indicator, and it gives 4px of that back on top so the buttons are centred
-   in the visible bar. --sp-bar-drop is what that frees; TablePage.css adds it
-   to the felt's top reserve so the whole table moves down by it, unchanged in
-   size. Every surface stacked above the bar reads --sp-bar-inset, never
-   env(safe-area-inset-bottom) directly, so they all move with it. */
+/* Phone decisions clear the home indicator and keep a 12px lower breathing
+   band even in browsers reporting no safe-area inset. The same static reserve
+   is consumed by preselection, the hero, tools and felt; action changes never
+   resize the table. Owner correction October 27: larger and higher buttons. */
 :root {
   --sp-bar-inset: env(safe-area-inset-bottom, 0px);
   --sp-bar-drop: 0px;
 }
-
 @media (max-width: 480px) {
   :root {
-    --sp-bar-inset: max(0px, calc(env(safe-area-inset-bottom, 0px) - 18px));
-    --sp-bar-drop: calc(
-      env(safe-area-inset-bottom, 0px) - max(0px, calc(env(safe-area-inset-bottom, 0px) - 18px)) -
-        min(4px, env(safe-area-inset-bottom, 0px))
-    );
-  }
-}
-
-@media (max-width: 480px) {
-  :root {
-    --sp-action-btn-h: 44px;
-    --sp-action-pad-top: calc(4px + min(4px, env(safe-area-inset-bottom, 0px)));
+    --sp-bar-inset: max(12px, env(safe-area-inset-bottom, 0px));
+    --sp-action-btn-h: 52px;
+    --sp-action-pad-top: 6px;
   }
 }
 
@@ -1907,4 +1891,28 @@
   font-size: 0.5625rem;
   color: rgba(255, 255, 255, 0.25);
   font-weight: 500;
+}
+
+/* Raise sizing uses the same readable phone targets as the decision row. */
+@media (max-width: 480px) {
+  .raise-confirm,
+  .raise-cancel {
+    height: 52px;
+  }
+  .raise-adjust {
+    width: 48px;
+    height: 48px;
+  }
+  .raise-preset {
+    height: 48px;
+  }
+}
+/* The first-generation 320px phone keeps 48px targets and the reported safe-area
+   inset so nine players still have a readable rail lane. */
+@media (max-width: 340px) and (orientation: portrait) {
+  :root {
+    --sp-action-btn-h: 48px;
+    --sp-bar-inset: env(safe-area-inset-bottom, 0px);
+    --sp-action-pad-top: 4px;
+  }
 }

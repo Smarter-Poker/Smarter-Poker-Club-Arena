@@ -717,16 +717,26 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const navigate = useNavigate();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const launchValues = searchParams.getAll('launch');
+  const approvedLaunchId =
+    launchValues.length === 0 ? undefined : launchValues.length === 1 ? launchValues[0] : '';
   const createParam = searchParams.get('create');
-  const requestedCreate = CREATE_TARGETS.has(createParam as GameCreationTarget)
-    ? (createParam as GameCreationTarget)
-    : null;
+  const requestedCreate =
+    approvedLaunchId !== undefined
+      ? 'table'
+      : CREATE_TARGETS.has(createParam as GameCreationTarget)
+        ? (createParam as GameCreationTarget)
+        : null;
   /* ?create=table&game=<variant>: the config form, still on THIS page. The
      selector used to navigate to /clubs/<host>/create-table/<variant>, which
      from a union console meant leaving the union for a member club's URL. */
   const gameParam = searchParams.get('game');
   const requestedGameType =
-    requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
+    approvedLaunchId !== undefined
+      ? 'plo5'
+      : requestedCreate === 'table' && isCreateTableGameType(gameParam)
+        ? gameParam
+        : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [clubAccess, setClubAccess] = useState<GameCreationAccess | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
@@ -2095,13 +2105,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           <button
             type="button"
             className={styles.creatorBack}
-            onClick={openTableSelector}
+            onClick={approvedLaunchId !== undefined ? clearCreate : openTableSelector}
             aria-label="Back To Game Types"
           >
             Back
           </button>
           <TableConfigPage
-            key={`${hostClubId}:${requestedGameType}`}
+            key={`${hostClubId}:${requestedGameType}${approvedLaunchId === undefined ? '' : `:${approvedLaunchId}`}`}
+            approvedLaunchId={
+              approvedLaunchId === undefined || scope === 'union' ? approvedLaunchId : ''
+            }
             clubIdOverride={hostClubId}
             gameTypeOverride={requestedGameType}
             embedded

@@ -2,6 +2,8 @@
  * database receipts, never process timers, own cadence and restart recovery. */
 import { createHash } from 'node:crypto';
 
+export const CASH_GAME_HORSE_ARRIVALS_VERSION = 1;
+
 export interface ArrivalTable {
   cluster_id?: string | null;
   settings?: unknown;

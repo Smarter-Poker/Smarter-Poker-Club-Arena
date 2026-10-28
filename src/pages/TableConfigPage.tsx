@@ -85,6 +85,7 @@ import {
   type StagePlanDraft,
 } from '../utils/multiDaySchedule';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
+import MidwayPlo5Launch from '../components/cash/MidwayPlo5Launch';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import PageBar from '../components/help/PageBar';
 import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
@@ -504,6 +505,8 @@ export interface TableConfigPageProps {
   embedded?: boolean;
   /** The standalone route's GameCreationGuard already proved club authority. */
   accessPrevalidated?: boolean;
+  /** Explicit approved launch selected by the union console, never a default. */
+  approvedLaunchId?: string;
 }
 
 const PREVALIDATED_STANDALONE_ACCESS: GameCreationAccess = {
@@ -518,6 +521,7 @@ export default function TableConfigPage({
   onExit,
   embedded = false,
   accessPrevalidated = false,
+  approvedLaunchId,
 }: TableConfigPageProps = {}) {
   const params = useParams<{ clubId: string; gameType: string }>();
   const clubId = clubIdOverride || params.clubId;
@@ -2175,6 +2179,22 @@ export default function TableConfigPage({
      or on its own route, it draws its own spade-family frame with the flat
      head. It carries no plates - the form's own footer holds Save and Start -
      so the frame closes on the flat cap. */
+  // Invalid launch IDs remain on the refusing review; they never fall back
+  // to the ordinary creator. The normal form and its controls stay intact.
+  const approvedLaunchContent =
+    approvedLaunchId !== undefined ? (
+      <div className="table-config-page">
+        <MidwayPlo5Launch
+          clubId={clubId || ''}
+          launchId={approvedLaunchId}
+          canBuildHere={canBuildHere}
+          checkingAccess={checkingAccess}
+          deniedMessage={access ? gameCreationDeniedMessage(access) : null}
+          onSaved={onExit ? () => onExit('saved') : undefined}
+        />
+      </div>
+    ) : null;
+
   const frame = (
     <SpadeConsole
       title={`${gameInfo.name} Setup`}
@@ -2184,7 +2204,7 @@ export default function TableConfigPage({
       foot="foot"
       aria-labelledby="table-config-title"
     >
-      {content}
+      {approvedLaunchId !== undefined ? approvedLaunchContent : content}
     </SpadeConsole>
   );
 

@@ -887,6 +887,29 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
   }
 }
 
+/** Refuses the approved launch while an older engine is still serving. */
+export async function isCashGameHorseArrivalsReady(): Promise<boolean> {
+  try {
+    const response = await engineFetchWithin(
+      `${GAME_SERVER_URL}/health`,
+      { cache: 'no-store' },
+      8_000
+    );
+    if (!response.ok) return false;
+    const health: unknown = await response.json();
+    return (
+      health !== null &&
+      typeof health === 'object' &&
+      !Array.isArray(health) &&
+      (health as Record<string, unknown>).status === 'ok' &&
+      (health as Record<string, unknown>).cashGameHorseArrivalsVersion === 1
+    );
+  } catch (error) {
+    reportError(error, 'GameServerAPI.cashGameHorseArrivalsReadiness');
+    return false;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLAYER LIFECYCLE — Heartbeat, Sit-Out, Pre-Actions, Straddle
 // ═══════════════════════════════════════════════════════════════════════════════

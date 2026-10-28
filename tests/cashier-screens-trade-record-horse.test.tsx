@@ -147,11 +147,35 @@ describe('the Trade record prints a treasury-funded seat as a Club Bank send', (
     mockClub([horseRow, humanRow]);
     await openRecord();
     fireEvent.click(
-      await screen.findByRole('button', { name: /Managed Transfer Club Bank To Midnight Run/ })
+      await screen.findByRole('button', { name: /Chip Movement Club Bank To Midnight Run/ })
     );
     expect(
       await screen.findByText("The Club Bank Sent 500 To Midnight Run's Player Wallet")
     ).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/horse/i);
+  });
+  it('opens Today and Latest Transactions with chip movements only', async () => {
+    mockClub([]);
+    await openRecord();
+    expect(screen.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Latest Transactions', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Chip Movements', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.queryByRole('button', { name: 'Managed', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Games', exact: true })).not.toBeInTheDocument();
+    const feed = vi
+      .mocked(supabase.rpc)
+      .mock.calls.find(([name]) => name === 'fn_cashier_history_feed');
+    expect(feed?.[1]).toMatchObject({ p_scope: 'club', p_kind: 'all', p_limit: 51 });
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    expect(feed?.[1]?.p_from).toBe(midnight.toISOString());
   });
 });

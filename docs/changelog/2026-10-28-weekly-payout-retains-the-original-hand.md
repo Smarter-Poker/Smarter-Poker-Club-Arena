@@ -1,0 +1,11 @@
+# Weekly payouts retain the original live hand
+
+The weekly phase now belongs to the original accounting DUE transaction and an immutable global operation token. Preparation keeps historical earning/rate authority. Financial execution preserves the order of every club funding pass, every gross agent pass, and then every secondary player/horse pass, with the original financial owners and idempotent receipts.
+
+The 03:58 Chicago announcement stops new hands. A database-relative 04:00 edge holds each existing hand and its original action, time-bank, disconnect, horse, pineapple, insurance, run-choice and safety callbacks. Cards, pots, current turns, consent and unspent decision windows remain in custody. Accepted writes must finish before the fleet ACK; success and failure continuations wait at the same original barrier. New table adoptions inherit that owner. Weekly completion cannot release daily maintenance or hand-for-hand; overlapping daily maintenance retains hand custody until its own resume edge.
+
+The same original DUE statement waits for the physical fleet ACK without locking the row needed by the independent ACK transaction. Waiting consumes its existing budget; admission retains the original 180-second financial reserve, 240-second statement/money deadline and five-minute gameplay ceiling. Missing or foreign custody refuses all money. No new scheduler, repair payer, global bypass, hand restart, void or settled-record rewrite supplies correctness.
+
+Validation: 272 focused connected/affected engine tests; a separate 114-test supporting timer/offer regression run; TypeScript compilation; the native pause/calendar/lease protocol; and eight isolated PostgreSQL financial cases including a real second-backend ACK while the original DUE waits, all original rounds, invoices, conservation, replay and rollback. Existing source guards now name the timer-custody helpers. Both native suites execute in the existing required accounting shard.
+
+These are source and isolated qualification results. Protected provider checks, exact production installation, certified engine activation and natural Monday behavior remain separate evidence. Native fixtures explicitly adapt precomputed inventory, external mint transport and historical statement time; they do not prove production fleet capacity or a future week's payout.

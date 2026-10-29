@@ -14,7 +14,7 @@ const input = () => ({
     PRIVATE_RECORD_GATEWAY_DATABASE_URL:
       'postgresql://ca_record_gateway:fixture@db.example:5432/postgres',
     SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY: 'fixture-only',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx',
   },
 });
 const state = () => ({
@@ -111,11 +111,19 @@ test('rollback refuses to overwrite concurrent aggregate changes', () => {
 });
 test('canonical config refuses multiline injection and unrecognized environment keys', () => {
   const a = input();
-  a.environment.SUPABASE_SERVICE_ROLE_KEY = 'fixture\nOVERRIDE=1';
+  a.environment.SUPABASE_PUBLISHABLE_KEY = 'fixture\nOVERRIDE=1';
   assert.throws(() => validateBootstrap(a, state()));
   const b = input();
   b.environment.PRIVATE_RECORD_GATEWAY_SOCKET = '/tmp/override';
   assert.throws(() => validateBootstrap(b, state()));
+});
+test('bootstrap refuses service capability, even under a publishable key name', () => {
+  const broad = input();
+  broad.environment.SUPABASE_SERVICE_ROLE_KEY = 'service-role-fixture';
+  assert.throws(() => validateBootstrap(broad, state()), /exact canonical/);
+  const mislabeled = input();
+  mislabeled.environment.SUPABASE_PUBLISHABLE_KEY = 'service-role-fixture';
+  assert.throws(() => validateBootstrap(mislabeled, state()), /pinned publishable/);
 });
 test('dedicated privilege grant preserves estate identity and source is provider-only', () => {
   const sudoers = readFileSync(
@@ -152,6 +160,8 @@ test('protected publisher selects bootstrap explicitly and uses distinct credent
   assert.match(bootstrap, /inputs.component == 'private-record-bootstrap'/);
   assert.match(bootstrap, /secrets.CA_RECORD_GATEWAY_SSH_KEY/);
   assert.match(bootstrap, /secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD/);
+  assert.doesNotMatch(bootstrap, /secrets\.SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(bootstrap, /SUPABASE_PUBLISHABLE_KEY: process\.env\.API_KEY/);
   assert.ok(
     bootstrap.indexOf('Required canonical configuration') < bootstrap.indexOf('sudo -n mkdir')
   );
@@ -184,7 +194,12 @@ test('bootstrap and activation use one normalized actual machine-id identity', (
 });
 
 test('reviewed preimage binds exact independently observed origin bytes', () => {
-  const bytes = readFileSync(new URL('../../infra/ca-origin/private-record-gateway.caddy-preimage', import.meta.url));
+  const bytes = readFileSync(
+    new URL('../../infra/ca-origin/private-record-gateway.caddy-preimage', import.meta.url)
+  );
   assert.equal(bytes.length, 4880);
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), 'cbf77db44f27c7d3640362be6e8271218a85ec3ba808973b89930515f2931d79');
+  assert.equal(
+    createHash('sha256').update(bytes).digest('hex'),
+    'cbf77db44f27c7d3640362be6e8271218a85ec3ba808973b89930515f2931d79'
+  );
 });

@@ -121,6 +121,11 @@ test('PUBLIC table/column writes, privileged routine execution, membership and o
   const drift = audit();
   drift.executableDefiners = [{ name: 'public.get_daily_challenge', hash: '0'.repeat(32) }];
   assert.throws(() => assertRoleAdmission(drift));
+  assert.match(roleAdmissionSql, /'inaccessibleRelationGrants'/);
+  assert.match(
+    roleAdmissionSql,
+    /'writableRelations',[\s\S]*?AND has_schema_privilege\('ca_record_gateway',n\.oid,'USAGE'\) AND \(has_table_privilege/
+  );
   assert.match(roleAdmissionSql, /has_any_column_privilege/);
   assert.match(roleAdmissionSql, /has_function_privilege/);
 });

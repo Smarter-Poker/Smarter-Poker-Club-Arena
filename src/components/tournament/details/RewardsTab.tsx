@@ -90,6 +90,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
+import { subscribeTournamentStandings } from '../../../services/tournamentStandingsUpdates';
 import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
@@ -170,6 +171,7 @@ function pct(n: number): string {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 interface BountyLedger {
+  tournamentId?: string;
   /** Heads still sitting on live players, i.e. prizes nobody has pulled. */
   liveHeads: number[];
   /** Every head already claimed, from the tournament_bounties ledger. */
@@ -219,18 +221,28 @@ const MAX_PAGES = 100;
  * a caller that destructures only `.data` turns every failure into an empty
  * result. See the catch in the loader.
  */
-async function fetchAllRows<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>
+async function fetchAllRows<T extends { id: string }>(
+  page: (cursor: string | null) => PromiseLike<{ data: unknown; error: unknown }>,
+  isCurrent: () => boolean
 ): Promise<T[]> {
   const out: T[] = [];
+  let cursor: string | null = null;
   for (let i = 0; i < MAX_PAGES; i++) {
-    const { data, error } = await page(i * PAGE, (i + 1) * PAGE - 1);
+    if (!isCurrent()) throw new Error('Bounty ledger read retired');
+    const { data, error } = await page(cursor);
+    if (!isCurrent()) throw new Error('Bounty ledger read retired');
     if (error) throw error;
-    const rows = (data || []) as T[];
+    if (!Array.isArray(data)) throw new Error('Bounty ledger response is not an array');
+    const rows = data as T[];
+    for (const row of rows) {
+      if (typeof row.id !== 'string' || !row.id || (cursor !== null && row.id <= cursor))
+        throw new Error('Bounty ledger cursor did not advance');
+      cursor = row.id;
+    }
     out.push(...rows);
     if (rows.length < PAGE) return out;
   }
-  return out;
+  throw new Error('Bounty ledger exceeded the complete-read limit');
 }
 
 /**
@@ -302,48 +314,62 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     [unitCents]
   );
 
-  const [ledger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
+  const [ownedLedger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
+  const ledger = ownedLedger.tournamentId === tournamentId ? ownedLedger : EMPTY_LEDGER;
 
-  /* A KNOCKOUT MOVES THE POOL (2026-10-04 review pass). The two bounty reads
-     ran once, when the tab opened, so "Claimed", the knockout count and - on
-     an event whose pool is the heads themselves - "Still Available" sat at
-     their opening values for as long as the tab stayed on screen while the
-     field busted around them. Every bounty is paid on an elimination, and the
-     page already streams those into `entries`, so the count of players out is
-     the signal: the same two reads run again when it changes, and never on a
-     timer. The figures on screen are kept until the new ones land. */
-  const playersOut = useMemo(() => entries.filter(isPlayerOut).length, [entries]);
-
-  /* Two queries, bounty events only, cancelled on unmount. */
+  /* Committed standings/lifecycle events invalidate the ledger even when the
+     number of eliminated players stays unchanged (rebuy, bounty settlement,
+     or reconnect). One in-flight read plus one trailing invalidation prevents
+     concurrent responses from overwriting newer data. */
   useEffect(() => {
     if (!tournamentId || !isBountyEvent) {
       setLedger(EMPTY_LEDGER);
       return;
     }
     let cancelled = false;
-
-    (async () => {
+    let inFlight = false;
+    let requested = false;
+    const load = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        requested = true;
+        return;
+      }
+      inFlight = true;
       try {
         const [live, claimed] = await Promise.all([
-          fetchAllRows<{ current_bounty: unknown; status: string | null }>((from, to) =>
-            supabase
-              .from('tournament_players')
-              .select('current_bounty, status')
-              .eq('tournament_id', tournamentId)
-              .gt('current_bounty', 0)
-              .range(from, to)
+          fetchAllRows<{ id: string; current_bounty: unknown; status: string | null }>(
+            (cursor) => {
+              let query = supabase
+                .from('tournament_players')
+                .select('id, current_bounty, status')
+                .eq('tournament_id', tournamentId)
+                .gt('current_bounty', 0)
+                .order('id', { ascending: true })
+                .limit(PAGE);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            () => !cancelled
           ),
-          fetchAllRows<{ bounty_amount: unknown }>((from, to) =>
-            supabase
-              .from('tournament_bounties')
-              .select('bounty_amount')
-              .eq('tournament_id', tournamentId)
-              .range(from, to)
+          fetchAllRows<{ id: string; bounty_amount: unknown }>(
+            (cursor) => {
+              let query = supabase
+                .from('tournament_bounties')
+                .select('id, bounty_amount')
+                .eq('tournament_id', tournamentId)
+                .order('id', { ascending: true })
+                .limit(PAGE);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            () => !cancelled
           ),
         ]);
         if (cancelled) return;
 
         setLedger({
+          tournamentId,
           /* A head belongs to a player still in (2026-10-26 audit). Before the
              money a mystery bust pays nothing and leaves its head on the row,
              so counting every row put 162 knocked-out players' heads back
@@ -369,19 +395,27 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
              network wobble during a knockout must not swap real figures for
              "Could Not Be Read". Only a first read that fails says so. */
           setLedger((prev) =>
-            prev.loaded && !prev.failed
+            prev.tournamentId === tournamentId && prev.loaded && !prev.failed
               ? prev
-              : { liveHeads: [], claimedHeads: [], loaded: true, failed: true }
+              : { tournamentId, liveHeads: [], claimedHeads: [], loaded: true, failed: true }
           );
           reportError(e, 'RewardsTab.bounty_ledger_load_failed');
         }
+      } finally {
+        inFlight = false;
+        if (!cancelled && requested) {
+          requested = false;
+          void load();
+        }
       }
-    })();
-
+    };
+    const unsubscribe = subscribeTournamentStandings(tournamentId, () => void load());
+    void load();
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [tournamentId, isBountyEvent, playersOut]);
+  }, [tournamentId, isBountyEvent]);
 
   /* ── FIELD STATE ──────────────────────────────────────────────────────── */
 

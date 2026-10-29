@@ -24,7 +24,7 @@ describe('the mystery numbers come from one source', () => {
 
   it('the head fallback counts only players still in', () => {
     const rw = read('src/components/tournament/details/RewardsTab.tsx');
-    expect(rw).toContain(".select('current_bounty, status')");
+    expect(rw).toContain(".select('id, current_bounty, status')");
     expect(rw).toMatch(/liveHeads: live\s*\.filter\(\(r\) => isStillIn\(/);
   });
 

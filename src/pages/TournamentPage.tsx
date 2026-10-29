@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 /**
  * ♠ CLUB ARENA — Tournament Lobby Page
@@ -144,7 +145,7 @@ export default function TournamentPage() {
       big_blind: number | null;
     }>
   >([]);
-  const [filter, setFilter] = useState<TournFilter>('all');
+  const [filter, setFilter] = usePlayerPreference<TournFilter>('TournamentPage:filter', 'all');
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -297,7 +298,6 @@ export default function TournamentPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setFilter('all');
     setSelectedTournament(null);
     setShowCreateModal(false);
     setIsRegistered(false);

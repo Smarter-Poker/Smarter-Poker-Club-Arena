@@ -17,6 +17,18 @@ const candidate = previous
 const digest = (text: string) => createHash('md5').update(text).digest('hex');
 
 describe('an interrupted postflop hand preserves original principal', () => {
+  it('declares one boolean live-proof expression with the unchanged installed function hash', () => {
+    const proofs = [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((match) => match[1]);
+    expect(proofs).toHaveLength(1);
+    const proof = proofs[0];
+    expect(proof).not.toMatch(/^\s*SELECT\b/i);
+    expect(proof).not.toMatch(/\bAS\s+installed\b/i);
+    expect(proof).not.toContain(';');
+    expect(proof).toBe(
+      "md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'"
+    );
+    expect(digest(candidate)).toBe('e416f1fa850c85d656ec55ddfae3386d');
+  });
   it('requires the exact chronologically preceding recorded emergency and played-clock floor', () => {
     expect(digest(emergency)).toBe('8fb3869ea1cac37357e482a0bb0f661c');
     expect(digest(previous)).toBe('52e7b71547751e500fa10b59185bd456');

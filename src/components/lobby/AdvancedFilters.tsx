@@ -1,3 +1,4 @@
+import { awaitPreferenceSave } from '../../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ADVANCED FILTERS — the per-game-type preferences sheet
@@ -255,8 +256,10 @@ function currentUserId(): string | null {
 }
 
 /** Read the saved filters for this club from the database, or null. */
-export async function fetchRemoteFilters(clubId: string): Promise<FilterStore | null> {
-  const userId = currentUserId();
+export async function fetchRemoteFilters(
+  clubId: string,
+  userId = currentUserId()
+): Promise<FilterStore | null> {
   if (!userId || !clubId) return null;
   try {
     const { data, error } = await supabase
@@ -294,23 +297,30 @@ export async function fetchRemoteFilters(clubId: string): Promise<FilterStore | 
  * the next lobby open (hasUnsyncedFilters) instead of the older row
  * overwriting the newer choice.
  */
+const filterVersions = new Map<string, number>();
 const pendingFilterWrites = new Map<string, Promise<void>>();
 
-export function pushRemoteFilters(clubId: string, store: FilterStore): void {
-  const userId = currentUserId();
+export function pushRemoteFilters(
+  clubId: string,
+  store: FilterStore,
+  userId = currentUserId()
+): void {
   if (!userId || !clubId) return;
   const key = `${userId}:${clubId}`;
+  const version = filterVersions.get(key) ?? 0;
   markUnsynced(unsyncedKey(clubId, userId), true);
   const write = async (): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('user_lobby_filters').upsert(
-        {
-          user_id: userId,
-          club_id: clubId,
-          filters: store,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,club_id' }
+      const { error } = await awaitPreferenceSave(
+        supabase.from('user_lobby_filters').upsert(
+          {
+            user_id: userId,
+            club_id: clubId,
+            filters: store,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,club_id' }
+        )
       );
       if (error) {
         if (!isAbortedRequest(error)) {
@@ -328,7 +338,11 @@ export function pushRemoteFilters(clubId: string, store: FilterStore): void {
   };
   const previous = pendingFilterWrites.get(key);
   const pending: Promise<void> = (previous ? previous.then(write) : write()).then((ok) => {
-    if (ok && pendingFilterWrites.get(key) === pending) {
+    if (
+      ok &&
+      pendingFilterWrites.get(key) === pending &&
+      (filterVersions.get(key) ?? 0) === version
+    ) {
       markUnsynced(unsyncedKey(clubId, userId), false);
     }
   });
@@ -351,9 +365,17 @@ export function hasUnsyncedFilters(clubId: string, userId = currentUserId()): bo
  * beside them did. Each chip is one discrete tap, so it is written at once;
  * pushRemoteFilters keeps the taps in order.
  */
+export function stageFilters(clubId: string, store: FilterStore, userId = currentUserId()): void {
+  saveFilters(clubId, store, userId);
+  if (!userId) return;
+  const key = `${userId}:${clubId}`;
+  filterVersions.set(key, (filterVersions.get(key) ?? 0) + 1);
+  markUnsynced(unsyncedKey(clubId, userId), true);
+}
+
 export function persistFilters(clubId: string, store: FilterStore): void {
   if (!clubId) return;
-  saveFilters(clubId, store);
+  stageFilters(clubId, store);
   pushRemoteFilters(clubId, store);
 }
 
@@ -396,7 +418,17 @@ export default function AdvancedFilters({
     // ALL has no spec of its own; open on Hold'em, the first that does.
     initialType === 'ALL' ? 'HOLDEM' : initialType
   );
-  const [store, setStore] = useState<FilterStore>(() => loadFilters(clubId));
+  const ownerId = useRef(currentUserId()).current;
+  const [store, setStore] = useState<FilterStore>(() => loadFilters(clubId, ownerId));
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  const chooseStore = (next: FilterStore) => {
+    touchedRef.current = true;
+    storeRef.current = next;
+    stageFilters(clubId, next, ownerId);
+    setStore(next);
+    onApply(next);
+  };
 
   /* SAVE ON CLICK (Dan 2026-08-30): every filter interaction persists the
      moment it happens, not only when Apply is tapped. Before this, tapping
@@ -415,7 +447,8 @@ export default function AdvancedFilters({
     // THIS DEVICE, IMMEDIATELY. localStorage is synchronous and free, so the
     // choice is durable the instant it is made - that is what "saves when
     // clicked" means and it must not wait on a network.
-    saveFilters(clubId, store);
+    if (!touchedRef.current) return;
+    saveFilters(clubId, store, ownerId);
 
     /* THE DATABASE, DEBOUNCED - AND THIS IS NOT AN OPTIMISATION.
        The blinds and seat controls are <input type="range">, whose onChange
@@ -432,7 +465,7 @@ export default function AdvancedFilters({
       remoteTimerRef.current = null;
       const pending = pendingRemoteRef.current;
       pendingRemoteRef.current = null;
-      if (pending) pushRemoteFilters(clubId, pending);
+      if (pending) pushRemoteFilters(clubId, pending, ownerId);
     }, REMOTE_SYNC_DEBOUNCE_MS);
   }, [clubId, store]);
 
@@ -449,7 +482,7 @@ export default function AdvancedFilters({
       }
       const pending = pendingRemoteRef.current;
       pendingRemoteRef.current = null;
-      if (pending) pushRemoteFilters(clubId, pending);
+      if (pending) pushRemoteFilters(clubId, pending, ownerId);
     };
   }, [clubId]);
 
@@ -463,9 +496,9 @@ export default function AdvancedFilters({
   useEffect(() => {
     // A store this device never got confirmed is newer than the row; the
     // lobby already re-sent it, so the row must not redraw the sheet backwards.
-    if (hasUnsyncedFilters(clubId)) return;
+    if (hasUnsyncedFilters(clubId, ownerId)) return;
     let cancelled = false;
-    void fetchRemoteFilters(clubId).then((remote) => {
+    void fetchRemoteFilters(clubId, ownerId).then((remote) => {
       if (cancelled || !remote || touchedRef.current) return;
       setStore((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
     });
@@ -544,8 +577,7 @@ export default function AdvancedFilters({
   const patch = useCallback(
     (next: Partial<GameFilterValue>) => {
       // Any edit here outranks a remote value still in flight.
-      touchedRef.current = true;
-      setStore((prev) => ({ ...prev, [activeType]: { ...value, ...next } }));
+      chooseStore({ ...storeRef.current, [activeType]: { ...value, ...next } });
     },
     [activeType, value]
   );
@@ -920,8 +952,7 @@ export default function AdvancedFilters({
                 // Reset does not go through patch(), so it marks the sheet
                 // touched itself - otherwise a remote value still in flight
                 // could land on top of a deliberate clear.
-                touchedRef.current = true;
-                setStore((prev) => ({ ...prev, [activeType]: emptyFilterValue(spec) }));
+                chooseStore({ ...storeRef.current, [activeType]: emptyFilterValue(spec) });
               }}
             >
               Reset {activeTypeLabel}
@@ -929,7 +960,7 @@ export default function AdvancedFilters({
             <button
               className="afx-btn afx-btn--save"
               onClick={() => {
-                saveFilters(clubId, store);
+                saveFilters(clubId, store, ownerId);
                 onApply(store);
                 onClose();
               }}

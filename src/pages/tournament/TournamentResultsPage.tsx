@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ♠ CLUB ARENA — Tournament Results History Page
  * Shows completed tournaments with final standings, prizes, and stats.
@@ -192,8 +193,12 @@ export default function TournamentResultsPage() {
   ];
   const filterParam = searchParams.get('filter');
   const typeParam = searchParams.get('type');
-  const [filter, setFilter] = useState<'all' | 'mine'>(filterParam === 'mine' ? 'mine' : 'all');
-  const [typeFilter, setTypeFilter] = useState<string>(
+  const [filter, setFilter] = usePlayerPreference<'all' | 'mine'>(
+    'tournament/TournamentResultsPage:filter',
+    filterParam === 'mine' ? 'mine' : 'all'
+  );
+  const [typeFilter, setTypeFilter] = usePlayerPreference<string>(
+    'tournament/TournamentResultsPage:typeFilter',
     typeParam && VALID_TYPE_FILTERS.includes(typeParam) ? typeParam : 'all'
   );
   const [activeTab, setActiveTab] = useState<'standings' | 'hands'>('standings');
@@ -202,7 +207,10 @@ export default function TournamentResultsPage() {
    * place. "Total Payout" is the second view precisely so the fact that a lower
    * finisher can top the money list is visible rather than implied.
    */
-  const [resultSort, setResultSort] = useState<ResultSort>('finish');
+  const [resultSort, setResultSort] = usePlayerPreference<ResultSort>(
+    'tournament/TournamentResultsPage:resultSort',
+    'finish'
+  );
   /** Mystery bounty split for the selected event. Empty for every other format. */
   const [mysteryRead, setMysteryRead] = useState<
     ArchiveRead<{

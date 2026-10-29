@@ -289,7 +289,7 @@ it('shows the authorized fees generated, never the wallet, and opens the existin
   await act(async () => {
     await vi.advanceTimersByTimeAsync(110);
   });
-  expect(screen.getByText('12.3K')).toBeInTheDocument();
+  expect(screen.getByText('12,345.00')).toBeInTheDocument();
   expect(screen.getByText('Fees Generated')).toBeInTheDocument();
   expect(screen.queryByText('98.7K')).not.toBeInTheDocument();
   expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();

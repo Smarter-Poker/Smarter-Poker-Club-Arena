@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Anti-Cheat Dashboard
@@ -202,7 +203,7 @@ export default function AntiCheatPage() {
   /** Names of every account a flag mentions, the flagged player and the others. */
   const [flagNames, setFlagNames] = useState<Record<string, string>>({});
   const [flagsLoaded, setFlagsLoaded] = useState(false);
-  const [flagFilter, setFlagFilter] = useState('open');
+  const [flagFilter, setFlagFilter] = usePlayerPreference('AntiCheatPage:flagFilter', 'open');
 
   // Events
   const [events, setEvents] = useState<AntiCheatEvent[]>([]);

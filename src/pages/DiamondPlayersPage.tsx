@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE DIAMOND ARENA'S PLAYERS PAGE (2026-09-29)
@@ -102,7 +103,10 @@ export default function DiamondPlayersPage() {
   const [cursor, setCursor] = useState<DiamondRosterCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
-  const [filter, setFilter] = useState<DiamondRosterFilter>('all');
+  const [filter, setFilter] = usePlayerPreference<DiamondRosterFilter>(
+    'DiamondPlayersPage:filter',
+    'all'
+  );
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);

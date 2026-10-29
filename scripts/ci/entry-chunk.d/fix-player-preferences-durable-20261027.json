@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/player-preferences-durable-20261027 - The small account-scoped preference journal and revision guard must be read synchronously before first-paint hydration so older database reads cannot replace unsynced choices. Its dependency-free mutation ID generator stages a stable identity in the same user gesture, before navigation or interruption. Network save code remains lazy; numeric bundle budgets and the shared baseline are unchanged.",
+  "modules": ["src/lib/mutationId.ts", "src/lib/tableSettingIntents.ts"]
+}

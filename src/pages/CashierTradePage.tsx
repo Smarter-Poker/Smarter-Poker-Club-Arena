@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import {
   SEND_SOURCE_LABELS,
   SEND_DESTINATION_LABELS,
@@ -592,9 +593,12 @@ function CashierTradeWorkspace() {
 
   const [search, setSearch] = useState('');
   const rosterSearchRef = useRef<HTMLInputElement>(null);
-  const [roleFilter, setRoleFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = usePlayerPreference('CashierTradePage:roleFilter', 'all');
   const [groupByRole, setGroupByRole] = useState(false);
-  const [sortKey, setSortKey] = useState<'recent' | 'balance' | 'name'>('recent');
+  const [sortKey, setSortKey] = usePlayerPreference<'recent' | 'balance' | 'name'>(
+    'CashierTradePage:sortKey',
+    'recent'
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(25);
 
@@ -1474,7 +1478,6 @@ function CashierTradeWorkspace() {
     // to a club where you have no assigned players left the filter stuck ON
     // with the only control that clears it greyed out - reload was the way out.
     setMineOnly(false);
-    setRoleFilter('all');
     setRecordQuery('');
     setRecordDirection('all');
     setHistorySearch('');

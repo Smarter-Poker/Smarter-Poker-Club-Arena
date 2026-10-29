@@ -54,20 +54,22 @@ describe('Player Management shows fees generated', () => {
   it('prints the fee figure and never the wallet in Simple mode', () => {
     render(simpleRow({}));
     expect(screen.getByText('Fees Generated')).toBeVisible();
-    expect(screen.getByText('12.3K')).toBeVisible();
+    expect(screen.getByText('12,345.67')).toBeVisible();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
   });
 
   it('adds downline fees for an agent with a downline', () => {
     render(simpleRow({ role: 'agent', downline_total: 4, downline_fees: 2_500 }));
-    expect(screen.getByText('Downline 2.5K')).toBeVisible();
+    expect(screen.getByText('Downline 2,500.00')).toBeVisible();
   });
 
   it('does not floor small fees to zero', () => {
-    expect(feeFigure(0.5)).toBe('0.5');
+    expect(feeFigure(0.5)).toBe('0.50');
     expect(feeFigure(999.25)).toBe('999.25');
-    expect(feeFigure(1_200)).toBe('1.2K');
+    expect(feeFigure(1_200)).toBe('1,200.00');
+    expect(feeFigure(3.5)).toBe('3.50');
+    expect(feeFigure(31_400.25)).toBe('31,400.25');
     expect(feeFigure(null)).toBe('Restricted');
   });
 
@@ -101,12 +103,14 @@ describe('Player Management shows fees generated', () => {
     expect(sql).toContain('greatest(coalesce(p_from, public.fn_ca_fee_counting_start()),');
     expect(sql).toContain('d.day >= b.from_day');
     expect(sql).toContain('t.day >= b.from_day');
-    const body = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals'));
+    const body = sql.slice(
+      sql.indexOf('CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals')
+    );
     expect(body.slice(0, body.indexOf('$function$;'))).not.toContain('fn_ca_fee_week_start');
     expect(sql).not.toMatch(/\b(DELETE|TRUNCATE|UPDATE)\b/);
   });
 
-  it('counts fees from this week\'s Monday reset only, without touching the ledgers', () => {
+  it("counts fees from this week's Monday reset only, without touching the ledgers", () => {
     const sql = readFileSync(
       resolve(
         process.cwd(),

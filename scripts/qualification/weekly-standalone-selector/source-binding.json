@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+      "bytes": 249502,
+      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -840,5 +840,68 @@
     "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244685,
+          "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+        },
+        "current": {
+          "bytes": 245583,
+          "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+        }
+      }
+    },
+    "execution_performed": false
+  },
+  "weeklyPauseOriginalContinuationComposition20261029": {
+    "review": "Reviewed merged protected-main weekly payout shard 1 physical-pause and financial-phase native steps/artifact alongside the additive 14-line original-continuation shard 3 native step/artifact. Classifier preserves weekly selection and adds only continuation/floor helper, builder, schema, probe and fixture alternatives. Preserve both parent audit histories and all financial SQL, fixture, assertion, budget, status and qualification-command inputs. Only current shared CI/classifier identities and directly dependent binding identities are refreshed. This composition is not renewed financial certification, execution, installation or production evidence.",
+    "main": "ac6a6207042e7671a22803b6e127dbe36afd8e0e",
+    "candidateBeforeMerge": "21a5497b3684e42bdb77e783ee68a6ec97da90f5",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "continuation_parent": {
+          "bytes": 245583,
+          "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+        },
+        "weekly_parent": {
+          "bytes": 245805,
+          "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+        },
+        "current": {
+          "bytes": 246703,
+          "sha256": "3bff56a5b32cab54435398564354a47f405dd8526ec7fea88f917bcba4e2a42a"
+        }
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "organizationUiContinuationComposition20261029": {
+    "review": "Composed both parent audit histories without loss. Reviewed protected runner/org-identity selection, presentation-only UI scope wrapper and its negative/source contract changes, retaining original financial/native accounting steps and continuation/floor lane selection. Only reviewed shared workflow/classifier/fixtureNativeCi test identities and directly dependent binding-file identities change; no monetary SQL, original financial fixture, amounts, assertions, native financial commands, limits or qualification status is altered. Matching identity is not renewed native financial execution, installation or production certification.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "candidateBeforeMerge": "de21f4ef570c5af97e08db4de3f633773213e8aa",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "continuation_parent": {
+          "bytes": 246703,
+          "sha256": "3bff56a5b32cab54435398564354a47f405dd8526ec7fea88f917bcba4e2a42a"
+        },
+        "protected_main": {
+          "bytes": 248604,
+          "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+        },
+        "current": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        }
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
   }
 }

@@ -2484,6 +2484,20 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: Durable private original hands survive restart and settle once
+        id: hand_continuation
+        if: matrix.shard == 3
+        env:
+          PG_ISOLATION_TESTER: ${{ github.workspace }}/artifacts/postgresql-17-isolationtester/toolchain/lib/pgxs/src/test/isolation/isolationtester
+        run: python3 scripts/ci/test-hand-continuation.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/hand-continuation --socket-root "$RUNNER_TEMP"
+      - name: Retain durable original continuation proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_continuation.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hand-continuation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hand-continuation/
+          if-no-files-found: error
+          retention-days: 7
       - name: The accepted actor roster is produced inside the settlement transaction
         id: accepted_hand_roster
         if: matrix.shard == 3

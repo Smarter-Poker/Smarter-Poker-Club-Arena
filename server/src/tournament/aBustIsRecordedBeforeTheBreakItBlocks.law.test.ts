@@ -245,6 +245,7 @@ describe('the continuation cursor gives an earlier stage its turn back, never tw
 
 function balanceStageManager() {
   const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+  manager.recoveredOriginalAdmissions = new Map();
   Object.assign(manager, {
     tournamentId: 'aaaaaaaa-0000-4000-8000-000000000001',
     running: true,

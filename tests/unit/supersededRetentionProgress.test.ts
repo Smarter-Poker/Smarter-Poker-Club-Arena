@@ -1,10 +1,29 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 describe('superseded action retention progress remains enforced', () => {
+  it('binds the uninstalled migration to independently captured exact cron bytes', () => {
+    const capture = JSON.parse(
+      readFileSync('scripts/ci/fixtures/superseded-action-preimages.json', 'utf8')
+    ).retention_cron_preimage;
+    expect(Buffer.byteLength(capture.command)).toBe(301);
+    expect(createHash('md5').update(capture.command).digest('hex')).toBe(
+      '96244362bf46b39e75ef1100b1372203'
+    );
+    expect(capture.command_md5).toBe('96244362bf46b39e75ef1100b1372203');
+    const sql = readFileSync(
+      'supabase/migrations/20261028215328_superseded_action_retention_progresses_at_its_existing_owner.sql',
+      'utf8'
+    );
+    expect(sql.match(/expected text:=\$original\$([\s\S]*?)\$original\$/)?.[1]).toBe(
+      capture.command
+    );
+  });
+
   it.each([
     'scripts/ci/test-superseded-retention-progress.py',
     'tests/unit/supersededRetentionProgress.test.ts',

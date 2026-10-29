@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {request,invocation,health,receipt,remoteCommand} from './v31-explicit-load.mjs';
 const p={operation:'reload',sourceSha:'a'.repeat(40),requestId:'11111111-1111-4111-8111-111111111111',datasetId:'22222222-2222-4222-8222-222222222222',checksum:'b'.repeat(64),cellCount:107,workerCount:8};
 const encode=v=>Buffer.from(JSON.stringify(v)).toString('base64');
@@ -23,6 +24,7 @@ test('before requires eight healthy serving workers and after additionally prove
 });
 test('fixed provider invocation preserves the live container and cannot build, promote or restart',()=>{
  const c=remoteCommand(p);
+ for(const operation of ['reload','status']){const command=remoteCommand({...p,operation}),inner=command.slice(9,-1).replaceAll("'\\''","'");assert.equal(spawnSync('bash',['-n'],{input:inner,encoding:'utf8'}).status,0,'actual generated Bash must parse');}
  for(const s of ['flock -n 9','TZ=America/Chicago','reloadPublic215Stores.js reload','result_code=$?','"$before" = "$after"'])assert.ok(c.includes(s));
  assert.ok(remoteCommand({...p,operation:'status'}).includes('reloadPublic215Stores.js status'));
  assert.doesNotMatch(c,/docker (?:run|build|pull|restart|stop|rm)|systemctl|--env-file|Config.Env|\.env|promot/);

@@ -4,7 +4,7 @@
 -- Add only the separately qualified branch; retain both owners' complete body.
 -- Retained modern capsules remain fenced by their original permit/snapshot
 -- disposition guards. Unknown source, custody or principal refuses atomically.
--- @live-proof: md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'
+-- @live-proof: SELECT md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d' AS installed;
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='15s';

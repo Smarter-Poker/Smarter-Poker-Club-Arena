@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { declaredProofs } from '../scripts/ci/check-migrations-are-live.mjs';
 
 const read = (path: string) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const home = 'scripts/ci/probes/f06-shared-hand-lane/interrupted-postflop/';
@@ -18,7 +19,7 @@ const digest = (text: string) => createHash('md5').update(text).digest('hex');
 
 describe('an interrupted postflop hand preserves original principal', () => {
   it('declares one boolean live-proof expression with the unchanged installed function hash', () => {
-    const proofs = [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((match) => match[1]);
+    const proofs = declaredProofs(sql);
     expect(proofs).toHaveLength(1);
     const proof = proofs[0];
     expect(proof).not.toMatch(/^\s*SELECT\b/i);

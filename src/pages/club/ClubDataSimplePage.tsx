@@ -412,10 +412,8 @@ export default function ClubDataSimplePage() {
     const controller = new AbortController();
     let dead = false;
     const key = scopeKey;
-    void ClubRosterService.getRosterPage(clubUuid, {
+    void ClubRosterService.getDataPlayerMatches(clubUuid, {
       search,
-      sort: 'name',
-      limit: 20,
       signal: controller.signal,
     })
       .then((page) => {

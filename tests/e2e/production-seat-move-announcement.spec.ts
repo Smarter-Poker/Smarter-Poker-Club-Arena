@@ -236,10 +236,12 @@ test('the published table explains controlled seat moves without moving a player
       }
     );
     await expect(page.locator('.table-surface')).toBeVisible({ timeout: 20_000 });
-    const spectator = page
-      .locator('.spectator-footer-bar__label')
-      .filter({ hasText: /^Spectating/ });
+    // Full cash tables render the waiting-list action instead of a
+    // "Spectating" label. This test id belongs only to the unseated branch.
+    const spectator = page.getByTestId('spectator-footer-bar');
     await expect(spectator).toBeVisible();
+    await expect(spectator).toHaveAttribute('data-state', /^(open-here|no-seats-here)$/);
+    await expect(page.locator('.table-page')).toHaveAttribute('data-hero', 'false');
     await expect(page.locator('.seat--hero')).toHaveCount(0);
     const seats = page.locator('.seat[data-player-id]');
     await expect.poll(() => seats.count()).toBeGreaterThanOrEqual(2);
@@ -308,6 +310,8 @@ test('the published table explains controlled seat moves without moving a player
     ).toBe(mainReadsAfterFirst);
     await expect(page).toHaveURL(routeBefore);
     await expect(spectator).toBeVisible();
+    await expect(spectator).toHaveAttribute('data-state', /^(open-here|no-seats-here)$/);
+    await expect(page.locator('.table-page')).toHaveAttribute('data-hero', 'false');
     await expect(page.locator('.seat--hero')).toHaveCount(0);
     expect(writes).toEqual([]);
     await info.attach('mobile-live-table-seat-move-other', {

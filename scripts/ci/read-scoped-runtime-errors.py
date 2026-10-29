@@ -47,7 +47,7 @@ BREAK_REFUSAL_REASONS = frozenset({
 })
 # Keep the original deal refusals as well as their later watchdog consequence.
 # Only these emitted call sites, with an exactly selected table, are admitted.
-ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start)\]')
+ENGINE_CONTEXT = re.compile(r'^\[ServerTableEngine\.([0-9a-f-]{36})\.(watchdog_kill|deal_error_attempt_(?:[1-9]|10)|too_many_errors_stopping|failed_to_start|hand_continuation_unproven)\]')
 ENGINE_REASON = re.compile(r'Engine self-terminating for restart: (tournament_table_zombie|cash_table_zombie|cash_lease_proof_expired|tournament_lease_proof_expired|dealing_loop_threw|post_hand_settlement_failed|authoritative_hand_commit_not_proved|atomic_stack_settlement_refused|post_commit_stack_refresh_failed|stalled_no_seat)\b')
 # Successor admission is owned by GameServer, before or while a new manager
 # recovers its originals. Keep this an exact call-site list, never GameServer.*.
@@ -461,6 +461,46 @@ def selection(value):
     return result
 
 
+def continuation_failure(block):
+    """Fixed categories and call sites only; never exception text or stack frames.
+
+    The lane reports capture, retain and consumer failures through one context.
+    A generic write refusal has already lost its underlying RPC error: it must
+    never be relabelled as a timeout, lock conflict or failed transaction.
+    """
+    message = block[0].split('] ', 1)[1] if '] ' in block[0] else ''
+    categories = {
+        'Error: Hand Continuation Write Is Unproven': 'write_unproven',
+        'Error: Hand Continuation Lease Is Unproven': 'lease_unproven',
+        'Error: Hand Continuation Owner Changed': 'owner_changed',
+        'Error: Hand Continuation Is Fenced': 'fenced',
+        'Error: Hand Sequence Is Exhausted': 'sequence_exhausted',
+        'Error: Hand Continuation Is Too Large': 'payload_bound',
+        'Error: Hand Recovery Requires The External Runout Original': 'external_runout_original_required',
+        'Error: Hand Recovery State Is Invalid': 'controller_state_invalid',
+        'TimeoutError: The operation was aborted due to timeout': 'timeout',
+        'DOMException [TimeoutError]: The operation was aborted due to timeout': 'timeout',
+        'AbortError: This operation was aborted': 'aborted',
+        'DOMException [AbortError]: This operation was aborted': 'aborted',
+    }
+    category = categories.get(message, 'unknown')
+    if message.startswith('DOMException [DataCloneError]: '):
+        category = 'clone_failed'
+    text = '\n'.join(block[1:])
+    phase = 'unknown'
+    # Only maintained owner names are recognized. No caller-provided file,
+    # function, line, message, cards or other payload crosses the boundary.
+    for name, pattern in [
+        ('retain', r'\bat (?:async )?(?:retainHandContinuation|[A-Za-z]+\.retainOriginalBatch) \('),
+        ('capture', r'\bat (?:HandController\.serializeRecoveryState|HandContinuationLane\.captureBatch) \('),
+        ('dispatch', r'\bat (?:async )?[A-Za-z]+\.handleHandEvent \('),
+    ]:
+        if re.search(pattern, text):
+            phase = name
+            break
+    return {'category': category, 'phase': phase}
+
+
 def extract(raw, scopes):
     allowed = {x for s in scopes for x in ([s['tournamentId']] if 'tournamentId' in s else []) + s['tableIds']}
     allowed_tables = {x for s in scopes for x in s['tableIds']}
@@ -489,6 +529,8 @@ def extract(raw, scopes):
                       'symbolicErrors': sorted(set(ERROR.findall(text))),
                       'engineReasons': sorted(set(ENGINE_REASON.findall(text)))
                       if context == 'ServerTableEngine.watchdog_kill' else []}
+            if context == 'ServerTableEngine.hand_continuation_unproven':
+                record['continuationFailure'] = continuation_failure(block)
             if context == 'GameServer.stalled_elimination_successor_drain_requested':
                 stall = SUCCESSOR_STALL.search(text)
                 if stall and stall.group(1) in allowed:

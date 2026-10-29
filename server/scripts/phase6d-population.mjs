@@ -1605,6 +1605,11 @@ function parseArgs(argv) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  if (argv[0] === 'fleet-turns') {
+    const { runFleetTurnCensusCli } = await import('./phase6d-turn-census.mjs');
+    await runFleetTurnCensusCli(argv.slice(1), REMOTE_OBSERVER);
+    return;
+  }
   const mode = argv.find((a) => ['run', 'report', 'observe', 'fleet'].includes(a));
   const args = parseArgs(argv.filter((a) => a !== mode));
   if (mode === 'fleet') {

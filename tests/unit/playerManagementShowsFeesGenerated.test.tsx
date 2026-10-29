@@ -45,6 +45,8 @@ function simpleRow(overrides: Record<string, unknown>) {
       selected={false}
       onSelect={vi.fn()}
       columns={new Set(defaultRosterWorkspace().columns)}
+      winLoss={{ cash: -20, mtt: 5, net: -15, fees: 12_345.67, downline_fees: 2_500 }}
+      feeLabel="Fees This Week"
       simpleMode
     />
   );
@@ -53,7 +55,7 @@ function simpleRow(overrides: Record<string, unknown>) {
 describe('Player Management shows fees generated', () => {
   it('prints the fee figure and never the wallet in Simple mode', () => {
     render(simpleRow({}));
-    expect(screen.getByText('Fees Generated')).toBeVisible();
+    expect(screen.getByText('Fees This Week')).toBeVisible();
     expect(screen.getByText('12,345.67')).toBeVisible();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('274.6K')).not.toBeInTheDocument();
@@ -63,6 +65,33 @@ describe('Player Management shows fees generated', () => {
     render(simpleRow({ role: 'agent', downline_total: 4, downline_fees: 2_500 }));
     expect(screen.getByText('Downline 2,500.00')).toBeVisible();
   });
+
+  it.each([true, false])(
+    'uses period fees rather than lifetime fees in Simple=%s',
+    (simpleMode) => {
+      const row = simpleRow({ total_fees: 987654, downline_total: 4, downline_fees: 999999 });
+      render({
+        ...row,
+        props: {
+          ...row.props,
+          simpleMode,
+          winLoss: { cash: -20, mtt: 5, net: -15, fees: 66.63, downline_fees: 155.09 },
+        },
+      });
+      expect(screen.getByText('66.63')).toBeVisible();
+      expect(screen.queryByText('987.6K')).not.toBeInTheDocument();
+      expect(screen.queryByText('999.9K')).not.toBeInTheDocument();
+    }
+  );
+  it.each([false, true])(
+    'never falls back to lifetime fees while loading or failed (failed=%s)',
+    (failed) => {
+      const row = simpleRow({ total_fees: 987654 });
+      render({ ...row, props: { ...row.props, winLoss: undefined, winLossUnavailable: failed } });
+      expect(screen.queryByText('987.6K')).not.toBeInTheDocument();
+      expect(screen.getAllByText(failed ? 'Unavailable' : '...').length).toBeGreaterThan(0);
+    }
+  );
 
   it('does not floor small fees to zero', () => {
     expect(feeFigure(0.5)).toBe('0.50');

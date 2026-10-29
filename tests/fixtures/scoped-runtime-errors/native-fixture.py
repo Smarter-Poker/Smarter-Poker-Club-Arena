@@ -22,6 +22,48 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def test_continuation_failure_retains_only_fixed_category_and_phase(self):
+        cases = [
+            ('Error: Hand Continuation Write Is Unproven',
+             '    at retainHandContinuation (/app/dist/services/supabase/handContinuation.js:41:15)',
+             'write_unproven', 'retain'),
+            ('Error: Hand Recovery Requires The External Runout Original',
+             '    at HandController.serializeRecoveryState (/app/dist/engine/HandController.js:12:3)',
+             'external_runout_original_required', 'capture'),
+            ('Error: PRIVATE player cards deck arbitrary error',
+             '    at ServerTableEngine.handleHandEvent (/app/dist/engine/ServerTableEngine.js:42:6)',
+             'unknown', 'dispatch'),
+        ]
+        for message, frame, category, phase in cases:
+            raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '+message+'\n'
+                   +STAMP+frame+'\n'+STAMP+'  PRIVATE credentials cards deck\n').encode()
+            result = reader.extract(raw, SCOPES)
+            self.assertEqual(result['matchingRecords'], 1)
+            record = result['records'][0]
+            self.assertEqual(record['context'], 'ServerTableEngine.hand_continuation_unproven')
+            self.assertEqual(record['continuationFailure'], {'category': category, 'phase': phase})
+            self.assertEqual(record['scopeIds'], [TABLE])
+            self.assertNotIn('PRIVATE', json.dumps(result))
+            self.assertNotIn('/app/', json.dumps(result))
+
+    def test_continuation_failure_requires_exact_selected_context_and_whole_message(self):
+        for context in [f'ServerTableEngine.{EVENT}.hand_continuation_unproven',
+                        f'ServerTableEngine.{TABLE}.hand_continuation_unproven_extra']:
+            raw = (STAMP+'['+context+'] Error: Hand Continuation Write Is Unproven\n').encode()
+            self.assertEqual(reader.extract(raw, SCOPES)['matchingRecords'], 0)
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven PRIVATE\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'unknown', 'phase': 'unknown'})
+        self.assertNotIn('PRIVATE', json.dumps(record))
+
+    def test_continuation_failure_does_not_infer_timeout_from_generic_refusal(self):
+        raw = (STAMP+f'[ServerTableEngine.{TABLE}.hand_continuation_unproven] '
+               +'Error: Hand Continuation Write Is Unproven\n'
+               +STAMP+'    at arbitraryTimeout (/PRIVATE/path:1:2)\n').encode()
+        record = reader.extract(raw, SCOPES)['records'][0]
+        self.assertEqual(record['continuationFailure'], {'category': 'write_unproven', 'phase': 'unknown'})
+
     def test_restart_read_requires_opt_in_and_original_window(self):
         self.assertFalse(reader.restart_incident_requested(None, None))
         window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}

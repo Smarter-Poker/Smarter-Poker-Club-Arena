@@ -420,7 +420,14 @@ def main():
         if r.returncode:
             raise SystemExit('migration failed on the regression database:\n' + r.stderr)
         h.passed = 0
-        h.scenarios()
+        # Exercise the inherited recreated-club and union-shell INSERTs with
+        # the same occupied default, not only the initial seed and club helper.
+        q(TEMPLATE, f'ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT {occupied}')
+        try:
+            h.scenarios()
+            record('FIXTURE every inherited synthetic club avoids the occupied default identifier', True)
+        finally:
+            q(TEMPLATE, f'ALTER TABLE public.clubs ALTER COLUMN club_id SET DEFAULT {original_default}')
         record(f'REGRESSION the base commerce harness passes {h.passed} scenarios with this migration on top', h.passed >= 159, h.passed)
 
         run_scenarios(RED, expect_fail=True)

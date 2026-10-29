@@ -57,7 +57,8 @@ jobs:
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          # World Hub remains repository 1132365826 under its existing owner.
+          owner: Smarter-Poker
           repositories: Smarter-Poker-World-Hub
           permission-contents: read
 

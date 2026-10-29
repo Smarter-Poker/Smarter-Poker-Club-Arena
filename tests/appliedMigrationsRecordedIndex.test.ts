@@ -62,6 +62,9 @@ describe('the shared migration ledger is never graded from one repository', () =
     );
     expect(workflow).toContain('actions/create-github-app-token@v3');
     expect(workflow).toContain('repositories: Smarter-Poker-World-Hub');
+    expect(workflow).toContain('owner: Smarter-Poker');
+    const token = workflow.split('id: estate-token')[1].split('permission-contents: read')[0];
+    expect(token).not.toContain('github.repository_owner');
     expect(workflow).toContain('permission-contents: read');
     expect(workflow).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');
     expect(workflow).not.toContain('indexing this repo only');

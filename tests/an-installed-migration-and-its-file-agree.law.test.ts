@@ -220,6 +220,19 @@ describe('a merged migration is installed, or says what replaced it', () => {
 
 describe('the pull-request workflow', () => {
   const yml = fs.readFileSync(WORKFLOW, 'utf8');
+
+  it('keeps the read-only sibling authority independent of Club Arena owner transfers', () => {
+    const token = yml.split('id: estate-token')[1].split('permission-contents: read')[0];
+    expect(token).toContain('owner: Smarter-Poker');
+    expect(token).toContain('repositories: Smarter-Poker-World-Hub');
+    expect(token).not.toContain('github.repository_owner');
+    expect(yml).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');
+    const checker = fs.readFileSync(
+      path.join(REPO, 'scripts/ci/check-applied-migrations-are-recorded.mjs'),
+      'utf8'
+    );
+    expect(checker).toContain("'Smarter-Poker/Smarter-Poker-World-Hub'");
+  });
   const code = yml
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('#'))

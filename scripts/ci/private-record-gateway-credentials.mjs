@@ -12,6 +12,9 @@ export const roleAdmissionSql = readFileSync(
 // only read leaderboards/staff/challenges, or transform NEW in a trigger. No
 // financial mutation definer is allowed. Changed/new bodies refuse admission.
 const benignDefiners = new Map([
+  // Dedicated EXECUTE only: exact existing read-only source fingerprint verifier.
+  // This does not expose readiness to anonymous/authenticated Data API roles.
+  ['public.fn_private_record_transport_ready', '07c92fe5dc7018f15a23d34f9bb2b386'],
   ['public.fn_club_leaderboard_period_v2', '9c7467edd1c92389dc846a396492cafb'],
   ['public.fn_global_leaderboard_period', '994e42b923d79f029ea4f71b8f6e1896'],
   ['public.fn_home_is_group_staff', '34c272e636299f9f5eb201f3762502d3'],
@@ -93,6 +96,11 @@ export function assertRoleAdmission(audit) {
     if (benignDefiners.get(routine.name) !== routine.hash)
       throw Error('effective unreviewed privileged routine execution is unqualified');
   return role;
+}
+/** Source qualification must succeed on this exact dedicated session. */
+export async function requireGatewaySourceReady(client) {
+  const result = await client.query('SELECT public.fn_private_record_transport_ready() AS ready');
+  if (result.rows?.[0]?.ready !== true) throw Error('dedicated private record source is not ready');
 }
 export function gatewayScramVerifier(password, salt = randomBytes(16)) {
   if (!/^[a-f0-9]{64,128}$/.test(password))
@@ -197,6 +205,7 @@ async function main() {
         !/^\d+$/.test(role.marker.slice(prefix.length))
       )
         throw Error('dedicated credential ownership is not qualified');
+      await requireGatewaySourceReady(client);
       await client.query('LISTEN ca_private_record_changes');
       await client.query('UNLISTEN ca_private_record_changes');
     } finally {

@@ -2056,7 +2056,7 @@ describe('restored provider accounting qualification', () => {
     expect(full.env?.ACCOUNTING_FIXTURE_PARENT).toBe('${{ runner.temp }}/union-accounting-scratch');
   });
 
-  it('keeps shard two runtime-only and requires the actual provider, Lightning and export build tools', () => {
+  it('requires the actual private pg_net, provider, Lightning and export build tools', () => {
     const install = ci.jobs.accounting_postgres.steps.find(
       (step: { name?: string }) =>
         step.name === 'Install PostgreSQL 17 tools without a default database service'
@@ -2094,7 +2094,10 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: String(shard) },
           }
         );
-        if (shard === 2) expect(output).toBe('');
+        if (shard === 2)
+          expect(output).toBe(
+            'INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev'
+          );
         else if (shard === 1)
           expect(output).toBe('INSTALL:postgresql-server-dev-17 build-essential');
         else
@@ -2109,6 +2112,29 @@ describe('restored provider accounting qualification', () => {
           stdio: 'pipe',
         })
       ).toThrow();
+      const toolBin = join(temp, 'build-tools');
+      mkdirSync(toolBin);
+      for (const name of [
+        'cc',
+        'make',
+        'bison',
+        'flex',
+        'perl',
+        'bzip2',
+        'pkg-config',
+        'curl-config',
+      ])
+        writeFileSync(join(toolBin, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      expect(
+        execFileSync(
+          '/bin/bash',
+          ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: toolBin, PG_CI_SHARD: '2' },
+          }
+        )
+      ).toBe('');
       for (const binary of ['createdb', 'pg_dump']) {
         const path = join(temp, 'lib/postgresql/17/bin', binary);
         rmSync(path);
@@ -2118,7 +2144,7 @@ describe('restored provider accounting qualification', () => {
             ['-c', prefix + '\nprintf "INSTALL:%s" "${pg_ci_build_packages[*]-}"'],
             { encoding: 'utf8', env: { ...process.env, PATH: '', PG_CI_SHARD: '2' } }
           )
-        ).toBe('INSTALL:');
+        ).toBe('INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev');
         writeFileSync(path, '', { mode: 0o755 });
       }
       rmSync(join(temp, 'lib/postgresql/17/lib/pg_cron.so'));
@@ -2131,7 +2157,7 @@ describe('restored provider accounting qualification', () => {
             env: { ...process.env, PATH: '', PG_CI_SHARD: '2' },
           }
         )
-      ).toBe('INSTALL:');
+      ).toBe('INSTALL:build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev');
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }

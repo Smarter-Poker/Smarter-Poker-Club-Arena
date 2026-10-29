@@ -68,6 +68,19 @@ function harness(ids: string[], answer: () => Answer) {
 }
 
 describe('a refused horse entry is not asked every pass', () => {
+  it('a refused candidate does not consume the successful entry quota', async () => {
+    let calls = 0;
+    const { svc, entries } = harness(['h1', 'h2', 'h3'], () => ({
+      data:
+        ++calls === 1
+          ? { ok: false, reason: 'horse_tournament_reservation_budget' }
+          : { ok: true, registration_id: 'paid-entry' },
+      error: null,
+    }));
+    expect(await svc.registerHorses(T, 1)).toBe(1);
+    expect(entries()).toBe(2);
+  });
+
   it('retains the original cap-refused request identity without retrying or altering entry', async () => {
     const id = 'aaaaaaaa-1111-4111-8111-111111111111';
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

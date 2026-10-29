@@ -1,3 +1,4 @@
+import { mttPlannedField, mttPrestartPlan, mttPrizeShare } from './mttHorseArrivalPlan.js';
 import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
 import { fixedSngHorseCount } from './FixedSngHorsePlan.js';
 import {
@@ -2130,73 +2131,25 @@ export function mttPrestartHorseTarget(opts: {
   const seats = maxPlayers === null ? null : Number(maxPlayers);
   if (seats !== null && (!Number.isSafeInteger(seats) || seats <= 1)) return 0;
 
-  /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
-     "the horses should fill any and all seats to insure that the guarantee is
-     always met."
-
-     MTT_PRESTART_MAX_HORSES is 24. That is the right default for an ordinary
-     event - enough to make a lobby row look like a game without spending the
-     club's chips on a field nobody asked for. It is nowhere near enough for a
-     GUARANTEED one: the Sunday $200 Deep Stack promises 20,000 and pays 180 of
-     every 200 entry into the pool, so covering it takes 112 entries. Ramping
-     to 24 would have left roughly 15,000 of overlay on an event the club had
-     already promised to cover.
-
-     A horse entry is a REAL entry. fn_register_horse_for_tournament first
-     commits an exact returned tournament ticket directly into escrow; only
-     when no ticket exists may it debit the horse's wallet through
-     atomic_deduct_wallet_and_log. Both paths write the rake evidence and add
-     `v_split.prize` to prize_pool - the same funded split a human makes. So
-     horses filling seats does not paper over the shortfall, it genuinely funds
-     it, and the guarantee stops being an overlay at all.
-
-     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
-     table always leaves a chair for a human), and a guarantee can never ask
-     for more than the event's own field. What changes is only the FLOOR: an
-     event carrying a guarantee ramps to whatever covers it, an event without
-     one keeps the 24 it always had. */
-  const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
-  const pool = Math.max(0, Number(opts.prizePool) || 0);
-  const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
-  const shortfall = guarantee - pool;
-  const entriesToCover =
-    guarantee > 0 && shortfall > 0 && prizeShare > 0 ? Math.ceil(shortfall / prizeShare) : 0;
-
-  /* Entries needed ON TOP of the field that is already there. `current`
-     already paid into `pool`, so adding it back would double count them and
-     over-fill the event. */
-  const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
-
-  // Always leave a seat: see safety property 1.
-  const fundedGoal = Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal);
-  const fieldGoal = seats === null ? fundedGoal : Math.min(seats - 1, fundedGoal);
+  // Half the planned funded field arrives in the owner's ten-minute window.
+  // Reach that mark one tick before the gun, preserving scheduling margin.
+  const field = mttPlannedField(
+    Math.max(0, Number(opts.guaranteedPrize) || 0),
+    Math.max(0, Number(opts.buyInPrizeShare) || 0)
+  );
+  const fieldGoal = mttPrestartPlan(field, seats);
   if (fieldGoal < 1) return 0;
-
-  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-10, 1 at T-0
-  const curve = elapsed * elapsed; // slow early, steep near the close
-
-  // At least one entrant the moment the window opens: a lobby row reading 1
-  // is a game somebody is in, and 0 is a game nobody will join.
-  const onCurve = Math.max(1, Math.min(fieldGoal, Math.ceil(fieldGoal * curve)));
-
-  // Already there (or ahead, if humans turned up). Nothing to do.
+  const elapsed = Math.min(
+    1,
+    (MTT_PRESTART_RAMP_MS - msUntilStart) / (MTT_PRESTART_RAMP_MS - MTT_PRESTART_TICK_MS)
+  );
+  const onCurve = Math.max(1, Math.ceil(fieldGoal * elapsed));
   if (onCurve <= current) return 0;
-
-  /* Walk toward the curve rather than jumping to it. Still never past the
-     curve, so the leave-a-seat and pool-cap guarantees above still hold.
-
-     THE STEP IS NOT WHERE A GUARANTEE GETS COVERED (2026-09-02). An earlier
-     draft of the overlay fix let a guaranteed event step past
-     MTT_PRESTART_MAX_STEP once the clock ran short - "cover the promise, the
-     pacing matters less". The pinned test one screen up refused it, correctly:
-     at T-1s a 20,000 guarantee wants 107 entrants, and registerHorses buys in
-     ONE HORSE PER SEQUENTIAL RPC inside the same 5-second loop that decides
-     when every other tournament starts. That is the stall the cap was added to
-     prevent, and a guarantee is not worth re-introducing it.
-
-     A short clock is not something to out-run here. It is something not to
-     create: see MTT_PUBLISH_LEAD_MS. */
-  return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
+  // A fixed six-per-45s ceiling cannot deliver half a large guarantee in ten
+  // minutes. Size the bounded slice from the actual goal and available ticks.
+  const ticks = Math.max(1, Math.floor(MTT_PRESTART_RAMP_MS / MTT_PRESTART_TICK_MS) - 1);
+  const step = Math.max(MTT_PRESTART_MAX_STEP, Math.ceil(fieldGoal / ticks));
+  return Math.min(onCurve, current + step);
 }
 
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
@@ -7127,7 +7080,7 @@ export class TournamentRecurringService {
       const { data: entryEvent, error: entryEventError } = await supabase
         .from('tournaments')
         .select(
-          'format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount'
+          'format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount, bounty_amount'
         )
         .eq('id', tournamentId)
         .maybeSingle();
@@ -7174,7 +7127,7 @@ export class TournamentRecurringService {
             currentPlayers: current,
             guaranteedPrize: Number(entryEvent.guaranteed_prize),
             prizePool: Number(entryEvent.prize_pool),
-            buyInPrizeShare: Number(entryEvent.buy_in_amount),
+            buyInPrizeShare: mttPrizeShare(entryEvent),
           });
           count = Math.min(count, Math.max(0, target - current));
           // A paid award still uses the existing bounded ticket-only recovery
@@ -7587,7 +7540,7 @@ export class TournamentRecurringService {
         ? recoveryTickets.concat(
             orderedWallets.slice(0, Math.max(0, count - recoveryTickets.length))
           )
-        : orderedTickets.concat(orderedWallets).slice(0, count);
+        : orderedTickets.concat(orderedWallets).slice(0, count * 4 + 6);
 
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
@@ -7624,7 +7577,9 @@ export class TournamentRecurringService {
        */
       let registered = 0;
       const failures = new Map<string, number>();
+      const admissionLimit = redeemTickets ? Math.max(count, recoveryTickets.length) : count;
       for (const horse of horses) {
+        if (registered >= admissionLimit) break;
         // THE FREEZE IS TOTAL (Dan 2026-09-03): a registration is a buy-in. A ramp
         // that crosses :53 stops here and the next tick finishes it.
         if (isMaintenanceFrozen()) break;
@@ -7674,6 +7629,15 @@ export class TournamentRecurringService {
           const reason = (res as { reason?: string } | null)?.reason || 'unknown';
           // 'tournament_full' / 'already_registered' are benign races.
           failures.set(reason, (failures.get(reason) || 0) + 1);
+          if (
+            [
+              'registration_closed',
+              'tournament_full',
+              'horse_registration_not_open',
+              'platform_frozen',
+            ].includes(reason)
+          )
+            break;
         }
       }
 

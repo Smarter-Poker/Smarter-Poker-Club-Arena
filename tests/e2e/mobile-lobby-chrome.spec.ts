@@ -1,3 +1,4 @@
+import { registerCssPreloadRetryCase } from './css/vite-css-preload-retry.fixture';
 import { tournamentScrollFeedbackFixture } from './helpers/tournament-scroll-feedback.mjs';
 import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';
 registerInitialTableReadinessCases();
@@ -1036,3 +1037,5 @@ async function documentFontsReady(page: Page) {
 
 import { registerMobileActionStripCases } from './support/mobileActionStripCases';
 registerMobileActionStripCases();
+
+registerCssPreloadRetryCase();

@@ -6,6 +6,20 @@ import { describe, expect, it } from 'vitest';
 import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 describe('superseded action retention progress remains enforced', () => {
+  it('budgets raw discovery chunks without changing its existing job', () => {
+    const sql = readFileSync(
+      'supabase/migrations/20261029083417_retention_discovery_commits_bounded_chunks_within_its_budget.sql',
+      'utf8'
+    );
+    expect(sql).toContain("'b7eae030b437b830695a3bac6f78f821'");
+    expect(sql).toContain('LIMIT 250');
+    expect(sql).toContain('total_count>=5000');
+    expect(sql).toContain("interval '900 milliseconds'");
+    expect(sql).toContain('clock_timestamp()+longest_chunk>=deadline');
+    expect(sql).toContain('longest_chunk:=greatest(longest_chunk,clock_timestamp()-chunk_started)');
+    expect(sql).not.toMatch(/cron\.alter_job|CREATE (?:TABLE|INDEX)/);
+  });
+
   it('binds the uninstalled migration to independently captured exact cron bytes', () => {
     const capture = JSON.parse(
       readFileSync('scripts/ci/fixtures/superseded-action-preimages.json', 'utf8')

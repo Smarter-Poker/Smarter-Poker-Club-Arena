@@ -39,3 +39,10 @@ export function isRecordedSatelliteQualifier(
     entry.chips > 0
   );
 }
+
+/** Only the recorded two-seat fixed-field satellite starts when full. */
+export function satelliteStartsWhenFull(tournament: unknown): boolean {
+  if (!tournament || typeof tournament !== 'object') return false;
+  const row = tournament as TournamentEntryCapacitySubject & { format_contract?: unknown };
+  return row.format_contract === 'sng-v1' && isFixedSngSatellite(row);
+}

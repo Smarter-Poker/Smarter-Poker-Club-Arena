@@ -97,7 +97,12 @@ describe('a remote engine script parses before it ships', () => {
   it('finds the remote scripts the release and drill lanes send to the engine host', () => {
     const files = new Set(scripts.map((s) => s.where.split(' > ')[0]));
     expect(files).toEqual(
-      new Set(['auto-deploy-hetzner.yml', 'engine-drill.yml', 'engine-rollback-drill.yml'])
+      new Set([
+        'auto-deploy-hetzner.yml',
+        'engine-drill.yml',
+        'engine-rollback-drill.yml',
+        'publish-club-arena.yml',
+      ])
     );
   });
 

@@ -53,7 +53,7 @@ echo 'DATA_CONSOLE_POSTGRES PASS Club Data Report'
 
 # Player Record: funded-club attribution and private event delivery.
 echo 'DATA_CONSOLE_POSTGRES RUN Member Record'
-bash "$repo/scripts/dev/test-member-record-live-postgres.sh"
+bash "$repo/scripts/ci/test-private-record-hosting.sh"
 echo 'DATA_CONSOLE_POSTGRES PASS Member Record'
 
 # A redeemed fee total must reach Member Record and Player Statistics together.

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Root-owned restricted entry point. Publisher-provided environment is discarded.
+set -eu
+exec /usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/node /usr/local/lib/ca-private-record-gateway/private-record-gateway-activate.mjs "$@"

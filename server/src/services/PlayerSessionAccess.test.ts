@@ -4,7 +4,7 @@ const events = vi.hoisted(() => ({
   row: null as null | ((payload: unknown) => void),
   remove: vi.fn(),
 }));
-vi.mock('./supabase.js', () => ({
+vi.mock('./supabase/client.js', () => ({
   supabase: {
     channel: () => {
       const channel = {

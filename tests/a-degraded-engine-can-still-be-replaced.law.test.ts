@@ -242,6 +242,7 @@ exit 88
 
       const healthBody = JSON.stringify({
         running: true,
+        weeklyPayout: null,
         releaseSha: sourceSha,
         liveness: 'ok',
         instanceId,

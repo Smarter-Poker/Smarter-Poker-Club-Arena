@@ -44,6 +44,27 @@ route:
   group_interval: 5m
   repeat_interval: 1h
   routes:
+    # Tournament failures and recoveries belong to Production Alerts only.
+    # Stop sibling traversal so critical/warning email routes cannot duplicate them.
+    - matchers:
+        - severity!="canary"
+        - component="tournament"
+      receiver: codex-inbox
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      continue: false
+
+    # Older tournament/MTT/Spin producers may omit the component label.
+    - matchers:
+        - severity!="canary"
+        - alertname=~"(?i).*(tournament|mtt|spin).*"
+      receiver: codex-inbox
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 4h
+      continue: false
+
     # Every non-canary fault reaches the durable incident inbox. Legacy
     # page=sms labels retain their priority route; that endpoint now records
     # to Codex instead of texting a handset. Email routing remains secondary.

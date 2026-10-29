@@ -17,6 +17,10 @@ import {
   type ContinuationEventIdentity,
 } from './HandContinuationLane.js';
 import { continuationEventId } from './PrivateHandContinuation.js';
+import {
+  claimedContinuationChair,
+  refreshClaimedContinuationChairs,
+} from '../services/supabase/handContinuation.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import {
@@ -115,6 +119,44 @@ type PreparedHandNumberOutcome =
   | null;
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
+  /** Measure before the original continuation queues this street behind retention. */
+  protected captureStreetIntegrityEvent(event: HandEvent, controller: HandController): HandEvent {
+    if (event.type !== 'COMMUNITY_CARDS') return event;
+    try {
+      const live = controller.getState();
+      const result = this.stateVerifier.measure({
+        tableId: this.tableId,
+        handNumber: this.handCount,
+        players: live.players,
+        communityCards: live.communityCards,
+        pot: live.pot,
+        stage: live.stage,
+        phase: 'in_hand',
+        rakeTaken: 0,
+      });
+      return {
+        ...event,
+        integrityVerification: {
+          handNumber: this.handCount,
+          stage: live.stage,
+          pot: live.pot,
+          result: {
+            ...result,
+            // Retain the verdict, never private cards or mutable player references.
+            violations: result.violations.map(({ type, message, severity }) => ({
+              type,
+              message: type === 'DUPLICATE_CARD' ? 'Duplicate card detected' : message,
+              severity,
+            })),
+          },
+        },
+      };
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.street_integrity_threw`);
+      return event;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -2062,6 +2104,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return prepared.n;
   }
 
+  /** A retained sequence-zero controller has no live hand to finish. The
+   * successor drain may stop it only at its explicit owner park, after the
+   * exact private write and every accepted mutation have returned. Its saved
+   * original remains authoritative for the existing custody handoff. */
+  isPreparedOriginalParkedForSuccessor(): boolean {
+    const controller = this.handController;
+    if (
+      !this.running ||
+      !this.lifecycleCanMutate() ||
+      !this.isCurrentEngine() ||
+      !this.requiresExplicitPauseResume() ||
+      !this.isParkedBetweenHands() ||
+      !controller ||
+      this.retainedPreparedOriginalController !== controller ||
+      this.f06CurrentPermit?.recoveryState() !== 'attempted' ||
+      this.f06CurrentPermit.binding.hand_number !== String(this.handCount) ||
+      // A claimed sequence-zero original carries the same positive marker;
+      // pendingOriginalContinuation is intentionally retained until actuation.
+      this.handContinuation !== null ||
+      this.hasWeeklyPayoutMutationInFlight()
+    )
+      return false;
+    return JSON.parse(controller.serializeRecoveryState()).handStarted === false;
+  }
+
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
     // Seats and cash rake can be prepared in parallel under the rest.
     // Tournament blinds must wait until that rest ends: a level may advance
@@ -3670,6 +3737,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async resumeOriginalController(): Promise<void> {
     const original = this.pendingOriginalContinuation;
     if (!original) return;
+    // A legitimate add-on can commit after initial admission while a pause
+    // holds this original. Revalidate that exact tuple through its SQL owner;
+    // an arbitrary larger stack is never accepted from the live row alone.
+    if (
+      original.seats.some((seat) => {
+        const admitted = claimedContinuationChair(original, seat.user_id);
+        const chair = this.seatedPlayers.find((p) => p.user_id === seat.user_id);
+        return (
+          admitted &&
+          chair &&
+          chair.seat_id === seat.seat_id &&
+          chair.seat_joined_at === seat.seat_joined_at &&
+          Number(chair.stack) !== admitted.authorized_stack
+        );
+      })
+    ) {
+      await refreshClaimedContinuationChairs(
+        original,
+        () =>
+          this.pendingOriginalContinuation === original &&
+          this.running &&
+          this.isCurrentEngine() &&
+          this.lifecycleCanMutate()
+      );
+    }
     const fields = original.batch.engine.fields;
     if (!fields || typeof fields !== 'object' || Array.isArray(fields))
       throw new Error('Original Hand Engine Capture Is Unproven');
@@ -3741,14 +3833,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const baselines = statePlayers.map((p) => {
       const seat = original.seats.find((s) => s.user_id === p.user_id)!;
       const chair = players.find((s) => s.user_id === p.user_id)!;
+      const admission = claimedContinuationChair(original, p.user_id);
       if (
         !seat ||
         !chair ||
         chair.seat_id !== seat.seat_id ||
         chair.seat_joined_at !== seat.seat_joined_at ||
-        Number(chair.stack) !== seat.stack_before
+        Number(chair.stack) !== (admission?.authorized_stack ?? seat.stack_before)
       )
         throw new Error('Original Hand Chair Changed');
+      // A funded post-anchor add-on stays outside this original hand. Keep
+      // its old controller, prehand total and delta-settlement baseline intact.
       return { ...p, stack: seat.stack_before };
     });
     this.stateVerifier.recordInitialChipTotal(this.tableId, baselines);
@@ -4142,6 +4237,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {
+          event = this.captureStreetIntegrityEvent(event, controllerForHand);
           if (this.handContinuation) this.handContinuation.enqueue(event);
           else
             void dispatchOriginalEvent(event).catch((error) =>

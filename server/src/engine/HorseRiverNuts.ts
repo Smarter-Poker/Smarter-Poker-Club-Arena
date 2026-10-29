@@ -257,5 +257,12 @@ export function fullPotNearPotWager(
     target === decision.amount
   )
     return decision;
+  // The final pot snap must keep the same canonical form the legalizer priced.
+  // A full physical stack is an all-in only when the authoritative menu permits it.
+  if (
+    target === Math.round((hero.bet + hero.stack) * 100) / 100 &&
+    state.legalActions.includes('all_in')
+  )
+    return { ...decision, action: 'all_in', amount: undefined };
   return { ...decision, amount: target };
 }

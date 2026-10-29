@@ -26,6 +26,7 @@ const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
 // migration apply/ledger, monitoring deploy, money recovery, post-deploy proof.
 const NEVER_CANCEL = [
   'publish-club-arena.yml',
+  'publish-club-arena-transaction.yml',
   'stage-engine-release.yml',
   'auto-deploy-hetzner.yml',
   'apply-merged-migration.yml',
@@ -39,6 +40,49 @@ const NEVER_CANCEL = [
 ];
 
 describe('workflow concurrency guards runner capacity without risking production', () => {
+  it('holds one global lock around the complete reusable production transaction', () => {
+    const caller = parse(readFileSync(resolve(dir, 'publish-club-arena.yml'), 'utf8'));
+    const child = parse(readFileSync(resolve(dir, 'publish-club-arena-transaction.yml'), 'utf8'));
+    expect(caller.concurrency).toBeUndefined();
+    expect(child.concurrency).toBeUndefined();
+    expect(child.on).toHaveProperty('workflow_call');
+    expect(Object.keys(child.on)).toEqual(['workflow_call']);
+    const production = caller.jobs.production;
+    expect(production.uses).toBe('./.github/workflows/publish-club-arena-transaction.yml');
+    expect(production.concurrency).toEqual({
+      group: 'publish-club-arena-production',
+      'cancel-in-progress': false,
+    });
+    expect(
+      Object.entries(caller.jobs)
+        .filter(([, value]: any) => value.concurrency)
+        .map(([key]) => key)
+    ).toEqual(['production']);
+    expect(Object.values(child.jobs).every((value: any) => !value.concurrency)).toBe(true);
+    expect(Object.keys(child.jobs).sort()).toEqual(
+      [
+        'retain-runtime',
+        'publish-to-app',
+        'publish-to-origin',
+        'publish-record-gateway',
+        'bootstrap-record-gateway',
+        'install-record-gateway-credentials',
+        'inspect-record-gateway-host',
+      ].sort()
+    );
+    expect(production.with).toEqual({
+      target_sha: '${{ needs.publish-needed.outputs.target_sha }}',
+      component: '${{ needs.publish-needed.outputs.component }}',
+      publish: '${{ needs.publish-needed.outputs.publish }}',
+      tests_proven: '${{ needs.publish-needed.outputs.tests_proven }}',
+      client_result: '${{ needs.client-tests.result }}',
+      build_result: '${{ needs.build-and-store.result }}',
+      gateway_build_result: '${{ needs.build-record-gateway.result }}',
+    });
+    for (const key of Object.keys(production.with))
+      expect(child.on.workflow_call.inputs[key]).toEqual({ required: true, type: 'string' });
+  });
+
   it('never cancels a production-mutating workflow in progress', () => {
     for (const file of NEVER_CANCEL) {
       const wf = load(file);

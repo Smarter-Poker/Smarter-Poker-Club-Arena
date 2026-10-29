@@ -12,7 +12,7 @@
  * than hand-shaped to suit the test.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { HandDetailModal } from '@/components/table/HandDetailModal';
 import { adaptServiceHandToPanel } from '@/lib/handHistoryAdapter';
@@ -189,4 +189,47 @@ it('restores a previously purchased expired hand without invoking billing', asyn
   expect(onRabbitHuntReceipt).toHaveBeenCalledWith(3046089);
   expect(onRabbitHunt).not.toHaveBeenCalled();
   expect(view.getByText(/Hand 3,046,089 · Only You/)).toBeTruthy();
+});
+
+it('keeps an accepted request visible after the purchase window expires', async () => {
+  vi.useFakeTimers();
+  let finish!: (v: any) => void;
+  const request = vi.fn(
+    () =>
+      new Promise<any>((resolve) => {
+        finish = resolve;
+      })
+  );
+  try {
+    const view = render(
+      <HandDetailModal
+        isOpen
+        onClose={() => {}}
+        hands={[record({ played_at: new Date(Date.now() - 89000).toISOString() })]}
+        heroId={HERO}
+        onRabbitHunt={request}
+        rabbitUserId={HERO}
+      />
+    );
+    fireEvent.click(view.getByRole('button', { name: 'Show What Would Have Come' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(view.getByRole('button', { name: 'Still Connecting...' }).hasAttribute('disabled')).toBe(
+      true
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({
+        success: true,
+        cards: [
+          { rank: 'K', suit: 'd' },
+          { rank: '4', suit: 's' },
+        ],
+      });
+    });
+    expect(view.container.querySelectorAll('.hdm-card--rabbit')).toHaveLength(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });

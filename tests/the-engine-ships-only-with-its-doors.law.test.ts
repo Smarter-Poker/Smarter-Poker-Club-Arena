@@ -13,7 +13,7 @@
  * a comment; the real script, run end to end against a "production" that
  * lacks the reprice door, fails and names it; an unreadable database and a
  * rollback keep their generic policy; continuation targets additionally require
- * their exact two installed migration histories; and the workflow runs the check before the break gate
+ * all exact installed migration histories; and the workflow runs the check before the break gate
  * with production's credentials.
  */
 import { spawnSync } from 'node:child_process';
@@ -195,6 +195,7 @@ describe('the workflow asks before it hands the build to Hetzner', () => {
 const continuationFiles = [
   '20261028233353_durable_private_hand_continuation.sql',
   '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
+  '20261029170914_original_claim_attests_exact_authorized_chairs.sql',
 ];
 function continuationHistory() {
   return continuationFiles.map((file) => ({
@@ -228,7 +229,10 @@ describe('continuation migration prerequisites in the existing door job', () => 
     const { engineDoors } = await load();
     const all = [...engineDoors(resolve(root, 'server/src')).keys()];
     expect(all).toContain('fn_f06_claim_legacy_river_continuation');
-    const res = runContinuationFixture(all, continuationHistory().slice(0, 1));
+    const res = runContinuationFixture(
+      all,
+      continuationHistory().filter((row) => row.version !== '20261029004521')
+    );
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('20261029004521');
   });
@@ -238,6 +242,17 @@ describe('continuation migration prerequisites in the existing door job', () => 
     const res = runContinuationFixture(all, continuationHistory().slice(1));
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('20261028233353');
+  });
+
+  it('refuses an absent authorized-chair projection even if every RPC name is present', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const res = runContinuationFixture(
+      all,
+      continuationHistory().filter((row) => row.version !== '20261029170914')
+    );
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
+    expect(res.stdout).toContain('20261029170914');
   });
 
   it.each(['sql_md5', 'name', 'statement_count'] as const)(
@@ -262,11 +277,11 @@ describe('continuation migration prerequisites in the existing door job', () => 
     expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
   });
 
-  it('passes both exact SQL histories without pinning a later compatible function body', async () => {
+  it('passes all exact SQL histories without pinning a later compatible function body', async () => {
     const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
     const res = runContinuationFixture(all, continuationHistory());
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('both exact continuation migration histories are installed');
+    expect(res.stdout).toContain('all exact continuation migration histories are installed');
   });
 
   it('fails closed for this continuation target when production is unreadable', () => {

@@ -17,13 +17,18 @@ describe('worker-isolate diagnostic scalars', () => {
     })()`,
       { eval: true }
     );
+    const originalThreadId = worker.threadId;
+    const exited = new Promise<number>((resolve) => worker.once('exit', resolve));
     try {
+      expect(originalThreadId).toBeGreaterThan(0);
       const sample = await new Promise<any>((resolve, reject) => {
         worker.once('message', resolve);
         worker.once('error', reject);
       });
+      expect(await exited).toBe(0);
+      expect(worker.threadId).toBe(-1);
       expect(isolateMemoryIsValid(sample, 3)).toBe(true);
-      expect(sample.threadId).toBe(worker.threadId);
+      expect(sample.threadId).toBe(originalThreadId);
       expect(sample.heapUsedBytes).toBeGreaterThan(0);
       expect(Object.keys(sample)).toHaveLength(7);
       for (const bad of [

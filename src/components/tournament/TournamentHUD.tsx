@@ -703,7 +703,7 @@ class HudFeed {
     try {
       const { data, error } = await readTournamentStandings(
         this.tournamentId,
-        'user_id, chips, status',
+        'id, user_id, chips, status',
         true
       );
       if (!error) rows = data;

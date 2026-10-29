@@ -51,7 +51,7 @@ export function receiptSourceMatches(dataset, sourceSha) {
 
 export function evaluatorArguments(dataset, operation) {
   if (!UUID.test(dataset) || !['evaluate', 'promote'].includes(operation)) throw new Error('Invalid evaluator invocation');
-  return ['node_modules/tsx/dist/cli.mjs', 'src/scripts/gtoV31Evaluate.ts', `--dataset=${dataset}`,
+  return ['scripts/gto-v31-evaluate-worker.mjs', `--dataset=${dataset}`,
     ...(operation === 'promote' ? ['--promote'] : [])];
 }
 

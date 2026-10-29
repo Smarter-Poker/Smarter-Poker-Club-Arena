@@ -199,6 +199,10 @@ docker compose pull --quiet
 # replaces the host path; validating inside that container would test old bytes.
 docker compose run --rm --no-deps --entrypoint /bin/amtool alertmanager \
   check-config /etc/alertmanager/alertmanager.yml
+
+# Real route evaluation prevents tournament alerts falling through to email.
+bash "$SRC_DIR/infra/monitoring/test-tournament-routes.sh" /etc/alertmanager/alertmanager.yml \
+  docker compose run --rm --no-deps --entrypoint /bin/amtool alertmanager
 docker compose up -d
 
 # ─── 6. Health check ─────────────────────────────────────────────────────

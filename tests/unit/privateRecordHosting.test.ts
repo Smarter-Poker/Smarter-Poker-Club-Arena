@@ -234,6 +234,30 @@ describe('gateway activation commit and recovery', () => {
 });
 
 describe('hosting qualification remains enforced', () => {
+  it('keeps gateway preparation outside the single locked transaction and binds its exact result', async () => {
+    const { parse } = await import('yaml');
+    const caller = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+    const child = parse(
+      readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
+    );
+    expect(caller.jobs['build-record-gateway'].if).toBe(
+      "needs.publish-needed.outputs.component == 'private-record-gateway'"
+    );
+    expect(caller.jobs.production.with.gateway_build_result).toBe(
+      '${{ needs.build-record-gateway.result }}'
+    );
+    expect(child.jobs['publish-record-gateway'].if).toContain(
+      "inputs.gateway_build_result == 'success'"
+    );
+    expect(child.jobs['publish-record-gateway'].if).toContain(
+      "inputs.component == 'private-record-gateway'"
+    );
+    expect(
+      child.jobs['publish-record-gateway'].steps.find(
+        (step: any) => step.uses === 'actions/download-artifact@v4'
+      ).with.name
+    ).toBe('private-record-gateway-${{ inputs.target_sha }}');
+  });
   it('requires real hosting inputs to execute native accounting qualification', async () => {
     const { classifyChangedPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
     for (const path of [

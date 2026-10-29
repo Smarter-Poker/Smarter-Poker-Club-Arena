@@ -369,6 +369,7 @@ describe('actual client publisher provenance admission', () => {
    */
   const workflow =
     readFileSync(path.resolve('.github/workflows/publish-club-arena.yml'), 'utf8') +
+    readFileSync(path.resolve('.github/workflows/publish-club-arena-transaction.yml'), 'utf8') +
     readFileSync(path.resolve('.github/scripts/publish-origin-activate.sh'), 'utf8');
   const blocks = [...workflow.matchAll(/<<'NODE'\n([\s\S]*?)^\s*NODE$/gm)];
   const courier = blocks.find((block) =>

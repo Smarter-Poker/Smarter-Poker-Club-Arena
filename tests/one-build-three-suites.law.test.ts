@@ -56,7 +56,9 @@ import { join } from 'node:path';
 
 const ROOT = process.cwd();
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
-const PUBLISH = readFileSync(join(ROOT, '.github/workflows/publish-club-arena.yml'), 'utf8');
+const PUBLISH =
+  readFileSync(join(ROOT, '.github/workflows/publish-club-arena.yml'), 'utf8') +
+  readFileSync(join(ROOT, '.github/workflows/publish-club-arena-transaction.yml'), 'utf8');
 const CUSTOMIZATION_CONFIG = readFileSync(join(ROOT, 'playwright.customization.config.ts'), 'utf8');
 
 const HARNESS_FLAGS = ['VITE_CUSTOMIZATION_TEST_HARNESS', 'VITE_FINANCIAL_DECISION_TEST_HARNESS'];

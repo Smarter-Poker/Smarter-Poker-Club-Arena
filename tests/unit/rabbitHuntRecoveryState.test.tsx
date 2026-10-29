@@ -89,3 +89,14 @@ it('does not let a late receipt overwrite a new purchase or a replaced viewer', 
   });
   expect(view.queryByText('cards')).toBeNull();
 });
+
+it('a replacement account starts idle after the old account needed recovery', async () => {
+  const request = vi.fn().mockResolvedValue({ success: false, retryable: true });
+  const view = render(<Surface request={request} />);
+  await act(async () => {
+    fireEvent.click(view.getByRole('button'));
+  });
+  expect(view.getByText('recover')).toBeTruthy();
+  view.rerender(<Surface request={request} user="b" />);
+  expect(view.getByText('idle')).toBeTruthy();
+});

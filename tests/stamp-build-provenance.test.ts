@@ -15,6 +15,10 @@ const source = readFileSync(path.join(sourceRoot, 'scripts/stamp-build-provenanc
  */
 const workflow =
   readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'), 'utf8') +
+  readFileSync(
+    path.join(sourceRoot, '.github/workflows/publish-club-arena-transaction.yml'),
+    'utf8'
+  ) +
   readFileSync(path.join(sourceRoot, '.github/scripts/publish-origin-activate.sh'), 'utf8');
 // Every test builds a real git fixture (init, commits, a fetched origin and a
 // captured PR merge) and runs the stamper as a child process. That is about
@@ -425,9 +429,21 @@ test('only the existing web and native publisher build steps carry the admitted 
     ['build-and-store', 'npm run build'],
     ['publish-to-app', 'npm run build:native'],
   ]) {
-    const step = w.jobs[job].steps.find((s: { run?: string }) => s.run === command);
+    const transaction = parse(
+      readFileSync(
+        path.join(sourceRoot, '.github/workflows/publish-club-arena-transaction.yml'),
+        'utf8'
+      )
+    );
+    const step = (w.jobs[job] ?? transaction.jobs[job]).steps.find(
+      (s: { run?: string }) => s.run === command
+    );
     expect(step.env.CA_BUILD_PURPOSE).toBe('production-publish');
-    expect(step.env.CA_PUBLISH_TARGET_SHA).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(step.env.CA_PUBLISH_TARGET_SHA).toBe(
+      job === 'build-and-store'
+        ? '${{ needs.publish-needed.outputs.target_sha }}'
+        : '${{ inputs.target_sha }}'
+    );
   }
 });
 

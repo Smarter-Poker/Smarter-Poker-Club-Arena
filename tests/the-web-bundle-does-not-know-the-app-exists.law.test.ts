@@ -172,7 +172,10 @@ describe('the web bundle does not know the native app exists', () => {
     const setters = Object.entries(pkg.scripts).filter(([, v]) => v.includes('VITE_NATIVE=1'));
     expect(setters.map(([k]) => k)).toEqual(['build:native']);
     expect(pkg.scripts['build:native']).toContain('CA_DIST=dist-native');
-    expect(read('.github/workflows/publish-club-arena.yml')).not.toContain('VITE_NATIVE');
+    expect(
+      read('.github/workflows/publish-club-arena.yml') +
+        read('.github/workflows/publish-club-arena-transaction.yml')
+    ).not.toContain('VITE_NATIVE');
     expect(read('.gitignore')).toMatch(/^dist-native$/m);
   });
 });

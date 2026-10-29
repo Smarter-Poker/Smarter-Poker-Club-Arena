@@ -2411,7 +2411,12 @@ export abstract class TournamentManagerBase {
     if (!this.successorDrainRequested || this.successorHandoffIssued || !this.isRunning())
       return false;
     for (const table of this.tableEngines.values()) {
-      if (table.isRunning() && !table.isBetweenHands()) return false;
+      if (
+        table.isRunning() &&
+        !table.isBetweenHands() &&
+        table.isPreparedOriginalParkedForSuccessor?.() !== true
+      )
+        return false;
     }
     // Mark before calling the owner: a synchronous callback or duplicate park
     // edge must never submit another handoff of this generation.
@@ -8781,7 +8786,9 @@ export abstract class TournamentManagerBase {
   ): Promise<void> {
     const generation = this.getTournamentLeaseGeneration();
     if (!generation) return;
-    const watermarks = await readTableWatermarks(this.tournamentId);
+    const watermarks = await readTableWatermarks(this.tournamentId, () =>
+      this.lifecycleIsCurrent(lifecycle)
+    );
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (!watermarks) {
       // Unreadable is not "no hands". Re-drive through this manager's own
@@ -9138,7 +9145,9 @@ export abstract class TournamentManagerBase {
     resumeId: string,
     generation: string
   ): Promise<boolean> {
-    const entitlements = await readStageEntitlements(this.tournamentId, stageNo);
+    const entitlements = await readStageEntitlements(this.tournamentId, stageNo, () =>
+      this.lifecycleIsCurrent(lifecycle)
+    );
     this.assertLifecycleCurrent(lifecycle);
     if (!entitlements) {
       reportError(
@@ -9154,27 +9163,44 @@ export abstract class TournamentManagerBase {
     await this.waitForStageThaw(lifecycle);
     this.assertLifecycleCurrent(lifecycle);
 
-    const { data: existingTables, error: tablesError } = await supabase
-      .from('tables')
-      .select('id, max_players')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting'])
-      .order('created_at', { ascending: true });
+    const options = (label: string) => ({
+      label,
+      shouldContinue: () => this.lifecycleIsCurrent(lifecycle),
+    });
+    const { rows: existingTables, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, max_players, created_at')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['running', 'waiting'])
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      options('Tournament.stage_seating_tables')
+    );
     this.assertLifecycleCurrent(lifecycle);
-    if (tablesError || !Array.isArray(existingTables)) {
-      throw new Error(`Stage table inventory read failed: ${tablesError?.message ?? 'no rows'}`);
-    }
-    const { data: liveSeats, error: seatsError } = await supabase
-      .from('table_seats')
-      .select(
-        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
-      )
-      .is('left_at', null)
-      .eq('tables.tournament_id', this.tournamentId);
+    if (!tablesComplete) throw new Error('Stage table inventory read incomplete');
+    existingTables.sort((a, b) =>
+      String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    );
+    const { rows: liveSeats, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select(
+          'id, user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+        )
+        .is('left_at', null)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.stage_seating_seats'));
     this.assertLifecycleCurrent(lifecycle);
-    if (seatsError || !Array.isArray(liveSeats)) {
-      throw new Error(`Stage live-seat read failed: ${seatsError?.message ?? 'no rows'}`);
-    }
+    if (!seatsComplete) throw new Error('Stage live-seat read incomplete');
     const occupied = new Map<string, Set<number>>();
     for (const seat of liveSeats as Array<{ table_id: string; seat_number: number }>) {
       if (!occupied.has(seat.table_id)) occupied.set(seat.table_id, new Set());

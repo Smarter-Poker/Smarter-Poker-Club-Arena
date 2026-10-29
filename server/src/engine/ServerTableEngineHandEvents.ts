@@ -772,7 +772,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           // outright while a hand is live, and a mid-hand add-on is queued rather
           // than applied to the live stack, so nothing legitimately moves chips
           // in or out between the deal and settlement.
-          this.verifyStreetIntegrity();
+          this.verifyStreetIntegrity(event.integrityVerification);
           this.broadcastCurrentState();
           break;
         }
@@ -1240,26 +1240,36 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
    * StateVerifier itself and drive the recovery FSM; this only adds the engine
    * context to the log.
    */
-  protected verifyStreetIntegrity(): void {
+  protected verifyStreetIntegrity(
+    captured?: Extract<HandEvent, { type: 'COMMUNITY_CARDS' }>['integrityVerification']
+  ): void {
     if (!this.handController) return;
     try {
-      const live = this.handController.getState();
-      const result = this.stateVerifier.verify({
-        tableId: this.tableId,
-        handNumber: this.handCount,
-        players: live.players,
-        communityCards: live.communityCards,
-        pot: live.pot,
-        stage: live.stage,
-        phase: 'in_hand',
-        // Nothing is raked until settlement, so every chip is still in a stack
-        // or in the pot.
-        rakeTaken: 0,
-      });
+      // Older retained events have no event-time verdict. Keep their existing
+      // reader; new events must not measure the later paid showdown state again.
+      const live = captured ? undefined : this.handController.getState();
+      const stage = captured?.stage ?? live!.stage;
+      const pot = captured?.pot ?? live!.pot;
+      const handNumber = captured?.handNumber ?? this.handCount;
+      if (captured)
+        this.stateVerifier.acceptVerificationResult(this.tableId, handNumber, captured.result);
+      const result =
+        captured?.result ??
+        this.stateVerifier.verify({
+          tableId: this.tableId,
+          handNumber,
+          players: live!.players,
+          communityCards: live!.communityCards,
+          pot,
+          stage,
+          phase: 'in_hand',
+          // Nothing is raked until settlement, so every chip is still in a stack
+          // or in the pot.
+          rakeTaken: 0,
+        });
       if (!result.valid) {
         const detail =
-          `Hand ${this.handCount} @ ${live.stage}: ` +
-          result.violations.map((v) => v.message).join('; ');
+          `Hand ${handNumber} @ ${stage}: ` + result.violations.map((v) => v.message).join('; ');
         reportError(detail, `ServerTableEngine.${this.tableId}.street_integrity_violation`);
 
         /**
@@ -1280,9 +1290,9 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           detail,
           {
             tableId: this.tableId,
-            handNumber: this.handCount,
-            stage: live.stage,
-            pot: live.pot,
+            handNumber,
+            stage,
+            pot,
             chipTotal: result.chipTotal,
             expectedChipTotal: result.expectedChipTotal ?? null,
             drift: result.drift ?? null,

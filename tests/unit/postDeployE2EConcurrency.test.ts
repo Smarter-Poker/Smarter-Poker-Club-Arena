@@ -32,7 +32,7 @@ describe('post-deploy E2E concurrency', () => {
     expect(
       readFileSync(resolve(__dirname, '../../scripts/ci/read-publisher-jobs.mjs'), 'utf8')
     ).toContain('jobs?filter=latest&per_page=30&page=${page}');
-    expect(workflow).toContain("entry?.name === 'publish-to-origin'");
+    expect(workflow).toContain("publisherJob(entry, 'publish-to-origin')");
     expect(workflow).toContain(
       "entry?.name === 'Stand down if the origin already serves a newer bundle'"
     );
@@ -44,7 +44,8 @@ describe('post-deploy E2E concurrency', () => {
     expect(workflow).toContain("proofs[0].conclusion === 'success'");
     expect(workflow).toContain("publishes[0].conclusion === 'skipped'");
     expect(workflow).toContain("proofs[0].conclusion === 'skipped'");
-    expect(workflow).not.toContain('SOURCE_CONCLUSION:');
+    expect(workflow).toContain("process.env.SOURCE_CONCLUSION === 'cancelled'");
+    expect(workflow).toContain('const cancelledBeforeTransaction');
     expect(workflow).not.toContain('should_run=false');
     expect(workflow).toContain(
       'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'

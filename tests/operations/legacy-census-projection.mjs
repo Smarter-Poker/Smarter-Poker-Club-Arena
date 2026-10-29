@@ -127,7 +127,7 @@ try {
   const projected = await post('Runtime.callFunctionOn', {
     objectId: broad.objects.objectId,
     functionDeclaration: source.projectLegacyCensus.toString(),
-    arguments: [{ objectId: modulesResponse.result.objectId }],
+    arguments: [{ objectId: modulesResponse.result.objectId }, { value: Date.now() + 5000 }],
     objectGroup: 'projection-exact',
   });
   assert.equal(projected.exceptionDetails, undefined);

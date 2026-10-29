@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252549,
-      "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1096,5 +1096,17 @@
       "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
     },
     "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "ciBrowserCriticalPathSourceAudit20261029": {
+    "scope": "Source identity only: five CSS Beat shards and three Diamond playfield shards preserve identical cases and required gates.",
+    "previousCiPin": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "currentCiPin": {
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
   }
 }

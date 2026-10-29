@@ -505,7 +505,14 @@ export function legacyCensusRoot() {
   return Object.prototype;
 }
 
-export function projectLegacyCensus(modules) {
+export function projectLegacyCensus(modules, workDeadlineMs) {
+  const startedAt = Date.now();
+  if (
+    !Number.isSafeInteger(workDeadlineMs) ||
+    workDeadlineMs <= startedAt ||
+    workDeadlineMs > startedAt + 40000
+  )
+    throw new Error('native census projection deadline refused');
   const roots = [
     modules.gameServer.GameServer.prototype,
     modules.engine.ServerTableEngine.prototype,
@@ -514,6 +521,7 @@ export function projectLegacyCensus(modules) {
     modules.lightningHost.LightningHandHost.prototype,
   ];
   const out = [[], [], [], [], []];
+  const limits = [4000, 4000, 2000, 4000, 4000];
   const getPrototypeOf = Object.getPrototypeOf;
   const isProxy = process.getBuiltinModule('node:util').types.isProxy;
   const membership = new WeakMap([[Object.prototype, 0]]);
@@ -547,11 +555,16 @@ export function projectLegacyCensus(modules) {
     return mask;
   };
   for (let index = 0; index < this.length; index++) {
+    if ((index & 1023) === 0 && Date.now() >= workDeadlineMs)
+      throw new Error('native census projection deadline exhausted');
     const value = this[index];
     if (isProxy(value)) continue;
     const mask = classify(getPrototypeOf(value));
     for (let group = 0; group < roots.length; group++)
-      if (mask & (1 << group)) out[group].push(value);
+      if (mask & (1 << group)) {
+        if (out[group].length >= limits[group]) throw new Error('native census count refused');
+        out[group].push(value);
+      }
   }
   return out;
 }
@@ -727,7 +740,7 @@ export async function runLegacyEngineCheckpoint({
           {
             objectId: broad.objects.objectId,
             functionDeclaration: projectLegacyCensus.toString(),
-            arguments: [{ objectId: modules.objectId }],
+            arguments: [{ objectId: modules.objectId }, { value: deadline }],
             objectGroup: 'legacy-checkpoint',
           },
           deadline,

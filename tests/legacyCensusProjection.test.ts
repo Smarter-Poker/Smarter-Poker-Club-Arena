@@ -55,13 +55,43 @@ describe('legacy native heap census projection', () => {
     const diverse = Array.from({ length: 4097 }, () =>
       Object.create(Object.create(Object.prototype))
     );
-    expect(() => projectLegacyCensus.call(diverse, modules)).toThrow(
+    expect(() => projectLegacyCensus.call(diverse, modules, Date.now() + 5000)).toThrow(
       'native census topology refused'
     );
     let deep = roots[0].prototype;
     for (let index = 0; index < 257; index++) deep = Object.create(deep);
-    expect(() => projectLegacyCensus.call([Object.create(deep)], modules)).toThrow(
-      'native census topology refused'
+    expect(() =>
+      projectLegacyCensus.call([Object.create(deep)], modules, Date.now() + 5000)
+    ).toThrow('native census topology refused');
+  });
+
+  it('refuses an expired or exhausted in-target deadline and excessive owner counts without returning a prefix', () => {
+    const roots = Array.from({ length: 5 }, () => class Concrete {});
+    const modules = {
+      gameServer: { GameServer: roots[0] },
+      engine: { ServerTableEngine: roots[1] },
+      manager: { TournamentManager: roots[2] },
+      lightningWorker: { LightningClusterWorker: roots[3] },
+      lightningHost: { LightningHandHost: roots[4] },
+    };
+    expect(() => projectLegacyCensus.call([], modules, Date.now() - 1)).toThrow(
+      'native census projection deadline refused'
+    );
+    expect(() => projectLegacyCensus.call([], modules, Date.now() + 41000)).toThrow(
+      'native census projection deadline refused'
+    );
+    let clockReads = 0;
+    const bounded = vm.runInNewContext(`(${projectLegacyCensus.toString()})`, {
+      process,
+      Date: { now: () => (++clockReads === 1 ? 1000 : 2001) },
+    });
+    expect(() => bounded.call([new roots[0]()], modules, 2000)).toThrow(
+      'native census projection deadline exhausted'
+    );
+    expect(clockReads).toBe(2);
+    const excess = Array.from({ length: 4001 }, () => new roots[1]());
+    expect(() => projectLegacyCensus.call(excess, modules, Date.now() + 5000)).toThrow(
+      'native census count refused'
     );
   });
 

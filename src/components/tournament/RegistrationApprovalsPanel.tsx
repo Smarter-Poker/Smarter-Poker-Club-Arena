@@ -54,12 +54,25 @@ interface Props {
   authorizedToRegister: boolean;
 }
 
-export default function RegistrationApprovalsPanel({
+export default function RegistrationApprovalsPanel(props: Props) {
+  const { isAdmin } = useClubRole(props.clubId);
+  // The approval list, pending reads and actions belong to one event and
+  // permission scope. Navigation must never reuse another event's list.
+  return (
+    <RegistrationApprovalScope
+      key={JSON.stringify([props.tournamentId, props.clubId, props.authorizedToRegister, isAdmin])}
+      {...props}
+      isAdmin={isAdmin}
+    />
+  );
+}
+
+function RegistrationApprovalScope({
   tournamentId,
   clubId,
   authorizedToRegister,
-}: Props) {
-  const { isAdmin } = useClubRole(clubId);
+  isAdmin,
+}: Props & { isAdmin: boolean }) {
   const toast = useToast();
 
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);

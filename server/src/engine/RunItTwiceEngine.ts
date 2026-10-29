@@ -1,3 +1,4 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
 import { reportError } from '../services/errorReporter.js';
 import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
 
@@ -112,6 +113,21 @@ export interface RITEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class RunItTwiceEngine {
+  private weeklyClock = new WeeklyPauseClock();
+  pauseForWeeklyPayout(tableId: string, owner: string): void {
+    this.weeklyClock.hold(tableId, owner);
+    this.scheduler.pauseForWeeklyPayout(tableId, owner, 'rit_offer');
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    this.weeklyClock.release(tableId, owner);
+    this.scheduler.resumeFromWeeklyPayout(tableId, owner, 'rit_offer');
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string): boolean {
+    return this.scheduler.isParkedForWeeklyPayout(tableId, owner, 'rit_offer');
+  }
+
   private activeOffers: Map<string, RITState> = new Map();
   private tableConfigs: Map<string, RITConfig> = new Map();
   private onEvent?: (event: RITEvent) => void;
@@ -322,6 +338,7 @@ export class RunItTwiceEngine {
   }
 
   accept(tableId: string, playerId: string): boolean {
+    if (this.weeklyClock.has(tableId)) return false;
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'offered') return false;
 
@@ -365,6 +382,7 @@ export class RunItTwiceEngine {
   }
 
   decline(tableId: string, playerId: string, reason: RITDeclineReason = 'player'): void {
+    if (this.weeklyClock.has(tableId)) return;
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'offered') return;
     if (!state.allPlayerIds.includes(playerId)) return;
@@ -513,6 +531,7 @@ export class RunItTwiceEngine {
    * If runs === 1, this effectively declines RIT.
    */
   chooserDecides(tableId: string, userId: string, runs: 1 | 2 | 3): void {
+    if (this.weeklyClock.has(tableId)) return;
     const state = this.activeOffers.get(tableId);
     if (!state || state.chooserPlayerId !== userId) return;
     // CONSENT-RACE FIX 2026-08-18: a settled offer (declined/accepted/
@@ -563,14 +582,19 @@ export class RunItTwiceEngine {
 
   dispose(tableId: string): void {
     this.endHand(tableId);
+    for (const owner of this.weeklyClock.retire(tableId)) {
+      this.scheduler.resumeFromWeeklyPayout(tableId, owner, 'rit_offer');
+    }
     this.tableConfigs.delete(tableId);
   }
 
   disposeAll(): void {
-    for (const [tableId] of this.activeOffers) {
-      this.clearOffer(tableId);
-    }
-    this.tableConfigs.clear();
+    const tables = new Set([
+      ...this.activeOffers.keys(),
+      ...this.tableConfigs.keys(),
+      ...this.weeklyClock.tableIds(),
+    ]);
+    for (const tableId of tables) this.dispose(tableId);
   }
 
   private emitEvent(event: RITEvent): void {

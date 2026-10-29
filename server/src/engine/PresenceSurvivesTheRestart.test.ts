@@ -142,6 +142,7 @@ describe('the break writes the FSM, the boot reads it', () => {
     const park = sliceBlockAfter(
       dealing,
       `if (
+          this.weeklyPayoutPauseOwners.size > 0 ||
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||

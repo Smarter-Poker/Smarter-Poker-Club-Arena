@@ -1,3 +1,4 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  INSURANCE ENGINE — All-In Equity Insurance System
@@ -195,6 +196,21 @@ export interface InsuranceEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class InsuranceEngine {
+  private weeklyClock = new WeeklyPauseClock();
+  pauseForWeeklyPayout(tableId: string, owner: string): void {
+    this.weeklyClock.hold(tableId, owner);
+    this.scheduler.pauseForWeeklyPayout(tableId, owner, 'insurance_offer:');
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    this.weeklyClock.release(tableId, owner);
+    this.scheduler.resumeFromWeeklyPayout(tableId, owner, 'insurance_offer:');
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string): boolean {
+    return this.scheduler.isParkedForWeeklyPayout(tableId, owner, 'insurance_offer:');
+  }
+
   private tableConfigs: Map<string, InsuranceConfig> = new Map();
   private activeOffers: Map<string, InsuranceOffer[]> = new Map();
   private onEvent?: (event: InsuranceEvent) => void;
@@ -450,6 +466,7 @@ export class InsuranceEngine {
    * player's actual pot winnings to the bank.
    */
   acceptEvCashout(tableId: string, playerId: string): { ok: boolean; amount?: number } {
+    if (this.weeklyClock.has(tableId)) return { ok: false };
     const offers = this.activeOffers.get(tableId);
     if (!offers) return { ok: false };
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
@@ -478,6 +495,7 @@ export class InsuranceEngine {
    * Accept insurance with full coverage (100%).
    */
   accept(tableId: string, playerId: string): boolean {
+    if (this.weeklyClock.has(tableId)) return false;
     return this.acceptPartial(tableId, playerId, 100);
   }
 
@@ -487,6 +505,7 @@ export class InsuranceEngine {
    * e.g., 75% coverage = 75% of the insuredAmount, 75% of the premium.
    */
   acceptPartial(tableId: string, playerId: string, coveragePercent: number): boolean {
+    if (this.weeklyClock.has(tableId)) return false;
     const offers = this.activeOffers.get(tableId);
     if (!offers) return false;
 
@@ -539,6 +558,7 @@ export class InsuranceEngine {
     // 'player' when a decline was chosen. Same finality either way.
     source: 'player' | 'timeout' = 'player'
   ): void {
+    if (this.weeklyClock.has(tableId)) return;
     const offers = this.activeOffers.get(tableId);
     if (!offers) return;
 
@@ -743,6 +763,9 @@ export class InsuranceEngine {
 
   dispose(tableId: string): void {
     this.endHand(tableId);
+    for (const owner of this.weeklyClock.retire(tableId)) {
+      this.scheduler.resumeFromWeeklyPayout(tableId, owner, 'insurance_offer:');
+    }
     this.tableConfigs.delete(tableId);
   }
 
@@ -769,10 +792,12 @@ export class InsuranceEngine {
   }
 
   disposeAll(): void {
-    for (const [tableId] of this.activeOffers) {
-      this.dispose(tableId);
-    }
-    this.tableConfigs.clear();
+    const tables = new Set([
+      ...this.activeOffers.keys(),
+      ...this.tableConfigs.keys(),
+      ...this.weeklyClock.tableIds(),
+    ]);
+    for (const tableId of tables) this.dispose(tableId);
   }
 
   private emitEvent(event: InsuranceEvent): void {

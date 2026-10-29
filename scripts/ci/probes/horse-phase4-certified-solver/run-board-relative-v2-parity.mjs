@@ -20,8 +20,11 @@ const validatorModule = await import(validatorSource ? pathToFileURL(validatorSo
 const { boardRelativeFeatureKeyV2Valid } = validatorModule;
 assert.equal(typeof boardRelativeFeatureKeyV2Valid,'function','actual maintained consumer validator required');
 
-if (!process.env.PGHOST?.startsWith('/Volumes/SmarterWork/agent-work/')) {
-  throw Error('parity requires an explicitly task-owned external SSD PostgreSQL socket');
+const hostedFixtureRoot = process.env.V31_FEATURE_PRIVATE_FIXTURE_ROOT;
+const hostedFixture = process.env.RUNNER_TEMP && hostedFixtureRoot?.startsWith(process.env.RUNNER_TEMP + '/') &&
+  process.env.PGHOST === hostedFixtureRoot + '/socket';
+if (!process.env.PGHOST?.startsWith('/Volumes/SmarterWork/agent-work/') && !hostedFixture) {
+  throw Error('parity requires an explicitly task-owned external SSD or hosted fixture PostgreSQL socket');
 }
 const deck = [...'23456789TJQKA'].flatMap((r) => [...'cdhs'].map((s) => r + s));
 function combo(hole) {
@@ -75,9 +78,14 @@ const altered = [
   JSON.stringify(JSON.parse(cases[0].expected).map((value,index) => index === 12 ? [0.5,0,0] : value)),
 ];
 const source = readFileSync(new URL('./board-relative-v2.sql', import.meta.url), 'utf8');
+// Exercise the maintained optimized function, not only the disconnected reference.
+// The parent rollback owns this private transaction; do not commit its fixture.
+const optimization = readFileSync(new URL('../../../../supabase/migrations/20261028223011_v31_feature_subsets_avoid_per_hand_sql.sql', import.meta.url), 'utf8')
+  .replace(/^BEGIN;$/m, '').replace(/^COMMIT;$/m, '');
 const sql = `BEGIN;
 DO $$ BEGIN IF current_setting('server_version_num')::integer NOT BETWEEN 170000 AND 179999 OR inet_server_addr() IS NOT NULL THEN RAISE EXCEPTION 'private socket PG17 fixture required'; END IF; END $$;
 ${source}
+${optimization}
 WITH inputs(id,combo,board) AS (VALUES ${rows}), computed AS (
  SELECT id,public.fn_gto_v31_board_relative_key_v2(combo,board) AS key FROM inputs
 ) SELECT jsonb_build_object('vectors',jsonb_agg(jsonb_build_object('id',id,'key',key,'valid',public.fn_gto_v31_board_relative_key_v2_valid(key)) ORDER BY id),

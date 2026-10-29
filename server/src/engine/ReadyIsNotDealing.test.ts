@@ -36,6 +36,8 @@ const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const TABLE = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   loadTable.mockReset();
   loadSeatedPlayers.mockReset();
@@ -86,6 +88,42 @@ const settled = async <T>(p: Promise<T>): Promise<{ done: boolean; value?: T }> 
 };
 
 describe('engine.ready', () => {
+  it('a genuinely started idle engine joins the weekly money edge through its original waiting loop', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-02T09:59:59Z'));
+    loadTable.mockResolvedValue(TABLE_ROW);
+    loadSeatedPlayers.mockResolvedValue([seat(1)]);
+    const engine = startable();
+    engine.findLedgerChipsOwedWhileWaiting = async () => {};
+    engine.processPendingAddOns = async () => {};
+    engine.adoptMovedPresence = async () => true;
+    engine.judgePresenceWhileWaiting = async () => {};
+    engine.executeIdleSeatMoves = async () => {};
+    engine.stopIfClusterTableClosed = async () => {};
+    // Keep the real original sleep long enough to straddle the money edge.
+    engine.sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const started = engine.start();
+    try {
+      expect(await engine.ready).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(engine.waitForPlayersWake).not.toBeNull();
+      expect(engine.handController).toBeNull();
+      await vi.advanceTimersByTimeAsync(1000);
+      engine.pauseForWeeklyPayout('weekly');
+      engine.engageWeeklyPayoutHandPause('weekly');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+      const rosterReads = loadSeatedPlayers.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(240000);
+      expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+      expect(loadSeatedPlayers).toHaveBeenCalledTimes(rosterReads);
+      expect(engine.dealingLoop).not.toHaveBeenCalled();
+    } finally {
+      await engine.stop();
+      await started;
+    }
+  });
+
   it('resolves true at `waiting` while start() is still waiting for a second player', async () => {
     loadTable.mockResolvedValue(TABLE_ROW);
     loadSeatedPlayers.mockResolvedValue([seat(1)]); // one player: start() cannot deal

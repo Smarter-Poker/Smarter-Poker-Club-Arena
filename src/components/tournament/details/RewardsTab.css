@@ -385,3 +385,16 @@
   color: var(--tl-text);
   font-variant-numeric: tabular-nums;
 }
+
+/* Keep the award components readable in the existing payout row. */
+.rw-award {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.rw-award .rw-pct {
+  font-size: 10px;
+  white-space: nowrap;
+}

@@ -1,3 +1,4 @@
+import {isClubArenaRepository} from './repository-identity.mjs';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,7 +48,7 @@ export function validateReceipt(receipt) {
   )
     fail('invalid schema');
   if (
-    receipt.repository !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    !isClubArenaRepository(receipt.repository, receipt.repositoryId) ||
     receipt.workflowRef !==
       `${receipt.repository}/.github/workflows/publish-club-arena.yml@refs/heads/main` ||
     ![receipt.repositoryId, receipt.runId, receipt.runAttempt].every(

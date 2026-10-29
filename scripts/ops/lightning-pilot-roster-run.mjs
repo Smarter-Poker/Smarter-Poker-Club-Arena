@@ -1,4 +1,5 @@
 /** Provider ownership checks for one manually invoked, non-retryable roster execution. */
+import {isClubArenaRepository} from '../ci/repository-identity.mjs';
 import { pathToFileURL } from 'node:url';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const WORKFLOW = '.github/workflows/lightning-pilot-roster.yml';
@@ -51,7 +52,7 @@ export async function guardRosterRun(
   const repo = env.GITHUB_REPOSITORY,
     token = env.GITHUB_TOKEN;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    !isClubArenaRepository(repo, env.GITHUB_REPOSITORY_ID) ||
     !token ||
     !/^\d+$/.test(env.GITHUB_RUN_ID || '')
   )

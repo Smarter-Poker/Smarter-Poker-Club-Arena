@@ -85,16 +85,17 @@ verify_release_identity() {
   local release_dir="$1"
   local expected_sha="$2"
   local repository="$3"
+  local identity_role="${4:-candidate}"
   python3 - \
     "$release_dir/ca-provenance.json" \
     "$release_dir/build-info.json" \
     "$expected_sha" \
-    "$repository" <<'PYTHON_RELEASE_IDENTITY'
+    "$repository" "$identity_role" <<'PYTHON_RELEASE_IDENTITY'
 import json
 import re
 import sys
 
-provenance_path, build_info_path, expected_sha, repository = sys.argv[1:]
+provenance_path, build_info_path, expected_sha, repository, identity_role = sys.argv[1:]
 try:
     with open(provenance_path, encoding='utf-8') as handle:
         provenance = json.load(handle)
@@ -108,6 +109,21 @@ def require(condition, message):
         raise SystemExit(message)
 
 require(type(provenance) is dict, 'release provenance is not one JSON object')
+old_repository = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+new_repository = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'
+require(repository in (old_repository, new_repository) and identity_role in ('candidate', 'rollback'),
+        'release repository or identity role is not approved')
+source_repository = repository
+if identity_role == 'rollback':
+    # Existing origin bytes keep their original publisher identity. Only the
+    # old-owner rollback release may predate immutable-ID provenance stamping.
+    source_run = re.fullmatch(r'https://github\.com/([^/]+/[^/]+)/actions/runs/[0-9]+', str(provenance.get('ciRun', '')))
+    require(source_run is not None, 'rollback publisher run identity is invalid')
+    source_repository = source_run.group(1)
+require(source_repository in (old_repository, new_repository), 'release publisher repository is not approved')
+require(provenance.get('repositoryId') == '1132369872' or
+        (source_repository == old_repository and provenance.get('repositoryId') is None),
+        'release immutable repository identity is invalid')
 require(type(build_info) is dict, 'release build-info is not one JSON object')
 require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
         'release provenance schema is invalid')
@@ -124,12 +140,12 @@ require(provenance.get('historyComplete') is True,
 require(type(provenance.get('behindMain')) is int and 0 <= provenance['behindMain'] <= 9007199254740991,
         'release provenance has unreadable protected-main distance')
 publication = provenance.get('publication')
-legacy_current = provenance['behindMain'] == 0 and publication is None
+legacy_current = source_repository == old_repository and provenance['behindMain'] == 0 and publication is None
 admitted = (type(publication) is dict and publication.get('admittedMain') == expected_sha
     and type(publication.get('observedMain')) is str
     and re.fullmatch(r'[0-9a-f]{40}', publication['observedMain']) is not None
     and ((publication['observedMain'] == expected_sha) == (provenance['behindMain'] == 0))
-    and publication.get('workflowRef') == 'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main'
+    and publication.get('workflowRef') == f'{source_repository}/.github/workflows/publish-club-arena.yml@refs/heads/main'
     and type(publication.get('workflowSha')) is str
     and re.fullmatch(r'[0-9a-f]{40}', publication['workflowSha']) is not None
     and publication.get('triggerSha') == publication['workflowSha']
@@ -147,7 +163,7 @@ require(type(build_info.get('built_at')) is str and
 require(type(build_info.get('run_id')) is str and
         re.fullmatch(r'[0-9]+', build_info['run_id']) is not None,
         'release build-info names no exact publisher run')
-expected_run = f"https://github.com/{repository}/actions/runs/{build_info['run_id']}"
+expected_run = f"https://github.com/{source_repository}/actions/runs/{build_info['run_id']}"
 require(provenance.get('ciRun') == expected_run,
         'release provenance and build-info name different publisher runs')
 PYTHON_RELEASE_IDENTITY
@@ -192,7 +208,7 @@ seal_current_release_for_rollback() {
     echo 'current rollback release contains a special file' >&2
     return 1
   fi
-  verify_release_identity "$release_dir" "$expected_sha" "$repository"
+  verify_release_identity "$release_dir" "$expected_sha" "$repository" rollback
 
   if [ -e "$manifest" ] || [ -L "$manifest" ]; then
     [ -f "$manifest" ] && [ ! -L "$manifest" ] && [ -s "$manifest" ] \

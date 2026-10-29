@@ -214,9 +214,8 @@ describe('stale deployment chunk recovery', () => {
       uninstall();
     });
 
-    // Behaviour moved deliberately (2026-10-26): an unreadable live build no
-    // longer recovers at the grace, it is asked again until the patience ends.
-    it('recovers once the patience ends when the navigation never completed', async () => {
+    // Unreadable production identity is not proof that a departure failed.
+    it('stops bounded unknown-departure probes without replacing the document', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();
       const uninstall = recovery.installVitePreloadErrorRecovery();
@@ -235,10 +234,70 @@ describe('stale deployment chunk recovery', () => {
         recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS
       );
       await flush();
-      // Still on this page, so the failure was real: one recovery, not two.
-      expect(replace).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
+      // Elapsed time does not establish that either cancelled load was stale.
+      expect(replace).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
       uninstall();
+    });
+
+    it('retains a departure that outlasts the grace during asynchronous cache purge', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      let finishPurge!: (value: string[]) => void;
+      vi.stubGlobal('caches', {
+        keys: () =>
+          new Promise<string[]>((resolve) => {
+            finishPurge = resolve;
+          }),
+        delete: vi.fn(),
+      });
+      const declined = vi.fn();
+      const reload = recovery.hardReload(declined);
+      browser.dispatchEvent(new Event('pagehide'));
+      await vi.advanceTimersByTimeAsync(recovery.NAVIGATION_GRACE_MS * 2);
+      finishPurge([]);
+      await reload;
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await flush();
+      expect(replace).not.toHaveBeenCalled();
+      expect(declined).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('rejects both critical lazy imports when their shared purge-time departure is declined', async () => {
+      vi.useFakeTimers();
+      const { browser, replace, recovery } = await freshDocument();
+      let finishPurge!: (value: string[]) => void;
+      vi.stubGlobal('caches', {
+        keys: () =>
+          new Promise<string[]>((resolve) => {
+            finishPurge = resolve;
+          }),
+        delete: vi.fn(),
+      });
+      const failure = new TypeError('Importing a module script failed.');
+      const first = recovery.lazyWithRetry(async () => {
+        throw failure;
+      }, 1) as unknown as () => Promise<unknown>;
+      const second = recovery.lazyWithRetry(async () => {
+        throw failure;
+      }, 1) as unknown as () => Promise<unknown>;
+      const rejected = [vi.fn(), vi.fn()];
+      void first().catch(rejected[0]);
+      await flush();
+      void second().catch(rejected[1]);
+      await flush();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('1');
+      browser.dispatchEvent(new Event('pagehide'));
+      finishPurge([]);
+      await flush();
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await flush();
+      expect(rejected[0]).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(rejected[1]).toHaveBeenCalledExactlyOnceWith(failure);
+      expect(replace).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBe('0');
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it('defers a direct hard reload requested during a navigation', async () => {
@@ -255,7 +314,7 @@ describe('stale deployment chunk recovery', () => {
         recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS
       );
       await flush();
-      expect(replace).toHaveBeenCalledTimes(1);
+      expect(replace).not.toHaveBeenCalled();
     });
 
     /* 2026-10-25, production post-deploy (WebKit): the lobby document took
@@ -295,14 +354,15 @@ describe('stale deployment chunk recovery', () => {
         uninstall();
       });
 
-      it('still restores a cancelled navigation once its bounded patience runs out', async () => {
+      it('never replaces a current-build departure after its bounded patience', async () => {
         const { replace, recovery, uninstall } = await departedOnBuild(BUILD);
         await vi.advanceTimersByTimeAsync(
           recovery.CURRENT_BUILD_PATIENCE_MS + recovery.NAVIGATION_GRACE_MS + 1
         );
         await flush();
-        expect(replace).toHaveBeenCalledTimes(1);
-        expect(String(replace.mock.calls[0][0])).toContain('_cb=');
+        expect(replace).not.toHaveBeenCalled();
+        expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
         uninstall();
       });
 
@@ -319,7 +379,7 @@ describe('stale deployment chunk recovery', () => {
       /* Production run 40260290873 (WebKit): a pending navigation refuses
          the departing page's new fetches, so the live build reads as
          unknown. That is a departure, not a stale page. */
-      it('keeps waiting while the live build cannot be read, then recovers at the patience', async () => {
+      it('stops unknown-build departure probes at the patience without reloading', async () => {
         const { replace, recovery, uninstall } = await departedOnBuild(
           new TypeError('Load failed')
         );
@@ -328,7 +388,7 @@ describe('stale deployment chunk recovery', () => {
         expect(replace).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
         await flush();
-        expect(replace).toHaveBeenCalledTimes(1);
+        expect(replace).not.toHaveBeenCalled();
         uninstall();
       });
 
@@ -347,7 +407,7 @@ describe('stale deployment chunk recovery', () => {
       });
     });
 
-    it('keeps a lazy route suspended instead of erroring while the page leaves', async () => {
+    it('exposes a lazy route fallback after bounded departure verification declines recovery', async () => {
       vi.useFakeTimers();
       const { browser, recovery } = await freshDocument();
       const uninstall = recovery.installVitePreloadErrorRecovery();
@@ -365,6 +425,13 @@ describe('stale deployment chunk recovery', () => {
       );
       await flush();
       expect(state).toBe('pending');
+      await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS * 2);
+      await flush();
+      expect(state).toBe('rejected');
+      expect(
+        recovery.claimChunkErrorForBoundary(new TypeError('Importing a module script failed.'))
+      ).toBe('exhausted');
+      expect(sessionStorage.getItem(chunkReloadGuardKey())).toBeNull();
       uninstall();
     });
   });
@@ -574,7 +641,7 @@ describe('stale deployment chunk recovery', () => {
       uninstall();
     });
 
-    it('does not reload while the live build cannot be read, until its bounded patience ends', async () => {
+    it('does not reload when the live build remains unreadable past its bounded patience', async () => {
       const { replace, recovery, uninstall } = await reinstatedThenFails(
         new TypeError('Fetch API cannot load build-info.json due to access control checks.')
       );
@@ -583,7 +650,7 @@ describe('stale deployment chunk recovery', () => {
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
       await settle();
-      expect(replace).toHaveBeenCalledTimes(1);
+      expect(replace).not.toHaveBeenCalled();
       uninstall();
     });
 
@@ -622,9 +689,9 @@ describe('stale deployment chunk recovery', () => {
 
     /* Nothing can be read (offline, or a WebKit departure cancelling every
        fetch of the page being left). A slow navigation can outlast one grace,
-       so recovery keeps asking for up to CURRENT_BUILD_PATIENCE_MS; a page
-       still here at the end of it really is stuck, and recovers once. */
-    it('waits for its bounded patience when nothing can be asked', async () => {
+       so recovery asks for at most CURRENT_BUILD_PATIENCE_MS, then stops
+       without replacing a document whose departure remains unknown. */
+    it('ends bounded stylesheet probes without reloading when nothing can be asked', async () => {
       vi.useFakeTimers();
       const { browser, replace, recovery } = await freshDocument();
       vi.stubGlobal(
@@ -642,7 +709,7 @@ describe('stale deployment chunk recovery', () => {
       expect(replace).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(recovery.CURRENT_BUILD_PATIENCE_MS);
       await settle();
-      expect(replace).toHaveBeenCalledTimes(1);
+      expect(replace).not.toHaveBeenCalled();
       uninstall();
     });
 

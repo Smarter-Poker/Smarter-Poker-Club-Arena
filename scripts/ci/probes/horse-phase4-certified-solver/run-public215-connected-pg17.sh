@@ -35,13 +35,16 @@ while IFS= read -r migration;do "${PSQL[@]}" -f "$ROOT/supabase/migrations/$migr
 BASE_HASH=$("${PSQL[@]}" -Atc "SELECT md5(pg_get_functiondef('public.fn_gto_v31_build_cell(uuid,jsonb)'::regprocedure));")
 "$PG_BIN/createdb" -h "$SOCKET" -p55447 -U "$USER" -T postgres public215_probe
 PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -h "$SOCKET" -p55447 -U "$USER" -d public215_probe)
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql"
+"${PSQL[@]}" -f "$HERE/public215-install-constraints-before.sql" \
+ -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql" \
+ -f "$HERE/public215-install-constraints-after.sql"
 if [[ "${1:-}" != identities ]];then node "$HERE/public215-declared-proofs.mjs" | "${PSQL[@]}";fi
 case "${1:-audit}" in
  all) fixture=all;;
  audit) fixture=public215-audit-cost.sql;;
  metadata) fixture=public215-metadata.sql;;
  identities) fixture=public215-identities.sql;;
+ install) fixture=public215-identities.sql;;
  selection) fixture=public215-selection.sql;;
  admission) fixture=public215-admission.sql;;
  wtl) fixture=public215-wtl-parity.sql;;

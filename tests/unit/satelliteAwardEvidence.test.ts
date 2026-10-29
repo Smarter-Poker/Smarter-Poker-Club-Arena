@@ -1,3 +1,4 @@
+import { satelliteAwardTotalLabel } from '../../src/components/tournament/details/useSatelliteAwards';
 import { describe, expect, it } from 'vitest';
 import {
   recordedSatelliteAwardKind,
@@ -66,4 +67,11 @@ describe('recorded satellite delivery evidence', () => {
     for (const value of [0, -1, 'bad', Infinity, null])
       expect(kind([receipt], value)).toBe('unknown');
   });
+});
+
+it('keeps a ticket separate from cash bounty when a satellite result is totaled', () => {
+  expect(satelliteAwardTotalLabel('ticket', 35, 4, String)).toBe('1 Ticket (35) + Cash 4');
+  expect(satelliteAwardTotalLabel('cash', 3, 2, String)).toBe('Cash 5');
+  expect(satelliteAwardTotalLabel('unknown', 35, 2, String)).toBe('Value 37');
+  expect(satelliteAwardTotalLabel('unknown', 0, 5, String)).toBe('Cash 5');
 });

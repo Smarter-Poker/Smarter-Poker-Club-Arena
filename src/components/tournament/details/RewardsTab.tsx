@@ -94,7 +94,7 @@ import { reportError } from '../../../utils/errorReporter';
 import { subscribeTournamentStandings } from '../../../services/tournamentStandingsUpdates';
 import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
-import { recordedSatelliteAwardKind, type SatellitePayoutEvidence } from './satelliteAwardEvidence';
+import { useSatelliteAwards, satelliteAwardLabel } from './useSatelliteAwards';
 import {
   chips,
   effectivePlaceLadderPool,
@@ -288,7 +288,12 @@ interface RewardColumns {
    (2026-08-26 audit). */
 const isStillIn = isPlayerLive;
 
-export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
+export default function RewardsTab({
+  tournament,
+  entries,
+  currentUserId,
+  satelliteAwards: providedAwards,
+}: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -528,56 +533,8 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
     Boolean(t.satellite_target_id || t.satellite_target);
 
-  const hasRecordedSatellitePrize =
-    isSatellite && isComplete && entries.some((e) => Number(e.prize) > 0);
-  const [ownedAwards, setOwnedAwards] = useState<{
-    tournamentId: string | null;
-    rows: SatellitePayoutEvidence[];
-    ready: boolean;
-    failed: boolean;
-  }>({ tournamentId: null, rows: [], ready: false, failed: false });
-  const awardRows = ownedAwards.tournamentId === tournamentId ? ownedAwards.rows : [];
-  const awardTypesReady = ownedAwards.tournamentId === tournamentId && ownedAwards.ready;
-  const awardRowsByUser = useMemo(() => {
-    const byUser = new Map<string, SatellitePayoutEvidence[]>();
-    for (const row of awardRows) {
-      const list = byUser.get(row.user_id) ?? [];
-      list.push(row);
-      byUser.set(row.user_id, list);
-    }
-    return byUser;
-  }, [awardRows]);
-  useEffect(() => {
-    if (!tournamentId || !hasRecordedSatellitePrize) return;
-    let cancelled = false;
-    setOwnedAwards({ tournamentId, rows: [], ready: false, failed: false });
-    void (async () => {
-      try {
-        // Existing RLS permits the field and club staff; a spectator may get no rows.
-        const rows = await fetchAllRows<SatellitePayoutEvidence>(
-          (cursor) => {
-            let query = supabase
-              .from('tournament_payouts')
-              .select('id,tournament_id,user_id,source,amount,recorded_by,metadata')
-              .eq('tournament_id', tournamentId)
-              .in('source', ['satellite_seat', 'satellite_ticket', 'satellite_remainder'])
-              .order('id', { ascending: true })
-              .limit(PAGE);
-            if (cursor !== null) query = query.gt('id', cursor);
-            return query;
-          },
-          () => !cancelled
-        );
-        if (!cancelled) setOwnedAwards({ tournamentId, rows, ready: true, failed: false });
-      } catch (error) {
-        reportError(error, 'RewardsTab.satellite_award_types');
-        if (!cancelled) setOwnedAwards({ tournamentId, rows: [], ready: true, failed: true });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tournamentId, hasRecordedSatellitePrize]);
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
+  const awardTypesReady = awardEvidence.ready;
 
   /**
    * A SATELLITE PAYS SEATS, NOT THE PERCENTAGE LADDER (2026-10-04).
@@ -1019,16 +976,9 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
           <p className="tl-empty__hint" role="status">
             {!awardTypesReady
               ? 'Reading Recorded Award Types'
-              : ownedAwards.failed ||
+              : awardEvidence.failed ||
                   [...satelliteAwards.seatWinners, ...satelliteAwards.finishers].some(
-                    (e) =>
-                      recordedSatelliteAwardKind(
-                        awardRowsByUser.get(e.user_id) ?? [],
-                        tournamentId,
-                        t.satellite_target_id ?? t.satellite_target,
-                        e.user_id,
-                        e.prize
-                      ) === 'unknown'
+                    (e) => awardEvidence.kindFor(e.user_id, e.prize) === 'unknown'
                   )
                 ? 'Ticket Or Cash Details Are Unavailable In This View. Recorded Values Are Shown.'
                 : null}
@@ -1040,13 +990,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
               {[...satelliteAwards.seatWinners, ...satelliteAwards.finishers].map((e, i) => {
                 const wonSeat = i < satelliteAwards.seatWinners.length;
                 const isHeroRow = !!currentUserId && e.user_id === currentUserId;
-                const awardKind = recordedSatelliteAwardKind(
-                  awardRowsByUser.get(e.user_id) ?? [],
-                  tournamentId,
-                  t.satellite_target_id ?? t.satellite_target,
-                  e.user_id,
-                  e.prize
-                );
+                const awardKind = awardEvidence.kindFor(e.user_id, e.prize);
                 return (
                   <li
                     key={e.id}
@@ -1073,11 +1017,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                       )}
                     </span>
                     <span className="tl-num tl-num--accent rw-prize">
-                      {awardKind === 'ticket'
-                        ? `1 Ticket (${unitMoney(e.prize)})`
-                        : awardKind === 'cash'
-                          ? `Cash ${unitMoney(e.prize)}`
-                          : `Value ${unitMoney(e.prize)}`}
+                      {satelliteAwardLabel(awardKind, unitMoney(e.prize))}
                     </span>
                   </li>
                 );

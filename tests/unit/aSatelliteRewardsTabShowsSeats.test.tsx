@@ -26,6 +26,10 @@ const h = vi.hoisted(() => ({
     data: Array<Record<string, unknown>> | null;
     error: { message: string } | null;
   }> | null,
+  pages: null as Array<{
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  }> | null,
   from: vi.fn(),
 }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { from: h.from } }));
@@ -137,9 +141,11 @@ beforeEach(() => {
   h.rows = receipts();
   h.error = null;
   h.pending = null;
+  h.pages = null;
   h.from.mockReset();
   h.from.mockImplementation(() => {
-    const result = h.pending ?? Promise.resolve({ data: h.rows.slice(), error: h.error });
+    const result =
+      h.pending ?? Promise.resolve(h.pages?.shift() ?? { data: h.rows.slice(), error: h.error });
     const builder: Record<string, unknown> = {};
     for (const method of ['select', 'eq', 'in', 'order', 'limit', 'gt'])
       builder[method] = () => builder;
@@ -325,4 +331,53 @@ describe('Rewards on an ordinary finished event', () => {
     expect(text).not.toContain('Qualified Players');
     expect(text).not.toContain('Satellite Awards');
   });
+});
+
+describe('page-owned satellite evidence', () => {
+  it('uses the shared evidence without fetching it again on a tab mount', () => {
+    const { container } = render(
+      <RewardsTab
+        {...props()}
+        satelliteAwards={{ ready: true, failed: false, kindFor: () => 'ticket' }}
+      />
+    );
+    expect(container.textContent).toContain('1 Ticket (100)');
+    expect(h.from).not.toHaveBeenCalled();
+  });
+  it('never labels an award from a partial receipt read', async () => {
+    const first = receipts()[0];
+    h.pages = [
+      {
+        data: Array.from({ length: 1000 }, (_, i) => ({
+          ...first,
+          id: String(i).padStart(4, '0'),
+          user_id: i === 0 ? first.user_id : `other${i}`,
+        })),
+        error: null,
+      },
+      { data: null, error: { message: 'second page unavailable' } },
+    ];
+    const { container } = render(<RewardsTab {...props()} />);
+    await waitFor(() => expect(container.textContent).toContain('Details Are Unavailable'));
+    expect(container.textContent).not.toContain('1 Ticket');
+    expect(h.from).toHaveBeenCalledTimes(2);
+  });
+});
+
+it('retires receipt evidence when the viewer changes without changing the event', async () => {
+  let resolveOld!: (value: { data: Array<Record<string, unknown>>; error: null }) => void;
+  h.pending = new Promise((resolve) => {
+    resolveOld = resolve;
+  });
+  const { container, rerender } = render(<RewardsTab {...props()} />);
+  await waitFor(() => expect(h.from).toHaveBeenCalledTimes(1));
+  h.pending = null;
+  h.rows = [];
+  rerender(<RewardsTab {...props()} currentUserId="other-viewer" />);
+  await waitFor(() => expect(h.from).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    resolveOld({ data: receipts(), error: null });
+  });
+  expect(container.textContent).not.toContain('1 Ticket');
+  expect(container.textContent).toContain('Details Are Unavailable');
 });

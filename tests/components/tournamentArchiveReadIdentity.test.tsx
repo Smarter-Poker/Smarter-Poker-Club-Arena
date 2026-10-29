@@ -445,3 +445,58 @@ describe('Biggest Hits uses recorded individual awards', () => {
     }
   );
 });
+
+describe('satellite archive award denominations', () => {
+  const target = 'a1000000-0000-4000-8000-000000000001';
+  const field = [
+    winner('Ticket Recipient', 35),
+    { ...winner('Bubble Recipient', 3), position: 2, status: 'eliminated' },
+  ];
+  const receipts = [
+    {
+      id: 'receipt1',
+      tournament_id: 'A',
+      user_id: 'Ticket Recipient',
+      source: 'satellite_seat',
+      amount: 35,
+      recorded_by: 'fn_settle_satellite_tournament',
+      metadata: { satellite_target_id: target },
+    },
+    {
+      id: 'receipt2',
+      tournament_id: 'A',
+      user_id: 'Bubble Recipient',
+      source: 'satellite_remainder',
+      amount: 3,
+      recorded_by: 'credit_and_log',
+      metadata: null,
+    },
+  ];
+  const answer = (awards: typeof receipts) =>
+    mocks.query.mockImplementation((table) =>
+      success(
+        table === 'tournaments'
+          ? [tournament('A', { variant: 'satellite', satellite_target_id: target })]
+          : table === 'tournament_payouts'
+            ? awards
+            : table === 'tournament_players'
+              ? field
+              : []
+      )
+    );
+  it('labels the actual ticket and cash bubble in both award and total columns', async () => {
+    answer(receipts);
+    mount();
+    await select('A');
+    await waitFor(() => expect(screen.getAllByText('1 Ticket (35)')).toHaveLength(2));
+    expect(screen.getAllByText('Cash 3')).toHaveLength(2);
+  });
+  it('does not guess a ticket from standings when receipt access returns no rows', async () => {
+    answer([]);
+    mount();
+    await select('A');
+    await waitFor(() => expect(screen.getAllByText('Value 35')).toHaveLength(2));
+    expect(screen.queryByText('1 Ticket (35)')).toBeNull();
+    expect(await screen.findByText(/Details Are Unavailable/)).toBeTruthy();
+  });
+});

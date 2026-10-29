@@ -88,7 +88,12 @@ sql+="DO $original_owners$ DECLARE r record;x jsonb;d text;BEGIN FOR r IN SELECT
 # Restore grants in the captured order so full pg_proc metadata stays exact.
 for owner in pre:
  signature=owner['signature']if '.'in owner['signature'].split('(')[0]else'public.'+owner['signature']
- sql+='REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;\n'
+ if signature=='public.fn_ca_settlement_correctness_check()':
+  # Preserve the existing browser-closure declaration and the full original ACL.
+  sql+='REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated;\n'
+  sql+='REVOKE ALL ON FUNCTION '+signature+' FROM service_role;\n'
+ else:
+  sql+='REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;\n'
  for acl in owner['acl']or[]:
   role=acl.split('=')[0]
   if role!='postgres':

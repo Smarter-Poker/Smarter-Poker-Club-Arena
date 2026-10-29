@@ -12,6 +12,19 @@ describe('superseded horse action retention remains enforced', () => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
 
+  it('qualifies the exact reserved physical-preflight upgrade in the existing native owner', () => {
+    const driver = readFileSync('scripts/ci/test-superseded-horse-actions.py', 'utf8');
+    expect(driver).toContain(
+      'supabase/migrations/20261029153123_superseded_compaction_refuses_impossible_physical_savings_be.sql'
+    );
+    expect(driver).toContain('e.sql(base, file=PREFLIGHT');
+    expect(driver).toContain('[MIGRATION, PREFLIGHT, PREIMAGE, Path(__file__)]');
+    expect(driver).toContain(
+      'BEFORE both certificate and payload attempted despite final rollback'
+    );
+    expect(driver).toContain('AFTER certificate and payload never attempted');
+  });
+
   it('runs the real PostgreSQL proof once in required accounting shard three', () => {
     const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
     const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>

@@ -1,4 +1,4 @@
--- Public definition readback 2026-10-29T18:09Z; no production rows or credentials.
+-- Public definition readback 2026-10-29; no production rows or credentials.
 CREATE OR REPLACE FUNCTION public.fn_ca_alert_resolution_reaches_the_incident()
  RETURNS trigger
  LANGUAGE plpgsql

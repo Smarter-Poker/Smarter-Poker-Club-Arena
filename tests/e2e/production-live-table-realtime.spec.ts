@@ -2068,6 +2068,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       `occupied table ${candidate.name} lost its visible read-only View/Watch Table or Game action`
     ).toBeVisible();
 
+    const navigationStartedAt = Date.now();
     // Read only the isolated spectator's observation cache, never auth tokens.
     const readPublicStatsCache = () =>
       page.evaluate(() => {
@@ -2080,7 +2081,6 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       'string'
     );
     const publicStatsStartedAt = Date.now();
-    const navigationStartedAt = Date.now();
     const banner = page.getByTestId('table-connection-banner');
     let tableId = candidate.id;
 

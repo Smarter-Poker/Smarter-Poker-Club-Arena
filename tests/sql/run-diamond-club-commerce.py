@@ -288,7 +288,9 @@ def scenarios():
     check(r.get('error') == 'owner_required', 'D19 only the owner activates a trial')
     # A recreated club by the same operator inherits the end time.
     C1b = '10000000-0000-4000-8000-00000000001b'
-    sql(f"INSERT INTO public.clubs(id,name,owner_id,chip_treasury,promo_balance,is_union) VALUES ('{C1b}','Commerce Club One Again','{A}',0,0,false)")
+    sql(f"""LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+      INSERT INTO public.clubs(id,club_id,name,owner_id,chip_treasury,promo_balance,is_union)
+      SELECT '{C1b}',COALESCE(max(club_id),10000)+1,'Commerce Club One Again','{A}',0,0,false FROM public.clubs;""")
     t3 = rpc('fn_ca_commerce_activate_trial', f"'club','{C1b}'", A)
     check(t3['success'] and not t3['created'] and t3['enrolled'] and t3['trial_end'] == t1['trial_end'], 'D47 a later scope of the same operator inherits the original trial end')
     adm = rpc('fn_ca_commerce_admission', f"'club','{C1}','open_table'", A)
@@ -664,7 +666,9 @@ def scenarios():
     # The union's own shell club carries clubs.union_id but is not a covered
     # (union_clubs) club: the sponsorship does not reach it.
     shell = str(uuid.uuid4())
-    sql(f"INSERT INTO public.clubs(id,name,owner_id,union_id,chip_treasury,promo_balance,is_union) VALUES ('{shell}','Commerce Union Shell','{B}','{U}',0,0,true)")
+    sql(f"""LOCK TABLE public.clubs IN SHARE ROW EXCLUSIVE MODE;
+      INSERT INTO public.clubs(id,club_id,name,owner_id,union_id,chip_treasury,promo_balance,is_union)
+      SELECT '{shell}',COALESCE(max(club_id),10000)+1,'Commerce Union Shell','{B}','{U}',0,0,true FROM public.clubs;""")
     r = rpc('fn_ca_commerce_quote', f"'club','{shell}','{lines('capacity_60')}'::jsonb,'{sp['sponsorship_id']}',NULL,'purchase'", B)
     check(r.get('error') == 'sponsorship_not_effective', 'D12 membership is the union_clubs link: the union shell club is not covered by its sponsorship', r)
     ust = rpc('fn_ca_commerce_scope_status', f"'union','{U}'", B)

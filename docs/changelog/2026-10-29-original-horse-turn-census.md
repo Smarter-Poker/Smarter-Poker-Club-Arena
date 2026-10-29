@@ -30,3 +30,12 @@ The existing private provider job selects this census only for an explicit JSON
 boolean `turn_census: true`; absent/false retains the existing observer. Its
 protected sparse checkout includes the three maintained control modules. Release
 jobs, concurrency and activation remain under their existing owner.
+
+Required-check recovery: the integrated PostgreSQL shard exposed two inherited
+commerce fixture INSERTs still drawing a random five-digit club code. One
+collided with an existing club and blocked census-control qualification. Both
+synthetic inserts now use the fixture's existing locked max-plus-one allocation.
+The existing native completion regression holds the default at an occupied code
+while exercising the inherited scenarios, covering both recreated and union-shell
+clubs. Captured schema, production defaults and commerce assertions are unchanged.
+The regression reproduced the collision before the correction and passed after it.

@@ -57,8 +57,19 @@ const NONE: RabbitEntitlement = { isVIP: false, isLifetime: false, vipRemaining:
 
 /** Last confirmed answer, by user id. Session memory only. */
 const confirmed = new Map<string, RabbitEntitlement>();
+const confirmedMonth = new Map<string, string>();
+function usageMonth(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${now.getUTCMonth()}`;
+}
+// A lookup begun before a purchase must not rewind that purchase's count.
+const usageVersions = new Map<string, number>();
+export function rabbitVipUsageVersion(userId: string): number {
+  return usageVersions.get(userId) ?? 0;
+}
 
 export function rememberRabbitEntitlement(userId: string, value: RabbitEntitlement): void {
+  confirmedMonth.set(userId, usageMonth());
   confirmed.set(userId, {
     isVIP: value.isVIP || value.isLifetime,
     isLifetime: value.isLifetime,
@@ -73,8 +84,17 @@ export function rememberRabbitEntitlement(userId: string, value: RabbitEntitleme
  */
 export function rememberRabbitVipRemaining(userId: string, remaining: number | null): void {
   const prior = confirmed.get(userId);
-  if (!prior || prior.isLifetime || !prior.isVIP || typeof remaining !== 'number') return;
-  confirmed.set(userId, { ...prior, vipRemaining: remaining });
+  if (typeof remaining !== 'number' || !Number.isFinite(remaining) || remaining < 0) return;
+  if (prior?.isLifetime) return;
+  usageVersions.set(userId, rabbitVipUsageVersion(userId) + 1);
+  // Within one monthly pool, a delayed receipt cannot put a spent use back.
+  const current = confirmedMonth.get(userId) === usageMonth() ? prior?.vipRemaining : null;
+  confirmedMonth.set(userId, usageMonth());
+  confirmed.set(userId, {
+    isVIP: true,
+    isLifetime: false,
+    vipRemaining: typeof current === 'number' ? Math.min(current, remaining) : remaining,
+  });
 }
 
 /**
@@ -93,10 +113,12 @@ export function initialRabbitEntitlement(
   if (profile?.id === userId && profile.vip_status === 'lifetime') {
     return { isVIP: true, isLifetime: true, vipRemaining: null };
   }
-  return known ?? NONE;
+  return confirmedMonth.get(userId) === usageMonth() ? (known ?? NONE) : NONE;
 }
 
 /** Test seam: forget every confirmed answer. */
 export function __resetRabbitEntitlementCache(): void {
   confirmed.clear();
+  usageVersions.clear();
+  confirmedMonth.clear();
 }

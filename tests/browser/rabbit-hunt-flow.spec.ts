@@ -224,3 +224,45 @@ test('a stalled recovery chunk times out before billing and cannot charge when i
   await expect(page.locator('.community-cards__card--rabbit')).toHaveCount(2);
   expect(purchases).toBe(1);
 });
+
+test('a purchase accepted before expiry stays visible until its delayed result arrives', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Review Hand', exact: true }).click();
+  await page.clock.fastForward(88000);
+  let requests = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/rabbit-hunt', async (route) => {
+    requests++;
+    await gate;
+    await route.fulfill({
+      headers: { 'access-control-allow-origin': '*' },
+      json: {
+        success: true,
+        cards: [
+          { rank: '2', suit: 'h' },
+          { rank: '9', suit: 's' },
+        ],
+        diamonds_spent: 5,
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Show What Would Have Come', exact: true }).click();
+  await expect.poll(() => requests).toBe(1);
+  await page.clock.fastForward(3000);
+  await expect(
+    page.getByRole('button', { name: 'Still Connecting...', exact: true })
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Still Connecting...', exact: true })
+  ).toBeDisabled();
+  await page.screenshot({ path: test.info().outputPath('rabbit-pending-after-expiry.png') });
+  release();
+  await expect(page.locator('.hdm-card--rabbit')).toHaveCount(2);
+  expect(requests).toBe(1);
+});

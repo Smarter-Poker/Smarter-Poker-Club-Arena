@@ -601,6 +601,7 @@ import {
 } from '../lib/heartbeatTarget';
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
+import { rememberRabbitVipRemaining } from '../components/table/rabbitEntitlement';
 //monteCarloEquity import removed — server-authoritative
 import '../components/table/ControlThemeTokens.css';
 import '../styles/table-design-tokens.css';
@@ -9320,6 +9321,8 @@ function LiveTablePage({
   const rabbitHandNumberRef = useRef<number | null>(null);
   /** P4 2026-09-05: the tile's reveal handler while an offer is up; B runs it. */
   const rabbitHotkeyRef = useRef<(() => void) | null>(null);
+  // Only the latest live purchase may replace the felt; every receipt still reaches review.
+  const rabbitLiveRequestRef = useRef(0);
   const registerRabbitHotkey = useCallback((handler: (() => void) | null) => {
     rabbitHotkeyRef.current = handler;
   }, []);
@@ -9408,7 +9411,11 @@ function LiveTablePage({
         handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
       const boardAtRequest = lastBoardOfHandRef.current;
       const requestedViewer = rabbitViewerRef.current;
+      const liveRequest = handNumber === undefined ? ++rabbitLiveRequestRef.current : null;
       const result = await requestRabbitHunt(tableId, requestedHandNumber);
+      // Billing owns the count even if the initiating tile has closed.
+      if (result.success && requestedViewer?.userId)
+        rememberRabbitVipRemaining(requestedViewer.userId, result.vip_remaining ?? null);
       if (rabbitViewerRef.current !== requestedViewer) {
         return { success: false, error: 'Rabbit Hunt View Changed' };
       }
@@ -9422,7 +9429,7 @@ function LiveTablePage({
       const parsedCards = canonicalCards(result.cards) as Card[];
       // Explicit hand requests belong to the replayer, which renders its own
       // result. A replayer purchase must never replace the live felt.
-      if (handNumber === undefined) {
+      if (handNumber === undefined && liveRequest === rabbitLiveRequestRef.current) {
         setRabbitRevealedCards(parsedCards);
         setRabbitRevealedHandNumber(requestedHandNumber);
         // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the

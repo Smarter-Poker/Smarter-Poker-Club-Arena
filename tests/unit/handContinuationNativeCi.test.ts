@@ -18,6 +18,8 @@ describe('durable original continuation qualification remains connected', () => 
     'scripts/ci/probes/hand-continuation-native.sql',
     'scripts/ci/fixtures/hand-continuation/financial-preimages.json',
     'scripts/ci/fixtures/hand-continuation/disposition.spec',
+    'scripts/ci/fixtures/hand-continuation/frozen_attestation_qualification.py',
+    'supabase/migrations/20261029093051_attest_frozen_original_hand_continuation_custody.sql',
     'scripts/ci/schema-manifest.d/hand-continuation.json',
     'supabase/migrations/20261028233353_durable_private_hand_continuation.sql',
   ])('executes required accounting for changes to %s', (path) => {
@@ -64,5 +66,15 @@ describe('durable original continuation qualification remains connected', () => 
           : '{postgres=X/postgres,service_role=X/postgres}'
       );
     }
+  });
+
+  it('executes and source-binds the frozen read-only custody door in the same native owner', () => {
+    const runner = read('scripts/ci/test-hand-continuation.py');
+    expect(runner).toContain(
+      "module(ROOT/DATA/'frozen_attestation_qualification.py','frozen_original_attestation').qualify(e,ROOT,hand,db)"
+    );
+    expect(runner).toContain(
+      "Path('supabase/migrations/20261029093051_attest_frozen_original_hand_continuation_custody.sql')"
+    );
   });
 });

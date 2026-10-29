@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "sourceFiles": {
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "42de43f58d9a622aac34091636f5396d76edc15c69ee1495b944d513a94eb272",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "31ffba692d81e4fb47784712bcf00a863da61d1202953e1cb1981828fc2cea2b",
     "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "f44fe0b0a684af7977b0fb15cf57e9531491c8caef183b3a4b3f5310d3ff888f",
     "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "5afe4f3acb8db582211cd001b3066d2a1257fec247bce4b07a825f6832c0fa12",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "98d4e3ef0ac803ac876d5298a120c172257b50de02b9de71e566baf10c1c2692",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "532f666297648156bc8fb458861dbd7375bcec8c14ce78f81bc8ec165c655b94",
     "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-before.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
     "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "0c29f380047ac522a239072a93c2ac2509964c42b478c7e44c85b4b876496288",
     ".github/workflows/weekly-close-hour-guard.yml": "2afbc02b180384be27bab4026413f3f1c442945f74510de7b4708b896743930e",
@@ -12,5 +12,9 @@
     "docs/laws.d/weekly-quality-keyed-event-joins.md": "81cb573969deaa976011e9e609d46db77ba9262429ad10ee7e50a03331d2c45f",
     "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "5afe4f3acb8db582211cd001b3066d2a1257fec247bce4b07a825f6832c0fa12",
     "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "f2c1c861cbc41c299f3a7018848b7afca7392de08ebdd33de7933f45ad0782ba"
+  },
+  "audit": {
+    "reason": "Candidate541b narrows materialized sources to three UUID keys and validates physical source/receipt bags; native115 exact inputs updated. Normal commit hook formatted the evidence and receipt JSON; only their reviewed byte pins were restamped after that formatting.",
+    "candidate_full_md5": "541b13417ffd614be148737ae33242b1"
   }
 }

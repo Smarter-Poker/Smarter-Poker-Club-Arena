@@ -80,6 +80,36 @@ describe('committed operational alert wakes native intake', () => {
     expect(message).toContain('leaves it unread');
   });
 
+  it('keeps review evidence bounded to one fresh read and a single-ID acknowledgement', () => {
+    const message = intakeMessage([A, B], B);
+    expect(message).toContain('Process exactly 2 deliveries, one at a time');
+    expect(message).toContain('SINGLE-ID acknowledgement');
+    expect(message).toContain('BEFORE reading the next ID');
+    expect(message).toContain('Never accumulate a batch acknowledgement');
+    expect(message).toContain('do not retry that rejected write or switch tools or identity');
+    expect(message).toContain('2-ID manifest');
+    expect(message).not.toContain('ARRAY[<read UUID literals>]');
+  });
+
+  it('does not submit another native batch on partial single-record receipts, including restart', async () => {
+    const f = fixture();
+    f.ids = [A, B];
+    await f.intake.event();
+    f.ids = [B]; // A was read; B still has no durable intake outcome.
+    await f.intake.event();
+    expect(f.calls).toBe(1);
+    expect(f.wakes).toBe(1);
+    const restored = fixture(f.state);
+    restored.ids = [B];
+    await restored.intake.event();
+    expect(restored.calls).toBe(0);
+    expect(restored.wakes).toBe(0);
+    f.acknowledged = true;
+    f.ids = [B];
+    await f.intake.event();
+    expect(f.calls).toBe(2);
+  });
+
   it('queues once across concurrent event bursts until actual database acknowledgement', async () => {
     const f = fixture();
     await Promise.all(Array.from({ length: 25 }, () => f.intake.event()));

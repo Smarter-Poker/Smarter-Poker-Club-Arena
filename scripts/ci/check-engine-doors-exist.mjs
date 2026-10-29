@@ -163,10 +163,25 @@ const CONTINUATION_MIGRATIONS = [
   '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
 ];
 let continuationTarget = false;
+let retainedCheckpointTarget = false;
+const RETAINED_CHECKPOINT_GUARD = 'server/scripts/retained-original-checkpoint-guard.mjs';
+const FROZEN_ATTESTATION_MIGRATION =
+  '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
+const FROZEN_ATTESTATION_CONTRACTS = [
+  { schema_name: 'public', proname: 'fn_f06_attest_frozen_hand_continuation',
+    body_md5: 'd47f131bbecd7fd7aaba9873af68285e',
+    acl: '{postgres=X/postgres,service_role=X/postgres}', service_execute: true },
+  { schema_name: 'smarter_private', proname: 'attest_frozen_hand_continuation',
+    body_md5: '7e5ebd0b8f622ba6daa596c2d2e45db0',
+    acl: '{postgres=X/postgres}', service_execute: false },
+];
 
 function continuationRequirements() {
-  if (!continuationTarget) return [];
-  return CONTINUATION_MIGRATIONS.map((file) => ({
+  const files = [
+    ...(continuationTarget ? CONTINUATION_MIGRATIONS : []),
+    ...(retainedCheckpointTarget ? [FROZEN_ATTESTATION_MIGRATION] : []),
+  ];
+  return files.map((file) => ({
     version: file.slice(0, 14),
     name: file.slice(15, -4),
     sql_md5: createHash('md5')
@@ -181,9 +196,12 @@ async function liveFunctions(names, requirements) {
   const fixture = process.env.ENGINE_DOORS_LIVE_FIXTURE;
   if (fixture) {
     const migrationFixture = process.env.ENGINE_DOORS_MIGRATIONS_FIXTURE;
+    const checkpointFixture = process.env.ENGINE_DOORS_CHECKPOINT_FIXTURE;
     return {
       found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))),
       migrations: migrationFixture ? JSON.parse(readFileSync(migrationFixture, 'utf8')) : [],
+      checkpointFunctions: checkpointFixture
+        ? JSON.parse(readFileSync(checkpointFixture, 'utf8')) : [],
     };
   }
   const url = process.env.DATABASE_URL;
@@ -218,7 +236,27 @@ async function liveFunctions(names, requirements) {
         [requirements.map((r) => r.version)]
       ));
     }
-    return { found: new Set(rows.map((r) => r.proname)), migrations };
+    let checkpointFunctions = [];
+    if (retainedCheckpointTarget) {
+      ({ rows: checkpointFunctions } = await client.query(
+        `SELECT n.nspname AS schema_name, p.proname,
+                oidvectortypes(p.proargtypes) AS argument_types,
+                md5(p.prosrc) AS body_md5, pg_get_userbyid(p.proowner) AS owner,
+                p.prosecdef AS security_definer, p.provolatile AS volatility,
+                p.prorettype::regtype::text AS return_type,
+                p.proacl::text AS acl, p.proconfig AS config,
+                has_function_privilege('anon',p.oid,'execute') AS anon_execute,
+                has_function_privilege('authenticated',p.oid,'execute') AS authenticated_execute,
+                has_function_privilege('service_role',p.oid,'execute') AS service_execute,
+                has_table_privilege('service_role','smarter_private.hand_continuations','SELECT') AS service_private_read
+           FROM pg_catalog.pg_proc p
+           JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+          WHERE p.oid IN (to_regprocedure($1),to_regprocedure($2))`,
+        FROZEN_ATTESTATION_CONTRACTS.map((r) =>
+          `${r.schema_name}.${r.proname}(uuid,uuid,uuid,bigint,bigint,text)`)
+      ));
+    }
+    return { found: new Set(rows.map((r) => r.proname)), migrations, checkpointFunctions };
   } catch (err) {
     return { unreadable: `production could not be asked: ${err?.message || err}` };
   } finally {
@@ -227,16 +265,27 @@ async function liveFunctions(names, requirements) {
 }
 
 async function main() {
+  // One closed serialized guard is an engine caller too. Do not scan arbitrary
+  // control scripts or make old targets depend on a newly installed contract.
+  const guardPath = join(ROOT, RETAINED_CHECKPOINT_GUARD);
+  retainedCheckpointTarget = existsSync(guardPath);
   const doors = engineDoors();
+  if (retainedCheckpointTarget) {
+    for (const name of doorsIn(readFileSync(guardPath, 'utf8'))) {
+      const files = doors.get(name) ?? [];
+      files.push(RETAINED_CHECKPOINT_GUARD);
+      doors.set(name, files);
+    }
+  }
   const names = [...doors.keys()].sort();
   continuationTarget = names.some((name) => CONTINUATION_DOORS.has(name));
   const requirements = continuationRequirements();
   const allow = existsSync(ALLOWLIST) ? JSON.parse(readFileSync(ALLOWLIST, 'utf8')) : {};
   const rollback = process.env.ROLLBACK_REQUESTED === 'true';
   const live = await liveFunctions(names, requirements);
-  if (live.unreadable && continuationTarget) {
+  if (live.unreadable && (continuationTarget || retainedCheckpointTarget)) {
     console.log(
-      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Both exact continuation migration histories must be proved before this target enters Hetzner.`
+      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Exact target migration histories and any selected frozen-checkpoint custody contract must be proved before this target enters Hetzner.`
     );
     return 1;
   }
@@ -264,8 +313,27 @@ async function main() {
     }
   }
   if (!prerequisitesProved) return 1;
-  if (requirements.length)
+  if (continuationTarget)
     console.log('OK - both exact continuation migration histories are installed.');
+  if (retainedCheckpointTarget) {
+    for (const expected of FROZEN_ATTESTATION_CONTRACTS) {
+      const rows = live.checkpointFunctions?.filter((row) =>
+        row.schema_name === expected.schema_name && row.proname === expected.proname);
+      const row = rows?.[0];
+      if (!Array.isArray(rows) || rows.length !== 1 ||
+          row.argument_types !== 'uuid, uuid, uuid, bigint, bigint, text' ||
+          row.body_md5 !== expected.body_md5 || row.owner !== 'postgres' ||
+          row.security_definer !== true || row.volatility !== 's' || row.return_type !== 'jsonb' ||
+          row.acl !== expected.acl ||
+          JSON.stringify(row.config) !== JSON.stringify(['search_path=pg_catalog, public, smarter_private']) ||
+          row.anon_execute !== false || row.authenticated_execute !== false ||
+          row.service_execute !== expected.service_execute || row.service_private_read !== false) {
+        console.log(`::error title=FROZEN ORIGINAL ATTESTATION UNPROVED::${expected.schema_name}.${expected.proname} must match the qualified body, read-only owner/configuration, service/browser grants and private-table denial before the retained-original checkpoint enters Hetzner.`);
+        return 1;
+      }
+    }
+    console.log('OK - frozen original attestation history and both exact read-only custody doors are installed.');
+  }
   if (missing.length === 0) {
     console.log(
       `OK - all ${names.length} database functions this build calls exist in production.`
@@ -294,7 +362,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().then(
     (code) => process.exit(code),
     (err) => {
-      if (continuationTarget) {
+      if (continuationTarget || retainedCheckpointTarget) {
         console.log(`::error title=CONTINUATION PREREQUISITES UNCHECKED::${err?.message || err}`);
         process.exit(1);
       }

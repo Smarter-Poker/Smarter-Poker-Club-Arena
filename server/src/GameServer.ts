@@ -2135,6 +2135,8 @@ export class GameServer {
   /** Where boot time goes, phase by phase, published on /health as bootPhases. */
   private readonly bootTimeline = new BootPhaseTimeline();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /** Cursor for the existing bounded never-dealt candidate pass; no new timer. */
+  private neverDealtCandidateCursor: string | null = null;
   /**
    * When each installed manager was admitted. The never-dealt sweep measures a
    * manager's idleness from here, not from the event's started_at: an event
@@ -9619,16 +9621,41 @@ export class GameServer {
          * it is this same stall, recovering by luck on a later re-adoption.
          */
         const neverDealtCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-        const { data: maybeNeverDealt } = await supabase
+        let neverDealtQuery = supabase
           .from('tournaments')
           .select('id, name, started_at')
           .eq('status', 'RUNNING')
-          .lt('started_at', neverDealtCutoff);
-        for (const t of (maybeNeverDealt || []).slice(0, 15)) {
+          .lt('started_at', neverDealtCutoff)
+          .order('id', { ascending: true })
+          .limit(15);
+        const candidateCursor = this.neverDealtCandidateCursor ?? null;
+        if (candidateCursor) neverDealtQuery = neverDealtQuery.gt('id', candidateCursor);
+        const { data: maybeNeverDealt, error: neverDealtError } = await neverDealtQuery;
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        if (neverDealtError || !Array.isArray(maybeNeverDealt)) {
+          throw neverDealtError ?? new Error('Never-dealt candidate board unavailable');
+        }
+        // Advance only a valid ordered page. Healthy early events must not
+        // permanently hide the later candidates behind the per-pass budget.
+        let previousCandidate = candidateCursor;
+        for (const candidate of maybeNeverDealt) {
+          if (
+            typeof candidate.id !== 'string' ||
+            !candidate.id ||
+            (previousCandidate !== null && candidate.id <= previousCandidate)
+          ) {
+            throw new Error('Never-dealt candidate cursor unavailable');
+          }
+          previousCandidate = candidate.id;
+        }
+        this.neverDealtCandidateCursor = maybeNeverDealt.length < 15 ? null : previousCandidate;
+        for (const t of maybeNeverDealt) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
           const { data: tRows, error: tErr } = await supabase
             .from('tables')
             .select('id, status')
             .eq('tournament_id', t.id);
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (tErr) continue; // unreadable is UNKNOWN, never "it never dealt"
           const tableIds = (tRows || []).map((r) => String((r as { id: string }).id));
           if (tableIds.length === 0) continue; // no table at all - creation path owns it
@@ -9637,6 +9664,7 @@ export class GameServer {
             .from('hand_history')
             .select('id', { count: 'exact', head: true })
             .in('table_id', tableIds);
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (dealtErr || dealt === null || dealt === undefined) continue;
           if (dealt > 0) continue; // it played; the sweeps above own it
 
@@ -9651,6 +9679,7 @@ export class GameServer {
             .select('id', { count: 'exact', head: true })
             .in('table_id', openTableIds)
             .is('left_at', null);
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (seatErr || !liveSeats || liveSeats < 2) continue;
 
           /**
@@ -9672,6 +9701,7 @@ export class GameServer {
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .eq('status', 'playing');
+          if (!this.directAdmissionIsCurrent(generation)) break;
           if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;
           if (liveSeats < stillPlaying) continue;
 

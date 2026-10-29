@@ -1,3 +1,4 @@
+import { horseHistoryReadProvenanceIsValid } from './ownPublicHistoryProvenance.js';
 import {
   isolateMemoryIsValid,
   type IsolateMemorySample,
@@ -1679,6 +1680,22 @@ export class HorseDecisionWorkerRuntime {
         !['pending', 'available', 'unavailable'].includes(request.ownPublicHistoryState)
       )
         throw Error('Invalid individual history state');
+      if (request.ownPublicHistoryProvenance !== undefined) {
+        const context = horseObserverReadContextFromRequest(request);
+        if (
+          !context ||
+          !horseHistoryReadProvenanceIsValid(
+            request.ownPublicHistoryProvenance,
+            context,
+            request.ownPublicHistoryState,
+            request.decisionTimeMs
+          ) ||
+          (request.ownPublicHistoryProvenance.reason === 'packet_ready'
+            ? request.ownPublicHistory === undefined
+            : request.ownPublicHistory !== undefined)
+        )
+          throw Error('Individual history provenance does not bind original observer and state');
+      }
       if (request.ownPublicHistory !== undefined) {
         const context = horseObserverReadContextFromRequest(request);
         if (

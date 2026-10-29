@@ -75,7 +75,7 @@ import { readTournamentStandings } from '../../services/readTournamentStandings'
  *     events retain their trailing read; bubble_burst counts show at once.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useTournamentHandForHand } from '../../hooks/useTournamentHandForHand';
@@ -88,11 +88,33 @@ import { subscribeTournamentStandings } from '../../services/tournamentStandings
 import { tournamentChipRanks } from '../../utils/tournamentChipRanks';
 import { reportError } from '../../utils/errorReporter';
 import { serverNow } from '../../utils/serverClock';
+import { tournamentPaidPlaces } from '../../lib/tournamentPaidPlaces';
+import { useFitText } from '../lobby/game-cards/useFitText';
 import './TournamentHUD.css';
 import {
   tournamentEntryWindow,
   tournamentEntryWindowOpen,
 } from '../../utils/tournamentEntryWindow';
+
+/** Fit the longer numeric labels inside the existing painted dock columns. */
+function DockFitText({
+  className,
+  children,
+  fitKey,
+}: {
+  className: string;
+  children: ReactNode;
+  fitKey: string;
+}) {
+  const ref = useFitText<HTMLSpanElement>(fitKey);
+  return (
+    <span className={`${className} tournament-dock__fit-zone`}>
+      <span ref={ref} className="tournament-dock__fit-text">
+        {children}
+      </span>
+    </span>
+  );
+}
 
 function TournamentDockArt() {
   return (
@@ -912,6 +934,7 @@ export function TournamentHUD({
   const shownPlayers =
     playersRemaining !== undefined ? playersRemaining : (fieldNow?.remaining ?? undefined);
   const shownAvg = averageStack !== undefined ? averageStack : (fieldNow?.avgStack ?? undefined);
+  const shownPaid = tournamentPaidPlaces(row);
   /** Dan 2026-08-30: "IT SHOULD ALSO SAY YOUR CURRENT RANK AFTER THE COUNTDOWN
       CLOCK AND BEFORE HOW MANY ARE LEFT." Null while the hero holds no live
       stack in this event (observer, eliminated). */
@@ -1041,18 +1064,23 @@ export function TournamentHUD({
           {/* Blinds + ante. A real break resumes on these, so they stay; a break
               row in the ladder has none. */}
           <div className="tournament-dock__seg tournament-dock__seg--wide">
-            <span className="tournament-dock__label">
+            <DockFitText className="tournament-dock__label" fitKey={`blinds-${cur?.ante}`}>
               Blinds
               {!ladderBreak && (cur?.ante ?? 0) > 0 && (
                 <span className="tournament-dock__sublabel"> Ante {fmtChips(cur!.ante)}</span>
               )}
-            </span>
-            <span className="tournament-dock__value">{blindsText}</span>
+            </DockFitText>
+            <DockFitText className="tournament-dock__value" fitKey={blindsText}>
+              {blindsText}
+            </DockFitText>
           </div>
 
           {/* Countdown to the next level, or to the end of the break */}
           <div className="tournament-dock__seg tournament-dock__seg--wide">
-            <span className="tournament-dock__label">
+            <DockFitText
+              className="tournament-dock__label"
+              fitKey={`${paused}-${next?.smallBlind}-${next?.bigBlind}-${next?.isBreak}`}
+            >
               {paused ? 'Resumes' : 'Next'}
               {!paused && next && !next.isBreak && (
                 <span className="tournament-dock__sublabel">
@@ -1063,7 +1091,7 @@ export function TournamentHUD({
               {!paused && next?.isBreak && (
                 <span className="tournament-dock__sublabel"> Break Next</span>
               )}
-            </span>
+            </DockFitText>
             <span
               className="tournament-dock__value tournament-dock__value--clock"
               style={{ color: clockColor }}
@@ -1088,6 +1116,14 @@ export function TournamentHUD({
             <div className="tournament-dock__seg">
               <span className="tournament-dock__label">Left</span>
               <span className="tournament-dock__value">{shownPlayers}</span>
+            </div>
+          )}
+
+          {/* Finalized place-prize ladder; bounties are separate awards. */}
+          {shownPaid !== null && (
+            <div className="tournament-dock__seg">
+              <span className="tournament-dock__label">Paid</span>
+              <span className="tournament-dock__value">{shownPaid.toLocaleString()}</span>
             </div>
           )}
 

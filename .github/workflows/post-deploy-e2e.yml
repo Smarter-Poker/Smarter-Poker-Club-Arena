@@ -101,6 +101,14 @@ jobs:
           git cat-file -e "$SHA^{commit}"
           git merge-base --is-ancestor "$SHA" origin/main
           echo "LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Qualify the exact dedicated journey pin
+        id: journey_pin
+        run: |
+          set -euo pipefail
+          SHA=$(node scripts/ci/downline-journey-pin.mjs)
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SHA" = "$LIVE_SHA"
+          echo "DOWNLINE_JOURNEY_SHA=$SHA" >> "$GITHUB_ENV"
       - name: Execute exactly the published pagination case
         id: proof
         env:
@@ -151,6 +159,7 @@ jobs:
           name: stats-pagination-proof
           path: |
             e2e-report/stats-pagination/
+            e2e-report/downline-journey-pin.json
             test-results/stats-pagination/
           if-no-files-found: error
           retention-days: 14

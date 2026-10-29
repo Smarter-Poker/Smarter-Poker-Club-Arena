@@ -1,0 +1,7 @@
+# Completed original hands no longer restate refusal incidents
+
+The hand-commit detector counted 43 lease-expired requests even though all 43 exact original hands had been accepted and their required post-commit obligations completed. Its rolling historical count ignored those authoritative outcomes, so the overdue incident kept reappearing.
+
+The detector now excludes only independently validated original-hand acceptance and required post-commit completion. It uses the maintained resolver’s full identity, typed-number, original table/hand, commit and obligation hashes, payload and successful exact-result predicate. A resolved flag, manual note, different later hand, malformed identity or partial obligation receipt cannot suppress a finding. Every source alert remains intact; the threshold, reason grouping, rolling window and existing correction watermark are unchanged. No payment, financial replay or engine replacement is included.
+
+Actual PostgreSQL 17 reproduces the old 43-count false positive, then verifies the correction and malformed/missing/wrong-original/partial-completion boundaries, the 25-event threshold, the existing watermark and unchanged function authority. The maintained composed alert qualification invokes this focused case and pins its exact inputs. Installation requires the protected-main migration applier and exact function readback before the overdue incident can be remeasured and closed.

@@ -285,6 +285,21 @@
       "path": "supabase/migrations/20261029180738_hand_history_incidents_retain_exact_original_identity.sql",
       "bytes": 16713,
       "sha256": "68b5d96b84bc1f34d338ed1fe1e7fdc03bebe79a6f9b87673ca439e738b99789"
+    },
+    "hand_refusal_native": {
+      "path": "scripts/qualification/hand-refusal-outcome/native.mjs",
+      "bytes": 7747,
+      "sha256": "99ad1b1ae13343c17dd2fb8136ac1124bd720176f824320e0cfc807e01025c28"
+    },
+    "hand_refusal_preimage": {
+      "path": "scripts/qualification/fixtures/hand-refusal-outcome/preimage.sql",
+      "bytes": 3100,
+      "sha256": "0aae913e2ddace2d8a0da104204d7b0454de997fe550358ab8199c3649ae02fb"
+    },
+    "hand_refusal_migration": {
+      "path": "supabase/migrations/20261029205730_hand_commit_detector_requires_exact_original_outcome.sql",
+      "bytes": 4474,
+      "sha256": "b3780a598420c37eb2afbcf4fdd6289caf29c38198d624f53fe2de036a995e20"
     }
   },
   "sequenceContract": {

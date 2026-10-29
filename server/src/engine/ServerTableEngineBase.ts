@@ -8312,6 +8312,18 @@ export abstract class ServerTableEngineBase {
        * from here, on its own budget.
        */
       if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
+      // The waiter already exists, so clearing this co-owner will not enter
+      // awaitPauseGate again. Offer its existing readiness edge now: the last
+      // maintenance wave can release the tournament's hand-for-hand barrier.
+      if (this.handForHandResolve !== null) {
+        try {
+          this.pauseReadyCallback?.(this.tableId);
+        } catch (error) {
+          reportError(error, 'ServerTableEngine.pause_ready_callback_failed', {
+            tableId: this.tableId,
+          });
+        }
+      }
       return;
     }
     this.releasePauseGate();

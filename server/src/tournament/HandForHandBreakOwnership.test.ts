@@ -109,6 +109,35 @@ describe('hand-for-hand respects tournament break ownership', () => {
     expect(b.released).toHaveBeenCalledOnce();
   });
 
+  it('waits for the last maintenance wave before releasing the hand-for-hand barrier', async () => {
+    const { manager, a, b } = field();
+    manager.hold('synchronized');
+    const released = [a, b].map((entry) => {
+      entry.state.maintenancePaused = true;
+      entry.state.handForHandResolve = null;
+      entry.engine.onPauseReady(() => manager.edge());
+      return (entry.state.awaitPauseGate() as Promise<void>).then(entry.released);
+    });
+    const resumeA = vi.spyOn(a.engine, 'resumeDealing');
+    const resumeB = vi.spyOn(b.engine, 'resumeDealing');
+    manager.ready();
+    await manager.resumeFromBreak();
+    // The real wave can arrive after the old 500ms next-hand re-pause.
+    vi.advanceTimersByTime(500);
+    expect(resumeA).not.toHaveBeenCalled();
+    expect(resumeB).not.toHaveBeenCalled();
+    a.engine.resumeFromMaintenance();
+    expect(a.released).not.toHaveBeenCalled();
+    expect(b.released).not.toHaveBeenCalled();
+    b.engine.resumeFromMaintenance();
+    await Promise.all(released);
+    expect(a.released).toHaveBeenCalledOnce();
+    expect(b.released).toHaveBeenCalledOnce();
+    manager.edge();
+    expect(a.released).toHaveBeenCalledOnce();
+    expect(b.released).toHaveBeenCalledOnce();
+  });
+
   it('rechecks the parked barrier when the add-on break ends', async () => {
     const { manager, a, b } = field();
     manager.hold('addon');

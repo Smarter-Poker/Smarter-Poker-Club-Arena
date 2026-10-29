@@ -1,0 +1,7 @@
+{
+  "migration": "20261029230358_cash_refusal_scope_index_has_real_collected_statistics.sql",
+  "sha256": "55832dedcb904161c2d879fa05a6fcc0cb6b8c991c15298bf3bea43c47277606",
+  "scope": "ANALYZE exactly scope,earned_at,id; no reason/result",
+  "state": "SOURCE_DRAFT_NEW_NATIVE_CONTROL_PENDING",
+  "provenance": "real single expression pg_statistic_ext_data/stxdexpr +pg_stats_ext_exprs +all3ordinary pg_statistic rows +exact protected history"
+}

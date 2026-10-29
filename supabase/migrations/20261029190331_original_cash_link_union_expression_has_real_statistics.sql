@@ -39,7 +39,7 @@ END $identity_sources_before$;
 DO $installed_selector$BEGIN IF NOT EXISTS(SELECT FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam WHERE i.indexrelid=to_regclass('public.union_pnl_cash_links_valid_union_selector')AND i.indrelid='public.union_pnl_cash_outcome_link_resolutions'::regclass AND i.indisvalid AND i.indisready AND i.indislive AND NOT i.indisunique AND i.indnatts=1 AND i.indnkeyatts=1 AND c.relowner='postgres'::regrole AND c.relkind='i' AND a.amname='spgist'AND pg_get_indexdef(i.indexrelid)='CREATE INDEX union_pnl_cash_links_valid_union_selector ON public.union_pnl_cash_outcome_link_resolutions USING spgist (((game_scope ->> ''game_union_id''::text))) WHERE (proof_md5 = md5((proof)::text))')THEN RAISE EXCEPTION 'linked_union_statistics_installed_selector_changed';END IF;END $installed_selector$;
 SET LOCAL statement_timeout='15s';
 CREATE STATISTICS public.union_pnl_cash_links_union_distribution ON ((game_scope->>'game_union_id')) FROM public.union_pnl_cash_outcome_link_resolutions;
-ANALYZE public.union_pnl_cash_outcome_link_resolutions;
+ANALYZE public.union_pnl_cash_outcome_link_resolutions (game_scope);
 SET LOCAL statement_timeout='15s';
 DO $identity_sources_after$
 DECLARE actual jsonb;qualified jsonb:=NULLIF(current_setting('ca.original_linked_cash_spgist_qualification',true),'')::jsonb;BEGIN

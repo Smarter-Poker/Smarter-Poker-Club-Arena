@@ -1,0 +1,8 @@
+{
+  "before_index_expr_count": 0,
+  "after_selected_column_analyze_index_expr_count": 0,
+  "explicit_CASE_statistics_real_stxdexpr": true,
+  "natural_plans": "minority/dominant finite selector+date BitmapIndexScan, nonfinite selector IndexScan",
+  "forced_flags": false,
+  "limits": "Private PG17 ICU fixture20,017 rows; no population/capacity claim; separate final16 controls use100 meaningful receipts"
+}

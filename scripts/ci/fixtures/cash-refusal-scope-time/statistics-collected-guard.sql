@@ -1,0 +1,11 @@
+DO $cash_collected$BEGIN IF NOT EXISTS(SELECT FROM pg_statistic_ext s JOIN pg_statistic_ext_data d ON d.stxoid=s.oid WHERE s.stxname='accounting_cash_receipts_scope_distribution'AND s.stxnamespace='public'::regnamespace AND s.stxowner='postgres'::regrole AND s.stxrelid='public.accounting_cash_source_receipts'::regclass AND s.stxkeys::text=''AND s.stxkind=ARRAY['e']::"char"[] AND s.stxstattarget IS NULL AND pg_get_statisticsobjdef(s.oid)=$cash_stats_def$CREATE STATISTICS public.accounting_cash_receipts_scope_distribution ON (CASE WHEN (scope ->> 'kind'::text) = 'unknown'::text THEN 'unknown'::text WHEN ((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND octet_length(scope ->> 'id'::text) = 36 THEN ((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text) ELSE NULL::text END) FROM accounting_cash_source_receipts$cash_stats_def$ AND pg_get_expr(s.stxexprs,s.stxrelid)=$cash_stats_expr$
+CASE
+    WHEN ((scope ->> 'kind'::text) = 'unknown'::text) THEN 'unknown'::text
+    WHEN (((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND (octet_length((scope ->> 'id'::text)) = 36)) THEN (((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text))
+    ELSE NULL::text
+END$cash_stats_expr$ AND NOT d.stxdinherit AND d.stxdexpr IS NOT NULL AND cardinality(d.stxdexpr)=1)OR NOT EXISTS(SELECT FROM pg_stats_ext_exprs v WHERE v.statistics_schemaname='public'AND v.statistics_name='accounting_cash_receipts_scope_distribution'AND v.schemaname='public'AND v.tablename='accounting_cash_source_receipts'AND NOT v.inherited AND v.expr=$cash_view_expr$
+CASE
+    WHEN ((scope ->> 'kind'::text) = 'unknown'::text) THEN 'unknown'::text
+    WHEN (((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND (octet_length((scope ->> 'id'::text)) = 36)) THEN (((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text))
+    ELSE NULL::text
+END$cash_view_expr$ AND v.n_distinct IS NOT NULL)OR(SELECT count(*)FROM pg_statistic s WHERE s.starelid='public.accounting_cash_source_receipts'::regclass AND s.staattnum=ANY(ARRAY[1,4,10])AND NOT s.stainherit)<>3 THEN RAISE EXCEPTION 'cash_refusal_real_expression_statistics_required';END IF;END$cash_collected$;

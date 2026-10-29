@@ -14,6 +14,7 @@ import {
   canonical,
   operationId,
   providerOperations,
+  providerState,
 } from '../../server/scripts/feature-ablation-assemble.mjs';
 const H = 'a'.repeat(64),
   SHA = 'b'.repeat(40);
@@ -466,4 +467,63 @@ test('known integrity violations in an incomplete attempt cannot be selected awa
   r.result.illegalActions = 1;
   a.receiptText = JSON.stringify(r);
   assert.match(assemble([a, b]).reasons.join(), /observed_integrity_violation/);
+});
+
+test('provider state accepts transferred repository identity and refuses substitutions before job custody', async (t) => {
+  const prior = process.env;
+  process.env = {
+    ...prior,
+    GITHUB_REPOSITORY: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
+    GITHUB_REPOSITORY_ID: '1132369872',
+    GITHUB_RUN_ID: '123',
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_TOKEN: 'structural-fixture-not-a-credential',
+  };
+  let repository = { id: 1132369872, full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' };
+  const run = {
+    id: 123,
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    path: '.github/workflows/horse-feature-ablation-qualification.yml',
+  };
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    urls.push(url);
+    return {
+      ok: true,
+      json: async () => (url.endsWith('/actions/runs/123') ? { ...run, repository } : { jobs: [] }),
+    };
+  });
+  try {
+    const state = await providerState();
+    assert.deepEqual(state.run, { ...run, repository });
+    assert.deepEqual(state.jobs, []);
+    assert.equal(state.currentAttempt, 1);
+    assert.deepEqual(urls, [
+      'https://api.github.com/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs/123',
+      'https://api.github.com/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs/123/attempts/1/jobs?per_page=100&page=1',
+    ]);
+    for (const id of [undefined, '', '1132369873']) {
+      if (id === undefined) delete process.env.GITHUB_REPOSITORY_ID;
+      else process.env.GITHUB_REPOSITORY_ID = id;
+      await assert.rejects(providerState(), /provider_metadata_unavailable/);
+      assert.equal(urls.length, 2);
+    }
+    process.env.GITHUB_REPOSITORY_ID = '1132369872';
+    process.env.GITHUB_REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    await assert.rejects(providerState(), /provider_metadata_unavailable/);
+    assert.equal(urls.length, 2);
+    process.env.GITHUB_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+    for (repository of [
+      undefined,
+      { id: 1132369873, full_name: process.env.GITHUB_REPOSITORY },
+      { id: 1132369872, full_name: 'foreign' },
+    ]) {
+      const calls = urls.length;
+      await assert.rejects(providerState(), /provider_workflow_identity/);
+      assert.equal(urls.length, calls + 1);
+    }
+  } finally {
+    process.env = prior;
+  }
 });

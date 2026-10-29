@@ -7,7 +7,10 @@ from the transferred repository was refused before qualification could begin.
 
 Admission now requires the current canonical name together with immutable GitHub
 repository ID `1132369872`, independently on the workflow environment, original
-provider operation and protected PR base. The first-family merge-time selection
+provider operation and protected PR base. The connected original-provider
+assembler and original-artifact custody gates use that same canonical name and
+built-in immutable workflow identity; the assembler independently checks the
+original API operation repository before reading job custody. The first-family merge-time selection
 uses the same repository predicate. Foreign names, missing/wrong IDs, unprotected
 merges and non-original operations remain refused.
 

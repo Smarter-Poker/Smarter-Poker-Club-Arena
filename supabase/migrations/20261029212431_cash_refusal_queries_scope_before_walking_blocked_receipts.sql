@@ -182,4 +182,6 @@ CASE
     WHEN (((scope ->> 'kind'::text) = ANY (ARRAY['club'::text, 'union'::text])) AND (octet_length((scope ->> 'id'::text)) = 36)) THEN (((scope ->> 'kind'::text) || ':'::text) || (scope ->> 'id'::text))
     ELSE NULL::text
 END$cash_view_expr$ AND v.n_distinct IS NOT NULL)OR(SELECT count(*)FROM pg_statistic s WHERE s.starelid='public.accounting_cash_source_receipts'::regclass AND s.staattnum=ANY(ARRAY[1,4,10])AND NOT s.stainherit)<>3 THEN RAISE EXCEPTION 'cash_refusal_real_expression_statistics_required';END IF;END$cash_collected$;
+-- Preserve the already operator-only ACL explicitly for source authorization checks.
+REVOKE ALL ON FUNCTION public.fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
 COMMIT;

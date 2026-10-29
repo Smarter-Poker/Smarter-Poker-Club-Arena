@@ -25,3 +25,5 @@ Production capacity and book closure remain separate acceptance steps.
 
 TypeScript and final affected native/provider results are recorded in the task
 checkpoint. No production installation or payout completion is asserted here.
+
+The normal pre-push authorization scan refused the replacement because it cannot infer prior operator-only ACLs. Both replaced SECURITY DEFINER owners now explicitly revoke PUBLIC, anon, authenticated and service_role in the same migration, preserving their already verified postgres-only ACL. This changes no economic query, function body or existing permission. Exact native full-metadata/atomic/history/readback checks are rerun for the changed migration bytes.

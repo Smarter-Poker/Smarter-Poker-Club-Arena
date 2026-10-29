@@ -3,7 +3,7 @@
   "index": "20261029211338_cash_refusal_scope_and_time_have_a_bounded_index.sql",
   "index_sha256": "92f52f59c490143c36d9382ba66caad92165b560a3ec82196a4623c8f264101c",
   "function": "20261029212431_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
-  "function_sha256": "3673119ecd69a69e10860612d602860dd1bd7a0fa28327c3af94f2a504c9246a",
+  "function_sha256": "956648a97a4441a78d4967e4594a8b17b00adb96c3b864155597a749989abbd6",
   "TQ": "HOLD_PRODUCTION_UNTIL_CAUSAL_ACCESS_INSTALL_AND_WHOLE225_PASS",
   "original_source65_GEN72": "unchanged"
 }

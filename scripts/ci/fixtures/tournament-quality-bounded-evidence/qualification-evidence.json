@@ -1,5 +1,5 @@
 {
-  "qualification": "passed_private_final_stats_dependency_guard_ABI_atomicity_permissions",
+  "qualification": "passed_private_final_explicit_ACL_stats_dependency_guard_ABI_atomicity_permissions",
   "migration": "supabase/migrations/20261029212530_tournament_quality_reads_bounded_rake_evidence.sql",
   "candidate_canonical_full_md5": "ba40f5f1f0aedf382134f246e8297e26",
   "candidate_canonical_prosrc_md5": "6830362a7dc8bb5354dc6113a2fed4b1",
@@ -31,7 +31,7 @@
     "postguard_failure_restores_original_owner_and_all41_metadata",
     "all_three_nonowner_roles_still_refused_without_business_execution"
   ],
-  "migration_sha256": "6f7f6ea4ac02965d0e614357a3500a42e42d106a8621d16c9c836ba15b41b66d",
+  "migration_sha256": "5cf418af1e9a291d7232f5bcbc9b8f82c49eb5bb650ae314131a612f4ae1bee1",
   "new_body_controls": [
     "PG17 canonical full/body hash observed",
     "all original raw metadata except prosrc preserved",
@@ -43,7 +43,7 @@
   "unchanged_guard_lifecycle_cases_repeated_locally": false,
   "required_hosted_eight_guard_cases": "existing directly invoked runner remains unconditional",
   "source_delivery": "One bundle authorized for qualified causal cash+TQ+targeted stats; production public TQ install still HOLD until causal access installed/readback and original225 whole capacity PASS",
-  "new_cash_dependency": "Current actual2table/5triggerowners+bounded selector+newrefusal+twoexact histories; native guard adaptation pending",
+  "new_cash_dependency": "Final exact2table/5triggerowners+bounded selector+realCASEstatistics+newrefusal+threeexact histories; all8nativecasespassed",
   "allocated_order": "211338 index \u2192212243 expressionstats \u2192212431 refusal \u2192212530 TQ \u2192212616 three helpers",
   "final_native_cases": [
     "exact_public_TQ_original_and_candidate_compile_ABI_ACL_security_metadata_preserved",
@@ -54,5 +54,6 @@
     "source_generation_window_helper_fullmetadata_and_protected_history_fail_closed_rollback",
     "postguard_failure_restores_original_owner_and_all41_metadata",
     "all_three_nonowner_roles_still_refused_without_business_execution"
-  ]
+  ],
+  "explicit_acl_native_result_sha256": "8b63f4f4d1c021ed8a835d0d6ebb9df62d0245a9e5bbe8e46520154c6b135e1d"
 }

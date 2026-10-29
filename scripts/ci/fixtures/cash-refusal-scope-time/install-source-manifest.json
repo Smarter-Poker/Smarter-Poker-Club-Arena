@@ -1,5 +1,5 @@
 {
-  "status": "SOURCE_DRAFT_NATIVE_CONTROL_PENDING",
+  "status": "PRIVATE_NATIVE_16_CONTROLS_AND_FOUR_READERS_PASSED_NO_PRODUCTION_CLAIM",
   "migrations": [
     {
       "file": "20261029211338_cash_refusal_scope_and_time_have_a_bounded_index.sql",
@@ -11,14 +11,14 @@
     },
     {
       "file": "20261029212431_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
-      "sha256": "3673119ecd69a69e10860612d602860dd1bd7a0fa28327c3af94f2a504c9246a"
+      "sha256": "956648a97a4441a78d4967e4594a8b17b00adb96c3b864155597a749989abbd6"
     }
   ],
   "readers": {
     "before": "28ed20cc8684e81261809012d63b1a5ec3307d2ae21b16d7db73d24b998bf5fd",
     "index": "b301f636b2dd33a1f54e770c831ff437ab6a636a8b385f0bb2c4e0362b8974a5",
     "statistics": "3eaf8c1a6be66d9572cd305ccaa24eb0049a5d4bfbda1c0f6228314613672bc6",
-    "function": "2597d66c33fdebc279d3d64fba12af9c4b952c5baff296deeffb064b2c3c335f"
+    "function": "b09c3c8c13b7da9003a75ccfdb68a086da26532db82613db617f6a3789e91163"
   },
   "order": "index211338 then expressionstats212243 then refusal212431; original225 wholeTEMP capacity then TQ212530 held until PASS",
   "limits": "Exact source/common guards; no production calls or installation claims"

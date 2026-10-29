@@ -45,6 +45,20 @@ describe('superseded action retention progress remains enforced', () => {
     expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
   });
 
+  it('runs the exact physical queue exit upgrade inside the existing native owner', () => {
+    const driver = readFileSync('scripts/ci/test-superseded-retention-progress.py', 'utf8');
+    expect(driver).toContain(
+      'supabase/migrations/20261029200737_physically_impossible_superseded_action_work_exits_its_exist.sql'
+    );
+    expect(driver).toContain('e.sql(base,file=queue_exit_migration');
+    expect(driver).toContain('e.sql(empty,file=queue_exit_migration');
+    expect(driver).toContain('[migration,budget_migration,queue_exit_migration,actions.PREFLIGHT,');
+    expect(driver).toContain('BEFORE physical impossible queue entry is deferred daily');
+    expect(driver).toContain('AFTER only physical impossible queue bookkeeping exits');
+    expect(driver).toContain('locked physical impossible source keeps its future retry entry');
+    expect(driver).toContain('queue exit rollback restores exact bookkeeping source and receipt');
+  });
+
   it('uses the existing required actions owner and retains the nested progress artifact', () => {
     const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
     const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>

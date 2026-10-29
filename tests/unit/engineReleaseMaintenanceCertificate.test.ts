@@ -27,6 +27,7 @@ const sourceIdentity = transaction.slice(sourceIdentityStart, sourceIdentityEnd)
 
 const validCertificate = {
   running: true,
+  weeklyPayout: null,
   maintenance: {
     reason: 'Deployment Recovery',
     active: true,
@@ -54,6 +55,8 @@ function runCertificate({
     [
       '-c',
       `set -u
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"
@@ -77,6 +80,7 @@ maintenance_certificate${minimum === undefined ? '' : ` ${minimum}`}`,
 const sourceSha = 'a'.repeat(40);
 const validSourceIdentity = {
   running: true,
+  weeklyPayout: null,
   releaseSha: sourceSha,
   liveness: 'ok',
   instanceId: '12345-deadbeef',
@@ -222,6 +226,7 @@ describe('the release transaction can read only an explicit maintenance health r
 describe('the already-sealed source remains replaceable when routing readiness is degraded', () => {
   const legacy = {
     running: true,
+    weeklyPayout: null,
     version: sourceSha.slice(0, 8),
     liveness: 'ok',
     instanceId: '12345-deadbeef',

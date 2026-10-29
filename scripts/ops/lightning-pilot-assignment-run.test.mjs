@@ -61,6 +61,7 @@ test('unreadable provider inventory never becomes an empty successful history', 
     guardAssignmentRun(
       {
         GITHUB_REPOSITORY: 'Smarter-Poker/Smarter-Poker-Club-Arena',
+        GITHUB_REPOSITORY_ID: '1132369872',
         GITHUB_RUN_ID: '2',
         GITHUB_TOKEN: 'sb_secret_test_fixture_provider',
       },
@@ -83,3 +84,5 @@ test('assignment workflow is explicit, serialized and checks ownership before cr
   );
   assert.match(s, /run-id: \$\{\{ inputs.prepare_run \}\}/);
 });
+
+test('transferred immutable assignment preserves provider refusal before mutation',async()=>{let calls=0;await assert.rejects(guardAssignmentRun({GITHUB_REPOSITORY:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:'1132369872',GITHUB_RUN_ID:'2',GITHUB_TOKEN:'modeled'},async url=>{calls++;assert.match(url,/repos\/Smarter-Software-PIQ\/Smarter-Poker-Club-Arena\/actions\/runs\/2$/);return {ok:false}}));assert.equal(calls,1);for(const id of [undefined,'42']){calls=0;await assert.rejects(guardAssignmentRun({GITHUB_REPOSITORY:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:id,GITHUB_RUN_ID:'2',GITHUB_TOKEN:'modeled'},async()=>{calls++;throw Error('unexpected credential use')}));assert.equal(calls,0)}});

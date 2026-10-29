@@ -264,10 +264,8 @@ describe('the rundown', () => {
   });
 
   it.each([
-    [0.00001, '~<0.1%'],
-    [0.99999, '~>99.9%'],
-    [0, 'Unknown'],
-    [1, 'Unknown'],
+    [0.00001, '<0.1%'],
+    [0.99999, '>99.9%'],
   ])('never rounds the persisted fraction %f into a false endpoint', (fraction, label) => {
     const m = buildReplay(HAND as never);
     render(
@@ -278,6 +276,21 @@ describe('the rundown', () => {
       />
     );
     expect(document.querySelector('.hdv__allin-value')?.textContent).toBe(label);
+  });
+
+  it.each([0, 1])('omits unproven equity %f while preserving result facts', (fraction) => {
+    render(
+      <HandDetailView
+        model={buildReplay(HAND as never)}
+        currentUserId="h"
+        viewerFacts={{ ...FACTS, all_in_equity: fraction }}
+      />
+    );
+    const block = document.querySelector('.hdv__allin')!;
+    expect(block.textContent).not.toContain('Your Equity');
+    expect(block.textContent).not.toContain('Unknown');
+    expect(block.textContent).toContain('At Risk');
+    expect(block.textContent).toContain('Got Back');
   });
 
   it('shows no all-in block when the hand had none', () => {

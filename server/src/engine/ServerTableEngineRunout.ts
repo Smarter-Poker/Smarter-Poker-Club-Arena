@@ -439,6 +439,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     response?: 'accept' | 'decline',
     runs?: 1 | 2 | 3
   ): { success: boolean; error?: string; status?: string } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.runItTwiceEngine.hasPendingOffer(this.tableId)) {
       return { success: false, error: 'No active Run It Twice offer' };
     }
@@ -600,6 +601,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     premium?: number;
     insuredAmount?: number;
   } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.insuranceEngine.isEnabled(this.tableId)) {
       return { success: false, error: 'Insurance is not enabled at this table' };
     }
@@ -673,11 +675,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.pineappleDiscardReceiptObservers.get(seat)?.();
     this.pineappleDiscardReceiptObservers.delete(seat);
     const delayed = this.pineappleDecisionDelayTimers.get(seat);
-    if (delayed) clearTimeout(delayed);
+    if (delayed) this.clearHandTimeout(delayed);
     this.pineappleDecisionDelayTimers.delete(seat);
 
     const deadline = this.pineappleDecisionDeadlineTimers.get(seat);
-    if (deadline) clearTimeout(deadline);
+    if (deadline) this.clearHandTimeout(deadline);
     this.pineappleDecisionDeadlineTimers.delete(seat);
 
     this.pineappleDecisionAbortControllers.get(seat)?.abort();
@@ -811,7 +813,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const abortController = new AbortController();
     this.pineappleDecisionAbortControllers.set(seat, abortController);
     if (deadlineMs !== undefined) {
-      const deadlineTimer = setTimeout(
+      const deadlineTimer = this.setHandTimeout(
         () => abortController.abort(),
         Math.max(0, deadlineMs - Date.now())
       );
@@ -848,9 +850,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     };
 
     try {
-      const result = await getLiveHorseDecisionWorker().decideDiscard(
-        snapshot,
-        abortController.signal
+      const result = await this.weeklyPayoutContinuation(
+        getLiveHorseDecisionWorker().decideDiscard(snapshot, abortController.signal)
       );
       if (
         result.generation !== generation ||
@@ -875,7 +876,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (this.pineappleDecisionAbortControllers.get(seat) === abortController) {
         this.pineappleDecisionAbortControllers.delete(seat);
         const deadlineTimer = this.pineappleDecisionDeadlineTimers.get(seat);
-        if (deadlineTimer) clearTimeout(deadlineTimer);
+        if (deadlineTimer) this.clearHandTimeout(deadlineTimer);
         this.pineappleDecisionDeadlineTimers.delete(seat);
       }
     }
@@ -901,16 +902,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const requests: Array<{ request: DecidePineappleDiscardRequest; cardIndex: number }> = [];
 
     for (const player of snapshot.players) {
-      const { request, result } = await this.requestPineappleDiscard(
-        controller,
-        handNumber,
-        generation,
-        leaseGeneration,
-        player.seat,
-        player.cards,
-        snapshot.flop,
-        gameVariant,
-        'forced_runout'
+      const { request, result } = await this.weeklyPayoutContinuation(
+        this.requestPineappleDiscard(
+          controller,
+          handNumber,
+          generation,
+          leaseGeneration,
+          player.seat,
+          player.cards,
+          snapshot.flop,
+          gameVariant,
+          'forced_runout'
+        )
       );
       decisions.set(player.seat, result.cardIndex);
       requests.push({ request, cardIndex: result.cardIndex });
@@ -998,7 +1001,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       const enginePlayer = hcState.players.find((p) => p.seat === seat);
       if (!enginePlayer || enginePlayer.is_folded || enginePlayer.cards.length !== 3) continue;
       const delay = 1200 + Math.random() * Math.min(4000, Math.max(1500, timeoutMs * 0.3));
-      const delayTimer = setTimeout(() => {
+      const delayTimer = this.setHandTimeout(() => {
         this.pineappleDecisionDelayTimers.delete(seat);
         if (lease !== null && lease.verified !== true) {
           return;
@@ -1033,7 +1036,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           'choice',
           deadline
         )
-          .then(({ request, result }) => {
+          .then(async ({ request, result }) => {
+            if (!(await this.weeklyHandPause.checkpoint())) return;
             if (
               !this.pineappleDecisionFenceIsCurrent(
                 handControllerRef,
@@ -1107,6 +1111,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * @returns success/error
    */
   submitDiscard(userId: string, cardIndex: number): { success: boolean; error?: string } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -1168,7 +1173,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.cancelPineappleDecisionWork();
       // Everyone is in - the beat, then the flop
       if (this.pineappleDiscardTimer) {
-        clearTimeout(this.pineappleDiscardTimer);
+        this.clearHandTimeout(this.pineappleDiscardTimer);
         this.pineappleDiscardTimer = null;
       }
       this.pineappleDiscardDeadlines.clear();
@@ -1548,7 +1553,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     try {
       // A beat on the all-in board itself, so the starting percentages that
       // were broadcast when the players got it in are actually readable.
-      await this.sleep(this.allInFirstPauseMs);
+      await this.weeklyPayoutContinuation(this.sleepHand(this.allInFirstPauseMs));
 
       // Guard every iteration: the table can be torn down, or the hand
       // replaced, while we are sleeping between streets.
@@ -1572,7 +1577,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         const before = controller.getCommunityCards().length;
         if (controller.getPineappleRunoutDiscardSnapshot?.()) {
           try {
-            if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+            if (
+              !(await this.weeklyPayoutContinuation(
+                this.preparePineappleRunoutDiscards(controller)
+              ))
+            )
+              return;
           } catch (error) {
             if (error instanceof HorseDecisionAbortedError) return;
             reportError(
@@ -1617,23 +1627,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         //
         // Hold for the reveal FIRST, then let the numbers move.
         if (allInPlayers.length >= 2) {
-          await this.sleep(this.allInStreetRevealMs);
+          await this.weeklyPayoutContinuation(this.sleepHand(this.allInStreetRevealMs));
           if (!this.running || this.handController !== controller) break;
           // liveExtraBoards 2026-08-29: dealNextStreet fills boards 2/3 in
           // lockstep but returns only board 1, so this refresh had been
           // dropping to single-board pricing on every street of a multi-board
           // bomb pot. Read them from the controller instead.
-          await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
+          await this.weeklyPayoutContinuation(
+            this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards())
+          );
         }
 
         if (result.complete) break;
-        await this.sleep(this.allInStreetPauseMs);
+        await this.weeklyPayoutContinuation(this.sleepHand(this.allInStreetPauseMs));
       }
 
       // Let the final percentages and the completed board sit for a moment
       // before the hand resolves and the pot ships.
       if (this.running && this.handController === controller) {
-        await this.sleep(this.allInPreShowdownPauseMs);
+        await this.weeklyPayoutContinuation(this.sleepHand(this.allInPreShowdownPauseMs));
       }
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.paced_runout_failed');
@@ -1663,6 +1675,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * criticals, 32 live hands. A stale continuation is dropped, loudly.
    */
   protected safeContinueRunout(reason: string, controller: HandController | null): void {
+    if (this.weeklyHandPause.held()) {
+      void this.weeklyHandPause
+        .checkpoint()
+        .then((current) => {
+          if (current && this.handController === controller)
+            this.safeContinueRunout(reason, controller);
+        })
+        .catch((error) => {
+          reportError(
+            error,
+            'ServerTableEngine.' + this.tableId + '.weekly_runout_continuation_failed',
+            {
+              reason,
+              handNumber: this.handCount,
+            }
+          );
+        });
+      return;
+    }
     if (this.runoutPayoutMutationUnsafe) {
       reportError(
         new Error('refused runout continuation after an external payout may have mutated stacks'),
@@ -1681,7 +1712,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
     if (controller.getPineappleRunoutDiscardSnapshot?.()) {
       void this.preparePineappleRunoutDiscards(controller)
-        .then((prepared) => {
+        .then(async (prepared) => {
+          if (!(await this.weeklyHandPause.checkpoint())) return;
           if (!prepared || this.handController !== controller) return;
           if (this.runoutPayoutMutationUnsafe) {
             this.killForRestart('unsafe_pineapple_runout_continuation_after_payout');
@@ -1733,7 +1765,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const handAtOffer = this.handCount;
     const horseIds = new Set(this.seatedPlayers.filter((p) => p.is_horse).map((p) => p.user_id));
     const respond = (delayMs: number, fn: () => void) => {
-      setTimeout(() => {
+      this.setHandTimeout(() => {
         if (!this.running || this.handCount !== handAtOffer) return;
         if (!this.runItTwiceEngine.hasPendingOffer(this.tableId)) return;
         try {
@@ -1823,7 +1855,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (completed) return;
       completed = true;
       clearInterval(checkInterval);
-      clearTimeout(safetyTimeout);
+      this.clearHandTimeout(safetyTimeout);
       if (!this.handController || this.handController !== controllerAtOffer) {
         reportError(
           new Error('RIT wait resolved into a different hand (#' + handAtOffer + ') - dropped'),
@@ -1855,7 +1887,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // 25-second countdown (engine autoDeclineTimeout). Safety = window + 5s
     // buffer; the DeadlineScheduler's auto-decline resolves the poll well
     // before this fires in any healthy process.
-    const safetyTimeout = setTimeout(
+    const safetyTimeout = this.setHandTimeout(
       () => {
         finish();
       },
@@ -2039,7 +2071,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           handCompleteObserved = true;
         }
       });
-      await this.dealAndResolveRITUnchecked(allInPlayers, controller);
+      await this.weeklyPayoutContinuation(
+        this.dealAndResolveRITUnchecked(allInPlayers, controller)
+      );
       if (this.runoutPayoutMutationUnsafe && !handCompleteObserved) {
         throw new Error('RIT payout mutation completed without HAND_COMPLETE proof');
       }
@@ -2172,7 +2206,8 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // on the canonical first run, before any pot is evaluated or credited.
     if (controller.getPineappleRunoutDiscardSnapshot?.()) {
       try {
-        if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+        if (!(await this.weeklyPayoutContinuation(this.preparePineappleRunoutDiscards(controller))))
+          return;
       } catch (error) {
         if (error instanceof HorseDecisionAbortedError) return;
         throw error;
@@ -2951,23 +2986,27 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // there pushes the numbers further from the card that caused them. The
       // worker pool is concurrent by construction; ask it for every board at
       // once.
-      const perBoard: number[][] = await Promise.all(
-        allBoards.map((b, boardIndex) =>
-          getEquityPool().estimateEquity(
-            hands,
-            b,
-            [
-              ...discarded,
-              ...allBoards.flatMap((other, otherIndex) => (otherIndex === boardIndex ? [] : other)),
-            ],
-            perBoardIters,
-            {
-              exact: true,
-              pots: equityPots,
-              hiLo: isHiLoVariant(equityVariant),
-              shortDeck: isShortDeck,
-              omaha: isOmaha,
-            }
+      const perBoard: number[][] = await this.weeklyPayoutContinuation(
+        Promise.all(
+          allBoards.map((b, boardIndex) =>
+            getEquityPool().estimateEquity(
+              hands,
+              b,
+              [
+                ...discarded,
+                ...allBoards.flatMap((other, otherIndex) =>
+                  otherIndex === boardIndex ? [] : other
+                ),
+              ],
+              perBoardIters,
+              {
+                exact: true,
+                pots: equityPots,
+                hiLo: isHiLoVariant(equityVariant),
+                shortDeck: isShortDeck,
+                omaha: isOmaha,
+              }
+            )
           )
         )
       );
@@ -3185,11 +3224,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const pricingStartedAt = Date.now();
     let allPricing: Awaited<ReturnType<ReturnType<typeof getEquityPool>['estimateInsurance']>>;
     try {
-      allPricing = await getEquityPool().estimateInsurance(
-        allInForOffer.map((player) => player.holeCards),
-        result.board,
-        variant,
-        isShortDeckPreflop
+      allPricing = await this.weeklyPayoutContinuation(
+        getEquityPool().estimateInsurance(
+          allInForOffer.map((player) => player.holeCards),
+          result.board,
+          variant,
+          isShortDeckPreflop
+        )
       );
       // Crossing a worker await is an authority boundary. Re-prove process,
       // distributed lease, exact controller, and exact hand before mutation.
@@ -3236,7 +3277,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         this.handCount === pricingHandNumber &&
         pricingBoardStillLive()
       ) {
-        await this.pacedAllInRunout(allInPlayers, pot);
+        await this.weeklyPayoutContinuation(this.pacedAllInRunout(allInPlayers, pot));
       }
       return;
     }
@@ -3245,7 +3286,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     );
     // Insurance prices are rounded and may be sampled preflop. They are not
     // public exact probabilities; use the same exact display path as every table.
-    await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
+    await this.weeklyPayoutContinuation(
+      this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards())
+    );
     // The optional display wait is also a financial authority boundary.
     // Never create an offer using a prior hand/street after that await.
     if (
@@ -3256,7 +3299,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     )
       return;
     if (offerRevealPauseMs > 0) {
-      await this.sleep(offerRevealPauseMs);
+      await this.weeklyPayoutContinuation(this.sleepHand(offerRevealPauseMs));
       if (
         !this.lifecycleCanMutate() ||
         this.handController !== controller ||
@@ -3314,7 +3357,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         'ServerTableEngine.' + this.tableId + '.insurance_leader_pricing_missing',
         { handNumber: pricingHandNumber, leaderId: bestHandPlayer.playerId }
       );
-      await this.pacedAllInRunout(allInPlayers, pot);
+      await this.weeklyPayoutContinuation(this.pacedAllInRunout(allInPlayers, pot));
       return;
     }
 
@@ -3441,12 +3484,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   ): Promise<void> {
     // ANIMATION AUDIT 2026-08-19: give the CURRENT board + percentages a
     // readable beat before the next card lands.
-    await this.sleep(this.allInStreetPauseMs);
+    await this.weeklyPayoutContinuation(this.sleepHand(this.allInStreetPauseMs));
     if (this.handController !== controller) return;
 
     if (controller.getPineappleRunoutDiscardSnapshot?.()) {
       try {
-        if (!(await this.preparePineappleRunoutDiscards(controller))) return;
+        if (!(await this.weeklyPayoutContinuation(this.preparePineappleRunoutDiscards(controller))))
+          return;
       } catch (error) {
         if (error instanceof HorseDecisionAbortedError) return;
         reportError(
@@ -3471,12 +3515,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // as pacedAllInRunout: the state broadcast above sent the street, the
     // client is still animating it, and moving the percentages now spoils the
     // card that is still turning over (Dan 2026-08-28).
-    await this.sleep(this.allInStreetRevealMs);
+    await this.weeklyPayoutContinuation(this.sleepHand(this.allInStreetRevealMs));
     if (this.handController !== controller) return;
     if (result.complete) {
       // No contract is priced once the river is complete, so its final public
       // percentage remains a standalone cosmetic worker operation.
-      await this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards());
+      await this.weeklyPayoutContinuation(
+        this.broadcastAllInEquity(allInPlayers, result.board, pot, this.liveExtraBoards())
+      );
       if (!this.lifecycleCanMutate() || this.handController !== controller) return;
       // River is down — settle (insurance included) via the normal finalize.
       controller.finalizeRunout();
@@ -3486,13 +3532,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // More cards to come: one structured worker pass supplies both the public
     // percentages and the real-money offer. The flow emits the percentages
     // immediately, then preserves the full one-second reveal-to-dialog beat.
-    await this.runInsurancePerStreetFlow(
-      offerPlayers,
-      allInPlayers,
-      pot,
-      result.board,
-      controller,
-      1000
+    await this.weeklyPayoutContinuation(
+      this.runInsurancePerStreetFlow(
+        offerPlayers,
+        allInPlayers,
+        pot,
+        result.board,
+        controller,
+        1000
+      )
     );
   }
 
@@ -3709,7 +3757,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     const seated = this.seatedPlayers.find((p) => p.user_id === leaderId);
     if (!seated?.is_horse || this.isOwnClientControlling(leaderId)) return;
     const handAtOffer = this.handCount;
-    setTimeout(
+    this.setHandTimeout(
       () => {
         if (!this.running || this.handCount !== handAtOffer) return;
         const offer = this.insuranceEngine
@@ -3742,7 +3790,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       if (completed) return; // Guard: exactly-once invocation
       completed = true;
       clearInterval(checkInterval);
-      clearTimeout(safetyTimeout);
+      this.clearHandTimeout(safetyTimeout);
       // A wait that outlives its hand must never touch the next hand's board.
       if (!this.handController || this.handController !== controllerAtOffer) {
         reportError(
@@ -3768,7 +3816,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }, 250); // Check every 250ms
 
     // Safety timeout: if insurance engine's own timeouts somehow fail, force continue after 20s
-    const safetyTimeout = setTimeout(() => {
+    const safetyTimeout = this.setHandTimeout(() => {
       if (!this.insuranceEngine.allResponded(this.tableId)) {
         console.warn(
           `[ServerTableEngine:${this.tableId}] Insurance safety timeout - forcing continue`

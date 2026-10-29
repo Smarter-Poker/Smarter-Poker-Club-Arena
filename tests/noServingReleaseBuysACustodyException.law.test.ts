@@ -80,7 +80,7 @@ function inflightHelper(rc: number): string {
   const path = join(dir, 'engine-release-inflight-hands.py');
   writeFileSync(
     path,
-    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+    `#!/bin/sh\nif [ "\${3:-}" = --weekly-payout-only ]; then echo database-proves-no-weekly-owner; exit 0; fi\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
   );
   chmodSync(path, 0o755);
   return path;
@@ -90,6 +90,7 @@ function run(certificateSource: string, reasons: Record<string, number>, release
   const unparked = Object.values(reasons).reduce((a, b) => a + b, 0);
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     handsInFlightTotal: 0,
     maintenance: {
@@ -176,9 +177,10 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
     );
   });
 
-  // Isolated SSD runs on 2026-10-12 took 5.3-7.4 seconds. Keep all assertions
-  // and allow bounded headroom for Git/filesystem work, rather than timing out
-  // after the check already completed its synchronous work.
+  // Isolated SSD runs took 5.3-7.4 seconds; the complete pre-push suite on
+  // 2026-10-28 took 33.8 seconds under process contention, and the two-file
+  // rerun took 59.3 seconds. Keep every refusal and each child's 10-second
+  // limit, with the same bounded 90-second headroom as the transaction suite.
   it('refuses each one alone and beside a preparation reason, with the database proof saying no hand', () => {
     for (const reason of CUSTODY_REASONS) {
       for (const releaseSha of SERVING) {
@@ -192,7 +194,7 @@ describe('2. every bank or custody reason refuses, whoever is serving', () => {
         }
       }
     }
-  }, 30_000);
+  }, 90_000);
   it('still admits the preparation reasons alone, so the refusals above are not a broken harness', () => {
     const result = run(CERTIFICATE, { f06_preparation_stuck: 13 }, RETIRED);
     expect(result.status, result.stderr).toBe(0);

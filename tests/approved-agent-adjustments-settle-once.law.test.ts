@@ -45,6 +45,39 @@ describe('Approved agent adjustments settle once through their original club ban
       'python3 -B scripts/qualification/approved-agent-adjustment/native.py'
     );
   });
+  it('documents earned commission through the canonical paid transfer pipeline', () => {
+    const source = read(
+      'supabase/migrations/20261028193243_approved_earned_agent_commissions_issue_paid_transfer_receip.sql'
+    );
+    for (const invariant of [
+      "public.fn_ca_declare_ledger('commission','club_treasury'",
+      "a.amount,'commission',p_club,a.reason",
+      'approved_agent_adjustment_paid_document_unverified',
+      "i.status='paid'",
+      'i.chips_transferred IS TRUE',
+      "i.breakdown->'approved_intent'=intent",
+      "a.id::text=l.metadata->>'adjustment_id'",
+      "a.status IN('approved','settled')",
+    ])
+      expect(source).toContain(invariant);
+    expect(source).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_accounting_correction_prepare'
+    );
+    const native = read('scripts/qualification/approved-agent-adjustment/native.py');
+    for (const proof of [
+      'real_document_trigger_reproduces_original_incident_category_failure_atomically',
+      'real_commission_document_paid_transferred_numbered_history_only_and_truthful_audit',
+      'commission_replay_preserves_exact_credit_invoice_counter_and_empty_messenger_deliveries',
+      'missing_document_trigger_refuses_and_rolls_back_credit',
+    ])
+      expect(native).toContain(proof);
+    expect(read('scripts/qualification/approved-agent-adjustment/document_pipeline.py')).toContain(
+      'accounting_transfer_document'
+    );
+    expect(read('scripts/qualification/approved-agent-adjustment/document_pipeline.py')).toContain(
+      "assert declaration.count('CREATE TABLE ')==1"
+    );
+  });
   it('keeps earned credits payable to suspended wallets without activating them', () => {
     const source = read(
       'supabase/migrations/20261028183252_suspended_agents_receive_approved_past_earned_chips.sql'

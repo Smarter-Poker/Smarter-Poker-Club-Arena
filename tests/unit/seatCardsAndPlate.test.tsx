@@ -40,7 +40,10 @@ import { render } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import SeatSlot, { type SeatPlayer, type Card } from '../../src/components/table/SeatSlot';
-import { displayOrderWithDealtIndex } from '../../src/lib/tableCardDisplay';
+import {
+  displayOrderWithDealtIndex,
+  heroWinningHoleCardIndexes,
+} from '../../src/lib/tableCardDisplay';
 import {
   dealerButtonPositionClearOfSeat,
   overlapsSeatPlate,
@@ -358,7 +361,103 @@ const DEALT: Card[] = [
   { rank: 'A', suit: 'd' },
 ];
 
+describe('winning hole cards rise above the rest of the hand', () => {
+  it('uses an independent lift that reveal/deal transform keyframes cannot flatten', () => {
+    const winner = rulesFor('.seat__card--winner')
+      .map((r) => r.body)
+      .join('\n');
+    expect(winner).toMatch(/translate:\s*0\s+-20%;/);
+  });
+
+  it.each([false, true])('raises only K/J in a PLO5 hand (hero=%s), then clears', (hero) => {
+    const holeCards: Card[] = [
+      { rank: 'A', suit: 's' },
+      { rank: 'K', suit: 'h' },
+      { rank: 'J', suit: 'd' },
+      { rank: '5', suit: 'c' },
+      { rank: '6', suit: 's' },
+    ];
+    const seat = (winning: boolean, indexes: number[] = [1, 2], shown = true) => (
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ holeCards, isHero: hero, showCards: shown })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        isWinner={winning}
+        winnerDisplayActive={winning}
+        winningHoleCardIndexes={indexes}
+      />
+    );
+    const h = render(seat(true));
+    const selector = hero ? '.seat__cards--hero' : '.seat__cards--opponent';
+    const winning = () => [...h.container.querySelectorAll(`${selector} .seat__card--winner`)];
+    expect(winning().map((c) => c.querySelector('img')?.getAttribute('alt'))).toEqual([
+      'King Of Hearts',
+      'Jack Of Diamonds',
+    ]);
+    expect(h.container.querySelectorAll(`${selector} .seat__card--dimmed`)).toHaveLength(3);
+    h.rerender(seat(true, []));
+    expect(winning()).toHaveLength(0);
+    h.rerender(seat(false));
+    expect(winning()).toHaveLength(0);
+    if (!hero) {
+      h.rerender(seat(true, [1, 2], false));
+      expect(winning()).toHaveLength(0);
+    }
+    h.unmount();
+  });
+});
+
 describe('the showdown highlight follows the card, not the slot', () => {
+  it('the live TablePage uses the same mapping before passing hero winner indexes', () => {
+    const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+    const prop = page.slice(
+      page.indexOf('winningHoleCardIndexes={'),
+      page.indexOf('isMuckedShowdown={')
+    );
+    expect(prop).toMatch(/player\.isHero\s*\? heroWinningHoleCardIndexes\(/);
+    expect(prop).toContain('heroEngineCardOrderRef.current');
+    expect(page).toContain('heroEngineCardOrderRef.current = sp.holeCards.map');
+    expect(page).toContain('heroEngineCardOrderRef.current = publicHeroCards.map');
+    expect(page).toContain('heroEngineCardOrderRef.current = null;');
+  });
+
+  it('the sorted hero raises K/J from their dealt positions, never J/6', () => {
+    const dealt: Card[] = [
+      { rank: '6', suit: 'h' },
+      { rank: 'A', suit: 's' },
+      { rank: 'K', suit: 'd' },
+      { rank: 'J', suit: 'c' },
+      { rank: '5', suit: 's' },
+    ];
+    const displayed = displayOrderWithDealtIndex(dealt).map(({ card }) => card!);
+    const indexes = heroWinningHoleCardIndexes(
+      [2, 3],
+      undefined,
+      displayed,
+      dealt.map((c) => `${c.rank}${c.suit}`)
+    );
+    const h = render(
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ isHero: true, holeCards: displayed })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        isWinner
+        winnerDisplayActive
+        winningHoleCardIndexes={indexes}
+      />
+    );
+    const winners = [...h.container.querySelectorAll('.seat__cards--hero .seat__card--winner')];
+    expect(winners.map((c) => c.querySelector('img')?.getAttribute('alt'))).toEqual([
+      'King Of Diamonds',
+      'Jack Of Clubs',
+    ]);
+    h.unmount();
+  });
+
   it('the display order is high to low and every card keeps its dealt index', () => {
     const shown = displayOrderWithDealtIndex(DEALT);
     expect(shown.map((c) => c.card!.rank)).toEqual(['A', 'A', '9', '6']);

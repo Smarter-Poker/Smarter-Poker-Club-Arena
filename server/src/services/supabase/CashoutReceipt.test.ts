@@ -338,3 +338,45 @@ describe('original administrative outcome service boundary', () => {
     ).rejects.toThrow('connection lost');
   });
 });
+
+// A last-moment paid rebuy must be decided by the transaction, not the prior roster read.
+describe('Lightning expiry uses a locked unfunded predicate', () => {
+  it('selects the guarded RPC and retains the original occupancy and forced mode', async () => {
+    const zero = { ...receipt, stack: 0, credited: false };
+    mock.rpc.mockImplementation(async (name: string) =>
+      name === 'fn_cashout_unfunded_seat_occupancy'
+        ? { data: zero, error: null }
+        : { data: null, error: null }
+    );
+    await expect(
+      atomicCashout('player', 'table', 2, {
+        occupancyId,
+        leaveMode: 'forced',
+        requireUnfunded: true,
+      })
+    ).resolves.toBe(0);
+    expect(mock.rpc).toHaveBeenCalledWith('fn_cashout_unfunded_seat_occupancy', {
+      p_user_id: 'player',
+      p_table_id: 'table',
+      p_seat_number: 2,
+      p_occupancy_id: occupancyId,
+      p_leave_mode: 'forced',
+    });
+  });
+  it.each(['BUST_REBUY_PENDING', 'BUST_REBUY_FUNDED'])(
+    'preserves the seat on %s without falling back to an unguarded cashout',
+    async (message) => {
+      mock.rpc.mockResolvedValue({ data: null, error: { message } });
+      await expect(
+        atomicCashout('player', 'table', 2, {
+          occupancyId,
+          leaveMode: 'forced',
+          requireUnfunded: true,
+        })
+      ).rejects.toThrow(message);
+      expect(mock.rpc.mock.calls.map(([name]) => name)).toEqual([
+        'fn_cashout_unfunded_seat_occupancy',
+      ]);
+    }
+  );
+});

@@ -104,13 +104,84 @@ describe('preflop maniac recovery uses the actual committed population', () => {
     expect(decide({ stack: 100, bet: 200, totalInvested: 200 }).action).toBe('fold');
     expect(eq.mock.calls[0][2]).toBe(2);
   });
-  it('confirms a noisy heads-up all-in boundary without lowering the net price', () => {
+  it('retains a noisy heads-up all-in refusal at the original governed budget', () => {
     const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(0.48).mockReturnValue(0.58);
-    expect(decide().action).toBe('all_in');
-    expect(eq).toHaveBeenCalledTimes(2);
+    expect(decide().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
     eq.mockReset().mockReturnValue(0.5);
     expect(decide().action).toBe('fold'); // 200 / (400 - 6), not gross 50%.
-    expect(eq).toHaveBeenCalledTimes(3); // at most the two existing bounded confirmations.
+    expect(eq).toHaveBeenCalledTimes(1); // The raked price is not lowered or retried.
+  });
+});
+
+describe('NLH recovery does not select extra samples after seeing a low estimate', () => {
+  it.each([0.48, 0.505])('retains the original priced refusal at equity %s', (initial) => {
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(initial).mockReturnValue(0.9);
+    expect(decide().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+  });
+  it.each([undefined, ''])('uses the selected NLH capabilities with gameVariant %s', (tag) => {
+    const { hero, gs } = spot({ is_folded: true });
+    if (tag === undefined) delete (gs as Partial<HorseGameStateV2>).gameVariant;
+    else gs.gameVariant = tag;
+    const selected = Eval.variantInfo(tag as string);
+    expect(selected).toMatchObject({
+      holeCount: 2,
+      isOmaha: false,
+      isShortDeck: false,
+      isFixedLimit: false,
+      isPotLimit: false,
+    });
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(0.48).mockReturnValue(0.9);
+    const run = () =>
+      HorseLogic.__testables.maniacCallDown(
+        { action: 'fold', thinkTime: 0 },
+        hero,
+        gs,
+        selected,
+        {}
+      );
+    expect(run().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+    // A cold-read early return would falsely pass the negative assertion.
+    // Prove this same default-tag path actually prices and admits a valid call.
+    eq.mockReset().mockReturnValueOnce(0.58).mockReturnValue(0.01);
+    expect(run().action).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+  });
+  it('does not replace two selected low estimates with a favorable fresh mean', () => {
+    const eq = vi
+      .spyOn(Eval, 'simulateEquity')
+      .mockReturnValueOnce(0.48)
+      .mockReturnValueOnce(0.48)
+      .mockReturnValue(0.9);
+    expect(decide().action).toBe('fold');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq.mock.calls[0][4]).toBe(360);
+  });
+  it('retains a justified above-price all-in without a second estimate', () => {
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(0.58).mockReturnValue(0.01);
+    expect(decide().action).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
+  });
+  it('retains a justified cheap all-in at the actual contestable price', () => {
+    const { hero, gs } = spot({ is_folded: true });
+    gs.contestablePot = 1000;
+    const eq = vi.spyOn(Eval, 'simulateEquity').mockReturnValueOnce(0.25).mockReturnValue(0.01);
+    expect(
+      HorseLogic.__testables.maniacCallDown(
+        { action: 'fold', thinkTime: 0 },
+        hero,
+        gs,
+        Eval.variantInfo('nlh'),
+        {}
+      ).action
+    ).toBe('all_in');
+    expect(eq).toHaveBeenCalledTimes(1);
   });
 });
 

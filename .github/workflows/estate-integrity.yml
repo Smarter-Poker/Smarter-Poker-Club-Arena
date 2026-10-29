@@ -58,9 +58,26 @@ jobs:
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
           owner: Smarter-Poker
 
+      # A GitHub App installation token cannot span personal and organization owners.
+      - name: Mint transferred Club Arena read token
+        if: github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872'
+        id: club-arena-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-Club-Arena
+          permission-contents: read
+          permission-actions: read
+          permission-issues: read
+          permission-administration: read
+
       - name: Compare every repo against what it is supposed to be
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN_CA: ${{ steps.club-arena-token.outputs.token }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
           # The alarm writes with GITHUB_TOKEN, whose issues: write is declared
           # above and therefore guaranteed. An App's installation scopes can be
           # narrowed without anyone here noticing, and an audit that cannot

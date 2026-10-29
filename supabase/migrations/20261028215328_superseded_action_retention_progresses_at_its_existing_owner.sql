@@ -51,7 +51,9 @@ RETURNS timestamptz LANGUAGE sql STABLE SET search_path=pg_catalog AS $function$
   AND pg_input_is_valid(p_expected->>'retained_at','timestamptz') THEN
    CASE WHEN isfinite((p_expected->>'retained_at')::timestamptz)
     AND (p_expected->>'retained_at')::timestamptz<'9999-01-01'::timestamptz
-    THEN (p_expected->>'retained_at')::timestamptz+interval '8 days' END END
+    THEN (p_expected->>'retained_at')::timestamptz+make_interval(days=>policy.horse_retention_days) END END
+ FROM (SELECT horse_retention_days FROM public.hand_history_retention_policy LIMIT 1) policy
+ WHERE policy.horse_retention_days BETWEEN 1 AND 36500
 $function$;
 REVOKE ALL ON FUNCTION smarter_private.superseded_action_retention_due_at(jsonb) FROM PUBLIC,anon,authenticated,service_role;
 

@@ -157,3 +157,11 @@ it('restores only its own wrapper and stops recording pending completions', asyn
   diagnostic().stop();
   expect(locks.request).toBe(otherWrapper);
 });
+
+it.each([undefined, {}])('leaves unavailable lock requests untouched (%s)', async (locks) => {
+  vi.stubGlobal('navigator', { locks });
+  installNaturalAuthAdmissionDiagnosticScript();
+  expect((await diagnostic().read()).installed).toBe(false);
+  expect((await diagnostic().read()).events).toEqual([]);
+  expect(navigator.locks).toBe(locks);
+});

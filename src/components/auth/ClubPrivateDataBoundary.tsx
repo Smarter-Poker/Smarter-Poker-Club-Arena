@@ -25,7 +25,10 @@ export default function ClubPrivateDataBoundary({ children }: { children: ReactN
         if (!clubUUID || !userId || (payload.clubId && payload.clubId !== clubUUID)) return;
         if (payload.userId && payload.userId !== userId) return;
         clearClubPrivateReadCaches(userId, clubUUID);
-        if (isPrivateClubDataRoute(pathname)) setGeneration((value) => value + 1);
+        // The member detail owns immediate capability withdrawal in place.
+        // Rejoining a scope must not discard its drafts or refetch every card.
+        const memberDetail = /(?:^|\/)clubs\/[^/]+\/members\/[^/]+\/?$/.test(pathname);
+        if (isPrivateClubDataRoute(pathname) && !memberDetail) setGeneration((value) => value + 1);
       }),
     [clubUUID, userId, pathname]
   );

@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6",
+    "scripts/ci/classify-ci-changes.mjs": "dd765f387a791128e7572a4620820707d09e9f12294684456886fe9dc6c97c4e",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1440,12 +1440,143 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
   },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "before_sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "after_sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
+  },
+  "legacyPostflopCapsuleFloorRouting20261029": {
+    "reason": "Reviewed legacy postflop prerequisite-version, captured exact current disposition guards, continuation assertion and played-clock-floor classification assertions in the existing required F06 runner. Active source identity only; preserve every prior audit, financial input, assertion and qualification status. No financial recertification or production claim.",
+    "files": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747",
+        "after": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92"
+      }
+    }
+  },
+  "uiPresentationSelection20261028": {
+    "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
+      }
+    }
+  },
+  "uiSelectionContractInputs20261028": {
+    "reason": "Preserve exact financial/source assertions while recognizing the checked UI-selection wrapper command. Cascade only current reviewed source identities, preserving historical state and records; not financial qualification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+        "current": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90"
+      }
+    }
+  },
+  "compilerPresentationScope20261028": {
+    "reason": "The compiler omits unchanged isolated chip-journal replay only after the same immutable positive presentation proof; every financial, executable, shared, mixed or unknown input retains replay. Compiler/invariants and financial matrices remain unchanged. Existing negative/actual-output regressions enforce the condition. Current source identity only, not financial or live certification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90",
+        "current": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
+      }
+    }
+  },
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    }
+  },
+  "postflopOrganizationMainIntegration20261029": {
+    "reason": "Normal integration of protected organization runner trust and UI selection with retained postflop native routing. Active source identities only; all prior audits, financial inputs, assertions and qualification states preserved. Not financial/native/live recertification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92",
+        "after": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57"
+      }
+    }
+  },
+  "horseTimingInputRouting20261029": {
+    "review": "Add only three connected horse native drivers and five SQL fixture inputs to existing accounting admission. No previous selector, financial fixture, assertion, timeout or qualification state changes. Existing Accounting4 horse-purchase chain now runs the T-10 regression; no authored CI workflow change. Current source identity only, not financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+    "current": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+    "validation": "Eight routing cases fail before the named selector; all65 horse routing cases pass after. Actual outer native chain passes including timing31 and purchase-budget27 checks."
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+        "current": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      }
+    },
+    "execution_performed": false
+  },
+  "playedClockFloorNativeLane20261029": {
+    "review": "Reviewed additive classifier alternatives for the played-clock-floor helper, builder and fixtures. The existing required continuation native lane invokes and source-binds the floor qualification. No workflow, financial fixture/owner, native command, assertion, budget or historical qualification verdict changes. Current source identity only, not financial recertification or production installation.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
+        "current": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
+      }
+    },
+    "execution_performed": false
+  },
+  "organizationUiContinuationComposition20261029": {
+    "review": "Composed both parent audit histories without loss. Reviewed protected runner/org-identity selection, presentation-only UI scope wrapper and its negative/source contract changes, retaining original financial/native accounting steps and continuation/floor lane selection. Only reviewed shared workflow/classifier/fixtureNativeCi test identities and directly dependent binding-file identities change; no monetary SQL, original financial fixture, amounts, assertions, native financial commands, limits or qualification status is altered. Matching identity is not renewed native financial execution, installation or production certification.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "candidateBeforeMerge": "de21f4ef570c5af97e08db4de3f633773213e8aa",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "continuation_parent": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704",
+        "protected_main": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+        "current": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "continuation_parent": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+        "protected_main": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9",
+        "current": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "horseTimingRecoveryMainComposition20261029": {
+    "review": "Preserved every financial source pin and all audit values from both parents, including protected-main own-agent and signup qualification notes. Reviewed the additive horse daily-counts/purchase-budget/registration-timing and five SQL fixture selector alternatives, alongside unchanged original-continuation/floor alternatives. Refresh only the composed classifier identity, existing workflow identity where parents differ, and direct legacy-fee/Spin binding dependencies. No monetary SQL, original financial fixtures, arithmetic, assertions, budgets, native commands or qualification result statuses are changed by this binding resolution. Native6 continuation/floor closure remains exactly source-bound; newly changed protected-main financial paths retain their own qualification requirements. This is not renewed financial execution, installation or production certification.",
+    "main": "cf5fa087169aab7f1c64947d1320ec0435ab9f60",
+    "candidateBeforeMerge": "0cc85eb852d7cf0f6cc2d10131572fdb7ce725d5",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "recovery_parent": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7",
+        "protected_main": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+        "current": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
   "supersededRetentionProgressEnforcement20261028": {
     "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
     "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
         "current": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
+  },
+  "retentionProgressProtectedMainComposition20261029": {
+    "reason": "Combine protected main915d5e2 with the retention progress qualification and additive Accounting3 selectors. Preserve every protected-main and branch historical audit object; update only current enforcement inputs and their derived child binding identities. Financial sources, assertions and qualification states remain unchanged.",
+    "protectedMainRevision": "915d5e2ac0ae3a9c8d10eb3de38cfb1d56cf733d",
+    "branchRevision": "22b1078f8a19df37b7608a3111d5fab281da32c8",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "protectedMain": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+        "combined": "dd765f387a791128e7572a4620820707d09e9f12294684456886fe9dc6c97c4e"
       }
     },
     "financial_qualification_performed": false,

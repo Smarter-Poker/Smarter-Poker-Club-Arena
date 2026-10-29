@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6",
+    "scripts/ci/classify-ci-changes.mjs": "dd765f387a791128e7572a4620820707d09e9f12294684456886fe9dc6c97c4e",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1146,15 +1146,14 @@
       }
     }
   },
-  "supersededHorseActionQualification20261028": {
-    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
-    "bindings": {
+  "uiPresentationSelection20261028": {
+    "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
+    "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+        "current": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
       }
-    },
-    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+    }
   },
   "nativeAlertRuntimeAudit20261027": {
     "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
@@ -1167,10 +1166,76 @@
       "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
     ]
   },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+  },
   "retentionMainIntegration20261028": {
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "horseTimingInputRouting20261029": {
+    "review": "Add only three connected horse native drivers and five SQL fixture inputs to existing accounting admission. No previous selector, financial fixture, assertion, timeout or qualification state changes. Existing Accounting4 horse-purchase chain now runs the T-10 regression; no authored CI workflow change. Current source identity only, not financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+    "current": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+    "validation": "Eight routing cases fail before the named selector; all65 horse routing cases pass after. Actual outer native chain passes including timing31 and purchase-budget27 checks."
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+        "current": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      }
+    },
+    "execution_performed": false
+  },
+  "playedClockFloorNativeLane20261029": {
+    "review": "Reviewed additive classifier alternatives for the played-clock-floor helper, builder and fixtures. The existing required continuation native lane invokes and source-binds the floor qualification. No workflow, financial fixture/owner, native command, assertion, budget or historical qualification verdict changes. Current source identity only, not financial recertification or production installation.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
+        "current": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
+      }
+    },
+    "execution_performed": false
+  },
+  "organizationUiContinuationComposition20261029": {
+    "review": "Composed both parent audit histories without loss. Reviewed protected runner/org-identity selection, presentation-only UI scope wrapper and its negative/source contract changes, retaining original financial/native accounting steps and continuation/floor lane selection. Only reviewed shared workflow/classifier/fixtureNativeCi test identities and directly dependent binding-file identities change; no monetary SQL, original financial fixture, amounts, assertions, native financial commands, limits or qualification status is altered. Matching identity is not renewed native financial execution, installation or production certification.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "candidateBeforeMerge": "de21f4ef570c5af97e08db4de3f633773213e8aa",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "continuation_parent": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704",
+        "protected_main": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+        "current": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "horseTimingRecoveryMainComposition20261029": {
+    "review": "Preserved every financial source pin and all audit values from both parents, including protected-main own-agent and signup qualification notes. Reviewed the additive horse daily-counts/purchase-budget/registration-timing and five SQL fixture selector alternatives, alongside unchanged original-continuation/floor alternatives. Refresh only the composed classifier identity, existing workflow identity where parents differ, and direct legacy-fee/Spin binding dependencies. No monetary SQL, original financial fixtures, arithmetic, assertions, budgets, native commands or qualification result statuses are changed by this binding resolution. Native6 continuation/floor closure remains exactly source-bound; newly changed protected-main financial paths retain their own qualification requirements. This is not renewed financial execution, installation or production certification.",
+    "main": "cf5fa087169aab7f1c64947d1320ec0435ab9f60",
+    "candidateBeforeMerge": "0cc85eb852d7cf0f6cc2d10131572fdb7ce725d5",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "recovery_parent": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7",
+        "protected_main": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+        "current": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
   },
   "supersededRetentionProgressEnforcement20261028": {
     "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
@@ -1178,6 +1243,19 @@
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
         "current": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
+  },
+  "retentionProgressProtectedMainComposition20261029": {
+    "reason": "Combine protected main915d5e2 with the retention progress qualification and additive Accounting3 selectors. Preserve every protected-main and branch historical audit object; update only current enforcement inputs and their derived child binding identities. Financial sources, assertions and qualification states remain unchanged.",
+    "protectedMainRevision": "915d5e2ac0ae3a9c8d10eb3de38cfb1d56cf733d",
+    "branchRevision": "22b1078f8a19df37b7608a3111d5fab281da32c8",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "protectedMain": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+        "combined": "dd765f387a791128e7572a4620820707d09e9f12294684456886fe9dc6c97c4e"
       }
     },
     "financial_qualification_performed": false,

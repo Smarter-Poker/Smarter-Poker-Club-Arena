@@ -1,3 +1,4 @@
+import { mainHorseHistoryRetentionBudget } from './ownPublicHistoryBudget.js';
 import { readHorseOwnPublicHistory } from '../../services/HorseOwnPublicHistory.js';
 import { HorseObserverParticipantRegistry } from './observerParticipants.js';
 import { availableParallelism } from 'node:os';
@@ -255,6 +256,7 @@ export interface LiveHorseDecisionWorkerShardStatus {
 export interface LiveHorseDecisionLaneStatus extends LiveHorseDecisionWorkerStatus {
   /** Number of main-owned client caches represented by the aggregate. */
   mainHistoryCacheClientCount?: number;
+  mainHistoryRetentionBudget?: ReturnType<typeof mainHorseHistoryRetentionBudget.status>;
   workerCount: number;
   /** The journal shards the disk admitted at construction (null: no journal). */
   journalShardCapacity: number | null;
@@ -486,6 +488,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       isolateMemoryAgeMs: null,
       mainHistoryCache,
       mainHistoryCacheClientCount: caches.length,
+      mainHistoryRetentionBudget: mainHorseHistoryRetentionBudget.status(),
       workerCount: all.length,
       journalShardCapacity: this.journalShardCapacity ?? null,
       journalCapacityUnreadable: this.journalCapacityUnreadable,

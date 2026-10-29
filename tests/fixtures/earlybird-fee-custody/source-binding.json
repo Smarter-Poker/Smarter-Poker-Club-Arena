@@ -15,7 +15,7 @@
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "supabase/migrations/20260918122532_five_original_spin_standings_retain_their_recorded_cash_outc.sql": "9f6e0b02abea54394d317c6d20f8e47ae10edefc9ba6c12f6542c23daf4540c4",
     ".prettierignore": "07ecc5925d551fde38704413665ef6cb9c68015c2772b577c01bfefec9c95331",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536"
   },
   "restamp_audit": [
@@ -455,6 +455,54 @@
     },
     "current": {
       "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    }
+  },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "before_sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "after_sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
+  },
+  "legacyPostflopCapsuleFloorRouting20261029": {
+    "reason": "Reviewed legacy postflop prerequisite-version, captured exact current disposition guards, continuation assertion and played-clock-floor classification assertions in the existing required F06 runner. Active source identity only; preserve every prior audit, financial input, assertion and qualification status. No financial recertification or production claim.",
+    "files": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747",
+        "after": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92"
+      }
+    }
+  },
+  "uiSelectionContractInputs20261028": {
+    "reason": "Preserve exact financial/source assertions while recognizing the checked UI-selection wrapper command. Cascade only current reviewed source identities, preserving historical state and records; not financial qualification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+        "current": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90"
+      }
+    }
+  },
+  "compilerPresentationScope20261028": {
+    "reason": "The compiler omits unchanged isolated chip-journal replay only after the same immutable positive presentation proof; every financial, executable, shared, mixed or unknown input retains replay. Compiler/invariants and financial matrices remain unchanged. Existing negative/actual-output regressions enforce the condition. Current source identity only, not financial or live certification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90",
+        "current": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
+      }
+    }
+  },
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    }
+  },
+  "postflopOrganizationMainIntegration20261029": {
+    "reason": "Normal integration of protected organization runner trust and UI selection with retained postflop native routing. Active source identities only; all prior audits, financial inputs, assertions and qualification states preserved. Not financial/native/live recertification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92",
+        "after": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57"
+      }
     }
   }
 }

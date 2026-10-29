@@ -11,11 +11,17 @@ class RetainedEvidenceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.head = 'a' * 40
-        self.env = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_JOB': 'accounting_postgres',
+        self.env = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_REPOSITORY_ID':'1132369872', 'GITHUB_JOB': 'accounting_postgres',
                     'GITHUB_SHA': self.head, 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2',
                     'GITHUB_EVENT_NAME': 'schedule', 'BBJ_STEP_OUTCOME': 'failure'}
         self.output = self.root/'artifacts/bbj-bank-replay'
         self.output.mkdir(parents=True)
+
+    def test_transferred_receipt_retains_immutable_repository_authority(self):
+        env = {**self.env, 'GITHUB_REPOSITORY': 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'}
+        self.assertEqual(manifest(self.root, env, {}, self.head)['repository'], env['GITHUB_REPOSITORY'])
+        for bad in ({'GITHUB_REPOSITORY_ID': '42'}, {'GITHUB_REPOSITORY': 'evil/Smarter-Poker-Club-Arena'}):
+            with self.assertRaises(ValueError): manifest(self.root, {**env, **bad}, {}, self.head)
 
     def test_failed_attempt_retains_available_bytes_and_names_missing_receipts(self):
         (self.output/'failure.log').write_bytes(b'original failure')

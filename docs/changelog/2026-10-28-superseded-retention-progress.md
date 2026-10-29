@@ -32,3 +32,8 @@ does not change that configuration. Native qualification uses a catalog/API
 shape substitute and the real PostgreSQL simple-query path, not a running
 pg_cron extension. Production completion therefore also requires actual job117
 run readback after protected installation.
+
+The due-time helper reads `hand_history_retention_policy.horse_retention_days`
+when recording a receipt, preserving the owner's configuration authority.
+Missing or invalid configuration does not invent a deadline. The existing
+semantic qualifier remains the sole authority that permits action compaction.

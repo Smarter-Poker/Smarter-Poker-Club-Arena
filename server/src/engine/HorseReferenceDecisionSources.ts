@@ -62,6 +62,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the tournament short all-in call floor (under 3BB shove, 20BB+ horse calls), the last action rule after every other layer (Dan 2026-10-26)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
+    'src/engine/HorseHeadsUpCommitment.ts':
+      'qualified cash NLH and high-only PLO heads-up matchable exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
@@ -107,6 +109,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':
       'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/ownPublicHistoryBudget.ts':
+      'the shared main-isolate byte reservations and heap-headroom admission that determine individual public-history availability',
     'src/engine/horseDecision/observerParticipants.ts':
       'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
     'src/engine/horseDecision/completedHandActions.ts':

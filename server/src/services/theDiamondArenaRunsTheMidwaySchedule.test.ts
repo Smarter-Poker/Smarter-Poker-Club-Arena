@@ -472,6 +472,12 @@ describe('the Diamond bankroll gate reads Diamonds', () => {
     const tables: string[] = [];
     const memberWalletReads: unknown[] = [];
     const target = {
+      format_contract: 'mtt-v2',
+      variant: 'freezeout',
+      max_players: null,
+      status: 'REGISTERING',
+      start_time: '2026-10-23T18:05:00.000Z',
+      current_players: 0,
       club_id: ARENA,
       union_id: null,
       buy_in_amount: 9,

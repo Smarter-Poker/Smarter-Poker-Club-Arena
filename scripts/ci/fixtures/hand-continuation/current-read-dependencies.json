@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "table",
+    "signature": "smarter_private.horse_settlement_key_certificates",
+    "definition": "CREATE TABLE smarter_private.horse_settlement_key_certificates (table_id uuid NOT NULL, stack_hand_id uuid NOT NULL, hand_number bigint NOT NULL, history_hand_id uuid NOT NULL, manifest_id uuid NOT NULL, original_result_sha256 text NOT NULL, original_request_sha256 text NOT NULL, compact_result jsonb NOT NULL, accounting_evidence_sha256 text NOT NULL, settled_at timestamp with time zone NOT NULL, compacted_at timestamp with time zone NOT NULL);"
+  },
+  {
+    "kind": "table",
+    "signature": "poker_diamond_jackpot_hits",
+    "definition": "CREATE TABLE poker_diamond_jackpot_hits (id uuid NOT NULL, arena_id uuid NOT NULL, table_id uuid NOT NULL, hand_number bigint NOT NULL, hand_id uuid NOT NULL, kind text NOT NULL, paid boolean NOT NULL, verdict jsonb NOT NULL, receipt jsonb NOT NULL, created_at timestamp with time zone NOT NULL);"
+  },
+  {
+    "kind": "function",
+    "signature": "smarter_private.horse_settlement_original_result(uuid,uuid,jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.horse_settlement_original_result(p_table uuid, p_stack_hand uuid, p_result jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public', 'pg_temp'\nAS $function$\nDECLARE cert smarter_private.horse_settlement_key_certificates; original jsonb;\nBEGIN\n SELECT * INTO cert FROM smarter_private.horse_settlement_key_certificates\n WHERE table_id=p_table AND stack_hand_id=p_stack_hand;\n IF NOT FOUND THEN RETURN p_result; END IF;\n SELECT p.atomic_receipt->'stack_result' INTO original FROM public.cash_hand_provenance_receipts p\n WHERE p.table_id=cert.table_id AND p.hand_number=cert.hand_number AND p.hand_id=cert.history_hand_id\n AND p.manifest_id=cert.manifest_id;\n IF p_result IS DISTINCT FROM cert.compact_result OR original IS NULL\n OR encode(extensions.digest(convert_to(original::text,'UTF8'),'sha256'),'hex') IS DISTINCT FROM cert.original_result_sha256\n OR encode(extensions.digest(convert_to((original->'request')::text,'UTF8'),'sha256'),'hex') IS DISTINCT FROM cert.original_request_sha256\n OR original-'request' IS DISTINCT FROM cert.compact_result THEN\n  RAISE EXCEPTION 'HORSE_SETTLEMENT_COMPACT_ORIGINAL_CONFLICT' USING ERRCODE='55000'; END IF;\n RETURN original;\nEND $function$\n"
+  }
+]

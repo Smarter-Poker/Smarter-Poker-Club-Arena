@@ -10,6 +10,7 @@ import {
   ENGINE_SUIT_MAP,
   RANK_ORDER,
   sortCardsByRank,
+  heroWinningHoleCardIndexes,
   GAME_VARIANT_LABELS,
   getGameVariantLabel,
 } from '../../src/lib/tableCardDisplay';
@@ -103,5 +104,37 @@ describe('getGameVariantLabel', () => {
     for (const v of ['nlh', 'plo6', 'mystery_variant']) {
       expect(getGameVariantLabel(v).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('winning hero indexes follow card identity after the display sort', () => {
+  const dealt = [card('6', 'h'), card('A', 's'), card('K', 'd'), card('J', 'c'), card('5', 's')];
+  const order = dealt.map((c) => `${c.rank}${c.suit}`);
+  const shown = sortCardsByRank(dealt);
+  it('maps K/J while preserving the unsorted preference', () => {
+    expect(heroWinningHoleCardIndexes([2, 3], undefined, shown, order)).toEqual([1, 2]);
+    expect(heroWinningHoleCardIndexes([2, 3], undefined, dealt, order)).toEqual([2, 3]);
+  });
+  it('does not remap RIT award indexes that already refer to displayed cards', () => {
+    expect(heroWinningHoleCardIndexes([2, 3], [0, 2], shown, order)).toEqual([0, 1, 2]);
+    expect(heroWinningHoleCardIndexes(undefined, [1, 2], shown, null)).toEqual([1, 2]);
+  });
+  it('distinguishes absent metadata from an explicitly empty winning holding', () => {
+    expect(heroWinningHoleCardIndexes(undefined, undefined, shown, order)).toBeUndefined();
+    expect(heroWinningHoleCardIndexes([], undefined, shown, order)).toEqual([]);
+  });
+  it('identifies the suit as well as the rank and normalizes ten spelling', () => {
+    const row = [card('A', 's'), card('A', 'h'), card('T', 'c')];
+    expect(
+      heroWinningHoleCardIndexes([0, 2], undefined, row, ['Ahearts', 'Aspades', '10clubs'])
+    ).toEqual([1, 2]);
+  });
+  it('never guesses at missing, stale, invalid or hidden cards', () => {
+    expect(heroWinningHoleCardIndexes([2], undefined, shown, null)).toEqual([]);
+    expect(heroWinningHoleCardIndexes([0], undefined, shown, ['2h'])).toEqual([]);
+    expect(heroWinningHoleCardIndexes([-1, NaN, 99], [NaN, -1, 99], shown, order)).toEqual([]);
+    expect(heroWinningHoleCardIndexes([2, 3], undefined, [null, card('J', 'c')], order)).toEqual([
+      1,
+    ]);
   });
 });

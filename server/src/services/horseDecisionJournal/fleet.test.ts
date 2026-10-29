@@ -360,6 +360,72 @@ function attachRetainedRiverHistory(f: ReturnType<typeof fixture>, count = 1, ca
   return history;
 }
 describe('own-turn accepted execution evidence', () => {
+  it.each(['fold', 'check'] as const)(
+    'does not credit a contradictory nonzero display amount for %s',
+    (action) => {
+      const f = fixture(action === 'check');
+      f.d.decision = { action, thinkTime: 0 };
+      const last = f.a.actions.length - 1;
+      f.a.actions[last] = { ...f.a.actions[last]!, action, amount: 0 };
+      f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      settleHorseExecutionWitness(f.w, {
+        applied: true,
+        acceptedActions: [{ record: f.a.actions[last]!, intended: true }],
+      });
+      f.w.executedAmount = 1;
+      const dir = mkdtempSync(join(tmpdir(), 'horse-contradictory-zero-chip-fleet-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const horse = readHorseJournalFleet(dir, packet()).horses.find(
+        (h) => h.horseId === f.d.snapshot.player.user_id
+      )!;
+      expect(horse.executionEvidence.selectedMatch).toBe(0);
+    }
+  );
+  it.each(['fold', 'check'] as const)(
+    'counts an intended zero-chip %s using its original controller amount',
+    (action) => {
+      const f = fixture(action === 'check');
+      f.d.decision = { action, thinkTime: 0 };
+      const last = f.a.actions.length - 1;
+      f.a.actions[last] = { ...f.a.actions[last]!, action, amount: 0 };
+      f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      settleHorseExecutionWitness(f.w, {
+        applied: true,
+        acceptedActions: [{ record: f.a.actions[last]!, intended: true }],
+      });
+      expect(f.w.executionStatus).toBe('intended');
+      expect(f.w.executedAmount).toBeNull();
+      expect(f.w.expectedExecutionAmount).toBe(0);
+      const dir = mkdtempSync(join(tmpdir(), 'horse-zero-chip-fleet-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const horse = readHorseJournalFleet(dir, packet()).horses.find(
+        (h) => h.horseId === f.d.snapshot.player.user_id
+      )!;
+      expect(horse.acceptedDecisions).toBe(1);
+      expect(horse.executionEvidence.selectedMatch).toBe(1);
+      expect(horse.executionEvidence.selectionUnknown).toBe(0);
+    }
+  );
   it.each(['intended', 'coerced', 'rejected', 'identity_mismatch'] as const)(
     'retains exact controller classification %s without inferring policy correctness',
     (mode) => {

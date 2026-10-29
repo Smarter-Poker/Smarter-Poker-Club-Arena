@@ -155,6 +155,9 @@ describe('a level is not spent while part of the field has no dealer', () => {
     TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS - 1,
     TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000,
   ])('never releases an entirely unavailable field after %ims', async (failingFor) => {
+    // This is an exact 29999/30000ms boundary. Awaited owner work must not
+    // move the fixture across that boundary on a loaded test worker.
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const m = manager(failingFor);
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     m.tableAdmissionFailingSince.set('healthy-table', Date.now() - failingFor);

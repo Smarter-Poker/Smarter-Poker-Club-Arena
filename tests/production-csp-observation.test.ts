@@ -121,7 +121,7 @@ describe('CSP observation owns one rendered document', () => {
     expect(spec).toContain("['/', '/hub/diamond-store', '/hub/home-games']");
     expect(spec).toContain('test.setTimeout(240_000)');
     expect(spec).toContain(').toEqual([])');
-    expect(spec).toContain('visitCspRoute(page, url, label)');
+    expect(spec).toContain('visitIsolatedCspRoute(context, url, label, COLLECT)');
     expect(source).toContain('CSP collector is unavailable');
   });
 });

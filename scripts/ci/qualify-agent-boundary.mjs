@@ -69,6 +69,11 @@ try {
   const dataScreen=await rpc('ca_club_data_screen',{p_club_id:club,p_limit:1});
   assert.equal(dataScreen.scope,'downline');
   assert.deepEqual(dataScreen.rows,[]);
+  assert.equal(dataScreen.member_fees?.day_basis,'UTC','Personal fee reader is not installed');
+  for(const field of ['cash_fees','tournament_fees','total_fees']) {
+   assert.ok(Object.hasOwn(dataScreen.member_fees,field),'Missing personal fee '+field);
+   assert.equal(Number(dataScreen.member_fees[field]),0,'Personal fees leaked another member: '+field);
+  }
   for(const field of ['games','fee','total_winnings','mtt_winnings','on_felt']) assert.equal(Number(dataScreen.summary[field]),0,'Data leaked another member: '+field);
   for(const legacyClub of [club,null]) {
    assert.deepEqual(await rpc('fn_agent_downline_rake',{p_agent_user_id:account.id,p_club_id:legacyClub}),[]);

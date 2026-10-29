@@ -76,3 +76,32 @@ export function rankHorseSocialCohorts<T extends { candidate: { id: string }; ho
     }))
     .sort((a, b) => b.showdownCount - a.showdownCount || b.horseCount - a.horseCount);
 }
+
+/** Observe at most three active public cohorts, preferring distinct game variants. */
+export function selectHorseSocialSubjects<
+  T extends {
+    candidate: { id: string };
+    tabName: string;
+    horseCount: number;
+    showdownCount: number;
+  },
+>(ranked: readonly T[]): T[] {
+  const active = ranked.filter((entry) => entry.horseCount > 0 && entry.showdownCount > 0);
+  const subjects: T[] = [];
+  const variants = new Set<string>();
+  const ids = new Set<string>();
+  for (const entry of active) {
+    if (variants.has(entry.tabName) || ids.has(entry.candidate.id)) continue;
+    subjects.push(entry);
+    variants.add(entry.tabName);
+    ids.add(entry.candidate.id);
+    if (subjects.length === 3) return subjects;
+  }
+  for (const entry of active) {
+    if (ids.has(entry.candidate.id)) continue;
+    subjects.push(entry);
+    ids.add(entry.candidate.id);
+    if (subjects.length === 3) break;
+  }
+  return subjects;
+}

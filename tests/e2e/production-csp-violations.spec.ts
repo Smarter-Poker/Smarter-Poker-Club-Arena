@@ -25,7 +25,7 @@
  *      ten days under a header that was supposed to be watching.
  */
 import { expect, test } from '@playwright/test';
-import { visitCspRoute } from './support/cspRouteObservation';
+import { visitIsolatedCspRoute } from './support/cspRouteObservation';
 
 type Violation = {
   directive: string;
@@ -61,16 +61,14 @@ const COLLECT = () => {
 };
 
 test.describe('the content security policy', () => {
-  test('blocks nothing the app actually needs', async ({ page, baseURL }) => {
+  test('blocks nothing the app actually needs', async ({ context, baseURL }) => {
     test.setTimeout(240_000);
-
-    await page.addInitScript(COLLECT);
 
     const found: Array<Violation & { route: string }> = [];
     const origin = new URL(baseURL ?? 'https://smarter.poker/hub/club-arena/').origin;
 
     const visit = async (url: string, label: string) => {
-      const batch = await visitCspRoute(page, url, label);
+      const batch = await visitIsolatedCspRoute(context, url, label, COLLECT);
       for (const v of batch) found.push({ ...v, route: label });
     };
 

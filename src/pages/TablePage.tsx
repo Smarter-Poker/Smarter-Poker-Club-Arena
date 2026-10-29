@@ -1,3 +1,4 @@
+import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
   allInEquityBoardKey,
   allInEquityHandMatches,
@@ -981,7 +982,12 @@ import {
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
-import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib/handHistoryLive';
+import {
+  HAND_HISTORY_PAGE,
+  mergeHandHistoryPages,
+  prependHand,
+  shouldRefetchHandHistory,
+} from '../lib/handHistoryLive';
 import { startHandHistoryHydration } from '../lib/handHistoryHydration';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
@@ -2452,6 +2458,7 @@ function LiveTablePage({
     userId,
     event: engineLastEvent,
     follow: (destination) => {
+      if (tableId) sessionStatsService.moveSession(tableId, destination, userId);
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: destination });
         return;
@@ -5024,6 +5031,8 @@ function LiveTablePage({
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const {
     sessionStartRef,
+    sessionCarryRef,
+    vpipCountRef,
     handsPlayedRef,
     handsWonRef,
     biggestPotRef,
@@ -5035,7 +5044,7 @@ function LiveTablePage({
     heroWonCurrentHandRef,
     hadShowdownRef,
     resetSession,
-  } = useTableSession(tableId);
+  } = useTableSession(tableId, userId);
   /* A sitting-out or busted cash seat still owns a session. Restore from
      seat ownership, not from the current hand's funded-player list. */
   // Diamond's finished card reads the exact custody after leave. Restoring
@@ -5073,6 +5082,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         const merged = mergeSessionFacts({
           serverFacts: data,
+          carried: sessionCarryRef.current,
           atAsk: factsAtAsk,
           now: {
             startMs: sessionStartRef.current,
@@ -5094,6 +5104,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         totalBuyInRef.current = sessionBuyInTotal({
           serverBaseline: data,
+          carriedAdjustment: sessionCarryRef.current.fundingAdjustment,
           totalAtAsk: totalAtAsk + sessionBuyInSeedRef.current,
           totalNow: totalBuyInRef.current,
         });
@@ -5313,7 +5324,6 @@ function LiveTablePage({
       hold.pendingExit = null;
     };
   }, []);
-  const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
   // hand", which is what sessionStatsService.recordHand() needs. Set on the
@@ -9945,6 +9955,12 @@ function LiveTablePage({
    * empty-failed the surfaces are looking at.
    */
   const [handHistory, setHandHistory] = useState<HandRecord[]>([]);
+  const handHistoryRowsRef = useRef(handHistory);
+  handHistoryRowsRef.current = handHistory;
+  const loadedHandHistoryScopeRef = useRef<string | null>(null);
+  const olderHandRequestRef = useRef<symbol | null>(null);
+  const [hasOlderHands, setHasOlderHands] = useState(false);
+  const [olderHandsLoading, setOlderHandsLoading] = useState(false);
   const [handHistoryState, setHandHistoryState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
     'idle'
   );
@@ -10011,6 +10027,20 @@ function LiveTablePage({
       pendingSavedIdsRef.current = [];
       setHandHistory([]);
     }
+    // Reset before the freshness check: a different pool can reuse this table route.
+    const readScope = handHistoryScopeRef.current;
+    if (loadedHandHistoryScopeRef.current !== readScope) {
+      loadedHandHistoryScopeRef.current = readScope;
+      handHistoryFetchedAtRef.current = null;
+      handHistoryTableRef.current = null;
+      handHistoryStateRef.current = 'idle';
+      pendingSavedIdsRef.current = [];
+      setHandHistory([]);
+      handHistoryRowsRef.current = [];
+      setHasOlderHands(false);
+      olderHandRequestRef.current = null;
+      setOlderHandsLoading(false);
+    }
     /* INSTANT REOPEN (Phase 1). Fetch on the first open for this table, after
        a failure, or when the list is stale enough that an event may have been
        missed; otherwise the list on screen is the record plus every hand the
@@ -10027,8 +10057,6 @@ function LiveTablePage({
     ) {
       return;
     }
-    // Another table's list must not linger under this table's name while it loads.
-    if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);
     return startHandHistoryHydration({
       load: () =>
         // THIS table's hands, in play order (Dan 2026-09-04). See
@@ -10042,7 +10070,17 @@ function LiveTablePage({
         /* An empty answer is an answer. `hands.length > 0` used to gate this,
            which left whatever was on screen (a cache, another table's list) in
            place when the truth was "no hands here yet". */
-        setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
+        const page = (hands || []).map((h) => adaptServiceHandToPanel(h, userId));
+        const sameScope = loadedHandHistoryScopeRef.current === readScope;
+        const alreadyPaged = sameScope && handHistoryRowsRef.current.length > HAND_HISTORY_PAGE;
+        setHandHistory((previous) => {
+          const next = sameScope && page.length > 0 ? mergeHandHistoryPages(previous, page) : page;
+          handHistoryRowsRef.current = next;
+          return next;
+        });
+        if (!alreadyPaged || page.length === 0)
+          setHasOlderHands(!lightningRoom?.poolSessionId && page.length === HAND_HISTORY_PAGE);
+        loadedHandHistoryScopeRef.current = readScope;
         handHistoryFetchedAtRef.current = Date.now();
         handHistoryTableRef.current = tableId ?? null;
       },
@@ -10063,6 +10101,55 @@ function LiveTablePage({
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
   }, [showHandHistory, showHandDetail, userId, tableId, lightningRoom?.poolSessionId, lastHandId]);
+
+  const loadOlderReviewHands = useCallback(async (): Promise<string | null> => {
+    if (
+      !userId ||
+      userId === 'guest' ||
+      !tableId ||
+      lightningRoom?.poolSessionId ||
+      !hasOlderHands ||
+      olderHandRequestRef.current ||
+      handHistoryStateRef.current !== 'ready'
+    )
+      return null;
+    const readScope = handHistoryScopeRef.current;
+    if (loadedHandHistoryScopeRef.current !== readScope) return null;
+    const loadedHands = handHistoryRowsRef.current;
+    const oldest = loadedHands[loadedHands.length - 1];
+    if (!oldest?.handNumber) return null;
+    const request = Symbol('older-hand-page');
+    olderHandRequestRef.current = request;
+    setOlderHandsLoading(true);
+    try {
+      const rows = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
+        tableId,
+        beforeHandNumber: oldest.handNumber,
+        throwOnError: true,
+      });
+      if (handHistoryScopeRef.current !== readScope || olderHandRequestRef.current !== request)
+        return null;
+      const page = rows.map((row) => adaptServiceHandToPanel(row, userId));
+      setHandHistory((previous) => {
+        const next = mergeHandHistoryPages(previous, page);
+        handHistoryRowsRef.current = next;
+        return next;
+      });
+      setHasOlderHands(rows.length === HAND_HISTORY_PAGE);
+      return page[0]?.id ?? null;
+    } catch (error) {
+      if (handHistoryScopeRef.current === readScope && olderHandRequestRef.current === request) {
+        reportError(error, 'TablePage.loadOlderReviewHands');
+        toast?.error?.('Could Not Load Older Hands. Try Again');
+      }
+      return null;
+    } finally {
+      if (olderHandRequestRef.current === request) {
+        olderHandRequestRef.current = null;
+        setOlderHandsLoading(false);
+      }
+    }
+  }, [userId, tableId, lightningRoom?.poolSessionId, hasOlderHands, toast]);
 
   /**
    * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
@@ -10104,7 +10191,11 @@ function LiveTablePage({
         // this page's tableId is the player's pool session, not a tables row.
         if (!row || (!lightningRoom?.poolSessionId && row.table_id !== tableId)) return;
         const record = adaptServiceHandToPanel(row, userId);
-        setHandHistory((prev) => prependHand(prev, record));
+        setHandHistory((prev) => {
+          const next = prependHand(prev, record, Number.POSITIVE_INFINITY);
+          handHistoryRowsRef.current = next;
+          return next;
+        });
         handHistoryFetchedAtRef.current = Date.now();
       } catch (e) {
         reportError(e, 'TablePage.takeSavedHand');
@@ -19153,6 +19244,15 @@ function LiveTablePage({
                  with a Peak Stack of 0 no matter what they held. This is the
                  once-per-hand, dealt-in-guarded emit, which makes it the exact
                  point at which the hero's stack is worth sampling. */
+              if (tableId)
+                sessionStatsService.recordHand(
+                  tableId,
+                  Number(tableStateRef.current.players?.[resolveHeroSeat() - 1]?.stack) || 0,
+                  outcome.won === true,
+                  heroVpipThisHandRef.current,
+                  heroPfrThisHandRef.current,
+                  `${tableId}:${hn}`
+                );
               masterBus.emit('HAND_COMPLETED', {
                 handId: String(tableStateRef.current.handNumber ?? hn),
                 tableId: tableId || '',
@@ -21262,51 +21362,18 @@ function LiveTablePage({
   // The session belongs to the SEAT, not to a modal, so it is owned here and
   // runs for as long as hero is sitting. SessionHUD is now a pure reader.
   // ═══════════════════════════════════════════════════════════════════════
-  const sessionStartedForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!tableId || !userId || userId === 'guest') return;
-    const seated = tableState.heroSeat > 0;
-    const key = `${tableId}:${userId}`;
-
-    if (seated && tableState.arenaAsset && sessionStartedForRef.current !== key) {
-      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      // Guard against seeding the session with a 0 stack from a snapshot that
-      // has the seat but not yet the chips — buyInTotal would be wrong for the
-      // whole session and every P&L reading would be inflated by the buy-in.
-      if (heroStack > 0) {
-        sessionStatsService.startSession(
-          tableId,
-          userId,
-          heroStack,
-          safeBB(tableState.blinds),
-          tableState.arenaAsset
-        );
-        sessionStartedForRef.current = key;
-        prevHandStackRef.current = heroStack;
-      }
-    } else if (!seated && sessionStartedForRef.current === key) {
-      sessionStatsService.endSession(tableId);
-      sessionStartedForRef.current = null;
-    }
-  }, [
+  useGameSessionLifecycle({
     tableId,
     userId,
-    tableState.heroSeat,
-    tableState.players,
-    tableState.blinds,
-    tableState.arenaAsset,
-  ]);
-
-  // End the session on unmount too (navigating away, or MultiTablePage
-  // closing this tab) so the session_history row is written.
-  useEffect(() => {
-    return () => {
-      if (sessionStartedForRef.current && tableId) {
-        sessionStatsService.endSession(tableId);
-        sessionStartedForRef.current = null;
-      }
-    };
-  }, [tableId]);
+    seated: tableState.heroSeat > 0,
+    stack: tableState.players[tableState.heroSeat - 1]?.stack || 0,
+    bigBlind: safeBB(tableState.blinds),
+    arenaAsset: tableState.arenaAsset,
+    onNewSession: resetSession,
+    onStart: (stack) => {
+      prevHandStackRef.current = stack;
+    },
+  });
 
   // Track if hero folds during the current hand (status changes mid-hand)
   useEffect(() => {
@@ -21375,21 +21442,8 @@ function LiveTablePage({
            how it was caught. The VPIP pair twenty lines below - one latch,
            one reader - is the pattern this should have followed. */
 
-        // Dan 2026-08-15 — THE Session Stats fix. SessionStatsService had a
-        // complete, correct recordHand() that computed hands, VPIP%, PFR%,
-        // P&L, BB/100, hands/hr and the sparkline trajectory — and NOTHING in
-        // the entire app ever called it. Every field except the clock sat at
-        // its zeroed initial value forever, which is exactly why the panel
-        // "only recorded the time". This is that missing call.
-        if (tableId) {
-          sessionStatsService.recordHand(
-            tableId,
-            heroStack,
-            heroDidWin,
-            heroVpipThisHandRef.current,
-            heroPfrThisHandRef.current
-          );
-        }
+        // SessionStatsService is fed by the dealt-in HAND_COMPLETED path,
+        // including the last hand before a move or leave. Never count it twice here.
       }
       if (previousHandNumber > 0 && lastDealPresentationHandRef.current !== handNum) {
         // This is a real in-session hand transition, never first-load
@@ -29878,10 +29932,18 @@ function LiveTablePage({
           setShowHandDetail(false);
           setHandDetailFocusId(null);
         }}
-        hands={handHistoryViewerRef.current === userId ? handHistory : []}
+        hands={
+          handHistoryViewerRef.current === userId &&
+          loadedHandHistoryScopeRef.current === handHistoryScopeRef.current
+            ? handHistory
+            : []
+        }
         heroId={userId || ''}
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
+        onLoadOlder={loadOlderReviewHands}
+        hasOlderHands={hasOlderHands}
+        olderHandsLoading={olderHandsLoading}
         viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         /* P5 2026-09-05: the rest of the server's ninety seconds. The felt
            shows the offer for ~2.5s; a player who missed it can buy the same

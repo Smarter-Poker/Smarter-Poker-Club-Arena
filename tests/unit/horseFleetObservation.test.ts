@@ -123,3 +123,59 @@ it('retains bounded bootstrap witness contracts in the existing observation rout
     stdio: 'pipe',
   });
 });
+
+it('selects the closed committed-turn census in the same private observation job', () => {
+  expect(job.env.FLEET_TURN_CENSUS_JSON).toBe(
+    '${{ toJSON(github.event.client_payload.turn_census) }}'
+  );
+  for (const path of [
+    '/scripts/ci/horse-turn-census-packet.py',
+    '/scripts/ci/horse-turn-census-proof.mjs',
+    '/server/scripts/phase6d-turn-census.mjs',
+  ])
+    expect(job.steps[0].with['sparse-checkout']).toContain(path);
+  const preflight = job.steps.find(
+    (s: { name?: string }) => s.name === 'Refuse unprotected source and unavailable local clients'
+  ).run;
+  const guard = preflight.slice(preflight.indexOf('case '), preflight.indexOf('esac') + 4);
+  for (const value of ['true', 'false', 'null'])
+    expect(() =>
+      execFileSync('bash', ['-c', guard], {
+        env: { ...process.env, FLEET_TURN_CENSUS_JSON: value },
+        stdio: 'pipe',
+      })
+    ).not.toThrow();
+  for (const value of ['"true"', '1', '{}', '[]'])
+    expect(() =>
+      execFileSync('bash', ['-c', guard], {
+        env: { ...process.env, FLEET_TURN_CENSUS_JSON: value },
+        stdio: 'pipe',
+      })
+    ).toThrow();
+  const packet = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Read one canonical cohort and original accepted coordinates'
+  ).run;
+  const observe = job.steps.find(
+    (s: { name?: string }) =>
+      s.name === 'Observe the installed CLI without release or maintenance actions'
+  ).run;
+  const invoke = (script: string, flag: string) =>
+    execFileSync('bash', ['-c', 'timeout() { printf "%s\\n" "$@"; };\n' + script], {
+      env: {
+        ...process.env,
+        FLEET_TURN_CENSUS_JSON: flag,
+        PRIVATE_DIR: '/private-fixture',
+        HSSH: '/private-fixture/hssh',
+      },
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+  expect(invoke(packet, 'true')).toContain('--turn-census');
+  expect(invoke(observe, 'true')).toContain('--observe-turn-census');
+  for (const flag of ['false', 'null']) {
+    expect(invoke(packet, flag)).not.toContain('--turn-census');
+    expect(invoke(observe, flag)).toContain('--observe-bounded');
+  }
+});

@@ -77,10 +77,10 @@ try {
       ' calls=0;',
       ' checkpoint(options,objects,modules,engines,managers,workers,hosts){',
       '  this.calls++;',
-      "  if(process.argv[3]==='engine_census' && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
-      "  if(process.argv[3]==='engine_census' && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
-      "  if(process.argv[3]==='engine_census' && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
-      "  if(process.argv[3]==='engine_census' && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
@@ -109,11 +109,11 @@ try {
       "const inspector=process.getBuiltinModule('node:inspector');",
       "const lines=createInterface({input:process.stdin});const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');",
       "lines.on('line',line=>{const {type}=JSON.parse(line);",
-      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
-      "send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
     ].join('\n')
   );
   const allocation = createServer();
@@ -127,7 +127,9 @@ try {
     process.execPath,
     [
       '--inspect-port=127.0.0.1:' + port,
-      '--max-old-space-size=64',
+      '--expose-gc',
+      scenario === 'memory_refusal' ? '--max-old-space-size=32' : '--max-old-space-size=64',
+      ...(scenario === 'memory_refusal' ? ['--max-semi-space-size=1'] : []),
       join(directory, 'target.mjs'),
       mode,
       scenario,
@@ -138,7 +140,7 @@ try {
       stdio: ['pipe', 'pipe', 'pipe'],
     }
   );
-  hardStop = setTimeout(() => child.kill('SIGKILL'), 8000);
+  hardStop = setTimeout(() => child.kill('SIGKILL'), scenario === 'shared_deadline' ? 35000 : 8000);
   const waiting = new Map(),
     queued = new Map();
   let channelFailure;
@@ -233,15 +235,66 @@ try {
     instanceId: '1-12345678',
     moduleExpression,
     guard,
-    discoverEngines: scenario === 'engine_census',
+    discoverEngines: [
+      'engine_census',
+      'shared_deadline',
+      'shared_deadline_exhausted',
+      'memory_refusal',
+    ].includes(scenario),
     workBudgetMs: 3000,
     cleanupBudgetMs: 2000,
   };
   let clientCloseCalls = 0,
     clientCloseWhileOpen = 0,
-    withheldCloseNotifications = 0;
+    withheldCloseNotifications = 0,
+    nativeCensusRequests = 0;
+  const nativeOrder = [];
+  const sharedDeadline = Date.now() + 30000;
   const observedWebSocket = (endpoint) => {
     const socket = new WebSocket(endpoint);
+    if (
+      ['engine_census', 'shared_deadline', 'shared_deadline_exhausted', 'memory_refusal'].includes(
+        scenario
+      )
+    ) {
+      let firstCensusId = null;
+      const send = socket.send.bind(socket);
+      socket.send = (raw) => {
+        const message = JSON.parse(raw);
+        if (message.method === 'Runtime.queryObjects') {
+          nativeCensusRequests++;
+          nativeOrder.push('census');
+          if (firstCensusId === null) firstCensusId = message.id;
+        }
+        if (
+          message.method === 'Runtime.releaseObjectGroup' &&
+          message.params.objectGroup === 'legacy-broad-census'
+        )
+          nativeOrder.push('broadReleased');
+        if (
+          message.method === 'Runtime.callFunctionOn' &&
+          message.params.functionDeclaration === guard.toString()
+        )
+          nativeOrder.push('guard');
+        return send(raw);
+      };
+      const add = socket.addEventListener.bind(socket);
+      socket.addEventListener = (type, listener, options) =>
+        add(
+          type,
+          type === 'message'
+            ? (event) => {
+                if (
+                  ['shared_deadline', 'shared_deadline_exhausted'].includes(scenario) &&
+                  JSON.parse(event.data).id === firstCensusId
+                )
+                  setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 700);
+                else listener(event);
+              }
+            : listener,
+          options
+        );
+    }
     const close = socket.close.bind(socket);
     socket.close = (...args) => {
       clientCloseCalls++;
@@ -265,7 +318,24 @@ try {
   };
   let expectedCalls = 1,
     result;
-  if (scenario === 'preexisting') {
+  if (['deadline_expired', 'deadline_future'].includes(scenario)) {
+    await assert.rejects(
+      runLegacyEngineCheckpoint({
+        ...options,
+        checkpointDeadlineMs: scenario === 'deadline_expired' ? Date.now() - 1 : Date.now() + 41000,
+      }),
+      /legacy checkpoint invocation identity refused/
+    );
+    assert.equal(stderrBytes, 0, 'invalid deadlines refuse before opening the inspector');
+    result = {
+      ok: false,
+      retryAllowed: false,
+      checkpointInvoked: false,
+      inspectorClosed: true,
+      cleanupConnections: 0,
+    };
+    expectedCalls = 0;
+  } else if (scenario === 'preexisting') {
     process.kill(child.pid, 'SIGUSR1');
     let ready = false;
     for (let i = 0; i < 20 && !ready; i++) {
@@ -330,7 +400,21 @@ try {
     result = await runLegacyEngineCheckpoint({
       ...options,
       ...(['timeout', 'early_timeout'].includes(scenario) ? { workBudgetMs: 500 } : {}),
-      ...(['success', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)
+      ...(scenario === 'shared_deadline'
+        ? { workBudgetMs: 20000, checkpointDeadlineMs: sharedDeadline }
+        : {}),
+      ...(scenario === 'shared_deadline_exhausted'
+        ? { workBudgetMs: 20000, cleanupBudgetMs: 200, checkpointDeadlineMs: Date.now() + 800 }
+        : {}),
+      ...([
+        'success',
+        'engine_census',
+        'shared_deadline',
+        'shared_deadline_exhausted',
+        'memory_refusal',
+        'cleanup_close_timeout',
+        'refusal_cleanup_timeout',
+      ].includes(scenario)
         ? { createWebSocket: observedWebSocket }
         : {}),
       ...(['cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario)
@@ -346,6 +430,21 @@ try {
         cleanupConnections: 0,
         retryAllowed: false,
       });
+    if (scenario === 'memory_refusal') {
+      assert.equal(result.reason, 'native census memory headroom refused');
+      assert.equal(result.checkpointInvoked, false);
+      assert.equal(nativeCensusRequests, 0);
+      assert.equal(result.censusMemory.ok, false);
+      assert.ok(result.censusMemory.availableHeapBytes < result.censusMemory.requiredHeapBytes);
+      expectedCalls = 0;
+    }
+    if (scenario === 'shared_deadline_exhausted') {
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      assert.equal(result.checkpointInvoked, false);
+      assert.equal(nativeCensusRequests, 1);
+      assert.match(result.transportDetail, /^op=queryObjects,cause=request_timeout/);
+      expectedCalls = 0;
+    }
     if (scenario === 'exception')
       assert.equal(result.reason, 'target checkpoint evaluation refused');
     if (['timeout', 'early_timeout'].includes(scenario)) {
@@ -436,7 +535,22 @@ try {
       expectedCalls = 0;
     }
   }
-  assert.equal(result.ok, ['success', 'engine_census'].includes(scenario), JSON.stringify(result));
+  assert.equal(
+    result.ok,
+    ['success', 'engine_census', 'shared_deadline'].includes(scenario),
+    JSON.stringify(result)
+  );
+  if (scenario === 'engine_census') {
+    assert.equal(nativeCensusRequests, 1, 'all five exact classes share one full-heap native scan');
+    assert.deepEqual(nativeOrder.slice(0, 3), ['census', 'broadReleased', 'guard']);
+  }
+  if (scenario === 'shared_deadline') {
+    assert.equal(nativeCensusRequests, 1);
+    assert.ok(
+      Date.now() <= sharedDeadline,
+      'native work and cleanup stayed inside the original absolute deadline'
+    );
+  }
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
@@ -448,7 +562,7 @@ try {
     pid: child.pid,
     calls: expectedCalls,
     inspectorOpen: false,
-    ...(scenario === 'engine_census'
+    ...(['engine_census', 'shared_deadline', 'shared_deadline_exhausted'].includes(scenario)
       ? { engineCount: 2, managerCount: 2, lightningWorkerCount: 2, lightningHostCount: 2 }
       : {}),
   });

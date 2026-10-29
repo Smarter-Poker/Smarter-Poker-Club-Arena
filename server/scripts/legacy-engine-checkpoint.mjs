@@ -315,7 +315,7 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         // Computed inside the executor, exactly as before, so a budget that is
         // already spent still arrives as a rejection and never as a throw.
         const startedAt = Date.now();
-        const allowanceMs = remaining(requestDeadline, 20000, operation, startedAt);
+        const allowanceMs = remaining(requestDeadline, 35000, operation, startedAt);
         const requestExpiresAt = startedAt + allowanceMs;
         let timer;
         const expireRequest = () => {
@@ -440,6 +440,135 @@ export function deferrableCheckpointRefusal(outcome) {
   );
 }
 
+// Serialized into the existing owned inspector, with no ambient application inputs.
+export function readLegacyCensusMemory() {
+  const heap = process.getBuiltinModule('node:v8').getHeapStatistics();
+  return {
+    usedHeapBytes: heap.used_heap_size,
+    availableHeapBytes: heap.total_available_size,
+    availableProcessBytes:
+      typeof process.availableMemory === 'function' ? process.availableMemory() : null,
+  };
+}
+
+export function legacyCensusMemoryAdmission(value) {
+  const fields = ['usedHeapBytes', 'availableHeapBytes', 'availableProcessBytes'];
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Object.keys(value).length !== fields.length ||
+    !fields.every((key) => Number.isSafeInteger(value[key]) && value[key] > 0)
+  )
+    return null;
+  const reserve = 32 * 1024 * 1024;
+  // V8's native census retains local/global handles and a result vector before
+  // constructing its JS array. Reserve well beyond the result array alone.
+  // This is admission, never an increase to the predecessor's heap or memory.
+  const requiredHeapBytes = value.usedHeapBytes + reserve;
+  const requiredProcessBytes = value.usedHeapBytes * 8 + reserve;
+  if (!Number.isSafeInteger(requiredProcessBytes)) return null;
+  return {
+    ...value,
+    requiredHeapBytes,
+    requiredProcessBytes,
+    ok:
+      value.availableHeapBytes >= requiredHeapBytes &&
+      value.availableProcessBytes >= requiredProcessBytes,
+  };
+}
+
+export function legacyCensusRoot() {
+  const roots = [
+    this.gameServer.GameServer.prototype,
+    this.engine.ServerTableEngine.prototype,
+    this.manager.TournamentManager.prototype,
+    this.lightningWorker.LightningClusterWorker.prototype,
+    this.lightningHost.LightningHandHost.prototype,
+  ];
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  // Every queried concrete class must reach this exact realm root, without
+  // traversing a Proxy or overlapping another concrete class's chain.
+  for (let i = 0; i < roots.length; i++) {
+    let cursor = roots[i],
+      depth = 0;
+    while (cursor !== Object.prototype) {
+      if (++depth > 256) throw new Error('native census root refused');
+      if (
+        cursor === null ||
+        isProxy(cursor) ||
+        roots.some((root, index) => index !== i && cursor === root)
+      )
+        throw new Error('native census root refused');
+      cursor = Object.getPrototypeOf(cursor);
+    }
+  }
+  return Object.prototype;
+}
+
+export function projectLegacyCensus(modules, workDeadlineMs) {
+  const startedAt = Date.now();
+  if (
+    !Number.isSafeInteger(workDeadlineMs) ||
+    workDeadlineMs <= startedAt ||
+    workDeadlineMs > startedAt + 40000
+  )
+    throw new Error('native census projection deadline refused');
+  const roots = [
+    modules.gameServer.GameServer.prototype,
+    modules.engine.ServerTableEngine.prototype,
+    modules.manager.TournamentManager.prototype,
+    modules.lightningWorker.LightningClusterWorker.prototype,
+    modules.lightningHost.LightningHandHost.prototype,
+  ];
+  const out = [[], [], [], [], []];
+  const limits = [4000, 4000, 2000, 4000, 4000];
+  const getPrototypeOf = Object.getPrototypeOf;
+  const isProxy = process.getBuiltinModule('node:util').types.isProxy;
+  const membership = new WeakMap([[Object.prototype, 0]]);
+  roots.forEach((root, index) => membership.set(root, 1 << index));
+  let cachedPrototypes = roots.length + 1;
+  const classify = (prototype) => {
+    if (prototype === null || isProxy(prototype)) return 0;
+    const cached = membership.get(prototype);
+    if (cached !== undefined) return cached;
+    const path = [];
+    let cursor = prototype,
+      mask = 0;
+    while (cursor !== null) {
+      // Native queryObjects excludes Proxy chains too. Never execute a trap
+      // while projecting unrelated objects from the broad native result.
+      if (isProxy(cursor)) break;
+      const known = membership.get(cursor);
+      if (known !== undefined) {
+        mask = known;
+        break;
+      }
+      if (path.length >= 256) throw new Error('native census topology refused');
+      path.push(cursor);
+      cursor = getPrototypeOf(cursor);
+    }
+    for (const item of path) {
+      if (cachedPrototypes >= 4096) throw new Error('native census topology refused');
+      membership.set(item, mask);
+      cachedPrototypes++;
+    }
+    return mask;
+  };
+  for (let index = 0; index < this.length; index++) {
+    if ((index & 1023) === 0 && Date.now() >= workDeadlineMs)
+      throw new Error('native census projection deadline exhausted');
+    const value = this[index];
+    if (isProxy(value)) continue;
+    const mask = classify(getPrototypeOf(value));
+    for (let group = 0; group < roots.length; group++)
+      if (mask & (1 << group)) {
+        if (out[group].length >= limits[group]) throw new Error('native census count refused');
+        out[group].push(value);
+      }
+  }
+  return out;
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -451,8 +580,10 @@ export async function runLegacyEngineCheckpoint({
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
+  checkpointDeadlineMs = null,
   createWebSocket = (endpoint) => new WebSocket(endpoint),
 }) {
+  const startedAt = Date.now();
   if (
     !Number.isSafeInteger(pid) ||
     pid < 1 ||
@@ -471,10 +602,21 @@ export async function runLegacyEngineCheckpoint({
     workBudgetMs > 20000 ||
     !Number.isSafeInteger(cleanupBudgetMs) ||
     cleanupBudgetMs < 100 ||
-    cleanupBudgetMs > 5000
+    cleanupBudgetMs > 5000 ||
+    (checkpointDeadlineMs !== null &&
+      (!Number.isSafeInteger(checkpointDeadlineMs) ||
+        checkpointDeadlineMs <= startedAt + cleanupBudgetMs ||
+        checkpointDeadlineMs > startedAt + 40000))
   )
     throw refused('legacy checkpoint invocation identity refused');
-  const deadline = Date.now() + workBudgetMs;
+  // The production caller starts this one absolute budget before its entry
+  // proof. Unused entry time belongs to the census, not to another window.
+  // Cleanup keeps its own reserved slice inside the same forty seconds.
+  const deadline =
+    checkpointDeadlineMs === null
+      ? startedAt + workBudgetMs
+      : checkpointDeadlineMs - cleanupBudgetMs;
+  const effectiveWorkBudgetMs = deadline - startedAt;
   let signalled = false,
     endpoint,
     connection,
@@ -488,14 +630,14 @@ export async function runLegacyEngineCheckpoint({
   // Which operation the transport is on. It is the name an unknown outcome
   // reports; it takes part in no decision and no branch reads it.
   let operation = 'inspectorEntry';
-  const startedAt = deadline - workBudgetMs;
+  let censusMemory = null;
   const describeLoss = (error) =>
     [
       detailOf(error) ??
         `op=${operation},cause=${
           error instanceof CheckpointTransportError ? 'transport_refused' : 'unexpected_error'
         }`,
-      `budgetMs=${workBudgetMs}`,
+      `budgetMs=${effectiveWorkBudgetMs}`,
       `spentMs=${Date.now() - startedAt}`,
       `invoked=${checkpointInvoked ? 'yes' : 'no'}`,
     ]
@@ -545,158 +687,153 @@ export async function runLegacyEngineCheckpoint({
       )
     );
     if (!modules?.objectId) throw refused('cached modules unavailable');
-    operation = 'serverPrototype';
-    const prototype = remoteValue(
-      await connection.request(
-        'Runtime.callFunctionOn',
-        {
-          objectId: modules.objectId,
-          functionDeclaration: 'function() { return this.gameServer.GameServer.prototype; }',
-          objectGroup: 'legacy-checkpoint',
-        },
-        deadline,
-        operation
-      )
-    );
-    if (!prototype?.objectId) throw refused('cached prototype unavailable');
-    operation = 'queryObjects';
-    const objects = await connection.request(
-      'Runtime.queryObjects',
-      {
-        prototypeObjectId: prototype.objectId,
-        objectGroup: 'legacy-checkpoint',
-      },
-      deadline,
-      operation
-    );
-    operation = 'serverSingleton';
-    const server = remoteValue(
-      await connection.request(
-        'Runtime.callFunctionOn',
-        {
-          objectId: objects.objects.objectId,
-          functionDeclaration:
-            'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
-          objectGroup: 'legacy-checkpoint',
-        },
-        deadline,
-        operation
-      )
-    );
-    if (!server?.objectId) throw refused('singleton unavailable');
-    let engineObjects = null,
+    let objects,
+      server,
+      engineObjects = null,
       managerObjects = null,
       lightningWorkerObjects = null,
       lightningHostObjects = null;
     if (discoverEngines) {
-      operation = 'enginePrototype';
-      const enginePrototype = remoteValue(
+      operation = 'censusMemoryAdmission';
+      const memory = remoteValue(
+        await connection.request(
+          'Runtime.evaluate',
+          {
+            expression: `(${readLegacyCensusMemory.toString()})()`,
+            returnByValue: true,
+          },
+          deadline,
+          operation
+        )
+      );
+      censusMemory = legacyCensusMemoryAdmission(memory?.value);
+      if (!censusMemory?.ok) throw refused('native census memory headroom refused');
+      operation = 'broadPrototype';
+      const prototype = remoteValue(
         await connection.request(
           'Runtime.callFunctionOn',
           {
             objectId: modules.objectId,
-            functionDeclaration: 'function() { return this.engine.ServerTableEngine.prototype; }',
+            functionDeclaration: legacyCensusRoot.toString(),
+            objectGroup: 'legacy-broad-census',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!prototype?.objectId) throw refused('native census root unavailable');
+      operation = 'queryObjects';
+      const broad = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: prototype.objectId,
+          objectGroup: 'legacy-broad-census',
+        },
+        deadline,
+        operation
+      );
+      if (!broad?.objects?.objectId) throw refused('native census unavailable');
+      operation = 'projectNativePrototypes';
+      const projected = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: broad.objects.objectId,
+            functionDeclaration: projectLegacyCensus.toString(),
+            arguments: [{ objectId: modules.objectId }, { value: deadline }],
             objectGroup: 'legacy-checkpoint',
           },
           deadline,
           operation
         )
       );
-      if (!enginePrototype?.objectId) throw refused('cached engine prototype unavailable');
-      operation = 'engineObjects';
-      const response = await connection.request(
-        'Runtime.queryObjects',
+      if (!projected?.objectId) throw refused('native census projection unavailable');
+      const groups = [];
+      for (let index = 0; index < 5; index++) {
+        const group = remoteValue(
+          await connection.request(
+            'Runtime.callFunctionOn',
+            {
+              objectId: projected.objectId,
+              functionDeclaration: `function() { return this[${index}]; }`,
+              objectGroup: 'legacy-checkpoint',
+            },
+            deadline,
+            'projectedCensusGroup'
+          )
+        );
+        if (!group?.objectId) throw refused('native census group unavailable');
+        groups.push(group.objectId);
+      }
+      // The five small arrays retain their own independent handles. Do not
+      // pin every unrelated heap object through the guard's private captures.
+      operation = 'releaseBroadCensus';
+      await connection.request(
+        'Runtime.releaseObjectGroup',
         {
-          prototypeObjectId: enginePrototype.objectId,
-          objectGroup: 'legacy-checkpoint',
+          objectGroup: 'legacy-broad-census',
         },
         deadline,
         operation
       );
-      engineObjects = response?.objects?.objectId;
-      if (!engineObjects) throw refused('engine object census unavailable');
-      operation = 'managerPrototype';
-      const managerPrototype = remoteValue(
+      objects = { objects: { objectId: groups[0] } };
+      [engineObjects, managerObjects, lightningWorkerObjects, lightningHostObjects] =
+        groups.slice(1);
+      operation = 'serverSingleton';
+      server = remoteValue(
         await connection.request(
           'Runtime.callFunctionOn',
           {
-            objectId: modules.objectId,
-            functionDeclaration: 'function() { return this.manager.TournamentManager.prototype; }',
+            objectId: groups[0],
             objectGroup: 'legacy-checkpoint',
-          },
-          deadline,
-          operation
-        )
-      );
-      if (!managerPrototype?.objectId) throw refused('cached manager prototype unavailable');
-      operation = 'managerObjects';
-      const managerResponse = await connection.request(
-        'Runtime.queryObjects',
-        {
-          prototypeObjectId: managerPrototype.objectId,
-          objectGroup: 'legacy-checkpoint',
-        },
-        deadline,
-        operation
-      );
-      managerObjects = managerResponse?.objects?.objectId;
-      if (!managerObjects) throw refused('manager object census unavailable');
-      operation = 'lightningWorkerPrototype';
-      const lightningWorkerPrototype = remoteValue(
-        await connection.request(
-          'Runtime.callFunctionOn',
-          {
-            objectId: modules.objectId,
             functionDeclaration:
-              'function() { return this.lightningWorker.LightningClusterWorker.prototype; }',
-            objectGroup: 'legacy-checkpoint',
+              'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
           },
           deadline,
           operation
         )
       );
-      if (!lightningWorkerPrototype?.objectId)
-        throw refused('cached lightning worker prototype unavailable');
-      operation = 'lightningWorkerObjects';
-      const lightningWorkerResponse = await connection.request(
-        'Runtime.queryObjects',
-        {
-          prototypeObjectId: lightningWorkerPrototype.objectId,
-          objectGroup: 'legacy-checkpoint',
-        },
-        deadline,
-        operation
-      );
-      lightningWorkerObjects = lightningWorkerResponse?.objects?.objectId;
-      if (!lightningWorkerObjects) throw refused('lightning worker object census unavailable');
-      operation = 'lightningHostPrototype';
-      const lightningHostPrototype = remoteValue(
+      if (!server?.objectId) throw refused('singleton unavailable');
+    } else {
+      operation = 'serverPrototype';
+      const prototype = remoteValue(
         await connection.request(
           'Runtime.callFunctionOn',
           {
             objectId: modules.objectId,
-            functionDeclaration:
-              'function() { return this.lightningHost.LightningHandHost.prototype; }',
+            functionDeclaration: 'function() { return this.gameServer.GameServer.prototype; }',
             objectGroup: 'legacy-checkpoint',
           },
           deadline,
           operation
         )
       );
-      if (!lightningHostPrototype?.objectId)
-        throw refused('cached lightning host prototype unavailable');
-      operation = 'lightningHostObjects';
-      const lightningHostResponse = await connection.request(
+      if (!prototype?.objectId) throw refused('cached prototype unavailable');
+      operation = 'queryObjects';
+      objects = await connection.request(
         'Runtime.queryObjects',
         {
-          prototypeObjectId: lightningHostPrototype.objectId,
+          prototypeObjectId: prototype.objectId,
           objectGroup: 'legacy-checkpoint',
         },
         deadline,
         operation
       );
-      lightningHostObjects = lightningHostResponse?.objects?.objectId;
-      if (!lightningHostObjects) throw refused('lightning host object census unavailable');
+      operation = 'serverSingleton';
+      server = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: objects.objects.objectId,
+            functionDeclaration:
+              'function() { if (this.length !== 1) throw new Error("singleton refused"); return this[0]; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!server?.objectId) throw refused('singleton unavailable');
     }
     checkpointInvoked = true;
     operation = 'guardCall';
@@ -745,7 +882,10 @@ export async function runLegacyEngineCheckpoint({
     if (/outcome unknown/.test(failure)) transportDetail = describeLoss(error);
   } finally {
     if (signalled) {
-      const cleanupDeadline = Date.now() + cleanupBudgetMs;
+      const cleanupDeadline = Math.min(
+        Date.now() + cleanupBudgetMs,
+        checkpointDeadlineMs ?? Infinity
+      );
       let shutdownRequested = false;
       try {
         // One cleanup-only reconnection at most: no imports or guard calls.
@@ -787,6 +927,13 @@ export async function runLegacyEngineCheckpoint({
               // The record is a courtesy to the reader, never a condition.
             }
           }
+          if (discoverEngines)
+            await connection.request(
+              'Runtime.releaseObjectGroup',
+              { objectGroup: 'legacy-broad-census' },
+              cleanupDeadline,
+              'inspectorCleanupBroadRelease'
+            );
           operation = 'inspectorCleanupRelease';
           await connection.request(
             'Runtime.releaseObjectGroup',
@@ -863,12 +1010,20 @@ export async function runLegacyEngineCheckpoint({
       ...(progress ? { progress } : {}),
       // Which operation was lost, and how much of the budget it was given.
       ...(transportDetail ? { transportDetail } : {}),
+      ...(censusMemory ? { censusMemory } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,
       cleanupConnections,
     };
-  return { ...result, inspectorClosed, checkpointInvoked, cleanupConnections, retryAllowed: false };
+  return {
+    ...result,
+    ...(censusMemory ? { censusMemory } : {}),
+    inspectorClosed,
+    checkpointInvoked,
+    cleanupConnections,
+    retryAllowed: false,
+  };
 }
 
 if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eval1]')) {
@@ -904,6 +1059,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     guard: retainedEed ? retainedOriginalCheckpointGuard : legacyEngineCheckpointGuard,
     discoverEngines: retainedEed,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
+    checkpointDeadlineMs: Number(process.argv[5]),
   }).catch(() => ({
     ok: false,
     reason: 'legacy checkpoint invocation refused',

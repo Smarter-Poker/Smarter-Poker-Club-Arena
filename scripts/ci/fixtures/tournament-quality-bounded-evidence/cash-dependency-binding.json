@@ -1,7 +1,7 @@
 {
   "status": "PRIVATE_EXACT_NATIVE_EIGHT_CONTROLS_PASSED_NO_PRODUCTION_CLAIM",
-  "body_migration": "20261029212431_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
-  "body_sha256": "956648a97a4441a78d4967e4594a8b17b00adb96c3b864155597a749989abbd6",
-  "TQ_source_sha256": "5cf418af1e9a291d7232f5bcbc9b8f82c49eb5bb650ae314131a612f4ae1bee1",
+  "body_migration": "20261029230421_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
+  "body_sha256": "387cdaef1b96a5626e103327e6646b2dbd55343cbba308eb998c2a76fbc06bc4",
+  "TQ_source_sha256": "e0f49ad649d3386ab9d9f18f260eb98464a9d42d18b9f7490cbb53614717ef3a",
   "dependency": "exact protected causal CCI+body histories, full actual schema/index/function metadata; capacity not asserted"
 }

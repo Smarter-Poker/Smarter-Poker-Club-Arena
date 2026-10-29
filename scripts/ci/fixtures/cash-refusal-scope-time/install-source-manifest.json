@@ -1,25 +1,25 @@
 {
-  "status": "PRIVATE_NATIVE_16_CONTROLS_AND_FOUR_READERS_PASSED_NO_PRODUCTION_CLAIM",
+  "status": "PRIVATE_RENUMBER_NATIVE_16_AND_FOUR_READERS_PASSED_NO_PRODUCTION_CLAIM",
   "migrations": [
     {
       "file": "20261029211338_cash_refusal_scope_and_time_have_a_bounded_index.sql",
       "sha256": "92f52f59c490143c36d9382ba66caad92165b560a3ec82196a4623c8f264101c"
     },
     {
-      "file": "20261029212243_cash_refusal_scope_index_has_real_collected_statistics.sql",
-      "sha256": "95f8fe5f98b16888ebad85e0fc4943bf104f49fad4bfe242356eac032a34aaf2"
+      "file": "20261029230358_cash_refusal_scope_index_has_real_collected_statistics.sql",
+      "sha256": "55832dedcb904161c2d879fa05a6fcc0cb6b8c991c15298bf3bea43c47277606"
     },
     {
-      "file": "20261029212431_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
-      "sha256": "956648a97a4441a78d4967e4594a8b17b00adb96c3b864155597a749989abbd6"
+      "file": "20261029230421_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
+      "sha256": "387cdaef1b96a5626e103327e6646b2dbd55343cbba308eb998c2a76fbc06bc4"
     }
   ],
   "readers": {
-    "before": "28ed20cc8684e81261809012d63b1a5ec3307d2ae21b16d7db73d24b998bf5fd",
-    "index": "b301f636b2dd33a1f54e770c831ff437ab6a636a8b385f0bb2c4e0362b8974a5",
-    "statistics": "3eaf8c1a6be66d9572cd305ccaa24eb0049a5d4bfbda1c0f6228314613672bc6",
-    "function": "b09c3c8c13b7da9003a75ccfdb68a086da26532db82613db617f6a3789e91163"
+    "before": "646844ed60a144efced1eb2b97495c8eb923b0f614454a39d38754cbfd33a578",
+    "index": "e00034c8deea21e15670aafb0514bc1b47923a8b2f0f82bab21a3a21a7b74e47",
+    "statistics": "18f3159f5d1688d81a0ebab918e03b1b11e5046550f65c815d4d241387098688",
+    "function": "5590412e164b92b340c0409bcb31dfd3765b3373c29683996060b8c98227ec1b"
   },
-  "order": "index211338 then expressionstats212243 then refusal212431; original225 wholeTEMP capacity then TQ212530 held until PASS",
+  "order": "211338 index ->230358 realCASEstatistics ->230421 refusal; actualDSS225 capacity before230441 TQ; actualMidwayfullreport and postTQ before230502 helpers",
   "limits": "Exact source/common guards; no production calls or installation claims"
 }

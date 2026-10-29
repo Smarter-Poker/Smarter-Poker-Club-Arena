@@ -20,7 +20,7 @@ def main():
   return run([*ps,'-f',path],None,error)
  def js(s):return json.loads(q(s))
  def ok(s):cases.append(s);print('PASS',s,flush=True)
- old=json.loads((F/'owners41-before.json').read_text());new=json.loads((F/'owners41-after.json').read_text());physical=json.loads((F/'physical-installed.json').read_text());candidate=(F/'candidate.sql').read_text();original=(F/'original.sql').read_text();source=(R/'supabase/migrations/20261029212530_tournament_quality_reads_bounded_rake_evidence.sql').read_text()
+ old=json.loads((F/'owners41-before.json').read_text());new=json.loads((F/'owners41-after.json').read_text());physical=json.loads((F/'physical-installed.json').read_text());candidate=(F/'candidate.sql').read_text();original=(F/'original.sql').read_text();source=(R/'supabase/migrations/20261029230441_tournament_quality_reads_bounded_rake_evidence.sql').read_text()
  assert hashlib.md5(original.encode()).hexdigest()=='28a130f35342357a4dfa61043f1ce2a2'and hashlib.md5(candidate.encode()).hexdigest()=='ba40f5f1f0aedf382134f246e8297e26'
  assert sum(x!=y for x,y in zip(old,new))==1 and len(old)==41
  try:
@@ -75,11 +75,11 @@ def main():
   read_before=read_catalog('before');assert read_before['owners']==native_old and read_before['history']is None
   # New body is parsed with real PL/pgSQL and compiled, but not invoked.
   adapted=adapted.replace('BEGIN;','BEGIN;SET LOCAL check_function_bodies=off;',1)
-  applier=(R/'scripts/ci/apply-recorded-migration.mjs').read_text();template=re.search(r'const historyStatement = `([\s\S]*?)`;',applier).group(1);tag='$ca_file_history_20261029212530$';history=template.replace('${version}','20261029212530').replace('${slug}','tournament_quality_reads_bounded_rake_evidence').replace('${exactSQLLiteral}',tag+source+tag)
+  applier=(R/'scripts/ci/apply-recorded-migration.mjs').read_text();template=re.search(r'const historyStatement = `([\s\S]*?)`;',applier).group(1);tag='$ca_file_history_20261029230441$';history=template.replace('${version}','20261029230441').replace('${slug}','tournament_quality_reads_bounded_rake_evidence').replace('${exactSQLLiteral}',tag+source+tag)
   before=owners();q(adapted.rsplit('COMMIT;',1)[0]+history+'COMMIT;');assert owners()==native_new;ok('whole_exact_migration_atomic_commit_changes_only_one_prosrc_native_catalog')
   read_after=read_catalog('after');assert read_after['owners']==native_new and read_after['history']['statements']==[source]and read_after['source65']is True and read_before['generation']==read_after['generation'];ok('exact_before_after_readers_execute_full_guards_and_capture_applier_exact_history')
   q(adapted,'tq_owner_changed');assert owners()==native_new;ok('installed_owner_replay_refuses_without_second_effect')
-  q("DELETE FROM supabase_migrations.schema_migrations WHERE version='20261029212530';SET check_function_bodies=off;"+original+';');assert owners()==before
+  q("DELETE FROM supabase_migrations.schema_migrations WHERE version='20261029230441';SET check_function_bodies=off;"+original+';');assert owners()==before
   for prefix in ['SET ROLE service_role;',"SET request.jwt.claims='{}';"]:
    q(prefix+adapted,'tq_operator_refused');assert owners()==before
   ok('nonowner_role_and_JWT_migration_attempts_refused_before_replacement')

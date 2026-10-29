@@ -8,7 +8,7 @@ SET LOCAL transaction_timeout='60s';SET LOCAL statement_timeout='15s';SET LOCAL 
 SET LOCAL timezone='UTC';SET LOCAL search_path=public,pg_temp;
 DO $admission$BEGIN
  IF current_user<>'postgres'OR session_user<>'postgres'OR NULLIF(current_setting('request.jwt.claims',true),'')IS NOT NULL OR NULLIF(current_setting('request.jwt.claim.role',true),'')IS NOT NULL OR NULLIF(current_setting('request.jwt.claim.sub',true),'')IS NOT NULL OR NULLIF(current_setting('ca.break_window_migration_override',true),'')IS NOT NULL THEN RAISE EXCEPTION 'weekly_linked_eight_real_owner_required';END IF;
- IF EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261029212616')THEN RAISE EXCEPTION 'weekly_linked_eight_replay_refused';END IF;
+ IF EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261029230502')THEN RAISE EXCEPTION 'weekly_linked_eight_replay_refused';END IF;
  IF NOT pg_try_advisory_xact_lock_shared(530090,1)OR public.fn_ca_break_window_refuses_migrations(clock_timestamp())IS NOT NULL THEN RAISE EXCEPTION 'weekly_linked_eight_DDL_boundary_refused';END IF;
  IF NOT EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261029190331'AND cardinality(statements)=1 AND encode(pg_catalog.sha256(convert_to(statements[1],'UTF8')),'hex')='edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a')THEN RAISE EXCEPTION 'weekly_linked_eight_exact_union_statistics_history_required';END IF;
  IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR smarter_private.original_inventory_basis_generation()IS DISTINCT FROM 'original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20'THEN RAISE EXCEPTION 'weekly_linked_eight_original_generation_changed';END IF;

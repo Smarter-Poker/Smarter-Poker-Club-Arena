@@ -4086,11 +4086,42 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             () => this.captureContinuationEngine(),
             (batch) => this.retainOriginalBatch(original, seats, batch),
             dispatchOriginalEvent,
-            () => this.running && this.isCurrentEngine() && this.lifecycleCanMutate(),
+            () =>
+              this.running &&
+              this.isCurrentEngine() &&
+              this.lifecycleCanMutate() &&
+              this.pendingOriginalContinuation === null,
             (error) => {
-              reportError(error, `ServerTableEngine.${this.tableId}.hand_continuation_unproven`);
-              this.killForRestart('hand_continuation_unproven');
-            }
+              const phase = this.handContinuation?.isReplayingOriginal()
+                ? 'original_replay_failed'
+                : 'hand_continuation_unproven';
+              reportError(error, `ServerTableEngine.${this.tableId}.${phase}`);
+              this.killForRestart(phase);
+            },
+            recovered
+              ? () =>
+                  this.runOwnedReadContinuation(async () => {
+                    const originalDecisionCount = controllerForHand.getState().actionHistory.length;
+                    for (const [index, event] of recovered.batch.events.entries())
+                      await dispatchOriginalEvent(event, {
+                        sequence: recovered.batch.sequence,
+                        index,
+                      });
+                    if (
+                      controllerForHand.getState().actionHistory.length === originalDecisionCount &&
+                      !this.ownsContinuationTimeBankClock() &&
+                      !recovered.batch.events.some((event) =>
+                        [
+                          'TURN_CHANGE',
+                          'ALL_IN_RUNOUT',
+                          'PINEAPPLE_DISCARD_REQUIRED',
+                          'HAND_COMPLETE',
+                        ].includes(event.type)
+                      )
+                    )
+                      controllerForHand.resumeRecoveredHand();
+                  })
+              : undefined
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {
@@ -4134,30 +4165,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               this.pendingOriginalContinuation = null;
               // Replay the one retained pending event batch through the original
               // consumers. It contains no invented action or replacement deal.
+              const lane = this.handContinuation!;
               void this.runOwnedReadContinuation(async () => {
                 try {
-                  const originalDecisionCount = controllerForHand.getState().actionHistory.length;
-                  for (const [index, event] of recovered.batch.events.entries())
-                    await dispatchOriginalEvent(event, {
-                      sequence: recovered.batch.sequence,
-                      index,
-                    });
+                  await lane.join();
                   if (
-                    controllerForHand.getState().actionHistory.length === originalDecisionCount &&
-                    !this.ownsContinuationTimeBankClock() &&
-                    !recovered.batch.events.some((event) =>
-                      [
-                        'TURN_CHANGE',
-                        'ALL_IN_RUNOUT',
-                        'PINEAPPLE_DISCARD_REQUIRED',
-                        'HAND_COMPLETE',
-                      ].includes(event.type)
-                    )
+                    this.handController === controllerForHand &&
+                    this.running &&
+                    this.isCurrentEngine() &&
+                    this.lifecycleCanMutate()
                   )
-                    controllerForHand.resumeRecoveredHand();
+                    await this.broadcastCurrentState();
                 } catch (error) {
-                  reportError(error, `ServerTableEngine.${this.tableId}.original_replay_failed`);
-                  this.killForRestart('original_replay_failed');
+                  if (this.running && this.isCurrentEngine())
+                    reportError(
+                      error,
+                      `ServerTableEngine.${this.tableId}.original_ready_publication_failed`
+                    );
                 }
               });
             };

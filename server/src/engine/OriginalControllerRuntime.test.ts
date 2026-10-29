@@ -11,7 +11,10 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
-vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn(async () => ({ userId: 'u1' })) }));
+const { originalAuth } = vi.hoisted(() => ({ originalAuth: { userId: 'u1' } }));
+vi.mock('../http/auth.js', () => ({
+  authenticateRequest: vi.fn(async () => ({ userId: originalAuth.userId })),
+}));
 vi.mock('../http/body.js', () => ({
   readBody: vi.fn(async (req: { __body?: string }) => req.__body ?? '{}'),
 }));
@@ -58,6 +61,7 @@ const binding = {
 };
 const engines: any[] = [];
 afterEach(() => {
+  originalAuth.userId = 'u1';
   for (const e of engines.splice(0)) {
     e.running = false;
     e.activeHandWaitRelease?.release('test_cleanup');
@@ -763,6 +767,141 @@ it('refuses HTTP, trusted actions, bank use and controller mutation until the re
     await resumed;
     await e.handContinuation.join();
     expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+  } finally {
+    e.running = false;
+    release?.();
+    e.activeHandWaitRelease?.release('test_cleanup');
+    e.releasePendingPauseWait();
+    await resumed;
+  }
+});
+
+it('serializes the retained old consumer before a new capsule and publishes original readiness once', async () => {
+  const { e, roster, emitted } = fixture();
+  const c: HandController = e.handController;
+  const events: HandEvent[] = [];
+  c.onEvent((x) => events.push(structuredClone(x)));
+  c.start();
+  const saved = c.serializeRecoveryState();
+  const turn = events.find((x) => x.type === 'TURN_CHANGE')!;
+  expect(turn).toBeTruthy();
+  const expected = HandController.fromRecoveryState(saved, config.tableId, 42);
+  expect(expected.performAction(expected.getState().currentPlayerSeat, 'call')).toBe(true);
+  expect(expected.performAction(expected.getState().currentPlayerSeat, 'fold')).toBe(true);
+  e.pendingOriginalContinuation = {
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: 1000,
+    })),
+    batch: {
+      version: 1,
+      sequence: 3,
+      controller: saved,
+      events: [turn],
+      engine: { fields: { currentHandStartedAt: 111 } },
+    },
+  };
+  e.tableInfo = {
+    id: config.tableId,
+    variant: 'nlh',
+    game_variant: 'nlh',
+    game_type: 'tournament',
+    table_type: 'tournament',
+    big_blind: 20,
+    small_blind: 10,
+    max_players: 2,
+    ante: 0,
+  };
+  const published: any[] = [];
+  e.hub = {
+    publish: (_table: string, payload: any) => published.push(structuredClone(payload)),
+    emitEvent: vi.fn(),
+  };
+  let release!: () => void;
+  let entered = false;
+  let oldConsumers = 0;
+  const writes: any[] = [];
+  e.handleHandEvent = async (x: HandEvent) => {
+    if (x.type === 'TURN_CHANGE' && !entered) {
+      entered = true;
+      oldConsumers++;
+      await e.broadcastCurrentState();
+      await new Promise<void>((r) => (release = r));
+      e.currentHandStartedAt = 222;
+    } else emitted.push(x);
+  };
+  e.retainOriginalBatch = async (_o: unknown, _s: unknown, b: any) => {
+    writes.push(structuredClone(b));
+  };
+  const resumed = e.resumeOriginalController();
+  const request = async (key: string, ctx: string | null) => {
+    let status = 0;
+    let body = '';
+    const res = {
+      writeHead: (x: number) => {
+        status = x;
+        return res;
+      },
+      end: (x?: string) => {
+        body = x ?? '';
+      },
+    };
+    __resetRateLimiterForTests();
+    await handleAction(
+      {
+        __body: JSON.stringify({
+          tableId: config.tableId,
+          action: 'fold',
+          actionContext: ctx,
+          idempotencyKey: key,
+        }),
+      } as never,
+      res as never,
+      { gameServer: { getTableEngine: () => e } }
+    );
+    return { status, body: JSON.parse(body) };
+  };
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const restored: HandController = e.handController;
+    const ctx = playerActionContext(restored);
+    const refused = await request('replay-overlap-1', ctx);
+    expect({
+      success: refused.body.success,
+      retainedStartFields: writes.map((b) => b.engine.fields.currentHandStartedAt),
+    }).toEqual({ success: false, retainedStartFields: [] });
+    expect(e.getActionContext()).toBeNull();
+    expect(published).toEqual([]);
+    expect((await e.activateTimeBank('u1')).success).toBe(false);
+    expect(
+      restored.performAction(restored.getState().currentPlayerSeat, 'call', undefined, 'forced')
+    ).toBe(true);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(writes).toEqual([]);
+    release();
+    await e.handContinuation.join();
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    expect(writes.map((b) => b.sequence)).toEqual([4]);
+    expect(writes[0].engine.fields.currentHandStartedAt).toBe(222);
+    expect(oldConsumers).toBe(1);
+    expect(published[0].action_context).toBe(playerActionContext(restored));
+    expect(published[0].action_context).toBeTruthy();
+    expect(e.handController).toBe(restored);
+    originalAuth.userId = 'u2';
+    const accepted = await request('replay-ready-2', published[0].action_context);
+    expect(accepted.body.success).toBe(true);
+    await resumed;
+    await e.handContinuation.join();
+    expect(writes.map((b) => b.sequence)).toEqual([4, 5]);
+    expect(emitted.filter((x) => x.type === 'HAND_START')).toHaveLength(0);
+    expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+    expect(restored.getState().players.map((p) => p.stack)).toEqual(
+      expected.getState().players.map((p) => p.stack)
+    );
   } finally {
     e.running = false;
     release?.();

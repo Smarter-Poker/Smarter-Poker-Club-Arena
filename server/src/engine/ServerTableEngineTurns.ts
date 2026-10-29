@@ -1275,7 +1275,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   public async activateTimeBank(
     userId: string
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
-    if (this.pendingOriginalContinuation)
+    if (this.isOriginalInputPending())
       return {
         success: false,
         error: 'Original Hand Recovery Is Pending',
@@ -1813,7 +1813,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     maxCallAmount?: number
   ): { success: boolean; error?: string; code?: string; armedToCall?: number } {
-    if (this.pendingOriginalContinuation)
+    if (this.isOriginalInputPending())
       return {
         success: false,
         error: 'Original Hand Recovery Is Pending',
@@ -1959,7 +1959,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     actionContext?: string | null,
     trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
-    if (this.pendingOriginalContinuation)
+    if (this.isOriginalInputPending())
       return {
         success: false,
         error: 'Original Hand Recovery Is Pending',
@@ -2025,7 +2025,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
-    if (this.pendingOriginalContinuation)
+    if (this.isOriginalInputPending())
       return {
         success: false,
         error: 'Original Hand Recovery Is Pending',
@@ -2492,7 +2492,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       pot: 0,
     };
     if (!this.handController) return defaultResult;
-    if (this.pendingOriginalContinuation || this.handContinuation?.isUnretained())
+    if (this.isOriginalInputPending() || this.handContinuation?.isUnretained())
       return defaultResult;
 
     const state = this.handController.getState();

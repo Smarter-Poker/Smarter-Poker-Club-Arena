@@ -305,7 +305,7 @@ async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number
 
 export abstract class ServerTableEngineBase {
   public getActionContext(): string | null {
-    if (this.pendingOriginalContinuation || this.handContinuation?.isUnretained()) return null;
+    if (this.isOriginalInputPending() || this.handContinuation?.isUnretained()) return null;
     return this.handController ? playerActionContext(this.handController) : null;
   }
 
@@ -315,14 +315,21 @@ export abstract class ServerTableEngineBase {
   private preparedOriginalRetentionUnconfirmed = false;
   protected retainedPublicHandState: GameState | null = null;
 
+  protected isOriginalInputPending(): boolean {
+    return (
+      this.pendingOriginalContinuation !== null ||
+      this.handContinuation?.isReplayingOriginal() === true
+    );
+  }
+
   /** HTTP success cannot precede the original accepted mutation's retention. */
   public async awaitActionPersistence(): Promise<void> {
-    if (this.pendingOriginalContinuation) throw new Error('Original Hand Is Not Actuated');
+    if (this.isOriginalInputPending()) throw new Error('Original Hand Is Not Actuated');
     await this.handContinuation?.awaitRetention();
   }
 
   protected publishedHandState(): GameState | null {
-    return this.pendingOriginalContinuation || this.handContinuation?.isUnretained()
+    return this.isOriginalInputPending() || this.handContinuation?.isUnretained()
       ? this.retainedPublicHandState
       : (this.handController?.getState() ?? null);
   }

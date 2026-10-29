@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252352,
-      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+      "bytes": 253174,
+      "sha256": "539969e6656725b957758955f6bc568ebe9cfd55b35a553676b6996b6e488c3d"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1097,6 +1097,17 @@
     "currentWorkflow": {
       "bytes": 252352,
       "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    }
+  },
+  "certificationClubScope20261029": {
+    "reason": "Add exact catalog lock-concurrency regression and full welcome cleanup qualification to accounting shard 4. Existing financial commands, assertions, budgets and historical qualification remain unchanged. This records current workflow bytes, not a financial or live certificate.",
+    "previous": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    },
+    "current": {
+      "bytes": 253174,
+      "sha256": "539969e6656725b957758955f6bc568ebe9cfd55b35a553676b6996b6e488c3d"
     }
   }
 }

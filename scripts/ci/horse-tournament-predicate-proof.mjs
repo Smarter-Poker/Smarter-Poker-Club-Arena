@@ -840,6 +840,59 @@ export async function loadInstalledCashTurnFoldApi() {
   );
 }
 
+const allInReviewGaps = new Set([
+  'request_lifecycle_missing',
+  'request_lifecycle_conflict',
+  'request_lifecycle_mismatch',
+  'storage_unavailable',
+  'invalid_records',
+  'record_conflict',
+  'accepted_hand_missing',
+  'accepted_hand_conflict',
+  'decision_missing',
+  'execution_missing',
+  'turn_conflict',
+  'input_mismatch',
+  'decision_effects_missing',
+  'decision_effects_invalid',
+  'read_frame_unavailable',
+  'binding_unavailable',
+  'multiple_decisions_for_action',
+  'unmatched_horse_action',
+  'fallback_lineage_unavailable',
+  'action_origin_unavailable',
+  'discard_decision_missing',
+  'discard_execution_missing',
+  'discard_capture_conflict',
+  'discard_input_mismatch',
+  'discard_binding_unavailable',
+  'unmatched_discard_action',
+]);
+const allInBindingReasons = new Set([
+  'invalid_turn_identity',
+  'missing_prior_actions',
+  'invalid_prior_actions',
+  'invalid_committed_identity',
+  'hand_fence_mismatch',
+  'execution_unavailable',
+  'prior_actions_mismatch',
+  'accepted_action_mismatch',
+  'observation_identity_unavailable',
+  'committed_identity_conflict',
+  'multiple_decisions_for_action',
+  'tracking_capacity',
+  'tracking_expired',
+]);
+const allInLifecycleOutcomes = ['success', 'refused', 'cancelled', 'expired', 'exception'];
+function allInClosedReasons(values, allowed) {
+  const counts = {};
+  let otherCount = 0;
+  for (const value of values)
+    if (allowed.has(value)) counts[value] = (counts[value] ?? 0) + 1;
+    else otherCount++;
+  return { counts, otherCount };
+}
+
 /** Original accepted-all-in facts only; normalization labels are derived, never a policy verdict. */
 export function acceptedAllInExecutionInputIsValid(input, source) {
   return (
@@ -874,8 +927,15 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
     if (performance.now() >= deadline) throw Error();
   };
   const cases = input.cases.map((c, index) => {
-    let counts = null;
-    const unknown = (reason) => ({ handKey: c.handKey, status: 'unknown', reason, counts });
+    let counts = null,
+      diagnostics = null;
+    const unknown = (reason) => ({
+      handKey: c.handKey,
+      status: 'unknown',
+      reason,
+      counts,
+      diagnostics,
+    });
     try {
       const entry = batch.recordsByHand[index];
       if (
@@ -932,6 +992,82 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
         !['preflop', 'flop', 'turn', 'river'].includes(action.stage)
       )
         return unknown('accepted_action_not_observed');
+      const review = api.reconcileHorseJournalHand(entry.records, c.handKey);
+      diagnostics = {
+        wholeHandReview: {
+          scope: 'whole_original_hand',
+          status: review.status,
+          gapCounts: allInClosedReasons(review.gaps, allInReviewGaps),
+          requestedRequests: review.requestedRequests,
+          terminalRequests: review.terminalRequests,
+          requestLifecycleVerified: review.requestLifecycleVerified,
+        },
+        targetBinder: {
+          scope: 'original_target_anchor',
+          targetExecutions: 0,
+          boundExecutions: 0,
+          refusalCounts: { counts: {}, otherCount: 0 },
+        },
+        targetLifecycle: {
+          scope: 'original_target_request_digest',
+          requested: 0,
+          terminal: 0,
+          terminalOutcomes: Object.fromEntries(allInLifecycleOutcomes.map((k) => [k, 0])),
+        },
+      };
+      const targetAnchor = (a) =>
+        a?.status === 'anchored' &&
+        api.horseHandAnchorKey(a) === coordinate &&
+        a.actionOrdinal === c.actionOrdinal &&
+        a.actorId === c.actorId &&
+        a.seat === c.seat &&
+        a.earlyLook !== true;
+      const admissions = [];
+      for (const record of entry.records) {
+        budget();
+        if (record.kind !== 'request_lifecycle') continue;
+        const body = JSON.parse(record.body);
+        if (body.phase !== 'requested') continue;
+        try {
+          api.validateHorseRequestLifecycle(body);
+          const request = body.request,
+            keys = api.horseLifecycleKeys(request);
+          if (
+            targetAnchor(api.anchorHorseDecisionHand(request)) &&
+            request.player?.user_id === c.actorId &&
+            request.player?.seat === c.seat &&
+            request.gameState?.stage === action.stage &&
+            digest(keys.hand) === c.handKey &&
+            digest(keys.turn) === record.turnKey
+          )
+            admissions.push({ record, body });
+        } catch {
+          /* Unknown records never gain target attribution. Whole-hand gaps remain visible. */
+        }
+      }
+      diagnostics.targetLifecycle.requested = admissions.length;
+      for (const record of entry.records) {
+        budget();
+        if (record.kind !== 'request_lifecycle') continue;
+        const body = JSON.parse(record.body);
+        if (body.phase !== 'terminal') continue;
+        try {
+          api.validateHorseRequestLifecycle(body);
+          if (
+            admissions.some(
+              (a) =>
+                a.record.producerId === record.producerId &&
+                a.record.turnKey === record.turnKey &&
+                a.body.requestDigest === body.requestDigest
+            )
+          ) {
+            diagnostics.targetLifecycle.terminal++;
+            diagnostics.targetLifecycle.terminalOutcomes[body.outcome]++;
+          }
+        } catch {
+          /* No unvalidated phase/outcome may leave the boundary. */
+        }
+      }
       const matchingDecisions = [];
       for (const r of decisions) {
         budget();
@@ -956,10 +1092,19 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
       const matchingExecutions = [];
       for (const e of executions) {
         budget();
-        const w = JSON.parse(e.body),
-          b = api.bindHorseDecisionToCommittedHand(w, hand);
-        if (b.status === 'bound' && b.actionOrdinal === c.actionOrdinal)
+        const w = JSON.parse(e.body);
+        if (!targetAnchor(w.handAnchor) || w.identity?.stage !== action.stage) continue;
+        diagnostics.targetBinder.targetExecutions++;
+        const b = api.bindHorseDecisionToCommittedHand(w, hand);
+        if (b.status === 'bound' && b.actionOrdinal === c.actionOrdinal) {
+          diagnostics.targetBinder.boundExecutions++;
           matchingExecutions.push({ e, w });
+        } else {
+          const reasons = diagnostics.targetBinder.refusalCounts;
+          if (allInBindingReasons.has(b.reason))
+            reasons.counts[b.reason] = (reasons.counts[b.reason] ?? 0) + 1;
+          else reasons.otherCount++;
+        }
       }
       counts.matchingDecisions = matchingDecisions.length;
       counts.matchingExecutions = matchingExecutions.length;
@@ -987,7 +1132,6 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
         w.executedAction !== 'all_in'
       )
         return unknown('execution_binding_mismatch');
-      const review = api.reconcileHorseJournalHand(entry.records, c.handKey);
       if (
         review.status !== 'reconciled' ||
         review.gaps.length ||
@@ -1053,6 +1197,11 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
         variant: g.gameVariant,
         mode: g.gameMode,
         counts,
+        diagnostics,
+        normalizationComparison: 'selected_vs_accepted',
+        capturedVsSelectedActionMatches: capture.decision.action === selected.action,
+        capturedVsSelectedAmountMatches:
+          (capture.decision.amount ?? null) === (selected.amount ?? null),
         decisionRecordSha256: r.sha256,
         executionRecordSha256: e.sha256,
         acceptedRecordSha256: accepted[0].sha256,
@@ -1090,4 +1239,9 @@ export function inspectAcceptedAllInExecutionRecords(input, batch, api) {
     status: cases.every((c) => c.status === 'observed') ? 'observed' : 'unknown',
   };
 }
-export const loadInstalledAcceptedAllInExecutionApi = loadInstalledCashTurnFoldApi;
+export async function loadInstalledAcceptedAllInExecutionApi() {
+  return {
+    ...(await loadInstalledCashTurnFoldApi()),
+    ...(await import('/app/dist/services/horseDecisionJournal/lifecycle.js')),
+  };
+}

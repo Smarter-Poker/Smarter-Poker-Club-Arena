@@ -7,12 +7,18 @@ import * as records from '../../services/horseDecisionJournal/record.js';
 import * as binding from '../../engine/HorseDecisionHandBinding.js';
 import * as review from '../../services/horseDecisionJournal/review.js';
 import * as witness from '../../engine/HorseExecutionWitness.js';
+import * as lifecycle from '../../services/horseDecisionJournal/lifecycle.js';
+import {
+  HorseQualifiedAuthorityHolder,
+  HorsePhase8AuthorityGate,
+} from '../../engine/HorseQualifiedAuthority.js';
+import { qualifiedTestAdmission } from '../../engine/HorseQualifiedAuthority.test-support.js';
 import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol.js';
 import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support.js';
 import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import { HorseMind } from '../../engine/HorseMind.js';
 import { channelHub } from '../../hub/ChannelHub.js';
-const api = { ...records, ...binding, ...review };
+const api = { ...records, ...binding, ...review, ...lifecycle };
 afterAll(() => channelHub.close());
 const table = '12345678-abcd-4321-abcd-123456789abc',
   lease = '22345678-abcd-4321-abcd-123456789abc',
@@ -582,5 +588,309 @@ it('reports a retained decision with a missing execution as UNKNOWN, rather than
       matchingPairs: 0,
     },
   });
+  expect(sanitize(f, out).status).toBe(0);
+});
+
+it('keeps a genuine authority withdrawal distinct from later controller normalization', () => {
+  const f = fixture(({ capture, w, hand }: any) => {
+    const holder = new HorseQualifiedAuthorityHolder('allin-review-worker');
+    holder.apply(qualifiedTestAdmission(1));
+    const ledger = (authority: any) => ({
+      version: 'horse-tournament-postflop-round2-v1',
+      mode: 'candidate',
+      changed: true,
+      applied: true,
+      selection: 'selected',
+      authority,
+      authorityVerdict: null,
+      baselineAction: 'all_in',
+      baselineAmount: null,
+      candidateAction: 'fold',
+      candidateAmount: null,
+      executionStatus: 'pending',
+      executedAction: null,
+      executedAmount: null,
+    });
+    capture.decision = {
+      action: 'fold',
+      thinkTime: 0,
+      tournamentPostflop: ledger(holder.receipt()),
+    };
+    const gate = new HorsePhase8AuthorityGate(() => qualifiedTestAdmission(1), 'allin-review-main');
+    gate.refresh();
+    const delivered = {
+      ...capture.decision,
+      tournamentPostflop: ledger(gate.stamp(holder.receipt())),
+    };
+    const replacement = witness.createHorseExecutionWitness(capture.snapshot, delivered, {
+      requestId: 9,
+      lane: 'fast',
+      computeMs: 1,
+      governorScale: 1,
+    });
+    witness.withdrawHorsePhase8Selection(replacement, capture.snapshot, 'withdrawn');
+    witness.settleHorseExecutionWitness(replacement, {
+      applied: true,
+      acceptedActions: [{ record: hand.actions[3], intended: true }],
+    });
+    Object.assign(w, replacement);
+  });
+  const out = inspect(f);
+  expect(out, JSON.stringify(out)).toMatchObject({ status: 'observed' });
+  expect(out.cases[0]).toMatchObject({
+    capturedAction: 'fold',
+    selectedAction: 'all_in',
+    acceptedAction: 'all_in',
+    capturedVsSelectedActionMatches: false,
+    capturedVsSelectedAmountMatches: true,
+    normalizationComparison: 'selected_vs_accepted',
+    derivedNormalizationKind: 'unchanged',
+    originalNormalizationReason: null,
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('refuses an unexplained captured-versus-selected substitution', () => {
+  const f = fixture(({ capture }: any) => {
+    capture.decision.action = 'fold';
+    delete capture.decision.amount;
+  });
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    reason: 'hand_not_reconciled',
+    diagnostics: {
+      wholeHandReview: {
+        scope: 'whole_original_hand',
+        status: 'incomplete',
+        gapCounts: { counts: { input_mismatch: 1 } },
+      },
+    },
+  });
+});
+it('exposes fixed whole-hand gaps and exact-target binder refusal when a pair cannot bind', () => {
+  const f = fixture(({ w }: any) => {
+    w.acceptedActions[0].record.amount = 37;
+  });
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    reason: 'matching_pair_missing',
+    diagnostics: {
+      wholeHandReview: { scope: 'whole_original_hand', status: 'incomplete' },
+      targetBinder: {
+        scope: 'original_target_anchor',
+        targetExecutions: 1,
+        boundExecutions: 0,
+        refusalCounts: { counts: { accepted_action_mismatch: 1 }, otherCount: 0 },
+      },
+    },
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('retains actual SDK unmatched-action gaps on a standalone missing preflop pair', () => {
+  const f = fixture(undefined, 'preflop');
+  f.rows.splice(0, 2);
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    reason: 'matching_pair_missing',
+    diagnostics: {
+      wholeHandReview: {
+        scope: 'whole_original_hand',
+        status: 'incomplete',
+        gapCounts: { counts: { unmatched_horse_action: 1 } },
+      },
+      targetBinder: { targetExecutions: 0, boundExecutions: 0 },
+      targetLifecycle: { requested: 0, terminal: 0 },
+    },
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+function addLifecycle(f: any, badDigest = false) {
+  const [d, e, h] = f.rows,
+    s = JSON.parse(d.body).snapshot,
+    requestDigest = lifecycle.horseLifecycleRequestDigest(s);
+  const make = (original: any, kind: any, sequence: number, body: any) =>
+    records.makeHorseJournalRecord({ ...original, kind, sequence }, body);
+  const requested = make(d, 'request_lifecycle', 1, {
+    version: 1,
+    phase: 'requested',
+    request: s,
+    requestDigest,
+    origin: 'worker_compute',
+  });
+  const terminal = make(d, 'request_lifecycle', 3, {
+    version: 1,
+    phase: 'terminal',
+    requestDigest: badDigest ? 'f'.repeat(64) : requestDigest,
+    outcome: 'success',
+  });
+  f.rows.splice(
+    0,
+    3,
+    requested,
+    make(d, 'decision', 2, JSON.parse(d.body)),
+    terminal,
+    make(e, 'execution', 4, JSON.parse(e.body)),
+    make(h, 'accepted_hand', 5, JSON.parse(h.body))
+  );
+}
+it('counts original target lifecycle only after actual digest and producer/turn joins', () => {
+  const f = fixture();
+  addLifecycle(f);
+  const out = inspect(f);
+  expect(out, JSON.stringify(out)).toMatchObject({
+    status: 'observed',
+    cases: [
+      {
+        diagnostics: {
+          wholeHandReview: {
+            requestedRequests: 1,
+            terminalRequests: 1,
+            requestLifecycleVerified: true,
+          },
+          targetLifecycle: {
+            scope: 'original_target_request_digest',
+            requested: 1,
+            terminal: 1,
+            terminalOutcomes: { success: 1 },
+          },
+        },
+      },
+    ],
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('does not credit a terminal with a foreign original request digest', () => {
+  const f = fixture();
+  addLifecycle(f, true);
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    diagnostics: {
+      wholeHandReview: {
+        status: 'incomplete',
+        gapCounts: { counts: { request_lifecycle_mismatch: 1 } },
+      },
+      targetLifecycle: { requested: 1, terminal: 0, terminalOutcomes: { success: 0 } },
+    },
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('keeps a different actor lifecycle in whole-hand counts, not target counts', () => {
+  const f = fixture(),
+    s = JSON.parse(f.rows[0].body).snapshot;
+  s.player = { ...s.gameState.players[1] };
+  s.gameState.currentPlayerSeat = 2;
+  s.fence = `${table}:123:2:${lease}:7`;
+  s.decisionKey = buildHorseDecisionKey(s);
+  const keys = lifecycle.horseLifecycleKeys(s),
+    requestDigest = lifecycle.horseLifecycleRequestDigest(s);
+  const meta = {
+    ...f.rows[0],
+    producerId: '72345678-abcd-4321-abcd-123456789abc',
+    turnKey: records.journalHash(keys.turn),
+  };
+  f.rows.push(
+    records.makeHorseJournalRecord(
+      { ...meta, kind: 'request_lifecycle', sequence: 1 },
+      { version: 1, phase: 'requested', request: s, requestDigest, origin: 'worker_compute' }
+    )
+  );
+  f.rows.push(
+    records.makeHorseJournalRecord(
+      { ...meta, kind: 'request_lifecycle', sequence: 2 },
+      { version: 1, phase: 'terminal', requestDigest, outcome: 'cancelled' }
+    )
+  );
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'observed',
+    diagnostics: {
+      wholeHandReview: { requestedRequests: 1, terminalRequests: 1 },
+      targetLifecycle: { requested: 0, terminal: 0, terminalOutcomes: { cancelled: 0 } },
+    },
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('maps new SDK gap labels to an other count, never exporting arbitrary reasons', () => {
+  const f = fixture();
+  f.rows.splice(0, 2);
+  const out = diagnostic.inspectAcceptedAllInExecutionRecords(f.input, f.batch, {
+    ...api,
+    reconcileHorseJournalHand: (...args: any[]) => ({
+      ...review.reconcileHorseJournalHand(args[0], args[1]),
+      gaps: ['private-secret'],
+    }),
+  });
+  expect(out.cases[0].diagnostics.wholeHandReview.gapCounts).toEqual({ counts: {}, otherCount: 1 });
+  expect(JSON.stringify(out)).not.toContain('private-secret');
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('refuses forged diagnostic scopes, reason labels, counts and comparison flags at the real output boundary', () => {
+  const f = fixture(),
+    out = inspect(f);
+  for (const change of [
+    (c: any) => {
+      c.diagnostics.wholeHandReview.scope = 'target';
+    },
+    (c: any) => {
+      c.diagnostics.wholeHandReview.gapCounts.counts = { 'private-secret': 1 };
+    },
+    (c: any) => {
+      c.diagnostics.targetBinder.targetExecutions = 3;
+    },
+    (c: any) => {
+      c.diagnostics.targetLifecycle.terminalOutcomes.success = 1;
+    },
+    (c: any) => {
+      c.capturedVsSelectedActionMatches = false;
+    },
+    (c: any) => {
+      c.normalizationComparison = 'captured_vs_accepted';
+    },
+  ]) {
+    const bad = JSON.parse(JSON.stringify(out));
+    change(bad.cases[0]);
+    const r = sanitize(f, bad);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).not.toContain('private-secret');
+  }
+});
+it('does not attribute a different original actor anchor to the target binder', () => {
+  const f = fixture(({ w }: any) => {
+    w.handAnchor = { ...w.handAnchor, actorId: producer };
+  });
+  const out = inspect(f);
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    diagnostics: {
+      targetBinder: {
+        targetExecutions: 0,
+        boundExecutions: 0,
+        refusalCounts: { counts: {}, otherCount: 0 },
+      },
+    },
+  });
+  expect(sanitize(f, out).status).toBe(0);
+});
+it('maps unknown target binder reasons to a count without echoing their contents', () => {
+  const f = fixture();
+  const out = diagnostic.inspectAcceptedAllInExecutionRecords(f.input, f.batch, {
+    ...api,
+    bindHorseDecisionToCommittedHand: () => ({ status: 'unavailable', reason: 'private-secret' }),
+  });
+  expect(out.cases[0]).toMatchObject({
+    status: 'unknown',
+    diagnostics: {
+      targetBinder: {
+        targetExecutions: 1,
+        boundExecutions: 0,
+        refusalCounts: { counts: {}, otherCount: 1 },
+      },
+    },
+  });
+  expect(JSON.stringify(out)).not.toContain('private-secret');
   expect(sanitize(f, out).status).toBe(0);
 });

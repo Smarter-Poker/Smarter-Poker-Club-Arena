@@ -24,3 +24,17 @@ place: after the original image retires it cannot be relabelled as a later one.
 The existing bounded Node child and Python sanitizer own transport and output.
 All prior selector versions retain their original behavior. Qualification and
 live inspection remain separate from source delivery.
+
+Captured worker choice and final selected choice are distinct when an original
+qualified authority was withdrawn before acceptance. The installed reconciler
+rebuilds that allowed transition. Explicit comparison flags preserve the two
+choices; `normalizationComparison: selected_vs_accepted` prevents a later
+controller normalization label explaining an earlier authority withdrawal.
+
+UNKNOWN reports retain the actual SDK whole-hand reconciliation status and
+closed gap counts, explicitly scoped to the whole original hand. Binder reason
+counts use only this target's original actor/seat/ordinal anchor. Request lifecycle
+counts require the original target request, its validated digest and exact
+producer/turn join; another actor's lifecycle never becomes target evidence.
+Unrecognized SDK reasons become an `otherCount`, never raw text. Supported
+variants in this diagnostic are NLH and PLO4/PLO5/PLO6; no other domain is claimed.

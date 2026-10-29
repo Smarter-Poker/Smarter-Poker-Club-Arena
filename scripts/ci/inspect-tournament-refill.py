@@ -459,7 +459,8 @@ def sanitize_accepted_all_in_result(result, value):
     keys=hashes|guards|{'handKey','status','observation','actionOrdinal','stage','variant','mode','counts',
         'capturedAction','capturedAmount','selectedAction','selectedAmount','expectedExecutionAmount',
         'executedAction','executedAmount','acceptedAction','acceptedAmount','acceptedIsFullRaise',
-        'stack','bet','executionStatus','actionTypeMatches','amountMatches','derivedNormalizationKind','originalNormalizationReason'}
+        'stack','bet','executionStatus','actionTypeMatches','amountMatches','derivedNormalizationKind','originalNormalizationReason',
+        'diagnostics','normalizationComparison','capturedVsSelectedActionMatches','capturedVsSelectedAmountMatches'}
     actions={'fold','check','call','bet','raise','all_in'}
     def number(n):return type(n) in (int,float) and math.isfinite(n) and n>=0
     def valid_counts(c):
@@ -468,11 +469,38 @@ def sanitize_accepted_all_in_result(result, value):
             and c['decisionRecords']<=256 and c['executionRecords']<=256
             and c['matchingDecisions']<=c['decisionRecords'] and c['matchingExecutions']<=c['executionRecords']
             and c['matchingPairs']<=c['matchingDecisions']*c['matchingExecutions'])
+    gap_labels={'request_lifecycle_missing','request_lifecycle_conflict','request_lifecycle_mismatch','storage_unavailable','invalid_records','record_conflict','accepted_hand_missing','accepted_hand_conflict','decision_missing','execution_missing','turn_conflict','input_mismatch','decision_effects_missing','decision_effects_invalid','read_frame_unavailable','binding_unavailable','multiple_decisions_for_action','unmatched_horse_action','fallback_lineage_unavailable','action_origin_unavailable','discard_decision_missing','discard_execution_missing','discard_capture_conflict','discard_input_mismatch','discard_binding_unavailable','unmatched_discard_action'}
+    binder_labels={'invalid_turn_identity','missing_prior_actions','invalid_prior_actions','invalid_committed_identity','hand_fence_mismatch','execution_unavailable','prior_actions_mismatch','accepted_action_mismatch','observation_identity_unavailable','committed_identity_conflict','multiple_decisions_for_action','tracking_capacity','tracking_expired'}
+    def bounded(n):return type(n) is int and 0<=n<=256
+    def reason_counts(r,allowed):
+        return (isinstance(r,dict) and set(r)=={'counts','otherCount'} and isinstance(r['counts'],dict)
+            and set(r['counts'])<=allowed and all(bounded(n) and n>0 for n in r['counts'].values())
+            and bounded(r['otherCount']) and sum(r['counts'].values())+r['otherCount']<=256)
+    def diagnostics(d):
+        if not isinstance(d,dict) or set(d)!={'wholeHandReview','targetBinder','targetLifecycle'}:return False
+        h,b,l=d['wholeHandReview'],d['targetBinder'],d['targetLifecycle']
+        return (isinstance(h,dict) and set(h)=={'scope','status','gapCounts','requestedRequests','terminalRequests','requestLifecycleVerified'}
+            and h['scope']=='whole_original_hand' and h['status'] in ('reconciled','incomplete','unavailable')
+            and reason_counts(h['gapCounts'],gap_labels) and bounded(h['requestedRequests']) and bounded(h['terminalRequests'])
+            and type(h['requestLifecycleVerified']) is bool
+            and (h['status']!='reconciled' or (not h['gapCounts']['counts'] and h['gapCounts']['otherCount']==0))
+            and isinstance(b,dict) and set(b)=={'scope','targetExecutions','boundExecutions','refusalCounts'}
+            and b['scope']=='original_target_anchor' and bounded(b['targetExecutions']) and bounded(b['boundExecutions'])
+            and reason_counts(b['refusalCounts'],binder_labels)
+            and b['targetExecutions']==b['boundExecutions']+sum(b['refusalCounts']['counts'].values())+b['refusalCounts']['otherCount']
+            and isinstance(l,dict) and set(l)=={'scope','requested','terminal','terminalOutcomes'}
+            and l['scope']=='original_target_request_digest' and bounded(l['requested']) and bounded(l['terminal'])
+            and isinstance(l['terminalOutcomes'],dict) and set(l['terminalOutcomes'])=={'success','refused','cancelled','expired','exception'}
+            and all(bounded(n) for n in l['terminalOutcomes'].values()) and sum(l['terminalOutcomes'].values())==l['terminal'])
     for c,original in zip(result['cases'],value['cases']):
         if not isinstance(c,dict) or c.get('handKey')!=original['handKey']:raise ValueError('execution_result_refused')
+        if c.get('diagnostics') is not None and (not diagnostics(c['diagnostics']) or not valid_counts(c['counts'])
+            or c['diagnostics']['targetBinder']['boundExecutions']!=c['counts']['matchingExecutions']
+            or c['diagnostics']['targetBinder']['targetExecutions']>c['counts']['executionRecords']):raise ValueError('execution_result_refused')
         if c.get('status')=='unknown':
-            if (set(c)!={'handKey','status','reason','counts'} or c['reason'] not in reasons
+            if (set(c)!={'handKey','status','reason','counts','diagnostics'} or c['reason'] not in reasons
                 or (c['counts'] is not None and not valid_counts(c['counts']))
+                or (c['reason'] in ('matching_pair_missing','matching_pair_ambiguous','hand_not_reconciled') and not diagnostics(c['diagnostics']))
                 or (c['reason']=='matching_pair_missing' and (not valid_counts(c['counts']) or c['counts']['matchingPairs']!=0))
                 or (c['reason']=='matching_pair_ambiguous' and (not valid_counts(c['counts']) or c['counts']['matchingPairs']<2))):raise ValueError('execution_result_refused')
             continue
@@ -490,7 +518,10 @@ def sanitize_accepted_all_in_result(result, value):
             or not c['stack']>0 or not c['acceptedAmount']>0 or c['executedAmount']!=c['acceptedAmount']
             or (c['acceptedIsFullRaise'] is not None and type(c['acceptedIsFullRaise']) is not bool)
             or c['executionStatus'] not in ('intended','coerced') or c['originalNormalizationReason'] is not None
-            or type(c['actionTypeMatches']) is not bool or type(c['amountMatches']) is not bool):raise ValueError('execution_result_refused')
+            or type(c['actionTypeMatches']) is not bool or type(c['amountMatches']) is not bool
+            or c['normalizationComparison']!='selected_vs_accepted'
+            or type(c['capturedVsSelectedActionMatches']) is not bool or type(c['capturedVsSelectedAmountMatches']) is not bool
+            or not diagnostics(c['diagnostics']) or c['diagnostics']['wholeHandReview']['status']!='reconciled'):raise ValueError('execution_result_refused')
         action_match=c['selectedAction']==c['acceptedAction'];amount_match=c['expectedExecutionAmount']==c['acceptedAmount']
         whole=math.floor((c['stack']+c['bet'])*100+0.5)/100
         kind=('unchanged' if action_match and amount_match else
@@ -498,6 +529,8 @@ def sanitize_accepted_all_in_result(result, value):
             'amount_changed' if action_match else 'action_type_changed' if amount_match else 'action_and_amount_changed')
         if (c['actionTypeMatches']!=action_match or c['amountMatches']!=amount_match
             or (c['executionStatus']=='intended')!=(action_match and amount_match)
+            or c['capturedVsSelectedActionMatches']!=(c['capturedAction']==c['selectedAction'])
+            or c['capturedVsSelectedAmountMatches']!=(c['capturedAmount']==c['selectedAmount'])
             or c['derivedNormalizationKind']!=kind):raise ValueError('execution_result_refused')
     if (result['status']=='observed')!=all(c['status']=='observed' for c in result['cases']):raise ValueError('execution_result_refused')
     return result

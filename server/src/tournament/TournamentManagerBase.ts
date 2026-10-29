@@ -10648,10 +10648,19 @@ export abstract class TournamentManagerBase {
        */
       // Read inline from the table's own recovery record: no wake, no query.
       const fieldCheckedAt = Date.now();
+      // The finite hold is an exception for the rest of a playing field.
+      // A hand completed on a subsequently closed table remains a dealing
+      // witness for this level, but cannot release every remaining dead table.
+      const fieldHasAvailableDealer = [...(this.tableEngines?.keys() ?? [])].some(
+        (tableId) => !this.tableAdmissionFailingSince?.has(tableId)
+      );
       let stoppedTable: { tableId: string; failingMs: number } | null = null;
       for (const [tableId, since] of this.tableAdmissionFailingSince ?? []) {
         const failingMs = fieldCheckedAt - since;
-        if (failingMs > TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS) {
+        if (
+          fieldHasAvailableDealer &&
+          failingMs > TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS
+        ) {
           if (!this.fieldWithoutDealerReleaseAnnouncedFor?.has(tableId)) {
             this.fieldWithoutDealerReleaseAnnouncedFor?.add(tableId);
             console.log(

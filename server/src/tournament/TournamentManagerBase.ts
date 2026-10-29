@@ -4765,24 +4765,39 @@ export abstract class TournamentManagerBase {
    * table has always been representable, it was simply never in the list.
    */
   protected async liveTournamentTableIdsWithPlayers(): Promise<string[] | null> {
-    const { data: liveTables, error: tablesErr } = await supabase
-      .from('tables')
-      .select('id')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting']);
-    if (tablesErr || !liveTables) return null;
+    const lifecycle = this.captureLifecycleToken();
+    const options = (label: string) => ({
+      label,
+      shouldContinue: () => this.lifecycleIsCurrent(lifecycle),
+    });
+    const { rows: liveTables, complete: tablesComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('tables')
+        .select('id')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['running', 'waiting'])
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.balance_live_tables'));
+    if (!tablesComplete) return null;
     const ids = liveTables.map((t: { id: string }) => t.id).filter(Boolean);
     if (ids.length === 0) return [];
-    // The seat query runs even for a single table, deliberately. "One table
-    // exists" and "one table holds players" are different statements, and this
-    // function is asked the second one — an empty adopted table must not read
-    // as a final table.
-    const { data: seats, error: seatsErr } = await supabase
-      .from('table_seats')
-      .select('table_id')
-      .in('table_id', ids)
-      .is('left_at', null);
-    if (seatsErr || !seats) return null;
+    // Read every occupied table through its tournament relationship. Passing
+    // the entire table inventory in a URL would itself cap large fields.
+    const { rows: seats, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select('id, table_id, tables!table_seats_table_id_fkey!inner(tournament_id)')
+        .eq('tables.tournament_id', this.tournamentId)
+        .is('left_at', null)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.balance_live_seats'));
+    if (!seatsComplete) return null;
     const holding = new Set(seats.map((s: { table_id: string }) => s.table_id));
     return ids.filter((id) => holding.has(id));
   }

@@ -93,16 +93,11 @@ test.describe('Player Stats production experience', () => {
     const blockedWrites: string[] = [];
     let armed = false;
     let clockInstalled = false;
-    let releaseRoles = () => {};
-    const rolesGate = new Promise<void>((resolve) => {
-      releaseRoles = resolve;
-    });
     const syntheticClub = 'ee871000-0000-4000-8000-000000000001';
     await page.route('**/rest/v1/**', async (route) => {
       const request = route.request();
       const rpc = new URL(request.url()).pathname.split('/rpc/')[1];
       if (rpc === 'fn_my_agent_roles') {
-        await rolesGate;
         await route.fulfill({
           json: [
             {
@@ -168,13 +163,17 @@ test.describe('Player Stats production experience', () => {
       clockInstalled = true;
       await page.reload();
       await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
-      // Let the real 220ms outgoing tab animation finish. The held roles read
-      // prevents DownlineRakePanel mounting until its clock is safely paused.
-      await page.getByRole('tab', { name: 'Rake', exact: true }).click();
-      await expect(page.locator('#stats-panel-rake')).toBeVisible();
+      // Roles must resolve before Rake is available. Pause before its panel
+      // mounts, then allow the real 220ms outgoing animation less than the
+      // initial 300ms debounce budget. Show More therefore precedes that timer
+      // even on the old component, without blocking the role-gated tab.
+      const rake = page.getByRole('tab', { name: 'Rake', exact: true });
+      await expect(rake).toBeVisible();
       await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
       armed = true;
-      releaseRoles();
+      await rake.click();
+      await page.clock.runFor(299);
+      await expect(page.locator('#stats-panel-rake')).toBeVisible();
       const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
       await expect(panel.getByRole('row')).toHaveCount(501);
       expect(reads).toEqual([{ limit: 501, search: null }]);
@@ -201,7 +200,6 @@ test.describe('Player Stats production experience', () => {
       expect(blockedWrites).toEqual([]);
     } finally {
       armed = false;
-      releaseRoles();
       try {
         if (clockInstalled) await page.clock.resume();
         await page.unroute('**/rest/v1/**');

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SESSION HUD — Minimizable floating stats display at table
@@ -43,7 +44,11 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   arenaAsset,
 }) => {
   const [stats, setStats] = useState<SessionStats | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = usePlayerPreference(
+    'sessionHUD.showAdvanced',
+    false,
+    'global'
+  );
   const [sessionDuration, setSessionDuration] = useState('0m');
   const [sessionStartTime] = useState(() => Date.now());
 

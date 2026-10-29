@@ -97,3 +97,90 @@ it('flushes one final search value instead of writing every keystroke', async ()
   expect(state.writes.map((row) => row.value)).toEqual(['abc']);
   unmount();
 });
+
+it('keeps closed mounted consumers synchronized without an older read undoing the gesture', async () => {
+  let reply!: (value: any) => void;
+  state.read = new Promise((resolve) => {
+    reply = resolve;
+  });
+  const a = renderHook(() => usePlayerPreference('studio:game', 'ALL'), { wrapper });
+  const b = renderHook(() => usePlayerPreference('studio:game', 'ALL'), { wrapper });
+  act(() => a.result.current[1]('PLO'));
+  expect(b.result.current[0]).toBe('PLO');
+  await act(async () => {
+    reply({ data: { value: 'ALL' }, error: null });
+  });
+  expect(a.result.current[0]).toBe('PLO');
+  expect(b.result.current[0]).toBe('PLO');
+  a.unmount();
+  b.unmount();
+  await waitFor(() => expect(state.writes).toHaveLength(1));
+});
+
+it('flushes the selected value before logout instead of losing the debounce window', async () => {
+  const { flushPreferencesBeforeLogout } = await import('../../src/lib/tableSettingIntents');
+  const view = renderHook(() => usePlayerPreference('instant:logout', 'all'), { wrapper });
+  act(() => view.result.current[1]('mine'));
+  expect(state.writes).toHaveLength(0);
+  await act(async () => {
+    await flushPreferencesBeforeLogout('preference-a');
+  });
+  expect(state.writes).toEqual([
+    { user_id: 'preference-a', preference_key: 'instant:logout:global', value: 'mine' },
+  ]);
+  expect(readTableSettingIntent('preference-a', 'page:instant:logout:global')).toBeNull();
+  view.unmount();
+});
+
+it('never lets an older mounted consumer overwrite a newer already-flushed choice', async () => {
+  vi.useFakeTimers();
+  const older = renderHook(() => usePlayerPreference('studio:flush-order', 'ALL'), { wrapper });
+  const newer = renderHook(() => usePlayerPreference('studio:flush-order', 'ALL'), { wrapper });
+  act(() => older.result.current[1]('PLO'));
+  act(() => newer.result.current[1]('HOLDEM'));
+  newer.unmount();
+  await act(async () => {});
+  expect(state.writes.map((row) => row.value)).toEqual(['HOLDEM']);
+  expect(readTableSettingIntent('preference-a', 'page:studio:flush-order:global')).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(state.writes.map((row) => row.value)).toEqual(['HOLDEM']);
+  expect(older.result.current[0]).toBe('HOLDEM');
+  older.unmount();
+});
+
+it('still saves the latest choice when browser journal storage is unavailable', async () => {
+  const view = renderHook(() => usePlayerPreference('studio:unavailable-storage', 'ALL'), {
+    wrapper,
+  });
+  act(() => view.result.current[1]('HOLDEM'));
+  const store = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('quota');
+  });
+  act(() => view.result.current[1]('PLO'));
+  view.unmount();
+  await waitFor(() => expect(state.writes.map((row) => row.value)).toEqual(['PLO']));
+  store.mockRestore();
+});
+
+it('retires an older local debounce when a different tab confirms a newer choice', async () => {
+  vi.useFakeTimers();
+  const view = renderHook(() => usePlayerPreference('studio:other-tab', 'ALL'), { wrapper });
+  act(() => view.result.current[1]('PLO'));
+  act(() => {
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'ca_player_preference:preference-a:studio:other-tab:global',
+        newValue: JSON.stringify('HOLDEM'),
+      })
+    );
+  });
+  expect(view.result.current[0]).toBe('HOLDEM');
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(state.writes).toHaveLength(0);
+  view.unmount();
+  expect(state.writes).toHaveLength(0);
+});

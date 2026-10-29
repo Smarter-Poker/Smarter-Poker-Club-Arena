@@ -107,7 +107,7 @@ export default function DiamondPlayersPage() {
     'DiamondPlayersPage:filter',
     'all'
   );
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('DiamondPlayersPage:search', '');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);

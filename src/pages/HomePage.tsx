@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * CLUB ARENA — Home Page (World Hub Cinematic Design)
@@ -214,14 +215,13 @@ function HomePageInner() {
   // #1: Keyboard shortcuts active flag
   const [showShortcutHint, setShowShortcutHint] = useState(false);
 
-  // #2: Pinned clubs (persisted in localStorage)
-  const [pinnedClubIds, setPinnedClubIds] = useState<string[]>(() => {
-    try {
-      return savedPinnedClubIds(localStorage.getItem(STORAGE_KEYS.PINNED_CLUBS));
-    } catch {
-      return []; // storage itself unavailable
-    }
-  });
+  // Pinned clubs follow the account across sessions and devices.
+  const [savedPins, setPinnedClubIds] = usePlayerPreference<string[]>(
+    'home:pinnedClubs',
+    [],
+    'global'
+  );
+  const pinnedClubIds = savedPinnedClubIds(JSON.stringify(savedPins));
 
   // #4: Leave confirmation modal
   const [leaveConfirm, setLeaveConfirm] = useState<{ visible: boolean; club: UserClub } | null>(
@@ -790,17 +790,14 @@ function HomePageInner() {
   ]);
 
   // #2: Pin/unpin club
-  const togglePinClub = useCallback((clubId: string) => {
-    setPinnedClubIds((prev) => {
-      const next = prev.includes(clubId) ? prev.filter((id) => id !== clubId) : [...prev, clubId];
-      try {
-        localStorage.setItem(STORAGE_KEYS.PINNED_CLUBS, JSON.stringify(next));
-      } catch {
-        /* */
-      }
-      return next;
-    });
-  }, []);
+  const togglePinClub = useCallback(
+    (clubId: string) => {
+      setPinnedClubIds((prev) =>
+        prev.includes(clubId) ? prev.filter((id) => id !== clubId) : [...prev, clubId]
+      );
+    },
+    [setPinnedClubIds]
+  );
 
   // #4: Leave club with confirmation
   const handleLeaveClub = useCallback(

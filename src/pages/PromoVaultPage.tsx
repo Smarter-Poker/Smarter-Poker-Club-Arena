@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PROMO VAULT - Requirement 6
@@ -916,7 +917,7 @@ function GrantDialog({
     recipientFocusPendingRef.current = false;
     (recipient ? sendQuantityRef : recipientSearchRef).current?.focus();
   }, [recipient]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('PromoVaultPage:search', '');
   const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
 

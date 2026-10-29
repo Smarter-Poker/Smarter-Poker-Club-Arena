@@ -170,6 +170,8 @@ const statistics = {
   is_overall: false,
 };
 beforeEach(() => {
+  // Each independent scenario starts with an account that has no saved preferences.
+  localStorage.clear();
   vi.clearAllMocks();
   state.broadcasts.clear();
   state.viewerId = 'viewer-1';

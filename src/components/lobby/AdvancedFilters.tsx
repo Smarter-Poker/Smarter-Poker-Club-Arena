@@ -1,3 +1,4 @@
+import { registerPreferenceFlush, trackPreferenceWrite } from '../../lib/tableSettingIntents';
 import { awaitPreferenceSave } from '../../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -347,6 +348,7 @@ export function pushRemoteFilters(
     }
   });
   pendingFilterWrites.set(key, pending);
+  trackPreferenceWrite(userId, pending);
   void pending.then(() => {
     if (pendingFilterWrites.get(key) === pending) pendingFilterWrites.delete(key);
   });
@@ -468,6 +470,18 @@ export default function AdvancedFilters({
       if (pending) pushRemoteFilters(clubId, pending, ownerId);
     }, REMOTE_SYNC_DEBOUNCE_MS);
   }, [clubId, store]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    return registerPreferenceFlush(ownerId, () => {
+      if (remoteTimerRef.current) clearTimeout(remoteTimerRef.current);
+      remoteTimerRef.current = null;
+      const pending = pendingRemoteRef.current;
+      pendingRemoteRef.current = null;
+      if (pending) pushRemoteFilters(clubId, pending, ownerId);
+      return pendingFilterWrites.get(`${ownerId}:${clubId}`);
+    });
+  }, [ownerId, clubId]);
 
   /* FLUSH WHAT IS STILL PENDING. Without this, a player who taps one chip and
      immediately closes the sheet - the common case - loses the cross-device

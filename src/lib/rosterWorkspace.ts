@@ -1,3 +1,12 @@
+import { supabase } from './supabase';
+import {
+  awaitPreferenceSave,
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  orderTableSettingWrite,
+  readTableSettingIntent,
+} from './tableSettingIntents';
+import { reportError } from '../utils/errorReporter';
 import { rosterSearchKey } from './rosterCache';
 import type { RosterFilter, RosterSort } from '../services/ClubRosterService';
 
@@ -15,6 +24,7 @@ export interface RosterReturnPosition {
   viewportTop: number;
   windowTop: number;
 }
+const workspaceRevisions = new Map<string, number>();
 const FILTERS = [
   'all',
   'mine',
@@ -67,6 +77,9 @@ function decodeWorkspace(value: unknown): RosterWorkspace | null {
   };
 }
 export function readRosterWorkspace(viewer: string, club: string): RosterWorkspace | null {
+  const pending = readTableSettingIntent(viewer, `page:roster:workspace:${club}`);
+  const pendingWorkspace = pending && decodeWorkspace(pending.value);
+  if (pendingWorkspace) return pendingWorkspace;
   try {
     const raw = sessionStorage.getItem(rosterWorkspaceKey(viewer, club));
     if (!raw) {
@@ -88,6 +101,70 @@ export function readRosterWorkspace(viewer: string, club: string): RosterWorkspa
     return null;
   }
 }
+function cacheWorkspace(viewer: string, club: string, workspace: RosterWorkspace): void {
+  try {
+    sessionStorage.setItem(
+      rosterWorkspaceKey(viewer, club),
+      JSON.stringify({ version: 2, ...workspace })
+    );
+  } catch {
+    /* The account row remains authoritative if browser storage is unavailable. */
+  }
+}
+async function saveWorkspace(
+  viewer: string,
+  club: string,
+  workspace: RosterWorkspace,
+  id: string
+): Promise<void> {
+  const key = `roster:workspace:${club}`;
+  await orderTableSettingWrite(viewer, `page:${key}`, async () => {
+    try {
+      const { error } = await awaitPreferenceSave(
+        supabase
+          .from('user_page_preferences')
+          .upsert(
+            { user_id: viewer, preference_key: key, value: workspace },
+            { onConflict: 'user_id,preference_key' }
+          )
+      );
+      if (error) throw error;
+      confirmTableSettingIntent(viewer, `page:${key}`, id);
+    } catch (error) {
+      reportError(error, 'RosterWorkspace.save');
+    }
+  });
+}
+/** Resolve the same workspace before publishing its account/club scope. */
+export async function loadRosterWorkspace(viewer: string, club: string): Promise<RosterWorkspace> {
+  const key = `page:roster:workspace:${club}`;
+  const revision = workspaceRevisions.get(rosterWorkspaceKey(viewer, club)) ?? 0;
+  const pending = readTableSettingIntent(viewer, key);
+  const held = pending && decodeWorkspace(pending.value);
+  if (held) {
+    void saveWorkspace(viewer, club, held, pending.id);
+    return held;
+  }
+  let workspace = readRosterWorkspace(viewer, club) ?? defaultRosterWorkspace();
+  try {
+    const { data, error } = (await awaitPreferenceSave(
+      supabase
+        .from('user_page_preferences')
+        .select('value')
+        .eq('user_id', viewer)
+        .eq('preference_key', `roster:workspace:${club}`)
+        .maybeSingle()
+    )) as { data?: { value: unknown } | null; error: unknown };
+    if (error) throw error;
+    if ((workspaceRevisions.get(rosterWorkspaceKey(viewer, club)) ?? 0) !== revision)
+      return readRosterWorkspace(viewer, club) ?? workspace;
+    workspace = decodeWorkspace(data?.value) ?? workspace;
+  } catch (error) {
+    reportError(error, 'RosterWorkspace.load');
+  }
+  cacheWorkspace(viewer, club, workspace);
+  return workspace;
+}
 export function writeRosterWorkspace(
   viewer: string,
   club: string,
@@ -95,14 +172,13 @@ export function writeRosterWorkspace(
 ): void {
   const safe = decodeWorkspace(workspace);
   if (!safe) return;
-  try {
-    sessionStorage.setItem(
-      rosterWorkspaceKey(viewer, club),
-      JSON.stringify({ version: 2, ...safe })
-    );
-  } catch {
-    /* Optional browser continuity. */
-  }
+  const previous = readRosterWorkspace(viewer, club);
+  if (previous && JSON.stringify(previous) === JSON.stringify(safe)) return;
+  const revisionKey = rosterWorkspaceKey(viewer, club);
+  workspaceRevisions.set(revisionKey, (workspaceRevisions.get(revisionKey) ?? 0) + 1);
+  cacheWorkspace(viewer, club, safe);
+  const id = beginTableSettingIntent(viewer, `page:roster:workspace:${club}`, safe);
+  void saveWorkspace(viewer, club, safe, id);
 }
 export function writeRosterReturnPosition(
   viewer: string,

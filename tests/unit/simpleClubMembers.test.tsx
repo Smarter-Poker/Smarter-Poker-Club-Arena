@@ -77,6 +77,7 @@ beforeEach(() => {
   f.page.mockReset();
   f.summary.mockReset();
   f.period.mockResolvedValue(new Map());
+  localStorage.clear();
   sessionStorage.clear();
   f.summary.mockResolvedValue({
     viewer_role: 'player',

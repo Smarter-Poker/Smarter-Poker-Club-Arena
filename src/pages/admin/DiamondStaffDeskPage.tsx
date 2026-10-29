@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE DIAMOND STAFF DESK (Diamond Phase 10, line 4)
@@ -678,11 +679,11 @@ function FamilyClose({ family, after }: { family: IncidentFamilyCount; after: ()
 }
 
 function Incidents() {
-  const [filter, setFilter] = useState<{
+  const [filter, setFilter] = usePlayerPreference<{
     status: IncidentStatusFilter;
     rule: string | null;
     severity: IncidentSeverity | null;
-  }>({ status: 'unresolved', rule: null, severity: null });
+  }>('DiamondStaffDeskPage:incidentFilter', { status: 'unresolved', rule: null, severity: null });
   const [rows, setRows] = useState<DiamondIncident[]>([]);
   const [families, setFamilies] = useState<IncidentFamilyCount[]>([]);
   const [next, setNext] = useState<number | null>(null);

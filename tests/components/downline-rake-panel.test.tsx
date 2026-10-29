@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -86,7 +86,10 @@ beforeEach(() => {
   state.getDownlineRakeSummary.mockResolvedValue(summary);
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('DownlineRakePanel', () => {
   it('uses semantic controls, truthful polling copy, and preserves identity casing', async () => {
@@ -112,25 +115,49 @@ describe('DownlineRakePanel', () => {
     );
   });
 
-  it('progressively reads beyond the old 500-row cap', async () => {
+  it('retains expanded pagination after the initial debounce and resets only for changed search', async () => {
+    vi.useFakeTimers();
     state.getDownlineRake.mockImplementation(async ({ limit }: { limit: number }) =>
       Array.from({ length: limit === 501 ? 501 : 620 }, (_, i) => row(i))
     );
-
-    render(<DownlineRakePanel roles={[roles[0]]} />);
-
-    const more = await screen.findByRole('button', { name: 'Show 500 More Members' });
+    await act(async () => {
+      render(<DownlineRakePanel roles={[roles[0]]} />);
+    });
     expect(screen.getByText(/Showing 500 Members/)).toBeVisible();
     expect(screen.getAllByRole('row')).toHaveLength(501);
-
-    fireEvent.click(more);
-    await waitFor(() =>
-      expect(state.getDownlineRake).toHaveBeenLastCalledWith(
-        expect.objectContaining({ limit: 1001 })
-      )
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Show 500 More Members' }));
+    });
+    expect(state.getDownlineRake).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: 1001, search: '' })
     );
-    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(621));
+    expect(screen.getAllByRole('row')).toHaveLength(621);
+    const readsAfterExpansion = state.getDownlineRake.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(state.getDownlineRake).toHaveBeenCalledTimes(readsAfterExpansion);
+    expect(screen.getAllByRole('row')).toHaveLength(621);
     expect(screen.queryByRole('button', { name: 'Show 500 More Members' })).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Search Downline Players' }), {
+        target: { value: 'river' },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(299);
+    });
+    expect(state.getDownlineRake).toHaveBeenCalledTimes(readsAfterExpansion);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(state.getDownlineRake).toHaveBeenCalledTimes(readsAfterExpansion + 1);
+    expect(state.getDownlineRake).toHaveBeenLastCalledWith(
+      expect.objectContaining({ limit: 501, search: 'river' })
+    );
+    expect(screen.getAllByRole('row')).toHaveLength(501);
+    expect(screen.getByRole('button', { name: 'Show 500 More Members' })).toBeVisible();
   });
 
   it('title-cases a dynamic error without adding generic inline chrome', async () => {

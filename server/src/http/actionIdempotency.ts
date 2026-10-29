@@ -64,13 +64,11 @@
  * ceiling, and eviction of the oldest rather than growth. This runs on the one
  * core the engine has.
  *
- * ONE ACCEPTED BOUND, WRITTEN DOWN SO IT IS A DECISION AND NOT AN OVERSIGHT:
- * this map is in memory and an engine restart loses it. A restart happens
- * inside the announced :55 break with every table parked and the platform
- * frozen (CLAUDE.md 13), and a key lives sixty seconds - so the exposure is a
- * retry that crosses a restart at a moment when actions are refused anyway.
- * The alternative, persisting keys to Postgres, puts a database write on the
- * hot path of every action on a one-core engine. Not worth it.
+ * The response cache is process-local. An unexpected restart loses it, so
+ * it is not the authoritative hand record. Tournament controller mutations
+ * are retained privately before success; a recovered controller has a fresh
+ * decision incarnation, rejecting an old request context without applying it
+ * again. The client resynchronizes to the original hand's retained state.
  */
 
 import { actionIdempotencyTotal } from '../observability/engineInstruments.js';
@@ -137,6 +135,68 @@ export type ActionKeyVerdict =
   | { kind: 'conflict' };
 
 const remembered = new Map<string, RememberedAction>();
+export interface ActionFlightReply {
+  status: number;
+  body: unknown;
+}
+export interface ActionFlightReservation {
+  complete(reply: ActionFlightReply): void;
+  fail(error: unknown): void;
+}
+const pending = new Map<string, { fingerprint: string; reply: Promise<ActionFlightReply> }>();
+
+/** A repeated intent joins its original durability wait before rate limiting. */
+export function lookupActionFlight(
+  userId: string,
+  tableId: string,
+  key: string,
+  fingerprint: string
+):
+  | { kind: 'fresh' }
+  | { kind: 'conflict' }
+  | { kind: 'pending'; reply: Promise<ActionFlightReply> } {
+  const hit = pending.get(storageKey(userId, tableId, key));
+  if (!hit) return { kind: 'fresh' };
+  return hit.fingerprint === fingerprint
+    ? { kind: 'pending', reply: hit.reply }
+    : { kind: 'conflict' };
+}
+
+/** Reserve synchronously before applying a hand mutation. Never evict a live intent. */
+export function reserveActionFlight(
+  userId: string,
+  tableId: string,
+  key: string,
+  fingerprint: string
+): ActionFlightReservation | null {
+  const id = storageKey(userId, tableId, key);
+  if (pending.size >= MAX_ACTION_KEYS || pending.has(id)) return null;
+  let resolve!: (reply: ActionFlightReply) => void, reject!: (error: unknown) => void;
+  const reply = new Promise<ActionFlightReply>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  // A first request can fail with no duplicate listening. Its own caller still
+  // receives that failure; this observer prevents an orphaned rejection.
+  void reply.catch(() => {});
+  const original = { fingerprint, reply };
+  pending.set(id, original);
+  let finished = false;
+  const release = () => {
+    if (finished) return false;
+    finished = true;
+    if (pending.get(id) === original) pending.delete(id);
+    return true;
+  };
+  return {
+    complete: (value) => {
+      if (release()) resolve(value);
+    },
+    fail: (error) => {
+      if (release()) reject(error);
+    },
+  };
+}
 
 /**
  * Writes since the last sweep. Sweeping on EVERY write would walk the whole
@@ -152,6 +212,7 @@ const WRITES_BETWEEN_SWEEPS = 500;
 /** Test seam. */
 export function _resetActionIdempotencyForTests(): void {
   remembered.clear();
+  pending.clear();
   writesSinceSweep = 0;
 }
 
@@ -244,12 +305,9 @@ export function lookupAction(
 /**
  * Remember what the engine answered for this intent.
  *
- * There is no "in flight" state and none is needed: between the lookup and
- * this call the handler does not await, and Node runs one turn of the event
- * loop at a time, so two simultaneous posts of the same key cannot both find
- * `fresh`. If an await is ever introduced between the two, that reasoning
- * dies and this needs a reservation - `theSameActionAppliesOnce.law.test.ts`
- * pins the absence of an await in that window for exactly this reason.
+ * The handler reserves the original synchronously before applying it. The
+ * successful result is remembered only after its private hand continuation
+ * is durable; concurrent copies join that reservation instead of acting again.
  */
 export function rememberAction(
   userId: string,

@@ -1,3 +1,4 @@
+import { broadcastTimeBankActivation } from '../services/timeBankBroadcast.js';
 import { cashRakeScope } from '../config/cashRakePolicy.js';
 import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
 import { SeatSitOutPersistence } from './SeatSitOutPersistence.js';
@@ -20,6 +21,9 @@ import type { F06MovementAdmission } from '../tournament/f06MovementAdmission.js
  */
 
 import { HandController } from './HandController.js';
+import { HandContinuationLane } from './HandContinuationLane.js';
+import type { PrivateHandContinuation } from './PrivateHandContinuation.js';
+import { retainHandContinuation } from '../services/supabase/handContinuation.js';
 import { CooperativeHandPause } from './CooperativeHandPause.js';
 import { CooperativeHandTimers } from './CooperativeHandTimers.js';
 import {
@@ -187,6 +191,7 @@ import type {
   SeatedPlayer,
   TableInfo,
   RakeConfig,
+  GameState,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { isMissingFunctionError } from '../lightning/rpcErrors.js';
@@ -300,7 +305,155 @@ async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number
 
 export abstract class ServerTableEngineBase {
   public getActionContext(): string | null {
+    if (this.handContinuation?.isUnretained()) return null;
     return this.handController ? playerActionContext(this.handController) : null;
+  }
+
+  protected handContinuation: HandContinuationLane | null = null;
+  protected pendingOriginalContinuation: PrivateHandContinuation | null = null;
+  protected retainedPreparedOriginalController: HandController | null = null;
+  private preparedOriginalRetentionUnconfirmed = false;
+  protected retainedPublicHandState: GameState | null = null;
+
+  /** HTTP success cannot precede the original accepted mutation's retention. */
+  public async awaitActionPersistence(): Promise<void> {
+    await this.handContinuation?.awaitRetention();
+  }
+
+  protected publishedHandState(): GameState | null {
+    return this.handContinuation?.isUnretained()
+      ? this.retainedPublicHandState
+      : (this.handController?.getState() ?? null);
+  }
+
+  /** All hand-owned capture fields survive together, including future additions. */
+  protected captureContinuationEngine(): Record<string, unknown> {
+    const self = this as unknown as Record<string, unknown>;
+    const fields = Object.fromEntries(
+      Object.keys(self)
+        .filter((k) => k.startsWith('currentHand'))
+        .map((k) => [k, structuredClone(self[k])])
+    );
+    const capturedAt = Date.now();
+    return {
+      fields,
+      capturedAt,
+      disconnectStates: this.disconnectEngine.getFsmStatesForTable(this.tableId),
+      timeBankMeta: structuredClone(this.timeBankMeta),
+      timeBankDebits: structuredClone(this.unresolvedTimeBankDebits),
+      timeBanks:
+        this.handController?.getState().players.map((p) => {
+          const bank = this.timeBankEngine.capturePlayerForRecovery(
+            this.tableId,
+            p.user_id,
+            capturedAt
+          );
+          return { userId: p.user_id, bank };
+        }) ?? [],
+    };
+  }
+
+  protected async retainOriginalBatch(
+    original: PrivateHandContinuation['original'],
+    seats: PrivateHandContinuation['seats'],
+    batch: PrivateHandContinuation['batch']
+  ): Promise<void> {
+    const authority = this.getEngineLeaseAuthority();
+    if (authority?.scope !== 'tournament' || !authority.verified || !authority.generation)
+      throw new Error('Hand Continuation Lease Is Unproven');
+    const prepared =
+      batch.sequence === 0 &&
+      batch.events.length === 0 &&
+      JSON.parse(batch.controller).handStarted === false;
+    if (prepared) this.preparedOriginalRetentionUnconfirmed = true;
+    const retained = retainHandContinuation(
+      original,
+      authority.generation,
+      seats,
+      batch,
+      () =>
+        this.lifecycleCanMutate() &&
+        this.isCurrentEngine() &&
+        this.handCount === Number(original.hand_number)
+    );
+    this.trackWeeklyPayoutOriginalWork(retained);
+    await retained;
+    // State copied from these exact retained bytes, never a later controller
+    // mutation still waiting behind this batch. The future deck stays private.
+    const saved = JSON.parse(batch.controller).state;
+    this.retainedPublicHandState = { ...saved, deck: [] } as GameState;
+  }
+
+  /** Positive retained bytes or a canonical claimed seq0 own this capability. */
+  protected markRetainedPreparedOriginal(
+    controller: HandController | null,
+    original: PrivateHandContinuation['original'],
+    batch: PrivateHandContinuation['batch']
+  ): void {
+    const permit = this.f06CurrentPermit;
+    if (
+      !controller ||
+      this.handController !== controller ||
+      !this.running ||
+      !this.lifecycleCanMutate() ||
+      !this.isCurrentEngine() ||
+      this.handCount !== Number(original.hand_number) ||
+      batch.sequence !== 0 ||
+      batch.events.length !== 0 ||
+      JSON.parse(batch.controller).handStarted !== false ||
+      controller.serializeRecoveryState() !== batch.controller ||
+      !permit ||
+      permit.recoveryState() !== 'attempted' ||
+      Object.entries(original).some(
+        ([key, value]) => permit.binding[key as keyof typeof permit.binding] !== value
+      )
+    )
+      throw new Error('Retained Prepared Original Is Unproven');
+    this.preparedOriginalRetentionUnconfirmed = false;
+    this.retainedPreparedOriginalController = controller;
+    if (this.weeklyHandPause.held()) this.observeWeeklyPayoutDrain();
+  }
+
+  protected async restoreContinuationAccounting(capture: Record<string, unknown>): Promise<void> {
+    if (capture.timeBankMeta instanceof Map)
+      this.timeBankMeta = structuredClone(capture.timeBankMeta);
+    if (capture.timeBankDebits instanceof Map) {
+      for (const [id, value] of capture.timeBankDebits)
+        this.unresolvedTimeBankDebits.set(id, structuredClone(value));
+      if (this.unresolvedTimeBankDebits.size) {
+        this.timeBankAccountingUnconfirmed = true;
+        await this.resolveUnconfirmedTimeBankDebits();
+        if (this.unresolvedTimeBankDebits.size)
+          throw new Error('Original Time Bank Accounting Is Unproven');
+      }
+    }
+  }
+
+  /** Admission already proved SQL custody; this does not allocate or deal. */
+  public installOriginalHandContinuation(
+    original: PrivateHandContinuation,
+    permit: F06HandPermit
+  ): void {
+    if (
+      this.running ||
+      this.pendingOriginalContinuation ||
+      this.handController ||
+      this.f06CurrentPermit ||
+      original.original.table_id !== this.tableId ||
+      original.original.tournament_id !== this.engineLeaseTournamentId ||
+      Object.entries(original.original).some(
+        ([key, value]) => permit.binding[key as keyof typeof permit.binding] !== value
+      ) ||
+      permit.recoveryState() !== 'attempted'
+    )
+      throw new Error('Hand Continuation Admission Is Unproven');
+    HandController.fromRecoveryState(
+      original.batch.controller,
+      this.tableId,
+      Number(original.original.hand_number)
+    );
+    this.pendingOriginalContinuation = original;
+    this.f06CurrentPermit = permit;
   }
 
   protected tableId: string;
@@ -3083,54 +3236,25 @@ export abstract class ServerTableEngineBase {
        the same helper, split here into the emit half that Step 5 needs
        without Step 6's console line (those two callbacks log the player id,
        which `bridgeToHub` does not). One hub broadcast shape, one place. */
-    const emitToHub = (event: { type: string } & Record<string, unknown>) => {
-      try {
-        this.hub?.emitEvent(this.tableId, {
-          ...event,
-          type: event.type.toLowerCase(),
-          table_id: this.tableId,
-          timestamp: Date.now(),
-        });
-      } catch {
-        /* broadcast failure is non-fatal */
-      }
-    };
+    const emitToHub = (event: { type: string } & Record<string, unknown>) =>
+      this.emitSubEngineEvent(event);
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
-      console.log(
-        `[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`
-      );
-      this.onTimeBankAccounting(event);
-      /* AND THE TABLE (Dan 2026-09-20: "the time bank badge never goes away").
-         TIME_BANK_ACTIVATED reaches the browser through its OWN hand-written
-         hub broadcast (ServerTableEngineTurns.activateTimeBank). The three
-         events that END a bank had no such path: this callback was the only
-         consumer and it does database accounting, so `setTimeBankActive(true)`
-         had no counterpart and the client's badge cleared only if a later
-         snapshot happened to disagree with it. The accounting call above is
-         untouched - this is a SECOND consumer of an event the engine already
-         produced, not a replacement.
-
-         Forwarded as a NARROWED object rather than the raw event: TimeBankEvent
-         carries an open index signature, and this frame goes to every seat at
-         the table, so only the four fields TablePage's persistTimeBankState
-         reads are named here. Values are passed through exactly as the engine
-         computed them; the client supplies its own defaults. */
-      if (
-        event.type === 'TIME_BANK_STOPPED' ||
-        event.type === 'TIME_BANK_EXPIRED' ||
-        event.type === 'TIME_BANK_DEPLETED'
-      ) {
-        emitToHub({
-          type: event.type,
-          tableId: event.tableId,
-          playerId: event.playerId,
-          secondsUsed: event.secondsUsed,
-          remainingSeconds: event.remainingSeconds,
-          usesRemaining: event.usesRemaining,
+      if (this.handContinuation)
+        this.handContinuation.enqueue({
+          type: 'CONTINUATION_TIME_BANK',
+          event:
+            event.type === 'TIME_BANK_ACTIVATED'
+              ? {
+                  ...event,
+                  seat: this.handController
+                    ?.getState()
+                    .players.find((p) => p.user_id === event.playerId)?.seat,
+                }
+              : event,
         });
-      }
+      else this.dispatchContinuationTimeBank(event);
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
       console.log(
@@ -3977,6 +4101,10 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        // These chairs already have an unfinished original hand. They are
+        // not between hands: do not execute leaves, moves, add-ons or eviction
+        // before restoring that controller and its original financial baseline.
+        if (this.pendingOriginalContinuation) break;
         // A SEAT CHANGED WHILE WAITING (2026-09-09, must-move audit). The
         // dealing loop's roster diff wakes the game's ClusterController; this
         // loop, where a one-player Main 1 or a fresh feeder spends its life,
@@ -4184,7 +4312,7 @@ export abstract class ServerTableEngineBase {
       // process, so recovery is just "resolve whatever is still open". Doing it
       // here as well as in postHandTasks matters for a table that goes idle:
       // otherwise an orphaned row would wait for a next hand that never comes.
-      await this.resolveOrphanedAddOns();
+      if (!this.pendingOriginalContinuation) await this.resolveOrphanedAddOns();
       if (!this.lifecycleCanMutate()) return;
 
       // Start dealing loop.
@@ -6712,6 +6840,7 @@ export abstract class ServerTableEngineBase {
       // replacement cannot claim the shared scheduler while module teardown
       // is still pending.
     }
+    this.handContinuation?.close();
     this.handController = null;
     // The line above is what makes an open terminal boundary unreachable: no
     // HAND_COMPLETE can dispatch without a controller, and every resolver is
@@ -7451,8 +7580,10 @@ export abstract class ServerTableEngineBase {
       this.maintenancePaused ||
       this.finalTableDealPaused ||
       this.terminalCloseoutPaused
-    )
+    ) {
+      this.offerExistingPauseReadyEdge();
       return;
+    }
     this.releasePauseGate();
   }
 
@@ -7608,8 +7739,10 @@ export abstract class ServerTableEngineBase {
       this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.finalTableDealPaused
-    )
+    ) {
+      this.offerExistingPauseReadyEdge();
       return;
+    }
     this.releasePauseGate();
   }
 
@@ -8326,6 +8459,7 @@ export abstract class ServerTableEngineBase {
     ) {
       // The remaining independent authority starts its own pause-age budget.
       if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
+      this.offerExistingPauseReadyEdge();
       return;
     }
     this.releasePauseGate();
@@ -8348,7 +8482,8 @@ export abstract class ServerTableEngineBase {
       this.runItTwiceEngine.isParkedForWeeklyPayout(this.tableId, owner) &&
       ((this.handForHandResolve !== null && this.isBetweenHands()) ||
         (this.handController !== null &&
-          this.weeklyPayoutStartedController === this.handController &&
+          (this.weeklyPayoutStartedController === this.handController ||
+            this.retainedPreparedOriginalController === this.handController) &&
           this.handController.isParkedForWeeklyPayout(owner)))
     );
   }
@@ -8356,6 +8491,8 @@ export abstract class ServerTableEngineBase {
   hasWeeklyPayoutMutationInFlight(): boolean {
     return (
       this.weeklyHandPause.pending() ||
+      this.preparedOriginalRetentionUnconfirmed ||
+      (this.handContinuation?.isUnretained() ?? false) ||
       this.terminalBoundaryPersistenceFailed ||
       this.hasSettlementInFlight() ||
       this.postHandTasksPromise !== null ||
@@ -8510,6 +8647,8 @@ export abstract class ServerTableEngineBase {
        * from here, on its own budget.
        */
       if (this.pausedSinceMs !== 0) this.pausedSinceMs = Date.now();
+      // The original waiter does not re-enter its gate when this owner exits.
+      this.offerExistingPauseReadyEdge();
       return;
     }
     this.releasePauseGate();
@@ -8524,8 +8663,10 @@ export abstract class ServerTableEngineBase {
       this.weeklyPayoutPauseOwners.size > 0 ||
       this.maintenancePaused ||
       this.terminalCloseoutPaused
-    )
+    ) {
+      this.offerExistingPauseReadyEdge();
       return;
+    }
     this.releasePauseGate();
   }
 
@@ -8709,6 +8850,28 @@ export abstract class ServerTableEngineBase {
     return this.handForHandPaused && this.pauseRequiresExplicitResume;
   }
 
+  /** Hand-for-hand cannot consume another authority's existing park. */
+  isHandForHandReleaseBlocked(): boolean {
+    return (
+      this.tournamentMovePauseOwners.size > 0 ||
+      this.weeklyPayoutPauseOwners.size > 0 ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused
+    );
+  }
+
+  private offerExistingPauseReadyEdge(): void {
+    if (!this.running || this.handForHandResolve === null) return;
+    try {
+      this.pauseReadyCallback?.(this.tableId);
+    } catch (error) {
+      reportError(error, 'ServerTableEngine.pause_ready_callback_failed', {
+        tableId: this.tableId,
+      });
+    }
+  }
+
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
@@ -8751,13 +8914,7 @@ export abstract class ServerTableEngineBase {
     // during a break is immediately — and without this line it would deal a
     // hand inside the break and destroy the break's pause budget on the way
     // through. See the `maintenancePaused` field.
-    if (
-      this.tournamentMovePauseOwners.size > 0 ||
-      this.weeklyPayoutPauseOwners.size > 0 ||
-      this.maintenancePaused ||
-      this.finalTableDealPaused ||
-      this.terminalCloseoutPaused
-    ) {
+    if (this.isHandForHandReleaseBlocked()) {
       this.pausedSinceMs = this.pausedSinceMs || Date.now();
       return;
     }
@@ -8999,7 +9156,7 @@ export abstract class ServerTableEngineBase {
    * report a running table as busy forever and the phase would never open.
    */
   isBetweenHands(): boolean {
-    return this.handController === null;
+    return this.handController === null && !this.pendingOriginalContinuation;
   }
 
   /**
@@ -9234,7 +9391,95 @@ export abstract class ServerTableEngineBase {
    * session base is spent first; only the excess hits the DB. Best-effort:
    * accounting must never break gameplay.
    */
-  private onTimeBankAccounting(event: TimeBankEvent): void {
+  protected emitSubEngineEvent(event: { type: string } & Record<string, unknown>): void {
+    try {
+      this.hub?.emitEvent(this.tableId, {
+        ...event,
+        type: event.type.toLowerCase(),
+        table_id: this.tableId,
+        timestamp: Date.now(),
+      });
+    } catch {
+      /* broadcast failure is non-fatal */
+    }
+  }
+
+  protected dispatchContinuationTimeBank(event: TimeBankEvent, debitId?: string): void {
+    console.log(
+      `[ServerTableEngine:${this.tableId}] TimeBank: ${event.type} player=${event.playerId}`
+    );
+    this.onTimeBankAccounting(event, debitId);
+    // Original activations publish only from the retained event consumer. The
+    // cash path retains its existing caller-owned publication below Turns.
+    if (
+      event.type === 'TIME_BANK_ACTIVATED' &&
+      event.publicationDeferred === true &&
+      this.handContinuation
+    ) {
+      this.resumeContinuationTimeBankActivation(event);
+      const automatic = event.activationCause === 'automatic';
+      void broadcastTimeBankActivation(this.tableId, {
+        player_id: event.playerId,
+        table_id: this.tableId,
+        additional_seconds: event.secondsGranted,
+        auto_activated: automatic,
+        uses_remaining: event.usesRemaining,
+        ...(automatic ? {} : { total_remaining: event.totalRemaining }),
+        unlimited_activations: event.unlimitedActivations === true,
+      });
+      if (
+        event.unlimitedActivations !== true &&
+        Number(event.usesRemaining) >= 0 &&
+        Number(event.usesRemaining) <= 1
+      ) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_low',
+            table_id: this.tableId,
+            player_id: event.playerId,
+            uses_remaining: event.usesRemaining,
+          });
+        } catch {
+          /* publication is best effort */
+        }
+      }
+      // Preserve the existing manual activation hub shape for seat badges.
+      if (!automatic) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_activated',
+            table_id: this.tableId,
+            player_id: event.playerId,
+            seat: event.seat,
+            uses_remaining: event.usesRemaining,
+            secondsGranted: event.secondsGranted,
+            usesRemaining: event.usesRemaining,
+            unlimitedActivations: event.unlimitedActivations === true,
+            timestamp: Date.now(),
+          });
+        } catch {
+          /* publication is best effort */
+        }
+      }
+    }
+    // Only named public terminal-bank fields cross the public boundary.
+    if (
+      event.type === 'TIME_BANK_STOPPED' ||
+      event.type === 'TIME_BANK_EXPIRED' ||
+      event.type === 'TIME_BANK_DEPLETED'
+    ) {
+      this.emitSubEngineEvent({
+        type: event.type,
+        tableId: event.tableId,
+        playerId: event.playerId,
+        secondsUsed: event.secondsUsed,
+        remainingSeconds: event.remainingSeconds,
+        usesRemaining: event.usesRemaining,
+      });
+    }
+  }
+
+  private onTimeBankAccounting(event: TimeBankEvent, debitId?: string): void {
     if (
       event.type !== 'TIME_BANK_STOPPED' &&
       event.type !== 'TIME_BANK_EXPIRED' &&
@@ -9250,18 +9495,20 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.isUnlimited(this.tableId, event.playerId);
       if (unlimited) {
         const secondsUsed = Math.max(0, Number(event.secondsUsed) || 0);
-        if (secondsUsed > 0) this.consumeTimeBankSeconds(event.playerId, secondsUsed);
+        if (secondsUsed > 0) this.submitTimeBankDebit(event.playerId, secondsUsed, debitId);
         return;
       }
       if (!meta) return;
-      const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
+      const remaining = Number.isFinite(event.remainingSeconds)
+        ? Number(event.remainingSeconds)
+        : this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
       const usedTotal = Math.max(0, meta.initialSeconds - remaining);
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
-      this.submitTimeBankDebit(event.playerId, owed);
+      this.submitTimeBankDebit(event.playerId, owed, debitId);
     } catch (err) {
       this.timeBankAccountingUnconfirmed = true;
       console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
@@ -9305,6 +9552,7 @@ export abstract class ServerTableEngineBase {
         `(debit ${debitId}, table ${this.tableId})`
       );
     };
+    this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
     try {
       const pending = Promise.resolve(
         supabase.rpc('fn_consume_time_bank', {
@@ -9318,7 +9566,7 @@ export abstract class ServerTableEngineBase {
             unanswered(
               String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt')
             );
-          }
+          } else this.unresolvedTimeBankDebits.delete(debitId);
         })
         .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))
         .finally(() => this.timeBankAccountingPending.delete(pending));
@@ -9339,6 +9587,9 @@ export abstract class ServerTableEngineBase {
    * need the answer are the ones whose tournament lease is already gone.
    */
   resolveUnconfirmedTimeBankDebits(): Promise<void> {
+    // A retained receipt ID may still belong to its physical first request.
+    // Only an unknown completed request needs the existing explicit re-ask.
+    if (this.timeBankAccountingPending.size > 0) return Promise.resolve();
     if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
     if (this.unresolvedTimeBankDebits.size === 0) return Promise.resolve();
     const run = (async () => {
@@ -11637,11 +11888,16 @@ export abstract class ServerTableEngineBase {
 
   /**
    * Check for an incomplete hand snapshot on server startup.
-   * If found, log it for now — full resume requires reconstructing HandController
-   * from serialized state, which is a future enhancement.
+   * Tournament admission installs a claimed original before startup. Legacy
+   * snapshots without that private original retain their existing disposition
+   * rules; they cannot manufacture a missing deck.
    */
   async checkCrashRecovery(): Promise<boolean> {
     if (this.f06MovementAdmission) throw new Error('f06_movement_only_no_snapshot_disposition');
+    if (this.pendingOriginalContinuation) {
+      this.handCount = Number(this.pendingOriginalContinuation.original.hand_number);
+      return true;
+    }
     const authority = this.getEngineLeaseAuthority();
     // Tournament managers perform this before F06 admission. Cash enters here
     // before legacy snapshot cleanup, under the current table generation.
@@ -11719,6 +11975,7 @@ export abstract class ServerTableEngineBase {
   protected abstract processPendingAddOns(players: SeatedPlayer[]): Promise<void>;
 
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
+  protected abstract resumeContinuationTimeBankActivation(event: TimeBankEvent): void;
   protected abstract clearTurnTimer(): void;
   protected abstract rearmTurnTimerIfCurrent(userId: string): void;
   protected abstract handlePlayerDisconnectedMidTurn(userId: string): void;

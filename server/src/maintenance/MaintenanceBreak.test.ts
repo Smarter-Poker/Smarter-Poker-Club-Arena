@@ -1834,16 +1834,32 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
     };
     visit(source);
     expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
+    const base = readFileSync(join(here, '../engine/ServerTableEngineBase.ts'), 'utf8');
+    const independent = base.slice(
+      base.indexOf('isHandForHandReleaseBlocked(): boolean {'),
+      base.indexOf('private offerExistingPauseReadyEdge(): void {')
+    );
+    for (const owner of [
+      'this.maintenancePaused',
+      'this.terminalCloseoutPaused',
+      'this.finalTableDealPaused',
+      'this.tournamentMovePauseOwners.size > 0',
+      'this.weeklyPayoutPauseOwners.size > 0',
+    ])
+      expect(independent).toContain(owner);
+    expect(independent).not.toContain('&&');
     let maintenanceSites = 0;
     let terminalOnlySites = 0;
     for (const guard of sites) {
-      const hasMaintenance = /maintenancePaused/.test(guard);
+      const hasMaintenance = /maintenancePaused|this\.isHandForHandReleaseBlocked\(\)/.test(guard);
       const hasTerminalCloseout = /terminalCloseoutPaused/.test(guard);
       expect(
         guard,
         'an awaitPauseGate call without a named pause authority can park or release the wrong hand: ' +
           guard.trim().slice(-120)
-      ).toMatch(/maintenancePaused|terminalCloseoutPaused|this\.isNextHandPaused\(\)/);
+      ).toMatch(
+        /maintenancePaused|terminalCloseoutPaused|this\.isNextHandPaused\(\)|this\.isHandForHandReleaseBlocked\(\)/
+      );
       if (hasMaintenance) maintenanceSites++;
       if (hasTerminalCloseout && !hasMaintenance) terminalOnlySites++;
     }

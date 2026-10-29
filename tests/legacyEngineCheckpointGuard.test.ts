@@ -2760,7 +2760,7 @@ describe('exact 8825 retained original custody retirement', () => {
   // The admission above rests on one ordering in code the guard cannot see:
   // `F06HandPermit.start` must mark the permit `attempted` BEFORE it actuates
   // the block that reserves the boundary integer. Pin it on the real class, and
-  // pin the single call site that relies on it, so a reordering of either fails
+  // pin the fresh start and qualified original-recovery sites, so a reordering fails
   // here rather than stranding the next release behind an unexplained refusal.
   const attemptedPermit = () => {
     const p = newPermit();
@@ -2816,20 +2816,43 @@ describe('exact 8825 retained original custody retirement', () => {
     await expect(permit.cancelPreparedHand()).rejects.toThrow('f06_prepared_cancellation_unproven');
     expect(permit.recoveryState()).toBe('attempted');
   });
-  it('reserves the boundary integer only inside the permit start block', () => {
+  it('reserves one boundary inside fresh permit start or attempted original recovery', () => {
     const dealing = readFileSync(
       path.join(__dirname, '..', 'server/src/engine/ServerTableEngineDealing.ts'),
       'utf8'
     );
     const calls = dealing.match(/this\.beginTerminalBoundaryPersistence\(\)/g) ?? [];
-    expect(calls).toHaveLength(1);
-    // The one call site sits in `startExactController`, and on an engine holding
-    // a permit that function is reached only through `f06CurrentPermit.start`.
+    expect(calls).toHaveLength(2);
+    // Fresh hands still open their boundary only inside permit actuation.
     expect(dealing).toMatch(
       /const startExactController = \(\) => \{\s*persistenceGeneration = this\.beginTerminalBoundaryPersistence\(\);/
     );
     expect(dealing).toMatch(
       /if \(this\.f06CurrentPermit\) this\.f06CurrentPermit\.start\(startExactController\);/
+    );
+    // Recovery does not start the original permit twice. Its admitted permit
+    // is already attempted, with exact binding and controller bytes proved
+    // before pendingOriginalContinuation can select this separate branch.
+    expect(dealing).toMatch(
+      /if \(recovered\) \{\s*const resumeExactOriginal = \(\) => \{\s*persistenceGeneration = this\.beginTerminalBoundaryPersistence\(\);\s*attempt\.started = true;/
+    );
+    expect(dealing).toMatch(
+      /if \(publicationStart\) publicationStart\.start\(resumeExactOriginal\);\s*else resumeExactOriginal\(\);\s*\} else if \(publicationStart\) publicationStart\.start\(startWithPermit\);\s*else startWithPermit\(\);/
+    );
+    expect(dealing).toContain('const recovered = this.pendingOriginalContinuation;');
+    const base = readFileSync(
+      path.join(__dirname, '..', 'server/src/engine/ServerTableEngineBase.ts'),
+      'utf8'
+    );
+    const admission = base.slice(
+      base.indexOf('public installOriginalHandContinuation('),
+      base.indexOf('protected tableId:', base.indexOf('public installOriginalHandContinuation('))
+    );
+    expect(admission).toContain("permit.recoveryState() !== 'attempted'");
+    expect(admission).toContain('permit.binding[key as keyof typeof permit.binding] !== value');
+    expect(admission).toContain("throw new Error('Hand Continuation Admission Is Unproven')");
+    expect(admission).toMatch(
+      /HandController\.fromRecoveryState\([\s\S]*?\);\s*this\.pendingOriginalContinuation = original;\s*this\.f06CurrentPermit = permit;/
     );
   });
   it('refuses a terminal boundary on an engine holding no permit at all', async () => {

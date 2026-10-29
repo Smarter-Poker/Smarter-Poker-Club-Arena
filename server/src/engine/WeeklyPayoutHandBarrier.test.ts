@@ -3,12 +3,15 @@ import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 import * as errorReporter from '../services/errorReporter.js';
+import * as originalRetention from '../services/supabase/handContinuation.js';
+import { HandContinuationLane } from './HandContinuationLane.js';
 
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
-function liveHand() {
+function liveHand(start = true) {
   const players = [1, 2].map((seat) => ({
     seat,
     user_id: `p${seat}`,
@@ -33,17 +36,94 @@ function liveHand() {
     players,
     1
   );
-  hand.start();
+  if (start) hand.start();
   const engine = new ServerTableEngine('t') as any;
   engine.running = true;
   engine.handController = hand;
-  engine.weeklyPayoutStartedController = hand;
+  engine.weeklyPayoutStartedController = start ? hand : null;
   engine.broadcastCurrentState = vi.fn(async () => {});
   engine.broadcastAllInEquity = vi.fn(async () => {});
   return { engine, hand, players };
 }
 
 describe('the real live hand is retained across the original weekly financial edge', () => {
+  it('does not acknowledge an unknown prepared private write even after the controller leaves the local slot', async () => {
+    const { engine, hand } = liveHand(false);
+    vi.spyOn(originalRetention, 'retainHandContinuation').mockRejectedValue(
+      new Error('Unknown ACK')
+    );
+    vi.spyOn(engine, 'getEngineLeaseAuthority').mockReturnValue({
+      scope: 'tournament',
+      verified: true,
+      generation: 'original-writer',
+    });
+    await expect(
+      engine.retainOriginalBatch({ hand_number: '1' }, [], {
+        version: 1,
+        sequence: 0,
+        controller: hand.serializeRecoveryState(),
+        events: [],
+        engine: {},
+      })
+    ).rejects.toThrow('Unknown ACK');
+    engine.handController = null;
+    engine.handForHandPaused = true;
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    const parked = engine.awaitPauseGate();
+    expect(engine.retainedPreparedOriginalController).toBeNull();
+    expect(engine.hasWeeklyPayoutMutationInFlight()).toBe(true);
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    engine.running = false;
+    engine.releasePendingPauseWait();
+    await parked;
+  });
+
+  it('withholds physical acknowledgement until the accepted original private write is retained', async () => {
+    const { engine, hand } = liveHand();
+    let acknowledge!: () => void;
+    const physical = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    const retain = vi.spyOn(originalRetention, 'retainHandContinuation').mockReturnValue(physical);
+    vi.spyOn(engine, 'getEngineLeaseAuthority').mockReturnValue({
+      scope: 'tournament',
+      verified: true,
+      generation: 'original-writer',
+    });
+    const boundary = vi.fn();
+    engine.onWeeklyPayoutBoundary(boundary);
+    const lane = new HandContinuationLane(
+      0,
+      () => hand.serializeRecoveryState(),
+      () => engine.captureContinuationEngine(),
+      (batch) => engine.retainOriginalBatch({ hand_number: 1 } as any, [], batch),
+      async () => {},
+      () => true,
+      (error) => {
+        throw error;
+      }
+    );
+    engine.handContinuation = lane;
+    lane.checkpoint();
+    engine.pauseForWeeklyPayout('weekly');
+    engine.engageWeeklyPayoutHandPause('weekly');
+    expect(engine.hasWeeklyPayoutMutationInFlight()).toBe(true);
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(retain).toHaveBeenCalledOnce();
+    expect(engine.hasWeeklyPayoutMutationInFlight()).toBe(true);
+    acknowledge();
+    await lane.awaitRetention();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(engine.hasWeeklyPayoutMutationInFlight()).toBe(false);
+    expect(engine.isParkedForWeeklyPayout('weekly')).toBe(true);
+    expect(boundary).toHaveBeenCalled();
+    retain.mockRestore();
+  });
+
   it('reports a rejected weekly runout checkpoint without an unhandled continuation', async () => {
     const { engine, hand } = liveHand();
     const failure = new Error('weekly checkpoint refused');

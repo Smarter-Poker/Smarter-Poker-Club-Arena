@@ -23,6 +23,9 @@ const sourceRoot = process.cwd();
 const controls = [
   'scripts/ci/downline-journey-pin.mjs',
   'scripts/ci/production-e2e-provenance.mjs',
+  'scripts/ci/client-runtime-retention.mjs',
+  'scripts/ci/client-runtime-inputs.mjs',
+  'scripts/ci/client-runtime-font-inputs.mjs',
 ];
 function fixture(inheritedEnv = process.env) {
   const root = mkdtempSync(join(tmpdir(), 'downline-journey-'));
@@ -73,6 +76,7 @@ function fixture(inheritedEnv = process.env) {
     qualifyStatsJourneyPin({ root, originalSha: initial, bodies: [body(sha), body(other)], git });
   return {
     root,
+    env,
     commit,
     git,
     original,
@@ -157,6 +161,99 @@ describe('the exact downline journey is pinned at its own start', () => {
         expect(() => f.qualify(served)).toThrow('shadowed by compiler baseUrl');
       })
   );
+
+  it('keeps a legitimate retained runtime pinned while qualifying the actual newer protected harness through existing contracts', () =>
+    withFixture((f) => {
+      const spec = 'tests/e2e/stats-deep.spec.ts';
+      const here = f.forward(
+        spec,
+        readFileSync(join(f.root, spec), 'utf8') + '\n// New verification only.\n'
+      );
+      f.git('update-ref', 'refs/heads/main', here);
+      const info = JSON.stringify({
+        ca_sha: f.original,
+        run_id: '99',
+        built_by: 'publish-club-arena.yml',
+      });
+      const manifest = 'synthetic immutable fixture manifest';
+      // Run the existing receipt, full build-input/backlog and two-origin
+      // validators in a real isolated Git checkout, not a hand-made boolean.
+      const contracts = `
+        import {makeRuntimeInputs,qualifiesRuntimeInputs} from ${JSON.stringify(join(sourceRoot, 'scripts/ci/client-runtime-inputs.mjs'))};
+        import {compareClientBacklog,readRetentionReceipt,assertReceiptOrigins} from ${JSON.stringify(join(sourceRoot, 'scripts/ci/client-runtime-retention.mjs'))};
+        import {createHash} from 'node:crypto';
+        const [root,base,here,info,manifest,attack]=process.argv.slice(1);
+        const hash=x=>createHash('sha256').update(x).digest('hex');
+        const inputs=makeRuntimeInputs(base,['app','diamond','prerender'].map(build=>({schema:1,build,sourceSha:base,cleanSource:true,files:[],directories:[],unknown:[]})),root);
+        const {paths}=compareClientBacklog(base,here,root);
+        if(attack==='inputs') inputs.complete=false;
+        if(!qualifiesRuntimeInputs(inputs,base,here,paths,root)) throw Error('Unqualified full runtime inputs');
+        const receipt=readRetentionReceipt({schema:1,kind:'retained-client-runtime',runtimeSha:base,verificationSha:here,sourceRunId:'123',sourceTriggerSha:here,repositoryId:'1132369872',originalPublisherRunId:'99',originalArtifactId:1,inputs,buildInfoSHA256:hash(info),manifestSHA256:hash(manifest),paths},'123',here,'1132369872');
+        assertReceiptOrigins(receipt,[Buffer.from(info),Buffer.from(info)],[Buffer.from(manifest),Buffer.from(attack==='origin' ? manifest+'changed' : manifest)]);
+        console.log(JSON.stringify(receipt));
+      `;
+      const validate = (attack = '') =>
+        JSON.parse(
+          execFileSync(
+            process.execPath,
+            [
+              '--input-type=module',
+              '-e',
+              contracts,
+              f.root,
+              f.original,
+              here,
+              info,
+              manifest,
+              attack,
+            ],
+            { env: f.env, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+          )
+        );
+      const raw = validate();
+      expect(() => validate('inputs')).toThrow();
+      expect(() => validate('origin')).toThrow();
+      const event = { workflow_run: { id: 123, head_sha: here }, repository: { id: 1132369872 } };
+      const args = { root: f.root, originalSha: f.original, bodies: [info, info], git: f.git };
+      expect(() => qualifyStatsJourneyPin(args)).toThrow('canonical harness differs');
+      const verifyRetention = (receipt: unknown) => expect(receipt).toEqual(validate());
+      const proof = qualifyStatsJourneyPin({ ...args, retention: { raw, event }, verifyRetention });
+      expect(proof.journeySha).toBe(f.original);
+      expect(proof.canonicalHarnessSha).toBe(here);
+      expect(proof.retainedRuntime).toBe(true);
+      expect(proof.retentionAuthority).toMatchObject({
+        sourceRunId: '123',
+        runtimeSha: f.original,
+        verificationSha: here,
+      });
+      expect(proof.fullRuntimeEquivalenceClaimed).toBe(false);
+      expect(() => qualifyStatsJourneyPin({ ...args, retention: { raw, event } })).toThrow(
+        'exact executed'
+      );
+      expect(() =>
+        qualifyStatsJourneyPin({
+          ...args,
+          retention: { raw: { ...raw, sourceRunId: '124' }, event },
+          verifyRetention,
+        })
+      ).toThrow('exact protected publisher run');
+      expect(() =>
+        qualifyStatsJourneyPin({
+          ...args,
+          retention: { raw: { ...raw, verificationSha: f.original }, event },
+          verifyRetention,
+        })
+      ).toThrow('exact executed');
+      expect(() =>
+        qualifyStatsJourneyPin({
+          ...args,
+          retention: { raw, event },
+          verifyRetention: () => {
+            throw new Error('Actual retained harness refused origin manifest or runtime inputs');
+          },
+        })
+      ).toThrow('retained harness refused');
+    }));
 
   it('keeps disagreeing or unreadable origin reads UNKNOWN', () =>
     withFixture((f) => {
@@ -247,11 +344,12 @@ describe('the exact downline journey is pinned at its own start', () => {
       expect(() => f.qualify(baseline, baseline, baseline)).toThrow('canonical harness differs');
     }));
 
-  it('refuses an uncommitted pin-control change', () =>
+  it.each([controls[0], controls[2]])('refuses an uncommitted pin-control change: %s', (path) =>
     withFixture((f) => {
-      writeFileSync(join(f.root, controls[0]), 'changed control');
+      writeFileSync(join(f.root, path), 'changed control');
       expect(() => f.qualify()).toThrow('pin control differs');
-    }));
+    })
+  );
 
   it.each([
     'import(variablePath);',

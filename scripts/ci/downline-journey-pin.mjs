@@ -14,6 +14,7 @@ import {
 import { resolve, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readBuildInfoSha, classifyTrustedLineage } from './production-e2e-provenance.mjs';
+import { readRetentionReceipt } from './client-runtime-retention.mjs';
 
 const ROOTS = ['tests/e2e/stats-deep.spec.ts', 'tests/e2e/global-setup.ts', 'playwright.config.ts'];
 const CONFIG = ['package.json', 'package-lock.json', 'tsconfig.json'];
@@ -209,7 +210,14 @@ export function statsHarnessInputs(root, verifyImport = () => {}) {
   return [...inputs].sort();
 }
 
-export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
+export function qualifyStatsJourneyPin({
+  root,
+  originalSha,
+  bodies,
+  git,
+  retention,
+  verifyRetention,
+}) {
   if (!SHA.test(originalSha || '')) refuse('The original client pin is malformed.');
   if (!Array.isArray(bodies) || bodies.length !== 2)
     throw new JourneyUnknown('Both origin reads are required.');
@@ -249,6 +257,9 @@ export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
   const controlInputs = [
     'scripts/ci/downline-journey-pin.mjs',
     'scripts/ci/production-e2e-provenance.mjs',
+    'scripts/ci/client-runtime-retention.mjs',
+    'scripts/ci/client-runtime-inputs.mjs',
+    'scripts/ci/client-runtime-font-inputs.mjs',
   ];
   for (const path of controlInputs) {
     const full = resolve(root, path);
@@ -261,18 +272,49 @@ export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
     )
       refuse(`The Stats pin control differs from protected source: ${path}`);
   }
+  let canonicalSha = live;
+  let retainedRuntime = false;
+  let retentionAuthority = null;
+  if (retention) {
+    const run = retention.event?.workflow_run;
+    const receipt = readRetentionReceipt(
+      retention.raw,
+      run?.id,
+      run?.head_sha,
+      retention.event?.repository?.id
+    );
+    if (receipt.runtimeSha === live) {
+      if (receipt.verificationSha !== here || typeof verifyRetention !== 'function')
+        refuse('Retained Stats source is not the exact executed verification source.');
+      // The existing harness command proves the complete runtime input seal and
+      // both origins' build-info AND manifests. Test blobs cannot replace it.
+      verifyRetention(receipt);
+      canonicalSha = here;
+      retainedRuntime = true;
+      retentionAuthority = {
+        sourceRunId: receipt.sourceRunId,
+        sourceTriggerSha: receipt.sourceTriggerSha,
+        repositoryId: receipt.repositoryId,
+        runtimeSha: receipt.runtimeSha,
+        verificationSha: receipt.verificationSha,
+        buildInfoSHA256: receipt.buildInfoSHA256,
+        manifestSHA256: receipt.manifestSHA256,
+      };
+    }
+  }
   const modes = new Map();
   const inputs = statsHarnessInputs(root, (base, actualPath) => {
     if (actualPath === null) {
       for (const extension of extensions)
-        if (git('ls-tree', live, '--', base + extension).trim())
+        if (git('ls-tree', canonicalSha, '--', base + extension).trim())
           refuse('Stats canonical package is shadowed by compiler baseUrl.');
       return;
     }
     const canonicalPath = extensions
       .map((extension) => base + extension)
       .find((path) => {
-        if (!modes.has(path)) modes.set(path, git('ls-tree', live, '--', path).split(/\s/)[0]);
+        if (!modes.has(path))
+          modes.set(path, git('ls-tree', canonicalSha, '--', path).split(/\s/)[0]);
         const mode = modes.get(path);
         return mode && mode !== '040000';
       });
@@ -281,13 +323,13 @@ export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
   });
   const inputBlobs = {};
   for (const path of inputs) {
-    const mode = git('ls-tree', live, '--', path).split(/\s/)[0];
+    const mode = git('ls-tree', canonicalSha, '--', path).split(/\s/)[0];
     const controlMode = git('ls-tree', here, '--', path).split(/\s/)[0];
     const executed = blobId(readFileSync(resolve(root, path)));
     if (
       !['100644', '100755'].includes(mode) ||
       !['100644', '100755'].includes(controlMode) ||
-      git('rev-parse', `${live}:${path}`).trim() !== executed ||
+      git('rev-parse', `${canonicalSha}:${path}`).trim() !== executed ||
       git('rev-parse', `${here}:${path}`).trim() !== executed
     )
       refuse(`Stats canonical harness differs from the executed input: ${path}`);
@@ -299,6 +341,9 @@ export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
     originalSha,
     journeySha: live,
     verificationControlSha: here,
+    canonicalHarnessSha: canonicalSha,
+    retainedRuntime,
+    retentionAuthority,
     inputs,
     inputBlobs,
     controlInputs,
@@ -349,9 +394,58 @@ async function main() {
     } catch {
       throw new JourneyUnknown('The protected-main history read is unavailable.');
     }
+    const retainedPath = 'retained-runtime-evidence/retained-runtime.json';
+    let retention;
+    if (existsSync(retainedPath)) {
+      if (process.env.GITHUB_EVENT_NAME !== 'workflow_run' || !process.env.GITHUB_EVENT_PATH)
+        refuse('Retained Stats source requires the existing publisher workflow event.');
+      if (
+        lstatSync(retainedPath).size > 4 * 1024 * 1024 ||
+        lstatSync(process.env.GITHUB_EVENT_PATH).size > 4 * 1024 * 1024
+      )
+        refuse('Retained Stats evidence exceeds its bound.');
+      retention = {
+        raw: readFileSync(retainedPath, 'utf8'),
+        event: JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')),
+      };
+      if (
+        process.env.GITHUB_REPOSITORY_ID !== '1132369872' ||
+        String(retention.event.repository?.id) !== process.env.GITHUB_REPOSITORY_ID ||
+        String(retention.event.workflow_run?.repository?.id) !== process.env.GITHUB_REPOSITORY_ID ||
+        retention.event.workflow_run?.head_branch !== 'main'
+      )
+        refuse('Retained Stats evidence does not name this protected publisher repository.');
+    }
+    const verifyRetention = (retained) => {
+      try {
+        execFileSync(
+          process.execPath,
+          [
+            'scripts/ci/client-runtime-retention.mjs',
+            'harness',
+            retained.runtimeSha,
+            retained.verificationSha,
+            retainedPath,
+            String(retention.event.workflow_run.id),
+            retention.event.workflow_run.head_sha,
+            String(retention.event.repository.id),
+          ],
+          { cwd: root, timeout: 90000, stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+      } catch {
+        refuse('The existing retained-runtime harness did not qualify this Stats source.');
+      }
+    };
     Object.assign(
       receipt,
-      qualifyStatsJourneyPin({ root, originalSha: process.env.LIVE_SHA, bodies, git }),
+      qualifyStatsJourneyPin({
+        root,
+        originalSha: process.env.LIVE_SHA,
+        bodies,
+        git,
+        retention,
+        verifyRetention,
+      }),
       { status: 'qualified', qualifiedAt: new Date().toISOString() }
     );
   } catch (error) {

@@ -2204,7 +2204,12 @@
    warm-gold border and amber halo as the winning board cards, full
    brightness, and holds it — the reference never pulses. The old 1.5s
    winnerCardPulse loop is gone for that reason. */
+/* Raise the cards that actually make the winning hand, for hero and villain.
+   Independent translate survives the flat-row overrides and transform-based
+   reveal/deal animations. A fifth of the card height stays legible at every
+   table scale and holds for the entire winning-card display, even with reduced motion. */
 .seat__card--winner {
+  translate: 0 -20%;
   box-shadow:
     0 0 0 2px #e9b355,
     0 0 10px rgba(240, 180, 80, 0.8),

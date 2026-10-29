@@ -130,13 +130,17 @@ export function EquityBadgeLayer({
     }
 
     /* A hand was tabled (or mucked): the class list of a `.seat__cards` row
-       changed. Only that - the layer's own slots and every other class on the
-       felt change constantly during a runout and move nothing. */
+       changed, or an individual winning card rose above the row. The layer's
+       own slots and unrelated classes must not trigger another layout read. */
     let mutationObserver: MutationObserver | null = null;
     if (typeof MutationObserver !== 'undefined') {
       mutationObserver = new MutationObserver((records) => {
         if (
-          records.some((r) => r.target instanceof Element && r.target.classList.contains(CARD_ROW))
+          records.some(
+            (r) =>
+              r.target instanceof Element &&
+              (r.target.classList.contains(CARD_ROW) || r.target.classList.contains('seat__card'))
+          )
         ) {
           remeasure();
         }

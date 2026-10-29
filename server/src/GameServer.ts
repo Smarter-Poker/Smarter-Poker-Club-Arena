@@ -11626,45 +11626,45 @@ export class GameServer {
    * reopen a no-op if something opened the table in the meantime.
    */
   private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
-    /* Every live tournament, a page at a time: one 500-row read left the
-       tail of a 594-tournament board out of the sweep entirely. */
-    const tournaments: LiveTournamentRow[] = [];
-    const PAGE = 500;
-    for (let from = 0; ; from += PAGE) {
-      const { data: liveRows, error: liveErr } = await supabase
-        .from('tournaments')
-        .select('id, status, start_time')
-        .in('status', ['REGISTERING', 'RUNNING'])
-        .order('id')
-        .range(from, from + PAGE - 1);
-      if (liveErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
-          'GameServer.reopen_sweep_tournament_read_failed'
-        );
-        return;
-      }
-      const page = (liveRows ?? []) as LiveTournamentRow[];
-      tournaments.push(...page);
-      if (page.length < PAGE) break;
-    }
+    const generation = this.lifecycleGeneration;
+    const current = () => this.directAdmissionIsCurrent(generation) && !isMaintenanceFrozen();
+    if (!current()) return;
+    const tournamentRead = await fetchAllRows<LiveTournamentRow & Record<string, unknown>>(
+      (cursor, want) => {
+        let query = supabase
+          .from('tournaments')
+          .select('id, status, start_time')
+          .in('status', ['REGISTERING', 'RUNNING'])
+          .order('id', { ascending: true })
+          .limit(want);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'GameServer.reopenTournamentBoard', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!current() || !tournamentRead.complete) return;
+    const tournaments = tournamentRead.rows;
     if (tournaments.length === 0) return;
 
-    // Bounded `in.(...)` lists: see REOPEN_SWEEP_ID_CHUNK.
+    // A bounded event list can still own more than one response of tables.
+    // The planner must see every open sibling before it may reopen a closed one.
     const tables: TournamentTableRow[] = [];
     for (const chunk of reopenSweepIdChunks(tournaments.map((t) => String(t.id)))) {
-      const { data: tableRows, error: tableErr } = await supabase
-        .from('tables')
-        .select('id, tournament_id, status, is_deleted, created_at')
-        .in('tournament_id', chunk);
-      if (tableErr) {
-        reportError(
-          new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
-          'GameServer.reopen_sweep_table_read_failed'
-        );
-        return;
-      }
-      tables.push(...((tableRows ?? []) as TournamentTableRow[]));
+      const tableRead = await fetchAllRows<TournamentTableRow & Record<string, unknown>>(
+        (cursor, want) => {
+          let query = supabase
+            .from('tables')
+            .select('id, tournament_id, status, is_deleted, created_at')
+            .in('tournament_id', chunk)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'GameServer.reopenTableBoard', pageAttempts: 1, shouldContinue: current }
+      );
+      if (!current() || !tableRead.complete) return;
+      tables.push(...tableRead.rows);
     }
 
     /* Seat counts for the CLOSED candidates only. A seat row survives its
@@ -11680,9 +11680,12 @@ export class GameServer {
         .select('table_id')
         .in('table_id', chunk)
         .is('left_at', null);
-      if (seatErr) {
+      if (!current()) return;
+      if (seatErr || !Array.isArray(seatRows)) {
         reportError(
-          new Error(`[GameServer] reopen sweep seat read failed: ${seatErr.message}`),
+          new Error(
+            `[GameServer] reopen sweep seat read failed: ${seatErr?.message ?? 'missing seat array'}`
+          ),
           'GameServer.reopen_sweep_seat_read_failed'
         );
         return;
@@ -11699,10 +11702,11 @@ export class GameServer {
 
     let reopened = 0;
     for (const plan of plans) {
+      if (!current()) return;
       if (!this.tournamentRetirementCustody.admissionAllowed(plan.tableId)) continue;
       const { error: reopenErr } = await this.tournamentRetirementCustody.withAdmission(
         plan.tableId,
-        () => this.running,
+        current,
         async (assertCurrent) => {
           const result = await supabase
             .from('tables')
@@ -11724,6 +11728,7 @@ export class GameServer {
       }
       reopened++;
 
+      if (!current()) return;
       if (plan.refreshHumanWindow) {
         /* The window closed hours ago. Hand the board a fresh one rather than
            straight to the past-start filler, so a repaired game is a game that

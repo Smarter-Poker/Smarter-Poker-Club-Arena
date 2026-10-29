@@ -139,7 +139,7 @@ describe('the static publisher is event-driven and independent', () => {
   });
 
   it('does not wait on or share a concurrency group with the engine deploy', () => {
-    const publishGroup = publisher.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
+    const publishGroup = publisher.match(/^ {4}concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     const engineGroup = engine.match(/^concurrency:\n\s*group:\s*(.+)$/m)?.[1]?.trim();
     expect(publishGroup).toBeTruthy();
     expect(engineGroup).toBeTruthy();

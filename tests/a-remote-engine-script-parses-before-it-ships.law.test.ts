@@ -101,7 +101,7 @@ describe('a remote engine script parses before it ships', () => {
         'auto-deploy-hetzner.yml',
         'engine-drill.yml',
         'engine-rollback-drill.yml',
-        'publish-club-arena.yml',
+        'publish-club-arena-transaction.yml',
       ])
     );
   });

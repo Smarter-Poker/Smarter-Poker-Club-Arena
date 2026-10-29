@@ -12,6 +12,7 @@ describe('source maps never ship to players', () => {
     // transaction it pipes to the host; the pool prune lives in the latter.
     const publisher =
       read('.github/workflows/publish-club-arena.yml') +
+      read('.github/workflows/publish-club-arena-transaction.yml') +
       read('.github/scripts/publish-origin-activate.sh');
     expect(publisher).toContain("find dist -name '*.map' -delete");
     expect(publisher).toContain('source maps survived the strip');

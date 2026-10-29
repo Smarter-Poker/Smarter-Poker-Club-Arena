@@ -8,10 +8,11 @@ const uncommented = (source: string) =>
     .split('\n')
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
-const triggers = (yaml: string) =>
-  yaml.slice(yaml.indexOf('\non:'), yaml.indexOf('\nconcurrency:'));
+const triggers = (yaml: string) => yaml.slice(yaml.indexOf('\non:'), yaml.indexOf('\njobs:'));
 
-const publisher = read('.github/workflows/publish-club-arena.yml');
+const entry = read('.github/workflows/publish-club-arena.yml');
+const transaction = read('.github/workflows/publish-club-arena-transaction.yml');
+const publisher = entry + '\n' + transaction;
 const publisherCode = uncommented(publisher);
 const target = '${{ needs.publish-needed.outputs.target_sha }}';
 
@@ -42,7 +43,10 @@ describe('no commit left behind means exact, fail-closed release events', () => 
     ].map((match) => match[1]);
     expect(checkoutBlocks.length).toBeGreaterThanOrEqual(2);
     expect(checkoutBlocks[0]).toContain('ref: ${{ steps.target.outputs.sha }}');
-    for (const block of checkoutBlocks.slice(1)) expect(block).toContain(`ref: ${target}`);
+    for (const block of checkoutBlocks.slice(1))
+      expect(block).toMatch(
+        /ref: \$\{\{ (?:needs\.publish-needed\.outputs\.target_sha|inputs\.target_sha) \}\}/
+      );
 
     expect(publisher).toContain(`"ca_sha": "${target}"`);
     expect(publisher).toContain(`VITE_APP_VERSION: ${target}`);
@@ -61,7 +65,7 @@ describe('no commit left behind means exact, fail-closed release events', () => 
 
 describe('one event creates one publish attempt', () => {
   it('uses push or an exact repository event, never timers or branch-authored dispatch', () => {
-    const on = triggers(publisher);
+    const on = triggers(entry);
     expect(on).toMatch(/^\s{2}push:/m);
     expect(on).toMatch(/^\s{2}repository_dispatch:/m);
     expect(on).toContain('types: [publish-club-arena]');
@@ -83,7 +87,10 @@ describe('one event creates one publish attempt', () => {
       if (!/\.ya?ml$/.test(file)) return false;
       return /^ {2}publish-to-origin:/m.test(read(`.github/workflows/${file}`));
     });
-    expect(publishers).toEqual(['publish-club-arena.yml']);
+    expect(publishers).toEqual(['publish-club-arena-transaction.yml']);
+    expect(entry).toContain('uses: ./.github/workflows/publish-club-arena-transaction.yml');
+    expect(transaction).toMatch(/^ {2}workflow_call:/m);
+    expect(transaction).not.toMatch(/^ {2}(?:push|repository_dispatch|workflow_dispatch|schedule):/m);
   });
 });
 

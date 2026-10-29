@@ -491,7 +491,7 @@
     "scripts/ci/classify-ci-changes.mjs": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "25a972fef5504416c6965bb07f73523a7e52fca179d9adce42de093e9e0a0167",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "329940cc6f681a82631875ba57107e6eb8b3a5763aeaa119df67de4f5bf52bac",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -510,7 +510,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "7ee41e452d50a169c68780e8ce4a74cc82ff17ac9254291829b6df804eba20bb",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "fcd4d2ee0ac28651265e55fca44b5eaae39d45e91e7c4e16e4c9b2c11ea4d04e",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5751,5 +5751,18 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "previous": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
     "current": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0"
+  },
+  "clubPromoJournalTransitive20261029": {
+    "reason": "Reviewed only current classifier identity and its own audit addition in the two nested bindings; retain historical financial qualification and receipt state. Current transitive source identity, no new financial certification.",
+    "changes": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "25a972fef5504416c6965bb07f73523a7e52fca179d9adce42de093e9e0a0167",
+        "current": "329940cc6f681a82631875ba57107e6eb8b3a5763aeaa119df67de4f5bf52bac"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "7ee41e452d50a169c68780e8ce4a74cc82ff17ac9254291829b6df804eba20bb",
+        "current": "fcd4d2ee0ac28651265e55fca44b5eaae39d45e91e7c4e16e4c9b2c11ea4d04e"
+      }
+    }
   }
 }

@@ -329,6 +329,7 @@ export interface PlayerAction {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface Tournament {
+  union_id?: string | null;
   format_contract?: unknown;
   id: string;
   club_id: string;

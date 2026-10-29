@@ -1569,19 +1569,6 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
           DIGEST_NATIVE_WORK: ${{ runner.temp }}
         run: python3 -B scripts/qualification/digest-retention/run-native.py
-      - name: Tournament source identities retain narrow physical coverage
-        if: matrix.shard == 2
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 -B scripts/ci/test-tournament-source-identity-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/tournament-source-identity-cover.json"
-      - name: Retain tournament source identity qualification
-        if: always() && matrix.shard == 2
-        uses: actions/upload-artifact@v4
-        with:
-          name: tournament-source-identity-cover-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/tournament-source-identity-cover.json
-          if-no-files-found: error
-          retention-days: 14
       - name: Native recovery export preserves credentials and refuses incomplete artifacts
         if: matrix.shard == 1
         env:

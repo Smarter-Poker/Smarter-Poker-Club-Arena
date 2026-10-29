@@ -1,0 +1,4 @@
+{
+  "_owner": "PR 8454: additive engine-only locked bust precondition; install the protected migration before engine activation.",
+  "functions": ["fn_cashout_unfunded_seat_occupancy"]
+}

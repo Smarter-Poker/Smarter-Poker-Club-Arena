@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -52,19 +53,60 @@ describe('tournament source identities retain narrow physical coverage', () => {
     );
     expect(evidence.cases).toContain('after_full_FOR_wrong_event_receipt_bags_all3_modes');
   });
-  it('runs the actual PG17 qualification once in the required accounting aggregate and retains evidence', () => {
+  it('runs the frozen native through the existing required floor family and retained directory', () => {
     const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
     const steps = ci.jobs.accounting_postgres.steps;
     const matching = steps.filter((step: { run?: string }) =>
-      step.run?.includes('python3 -B scripts/ci/test-tournament-source-identity-cover-postgres.py')
+      step.run?.includes('python3 -B scripts/ci/test_launch_reset_floor.py')
     );
     expect(matching).toHaveLength(1);
-    expect(matching[0].if).toBe('matrix.shard == 2');
-    expect(
-      steps.some((step: { with?: { path?: string } }) =>
-        step.with?.path?.includes('tournament-source-identity-cover.json')
-      )
-    ).toBe(true);
+    expect(matching[0].if).toBe('matrix.shard == 1');
+    expect(matching[0].run).toContain('--output "$PROBE_EVIDENCE/floor.json"');
+    expect(matching[0].env.PROBE_EVIDENCE).toBe('${{ runner.temp }}/scoped-launch-reset');
+    const retention = steps.find(
+      (step: { with?: { path?: string } }) =>
+        step.with?.path === '${{ runner.temp }}/scoped-launch-reset/'
+    );
+    expect(retention.if).toContain('always()');
+    expect(retention.if).toContain('matrix.shard == 1');
+    expect(retention.with['if-no-files-found']).toBe('error');
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
+  });
+  it('executes the actual unconditional floor dispatch with exact arguments and propagates native refusal', () => {
+    const result = spawnSync(
+      'python3',
+      [
+        '-c',
+        `
+import ast,subprocess,sys
+from pathlib import Path
+from types import SimpleNamespace
+floor=Path('scripts/ci/test_launch_reset_floor.py').resolve()
+name='test-tournament-source-identity-cover-postgres.py'
+nodes=[n for n in ast.parse(floor.read_text()).body if isinstance(n,ast.Expr) and name in ast.unparse(n)]
+assert len(nodes)==1
+code=compile(ast.Module(body=nodes,type_ignores=[]),str(floor),'exec')
+calls=[]
+class Dispatch:
+ fail=False
+ def check_output(self,argv,**kwargs):
+  calls.append(argv);assert kwargs=={'text':True}
+  if self.fail:raise subprocess.CalledProcessError(7,argv)
+  return 'qualified'
+dispatch=Dispatch()
+scope={'Path':Path,'__file__':str(floor),'sys':SimpleNamespace(executable='/fixture/python'),'subprocess':dispatch,'pg':Path('/fixture/pg'),'args':SimpleNamespace(scratch=Path('/fixture/work'),output=Path('/fixture/evidence/floor.json')),'print':lambda *args:None}
+exec(code,scope)
+assert calls==[['/fixture/python',str(floor.parent/name),'--pg-bin','/fixture/pg','--scratch','/fixture/work','--output','/fixture/evidence/tournament-source-identity-cover.json']]
+dispatch.fail=True
+try:exec(code,scope)
+except subprocess.CalledProcessError:pass
+else:raise AssertionError('native failure was swallowed')
+print('PASS exact required floor dispatch and failure propagation')
+`,
+      ],
+      { encoding: 'utf8' }
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('PASS exact required floor dispatch and failure propagation');
   });
 });

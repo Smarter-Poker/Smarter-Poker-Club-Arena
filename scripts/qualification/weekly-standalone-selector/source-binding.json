@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 249362,
-      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -840,28 +840,5 @@
     "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
-  },
-  "sourceIdentityCoverWorkflowAudit20261029": {
-    "review": "Adds one PG17 identity-cover command and retained artifact to required accounting shard2. Every earlier command/source qualification unchanged. Binding composition only; no execution or live proof.",
-    "before": [
-      {
-        "bytes": 245805,
-        "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
-      }
-    ],
-    "after": {
-      "bytes": 246563,
-      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
-    },
-    "prior_commands_preserved": true,
-    "execution_performed": false
-  },
-  "identityCoverCurrentMainComposition20261029": {
-    "review": "Actual three-way integration retains every incoming #8439 field/audit and all financial sources/assertions. Only conflicting active CI size/hash replaced by actual combined workflow, which preserves paid-organization runner routing and adds the sole identity native/artifact. No financial certificate or hosted execution restamp.",
-    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
-    "combinedWorkflow": {
-      "bytes": 249362,
-      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
-    }
   }
 }

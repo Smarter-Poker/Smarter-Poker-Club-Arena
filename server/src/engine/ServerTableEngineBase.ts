@@ -10849,6 +10849,9 @@ export abstract class ServerTableEngineBase {
          money path's books either way (CLAUDE.md 11.5). */
       await atomicCashout(player.user_id, this.tableId, player.seat_number, {
         leaveMode: 'forced',
+        ...(this.clusterLightningEnabled === true || this.dealingHaltLock
+          ? { requireUnfunded: true }
+          : {}),
         occupancyId: player.occupancy_id,
       });
     } catch (err) {

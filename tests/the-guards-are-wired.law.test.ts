@@ -118,6 +118,84 @@ describe('LAW - the merged-branch guard is wired into the push path', () => {
   });
 });
 
+describe('transferred Club Arena destination identity', () => {
+  function verdict(
+    remote: string,
+    identity = '{"id":1132369872,"full_name":"Smarter-Software-PIQ/Smarter-Poker-Club-Arena"}',
+    prs = '[]'
+  ) {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ca-merged-identity-')));
+    try {
+      const trace = join(dir, 'trace');
+      writeFileSync(
+        join(dir, 'gh'),
+        '#!/bin/bash\nprintf "%s\n" "$*" >> "$TRACE"\ncase "$*" in *"/pulls"*) printf "%s" "$PRS" ;; *) printf "%s" "$IDENTITY" ;; esac\n',
+        { mode: 0o755 }
+      );
+      const result = spawnSync(
+        'bash',
+        [resolve(root, GUARD_PATH), 'fix/example', 'origin', remote],
+        {
+          env: {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH}`,
+            TRACE: trace,
+            IDENTITY: identity,
+            PRS: prs,
+          },
+          encoding: 'utf8',
+        }
+      );
+      return { status: result.status, trace: existsSync(trace) ? readFileSync(trace, 'utf8') : '' };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  it.each([
+    'https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git',
+    'git@github.com:Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git',
+    'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git',
+  ])('resolves the immutable identity and canonical head owner for %s', (remote) => {
+    const result = verdict(remote);
+    expect(result.status).toBe(0);
+    expect(result.trace).toContain('repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pulls');
+    expect(result.trace).toContain('head=Smarter-Software-PIQ:fix/example');
+  });
+  it.each([
+    '{"id":1,"full_name":"Smarter-Software-PIQ/Smarter-Poker-Club-Arena"}',
+    '',
+    'not-json',
+    '{"id":1132369872,"full_name":"untrusted/repo"}',
+  ])('fails closed on identity %s', (identity) => {
+    expect(
+      verdict('https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git', identity)
+        .status
+    ).toBe(1);
+  });
+  it('rejects unrelated new-organization destinations', () => {
+    expect(verdict('https://github.com/Smarter-Software-PIQ/another.git').status).toBe(1);
+  });
+  it('preserves unrelated legacy repository queries', () => {
+    const result = verdict(
+      'https://github.com/Smarter-Poker/Smarter-Poker-World-Hub.git',
+      'not-needed'
+    );
+    expect(result.status).toBe(0);
+    expect(result.trace).toContain('repos/Smarter-Poker/Smarter-Poker-World-Hub/pulls');
+    expect(result.trace).toContain('head=Smarter-Poker:fix/example');
+    expect(result.trace.split('\n').filter(Boolean)).toHaveLength(1);
+  });
+  it('continues refusing merged branches in the transferred repository', () => {
+    expect(
+      verdict(
+        'https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git',
+        undefined,
+        '[{"number":8512,"merged_at":"2026-10-29","state":"closed"}]'
+      ).status
+    ).toBe(1);
+  });
+});
+
 describe('LAW - the test gate can never look at an empty diff', () => {
   /**
    * FOUND 2026-09-06, and it had been true for as long as the hook has had a

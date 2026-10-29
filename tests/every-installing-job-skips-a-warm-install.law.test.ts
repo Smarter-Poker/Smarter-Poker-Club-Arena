@@ -31,7 +31,11 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/publish-club-arena.yml'];
+const WORKFLOWS = [
+  '.github/workflows/ci.yml',
+  '.github/workflows/publish-club-arena.yml',
+  '.github/workflows/publish-club-arena-transaction.yml',
+];
 
 /**
  * Split a workflow into job blocks. Jobs are two-space keys; everything under

@@ -55,6 +55,7 @@ import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const PUBLISHER = '.github/workflows/publish-club-arena.yml';
+const TRANSACTION = '.github/workflows/publish-club-arena-transaction.yml';
 const ACTIVATION = '.github/scripts/publish-origin-activate.sh';
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
 
@@ -157,6 +158,10 @@ describe('the publisher says what it refused', () => {
   it('has no guard that can stop the release without printing anything', () => {
     const found = [
       ...silentGuards(logicalShellLines(read(PUBLISHER))).map((g) => ({ ...g, file: PUBLISHER })),
+      ...silentGuards(logicalShellLines(read(TRANSACTION))).map((g) => ({
+        ...g,
+        file: TRANSACTION,
+      })),
       ...silentGuards(logicalScriptLines(read(ACTIVATION))).map((g) => ({
         ...g,
         file: ACTIVATION,
@@ -183,7 +188,9 @@ describe('the publisher says what it refused', () => {
   });
 
   it('keeps every run step far below the size that stopped the workflow parsing', () => {
-    const workflow = load(read(PUBLISHER)) as {
+    const workflow = {
+      jobs: { ...(load(read(PUBLISHER)) as any).jobs, ...(load(read(TRANSACTION)) as any).jobs },
+    } as {
       jobs: Record<string, { steps?: Array<{ name?: string; run?: string }> }>;
     };
     const oversized: string[] = [];
@@ -266,7 +273,7 @@ describe('the publisher says what it refused', () => {
   });
 
   it('pipes the activation transaction from the protected checkout, not a second publisher', () => {
-    const workflow = read(PUBLISHER);
+    const workflow = read(TRANSACTION);
     expect(workflow).toContain(`bash -s -- \\`);
     expect(workflow).toContain(`< ${ACTIVATION}`);
     expect(workflow).not.toContain("<<'REMOTE_ACTIVATE'");

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { gitEnvironmentForCwd } from './classify-ci-changes.mjs';
+import { publisherJobKey } from './publisher-job-identity.mjs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -38,7 +40,7 @@ export function compareClientBacklog(base, target, cwd = process.cwd()) {
   if (!SHA.test(base) || !SHA.test(target))
     throw new Error('Client comparison requires full SHAs.');
   const run = (...args) =>
-    execFileSync('git', ['-C', cwd, ...args], { maxBuffer: 32 * 1024 * 1024 });
+    execFileSync('git', ['-C', cwd, ...args], { env: gitEnvironmentForCwd(), maxBuffer: 32 * 1024 * 1024 });
   run('cat-file', '-e', `${base}^{commit}`);
   run('cat-file', '-e', `${target}^{commit}`);
   run('merge-base', '--is-ancestor', base, target);
@@ -266,7 +268,7 @@ async function admit(target) {
   );
   if (!Array.isArray(jobs.jobs) || jobs.total_count !== jobs.jobs.length)
     throw new Error('Original publisher job evidence is incomplete.');
-  const origins = jobs.jobs.filter((entry) => entry.name === 'publish-to-origin');
+  const origins = jobs.jobs.filter((entry) => publisherJobKey(entry.name) === 'publish-to-origin');
   if (
     origins.length !== 1 ||
     origins[0].status !== 'completed' ||

@@ -225,12 +225,20 @@ describe('every other pull request workflow cancels its superseded run per PR', 
       'deploy-monitoring.yml',
       'money-trigger-recovery.yml',
     ]) {
-      const c = load(file).concurrency as Record<string, unknown>;
+      const w = load(file);
+      const c = (
+        file === 'publish-club-arena.yml' ? (w.jobs.production as any).concurrency : w.concurrency
+      ) as Record<string, unknown>;
       expect(c['cancel-in-progress'], file).toBe(false);
     }
-    expect((load('publish-club-arena.yml').concurrency as Record<string, unknown>).group).toBe(
-      'publish-club-arena-production'
-    );
+    expect(
+      (
+        (load('publish-club-arena.yml').jobs.production as any).concurrency as Record<
+          string,
+          unknown
+        >
+      ).group
+    ).toBe('publish-club-arena-production');
   });
 });
 

@@ -187,9 +187,8 @@ describe('Club Arena runtime asset retention', () => {
           !line.includes("'*.map'")
       );
     expect(runtimePrunes).toEqual([]);
-    expect(await read('.github/workflows/publish-club-arena.yml')).not.toContain(
-      'sync-club-arena-dist.mjs'
-    );
+    for (const file of ['publish-club-arena.yml', 'publish-club-arena-transaction.yml'])
+      expect(await read(`.github/workflows/${file}`)).not.toContain('sync-club-arena-dist.mjs');
   });
 
   it('atomically adopts the legacy regular fonts.css only when its bytes exactly match current', async () => {

@@ -514,6 +514,7 @@ describe('LAW - local preflight selects document and workflow contracts', () => 
   it.each([
     'AGENT-PLAYBOOK.md',
     '.github/workflows/publish-club-arena.yml',
+    '.github/workflows/publish-club-arena-transaction.yml',
     'scripts/stamp-build-provenance.mjs',
     'public/styles/example.css',
   ])('runs the existing test that reads %s and blocks on its failure', (file) => {

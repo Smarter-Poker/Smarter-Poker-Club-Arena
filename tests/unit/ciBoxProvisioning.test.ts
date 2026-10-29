@@ -143,6 +143,7 @@ describe('CI box provisioning', () => {
     const workflows = [
       '.github/workflows/ci.yml',
       '.github/workflows/publish-club-arena.yml',
+      '.github/workflows/publish-club-arena-transaction.yml',
       '.github/workflows/post-deploy-e2e.yml',
     ]
       .map(repo)

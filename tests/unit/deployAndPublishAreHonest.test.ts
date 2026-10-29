@@ -19,6 +19,7 @@ const job = (yaml: string, name: string) => {
 
 const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const publish = read('.github/workflows/publish-club-arena.yml');
+const transaction = read('.github/workflows/publish-club-arena-transaction.yml');
 /**
  * The origin job's shell is the step text PLUS the activation transaction it
  * pipes to the host. That transaction was a heredoc inside the step until
@@ -29,7 +30,7 @@ const publish = read('.github/workflows/publish-club-arena.yml');
 const originActivate = read('.github/scripts/publish-origin-activate.sh');
 const ACTIVATION_PIPE = '< .github/scripts/publish-origin-activate.sh';
 const originJob = () => {
-  const text = job(publish, 'publish-to-origin');
+  const text = job(transaction, 'publish-to-origin');
   const pipe = text.indexOf(ACTIVATION_PIPE);
   expect(pipe, 'the origin job must pipe the activation transaction').toBeGreaterThan(-1);
   const after = pipe + ACTIVATION_PIPE.length;
@@ -220,10 +221,12 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('contains no executable World Hub checkout, sync token, or Vercel deploy', () => {
-    expect(publishCode).not.toMatch(/repository:\s*Smarter-Poker\/Smarter-Poker-World-Hub/);
-    expect(publishCode).not.toMatch(/WORLD_HUB_(?:SYNC_)?TOKEN/);
-    expect(publishCode).not.toMatch(/\bvercel\s+(?:deploy|--prod)\b/i);
-    expect(publishCode).toContain('ORIGIN_URL: https://ca-static.smarter.poker');
+    for (const source of [publishCode, uncommented(transaction)]) {
+      expect(source).not.toMatch(/repository:\s*Smarter-Poker\/Smarter-Poker-World-Hub/);
+      expect(source).not.toMatch(/WORLD_HUB_(?:SYNC_)?TOKEN/);
+      expect(source).not.toMatch(/\bvercel\s+(?:deploy|--prod)\b/i);
+    }
+    expect(uncommented(transaction)).toContain('ORIGIN_URL: https://ca-static.smarter.poker');
   });
 
   it('uses only the Club Arena origin credential names', () => {
@@ -248,7 +251,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('runs every release job on a fresh hosted runner', () => {
-    const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
+    const runners = [publish, transaction]
+      .flatMap((source) => [...source.matchAll(/^\s+runs-on:\s*(.+)$/gm)])
+      .map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(
       new Set(
@@ -264,14 +269,16 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     // Attestation verification explicitly denies self-hosted provenance.
     // Runner selection itself remains strictly hosted.
     expect(runners.join('\n')).not.toContain('self-hosted');
-    expect(publish).toContain('--deny-self-hosted-runners');
+    expect(transaction).toContain('--deny-self-hosted-runners');
   });
 
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = originJob();
-    expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
-    expect(origin).toContain("needs.build-and-store.result == 'success'");
-    expect(origin).toContain("needs.client-tests.result == 'success'");
+    expect(job(publish, 'production')).toContain(
+      'needs: [publish-needed, client-tests, build-and-store, build-record-gateway]'
+    );
+    expect(origin).toContain("inputs.build_result == 'success'");
+    expect(origin).toContain("inputs.client_result == 'success'");
   });
 
   it('checks out the exact publish control before invoking repository proof scripts', () => {
@@ -285,7 +292,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(checkout).toBeGreaterThan(-1);
     expect(download).toBeGreaterThan(checkout);
     expect(proof).toBeGreaterThan(download);
-    expect(origin).toContain('ref: ${{ needs.publish-needed.outputs.target_sha }}');
+    expect(origin).toContain('ref: ${{ inputs.target_sha }}');
     expect(origin).toContain('persist-credentials: false');
   });
 
@@ -376,14 +383,12 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     );
     expect(upload).toContain('uses: actions/upload-artifact@v4');
     expect(upload).toContain('include-hidden-files: true');
-    expect(publish).toContain('test -s dist/.release-manifest.sha256');
+    expect(transaction).toContain('test -s dist/.release-manifest.sha256');
   });
 
   it('requires the artifact to prove its exact clean protected-main CI source', () => {
     const origin = originJob();
-    const gateStart = origin.indexOf(
-      'EXPECTED_SHA="${{ needs.publish-needed.outputs.target_sha }}"'
-    );
+    const gateStart = origin.indexOf('EXPECTED_SHA="${{ inputs.target_sha }}"');
     const gateEnd = origin.indexOf(
       'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info'
     );
@@ -466,9 +471,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('bounds every job and every origin transport operation', () => {
-    const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
-      Number(match[1])
-    );
+    const jobTimeouts = [publish, transaction]
+      .flatMap((source) => [...source.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)])
+      .map((match) => Number(match[1]));
     expect(jobTimeouts).toHaveLength(11);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = originJob();
@@ -501,11 +506,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(proof).toContain('echo "sha=$SHA" >> "$GITHUB_OUTPUT"');
     expect(proof).toMatch(/origin serves '\$LIVE_ORIGIN'.*wanted \$SHA[\s\S]{0,80}exit 1/);
     expect(proof).not.toMatch(/sed -n[\s\S]*ca_sha/);
-    const app = job(publish, 'publish-to-app');
+    const app = job(transaction, 'publish-to-app');
     expect(app).toContain("needs.publish-to-origin.outputs.verified_sha != ''");
-    expect(app).toContain(
-      'needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha'
-    );
+    expect(app).toContain('needs.publish-to-origin.outputs.verified_sha == inputs.target_sha');
   });
 
   it('restores the exact prior immutable release when post-activation proof fails', () => {

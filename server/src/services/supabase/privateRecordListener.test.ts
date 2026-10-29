@@ -1,12 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('./handOutboxListener.js', () => ({ defaultOpenSession: vi.fn() }));
-vi.mock('../leaseHeartbeatSession.js', () => ({
-  resolveEngineListenConnectionString: vi.fn(),
-}));
-vi.mock('./privateRecordTransportReady.js', () => ({
-  privateRecordTransportReady: vi.fn(),
-}));
 import { PrivateRecordListener, PRIVATE_RECORD_CHANNEL } from './privateRecordListener.js';
 class Fake extends EventEmitter {
   queries: string[] = [];

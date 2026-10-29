@@ -126,15 +126,21 @@ const FILTER_LABEL: Record<RosterFilter, string> = {
   inactive_30: 'Inactive 30d',
   inactive_60: 'Inactive 60d',
   inactive_90: 'Inactive 90d',
-  high_fees: 'Fees 100+',
+  high_fees: 'Overall Fees 100+',
 };
 
-/** Today uses Chicago midnight; weekly/monthly Win / Loss windows use UTC. */
+/** Selected financial periods share Chicago calendar boundaries. */
 const WIN_LOSS_LABEL: Record<WinLossPeriod, string> = {
   overall: 'Win / Loss Overall',
   month: 'Win / Loss This Month',
   week: 'Win / Loss This Week',
   today: 'Win / Loss Today',
+};
+const PERIOD_FEE_LABEL: Record<WinLossPeriod, string> = {
+  week: 'Fees This Week',
+  today: 'Fees Today',
+  month: 'Fees This Month',
+  overall: 'Fees Overall',
 };
 const WIN_LOSS_SHORT: Record<WinLossPeriod, string> = {
   overall: 'Win / Loss',
@@ -151,7 +157,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
   name: 'Name (A To Z)',
   downlines: 'Downlines',
   wallet: 'Wallet Balance',
-  fees: 'Fees',
+  fees: 'Most Overall Fees',
 };
 
 type OptionalColumn = RosterColumn;
@@ -217,12 +223,20 @@ function winLossText(winLoss: WinLossFigure | undefined, unavailable: boolean): 
   return unavailable ? 'Unavailable' : '...';
 }
 
-function feeTitle(member: RosterMember): string | undefined {
-  if (member.total_fees == null) return undefined;
+function periodFeeText(value: number | undefined, unavailable: boolean): string {
+  return value === undefined ? (unavailable ? 'Unavailable' : '...') : feeFigure(value);
+}
+
+function feeTitle(
+  member: RosterMember,
+  figures: WinLossFigure | undefined,
+  label: string
+): string | undefined {
+  if (figures?.fees === undefined) return undefined;
   const exact = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  return member.downline_fees != null && (member.downline_total ?? 0) > 0
-    ? `Fees Generated ${exact(member.total_fees)}. Downline Fees ${exact(member.downline_fees)}.`
-    : `Fees Generated ${exact(member.total_fees)}.`;
+  return figures.downline_fees !== undefined && (member.downline_total ?? 0) > 0
+    ? `${label} ${exact(figures.fees)}. Downline Fees ${exact(figures.downline_fees)}.`
+    : `${label} ${exact(figures.fees)}.`;
 }
 
 function abortLike(error: unknown): boolean {
@@ -1917,6 +1931,7 @@ export default function ClubMembersPage() {
                 winLoss={winLoss.get(member.user_id)}
                 winLossUnavailable={winLoss.unavailable.has(member.user_id)}
                 winLossLabel={WIN_LOSS_SHORT[winLossPeriod]}
+                feeLabel={PERIOD_FEE_LABEL[winLossPeriod]}
               />
             ))}
             <div aria-hidden="true" style={{ height: virtual.paddingBottom }} />
@@ -1979,6 +1994,7 @@ export const MemberRow = memo(function MemberRow({
   winLoss,
   winLossUnavailable = false,
   winLossLabel = 'Win / Loss',
+  feeLabel = 'Fees This Week',
 }: {
   simpleMode?: boolean;
   /** The net for the chosen window; undefined while it loads. */
@@ -1986,6 +2002,7 @@ export const MemberRow = memo(function MemberRow({
   /** The last read for this row failed; it is being retried. */
   winLossUnavailable?: boolean;
   winLossLabel?: string;
+  feeLabel?: string;
   member: RosterMember;
   position: number;
   total: number;
@@ -2087,12 +2104,12 @@ export const MemberRow = memo(function MemberRow({
             ) : null}
           </span>
           {simpleMode && member.can_view_financials && (
-            <span className="member-simple-balance" title={feeTitle(member)}>
-              <strong>{feeFigure(member.total_fees)}</strong>
-              <span>Fees Generated</span>
-              {(member.downline_total ?? 0) > 0 && member.downline_fees != null && (
+            <span className="member-simple-balance" title={feeTitle(member, winLoss, feeLabel)}>
+              <strong>{periodFeeText(winLoss?.fees, winLossUnavailable)}</strong>
+              <span>{feeLabel}</span>
+              {(member.downline_total ?? 0) > 0 && winLoss?.downline_fees !== undefined && (
                 <span className="member-simple-balance__downline">
-                  Downline {feeFigure(member.downline_fees)}
+                  Downline {periodFeeText(winLoss?.downline_fees, winLossUnavailable)}
                 </span>
               )}
               <strong
@@ -2118,8 +2135,16 @@ export const MemberRow = memo(function MemberRow({
               )}
               {columns.has('fees') && (
                 <>
-                  <Metric label="Indiv. Fees" value={feeFigure(member.total_fees)} accent />
-                  <Metric label="Downline Fees" value={feeFigure(member.downline_fees)} accent />
+                  <Metric
+                    label={feeLabel}
+                    value={periodFeeText(winLoss?.fees, winLossUnavailable)}
+                    accent
+                  />
+                  <Metric
+                    label="Downline Fees"
+                    value={periodFeeText(winLoss?.downline_fees, winLossUnavailable)}
+                    accent
+                  />
                 </>
               )}
               {columns.has('wallets') && (
@@ -2169,7 +2194,10 @@ function EmptyRoster({ filter, searchQuery }: { filter: RosterFilter; searchQuer
     inactive_30: ['No Inactive Players', 'No Visible Players Have Been Inactive For 30 Days.'],
     inactive_60: ['No Inactive Players', 'No Visible Players Have Been Inactive For 60 Days.'],
     inactive_90: ['No Inactive Players', 'No Visible Players Have Been Inactive For 90 Days.'],
-    high_fees: ['No High-Fee Players', 'No Visible Players Have Recorded At Least 100 In Fees.'],
+    high_fees: [
+      'No Players With High Overall Fees',
+      'No Visible Players Have Recorded At Least 100 In Overall Fees.',
+    ],
   };
   const [heading, body] = searching
     ? ['No Results Found', `No Results For "${searchQuery}".`]

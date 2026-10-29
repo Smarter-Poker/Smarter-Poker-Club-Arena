@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   mkdtempSync,
@@ -249,11 +249,56 @@ describe('hosting qualification remains enforced', () => {
     const { parse } = await import('yaml');
     const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
     const owners = workflow.jobs.accounting_postgres.steps.filter(
-      (step: any) => step.run === 'bash scripts/ci/test-private-record-hosting.sh'
+      (step: any) => step.run === 'npm run test:data:postgres'
     );
     expect(owners).toHaveLength(1);
     expect(owners[0].if).toBe('matrix.shard == 2');
     expect(owners[0]['continue-on-error']).toBeUndefined();
+    expect(JSON.parse(readFileSync('package.json', 'utf8')).scripts['test:data:postgres']).toBe(
+      'bash scripts/ci/test-data-console-postgres-contracts.sh'
+    );
+    const parent = readFileSync('scripts/ci/test-data-console-postgres-contracts.sh', 'utf8');
+    expect(
+      parent.match(/bash "\$repo\/scripts\/ci\/test-private-record-hosting\.sh"/g)
+    ).toHaveLength(1);
+    expect(parent).not.toContain('bash "$repo/scripts/dev/test-member-record-live-postgres.sh"');
+    const wrapper = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    expect(wrapper).toContain('set -euo pipefail');
+    expect(
+      wrapper.match(/bash "\$repo\/scripts\/dev\/test-member-record-live-postgres\.sh"/g)
+    ).toHaveLength(1);
+    for (const child of [
+      'test-private-record-credentials-postgres.sh',
+      'test-private-record-bootstrap-linux.sh',
+    ])
+      expect(wrapper).toContain(`bash "$repo/scripts/ci/${child}"`);
+    expect(wrapper).not.toContain('test-data-console-postgres-contracts.sh');
+    expect(
+      workflow.jobs.accounting_postgres.steps.some(
+        (step: any) => step.run === 'bash scripts/ci/test-private-record-hosting.sh'
+      )
+    ).toBe(false);
+  });
+  it('propagates hosting failure through the actual Data Console Member Record block', () => {
+    const root = fixture();
+    mkdirSync(join(root, 'scripts/ci'), { recursive: true });
+    const parent = readFileSync('scripts/ci/test-data-console-postgres-contracts.sh', 'utf8');
+    const block = parent.slice(
+      parent.indexOf("echo 'DATA_CONSOLE_POSTGRES RUN Member Record'"),
+      parent.indexOf('# A redeemed fee total')
+    );
+    expect(block).toContain('bash "$repo/scripts/ci/test-private-record-hosting.sh"');
+    const script = join(root, 'scripts/ci/test-private-record-hosting.sh');
+    for (const status of [0, 23]) {
+      writeFileSync(script, `#!/usr/bin/env bash\nexit ${status}\n`);
+      const result = spawnSync(
+        'bash',
+        ['-c', `set -euo pipefail\nrepo="$1"\n${block}`, 'qualification', root],
+        { encoding: 'utf8' }
+      );
+      expect(result.status).toBe(status);
+      expect(result.stdout.includes('DATA_CONSOLE_POSTGRES PASS Member Record')).toBe(status === 0);
+    }
   });
   it('qualifies the ephemeral Linux runner node path before verifying unchanged production units', () => {
     const script = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');

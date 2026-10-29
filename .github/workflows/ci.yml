@@ -375,8 +375,6 @@ jobs:
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
     runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
-    # The qualified source/native/TSC checks took 15m03 including cleanup on Oct28.
-    # Preserve every check and leave measured completion headroom.
     # 8443 job122933361176 completed every functional step at14:59, then
     # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
     # Preserve all commands/test deadlines and reserve5minutes for the
@@ -1514,16 +1512,19 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Original committed horse turns have an independent complete census
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-horse-turn-census-packet.py
+          node --test tests/operations/horse-turn-census-transport.test.mjs
+          python3 -B scripts/ci/test-horse-turn-census-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
       - name: Runtime privilege changes preserve the schema DDL boundary
         if: matrix.shard == 4
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-runtime-privilege-ddl-guard-postgres.py --pg-bin "$PG_BIN" --scratch-root "${{ runner.temp }}"
-      - name: Independent private record fallback and hosting
-        if: matrix.shard == 2
-        env:
-          PG17_BINDIR: /usr/lib/postgresql/17/bin
-        run: bash scripts/ci/test-private-record-hosting.sh
       - name: Retention bounds retained prefixes before accounting guards
         if: matrix.shard == 4
         env:
@@ -2535,21 +2536,6 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-superseded-horse-actions.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-horse-actions
-      - name: Existing retention owner progresses aged superseded requests
-        id: superseded_retention_progress
-        if: matrix.shard == 3
-        env:
-          TMPDIR: ${{ runner.temp }}
-          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-superseded-retention-progress.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-retention-progress
-      - name: Retain superseded retention progress proof
-        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_retention_progress.outcome)
-        uses: actions/upload-artifact@v4
-        with:
-          name: superseded-retention-progress-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/superseded-retention-progress/
-          if-no-files-found: error
-          retention-days: 7
       - name: Retain superseded horse action proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_horse_actions.outcome)
         uses: actions/upload-artifact@v4

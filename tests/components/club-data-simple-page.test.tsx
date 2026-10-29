@@ -24,7 +24,7 @@ const { rpcMock, authState, clubRow, unionRow, rosterMock, navigateMock } = vi.h
 }));
 
 vi.mock('../../src/services/ClubRosterService', () => ({
-  ClubRosterService: { getRosterPage: rosterMock },
+  ClubRosterService: { getDataPlayerMatches: rosterMock },
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => authState.current }));
@@ -450,6 +450,30 @@ describe('earned fees and direct player lookup', () => {
     expect(navigateMock).toHaveBeenCalledWith(`/clubs/${CLUB_ID}/members/woo-id`);
     expect(screen.queryByText('Private')).not.toBeInTheDocument();
     expect(screen.queryByText('Private Legal Name')).not.toBeInTheDocument();
+  });
+
+  it('opens KingFish from the identity-only result instead of a crowded upline page', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    rosterMock.mockResolvedValue({
+      items: [
+        {
+          user_id: 'kingfish-id',
+          alias: 'KingFish',
+          username: 'kingfish',
+          can_view_financials: true,
+          management_club_id: 'management-club',
+        },
+      ],
+    });
+    render(<ClubDataSimplePage />);
+    await screen.findByText('Shark Tank');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'KingFish' } });
+    fireEvent.click(await screen.findByRole('button', { name: /KingFish.*View Player Data/i }));
+    expect(rosterMock).toHaveBeenCalledWith(CLUB_ID, {
+      search: 'KingFish',
+      signal: expect.any(AbortSignal),
+    });
+    expect(navigateMock).toHaveBeenCalledWith('/clubs/management-club/members/kingfish-id');
   });
 
   it('discards player results after account hydration begins', async () => {

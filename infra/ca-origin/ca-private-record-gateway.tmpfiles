@@ -1,0 +1,2 @@
+# Runtime parent is root-controlled; only each revision directory belongs to the app.
+d /run/ca-private-record-gateway 0755 root caddy -

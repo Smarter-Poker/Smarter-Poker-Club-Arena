@@ -60,6 +60,11 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     const native = read('scripts/dev/test-roster-join-sort-postgres.sh');
     expect(native).toContain('tests/fixtures/stats-club-scope/roster-join-sort');
     expect(native).toContain('20261021174637_roster_club_join_date_sorting.sql');
+    expect(native).toContain(
+      '20261029064232_player_name_search_ranks_direct_matches_before_upline.sql'
+    );
+    expect(native).toContain('search-assertions.sql');
+    expect(native).toContain('Player name search regression');
   });
 
   it('is one fail-closed accounting shard step using runner-owned scratch space', () => {

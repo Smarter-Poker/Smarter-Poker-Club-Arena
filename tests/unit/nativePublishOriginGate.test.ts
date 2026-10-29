@@ -69,6 +69,8 @@ function runOriginVerification(liveSha: string) {
         GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       },
       encoding: 'utf8',
+      // The real shell performs 120 JSON interpreter checks on mismatch.
+      // Allow the measured concurrent-run cost without changing its loop or assertions.
       timeout: 15_000,
     });
     return { status: result.status, output: readFileSync(output, 'utf8'), error: result.error };
@@ -104,6 +106,11 @@ describe('native publishing requires the exact origin verification', () => {
     expect(workflow.jobs['publish-needed'].outputs.selection_base).toBe(
       '${{ steps.selection-base.outputs.base_sha }}'
     );
+    expect(
+      workflow.jobs['publish-needed'].steps.find(
+        (step: { id?: string }) => step.id === 'selection-base'
+      ).if
+    ).toBe("steps.target.outputs.component == 'client'");
     expect(tests.run).toContain(
       'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
     );

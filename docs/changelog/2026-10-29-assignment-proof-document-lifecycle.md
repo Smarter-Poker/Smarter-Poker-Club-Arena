@@ -1,0 +1,7 @@
+# Keep private join proof bound to the browser document
+
+The assignment browser verifier discarded an already observed private-channel join whenever the main frame changed URL. Same-document history navigation keeps the root account subscription mounted, so no replacement join acknowledgement is owed. The same observer could also accept a late acknowledgement from a socket belonging to a retired document.
+
+The verifier now advances socket ownership only for a main-frame document navigation request. History navigation retains the acknowledged join, a replacement document rejects old-socket frames, and an outstanding proof waiter remains attached until the current document's own acknowledgement arrives. Every main-frame navigation still counts toward the existing assertion that a transfer must update the open roster without navigation or reload. The original 45-second deadline, real private broadcast, authorized roster read and financial refusal assertions are unchanged.
+
+Maintained-observer regressions fail on the previous behavior and pass with the correction, covering history navigation, full document replacement before and during an active wait, old-socket broadcast refusal, iframe navigation and unrelated identities. This deterministic lifecycle defect is not attributed as the cause of an earlier production failure whose detailed log remains unavailable. No application runtime, SQL, financial rule, provider workflow or engine activation is changed.

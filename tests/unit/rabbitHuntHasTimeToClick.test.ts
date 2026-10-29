@@ -181,7 +181,7 @@ describe('the player may hide the button, and only the button', () => {
   it('gates the HUD slot', () => {
     const TABLE_PAGE = stripComments(read('src/pages/TablePage.tsx'));
     expect(TABLE_PAGE).toMatch(
-      /tableHudControl\(\{\s*heroPromptedToAct,\s*handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable,\s*rabbitEnabled: v8Settings\.rabbit_hunt_button,?\s*\}\)/
+      /tableHudControl\(\{\s*heroPromptedToAct,\s*handSettling,\s*handInProgress: tableState\.isHandInProgress,\s*rabbitAvailable: isRabbitAvailable && rabbitViewIsCurrent,\s*rabbitEnabled: v8Settings\.rabbit_hunt_button,?\s*\}\)/
     );
     const completed = {
       heroPromptedToAct: false,

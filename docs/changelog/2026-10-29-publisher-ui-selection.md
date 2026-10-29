@@ -7,3 +7,5 @@ Publisher shards now use the same maintained selector against the selected prote
 The test matrix, failures, required aggregates, exact-tree reuse, production concurrency, isolated release secrets, forward ancestry, host lock, compare-and-swap, rollback and both live-origin checks remain unchanged. No SQL or engine replacement is part of this change.
 
 The required ownership/coalescing regression now resolves its initial read inside awaited React act before emitting subscription events. The mock exposes callbacks during render, before the authority effect is ready. Both exact burst and follow-up read counts remain unchanged; production and financial authorization code are unchanged.
+
+The selection-baseline read is limited to the client component; independent private-record publication routes keep their existing controls and avoid unrelated UI origin reads.

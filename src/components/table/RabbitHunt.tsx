@@ -318,6 +318,7 @@ export function RabbitHunt({
           className={`rabbit-hunt__button ${isRevealing ? 'rabbit-hunt__button--loading' : ''} ${visibleIsVIP ? 'rabbit-hunt__button--vip' : ''}`}
           onClick={handleReveal}
           disabled={isRevealing}
+          aria-busy={isRevealing}
           aria-label={
             isRevealing
               ? 'Revealing Rabbit Hunt'
@@ -358,7 +359,7 @@ export function RabbitHunt({
             typeof (visibleVipRemaining ?? packRemaining) === 'number' && (
               <span className="rabbit-hunt__remaining">{visibleVipRemaining ?? packRemaining}</span>
             )}
-          {!isRevealing && !visibleIsLifetime && (
+          {!visibleIsLifetime && (
             <span
               className={`rabbit-hunt__cost ${visibleIsLifetime || (visibleIsVIP && visibleVipRemaining !== 0) ? 'rabbit-hunt__cost--free' : ''}`}
             >

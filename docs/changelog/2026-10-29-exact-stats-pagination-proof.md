@@ -1,0 +1,7 @@
+# Complete The Exact Published Stats Pagination Proof
+
+The complete production browser run passed 745 cases but explicitly skipped its published downline pagination proof because the client had advanced after the lane's earlier release pin. That skip is not a passing pagination certificate.
+
+The existing post-deploy workflow now accepts one fixed `run-stats-pagination-proof` dispatch with no payload inputs. A separate bounded job uses a fresh isolated identity with no shared club membership or staff preparation, reads both public client origins after setup, and executes only the unchanged pagination case in Chromium with one worker and zero retries. It reads both origins again immediately afterward and requires the exact browser attachment, all three expected read requests, zero blocked writes, one first-attempt pass, zero skips and verified retirement of that exact isolated identity. Changed or unreadable provenance refuses certification. Every outcome retains its report; existing broad-lane tests, locks and publisher behavior are preserved.
+
+This route never publishes, deploys an engine, accepts an arbitrary test selector or changes application behavior. Its regression tests exercise admission, origin disagreement, malformed/partial/skipped/retried reports, browser assertion evidence, release drift and cleanup requirements. Protected integration and the actual one-case production verdict remain required for completion.

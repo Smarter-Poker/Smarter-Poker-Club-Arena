@@ -29,8 +29,16 @@ defer() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 # and a retry stays forbidden however the helper exited.
 defer_proved_not_started() { echo "[legacy-engine-checkpoint] $*" >&2; exit 75; }
 [ "$(id -u)" = 0 ] || die 'root-owned release required'
-[ "$#" = 1 ] || die 'expected owning run key'
+[ "$#" = 2 ] || die 'expected owning run key and absolute entry deadline'
 RUN_ID="$1"
+CHECKPOINT_DEADLINE_MS="$2"
+[[ "$CHECKPOINT_DEADLINE_MS" =~ ^[1-9][0-9]{12}$ ]] \
+  || die 'invalid absolute checkpoint deadline'
+CHECKPOINT_NOW_MS="$(date +%s%3N)"
+[ "$CHECKPOINT_DEADLINE_MS" -le "$((CHECKPOINT_NOW_MS + 40000))" ] \
+  || die 'absolute checkpoint deadline exceeds the original forty seconds'
+[ "$CHECKPOINT_DEADLINE_MS" -gt "$((CHECKPOINT_NOW_MS + 5000))" ] \
+  || defer 'absolute checkpoint entry budget elapsed before intent; nothing was attempted'
 [[ "$RUN_ID" =~ ^[1-9][0-9]*(-[1-9][0-9]*)?$ ]] || die 'invalid run key'
 # /var/lock is a symlink to /run/lock on the engine host. Compare the held
 # descriptor's file identity, not a resolved path against its configured alias.
@@ -90,6 +98,8 @@ NODE_BOOT_MS=$(( $(date +%s%3N) - NODE_BOOT_STARTED_MS ))
 # so it is measured here and reported, as evidence for the next re-derivation
 # of that allowance, not as an admission term. (The literal invocation above
 # is an anchor other suites locate with indexOf; it is not repeated here.)
+# The measured split does not strand unused entry time: the caller's absolute
+# deadline passes unchanged to native work and its reserved cleanup slice.
 echo "[legacy-engine-checkpoint] predecessor runtime check took ${NODE_BOOT_MS}ms; the guard boot it proxies is inside the 40000ms legacy checkpoint budget" >&2
 
 # Installed SQL is a prerequisite, not a trial mutation. Refuse before the
@@ -126,6 +136,8 @@ print(instance)
 
 # Persist intent before opening debugger access. A disconnect is unknown, not
 # permission to invoke again. Existing release recovery retains this run key.
+[ "$CHECKPOINT_DEADLINE_MS" -gt "$(( $(date +%s%3N) + 5000 ))" ] \
+  || defer 'absolute checkpoint entry budget elapsed before intent; nothing was attempted'
 #
 # THE O_EXCL BELOW IS THE ONE-SHOT AND IT IS NOT WEAKENED HERE. What changed on
 # 2026-09-21 is only that its refusal has a NAME. Run 35626149078 re-entered
@@ -174,7 +186,7 @@ fi
 
 set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/retained-original-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT"
+  | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
 CHECKPOINT_RC=$?
 set -e
 if [ "$CHECKPOINT_RC" = 75 ]; then

@@ -111,6 +111,45 @@ describe('worker-only insurance runout authority', () => {
     );
   });
 
+  it('retains exact display and insurance continuation while the weekly owner holds the hand', async () => {
+    const { engine, controller, offerPlayers, allInPlayers, createOffers } = harness();
+    engine.hub = { emitEvent: vi.fn() };
+    engine.waitForInsuranceResponses = vi.fn();
+    engine.insuranceEngine.configure(TABLE, { enabled: true });
+    workerMocks.estimateInsurance.mockResolvedValueOnce([
+      { equity: 82, strictLossPct: 18, pushPct: 0, exact: false, runouts: 6000 },
+      { equity: 18, strictLossPct: 82, pushPct: 0, exact: false, runouts: 6000 },
+    ]);
+    let resolveDisplay!: (value: number[]) => void;
+    workerMocks.estimateEquity.mockReturnValueOnce(
+      new Promise<number[]>((resolve) => {
+        resolveDisplay = resolve;
+      })
+    );
+    const flow = engine.runInsurancePerStreetFlow(offerPlayers, allInPlayers, 200, [], controller);
+    await vi.waitFor(() => expect(workerMocks.estimateEquity).toHaveBeenCalledOnce());
+    expect(workerMocks.estimateEquity).toHaveBeenCalledWith(
+      expect.anything(),
+      [],
+      [],
+      expect.any(Number),
+      expect.objectContaining({ exact: true })
+    );
+    engine.weeklyHandPause.hold('weekly');
+    resolveDisplay([0.82, 0.18]);
+    for (let step = 0; step < 12; step++) await Promise.resolve();
+    expect(engine.hub.emitEvent).not.toHaveBeenCalled();
+    expect(createOffers).not.toHaveBeenCalled();
+    expect(engine.waitForInsuranceResponses).not.toHaveBeenCalled();
+    engine.weeklyHandPause.release('weekly');
+    await flow;
+    expect(
+      engine.hub.emitEvent.mock.calls.filter(([, event]: any[]) => event.type === 'all_in_equity')
+    ).toHaveLength(1);
+    expect(createOffers).toHaveBeenCalledOnce();
+    expect(engine.waitForInsuranceResponses).toHaveBeenCalledOnce();
+  });
+
   it.each(['hand', 'controller', 'board'])(
     'does not issue insurance when the %s fence changes during exact display computation',
     async (fence) => {

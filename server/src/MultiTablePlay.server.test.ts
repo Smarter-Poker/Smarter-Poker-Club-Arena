@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DisconnectEngine } from './engine/DisconnectEngine.js';
+import { CooperativeHandTimers } from './engine/CooperativeHandTimers.js';
 import { PreciseActionTimer } from './engine/PreciseActionTimer.js';
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -243,7 +244,8 @@ describe('horse decision interleaving across 4 tables', () => {
     const acted: string[] = [];
     const armThink = (tableId: string, thinkMs: number) =>
       new Promise<void>((resolve) => {
-        setTimeout(() => {
+        const timers = new CooperativeHandTimers();
+        timers.set(() => {
           acted.push(tableId);
           resolve();
         }, thinkMs);
@@ -260,9 +262,9 @@ describe('horse decision interleaving across 4 tables', () => {
     // deep read past the think time (inside the turn clock), the wait is a
     // second per-engine timer held in the same field, so cancelHorseDecisionWork
     // clears whichever one the turn is on. Both are armed per table.
-    expect(src).toContain('const thinkTimer = setTimeout(');
+    expect(src).toContain('const thinkTimer = this.setHandTimeout(');
     expect(src).toContain('this.horseActionTimer = thinkTimer;');
-    expect(src).toContain('secondLookHoldTimer = setTimeout(');
+    expect(src).toContain('secondLookHoldTimer = this.setHandTimeout(');
     expect(src).toContain('this.horseActionTimer = secondLookHoldTimer;');
     // Every path that acts (think timer, hold expiry, deep answer landing)
     // goes through commitDecision, which runs the commit fence before it

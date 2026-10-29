@@ -68,7 +68,9 @@ describe('settlement reads its own hand, never the live fields', () => {
 describe('delayed continuations name the hand they belong to', () => {
   it('a pre-action beat acts only on the controller it was armed for', () => {
     const src = read('./ServerTableEngineTurns.ts');
-    const idx = src.indexOf('preActionVisibleMs);');
+    const idx = src.indexOf(
+      'this.weeklyPayoutContinuation(this.sleepHand(this.preActionVisibleMs))'
+    );
     expect(idx).toBeGreaterThan(-1);
     const around = src.slice(Math.max(0, idx - 1500), idx + 1500);
     expect(around).toContain('controllerAtBeat');

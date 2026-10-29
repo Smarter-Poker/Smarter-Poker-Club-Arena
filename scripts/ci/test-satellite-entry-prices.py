@@ -44,6 +44,12 @@ try:
  ('90000000-0000-4000-8000-000000000007'::uuid,'RUNNING'),
  ('90000000-0000-4000-8000-000000000008'::uuid,'REGISTERING'))v(id,status);
  INSERT INTO tournament_schedules VALUES('90000000-0000-4000-8000-000000000009','90000000-0000-4000-8000-000000000001',NULL,'Free Satellite',true,'{"type":"satellite","buyIn":0,"satelliteTargetName":"Nightly"}');
+ INSERT INTO clubs VALUES('90000000-0000-4000-8000-000000000010','diamonds',true);
+ INSERT INTO tournament_schedules VALUES
+ ('90000000-0000-4000-8000-000000000011','90000000-0000-4000-8000-000000000010',NULL,'Diamond Nightly',true,'{"type":"mtt","buyIn":35}'),
+ ('90000000-0000-4000-8000-000000000012','90000000-0000-4000-8000-000000000010',NULL,'Diamond Nightly Satellite 15',true,'{"type":"satellite","buyIn":15,"satelliteTargetName":"Diamond Nightly"}');
+ INSERT INTO tournaments(id,club_id,name,status,format_contract,start_time,buy_in_amount,buy_in_fee) VALUES('90000000-0000-4000-8000-000000000013','90000000-0000-4000-8000-000000000010','Diamond Nightly','REGISTERING','mtt-v2',now()+interval '3 hours',315,35);
+ INSERT INTO tournaments(id,club_id,schedule_id,name,status,format_contract,start_time,buy_in_amount,buy_in_fee,satellite_target_id,min_players) VALUES('90000000-0000-4000-8000-000000000014','90000000-0000-4000-8000-000000000010','90000000-0000-4000-8000-000000000012','Diamond Nightly Satellite 15','REGISTERING','mtt-v2',now(),135,15,'90000000-0000-4000-8000-000000000013',4);
  INSERT INTO tournament_players VALUES('90000000-0000-4000-8000-000000000006');
  INSERT INTO tournament_satellite_economic_snapshots VALUES('90000000-0000-4000-8000-000000000008');
  """)
@@ -51,6 +57,8 @@ try:
  sql(migration.read_text())
  check("SELECT config->>'buyIn'='5' AND name='Nightly Satellite 5' AND config->>'rebuyCost'='5' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000003';")
  check("SELECT config->>'buyIn'='0' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000009';")
+ check("SELECT config->>'buyIn'='5' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000012';")
+ check("SELECT buy_in_amount=45 AND buy_in_fee=5 AND min_players=8 AND name='Diamond Nightly Satellite 5' FROM tournaments WHERE id='90000000-0000-4000-8000-000000000014';")
  check("SELECT buy_in_amount=4.5 AND buy_in_fee=.5 AND min_players=8 AND rebuy_cost=5 AND name='Nightly Satellite 5' FROM tournaments WHERE id='90000000-0000-4000-8000-000000000005';")
  check("SELECT count(*)=3 FROM tournaments WHERE id IN ('90000000-0000-4000-8000-000000000006','90000000-0000-4000-8000-000000000007','90000000-0000-4000-8000-000000000008') AND buy_in_amount=13.5 AND buy_in_fee=1.5;")
  sql('DROP FUNCTION IF EXISTS pg_temp.satellite_entry_value(numeric,numeric);'+migration.read_text())

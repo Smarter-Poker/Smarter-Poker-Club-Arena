@@ -69,7 +69,8 @@ BEGIN
   old_value:=t.buy_in_amount+t.buy_in_fee;
   new_value:=pg_temp.satellite_entry_value(target_value,old_value);
   IF new_value IS NULL OR old_value<=0 OR new_value IS NOT DISTINCT FROM old_value THEN CONTINUE;END IF;
-  new_name:=regexp_replace(t.name,'(Satellite) [0-9]+([.][0-9]+)?$','\1 '||new_value::text,'i');
+  SELECT CASE WHEN c.asset='diamonds' AND c.is_platform THEN 10 ELSE 1 END INTO scale FROM public.clubs c WHERE c.id=t.club_id;
+  new_name:=regexp_replace(t.name,'(Satellite) [0-9]+([.][0-9]+)?$','\1 '||trim_scale(new_value/COALESCE(scale,1))::text,'i');
   UPDATE public.tournaments SET buy_in_amount=round(new_value*.9,2),buy_in_fee=round(new_value*.1,2),
     name=new_name,min_players=GREATEST(COALESCE(t.min_players,3),ceil(target_value/round(new_value*.9,2))::integer),
     rebuy_cost=CASE WHEN t.is_rebuy OR t.is_reentry THEN new_value ELSE t.rebuy_cost END,

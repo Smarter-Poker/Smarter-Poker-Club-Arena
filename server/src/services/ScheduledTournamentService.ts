@@ -2215,7 +2215,12 @@ export class ScheduledTournamentService {
       // starting stack, matching what process_tournament_rebuy computes.
       is_rebuy: isRebuy,
       is_reentry: isReentry,
-      rebuy_cost: isRebuy || isReentry ? wholeChips(cfg.rebuyCost) || split.total : null,
+      rebuy_cost:
+        isRebuy || isReentry
+          ? isSatellite
+            ? buyInAmount + buyInFee
+            : wholeChips(cfg.rebuyCost) || split.total
+          : null,
       rebuy_chips:
         isRebuy || isReentry
           ? clampInt(cfg.rebuyChips, 1, 100_000_000, 0) ||
@@ -2233,7 +2238,11 @@ export class ScheduledTournamentService {
        * add-on chips became the 5,000 starting stack. Read both keys; the
        * camel-cased one wins when both are present.
        */
-      addon_cost: addOn ? wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total : null,
+      addon_cost: addOn
+        ? isSatellite
+          ? buyInAmount + buyInFee
+          : wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total
+        : null,
       addon_chips: addOn
         ? clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0) ||
           clampInt(cfg.startingStack, 1, 100_000_000, 10000)
@@ -2337,7 +2346,7 @@ export class ScheduledTournamentService {
     namePrefix: string,
     targetId?: string,
     feederStartTime?: Date
-  ): Promise<{ id: string; entryValue: number } | null> {
+  ): Promise<{ id: string; entryValue: number; nativeEntryValue: number } | null> {
     let query = supabase
       .from('tournaments')
       .select(
@@ -2372,6 +2381,7 @@ export class ScheduledTournamentService {
       return null;
     return {
       id: data.id as string,
+      nativeEntryValue: Number(data.buy_in_amount) + Number(data.buy_in_fee),
       entryValue:
         (Number(data.buy_in_amount) + Number(data.buy_in_fee)) /
         (diamondHost ? DIAMOND_ARENA_DIAMONDS_PER_CHIP : 1),
@@ -2614,15 +2624,17 @@ export class ScheduledTournamentService {
       row.satellite_target_id = target.id;
       if (isPersistedUnlimitedMtt(old) && Number(row.buy_in_amount) + Number(row.buy_in_fee) > 0) {
         const entry = satelliteEntryValue(
-          target.entryValue,
+          target.nativeEntryValue,
           Number(row.buy_in_amount) + Number(row.buy_in_fee)
         );
         const priced = buyInFor(entry, 0.1);
         row.buy_in_amount = priced.prize;
         row.buy_in_fee = priced.fee;
+        if (row.is_rebuy || row.is_reentry) row.rebuy_cost = entry;
+        if (row.add_on_available) row.addon_cost = entry;
         row.min_players = Math.max(
           Number(row.min_players) || 3,
-          Math.ceil(target.entryValue / priced.prize)
+          Math.ceil(target.nativeEntryValue / priced.prize)
         );
         row.name = String(row.name).replace(/(Satellite)\s+\d+(?:\.\d+)?$/i, `$1 ${entry}`);
       }

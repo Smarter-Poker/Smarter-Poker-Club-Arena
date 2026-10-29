@@ -37,6 +37,7 @@ const genericInsert=(id,n)=>`INSERT INTO financial_alerts(id,severity,source,mes
  jsonb_build_object('table_id','${genericTables[n]}','tournament_id','${t1}'));`;
 let running = false;
 const clients = [];
+const client=()=>{const p=spawn(path.join(bin,'psql'),args);let out='',err='';p.stdout.on('data',v=>out+=v);p.stderr.on('data',v=>err+=v);const done=new Promise((resolve,reject)=>p.on('exit',c=>c===0?resolve(out):reject(Error(err))));clients.push(p);return {p,done};};
 try {
  run('initdb', ['-D', path.join(dir, 'db'), '-U', 'postgres', '-A', 'trust', '--no-locale', '--encoding=UTF8']);
  run('pg_ctl', ['-D', path.join(dir, 'db'), '-l', path.join(dir, 'log'), '-o', `-k ${socket} -p 55489 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10`, '-w', 'start']); running = true;
@@ -71,10 +72,33 @@ try {
  DO $$BEGIN IF (SELECT count(*) FROM ca_drift_incidents)<>1 OR NOT EXISTS(SELECT 1 FROM ca_drift_incidents WHERE status='resolved' AND table_id='${t1}' AND metadata->>'table_id'='${t2}') THEN RAISE EXCEPTION 'old source no longer reproduces collision and premature closure'; END IF; END $$;
  ROLLBACK;`);
  console.log('PASS fail-before: real old bridge folds different originals and latest resolution closes their shared incident');
+ // One exact interruption between DO NOTHING and its fallback UPDATE.
+ sql(`INSERT INTO ca_detector_registry(source,owner,sla_hours,note) VALUES('financial_alerts:${genericSource}','fixture',24,'source already registered, matching the production conflict case') ON CONFLICT(source) DO NOTHING;`);
+ sql(`CREATE FUNCTION fixture_hold_after_insert() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
+ IF current_setting('qualification.hold_gap',true)='true' THEN PERFORM pg_advisory_lock(778899);PERFORM pg_advisory_unlock(778899);END IF;RETURN NULL;END $$;
+ CREATE TRIGGER fixture_hold_after_insert AFTER INSERT ON ca_drift_incidents FOR EACH STATEMENT EXECUTE FUNCTION fixture_hold_after_insert();`);
+ const gate=client();gate.p.stdin.write('SELECT pg_advisory_lock(778899);\\echo GATE_READY\n');
+ let gateReady=false;const gateUntil=Date.now()+3000;while(Date.now()<gateUntil){if(sql("SELECT count(*) FROM pg_stat_activity WHERE state='idle' AND query='SELECT pg_advisory_lock(778899);'")==='1'){gateReady=true;break;}await new Promise(r=>setTimeout(r,20));}assert.ok(gateReady);
+ const gap1='81111111-1111-4111-8111-000000000001',gap2='81111111-1111-4111-8111-000000000002';
+ const origin=client();origin.p.stdin.write('BEGIN;'+genericInsert(gap1,0).replace('has failed to start','before-gap has failed to start')+'\\echo ORIGIN_READY\n');
+ let originReady=false;const originUntil=Date.now()+3000;while(Date.now()<originUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE state='idle in transaction' AND query LIKE '%${gap1}%'`)==='1'){originReady=true;break;}await new Promise(r=>setTimeout(r,20));}assert.ok(originReady);
+ const newcomer=client();newcomer.p.stdin.end("SET qualification.hold_gap='true';"+genericInsert(gap2,2).replace('has failed to start','before-gap has failed to start'));
+ let conflictWait=false;const conflictUntil=Date.now()+3000;while(Date.now()<conflictUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%${gap2}%'`)==='1'){conflictWait=true;break;}await new Promise(r=>setTimeout(r,20));}assert.ok(conflictWait);
+ origin.p.stdin.end('COMMIT;\n');await origin.done;
+ let afterConflict=false;const gapUntil=Date.now()+3000;while(Date.now()<gapUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%${gap2}%'`)==='1'){afterConflict=true;break;}await new Promise(r=>setTimeout(r,20));}assert.ok(afterConflict,'newcomer reached actual AFTER INSERT STATEMENT after DO NOTHING conflict');
+ sql(`SET lock_timeout='500ms';SET statement_timeout='2s';UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id='${gap1}';`);
+ assert.equal(status(gap1),'resolved','original group can resolve between conflict and fallback');
+ gate.p.stdin.end('SELECT pg_advisory_unlock(778899);\n');await gate.done;await newcomer.done;
+ assert.equal(sql(`SELECT count(*) FROM ca_drift_incidents WHERE source='financial_alerts:${genericSource}' AND status='open'`),'0','NULL fallback leaves the unresolved new original without an active group');
+ assert.equal(sql(`SELECT resolved FROM financial_alerts WHERE id='${gap2}'`),'f','unresolved new original source alert exists without its member event');
+ console.log('PASS fail-before: actual DO NOTHING/fallback gap loses new unresolved original after its conflicting group resolves');
+ sql('DROP TRIGGER fixture_hold_after_insert ON ca_drift_incidents;DROP FUNCTION fixture_hold_after_insert();');
+
+
  // Retain a live legacy group across the real migration to test transition.
  // The demonstrated admission group has six originals, three still unresolved.
  sql('BEGIN;'+genericIds.map(genericInsert).join('')+`UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id IN('${genericIds[0]}','${genericIds[4]}','${genericIds[5]}');
- DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM ca_drift_incidents WHERE source='financial_alerts:${genericSource}' AND status='resolved' AND occurrences=6) OR (SELECT count(*) FROM financial_alerts WHERE source='${genericSource}' AND NOT resolved)<>3 THEN RAISE EXCEPTION 'old generic source no longer reproduces six-member false closure'; END IF; END $$;`+
+ DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM ca_drift_incidents WHERE source='financial_alerts:${genericSource}' AND status='resolved' AND occurrences=6) OR (SELECT count(*) FROM financial_alerts WHERE id IN('${genericIds.join("','")}') AND NOT resolved)<>3 THEN RAISE EXCEPTION 'old generic source no longer reproduces six-member false closure'; END IF; END $$;`+
  futureIds.map(genericInsert).join('')+`DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM ca_drift_incidents WHERE source='financial_alerts:${genericSource}' AND status='open' AND occurrences=5) THEN RAISE EXCEPTION 'old resolved echo no longer steals an active group member'; END IF; END $$;ROLLBACK;`);
  console.log('PASS fail-before: six-member admission group closes with three unresolved originals; resolved echo steals an active member');
  for (let n=0;n<genericIds.length;n++) sql(genericInsert(genericIds[n],n));
@@ -155,7 +179,6 @@ try {
  const x='11111111-1111-4111-8111-000000000013',y='11111111-1111-4111-8111-000000000014';
  sql(insert(x,t1,900020)+insert(y,t2,900021));
  sql(fixedBridge+';');
- const client=()=>{const p=spawn(path.join(bin,'psql'),args);let out='',err='';p.stdout.on('data',v=>out+=v);p.stderr.on('data',v=>err+=v);const done=new Promise((resolve,reject)=>p.on('exit',c=>c===0?resolve(out):reject(Error(err))));clients.push(p);return {p,done};};
  const first=client();first.p.stdin.write(`BEGIN;UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id='${x}';\\echo FIRST_READY\n`);
  let ready=false;const until=Date.now()+5000;
  while(Date.now()<until){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND query LIKE '%${x}%'`) === '1'){ready=true;break;}await new Promise(r=>setTimeout(r,20));}
@@ -167,21 +190,52 @@ try {
  first.p.stdin.end('COMMIT;\n');await Promise.all([first.done,second.done]);
  assert.equal(status(y),'resolved','concurrent last member observes predecessor commit and closes the exact group');
  console.log('PASS observed concurrent last-member lock, commit and exact closure');
- // Concurrent first observations must retain both exact members after INSERT conflict.
+ // Concurrent raise and resolution retain both originals under one cause owner.
  const r1='71111111-1111-4111-8111-000000000001',r2='71111111-1111-4111-8111-000000000002';
  const creator=client();creator.p.stdin.write('BEGIN;'+genericInsert(r1,0)+'\\echo CREATOR_READY\n');
  let creatorReady=false;const creatorUntil=Date.now()+5000;
  while(Date.now()<creatorUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND query LIKE '%${r1}%'`) === '1'){creatorReady=true;break;}await new Promise(r=>setTimeout(r,20));}
  assert.ok(creatorReady,'first observation owns an uncommitted cause-group insert');
- const contender=client();contender.p.stdin.end(genericInsert(r2,1));
+ const contender=client();contender.p.stdin.write('BEGIN;'+genericInsert(r2,1)+'\\echo CONTENDER_READY\n');
  let insertBlocked=false;const insertUntil=Date.now()+3000;
- while(Date.now()<insertUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%${r2}%'`) === '1'){insertBlocked=true;break;}await new Promise(r=>setTimeout(r,20));}
+ while(Date.now()<insertUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory' AND query LIKE '%${r2}%'`) === '1'){insertBlocked=true;break;}await new Promise(r=>setTimeout(r,20));}
  assert.ok(insertBlocked,'second first observation actually waits on original insert');
- creator.p.stdin.end('COMMIT;\n');await Promise.all([creator.done,contender.done]);
+ creator.p.stdin.end('COMMIT;\n');await creator.done;
+ let contenderReady=false;const contenderUntil=Date.now()+3000;
+ while(Date.now()<contenderUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE state='idle in transaction' AND query LIKE '%${r2}%'`)==='1'){contenderReady=true;break;}await new Promise(r=>setTimeout(r,20));}
+ assert.ok(contenderReady,'new member is appended under original transaction ownership');
+ const closer=client();closer.p.stdin.end(`UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id='${r1}';`);
+ let closerBlocked=false;const closerUntil=Date.now()+3000;
+ while(Date.now()<closerUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE wait_event='advisory' AND query LIKE '%${r1}%'`)==='1'){closerBlocked=true;break;}await new Promise(r=>setTimeout(r,20));}
+ assert.ok(closerBlocked,'resolution actually waits for the new member transaction before row locking');
+ contender.p.stdin.end('COMMIT;\n');await Promise.all([contender.done,closer.done]);
  assert.equal(sql(`SELECT occurrences FROM ca_drift_incidents WHERE metadata->>'alert_id'='${r2}'`),'2','insert-conflict recurrence remains counted');
  assert.equal(sql(`SELECT count(*)=2 AND count(DISTINCT detail->>'alert_id')=2 FROM ca_incident_events WHERE incident_id=(SELECT id FROM ca_drift_incidents WHERE metadata->>'alert_id'='${r2}') AND kind IN('created','recurred')`),'t','concurrent insert fallback retains both exact original member UUIDs');
- resolve(r2);assert.equal(status(r2),'open');resolve(r1);assert.equal(status(r2),'resolved','insert-race members retain complete closure wiring');
- console.log('PASS observed concurrent original insertion conflict retains every member and exact closure');
+ assert.equal(status(r2),'open','earlier resolution cannot close over new unresolved original');resolve(r2);assert.equal(status(r2),'resolved','all original transaction members resolve through the same owner');
+ console.log('PASS observed three-session transaction ownership prevents conflict/fallback loss and premature closure');
+ // Inspect the actual maintained member lookup over an indexed 2,000-row fixture.
+ sql(`CREATE INDEX idx_financial_alerts_source_created ON financial_alerts(source,created_at DESC);
+ INSERT INTO financial_alerts(severity,source,message,resolved) SELECT 'critical','${genericSource}','plan-noise-'||n,true FROM generate_series(1,2000)n;ANALYZE financial_alerts;`);
+ const definition=sql("SELECT pg_get_functiondef('fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)");
+ const extracted=definition.match(/CROSS JOIN LATERAL \(([\s\S]*?)\n      \) m/)[1];
+ const literal=x=>"'"+x.replaceAll("'","''")+"'";
+ const groupKey=sql(`SELECT dedupe_key FROM ca_drift_incidents WHERE metadata->>'alert_id'='${genericIds[5]}'`);
+ const observedAt=sql(`SELECT created_at::text FROM financial_alerts WHERE id='${genericIds[0]}'`);
+ const lookup=extracted.replaceAll('NEW.source',literal(genericSource)).replaceAll('v_group.dedupe_key',literal(groupKey));
+ const walk=n=>[n,...(n.Plans||[]).flatMap(walk)];
+ for(const [label,detail] of [['versioned',{financial_member_version:1,alert_id:futureIds[0]}],['legacy',{}]]) {
+   const explained=JSON.parse(sql(`EXPLAIN(ANALYZE,FORMAT JSON,COSTS OFF,TIMING OFF) WITH e AS MATERIALIZED(SELECT ${literal(JSON.stringify(detail))}::jsonb detail,${literal(observedAt)}::timestamptz at) SELECT m.* FROM e CROSS JOIN LATERAL(${lookup})m;`));
+   const scans=walk(explained[0].Plan).filter(n=>n['Relation Name']==='financial_alerts').map(n=>({type:n['Node Type'],index:n['Index Name'],condition:n['Index Cond'],loops:n['Actual Loops'],removed:n['Rows Removed by Filter']}));
+   const active=scans.filter(n=>n.loops>0);
+   assert.equal(active.length,1,'one version-specific member lookup executes');
+   const expectedIndex=label==='versioned'?'financial_alerts_pkey':'idx_financial_alerts_source_created';
+   const indexed=walk(explained[0].Plan).filter(n=>n['Index Name']===expectedIndex && n['Actual Loops']>0);
+   assert.equal(indexed.length,1,'actual extracted lookup executes the existing identity/time index');
+   assert.ok(indexed[0]['Index Cond'].includes(label==='versioned'?'id =':'created_at ='),'member equality remains in Index Cond, including bitmap access');
+   assert.notEqual(active[0].type,'Seq Scan','member lookup never scans the full same-source fixture');
+   console.log('MEMBER LOOKUP PLAN '+label+' '+JSON.stringify({scans,index:expectedIndex,condition:indexed[0]['Index Cond']}));
+ }
+
  assert.equal(sql('SELECT count(*) FROM ca_incident_file_failures'),'0','no swallowed trigger failure');
  console.log('PASS after: table/hand boundaries, same-original recurrence, unknown identity, exact closure and unchanged history');
  console.log(sql("SELECT proname,md5(pg_get_functiondef(oid)) FROM pg_proc WHERE oid IN('fn_ca_financial_alert_to_incident()'::regprocedure,'fn_ca_alert_resolution_reaches_the_incident()'::regprocedure,'fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)'::regprocedure) ORDER BY proname"));

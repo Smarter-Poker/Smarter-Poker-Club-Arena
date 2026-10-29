@@ -7,8 +7,8 @@
 -- and must be unique; missing/ambiguous members stay unknown. Historical rows
 -- and events, financial rules, wallet state and schedules remain unchanged.
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_financial_alert_to_incident()'::regprocedure)) = 'f3b7353cbbb7dd3a03b5dedbecc034b7'
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)'::regprocedure)) = 'fb5a6ed97f9a2318eb0fafdc5873a6b9'
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) = 'f7fb531156215d169570707070bd1b27'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)'::regprocedure)) = '8687f48f6ebd164536a561a5d4e57dfb'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) = '6aeff3afb938b152034f9a250efb3e21'
 BEGIN;
 SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='15s';
 DO $migration$
@@ -52,25 +52,35 @@ BEGIN
  RAISE EXCEPTION 'INCIDENT_MEMBER_ANCHOR_CHANGED: fn_ca_raise_drift_incident';END IF;
  v_new:=replace(v_new,$old$  v_stable text;$old$,$new$  v_stable text;
   v_financial_member jsonb := '{}'::jsonb;$new$);
- IF array_length(string_to_array(v_new,$old$  UPDATE public.ca_drift_incidents
-     SET occurrences$old$),1)<>2 THEN
+ IF array_length(string_to_array(v_new,'  UPDATE public.ca_drift_incidents
+     SET occurrences'),1)<>2 THEN
  RAISE EXCEPTION 'INCIDENT_MEMBER_ANCHOR_CHANGED: fn_ca_raise_drift_incident';END IF;
- v_new:=replace(v_new,$old$  UPDATE public.ca_drift_incidents
-     SET occurrences$old$,$new$  -- Keep validated original alert identity in the append-only event at the
+ v_new:=replace(v_new,'  UPDATE public.ca_drift_incidents
+     SET occurrences','  -- Keep validated original alert identity in the append-only event at the
   -- original raise, including recurrence and concurrent insertion fallback.
-  IF left(p_source,length('financial_alerts:'))='financial_alerts:' THEN
-    v_financial_member:=jsonb_build_object('financial_member_version',1,'alert_id',
-      CASE WHEN jsonb_typeof(p_metadata->'alert_id')='string'
-        AND p_metadata->>'alert_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  IF left(p_source,length(''financial_alerts:''))=''financial_alerts:'' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended(''ca-financial-incident-members:'' || public.fn_ca_stable_dedupe_key(p_dedupe_key),0));
+    v_financial_member:=jsonb_build_object(''financial_member_version'',1,''alert_id'',
+      CASE WHEN jsonb_typeof(p_metadata->''alert_id'')=''string''
+        AND p_metadata->>''alert_id'' ~ ''^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$''
         AND EXISTS(SELECT 1 FROM public.financial_alerts a
-          WHERE a.id=CASE WHEN p_metadata->>'alert_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-                         THEN (p_metadata->>'alert_id')::uuid END
-            AND a.source=substr(p_source,length('financial_alerts:')+1)
-            AND a.severity='critical')
-      THEN lower(p_metadata->>'alert_id') ELSE NULL END);
+          WHERE a.id=CASE WHEN p_metadata->>''alert_id'' ~ ''^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$''
+                         THEN (p_metadata->>''alert_id'')::uuid END
+            AND a.source=substr(p_source,length(''financial_alerts:'')+1)
+            AND a.severity=''critical'')
+      THEN lower(p_metadata->>''alert_id'') ELSE NULL END);
   END IF;
   UPDATE public.ca_drift_incidents
-     SET occurrences$new$);
+     SET occurrences');
+ IF array_length(string_to_array(v_new,$old$  IF (SELECT count(*) FROM public.ca_drift_incidents
+       WHERE source = p_source AND status <> 'resolved') >= 25 THEN$old$),1)<>2 THEN
+ RAISE EXCEPTION 'INCIDENT_STORM_OWNER_ANCHOR_CHANGED';END IF;
+ v_new:=replace(v_new,$old$  IF (SELECT count(*) FROM public.ca_drift_incidents
+       WHERE source = p_source AND status <> 'resolved') >= 25 THEN$old$,$new$  IF (SELECT count(*) FROM public.ca_drift_incidents
+       WHERE source = p_source AND status <> 'resolved') >= 25 THEN
+    IF left(p_source,length('financial_alerts:'))='financial_alerts:' THEN
+      PERFORM pg_advisory_xact_lock(hashtextextended('ca-financial-incident-members:storm:' || p_source,0));
+    END IF;$new$);
  IF array_length(string_to_array(v_new,$old$'discrepancy', p_discrepancy));$old$),1)<>2 THEN
  RAISE EXCEPTION 'INCIDENT_MEMBER_ANCHOR_CHANGED: fn_ca_raise_drift_incident';END IF;
  v_new:=replace(v_new,$old$'discrepancy', p_discrepancy));$old$,$new$'discrepancy', p_discrepancy) || v_financial_member);$new$);
@@ -120,7 +130,19 @@ BEGIN
  v_new:=replace(v_new,$old$DECLARE v_state text; v_msg text; v_storm record; v_members bigint; v_bad bigint; v_current boolean;$old$,$new$DECLARE v_state text; v_msg text; v_storm record; v_group record; v_members bigint; v_bad bigint; v_current boolean;$new$);
  IF array_length(string_to_array(v_new,$old$  UPDATE public.ca_drift_incidents i$old$),1)<>2 THEN
  RAISE EXCEPTION 'INCIDENT_MEMBER_ANCHOR_CHANGED: fn_ca_alert_resolution_reaches_the_incident';END IF;
- v_new:=replace(v_new,$old$  UPDATE public.ca_drift_incidents i$old$,$new$  -- A cause group may contain different original entities. Lock its owner row
+ v_new:=replace(v_new,$old$  UPDATE public.ca_drift_incidents i$old$,$new$  -- The original raise and resolution share transaction ownership before any
+  -- incident row lock. A conflict cannot resolve between DO NOTHING and fallback.
+  FOR v_group IN SELECT DISTINCT i.dedupe_key FROM public.ca_drift_incidents i
+    WHERE i.status<>'resolved' AND i.source='financial_alerts:' || NEW.source
+      AND (i.dedupe_key='fa:' || NEW.source || ':' || md5(public.fn_ca_normalize_alert_text(left(NEW.message,200)) || '|' || public.fn_ca_normalize_alert_text(left(COALESCE(NEW.context->>'error',''),200)))
+        OR i.metadata->>'alert_id'=NEW.id::text
+        OR EXISTS(SELECT 1 FROM public.ca_incident_events e WHERE e.incident_id=i.id
+          AND e.kind IN('created','recurred') AND lower(e.detail->>'alert_id')=NEW.id::text))
+    ORDER BY i.dedupe_key
+  LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended('ca-financial-incident-members:' || public.fn_ca_stable_dedupe_key(v_group.dedupe_key),0));
+  END LOOP;
+  -- A cause group may contain different original entities. Lock its owner row
   -- before reading membership so concurrent final resolutions see prior commits.
   FOR v_group IN SELECT i.id,i.source,i.dedupe_key,i.occurrences,i.detected_at
     FROM public.ca_drift_incidents i
@@ -134,18 +156,21 @@ BEGIN
       CROSS JOIN LATERAL (
         SELECT count(*) AS matches,min(a.id::text) AS alert_id,
                bool_and(a.resolved IS TRUE) AS all_resolved
-        FROM public.financial_alerts a
-        WHERE a.source=NEW.source
-          AND CASE WHEN e.detail ? 'financial_member_version' THEN
-            e.detail->'financial_member_version'='1'::jsonb
+        FROM (
+          SELECT a.id,a.resolved FROM public.financial_alerts a
+          WHERE e.detail->'financial_member_version'='1'::jsonb
             AND jsonb_typeof(e.detail->'alert_id')='string'
             AND a.id=CASE WHEN e.detail->>'alert_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
                          THEN (e.detail->>'alert_id')::uuid END
-          ELSE a.created_at=e.at AND a.severity='critical'
+            AND a.source=NEW.source
+          UNION ALL
+          SELECT a.id,a.resolved FROM public.financial_alerts a
+          WHERE NOT(e.detail ? 'financial_member_version')
+            AND a.source=NEW.source AND a.created_at=e.at AND a.severity='critical'
             AND v_group.dedupe_key='fa:' || a.source || ':' || md5(
               public.fn_ca_normalize_alert_text(left(a.message,200)) || '|' ||
               public.fn_ca_normalize_alert_text(left(COALESCE(a.context->>'error',''),200)))
-          END
+        ) a
       ) m
       WHERE e.incident_id=v_group.id AND e.kind IN ('created','recurred')
     )

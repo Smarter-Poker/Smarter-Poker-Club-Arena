@@ -124,12 +124,24 @@ export function createPrivateRecordGatewayAccess(
 export async function privateRecordGatewaySourceReady(
   client: OutboxListenerClient
 ): Promise<boolean> {
-  const result = await client.query('SELECT public.fn_private_record_transport_ready() AS ready');
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    'rows' in result &&
-    Array.isArray(result.rows) &&
-    result.rows[0]?.ready === true
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      client.query('SELECT public.fn_private_record_transport_ready() AS ready'),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('gateway source readiness deadline')), 5_000);
+      }),
+    ]);
+    return (
+      typeof result === 'object' &&
+      result !== null &&
+      'rows' in result &&
+      Array.isArray(result.rows) &&
+      result.rows[0]?.ready === true
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  // A deadline rejects the connect attempt; PrivateRecordListener owns closing
+  // that exact session and reconnecting, so a stuck query cannot strand it.
 }

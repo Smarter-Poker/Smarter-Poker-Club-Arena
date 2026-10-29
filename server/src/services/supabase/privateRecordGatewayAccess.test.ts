@@ -122,6 +122,20 @@ describe('gateway-only actor-bound read access', () => {
     query.mockRejectedValueOnce(Error('database unavailable'));
     await expect(privateRecordGatewaySourceReady(client)).rejects.toThrow('database unavailable');
   });
+  it('bounds an unresponsive dedicated readiness query for listener recovery', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = { query: vi.fn(() => new Promise(() => {})) } as any;
+      const rejected = expect(privateRecordGatewaySourceReady(client)).rejects.toThrow(
+        'gateway source readiness deadline'
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejected;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('bounds an unresponsive fetch and never turns it into session revocation', async () => {
     const access = createPrivateRecordGatewayAccess(environment, {
       fetch: vi.fn(() => new Promise<Response>(() => {})),

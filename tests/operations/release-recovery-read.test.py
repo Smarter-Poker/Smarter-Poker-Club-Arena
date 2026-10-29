@@ -7,6 +7,9 @@ import io
 import ast
 import json
 import os
+import socket
+import subprocess
+import shutil
 from pathlib import Path
 import tempfile
 import types
@@ -317,14 +320,25 @@ class ReaderTests(unittest.TestCase):
         self.assertIn("'--lines=2'", source)
         self.assertIn('8193 - len(raw)', source)
         self.assertNotIn('shell=True', source)
-        self.assertNotIn('docker', source)
-        # The only systemd operation is a bounded exact-unit metadata show.
+        functions = {node.name: node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)}
+        for name in ['pending_remote', 'pending_unit', 'pending_journal', 'pending_observation',
+                     'observation', 'retained_reason', 'reason_from_rows']:
+            original_mode = ast.unparse(functions[name])
+            self.assertNotIn('docker', original_mode)
+            self.assertNotIn('checkpoint_', original_mode)
+        # Existing modes still have no Docker route; the new mode permits
+        # only two fixed read-only Docker command shapes.
+        docker_lists = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.List)
+                        and node.elts and isinstance(node.elts[0], ast.Constant) and node.elts[0].value == 'docker']
+        self.assertEqual(len(docker_lists), 2)
+        self.assertEqual([node.elts[1].value for node in docker_lists], ['inspect', 'exec'])
+        # Both systemd reads are bounded exact-unit metadata show operations.
         tree = ast.parse(source)
         lists = [node for node in ast.walk(tree) if isinstance(node, ast.List)
                  and node.elts and isinstance(node.elts[0], ast.Constant)
                  and node.elts[0].value == 'systemctl']
-        self.assertEqual(len(lists), 1)
-        self.assertEqual(lists[0].elts[1].value, 'show')
+        self.assertEqual(len(lists), 2)
+        self.assertTrue(all(node.elts[1].value == 'show' for node in lists))
         self.assertIn('--property=ActiveState,SubState,InvocationID', source)
 
     def witness_fixture(self):
@@ -510,6 +524,197 @@ class ReaderTests(unittest.TestCase):
                           if isinstance(key, ast.Constant)}
                 self.assertEqual(ast.literal_eval(fields['schema']), 1)
                 self.assertEqual(ast.unparse(fields['completedAt']), 'int(time.time())')
+
+
+
+class CheckpointAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='native-checkpoint-read-', dir=ROOT.parent)
+        self.root = Path(self.temp.name)
+        self.directory = self.root / 'engine-release-requests'
+        self.directory.mkdir()
+        self.request = {**REQUEST, 'mode': 'checkpoint_admission'}
+        self.intent = {'instance': '1-12345678', 'container': 'c' * 64,
+            'startedAt': '2026-10-28T20:00:00.123456789Z', 'hostPid': 1234,
+            'source': 'e' * 40, 'runId': REQUEST['runKey'], 'controlSha': REQUEST['releaseSha'],
+            'at': 1791821800.125, 'retryAllowed': False}
+        self.path = self.directory / (REQUEST['runKey'] + '.legacy-checkpoint-intent')
+        self.write_intent(self.intent)
+        self.unit = {'loadState': 'loaded', 'activeState': 'inactive', 'subState': 'dead', 'invocationId': ''}
+        self.runtime = {key: self.intent[key] for key in ('container', 'startedAt', 'hostPid', 'source')}
+        self.runtime['imageId'] = 'sha256:' + 'f' * 64
+        self.native_unit, self.native_container, self.native_presence = R.checkpoint_unit, R.checkpoint_container, R.checkpoint_presence
+        self.patches = [patch.object(R, 'STATE_ROOT', self.root),
+            patch.object(R, 'checkpoint_unit', return_value=self.unit),
+            patch.object(R, 'checkpoint_container', return_value=self.runtime),
+            patch.object(R, 'checkpoint_presence', return_value='closed')]
+        for item in self.patches: item.start()
+
+    def tearDown(self):
+        for item in reversed(self.patches): item.stop()
+        self.temp.cleanup()
+
+    def write_intent(self, value):
+        self.path.write_text(json.dumps(value) + '\n'); self.path.chmod(0o600)
+
+    def test_retired_request_reads_exact_legacy_intent_and_unit_without_admission_claim(self):
+        answer = R.remote(self.request)
+        self.assertEqual(answer['checkpointIntent'], self.intent)
+        self.assertEqual(answer['intentStatus'], 'retained_exact_identity')
+        self.assertEqual(answer['unit'], self.unit)
+        self.assertEqual(answer['tcp9229Presence'], 'closed')
+        self.assertEqual(R.validate_reply(answer, self.request), answer)
+        self.assertNotIn('memory', json.dumps(answer).lower())
+        self.assertEqual(set(self.directory.iterdir()), {self.path})
+
+    def test_missing_intent_remains_unknown_while_exact_retired_unit_and_runtime_are_observed(self):
+        self.path.unlink()
+        answer = R.remote(self.request)
+        self.assertIsNone(answer['checkpointIntent'])
+        self.assertEqual(answer['intentStatus'], 'missing_unknown')
+        self.assertIn('unknown', answer['absenceMeans'])
+        self.assertEqual(R.validate_reply(answer, self.request), answer)
+
+    def test_schema_identity_source_process_and_control_mismatch_fail_closed(self):
+        for key, value in [('instance', 'wrong'), ('container', 'd' * 64), ('hostPid', True),
+            ('hostPid', 1235), ('source', 'd' * 40), ('source', 'bad'), ('runId', '1-1'),
+            ('controlSha', 'b' * 40), ('startedAt', 'bad'), ('startedAt', '2026-13-01T00:00:00Z'),
+            ('retryAllowed', True), ('at', True), ('at', float('inf')), ('at', 0)]:
+            with self.subTest(key=key, value=value):
+                self.write_intent({**self.intent, key: value})
+                with self.assertRaises(ValueError): R.remote(self.request)
+        for value in [{**self.intent, 'raw': 'private'}, {}, [], None]:
+            self.write_intent(value)
+            with self.assertRaises(ValueError): R.remote(self.request)
+
+    def test_retained_request_binds_a_different_control_generation_without_exporting_actor_or_path(self):
+        control = 'b' * 40
+        raw = '\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor', '/usr/local/lib/club-arena/engine-control-generations/' + control,
+            control, '1791829999']) + '\n'
+        self.write_intent({**self.intent, 'controlSha': control})
+        for suffix in ('.request', '.intent'):
+            path = self.directory / (REQUEST['runKey'] + suffix)
+            path.write_text(raw); path.chmod(0o600)
+        answer = R.remote(self.request)
+        self.assertEqual(answer['operationIdentityBasis'], 'retained_request_and_intent')
+        self.assertEqual(answer['operationControlSha'], control)
+        self.assertEqual(answer['retainedRequestBinding'], {**REQUEST, 'controlSha': control})
+        self.assertEqual(R.validate_reply(answer, self.request), answer)
+        self.assertNotIn('private actor', json.dumps(answer))
+        self.assertNotIn('/usr/local', json.dumps(answer))
+        (self.directory / (REQUEST['runKey'] + '.intent')).unlink()
+        with self.assertRaises(ValueError): R.remote(self.request)
+
+    def test_fixed_files_refuse_symlinks_fifo_permissions_owner_and_path_replacement(self):
+        self.path.unlink(); self.path.symlink_to(self.root / 'absent')
+        with self.assertRaises(ValueError): R.remote(self.request)
+        self.path.unlink(); os.mkfifo(self.path)
+        with self.assertRaises(ValueError): R.remote(self.request)
+        self.path.unlink(); self.write_intent(self.intent); self.path.chmod(0o644)
+        with self.assertRaises(ValueError): R.remote(self.request)
+        self.path.chmod(0o600)
+        original = R.read_lines
+        def replaced(fd, name, optional=False):
+            rows = original(fd, name, optional)
+            if name.endswith('.legacy-checkpoint-intent'):
+                self.path.unlink(); self.write_intent(self.intent)
+            return rows
+        with patch.object(R, 'read_lines', side_effect=replaced), self.assertRaises(ValueError):
+            R.remote(self.request)
+        with patch.object(R.os, 'geteuid', return_value=os.geteuid() + 1), self.assertRaises(ValueError):
+            R.remote(self.request)
+
+    def test_duplicate_truncated_oversized_and_cross_read_changes_are_refused(self):
+        for raw in ['{', '{"instance":"a","instance":"b"}', 'x' * 4097, json.dumps(self.intent) + '\n{}']:
+            self.path.write_text(raw)
+            with self.subTest(raw=raw[:30]), self.assertRaises(ValueError): R.remote(self.request)
+        self.write_intent(self.intent)
+        calls = 0
+        def changed(_runtime):
+            nonlocal calls
+            calls += 1
+            self.write_intent({**self.intent, 'instance': '1-00000000'})
+            return 'closed'
+        with patch.object(R, 'checkpoint_presence', side_effect=changed), self.assertRaises(ValueError):
+            R.remote(self.request)
+        self.assertEqual(calls, 1)
+
+    def test_runtime_or_unit_replacement_during_probe_is_refused(self):
+        with patch.object(R, 'checkpoint_container', side_effect=[self.runtime, {**self.runtime, 'hostPid': 99}]), self.assertRaises(ValueError):
+            R.remote(self.request)
+        with patch.object(R, 'checkpoint_unit', side_effect=[self.unit, {**self.unit, 'loadState': 'not-found'}]), self.assertRaises(ValueError):
+            R.remote(self.request)
+
+    def test_export_shape_and_forged_identity_or_presence_are_refused(self):
+        answer = R.remote(self.request)
+        for mutation in [{'tcp9229Presence': 'safe'}, {'intentStatus': 'not_started'}, {'readOnly': False},
+            {'raw': 'private'}, {'runtime': {**self.runtime, 'hostPid': True}},
+            {'checkpointIntent': {**self.intent, 'runId': '1-1'}},
+            {'checkpointIntent': {**self.intent, 'controlSha': 'b' * 40}},
+            {'operationControlSha': 'b' * 40}, {'operationIdentityBasis': 'ready'},
+            {'retainedRequestBinding': {**REQUEST, 'controlSha': 'b' * 40}},
+            {'operationIdentityBasis': 'retained_request_and_intent'},
+            {'unit': {**self.unit, 'invocationId': 'bad'}}]:
+            with self.subTest(mutation=mutation), self.assertRaises((ValueError, TypeError)):
+                R.validate_reply({**answer, **mutation}, self.request)
+
+    def test_native_commands_are_fixed_metadata_and_tcp_only_with_unknown_errors(self):
+        calls = []
+        raw = ('c' * 64 + ' sha256:' + 'f' * 64 + ' true ' + self.intent['startedAt'] + ' 1234 ' + 'e' * 40).encode()
+        def read(args):
+            calls.append(args)
+            if args[0] == 'systemctl':
+                return types.SimpleNamespace(returncode=0, stdout=b'LoadState=not-found\nActiveState=inactive\nSubState=dead\nInvocationID=\n')
+            if args[1] == 'inspect': return types.SimpleNamespace(returncode=0, stdout=raw)
+            return types.SimpleNamespace(returncode=0, stdout=b'{"presence":"open"}\n')
+        # Invoke the real functions despite the outer per-test provider guards.
+        with patch.object(R, 'bounded_journal', side_effect=read):
+            unit = self.native_unit(self.request)
+            runtime = self.native_container()
+            self.assertEqual(self.native_presence(runtime), 'open')
+        self.assertEqual(unit['loadState'], 'not-found')
+        self.assertEqual(calls[0][0:3], ['systemctl', 'show', 'club-arena-engine-release-v1@' + REQUEST['runKey'] + '.service'])
+        self.assertEqual(calls[1], ['docker', 'inspect', '--format', R.CONTAINER_FORMAT, 'club-arena-engine'])
+        self.assertEqual(calls[2], ['docker', 'exec', 'c' * 64, 'node', '-e', R.CHECKPOINT_TCP])
+        for raw in [b'private', b'{"presence":"closed","raw":"private"}', b'{"presence":"safe"}']:
+            with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=raw)):
+                self.assertEqual(self.native_presence(self.runtime), 'unknown')
+        for failure in [OSError('private'), subprocess.TimeoutExpired(['fixed'], 5)]:
+            with patch.object(R, 'bounded_journal', side_effect=failure):
+                self.assertEqual(self.native_presence(self.runtime), 'unknown')
+        for token in ['inspector', 'http', 'WebSocket', 'process.kill', 'process.env', 'availableMemory']:
+            self.assertNotIn(token, R.CHECKPOINT_TCP)
+
+    def test_malformed_mode_and_presence_types_are_refused_without_unhashable_errors(self):
+        for value in [None, False, 0, [], {}, ['checkpoint_admission']]:
+            with self.subTest(mode=value), self.assertRaises(ValueError):
+                R.selection({**REQUEST, 'mode': value})
+        for presence in [None, False, 0, [], {}]:
+            raw = json.dumps({'presence': presence}).encode()
+            with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=raw)):
+                self.assertEqual(self.native_presence(self.runtime), 'unknown')
+        answer = R.remote(self.request)
+        for mutation in [{'tcp9229Presence': []}, {'operationIdentityBasis': {}},
+                         {'unit': {**self.unit, 'activeState': []}}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_reply({**answer, **mutation}, self.request)
+
+    def test_actual_native_loopback_tcp_open_then_closed_without_inspector(self):
+        node = shutil.which('node')
+        self.assertIsNotNone(node, 'configured Node required for native TCP fixture')
+        listener = socket.socket()
+        try:
+            listener.bind(('127.0.0.1', 0)); listener.listen(1)
+            self.assertEqual(R.CHECKPOINT_TCP.count('port:9229'), 1)
+            program = R.CHECKPOINT_TCP.replace('port:9229', 'port:' + str(listener.getsockname()[1]))
+            opened = subprocess.run([node, '-e', program], capture_output=True, timeout=3, check=True)
+            self.assertEqual(json.loads(opened.stdout), {'presence': 'open'})
+        finally:
+            listener.close()
+        closed = subprocess.run([node, '-e', program], capture_output=True, timeout=3, check=True)
+        self.assertEqual(json.loads(closed.stdout), {'presence': 'closed'})
 
 
 if __name__ == '__main__':

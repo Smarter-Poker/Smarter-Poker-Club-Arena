@@ -1,0 +1,7 @@
+# Read original checkpoint admission metadata without opening an inspector
+
+The failed retained-original release left inspector cleanup unknown. The existing pending-transaction reader requires a retained request/intent pair and could not describe a retired checkpoint. Add a bounded `checkpoint_admission` mode to that same explicit Production Integrity Audit read, without changing its workflow, credentials, publication or existing modes.
+
+The read validates strict regular owner-only intent files, original request/control binding where retained, native container/process/source identity and exact systemd unit metadata across the probe. It checks only fixed loopback TCP9229 presence inside that container. It never sends inspector HTTP/WebSocket traffic, attaches, signals, imports application code, closes an inspector, retries a checkpoint, clears intent or changes release state. Missing identity remains unknown, and unit-name metadata alone does not bind a selected source. No child-heap result is presented as main-process capacity.
+
+The existing 30 cases remain, with native fixed-command allowlists scoped to the new mode. Additional cases cover retired and missing intent, control binding, metadata races, malformed types, strict files, unknown transport, and real isolated TCP open/closed behavior. The production port remains pinned to9229 while the isolated test uses its own ephemeral listener. Actual protected publication and the subsequent exact-run read remain required; this observer does not repair recovery or certify an engine release.

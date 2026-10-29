@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { recordNonVerdict } from './support/nonVerdict';
 
 test.describe('Player Stats production experience', () => {
   // The overview rollup is intentionally exhaustive and can take several
@@ -50,6 +51,177 @@ test.describe('Player Stats production experience', () => {
       await expect(analysis).toBeFocused();
       await expect(page.locator('#stats-panel-analysis')).toBeVisible();
     }
+  });
+
+  test('published downline pagination survives the initial debounce and resets only for changed search', async ({
+    page,
+  }, testInfo) => {
+    // Use the lane's existing isolated session. Only these three read responses
+    // are synthetic; authentication and every published JS/CSS asset stay real.
+    const expected = process.env.LIVE_SHA;
+    expect(expected, 'The trusted publication lane must supply its exact client SHA').toMatch(
+      /^[a-f0-9]{40}$/
+    );
+    const bracket: Array<{ point: string; sha: string | null; reason: string | null }> = [];
+    const release = async (point: 'before' | 'after') => {
+      let sha: string | null = null;
+      let reason: string | null = null;
+      try {
+        const response = await page.request.get('build-info.json');
+        if (!response.ok()) reason = 'build_info_unreadable';
+        else {
+          const value = (await response.json()).ca_sha;
+          if (typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) sha = value;
+          else reason = 'build_info_identity_unreadable';
+        }
+      } catch {
+        reason = 'build_info_unreadable';
+      }
+      bracket.push({ point, sha, reason });
+      if (reason || sha !== expected) {
+        const description = await recordNonVerdict(testInfo, {
+          title: 'Published downline pagination release was not established',
+          detail:
+            'The exact expected client was not readable before and after this proof; the maintained outer release-window classifier decides forward publication or rollback.',
+          evidence: { expected, bracket },
+        });
+        test.skip(true, description);
+      }
+    };
+    await release('before');
+    const reads: Array<{ limit: number; search: string | null }> = [];
+    const blockedWrites: string[] = [];
+    let armed = false;
+    let clockInstalled = false;
+    let releaseRoles = () => {};
+    const rolesGate = new Promise<void>((resolve) => {
+      releaseRoles = resolve;
+    });
+    const syntheticClub = 'ee871000-0000-4000-8000-000000000001';
+    await page.route('**/rest/v1/**', async (route) => {
+      const request = route.request();
+      const rpc = new URL(request.url()).pathname.split('/rpc/')[1];
+      if (rpc === 'fn_my_agent_roles') {
+        await rolesGate;
+        await route.fulfill({
+          json: [
+            {
+              club_id: syntheticClub,
+              club_name: 'Isolated Pagination Fixture',
+              role: 'agent',
+              agent_id: 'ee871000-0000-4000-8000-000000000002',
+              is_overseer: false,
+            },
+          ],
+        });
+      } else if (rpc === 'fn_agent_downline_rake') {
+        const body = request.postDataJSON();
+        expect(body.p_club_id).toBe(syntheticClub);
+        reads.push({ limit: body.p_limit, search: body.p_search });
+        const count = body.p_limit === 501 ? 501 : 620;
+        await route.fulfill({
+          json: Array.from({ length: count }, (_, index) => ({
+            player_id: `isolated-pagination-${index}`,
+            username: `Fixture Player ${index}`,
+            club_id: syntheticClub,
+            club_name: 'Isolated Pagination Fixture',
+            role: 'player',
+            depth: 1,
+            upline_user_id: null,
+            upline_name: null,
+            rake_generated: index + 1,
+            hands: index + 2,
+            last_hand_at: null,
+            downline_players: 0,
+            downline_rake: 0,
+          })),
+        });
+      } else if (rpc === 'fn_agent_downline_rake_summary') {
+        await route.fulfill({
+          json: {
+            period_start: null,
+            period_end: null,
+            members: 620,
+            active: 620,
+            direct: 620,
+            sub_agents: 0,
+            hands: 1000,
+            rake_generated: 620,
+            commission_rate: 0.2,
+            estimated_commission: 124,
+            last_hand_at: null,
+            top_earner: null,
+          },
+        });
+      } else if (armed && !['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
+        // During the bounded component interaction, no unknown RPC or REST
+        // mutation may escape to the production database. Never log payloads.
+        blockedWrites.push(rpc || request.method());
+        await route.abort('blockedbyclient');
+      } else {
+        await route.fallback();
+      }
+    });
+    try {
+      const start = Date.now();
+      await page.clock.install({ time: start });
+      clockInstalled = true;
+      await page.reload();
+      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
+      // Let the real 220ms outgoing tab animation finish. The held roles read
+      // prevents DownlineRakePanel mounting until its clock is safely paused.
+      await page.getByRole('tab', { name: 'Rake', exact: true }).click();
+      await expect(page.locator('#stats-panel-rake')).toBeVisible();
+      await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+      armed = true;
+      releaseRoles();
+      const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
+      await expect(panel.getByRole('row')).toHaveCount(501);
+      expect(reads).toEqual([{ limit: 501, search: null }]);
+      await panel.getByRole('button', { name: 'Show 500 More Members' }).click();
+      await expect(panel.getByRole('row')).toHaveCount(621);
+      expect(reads).toEqual([
+        { limit: 501, search: null },
+        { limit: 1001, search: null },
+      ]);
+      await page.clock.runFor(300);
+      await expect(panel.getByRole('row')).toHaveCount(621);
+      await expect(panel.getByRole('button', { name: 'Show 500 More Members' })).toHaveCount(0);
+      expect(reads).toHaveLength(2);
+      await panel.getByRole('textbox', { name: 'Search Downline Players' }).fill('river');
+      await page.clock.runFor(299);
+      expect(reads).toHaveLength(2);
+      await page.clock.runFor(1);
+      await expect(panel.getByRole('row')).toHaveCount(501);
+      expect(reads).toEqual([
+        { limit: 501, search: null },
+        { limit: 1001, search: null },
+        { limit: 501, search: 'river' },
+      ]);
+      expect(blockedWrites).toEqual([]);
+    } finally {
+      armed = false;
+      releaseRoles();
+      try {
+        if (clockInstalled) await page.clock.resume();
+        await page.unroute('**/rest/v1/**');
+      } finally {
+        // Read even after an assertion failure: a concurrent publish is a
+        // non-verdict, never evidence that the expected UI regressed.
+        await release('after');
+      }
+    }
+    await testInfo.attach('published-downline-pagination', {
+      body: JSON.stringify({
+        clientSha: expected,
+        bracket,
+        syntheticReadResponses: true,
+        actualPublishedAssets: true,
+        reads,
+        blockedWrites: 0,
+      }),
+      contentType: 'application/json',
+    });
   });
 
   test('traverses every owner Stats surface and preserves club and range scope', async ({

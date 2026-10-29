@@ -10,6 +10,98 @@ import {
 import type { HandContinuationBatch } from '../../engine/HandContinuationLane.js';
 import type { F06HandIdentity } from '../F06HandPermit.js';
 
+/** Transient canonical SQL admission; never serialized into the original capsule. */
+export interface ClaimedContinuationChair {
+  readonly user_id: string;
+  readonly seat_id: string;
+  readonly seat_joined_at: string;
+  readonly stack_before: number;
+  readonly authorized_stack: number;
+}
+interface ClaimedChairProof {
+  readonly writerGeneration: string;
+  readonly payloadSha256: string;
+  readonly chairs: ReadonlyMap<string, Readonly<ClaimedContinuationChair>>;
+}
+const claimedChairs = new WeakMap<PrivateHandContinuation, Readonly<ClaimedChairProof>>();
+
+/** Only the exact decoded object returned by a verified claim owns this proof. */
+export function claimedContinuationChair(
+  original: PrivateHandContinuation,
+  userId: string
+): Readonly<ClaimedContinuationChair> | null {
+  return claimedChairs.get(original)?.chairs.get(userId) ?? null;
+}
+
+function bindClaimedChairs(
+  original: PrivateHandContinuation,
+  admission: unknown,
+  writerGeneration: string,
+  payloadSha256: string
+): void {
+  const a = admission as Record<string, unknown> | null;
+  const unproven = () => new Error('Hand Continuation Chair Admission Is Unproven');
+  if (
+    !a ||
+    typeof a !== 'object' ||
+    Array.isArray(a) ||
+    a.version !== 1 ||
+    a.tournament_id !== original.original.tournament_id ||
+    a.table_id !== original.original.table_id ||
+    a.writer_generation !== writerGeneration ||
+    a.original_generation !== original.original.lease_generation ||
+    a.hand_number !== original.original.hand_number ||
+    a.sequence !== String(original.batch.sequence) ||
+    a.payload_sha256 !== payloadSha256 ||
+    !Array.isArray(a.seats) ||
+    a.seats.length !== original.seats.length
+  )
+    throw unproven();
+  const expected = new Map(original.seats.map((seat) => [seat.user_id, seat]));
+  if (expected.size !== original.seats.length) throw unproven();
+  const chairs = new Map<string, Readonly<ClaimedContinuationChair>>();
+  const seatIds = new Set<string>();
+  for (const item of a.seats) {
+    const row = item as Record<string, unknown> | null;
+    if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.user_id !== 'string')
+      throw unproven();
+    const seat = expected.get(row.user_id);
+    if (
+      !seat ||
+      typeof seat.stack_before !== 'number' ||
+      !Number.isFinite(seat.stack_before) ||
+      seat.stack_before < 0 ||
+      seat.stack_before > Number.MAX_SAFE_INTEGER ||
+      typeof seat.seat_id !== 'string' ||
+      seat.seat_id.length === 0 ||
+      typeof seat.seat_joined_at !== 'string' ||
+      seat.seat_joined_at.length === 0 ||
+      chairs.has(row.user_id) ||
+      row.seat_id !== seat.seat_id ||
+      row.seat_joined_at !== seat.seat_joined_at ||
+      row.stack_before !== seat.stack_before ||
+      typeof row.authorized_stack !== 'number' ||
+      !Number.isFinite(row.authorized_stack) ||
+      row.authorized_stack < seat.stack_before ||
+      row.authorized_stack > Number.MAX_SAFE_INTEGER ||
+      seatIds.has(seat.seat_id)
+    )
+      throw unproven();
+    seatIds.add(seat.seat_id);
+    chairs.set(
+      row.user_id,
+      Object.freeze({
+        user_id: row.user_id,
+        seat_id: seat.seat_id,
+        seat_joined_at: seat.seat_joined_at,
+        stack_before: seat.stack_before,
+        authorized_stack: row.authorized_stack,
+      })
+    );
+  }
+  claimedChairs.set(original, Object.freeze({ writerGeneration, payloadSha256, chairs }));
+}
+
 type Transport = (
   name: string,
   args: Record<string, unknown>
@@ -92,7 +184,37 @@ export async function claimHandContinuation(
     String(value.batch.sequence) !== claim.sequence
   )
     throw new Error('Hand Continuation Claim Identity Changed');
+  if (Object.prototype.hasOwnProperty.call(row, 'chair_admission'))
+    bindClaimedChairs(value, row.chair_admission, writerGeneration, claim.sha256);
   return value;
+}
+
+/** Revalidate a changed observed stack inside the same original owner's claim. */
+export async function refreshClaimedContinuationChairs(
+  original: PrivateHandContinuation,
+  current: () => boolean,
+  transport: Transport = rpc
+): Promise<void> {
+  const before = claimedChairs.get(original);
+  if (!before || !current()) throw new Error('Hand Continuation Chair Admission Is Unproven');
+  const next = await claimHandContinuation(
+    original.original.tournament_id,
+    before.writerGeneration,
+    original.original.table_id,
+    current,
+    transport
+  );
+  const after = next ? claimedChairs.get(next) : null;
+  if (
+    !current() ||
+    !next ||
+    !after ||
+    claimedChairs.get(original) !== before ||
+    after.payloadSha256 !== before.payloadSha256 ||
+    encodePrivateHandContinuation(original).sha256 !== before.payloadSha256
+  )
+    throw new Error('Hand Continuation Chair Admission Is Unproven');
+  claimedChairs.set(original, after);
 }
 
 /** Only a complete, untouched river can use a legacy snapshot without a deck. */

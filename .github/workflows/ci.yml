@@ -4086,7 +4086,13 @@ jobs:
     # the beats, on one worker for 7.1 of the job's 16 test minutes (run
     # 36886817861); it builds its own bundle and needs neither this build nor
     # the shared preview, so it runs beside this job instead of after it.
-    name: CSS Beat suites (multi-table, animations, Table Studio)
+    name: CSS Beat suites shard ${{ matrix.shard }}/3 (multi-table, animations, Table Studio)
+    # Paid VMs run disjoint Playwright shards. The required aggregate waits for
+    # every shard; independent real-component gates execute once across them.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
@@ -4096,12 +4102,21 @@ jobs:
     steps:
       - name: Reserve disk for browser checks
         # This browser-only job does not invoke the separate Android build.
-        # Keep its fixtures and failure evidence; reclaim the unused hosted SDK.
+        # The paid VM had 369 GiB free while measuring/removing this unused
+        # 12 GiB SDK cost 98 seconds. Skip that work only with >=100 GiB proven
+        # free; smaller or unparseable capacity keeps the existing cleanup.
+        # A failed capacity command remains a visible failure.
         run: |
+          set -euo pipefail
           df -h /
-          if [ -d /usr/local/lib/android/sdk ]; then
-            sudo du -sh /usr/local/lib/android/sdk
-            sudo rm -rf -- /usr/local/lib/android/sdk
+          FREE_KB=$(df -Pk / | awk 'NR == 2 { print $4 }')
+          if [[ "$FREE_KB" =~ ^[0-9]+$ ]] && (( 10#$FREE_KB >= 100 * 1024 * 1024 )); then
+            echo 'At least 100 GiB is free; browser checks need no SDK cleanup.'
+          else
+            if [ -d /usr/local/lib/android/sdk ]; then
+              sudo du -sh /usr/local/lib/android/sdk
+              sudo rm -rf -- /usr/local/lib/android/sdk
+            fi
           fi
           df -h /
 
@@ -4354,7 +4369,7 @@ jobs:
           # The JSON report beside the line reporter feeds the flaky-case
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" node scripts/ci/ui-test-selection.mjs browser tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" node scripts/ci/ui-test-selection.mjs browser tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/3
 
       # The CSS Beat suites run with one retry: a case that passed only on
       # retry is named, never counted as clean.
@@ -4372,7 +4387,7 @@ jobs:
         if: ${{ failure() && steps.css-beats.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
-          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: css-beats-failure-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 3
           if-no-files-found: warn
@@ -4382,6 +4397,7 @@ jobs:
       # Its dedicated route redirects unless the test-harness flag is enabled -
       # which the shared build below now carries, so this needs no server.
       - name: Table Studio real-component purchase, sync, and accessibility gate
+        if: matrix.shard == 1
         id: table-studio
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
@@ -4400,6 +4416,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Insurance and Rabbit Hunt 375px decision gate
+        if: matrix.shard == 2
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:financial-decisions
@@ -4409,6 +4426,7 @@ jobs:
       # login and no production data. Guards the shared /push/ registration,
       # the Not Now cool-down and the owner receipt exception (2026-09-27).
       - name: Push enrollment opt-in browser gate
+        if: matrix.shard == 3
         run: npm run test:e2e:push-enrollment
 
       # if: always() because the preview is now started outside the step that

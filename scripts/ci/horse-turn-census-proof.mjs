@@ -92,6 +92,130 @@ export function horseTurnHistoryReason(snapshot, api) {
     return 'unknown';
   }
 }
+// Fixed tuple indices: calls, delivered mask, sampled calls, invalid-deck calls,
+// actual iterations, reached/band/conditioner/bigBet-access masks, TRUE/FALSE/ABSENT
+// bigBet masks, tier0..3 masks, original large-call witness/TRUE/unknown masks.
+const RANGE_MASK_MAX = (1 << 27) - 1;
+const rangeStatuses = ['unknown', 'observed', 'not_reached', 'outside_domain', 'refused'];
+function originalLargeAllInCall(snapshot, index) {
+  const gs = snapshot?.gameState,
+    p = gs?.players?.[index],
+    bb = gs?.bigBlind;
+  if (!p || !Array.isArray(gs.actionHistory) || !Number.isFinite(bb) || bb <= 0) return 'unknown';
+  const acts = gs.actionHistory.filter((a) => a.userId === p.user_id && a.stage === gs.stage);
+  // Classify the last original action, without replaying wagers. Earlier
+  // passive actions or sub-20bb aggression do not establish a genuine large
+  // bet; an earlier large bet/raise excludes this false-bigBet witness.
+  const a = acts.at(-1);
+  if (!a || a.action !== 'all_in') return false;
+  if (!Number.isFinite(a.amount)) return 'unknown';
+  if (a.amount < 20 * bb) return false;
+  let unsupported = false;
+  for (const prior of acts.slice(0, -1)) {
+    if (!Number.isFinite(prior.amount)) unsupported = true;
+    else if (['bet', 'raise'].includes(prior.action)) {
+      if (prior.amount >= 20 * bb) return false;
+      if (prior.amount < 0) unsupported = true;
+    } else if (!['check', 'call'].includes(prior.action) || prior.amount < 0) unsupported = true;
+  }
+  if (unsupported) return 'unknown';
+  const n = a.publicNode;
+  if (
+    n?.version !== 1 ||
+    n.status !== 'captured' ||
+    n.actorSeat !== p.seat ||
+    a.seat !== p.seat ||
+    n.street !== gs.stage ||
+    n.variant !== gs.gameVariant ||
+    n.mode !== gs.gameMode ||
+    n.bigBlind !== bb ||
+    !Number.isFinite(n.currentBet) ||
+    n.currentBet <= 0 ||
+    !Number.isFinite(n.toCall) ||
+    !Array.isArray(n.seats)
+  )
+    return 'unknown';
+  const seats = n.seats.filter((row) => Array.isArray(row) && row[0] === p.seat);
+  if (seats.length !== 1 || seats[0].length !== 7) return 'unknown';
+  const behind = seats[0][1],
+    prior = seats[0][2];
+  if (
+    !Number.isFinite(behind) ||
+    behind < 0 ||
+    !Number.isFinite(prior) ||
+    prior < 0 ||
+    a.amount < prior ||
+    Math.abs(a.amount - prior - behind) > 1e-8 ||
+    Math.abs(n.toCall - Math.max(0, n.currentBet - prior)) > 1e-8
+  )
+    return 'unknown';
+  return a.amount <= n.currentBet + 1e-8;
+}
+export function horseTurnRangeEvidence(c, api) {
+  const unknown = { rangeStatus: 'unknown', rangeUse: null };
+  try {
+    if (
+      typeof api?.horseRangeConsumptionIsValid !== 'function' ||
+      !c?.rangeConsumption ||
+      !api.horseRangeConsumptionIsValid(c.rangeConsumption, c.snapshot, c.readFrame?.sha256 ?? null)
+    )
+      return unknown;
+    const r = c.rangeConsumption;
+    if (r.status === 'refused') return { rangeStatus: 'refused', rangeUse: null };
+    const v = Array(19).fill(0);
+    v[0] = r.calls.length;
+    for (const call of r.calls) {
+      v[call.status === 'sampled' ? 2 : 3]++;
+      v[4] += call.samples;
+      if (!Number.isSafeInteger(v[4])) return unknown;
+      call.opponents.forEach((row, i) => {
+        const bit = 1 << (call.board * 9 + i);
+        v[1] |= bit;
+        for (let flag = 0; flag < 4; flag++) if (row[11] & (1 << flag)) v[5 + flag] |= bit;
+        v[row[5] === 1 ? 9 : row[5] === 0 ? 10 : 11] |= bit;
+        if (row[10] !== null) v[12 + row[10]] |= bit;
+        const candidate = originalLargeAllInCall(c.snapshot, row[0]);
+        if (candidate === true) {
+          v[16] |= bit;
+          if (row[5] === 1) v[17] |= bit;
+        } else if (candidate === 'unknown') v[18] |= bit;
+      });
+    }
+    return { rangeStatus: r.status, rangeUse: v };
+  } catch {
+    return unknown;
+  }
+}
+function validRangeSummary(t) {
+  if (!rangeStatuses.includes(t.rangeStatus)) return false;
+  if (['unknown', 'refused'].includes(t.rangeStatus)) return t.rangeUse === null;
+  const v = t.rangeUse;
+  if (!Array.isArray(v) || v.length !== 19 || v.some((n) => !Number.isSafeInteger(n) || n < 0))
+    return false;
+  if (t.rangeStatus !== 'observed') return v.every((n) => n === 0);
+  if (v[0] < 1 || v[0] > 3 || v[2] + v[3] !== v[0] || (v[2] > 0 ? v[4] < 1 : v[4] !== 0) || !v[1])
+    return false;
+  for (const i of [1, ...Array.from({ length: 14 }, (_, n) => n + 5)])
+    if (v[i] > RANGE_MASK_MAX) return false;
+  const subset = (a, b) => (a & b) === a;
+  if (
+    !subset(v[5], v[1]) ||
+    [6, 7, 8, 12, 13, 14, 15].some((i) => !subset(v[i], v[5])) ||
+    [9, 10, 11, 16, 17, 18].some((i) => !subset(v[i], v[1]))
+  )
+    return false;
+  if (
+    (v[9] | v[10] | v[11]) !== v[1] ||
+    v[9] & v[10] ||
+    v[9] & v[11] ||
+    v[10] & v[11] ||
+    v[17] !== (v[16] & v[9]) ||
+    v[16] & v[18]
+  )
+    return false;
+  for (let i = 12; i < 16; i++) for (let j = i + 1; j < 16; j++) if (v[i] & v[j]) return false;
+  return true;
+}
 const stages = ['preflop', 'flop', 'pineapple_discard', 'turn', 'river', 'showdown'];
 const actions = ['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard'];
 const origins = ['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced', 'unknown'];
@@ -111,7 +235,7 @@ const utc = (x) =>
 export function validateHorseTurnCensusPacket(p, expectedSource = p?.sourceSha) {
   if (
     !exact(p, ['version', 'sourceSha', 'window', 'horseIds', 'hands']) ||
-    ![2, 3].includes(p.version) ||
+    ![2, 3, 4].includes(p.version) ||
     !hex(expectedSource, 40) ||
     p.sourceSha !== expectedSource ||
     !exact(p.window, ['startUtc', 'endUtc']) ||
@@ -141,8 +265,8 @@ export function validateHorseTurnCensusPacket(p, expectedSource = p?.sourceSha) 
   const seen = new Set();
   for (const h of p.hands) {
     if (
-      !exact(h, ['handKey', 'committedAtMs', 'actions', ...(p.version === 3 ? ['context'] : [])]) ||
-      (p.version === 3 && !validContext(h.context)) ||
+      !exact(h, ['handKey', 'committedAtMs', 'actions', ...(p.version >= 3 ? ['context'] : [])]) ||
+      (p.version >= 3 && !validContext(h.context)) ||
       !hex(h.handKey, 64) ||
       seen.has(h.handKey) ||
       !Number.isSafeInteger(h.committedAtMs) ||
@@ -240,6 +364,7 @@ function closedPhases(value) {
 }
 const emptyTurn = (h, a) => ({
   ...(h.context ? { contextBinding: 'unknown', historyReason: 'unknown' } : {}),
+
   actorIndex: a.actorIndex,
   handKey: h.handKey,
   actionOrdinal: a.actionOrdinal,
@@ -268,7 +393,7 @@ const equalAction = (a, expected, ids) =>
 /** Batch is a private installed-store result. Only closed fields are returned. Missing domains survive every refusal. */
 export function inspectHorseTurnCensus(packet, batch, api, clock = () => performance.now()) {
   const base = {
-    version: packet?.version === 3 ? 3 : 2,
+    version: [3, 4].includes(packet?.version) ? packet.version : 2,
     scope: 'supplied_committed_turn_census',
     status: 'unknown',
     rawRecordsExported: false,
@@ -282,7 +407,12 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
   } catch {
     return { ...base, reason: 'input_refused', turns: [] };
   }
-  const turns = packet.hands.flatMap((h) => h.actions.map((a) => emptyTurn(h, a)));
+  const turns = packet.hands.flatMap((h) =>
+    h.actions.map((a) => ({
+      ...emptyTurn(h, a),
+      ...(packet.version === 4 ? { rangeStatus: 'unknown', rangeUse: null } : {}),
+    }))
+  );
   const result = {
     ...base,
     sourceSha: packet.sourceSha,
@@ -577,12 +707,14 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
           api.horsePlanHandKey(s.gameState.actionHistory, context),
           context
         );
-        if (packet.version === 3) {
+        if (packet.version >= 3) {
           out.contextBinding = horseTurnContextBinding(expected.context, s);
           if (out.contextBinding !== 'matched') continue;
         }
         out.inputBinding = 'canonical_digest_and_read_frame';
-        if (packet.version === 3) out.historyReason = horseTurnHistoryReason(s, api);
+        if (packet.version >= 3) out.historyReason = horseTurnHistoryReason(s, api);
+        if (packet.version === 4 && out.execution === 'intended' && out.selection === 'matched')
+          Object.assign(out, horseTurnRangeEvidence(c, api));
         out.publicRead = api.horseObserverReadsUsedPublicPool(c.observerReads, s)
           ? 'pooled_public'
           : api.horseObserverReadsWereIndependent(c.observerReads, s)
@@ -677,6 +809,12 @@ export async function loadInstalledTurnCensusApis() {
     Object.assign(
       api,
       await import(/* @vite-ignore */ '/app/dist/engine/HorseObserverReadContext.js')
+    );
+  } catch {}
+  try {
+    Object.assign(
+      api,
+      await import(/* @vite-ignore */ '/app/dist/engine/HorseRangeConsumptionReceipt.js')
     );
   } catch {}
   return api;
@@ -782,7 +920,7 @@ export function sanitizeHorseTurnCensusResult(v) {
   ];
   if (
     !exact(v, root) ||
-    ![2, 3].includes(v.version) ||
+    ![2, 3, 4].includes(v.version) ||
     v.scope !== 'supplied_committed_turn_census' ||
     !['observed', 'unknown'].includes(v.status) ||
     !hex(v.sourceSha, 40) ||
@@ -844,13 +982,21 @@ export function sanitizeHorseTurnCensusResult(v) {
         'origin',
         ...Object.keys(states),
         'phases',
-        ...(v.version === 3 ? ['contextBinding', 'historyReason'] : []),
+        ...(v.version >= 3 ? ['contextBinding', 'historyReason'] : []),
+        ...(v.version === 4 ? ['rangeStatus', 'rangeUse'] : []),
       ]) ||
-      (v.version === 3 &&
+      (v.version >= 3 &&
         (!['unknown', 'matched', 'contradictory'].includes(t.contextBinding) ||
           !['unknown', ...Object.values(historyReasons).flat()].includes(t.historyReason) ||
           (t.historyReason !== 'unknown' &&
             t.inputBinding !== 'canonical_digest_and_read_frame'))) ||
+      (v.version === 4 &&
+        (!validRangeSummary(t) ||
+          (t.rangeStatus !== 'unknown' &&
+            (t.inputBinding !== 'canonical_digest_and_read_frame' ||
+              t.contextBinding !== 'matched' ||
+              t.execution !== 'intended' ||
+              t.selection !== 'matched')))) ||
       !Number.isSafeInteger(t.actorIndex) ||
       t.actorIndex < 0 ||
       t.actorIndex >= 1000 ||
@@ -882,7 +1028,7 @@ export function sanitizeHorseTurnCensusResult(v) {
     )
       throw Error('result_refused');
     if (
-      v.version === 3 &&
+      v.version >= 3 &&
       ((t.contextBinding === 'matched' &&
         (t.inputBinding !== 'canonical_digest_and_read_frame' ||
           t.capture !== 'present' ||

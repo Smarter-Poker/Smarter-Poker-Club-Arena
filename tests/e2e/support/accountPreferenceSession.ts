@@ -2,6 +2,23 @@ import { expect, devices, type Browser, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
 
+/** A fresh authenticated device completes the actual first-run agreement UI. */
+export async function acknowledgePreferenceWelcome(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: 'Welcome To Poker Arena', exact: true });
+  await expect(dialog).toBeVisible({ timeout: 45_000 });
+  const agreement = dialog.getByRole('checkbox', {
+    name: 'I Understand And Agree To These Terms',
+    exact: true,
+  });
+  if ((await agreement.getAttribute('aria-checked')) !== 'true')
+    await agreement.click({ timeout: 15_000 });
+  await expect(agreement).toHaveAttribute('aria-checked', 'true');
+  await dialog
+    .getByRole('button', { name: 'Enter Poker Arena', exact: true })
+    .click({ timeout: 15_000 });
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+}
+
 async function passwordPreferenceSession(account: TemporaryCustomizationAccount) {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -72,8 +89,20 @@ export async function logoutAndOpenFreshPreferenceDevice(
   if (!(await logout.isVisible()))
     await page.getByRole('button', { name: 'Open Menu', exact: true }).click();
   await logout.click();
+  await expect(page).toHaveURL(/\/auth(?:\/|[?#]|$)/, { timeout: 45_000 });
   await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('smarter-poker-auth')))
+    .poll(
+      async () => {
+        try {
+          return await page.evaluate(() => localStorage.getItem('smarter-poker-auth'));
+        } catch (error) {
+          if (/Execution context was destroyed|because of a navigation/.test(String(error)))
+            return 'navigation-pending';
+          throw error;
+        }
+      },
+      { timeout: 45_000 }
+    )
     .toBeNull();
   const browser = page.context().browser();
   if (!browser) throw new Error('Separate browser context required');

@@ -16,6 +16,12 @@ type Heap = Pick<
   'heap_size_limit' | 'used_heap_size' | 'total_available_size'
 >;
 
+export type HorseHistoryRetentionRefusal =
+  | 'invalid_claim'
+  | 'heap_unavailable'
+  | 'heap_headroom'
+  | 'retention_capacity';
+
 export class HorseHistoryRetentionBudget {
   private readonly claims = new Map<object, { bytes: number; evict: () => void }>();
   private retained = 0;
@@ -32,8 +38,50 @@ export class HorseHistoryRetentionBudget {
     this.retained -= claim.bytes;
     this.claims.delete(owner);
   }
-  reserve(owner: object, bytes: number, evict: () => void): boolean {
-    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes) return false;
+  /** Same-isolate admission for a synchronous representation of an exact retained packet.
+   * This does not grow a claim, evict an original or guarantee V8 allocation. */
+  canAllocateRepresentation(
+    owner: object,
+    report?: (reason: HorseHistoryRetentionRefusal) => void
+  ): boolean {
+    const refuse = (reason: HorseHistoryRetentionRefusal): false => {
+      try {
+        report?.(reason);
+      } catch {
+        /* diagnostics cannot alter admission */
+      }
+      return false;
+    };
+    const claim = this.claims.get(owner);
+    if (!claim || claim.bytes <= 0) return refuse('invalid_claim');
+    let available: number;
+    try {
+      const h = this.heap();
+      available = Math.min(h.total_available_size, h.heap_size_limit - h.used_heap_size);
+      if (!Number.isFinite(available) || available < 0) return refuse('heap_unavailable');
+    } catch {
+      return refuse('heap_unavailable');
+    }
+    if (claim.bytes * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE > available)
+      return refuse('heap_headroom');
+    return true;
+  }
+  reserve(
+    owner: object,
+    bytes: number,
+    evict: () => void,
+    report?: (reason: HorseHistoryRetentionRefusal) => void
+  ): boolean {
+    const refuse = (reason: HorseHistoryRetentionRefusal): false => {
+      try {
+        report?.(reason);
+      } catch {
+        /* diagnostics cannot alter admission */
+      }
+      return false;
+    };
+    if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > this.maxBytes)
+      return refuse('invalid_claim');
     const prior = this.claims.get(owner)?.bytes ?? 0;
     if (bytes <= prior && this.claims.has(owner)) {
       this.retained += bytes - prior;
@@ -45,11 +93,12 @@ export class HorseHistoryRetentionBudget {
     try {
       const h = this.heap();
       available = Math.min(h.total_available_size, h.heap_size_limit - h.used_heap_size);
-      if (!Number.isFinite(available) || available < 0) return false;
+      if (!Number.isFinite(available) || available < 0) return refuse('heap_unavailable');
     } catch {
-      return false;
+      return refuse('heap_unavailable');
     }
-    if ((bytes - prior) * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE > available) return false;
+    if ((bytes - prior) * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE > available)
+      return refuse('heap_headroom');
     while (this.retained - prior + bytes > this.maxBytes) {
       let victim: object | undefined;
       for (const key of this.claims.keys())
@@ -57,7 +106,7 @@ export class HorseHistoryRetentionBudget {
           victim = key;
           break;
         }
-      if (!victim) return false;
+      if (!victim) return refuse('retention_capacity');
       const callback = this.claims.get(victim)!.evict;
       this.release(victim);
       callback();

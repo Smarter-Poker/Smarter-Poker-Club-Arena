@@ -244,8 +244,10 @@ describe('closed exact published Stats pagination proof', () => {
     expect(proof.run).toContain('--project=chromium --workers=1 --retries=0');
     expect(proof.env.E2E_STATS_PAGINATION_PROOF).toBe('1');
     const before = job.steps.findIndex((s: any) => s.id === 'pin');
-    expect(job.steps[before + 1]).toBe(proof);
-    expect(job.steps[before + 2].id).toBe('after_pin');
+    expect(job.steps[before + 1].id).toBe('journey_pin');
+    expect(job.steps[before + 1].run).toContain('node scripts/ci/downline-journey-pin.mjs');
+    expect(job.steps[before + 2]).toBe(proof);
+    expect(job.steps[before + 3].id).toBe('after_pin');
     const cleanup = job.steps.find((s: any) => s.id === 'cleanup');
     expect(cleanup.if).toContain('always()');
     expect(cleanup.run).toContain('await cleanupProductionE2EAccount() !== true');

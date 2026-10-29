@@ -4,6 +4,7 @@ import {
   HorseHistoryRetentionBudget,
   HISTORY_AGGREGATE_MAX_BYTES,
   HISTORY_PACKET_MAX_BYTES,
+  HISTORY_ACTIVE_LOADS,
 } from './ownPublicHistoryBudget.js';
 it('derives the aggregate encoded ceiling from one existing bank and reads the actual current isolate heap', () => {
   const budget = new HorseHistoryRetentionBudget();
@@ -56,4 +57,32 @@ it('fails closed on missing or exhausted heap metadata without evicting retained
   expect(budget.reserve({}, 100, () => {})).toBe(false);
   expect(budget.reserve(owner, 50, () => {})).toBe(true);
   expect(budget.status()).toMatchObject({ encodedBytes: 50, reservations: 1 });
+});
+
+it('uses the exact retained claim and existing reserve at the representation boundary without changing ownership', () => {
+  const reserve = (HISTORY_ACTIVE_LOADS + 2) * HISTORY_PACKET_MAX_BYTES * 2;
+  let available = 1024 ** 3,
+    broken = false;
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES, () => {
+    if (broken) throw Error('unavailable');
+    return { heap_size_limit: 1024 ** 3, used_heap_size: 0, total_available_size: available };
+  });
+  const owner = {},
+    evict = () => {
+      throw Error('must not evict');
+    };
+  expect(budget.reserve(owner, 512, evict)).toBe(true);
+  const original = budget.status();
+  available = reserve + 512 * 2 - 1;
+  expect(budget.canAllocateRepresentation(owner)).toBe(false);
+  available++;
+  expect(budget.canAllocateRepresentation(owner)).toBe(true);
+  expect(budget.canAllocateRepresentation({})).toBe(false);
+  available = Number.NaN;
+  expect(budget.canAllocateRepresentation(owner)).toBe(false);
+  broken = true;
+  expect(budget.canAllocateRepresentation(owner)).toBe(false);
+  expect(budget.status()).toEqual(original);
+  budget.release(owner);
+  expect(budget.canAllocateRepresentation(owner)).toBe(false);
 });

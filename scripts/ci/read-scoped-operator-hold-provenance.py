@@ -20,7 +20,12 @@ FILES = ['GameServer.js', 'engine/ServerTableEngineBase.js',
  'engine/ServerTableEngine.js', 'handlers/admin.js', 'tournament/TournamentManagerBase.js',
  'services/tableLease.js', 'services/supabase/client.js', 'releaseIdentity.js',
  'http/createEngineHttpServer.js', 'maintenance/MaintenanceBreak.js',
- 'maintenance/freezeState.js', 'services/supabase/dataActorContext.js']
+ 'maintenance/freezeState.js', 'services/supabase/dataActorContext.js',
+ 'engine/HandController.js', 'engine/HandContinuationLane.js',
+ 'engine/PrivateHandContinuation.js', 'engine/TimeBankEngine.js',
+ 'engine/DisconnectEngine.js', 'engine/ServerTableEngineTurns.js',
+ 'services/F06HandPermit.js', 'services/TournamentRetirementCustody.js',
+ 'services/supabase/handContinuation.js', 'services/supabase/snapshots.js']
 # Fixed files only; no application imports, environment reads or inspector.
 NODE_READ = r"""
 const fs=require('node:fs'), crypto=require('node:crypto');

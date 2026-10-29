@@ -661,7 +661,11 @@ it('refuses admission with unavailable main heap headroom without loading or cha
   expect(other.state(context())).toBe('unavailable');
   expect(load).toHaveBeenCalledTimes(1);
   cache.acknowledge(context(), null);
+  expect(cache.forSnapshot(context(), 200)).toBeUndefined();
+  expect(cache.state(context())).toBe('unavailable');
+  available = 1024 ** 3;
   expect(cache.forSnapshot(context(), 200)).toEqual(packet);
+  expect(load).toHaveBeenCalledTimes(1);
 });
 it('releases unavailable load reservations and keeps the existing failure cooldown', async () => {
   let now = 200;
@@ -735,3 +739,75 @@ it('disposes only its owned claims and never reloads a terminal cache', async ()
   b.dispose();
   expect(budget.status()).toMatchObject({ encodedBytes: 0, reservations: 0 });
 });
+
+it.each(['clone', 'parse', 'ack'] as const)(
+  'admits retained %s before allocating and preserves the original on refusal',
+  async (operation) => {
+    let available = 1024 ** 3;
+    const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => ({
+      ...ampleHeap(),
+      total_available_size: available,
+    }));
+    const load = vi.fn(async () => window());
+    const cache = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+    cache.forSnapshot(context(), 200);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const ctx = context();
+    const original = cache.forSnapshot(ctx, 200)!;
+    if (operation === 'parse') {
+      cache.acknowledge(context(), original.digest);
+      cache.acknowledge(context(), null);
+    }
+    const before = budget.status();
+    available = 0;
+    const allocate =
+      operation === 'clone'
+        ? vi.spyOn(globalThis, 'structuredClone')
+        : operation === 'parse'
+          ? vi.spyOn(JSON, 'parse')
+          : vi.spyOn(JSON, 'stringify');
+    if (operation === 'ack') cache.acknowledge(ctx, original.digest);
+    else expect(cache.forSnapshot(ctx, 200)).toBeUndefined();
+    if (operation === 'ack')
+      expect(
+        (allocate.mock.calls as unknown[][]).some(
+          ([value]) => !!value && typeof value === 'object' && 'hands' in value
+        )
+      ).toBe(false);
+    else expect(allocate).not.toHaveBeenCalled();
+    allocate.mockRestore();
+    expect(budget.status()).toEqual(before);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(cache.status()).toMatchObject({
+      entries: 1,
+      decodedPacketCount: operation === 'parse' ? 0 : 1,
+      serializedPacketCount: operation === 'parse' ? 1 : 0,
+      acknowledgedCount: operation === 'ack' ? 1 : 0,
+    });
+    if (operation !== 'ack') expect(cache.state(context())).toBe('unavailable');
+    available = 1024 ** 3;
+    if (operation === 'ack') {
+      cache.acknowledge(ctx, original.digest);
+      expect(cache.status()).toMatchObject({
+        decodedPacketCount: 0,
+        serializedPacketCount: 1,
+        acknowledgedCount: 1,
+      });
+      expect(load).toHaveBeenCalledTimes(1);
+    }
+    cache.acknowledge(context(), null);
+    expect(cache.forSnapshot(context(), 199)).toBeUndefined();
+    const recovered = cache.forSnapshot(context(), 200)!;
+    expect(recovered).toEqual(original);
+    expect(recovered).not.toBe(original);
+    cache.acknowledge(context(), recovered.digest);
+    expect(cache.status()).toMatchObject({
+      decodedPacketCount: 0,
+      serializedPacketCount: 1,
+      acknowledgedCount: 1,
+    });
+    expect(cache.forSnapshot(context(), 200)).toBeUndefined();
+    expect(load).toHaveBeenCalledTimes(1);
+    cache.dispose();
+  }
+);

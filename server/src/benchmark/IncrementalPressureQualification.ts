@@ -115,6 +115,17 @@ export function assertIncrementalWorkerFlags(
   if (!matches(rules.flags.candidate) && !matches(rules.flags.reference))
     throw Error('Incremental actual worker flag contrast changed');
 }
+// The provider name changed in the repository transfer; the immutable identity did not.
+const INCREMENTAL_PROVIDER_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+const INCREMENTAL_PROVIDER_REPOSITORY_ID = 1132369872;
+function isIncrementalProviderRepository(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const repository = value as Record<string, unknown>;
+  return (
+    repository.id === INCREMENTAL_PROVIDER_REPOSITORY_ID &&
+    repository.full_name === INCREMENTAL_PROVIDER_REPOSITORY
+  );
+}
 export function assertIncrementalPlanProvenance(
   operation: unknown,
   prs: unknown,
@@ -126,6 +137,7 @@ export function assertIncrementalPlanProvenance(
   const o = operation as Record<string, unknown>;
   if (
     String(o.id) !== run ||
+    !isIncrementalProviderRepository(o.repository) ||
     o.path !== '.github/workflows/horse-feature-ablation-qualification.yml' ||
     o.event !== 'workflow_dispatch' ||
     o.head_branch !== 'main' ||
@@ -139,7 +151,7 @@ export function assertIncrementalPlanProvenance(
         p.merged_at &&
         p.merge_commit_sha === commit &&
         p.base?.ref === 'main' &&
-        p.base?.repo?.full_name === 'Smarter-Poker/Smarter-Poker-Club-Arena' &&
+        isIncrementalProviderRepository(p.base?.repo) &&
         Date.parse(p.merged_at) < Date.parse(String(o.created_at))
     )
   )
@@ -390,7 +402,8 @@ export async function authenticateIncrementalPlan(
     run = process.env.GITHUB_RUN_ID,
     token = process.env.GITHUB_TOKEN;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    repo !== INCREMENTAL_PROVIDER_REPOSITORY ||
+    process.env.GITHUB_REPOSITORY_ID !== String(INCREMENTAL_PROVIDER_REPOSITORY_ID) ||
     !/^\d+$/.test(run ?? '') ||
     !token ||
     process.env.GITHUB_REF !== 'refs/heads/main' ||
@@ -470,7 +483,7 @@ export async function authenticateIncrementalPlan(
       p.merge_commit_sha === firstFamilyCommit &&
       p.merged_at &&
       p.base?.ref === 'main' &&
-      p.base?.repo?.full_name === repo
+      isIncrementalProviderRepository(p.base?.repo)
   )?.merged_at;
   const baseline = await get(`/actions/runs/${family.providerAnchor.baselineRunId}`);
   const familyPrs = await get(`/commits/${familyCommit}/pulls`);

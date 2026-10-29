@@ -179,6 +179,7 @@ function fixture(
     lifecycleIsCurrent: (t: unknown) => current && manager.running && t === token,
     tableEngines: new Map([[TABLE_ID, engine]]),
     gameServer: {
+      retireCompletedF06CustodyMetadata: vi.fn().mockReturnValue(0),
       unregisterTableEngine: vi.fn().mockReturnValue(!options.cleanupFails),
       stopClosedTournamentTableEngine: vi.fn().mockResolvedValue(false),
     },
@@ -299,6 +300,12 @@ describe('external committed completion outranks an obsolete entry reprice', () 
       'fn_resolve_tournament_terminal_outcome',
       'fn_ca_legacy_fee_custody_origin',
     ]);
+    expect(manager.gameServer.retireCompletedF06CustodyMetadata).toHaveBeenCalledOnce();
+    expect(manager.gameServer.retireCompletedF06CustodyMetadata).toHaveBeenCalledWith(
+      TOURNAMENT_ID,
+      manager,
+      TOURNAMENT_ID
+    );
     expect(transport.report).not.toHaveBeenCalled();
   });
   it.each([

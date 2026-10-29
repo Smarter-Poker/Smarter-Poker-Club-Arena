@@ -224,3 +224,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original shaped cash keeps its exact Boolean evidence gate in a fixed-width physical key.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-boolgate-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-boolgate.json'))], text=True))
+
+# Original Boolean index statistics are collected by the guarded owning migration.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-statistics.json'))], text=True))

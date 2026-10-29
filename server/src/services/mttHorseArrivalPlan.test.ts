@@ -86,6 +86,24 @@ describe('half before start and the other half throughout late registration', ()
       })
     ).toBeGreaterThan(0);
   });
+  it('keeps bounded arrivals after pauses while the actual DB door remains open', () => {
+    const paused = {
+      tournament_id: 'paused-mystery',
+      startedAtMs: 0,
+      nowMs: 60 * MIN,
+      lateRegMins: 0,
+      lateRegLevels: 6,
+      currentLevel: 5,
+      levelWindowMs: 48 * MIN,
+      plannedField: 154,
+      entriesAtStart: 77,
+      lateEntries: 1,
+    };
+    expect(lateRegArrivalsFor({ ...paused, registrationOpen: true })).toBe(5);
+    expect(lateRegArrivalsFor({ ...paused, registrationOpen: false })).toBe(0);
+    expect(lateRegArrivalsFor(paused)).toBe(0);
+    expect(lateRegArrivalsFor({ ...paused, registrationOpen: true, lateEntries: 77 })).toBe(0);
+  });
   it('never opens purchases early or after late registration closes', () => {
     expect(
       mttPrestartHorseTarget({

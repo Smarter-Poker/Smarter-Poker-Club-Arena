@@ -334,6 +334,8 @@ export interface LateRegEvent {
   levelWindowMs?: number;
   /** Entries registered after the start, by anybody, through any path. */
   lateEntries: number;
+  /** Authoritative DB door, read immediately before planning this cycle. */
+  registrationOpen?: boolean;
 }
 
 /** Pure: this event's late-registration share, fixed per event id. */
@@ -379,7 +381,10 @@ export function lateRegProgress(ev: LateRegEvent): number | null {
  */
 export function lateRegArrivalsFor(ev: LateRegEvent): number {
   const progress = lateRegProgress(ev);
-  if (progress === null || progress >= 1) return 0;
+  if (ev.registrationOpen === false || progress === null) return 0;
+  // Pauses can extend a level-based window beyond its ladder estimate.
+  // Only the authoritative open door may overrule that estimate.
+  if (progress >= 1 && ev.registrationOpen !== true) return 0;
   const atStart = Math.max(0, Math.floor(Number(ev.entriesAtStart) || 0));
   const expected = Math.max(
     LATE_REG_MIN_ARRIVALS,
@@ -514,6 +519,7 @@ export async function lateRegisterHorsesOnce(
       if (late === null || live === null || total === null) continue;
 
       const want = lateRegArrivalsFor({
+        registrationOpen: true,
         tournament_id: t.id,
         startedAtMs,
         nowMs,

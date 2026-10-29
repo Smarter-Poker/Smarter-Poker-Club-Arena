@@ -338,16 +338,18 @@ export function declaredObjects(sql) {
  * the same lines, which tests/a-merged-migration-must-be-live.law.test.ts pins
  * per Lightning file against the raw line count.
  */
+function inlineDeclaredProofs(sql) {
+  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim());
+}
 export function declaredProofs(sql) {
-  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)]
-    .map((m) => m[1].trim())
-    .concat(
-      externalDeclaredProofs(
-        sql,
-        JSON.parse(readFileSync(join(ROOT, 'scripts/ci/migration-live-proofs.json'), 'utf8')),
-        DIR
-      )
-    );
+  return resolveDeclaredProofs(
+    sql,
+    JSON.parse(readFileSync(join(ROOT, 'scripts/ci/migration-live-proofs.json'), 'utf8')),
+    DIR
+  );
+}
+export function resolveDeclaredProofs(sql, registry, dir) {
+  return proofDeclarations(sql, registry, dir, true);
 }
 
 /** Immutable installed files cannot be edited to add markers. External proof
@@ -373,6 +375,9 @@ function externalProofFile(path) {
   return value;
 }
 export function externalDeclaredProofs(sql, registry, dir) {
+  return proofDeclarations(sql, registry, dir, false);
+}
+function proofDeclarations(sql, registry, dir, includeInline) {
   if (
     !registry ||
     registry.schema !== 1 ||
@@ -380,12 +385,14 @@ export function externalDeclaredProofs(sql, registry, dir) {
     !Array.isArray(registry.entries)
   )
     throw Error('invalid external live proof registry');
-  const seen = new Set(),
-    result = [];
+  const seen = new Set();
+  let result = includeInline ? inlineDeclaredProofs(sql) : [];
   for (const entry of registry.entries) {
     if (
       !entry ||
-      Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' ||
+      !['file,proofs,sha256', 'file,proofs,replaces,sha256'].includes(
+        Object.keys(entry).sort().join(',')
+      ) ||
       typeof entry.file !== 'string' ||
       !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) ||
       seen.has(entry.file) ||
@@ -400,7 +407,26 @@ export function externalDeclaredProofs(sql, registry, dir) {
     const file = externalProofFile(join(dir, entry.file));
     if (file.sha256 !== entry.sha256)
       throw Error(`external live proof migration bytes changed: ${entry.file}`);
-    if (file.text === sql) result.push(...entry.proofs);
+    // A repair names each exact inline declaration it replaces and binds the
+    // entire immutable migration. Other assertions remain, and missing,
+    // duplicate or mismatched replacements refuse the audit before querying.
+    if (
+      Object.hasOwn(entry, 'replaces') &&
+      (!Array.isArray(entry.replaces) ||
+        !entry.replaces.length ||
+        new Set(entry.replaces).size !== entry.replaces.length ||
+        entry.replaces.some(
+          (p) => typeof p !== 'string' || !inlineDeclaredProofs(file.text).includes(p)
+        ))
+    )
+      throw Error(
+        `external live proof replacement does not match inline declarations: ${entry.file}`
+      );
+    if (file.text === sql) {
+      if (includeInline && entry.replaces)
+        result = result.filter((p) => !entry.replaces.includes(p));
+      result.push(...entry.proofs);
+    }
   }
   return result;
 }

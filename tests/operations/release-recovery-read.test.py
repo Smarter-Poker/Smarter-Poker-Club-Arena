@@ -317,7 +317,15 @@ class ReaderTests(unittest.TestCase):
         self.assertIn("'--lines=2'", source)
         self.assertIn('8193 - len(raw)', source)
         self.assertNotIn('shell=True', source)
-        self.assertNotIn('docker', source)
+        # This explicit inspector mode admits only immutable Docker reads and
+        # its scalar-only helper, not lifecycle operations or a publisher.
+        for forbidden in ["'restart'", "'stop'", "'kill'", "'rm'", "'run'"]:
+            self.assertNotIn(forbidden, source[source.index('def inspector_identity'):source.index('def remote(')])
+        for forbidden in ['Runtime.queryObjects', "SIGUSR1", 'inspector.close(', 'global.gc(', 'GameServer.']:
+            self.assertNotIn(forbidden, R.INSPECTOR_NODE)
+        self.assertEqual(R.INSPECTOR_NODE.count("method:'Runtime.evaluate'"), 1)
+        self.assertIn("hostname:'127.0.0.1',port:9229", R.INSPECTOR_NODE)
+        self.assertNotIn('process.env', R.INSPECTOR_NODE)
         # The only systemd operation is a bounded exact-unit metadata show.
         tree = ast.parse(source)
         lists = [node for node in ast.walk(tree) if isinstance(node, ast.List)
@@ -510,6 +518,217 @@ class ReaderTests(unittest.TestCase):
                           if isinstance(key, ast.Constant)}
                 self.assertEqual(ast.literal_eval(fields['schema']), 1)
                 self.assertEqual(ast.unparse(fields['completedAt']), 'int(time.time())')
+
+
+
+
+class InspectorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='owned-inspector-', dir=ROOT.parent)
+        self.root = Path(self.temp.name)
+        d = self.root / 'engine-release-requests'; d.mkdir(); self.d = d
+        self.request = {**REQUEST, 'mode': 'legacy_checkpoint_inspector'}
+        self.intent = {'instance':'1-1234abcd','container':'c'*64,'startedAt':'2026-10-29T20:00:00.000Z',
+            'hostPid':1234,'source':R.EED,'runId':REQUEST['runKey'],'controlSha':'b'*40,'at':1793307300.0,'retryAllowed':False}
+        self.identity = {'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':self.intent['startedAt'],'hostPid':'1234','restarts':'0'}
+        self.health = {'source':R.EED,'instance':self.intent['instance']}
+        self.url = 'ws://127.0.0.1:9229/12345678-1234-1234-1234-123456789abc'
+        self.digest = R.hashlib.sha256(self.url.encode()).hexdigest()
+        self.native = {'pid':1,'usedHeapBytes':100000000,'availableHeapBytes':200000000,
+            'heapLimitBytes':4000000000,'availableProcessBytes':1000000000}
+        self.write_intent()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor', '/usr/local/lib/club-arena/engine-control-generations/'+'b'*40,'b'*40,'1793399999']
+        for suffix in ['.request','.intent']:
+            p=d/(REQUEST['runKey']+suffix);p.write_text('\n'.join(rows)+'\n');p.chmod(0o600)
+        self.patches = [patch.object(R,'STATE_ROOT',self.root),patch.object(R,'inspector_identity',return_value=self.identity),
+            patch.object(R,'inspector_health',return_value=self.health)]
+        for p in self.patches:p.start()
+        self.calls=[]
+    def tearDown(self):
+        for p in reversed(self.patches):p.stop()
+        self.temp.cleanup()
+    def write_intent(self):
+        self.path=self.d/(REQUEST['runKey']+'.legacy-checkpoint-intent')
+        self.path.write_text(json.dumps(self.intent));self.path.chmod(0o600)
+    def command(self,args,deadline,**kwargs):
+        self.calls.append(args)
+        if args[1:3]==['image','inspect']:return (R.EED+'\n').encode()
+        if args[1]=='logs':return ('2026-10-29T20:55:01.000000000Z Debugger listening on '+self.url+'\nprivate ignored log\n').encode()
+        raise AssertionError(args)
+    def run_probe(self, probes):
+        with patch.object(R,'inspector_command',side_effect=self.command),patch.object(R,'inspector_probe',side_effect=probes) as probe:
+            result=R.remote(self.request)
+        self.assertEqual(R.validate_reply(result,self.request),result)
+        return result,probe
+    def test_closed_proves_only_absence_without_logs_or_websocket(self):
+        v,p=self.run_probe([{'state':'closed','endpointSha256':None}])
+        self.assertEqual(v['status'],'closed');self.assertIsNone(v['nativeMemory']);self.assertEqual(p.call_count,1)
+        self.assertFalse(any(x[1]=='logs' for x in self.calls))
+    def test_owned_exact_original_endpoint_exports_only_scalar_provenance(self):
+        v,p=self.run_probe([{'state':'open','endpointSha256':self.digest},{'state':'owned','endpointSha256':self.digest,'native':self.native}])
+        self.assertEqual(v['status'],'owned');self.assertTrue(v['nativeMemory']['predicateSatisfied'])
+        self.assertEqual(p.call_args.args[-1],self.digest)
+        for text in [self.url,'private','1234','c'*64,'/app']:
+            if text=='1234':continue
+            self.assertNotIn(text,json.dumps(v))
+        self.assertEqual(v['readiness'],'unknown_not_certified_by_metadata')
+    def test_foreign_endpoint_never_attaches(self):
+        v,p=self.run_probe([{'state':'open','endpointSha256':'e'*64}]);self.assertEqual(v['status'],'foreign');self.assertEqual(p.call_count,1)
+    def test_foreign_client_never_exports_memory(self):
+        v,_=self.run_probe([{'state':'open','endpointSha256':self.digest},{'state':'foreign','endpointSha256':self.digest}]);self.assertEqual(v['reason'],'established_inspector_client');self.assertIsNone(v['nativeMemory'])
+    def test_missing_log_is_unproved_and_never_attaches(self):
+        with patch.object(R,'inspector_endpoint',side_effect=ValueError('missing')):
+            v,p=self.run_probe([{'state':'open','endpointSha256':self.digest}])
+        self.assertEqual(v['status'],'unproved');self.assertEqual(v['reason'],'historical_endpoint_unavailable');self.assertEqual(p.call_count,1)
+    def test_missing_intent_is_refused_not_empty(self):
+        self.path.unlink()
+        with self.assertRaises(R.ScopedRefusal) as caught:R.remote(self.request)
+        self.assertEqual((caught.exception.phase,caught.exception.code),('inspector','intent_unavailable'))
+    def test_intent_candidate_control_and_original_identity_mismatch_refuse(self):
+        for key,value in [('runId','1-1'),('source','a'*40),('controlSha','e'*40),('retryAllowed',True),('hostPid',True),('at',float('nan'))]:
+            original=dict(self.intent);self.intent[key]=value;self.write_intent()
+            with self.subTest(key=key),self.assertRaises(ValueError):R.remote(self.request)
+            self.intent=original
+        self.write_intent()
+    def test_changed_identity_rejects_even_closed_result(self):
+        with patch.object(R,'inspector_identity',side_effect=[self.identity,{**self.identity,'hostPid':'5678'}]),self.assertRaises(ValueError):
+            self.run_probe([{'state':'closed','endpointSha256':None}])
+    def test_permissions_and_symlink_intent_refused(self):
+        self.path.chmod(0o644)
+        with self.assertRaises(ValueError):R.remote(self.request)
+        self.path.unlink();self.path.symlink_to(self.d/'other')
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+    def test_historical_exact_line_ambiguous_foreign_oversize_and_time(self):
+        line=('2026-10-29T20:55:01Z Debugger listening on '+self.url+'\n').encode()
+        self.assertEqual(R.inspector_endpoint(line,self.intent['at']),self.digest)
+        for raw in [b'',line+line,line.replace(b'127.0.0.1',b'evil.local'),b'x'*65537,line.replace(b'20:55:01',b'20:56:01')]:
+            with self.subTest(raw=raw[:40]),self.assertRaises(ValueError):R.inspector_endpoint(raw,self.intent['at'])
+    def test_missing_nonfinite_wrong_pid_and_overflow_memory_refuse(self):
+        for key,value in [('pid',2),('pid',True),('availableProcessBytes',None),('usedHeapBytes',float('inf')),('availableHeapBytes',-1),('usedHeapBytes',9007199254740991)]:
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):R.inspector_memory({**self.native,key:value})
+    def test_predicate_boundary_is_exact_32MiB_8x_but_not_readiness(self):
+        n={**self.native,'availableHeapBytes':133554432,'availableProcessBytes':833554432}
+        self.assertTrue(R.inspector_memory(n)['predicateSatisfied'])
+        for key in ['availableHeapBytes','availableProcessBytes']:
+            self.assertFalse(R.inspector_memory({**n,key:n[key]-1})['predicateSatisfied'])
+    def test_scalar_forgery_extra_fields_and_unknown_as_owned_refused(self):
+        v,_=self.run_probe([{'state':'closed','endpointSha256':None}])
+        for change in [{'nativeMemory':self.native},{'status':'owned'},{'endpointSha256':self.digest},{'raw':'private'},{'readiness':'ready'},{'originalSourceSha':None},{'reason':'evidence_unavailable'}]:
+            with self.subTest(change=change),self.assertRaises(ValueError):R.validate_reply({**v,**change},self.request)
+    def test_bounded_native_child_deadline_and_oversize(self):
+        with self.assertRaises(ValueError):R.inspector_command(['python3','-c','print("x"*1000)'],R.time.monotonic()+2,limit=100)
+        with self.assertRaises(ValueError):R.inspector_command(['python3','-c','import time;time.sleep(1)'],R.time.monotonic()+.02)
+    def test_probe_closed_unknown_and_native_payload_bound(self):
+        for row in [{'state':'closed','endpointSha256':'a'*64},{'state':'open','endpointSha256':None},{'state':'whatever','endpointSha256':None},{'state':'owned','endpointSha256':'a'*64,'native':{},'raw':'private'}]:
+            with patch.object(R,'inspector_command',return_value=json.dumps(row).encode()),self.subTest(row=row),self.assertRaises(ValueError):R.inspector_probe('c'*64,123)
+
+
+    def test_actual_native_scalar_read_and_proxy_environment_independence(self):
+        # Actual native inspector evaluation in an isolated child. Linux PID 1
+        # binding is separately pinned in the maintained transport; this local
+        # process deliberately is not a production container or target.
+        import re
+        expression = re.search(r'const evaluate="(.*)";', R.INSPECTOR_NODE)[1]
+        script = "import inspector from 'node:inspector';const s=new inspector.Session();s.connect();s.post('Runtime.evaluate'," + json.dumps({'expression':expression,'returnByValue':True,'timeout':500}) + ",(e,r)=>{if(e||r.exceptionDetails)process.exitCode=1;else console.log(JSON.stringify(r.result.value));s.disconnect()});"
+        node = os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
+        reply = R.subprocess.run([node,'--input-type=module','-e',script],capture_output=True,timeout=5,
+            env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','HTTPS_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        value=json.loads(reply.stdout);self.assertGreater(value['pid'],0)
+        self.assertTrue(all(type(v) is int and v>0 for v in value.values()))
+        self.assertIn("agent:false,timeout:1000",R.INSPECTOR_NODE)
+        self.assertNotIn('fetch(',R.INSPECTOR_NODE)
+        self.assertIn("socket.close()",R.INSPECTOR_NODE)
+        self.assertNotIn('node:inspector',R.INSPECTOR_NODE.split('finally{')[0])
+        self.assertIn("if(connections()!==0)",R.INSPECTOR_NODE)
+        self.assertIn("if(connections()!==1)",R.INSPECTOR_NODE)
+        self.assertIn("Buffer.byteLength(event.data)>4096",R.INSPECTOR_NODE)
+        self.assertIn("setTimeout(()=>reject(Error('deadline')),1500)",R.INSPECTOR_NODE)
+        self.assertIn("if(await target()!==url||connections()!==1)",R.INSPECTOR_NODE)
+
+
+    def test_actual_bounded_http_and_websocket_scalar_transport(self):
+        # Real inspector HTTP/WS in our own tiny child; fixture substitutes the
+        # ephemeral port/PID and Linux socket-table seam only. No live target.
+        import re
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
+        target=R.subprocess.Popen([node,'--input-type=module','-e',
+            "import inspector from 'node:inspector';inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));process.stdin.resume();"],
+            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.DEVNULL)
+        try:
+            with R.selectors.DefaultSelector() as selector:
+                selector.register(target.stdout,R.selectors.EVENT_READ)
+                self.assertTrue(selector.select(2),'isolated target startup deadline')
+                selected=json.loads(target.stdout.readline())
+            port=int(selected['url'].split(':')[2].split('/')[0])
+            source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
+            source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
+            digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
+            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+                env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+            self.assertEqual(reply.returncode,0,reply.stderr)
+            value=json.loads(reply.stdout)
+            self.assertEqual(value['state'],'owned');self.assertEqual(value['native']['pid'],selected['pid'])
+            self.assertEqual(value['endpointSha256'],digest)
+            self.assertGreater(value['native']['usedHeapBytes'],0)
+            self.assertIsNone(target.poll(),'reader must not stop its target')
+        finally:
+            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close()
+
+
+    def retired(self):
+        for suffix in ['.request','.intent']:(self.d/(REQUEST['runKey']+suffix)).unlink()
+        directory=self.root/'engine-release-results';directory.mkdir()
+        self.receipt=directory/(REQUEST['runKey']+'.json')
+        self.failed={'schema':1,'runId':REQUEST['runKey'],'result':'failed','sha':REQUEST['releaseSha'],
+            'controlSha':self.intent['controlSha'],'invocationId':'f'*32,'transactionExitStatus':1,
+            'recoveredDesiredSha':R.EED,'recoveredDesiredImageId':self.identity['image'],'completedAt':int(self.intent['at'])+30}
+        self.write_failed()
+    def write_failed(self):
+        self.receipt.write_text(json.dumps(self.failed));self.receipt.chmod(0o600)
+    def test_retired_failure_preserves_original_closed_and_owned_read(self):
+        self.retired()
+        v,_=self.run_probe([{'state':'closed','endpointSha256':None}]);self.assertEqual(v['status'],'closed')
+        v,_=self.run_probe([{'state':'open','endpointSha256':self.digest},{'state':'owned','endpointSha256':self.digest,'native':self.native}]);self.assertEqual(v['status'],'owned')
+        self.assertNotIn('invocationId',json.dumps(v));self.assertNotIn('transactionExitStatus',json.dumps(v))
+    def test_retired_missing_receipt_refuses_before_any_probe(self):
+        self.retired();self.receipt.unlink()
+        with patch.object(R,'inspector_probe') as probe,self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        probe.assert_not_called()
+    def test_retired_wrong_control_target_and_desired_refuse(self):
+        self.retired()
+        for key,value in [('controlSha','e'*40),('sha','e'*40),('runId','1-1'),('recoveredDesiredSha','e'*40),('result','sealed')]:
+            original=dict(self.failed);self.failed[key]=value;self.write_failed()
+            with patch.object(R,'inspector_probe') as probe,self.subTest(key=key),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();self.failed=original
+    def test_retired_wrong_image_and_failure_metadata_refuse(self):
+        self.retired()
+        for key,value in [('recoveredDesiredImageId','sha256:'+'e'*64),('schema',True),('transactionExitStatus',0),('transactionExitStatus',True),('invocationId','bad'),('completedAt',self.intent['at']-1),('completedAt',4102444800),('raw','private')]:
+            original=dict(self.failed);self.failed[key]=value;self.write_failed()
+            with patch.object(R,'inspector_probe') as probe,self.subTest(key=key),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();self.failed=original
+    def test_partial_request_records_never_fall_back_to_valid_failure(self):
+        self.retired()
+        for suffix in ['.request','.intent']:
+            path=self.d/(REQUEST['runKey']+suffix);path.write_text('private invalid retained record');path.chmod(0o600)
+            with patch.object(R,'inspector_probe') as probe,self.subTest(suffix=suffix),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();path.unlink()
+    def test_changed_retired_receipt_invalidates_closed_observation(self):
+        self.retired()
+        def change(*args):
+            self.failed['invocationId']='e'*32;self.write_failed()
+            return {'state':'closed','endpointSha256':None}
+        with patch.object(R,'inspector_command',side_effect=self.command),patch.object(R,'inspector_probe',side_effect=change),self.assertRaises(R.ScopedRefusal) as caught:R.remote(self.request)
+        self.assertEqual(caught.exception.code,'identity_changed')
+    def test_retired_receipt_permissions_symlinks_and_oversize_refuse(self):
+        self.retired();self.receipt.chmod(0o644)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        self.write_failed();self.receipt.write_text('x'*65537)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        self.receipt.unlink();self.receipt.symlink_to(self.path)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
 
 
 if __name__ == '__main__':

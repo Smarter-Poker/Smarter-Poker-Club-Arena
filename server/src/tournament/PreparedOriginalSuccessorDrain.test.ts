@@ -75,20 +75,28 @@ function fixture() {
   return { manager, engine, controller, handoff };
 }
 
-it('hands off a durably prepared original at its actual park instead of waiting for it to play through the drain', async () => {
-  const { manager, engine, controller, handoff } = fixture();
-  manager.requestSuccessorDrain();
-  expect(handoff).not.toHaveBeenCalled();
-  const parked = engine.awaitPauseGate();
-  expect(engine.isBetweenHands()).toBe(false);
-  expect(JSON.parse(controller.serializeRecoveryState()).handStarted).toBe(false);
-  expect(handoff).toHaveBeenCalledTimes(1);
-  manager.completeSuccessorDrain();
-  expect(handoff).toHaveBeenCalledTimes(1);
-  engine.running = false;
-  engine.resumeDealing();
-  await parked;
-});
+it.each([false, true])(
+  'hands off a durably prepared original at its actual park (claimed=%s)',
+  async (claimed) => {
+    const { manager, engine, controller, handoff } = fixture();
+    if (claimed)
+      engine.pendingOriginalContinuation = {
+        original: engine.f06CurrentPermit.binding,
+        batch: { sequence: 0, events: [], controller: controller.serializeRecoveryState() },
+      };
+    manager.requestSuccessorDrain();
+    expect(handoff).not.toHaveBeenCalled();
+    const parked = engine.awaitPauseGate();
+    expect(engine.isBetweenHands()).toBe(false);
+    expect(JSON.parse(controller.serializeRecoveryState()).handStarted).toBe(false);
+    expect(handoff).toHaveBeenCalledTimes(1);
+    manager.completeSuccessorDrain();
+    expect(handoff).toHaveBeenCalledTimes(1);
+    engine.running = false;
+    engine.resumeDealing();
+    await parked;
+  }
+);
 
 it.each([
   'started',

@@ -2082,7 +2082,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.retainedPreparedOriginalController !== controller ||
       this.f06CurrentPermit?.recoveryState() !== 'attempted' ||
       this.f06CurrentPermit.binding.hand_number !== String(this.handCount) ||
-      this.pendingOriginalContinuation !== null ||
+      // A claimed sequence-zero original carries the same positive marker;
+      // pendingOriginalContinuation is intentionally retained until actuation.
       this.handContinuation !== null ||
       this.hasWeeklyPayoutMutationInFlight()
     )

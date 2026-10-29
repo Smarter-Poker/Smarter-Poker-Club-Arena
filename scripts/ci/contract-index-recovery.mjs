@@ -21,13 +21,65 @@ export const EXPECTED_DEFINITION =
 export const CHICAGO_FILE = '20261023213635_today_win_loss_resets_at_chicago_midnight.sql';
 export const CHICAGO_INDEX = 'public.ca_hand_facts_cash_member_time_idx';
 export const CHICAGO_SHA = '3fb827d597941a0fe32260d9b0172e005cf86eea375d2bacaa888625a5339b5f';
-export const FUNDING_FILE = '20261026161532_unpaid_lightning_earnings_follow_the_original_funding_club.sql';
+export const FUNDING_FILE =
+  '20261026161532_unpaid_lightning_earnings_follow_the_original_funding_club.sql';
 export const FUNDING_INDEX = 'public.accounting_cash_club_week_player_cover';
 export const FUNDING_SHA = 'c3206fd79746fcb8151e5aadfb074723b30aed8ca76904e3e694313a2c514d24';
-export function recoveryRequest(file, sql, index, oid, before, transientOid = null) {
+export const CASH_HASH_FILE =
+  '20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql';
+export const CASH_HASH_INDEX = 'public.union_pnl_cash_links_valid_union_hash';
+export const CASH_HASH_FAILED_OID = '275975891';
+export const CASH_HASH_SHA = '15b43293a4711f3c2ff745279929d36bb31e2dadd8d443218a08cf585d7f74d9';
+export const CASH_HASH_OLD_DEFINITION =
+  "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text))) WHERE (proof_md5 = md5((proof)::text))";
+export function isCashHashRecovery(request) {
+  return request?.index === CASH_HASH_INDEX;
+}
+export const CASH_PROOF_HAND_OID = '271236984';
+export const CASH_PROOF_HAND_INDEX = 'public.union_pnl_cash_links_valid_proof_hand';
+export const CASH_PROOF_HAND_DEFINITION =
+  'CREATE INDEX union_pnl_cash_links_valid_proof_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id) INCLUDE (table_id, hand_number) WHERE (proof_md5 = md5((proof)::text))';
+export const CASH_HASH_NEW_DEFINITION =
+  'CREATE INDEX union_pnl_cash_links_proof_gate_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (((proof_md5 = md5((proof)::text))), hand_id)';
+export function recoveryRequest(
+  file,
+  sql,
+  index,
+  oid,
+  before,
+  transientOid = null,
+  selectorOid = null
+) {
+  if (file === CASH_HASH_FILE && !isCashHashMigration(file, sql))
+    throw new Error('Cash HASH installer requires exact qualified migration bytes');
+  if (file === CASH_HASH_FILE && index === CASH_PROOF_HAND_INDEX) {
+    if (oid !== CASH_PROOF_HAND_OID || transientOid)
+      throw new Error('Retirement-only request requires exact old proof-hand OID');
+    return { ...cashHashRetirementRequest(file, sql, selectorOid, before), retirementOnly: true };
+  }
+  if (selectorOid)
+    throw new Error('Selector OID belongs only to explicit retirement-only recovery');
+
+  if (file === CASH_HASH_FILE && index === CASH_HASH_INDEX) {
+    if (
+      transientOid ||
+      !validRecoveryCutoff(before) ||
+      oid !== CASH_HASH_FAILED_OID ||
+      createHash('sha256').update(sql).digest('hex') !== CASH_HASH_SHA
+    )
+      throw new Error(
+        'Cash HASH replacement requires exact corrected migration and observed failed OID'
+      );
+    return { index, oid, before, transientOid: null };
+  }
   if (file === FUNDING_FILE && index === FUNDING_INDEX) {
-    if (transientOid || !validRecoveryCutoff(before) || !/^[1-9][0-9]*$/.test(oid || '') ||
-        BigInt(oid) > 4294967295n || createHash('sha256').update(sql).digest('hex') !== FUNDING_SHA)
+    if (
+      transientOid ||
+      !validRecoveryCutoff(before) ||
+      !/^[1-9][0-9]*$/.test(oid || '') ||
+      BigInt(oid) > 4294967295n ||
+      createHash('sha256').update(sql).digest('hex') !== FUNDING_SHA
+    )
       throw new Error('Funding cover recovery requires exact migration bytes and observed OID');
     return { index, oid, before, transientOid: null };
   }
@@ -145,9 +197,26 @@ export function recoverySnapshotDiagnostic(rows) {
   return `category=${category}; holders=${holders}; unknown_age=${unknownAge}; oldest_age_seconds=${oldest}; prepared=${prepared}`;
 }
 export function recoveryCatalog(request) {
-  if (request?.index === FUNDING_INDEX) return RECOVERY_CATALOG
-    .replaceAll('managed_game_contract_versions_game_id_id_idx', 'accounting_cash_club_week_player_cover')
-    .replaceAll('managed_game_contract_versions', 'accounting_cash_rake_sources');
+  if (isCashHashRecovery(request) && request.retirementOnly)
+    throw new Error('Retirement-only mode cannot inspect or replace the valid selector');
+  if (isCashHashRecovery(request))
+    return RECOVERY_CATALOG.replaceAll(
+      'managed_game_contract_versions_game_id_id_idx',
+      'union_pnl_cash_links_valid_union_hash'
+    )
+      .replaceAll('managed_game_contract_versions', 'union_pnl_cash_outcome_link_resolutions')
+      .replace(
+        'NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=c.oid) AS no_constraints,',
+        `NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=c.oid) AS no_constraints,
+       (SELECT count(*)=1 AND bool_and(convalidated) FROM pg_constraint
+        WHERE conrelid=t.oid AND conname='union_pnl_cash_outcome_link_resolutions_check'
+        AND pg_get_constraintdef(oid)='CHECK ((proof_md5 = md5((proof)::text)))') AS cash_proof_check_validated,`
+      );
+  if (request?.index === FUNDING_INDEX)
+    return RECOVERY_CATALOG.replaceAll(
+      'managed_game_contract_versions_game_id_id_idx',
+      'accounting_cash_club_week_player_cover'
+    ).replaceAll('managed_game_contract_versions', 'accounting_cash_rake_sources');
 
   if (request?.index !== CHICAGO_INDEX) return RECOVERY_CATALOG;
   return RECOVERY_CATALOG.replaceAll(
@@ -156,15 +225,79 @@ export function recoveryCatalog(request) {
   ).replaceAll('managed_game_contract_versions', 'ca_hand_facts');
 }
 export function validateRecoveryCatalog(rows, request, recovered = false) {
+  if (isCashHashRecovery(request) && request.retirementOnly)
+    throw new Error('Retirement-only mode cannot qualify failed-selector removal');
+  if (isCashHashRecovery(request)) {
+    if (
+      request.oid !== CASH_HASH_FAILED_OID ||
+      request.transientOid ||
+      !validRecoveryCutoff(request.before)
+    )
+      throw new Error('Unbound cash HASH replacement');
+    if (recovered) {
+      if (!Array.isArray(rows) || rows.length !== 0)
+        throw new Error('Cash HASH removal is unproven');
+      return { oid: 'absent' };
+    }
+    if (!Array.isArray(rows) || rows.length !== 1)
+      throw new Error('Unknown failed cash HASH catalog');
+    const r = rows[0];
+    if (
+      r.oid !== request.oid ||
+      r.observer_authorized !== true ||
+      r.owner !== 'postgres' ||
+      r.table_owner !== 'postgres' ||
+      r.schema !== 'public' ||
+      r.name !== 'union_pnl_cash_links_valid_union_hash' ||
+      r.relkind !== 'i' ||
+      r.table_schema !== 'public' ||
+      r.table_name !== 'union_pnl_cash_outcome_link_resolutions' ||
+      r.definition !== CASH_HASH_OLD_DEFINITION ||
+      r.valid !== false ||
+      r.ready !== false ||
+      r.live !== true ||
+      r.replica_identity !== false ||
+      r.unique_index !== false ||
+      r.primary_index !== false ||
+      r.exclusion_index !== false ||
+      r.key_count !== 1 ||
+      r.attribute_count !== 1 ||
+      r.no_predicate !== false ||
+      r.no_expression !== false ||
+      r.no_constraints !== true ||
+      r.no_transients !== true ||
+      r.no_builder !== true ||
+      r.cash_proof_check_validated !== true ||
+      !Array.isArray(r.transient_names) ||
+      r.transient_names.length !== 0
+    )
+      throw new Error('Failed cash HASH identity/shape/state differs');
+    return r;
+  }
   if (request?.index === FUNDING_INDEX) {
     if (!Array.isArray(rows) || rows.length !== 1) throw new Error('unknown funding cover catalog');
     const r = rows[0];
-    if (r.name !== 'accounting_cash_club_week_player_cover' || r.table_name !== 'accounting_cash_rake_sources' ||
-        r.definition !== 'CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)' || r.attribute_count !== 4)
+    if (
+      r.name !== 'accounting_cash_club_week_player_cover' ||
+      r.table_name !== 'accounting_cash_rake_sources' ||
+      r.definition !==
+        'CREATE INDEX accounting_cash_club_week_player_cover ON public.accounting_cash_rake_sources USING btree (club_id, earned_at) INCLUDE (player_id, id)' ||
+      r.attribute_count !== 4
+    )
       throw new Error('Funding cover index shape differs');
-    validateRecoveryCatalog([{ ...r, name:'managed_game_contract_versions_game_id_id_idx',
-      table_name:'managed_game_contract_versions', definition:EXPECTED_DEFINITION, attribute_count:2 }],
-      { ...request,index:RECOVERY_INDEX },recovered);
+    validateRecoveryCatalog(
+      [
+        {
+          ...r,
+          name: 'managed_game_contract_versions_game_id_id_idx',
+          table_name: 'managed_game_contract_versions',
+          definition: EXPECTED_DEFINITION,
+          attribute_count: 2,
+        },
+      ],
+      { ...request, index: RECOVERY_INDEX },
+      recovered
+    );
     return r;
   }
 
@@ -250,8 +383,19 @@ export function validateRecoverySnapshots(rows) {
 }
 
 export function recoveryStatement(request) {
+  if (isCashHashRecovery(request) && request.retirementOnly)
+    throw new Error('Retirement-only mode cannot touch the valid selector');
+  if (isCashHashRecovery(request)) {
+    if (
+      request.oid !== CASH_HASH_FAILED_OID ||
+      request.transientOid ||
+      !validRecoveryCutoff(request.before)
+    )
+      throw new Error('Unbound cash HASH removal');
+    return 'DROP INDEX CONCURRENTLY public.union_pnl_cash_links_valid_union_hash';
+  }
   if (request?.index === FUNDING_INDEX) {
-    recoveryStatement({ ...request,index:RECOVERY_INDEX });
+    recoveryStatement({ ...request, index: RECOVERY_INDEX });
     if (request.transientOid) throw new Error('Funding transient recovery is not admitted');
     return 'REINDEX INDEX CONCURRENTLY public.accounting_cash_club_week_player_cover';
   }
@@ -316,4 +460,243 @@ export function validateRecoveryPair(originalRows, transientRows, request) {
     { ...request, oid: request.transientOid }
   );
   return { original, transient };
+}
+
+const CASH_LINK_CONSTRAINTS = [
+  [
+    'union_pnl_cash_outcome_link_resoluti_outcome_evidence_md5_check',
+    "CHECK ((outcome_evidence_md5 ~ '^[0-9a-f]{32}$'::text))",
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_check',
+    'CHECK ((proof_md5 = md5((proof)::text)))',
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_check1',
+    "CHECK (((roster_source = 'manifest'::text) = (manifest_id IS NOT NULL)))",
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_check2',
+    "CHECK ((((proof ->> 'status'::text) = 'proven'::text) AND ((proof ->> 'resolution_kind'::text) = 'cash_outcome_provenance_link'::text) AND ((proof ->> 'table_id'::text) = (table_id)::text) AND (((proof ->> 'hand_number'::text))::bigint = hand_number) AND ((proof ->> 'hand_id'::text) = (hand_id)::text) AND ((proof ->> 'outcome_payload_hash'::text) = outcome_payload_hash) AND ((proof ->> 'outcome_evidence_md5'::text) = outcome_evidence_md5) AND ((proof ->> 'roster_source'::text) = roster_source) AND (NOT ((proof ->> 'manifest_id'::text) IS DISTINCT FROM (manifest_id)::text)) AND ((proof -> 'game_scope'::text) = game_scope) AND ((proof -> 'evidence'::text) = evidence) AND ((evidence -> 'game_scope'::text) = game_scope)))",
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_evidence_check',
+    "CHECK (((jsonb_typeof(evidence) = 'object'::text) AND ((evidence ->> 'provenance_link'::text) = 'resolved'::text)))",
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_game_scope_check',
+    "CHECK (((jsonb_typeof(game_scope) = 'object'::text) AND (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text])))",
+    true,
+  ],
+  ['union_pnl_cash_outcome_link_resolutions_hand_id_key', 'UNIQUE (hand_id)', true],
+  ['union_pnl_cash_outcome_link_resolutions_pkey', 'PRIMARY KEY (table_id, hand_number)', true],
+  [
+    'union_pnl_cash_outcome_link_resolutions_reason_check',
+    'CHECK ((length(btrim(reason)) >= 20))',
+    true,
+  ],
+  [
+    'union_pnl_cash_outcome_link_resolutions_roster_source_check',
+    "CHECK ((roster_source = ANY (ARRAY['manifest'::text, 'seat_inventory'::text, 'lightning_pool'::text])))",
+    true,
+  ],
+];
+const CASH_LINK_BEFORE_INDEXES = [
+  'CREATE INDEX union_pnl_cash_links_valid_proof_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id) INCLUDE (table_id, hand_number) WHERE (proof_md5 = md5((proof)::text))',
+  'CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_hand_id_key ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id)',
+  'CREATE UNIQUE INDEX union_pnl_cash_outcome_link_resolutions_pkey ON public.union_pnl_cash_outcome_link_resolutions USING btree (table_id, hand_number)',
+];
+export function cashHashRetirementCatalog(request) {
+  if (
+    !isCashHashRecovery(request) ||
+    request.oid !== CASH_HASH_FAILED_OID ||
+    request.transientOid ||
+    !validRecoveryCutoff(request.before)
+  )
+    throw new Error('Unbound proof-hand retirement');
+  if (!isCashHashRecovery(request)) throw new Error('Unbound proof-hand retirement');
+  return RECOVERY_CATALOG.replaceAll(
+    'managed_game_contract_versions_game_id_id_idx',
+    'union_pnl_cash_links_valid_proof_hand'
+  )
+    .replaceAll('managed_game_contract_versions', 'union_pnl_cash_outcome_link_resolutions')
+    .replace(
+      'NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=c.oid) AS no_constraints,',
+      `NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conindid=c.oid) AS no_constraints,
+       NOT EXISTS(SELECT 1 FROM pg_depend d WHERE d.refclassid='pg_class'::regclass AND d.refobjid=c.oid) AS no_incoming_dependencies,
+       (SELECT count(*)=5 AND bool_and(d.classid='pg_class'::regclass AND d.objsubid=0 AND d.refclassid='pg_class'::regclass AND d.refobjid=t.oid AND d.deptype='a') AND array_agg(d.refobjsubid ORDER BY d.refobjsubid)=ARRAY[1,2,3,10,11]::integer[] FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid) AS exact_auto_dependencies,
+       (SELECT jsonb_agg(jsonb_build_array(conname,pg_get_constraintdef(oid),convalidated) ORDER BY conname) FROM pg_constraint WHERE conrelid=t.oid) AS original_constraints,
+       (SELECT jsonb_agg(pg_get_indexdef(i2.indexrelid) ORDER BY pg_get_indexdef(i2.indexrelid)) FROM pg_index i2 WHERE i2.indrelid=t.oid AND i2.indexrelid<>to_regclass('public.union_pnl_cash_links_proof_gate_hand')) AS original_indexes,
+       EXISTS(SELECT 1 FROM pg_index ni JOIN pg_class nc ON nc.oid=ni.indexrelid
+        WHERE nc.oid=to_regclass('public.union_pnl_cash_links_proof_gate_hand') AND ni.indrelid=t.oid
+        AND ni.indisvalid AND ni.indisready AND ni.indislive AND NOT ni.indisunique AND NOT ni.indisprimary AND NOT ni.indisexclusion
+        AND nc.relowner='postgres'::regrole AND pg_get_indexdef(nc.oid)=` +
+        "'" +
+        CASH_HASH_NEW_DEFINITION.replaceAll("'", "''") +
+        "'" +
+        `) AS new_selector_valid,
+       (SELECT nc.oid::text FROM pg_class nc WHERE nc.oid=to_regclass('public.union_pnl_cash_links_proof_gate_hand')) AS new_selector_oid,`
+    );
+}
+export function validateCashHashRetirement(rows, request, removed = false) {
+  if (
+    !isCashHashRecovery(request) ||
+    request.oid !== CASH_HASH_FAILED_OID ||
+    request.transientOid ||
+    !validRecoveryCutoff(request.before)
+  )
+    throw new Error('Unbound proof-hand retirement');
+  if (
+    !/^[1-9][0-9]*$/.test(request.selectorOid || '') ||
+    BigInt(request.selectorOid) > 4294967295n ||
+    request.selectorOid === CASH_HASH_FAILED_OID ||
+    request.selectorOid === CASH_PROOF_HAND_OID
+  )
+    throw new Error('Unbound observed selector OID');
+  if (removed) {
+    if (!Array.isArray(rows) || rows.length !== 0)
+      throw new Error('Proof-hand retirement unproven');
+    return;
+  }
+  if (!Array.isArray(rows) || rows.length !== 1)
+    throw new Error('Unknown proof-hand retirement catalog');
+  const r = rows[0];
+  if (
+    r.oid !== CASH_PROOF_HAND_OID ||
+    r.observer_authorized !== true ||
+    r.owner !== 'postgres' ||
+    r.table_owner !== 'postgres' ||
+    r.schema !== 'public' ||
+    r.name !== 'union_pnl_cash_links_valid_proof_hand' ||
+    r.relkind !== 'i' ||
+    r.table_schema !== 'public' ||
+    r.table_name !== 'union_pnl_cash_outcome_link_resolutions' ||
+    r.definition !== CASH_PROOF_HAND_DEFINITION ||
+    r.valid !== true ||
+    r.ready !== true ||
+    r.live !== true ||
+    r.replica_identity !== false ||
+    r.unique_index !== false ||
+    r.primary_index !== false ||
+    r.exclusion_index !== false ||
+    r.key_count !== 1 ||
+    r.attribute_count !== 3 ||
+    r.no_predicate !== false ||
+    r.no_expression !== true ||
+    r.no_constraints !== true ||
+    r.no_transients !== true ||
+    r.no_builder !== true ||
+    r.no_incoming_dependencies !== true ||
+    r.exact_auto_dependencies !== true ||
+    r.new_selector_valid !== true ||
+    r.new_selector_oid !== request.selectorOid ||
+    !Array.isArray(r.transient_names) ||
+    r.transient_names.length !== 0 ||
+    JSON.stringify(r.original_constraints) !== JSON.stringify(CASH_LINK_CONSTRAINTS) ||
+    JSON.stringify(r.original_indexes) !== JSON.stringify(CASH_LINK_BEFORE_INDEXES)
+  )
+    throw new Error('Proof-hand retirement identity/dependencies/selector/state differs');
+  return r;
+}
+export function cashHashRetirementStatement(request) {
+  if (
+    !isCashHashRecovery(request) ||
+    request.oid !== CASH_HASH_FAILED_OID ||
+    request.transientOid ||
+    !validRecoveryCutoff(request.before)
+  )
+    throw new Error('Unbound proof-hand retirement');
+  if (
+    !/^[1-9][0-9]*$/.test(request?.selectorOid || '') ||
+    BigInt(request.selectorOid) > 4294967295n ||
+    request.selectorOid === CASH_HASH_FAILED_OID ||
+    request.selectorOid === CASH_PROOF_HAND_OID
+  )
+    throw new Error('Unbound observed selector OID');
+  if (!isCashHashRecovery(request)) throw new Error('Unbound proof-hand retirement');
+  return 'DROP INDEX CONCURRENTLY public.union_pnl_cash_links_valid_proof_hand';
+}
+
+export function isCashHashMigration(file, sql) {
+  return (
+    file === CASH_HASH_FILE && createHash('sha256').update(sql).digest('hex') === CASH_HASH_SHA
+  );
+}
+export function cashHashRetirementRequest(file, sql, selectorOid, before) {
+  if (
+    !isCashHashMigration(file, sql) ||
+    !validRecoveryCutoff(before) ||
+    !/^[1-9][0-9]*$/.test(selectorOid || '') ||
+    BigInt(selectorOid) > 4294967295n ||
+    selectorOid === CASH_HASH_FAILED_OID ||
+    selectorOid === CASH_PROOF_HAND_OID
+  )
+    throw new Error(
+      'Retirement requires exact qualified migration and freshly observed valid selector OID'
+    );
+  return {
+    index: CASH_HASH_INDEX,
+    oid: CASH_HASH_FAILED_OID,
+    before,
+    transientOid: null,
+    selectorOid,
+  };
+}
+
+// Read-only physical completion witness. It is also used before skipping CCI:
+// an already valid selector is never rebuilt to finish pure qualification/history.
+export function cashHashSelectorStateCatalog() {
+  return `SELECT current_user='postgres' AS observer_authorized,
+  pg_get_userbyid(t.relowner) AS table_owner,nc.oid::text AS selector_oid,
+  to_regclass('public.union_pnl_cash_links_valid_proof_hand') IS NOT NULL AS old_proof_present,
+  COALESCE(ni.indrelid=t.oid AND ni.indisvalid AND ni.indisready AND ni.indislive AND NOT ni.indisunique AND NOT ni.indisprimary AND NOT ni.indisexclusion
+   AND nc.relowner='postgres'::regrole AND nc.relkind='i' AND nc.relpersistence='p'
+   AND pg_get_indexdef(nc.oid)='${CASH_HASH_NEW_DEFINITION.replaceAll("'", "''")}',false) AS new_selector_valid,
+  NOT EXISTS(SELECT 1 FROM pg_stat_progress_create_index WHERE relid=t.oid) AS no_builder,
+  (SELECT jsonb_agg(jsonb_build_array(conname,pg_get_constraintdef(oid),convalidated) ORDER BY conname) FROM pg_constraint WHERE conrelid=t.oid) AS original_constraints,
+  (SELECT jsonb_agg(pg_get_indexdef(i2.indexrelid) ORDER BY pg_get_indexdef(i2.indexrelid)) FROM pg_index i2
+   WHERE i2.indrelid=t.oid AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_proof_gate_hand'),0::oid)
+   AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_proof_hand'),0::oid)) AS remaining_indexes,
+  (SELECT count(*)=2 AND bool_and(i2.indisvalid AND i2.indisready AND i2.indislive AND c2.relowner='postgres'::regrole)
+   FROM pg_index i2 JOIN pg_class c2 ON c2.oid=i2.indexrelid WHERE i2.indrelid=t.oid
+   AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_proof_gate_hand'),0::oid)
+   AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_proof_hand'),0::oid)) AS remaining_indexes_valid
+ FROM pg_class t LEFT JOIN pg_index ni ON ni.indexrelid=to_regclass('public.union_pnl_cash_links_proof_gate_hand')
+ LEFT JOIN pg_class nc ON nc.oid=ni.indexrelid WHERE t.oid=to_regclass('public.union_pnl_cash_outcome_link_resolutions') AND t.relkind='r' AND t.relpersistence='p'`;
+}
+export function validateCashHashSelectorState(rows, request, oldMustBeAbsent = false) {
+  if (
+    !isCashHashRecovery(request) ||
+    request.oid !== CASH_HASH_FAILED_OID ||
+    request.transientOid ||
+    !validRecoveryCutoff(request.before) ||
+    !/^[1-9][0-9]*$/.test(request.selectorOid || '') ||
+    BigInt(request.selectorOid) > 4294967295n
+  )
+    throw new Error('Unbound completed selector witness');
+  if (!Array.isArray(rows) || rows.length !== 1)
+    throw new Error('Unknown completed selector witness');
+  const r = rows[0],
+    remaining = CASH_LINK_BEFORE_INDEXES.filter(
+      (x) => !x.startsWith('CREATE INDEX union_pnl_cash_links_valid_proof_hand ')
+    );
+  if (
+    r.observer_authorized !== true ||
+    r.table_owner !== 'postgres' ||
+    r.selector_oid !== request.selectorOid ||
+    r.new_selector_valid !== true ||
+    r.no_builder !== true ||
+    r.remaining_indexes_valid !== true ||
+    typeof r.old_proof_present !== 'boolean' ||
+    (oldMustBeAbsent && r.old_proof_present !== false) ||
+    JSON.stringify(r.original_constraints) !== JSON.stringify(CASH_LINK_CONSTRAINTS) ||
+    JSON.stringify(r.remaining_indexes) !== JSON.stringify(remaining)
+  )
+    throw new Error('Completed selector identity/remaining constraints/indexes differ');
+  return r;
 }

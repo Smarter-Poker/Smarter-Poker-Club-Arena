@@ -488,10 +488,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+    "scripts/ci/classify-ci-changes.mjs": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "e0d3e8174d258e01d25e101cae1ae48a400ee804b922bb92c2245dd717b2a4af",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "5ffb6ae9f5179ac26143526b5b0fe5aad570f1187afb898e576d47b76ee5d596",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -505,12 +505,12 @@
     "tests/fixtures/sep8-spin-custody/README.md": "be6f3eb4eb716056e9ecc8863d326c78de3d176662b77e95c2951aa42453ff73",
     "tests/fixtures/sep8-spin-custody/late-fault.sql": "43653b983d870248707525058134de21821aa8f4f1c55df3d42f0a1e02d8b7b7",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "tests/unit/fixtureNativeCi.test.ts": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "c95084251c5d64f8500cbfb00b24ab4700402bf7fcd1d084afa71926b4d849e0",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "2d5c9df57c6bb8854fe0fbb432e65a878b028610fd78a5091c39eea9916838b9",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -550,7 +550,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "c9f23aa1276a55837211c5e6c42ace4271b7a17afbeaf71ab10eba484d5085ff",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -5444,23 +5444,52 @@
     "previous": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
     "current": "37d64780e8c8aaa7e65c2529f2649952b566c328bfae731532b19d390a22ffbd"
   },
-  "supersededHorseActionQualification20261028": {
-    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
-    "bindings": {
+  "uiPresentationSelection20261028": {
+    "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
+    "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+        "current": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
+      }
+    }
+  },
+  "uiSelectionContractInputs20261028": {
+    "reason": "Preserve exact financial/source assertions while recognizing the checked UI-selection wrapper command. Cascade only current reviewed source identities, preserving historical state and records; not financial qualification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+        "current": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90"
       },
       "tests/fixtures/legacy-fee-finality/source-binding.json": {
         "previous": "b6ef5f7f9e1324d2ac3744c2a9ce2afe62bdf312b680423daf1e264b5d20106d",
-        "current": "3818b99e20acbb2212c205f3a61677e307d2c9c2d4f3aead3ea95f7cf819600c"
+        "current": "409cf00b2f0ca7ba85ad207cda87c9f9ba568d89433796ca3dad4a00bb418f4b"
       },
       "tests/fixtures/sep8-spin-custody/source-binding.json": {
         "previous": "a60a0ef77be8fb2a1bcc49c7a9f2f0b0347c9550e550cf51982f328583587e02",
-        "current": "594050f7a8e4dfc1255ecf1afefdbafe3649454e05801461da6a29e9a97fbc20"
+        "current": "5f3598f163dfe6d4521d8ef7d2a2390cbcfbf3387751b419094fe9b093091960"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous": "bb187f959ddaaaf74e68d664151333a20417f113a28d7de7d5110a04a23424f3",
+        "current": "6d1627a0cfd9dabfb26a325a38e4777525535836f90168e713a0fd26dfca6b46"
       }
-    },
-    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+    }
+  },
+  "compilerPresentationScope20261028": {
+    "reason": "The compiler omits unchanged isolated chip-journal replay only after the same immutable positive presentation proof; every financial, executable, shared, mixed or unknown input retains replay. Compiler/invariants and financial matrices remain unchanged. Existing negative/actual-output regressions enforce the condition. Current source identity only, not financial or live certification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90",
+        "current": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "5f3598f163dfe6d4521d8ef7d2a2390cbcfbf3387751b419094fe9b093091960",
+        "current": "6963f6edc0ec865ec4ecf33e47da15e0ac1daf621e564911c75777adfaf7cf71"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous": "6d1627a0cfd9dabfb26a325a38e4777525535836f90168e713a0fd26dfca6b46",
+        "current": "7470230b363adea4a62a2aa8f182007a63b87451eb1ec887895f64d505a91a28"
+      }
+    }
   },
   "nativeAlertRuntimeAudit20261027": {
     "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
@@ -5485,9 +5514,51 @@
       }
     ]
   },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "b6ef5f7f9e1324d2ac3744c2a9ce2afe62bdf312b680423daf1e264b5d20106d",
+        "current": "3818b99e20acbb2212c205f3a61677e307d2c9c2d4f3aead3ea95f7cf819600c"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "a60a0ef77be8fb2a1bcc49c7a9f2f0b0347c9550e550cf51982f328583587e02",
+        "current": "594050f7a8e4dfc1255ecf1afefdbafe3649454e05801461da6a29e9a97fbc20"
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+  },
   "retentionMainIntegration20261028": {
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": "cf148b183270761e4a48c1cb7daa2d3c04c13a92cf97de30ee1ee7f6420d8976"
+    }
+  },
+  "horseTimingInputRouting20261029": {
+    "review": "Add only three connected horse native drivers and five SQL fixture inputs to existing accounting admission. No previous selector, financial fixture, assertion, timeout or qualification state changes. Existing Accounting4 horse-purchase chain now runs the T-10 regression; no authored CI workflow change. Current source identity only, not financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+    "current": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+    "validation": "Eight routing cases fail before the named selector; all65 horse routing cases pass after. Actual outer native chain passes including timing31 and purchase-budget27 checks.",
+    "nestedBindings": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "b6ae2aef38633f15f2002429838b2ae385436282475bd6c68b7ad2866c583eef",
+        "current": "5ffb6ae9f5179ac26143526b5b0fe5aad570f1187afb898e576d47b76ee5d596"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "adf6548ee361be908183173da620601b04d514abf6a2da5c516e441b964b6f27",
+        "current": "2d5c9df57c6bb8854fe0fbb432e65a878b028610fd78a5091c39eea9916838b9"
+      }
+    }
   }
 }

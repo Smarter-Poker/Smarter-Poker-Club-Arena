@@ -322,7 +322,7 @@ it('reads recent multirun history only through bounded candidate-table lookups',
       // Reproduce the production failure boundary: a global recent-history read
       // is refused; equality on the existing table/created index is required.
       expect(ids.map((id) => `eq.${id}`)).toContain(query.get('table_id'));
-      expect(query.get('created_at')).toBe('gte.2026-10-16T18:00:00.000Z');
+      expect(query.get('created_at')).toBe('gte.2026-10-16T16:30:00.000Z');
       expect(query.get('order')).toBe('created_at.desc');
       expect(query.get('limit')).toBe('500');
       expect(query.get('rit_boards')).toBe('not.is.null');
@@ -689,4 +689,41 @@ it('the actual passive DOM witness rejects a settled strip and preserves both wi
     'Settled Run Choice Still Covers The Table'
   );
   expect(read().violations).toContain('41: Settled Run Choice Still Covers The Table');
+});
+
+it('refuses a target-three observation without actual three-run history', () => {
+  const tables = [subject('quiet', 9), { ...subject('fixed', 6), run_it_mode: 'mandatory_three' }];
+  for (const rows of [[], history('quiet', 4, 0), history('undiscovered', 0, 3)]) {
+    expect(() => selectNaturalMultiRunSubject(tables, rows, [3])).toThrow(
+      /positive three-run history/
+    );
+  }
+});
+
+it('retains a natural three-run opportunity across provider queue time within the bounded lookback', async () => {
+  const quiet = '00000000-0000-0000-0000-000000000001';
+  const active = '00000000-0000-0000-0000-000000000002';
+  const now = Date.parse('2026-10-29T00:15:47Z');
+  const opportunityAt = Date.parse('2026-10-28T23:20:48Z');
+  const queries: URLSearchParams[] = [];
+  const rows = await readNaturalMultiRunHistory(
+    [quiet, active],
+    async (query) => {
+      queries.push(query);
+      const floor = Date.parse(query.get('created_at')!.slice(4));
+      return query.get('table_id') === `eq.${active}` && opportunityAt >= floor
+        ? history(active, 0, 1)
+        : [];
+    },
+    now
+  );
+  expect(selectNaturalMultiRunSubject([subject(quiet, 9), subject(active, 6)], rows, [3]).id).toBe(
+    active
+  );
+  expect(queries).toHaveLength(2);
+  for (const query of queries) {
+    expect(query.get('select')).toBe('table_id,rit_boards');
+    expect(query.get('limit')).toBe('500');
+    expect(query.get('created_at')).toBe('gte.2026-10-28T22:15:47.000Z');
+  }
 });

@@ -44,6 +44,7 @@ const BUILD_ID: string = (() => {
 const RELOAD_KEY = `${STORAGE_KEYS.CHUNK_RELOAD}:${BUILD_ID}`;
 const MAX_RELOADS = 1; // One guarded hard reload per build
 let recoveryStarted = false;
+const recoveryDeclines = new Set<() => void>();
 
 /** The sessionStorage key that guards this build's single recovery reload. */
 export function chunkReloadGuardKey(): string {
@@ -68,6 +69,7 @@ export function chunkReloadGuardKey(): string {
 export const NAVIGATION_GRACE_MS = 10_000;
 let leavingAt = Number.NEGATIVE_INFINITY;
 let deferredRecovery: ReturnType<typeof setTimeout> | null = null;
+let deferredRequests: { recover: () => void; decline?: () => void }[] = [];
 
 function markLeaving(): void {
   leavingAt = Date.now();
@@ -103,9 +105,10 @@ export function documentIsNavigatingAway(now = Date.now()): boolean {
  * cancellations had been read as staleness without ever checking. So when the
  * grace ends and the page is still here, recovery first asks production which
  * build it serves. A document on that build keeps waiting for its navigation,
- * bounded by CURRENT_BUILD_PATIENCE_MS so a navigation that really was
- * cancelled still gets its suspended route back. A different build, an
- * unreadable answer, or a local build recovers exactly as before.
+ * bounded by CURRENT_BUILD_PATIENCE_MS. Only a positively different build
+ * permits replacement. At the deadline a current or unreadable identity ends
+ * probing; a suspended critical import rejects into its explicit fallback.
+ * Time passing cannot establish that the player's navigation was cancelled.
  */
 export const CURRENT_BUILD_PATIENCE_MS = 60_000;
 export const LIVE_BUILD_READ_TIMEOUT_MS = 3_000;
@@ -173,28 +176,29 @@ function departureUndecided(now = Date.now()): boolean {
 }
 
 /** Run `recover` once the current navigation has had its chance to finish. */
-function afterNavigationGrace(recover: () => void): void {
+function afterNavigationGrace(recover: () => void, decline?: () => void): void {
+  deferredRequests.push({ recover, decline });
   if (deferredRecovery !== null) return;
   const departedAt = leavingAt;
   const schedule = (wait: number): void => {
     deferredRecovery = setTimeout(() => {
       void (async () => {
-        if (
-          Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS &&
-          (await readLiveBuild()) !== 'other'
-        ) {
-          // Current, or unreadable because the browser is mid-navigation
-          // (WebKit refuses a leaving page's new fetches): a reload cannot
-          // help and would cancel the navigation if it is merely slow. Keep
-          // the single deferral armed.
+        const live = await readLiveBuild();
+        if (live !== 'other' && Date.now() - departedAt < CURRENT_BUILD_PATIENCE_MS) {
           schedule(NAVIGATION_GRACE_MS);
           return;
         }
         deferredRecovery = null;
-        // The departure is decided: it never completed, or the build is
-        // stale. Recovery from here replaces this document directly.
+        const requests = deferredRequests;
+        deferredRequests = [];
+        // A deadline is not stale-build evidence. Stop probing and expose the
+        // importing caller's fallback instead of hijacking a slow departure.
+        if (live !== 'other') {
+          for (const request of requests) request.decline?.();
+          return;
+        }
         leavingAt = Number.NEGATIVE_INFINITY;
-        recover();
+        for (const request of requests) request.recover();
       })();
     }, wait);
   };
@@ -285,9 +289,9 @@ export function isChunkLoadError(error: unknown): boolean {
  * the Cache Storage it was serving from, then navigate with a cache-busting
  * query so the browser and the edge are both forced to fetch a fresh document.
  */
-export async function hardReload(): Promise<void> {
-  if (documentIsNavigatingAway()) {
-    afterNavigationGrace(() => void hardReload());
+export async function hardReload(onDeclined?: () => void): Promise<void> {
+  if (Number.isFinite(leavingAt)) {
+    afterNavigationGrace(() => void hardReload(onDeclined), onDeclined);
     return;
   }
   try {
@@ -306,9 +310,10 @@ export async function hardReload(): Promise<void> {
   } catch {
     /* ignore — best effort */
   }
-  // The purge above is asynchronous; a navigation may have started meanwhile.
-  if (documentIsNavigatingAway()) {
-    afterNavigationGrace(() => void hardReload());
+  // The purge above is asynchronous; a departure remains relevant even if
+  // its grace elapsed while service workers or caches were being removed.
+  if (Number.isFinite(leavingAt)) {
+    afterNavigationGrace(() => void hardReload(onDeclined), onDeclined);
     return;
   }
   try {
@@ -351,7 +356,9 @@ export type BoundaryChunkOutcome = 'not-chunk' | 'recovering' | 'exhausted';
  */
 export function claimChunkErrorForBoundary(error: unknown): BoundaryChunkOutcome {
   if (!isChunkLoadError(error)) return 'not-chunk';
-  if (!canOwnChunkRecovery(error)) return 'exhausted';
+  // A departing document whose automatic recovery cannot yet be justified
+  // must retain the boundary's explicit Reload action, not claim a spinner.
+  if (!canOwnChunkRecovery(error) || Number.isFinite(leavingAt)) return 'exhausted';
   void recoverFromStaleChunk(error);
   return 'recovering';
 }
@@ -369,21 +376,41 @@ export function reportExhaustedChunkLoad(error: unknown, surface: string): void 
     .catch(() => undefined);
 }
 
-export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
+export async function recoverFromStaleChunk(
+  error: unknown,
+  onDeclined?: () => void
+): Promise<boolean> {
   if (!canOwnChunkRecovery(error)) return false;
-  if (recoveryStarted) return true;
+  if (recoveryStarted) {
+    if (onDeclined) recoveryDeclines.add(onDeclined);
+    return true;
+  }
   // A cancelled load during navigation spends no reload budget. A failure
   // that arrives after the grace while the departure is still undecided
   // (a lazy retry's backoff can outlast it) is confirmed the same way rather
   // than replacing the document on the spot.
-  if (documentIsNavigatingAway() || departureUndecided()) {
-    afterNavigationGrace(() => void recoverFromStaleChunk(error));
+  if (Number.isFinite(leavingAt)) {
+    afterNavigationGrace(() => void recoverFromStaleChunk(error, onDeclined), onDeclined);
     return true;
   }
 
   recoveryStarted = true;
+  if (onDeclined) recoveryDeclines.add(onDeclined);
   incrementReloadCount();
-  await hardReload();
+  await hardReload(() => {
+    recoveryStarted = false;
+    // No replacement occurred: release this incident's reservation.
+    try {
+      sessionStorage.setItem(RELOAD_KEY, String(Math.max(0, getReloadCount() - 1)));
+    } catch {
+      /* storage unavailable */
+    }
+    // Every critical importer sharing this incident needs its own rejection.
+    // Snapshot and clear before callbacks so each is notified exactly once.
+    const declines = [...recoveryDeclines];
+    recoveryDeclines.clear();
+    for (const decline of declines) decline();
+  });
   return true;
 }
 
@@ -403,8 +430,9 @@ export async function recoverFromStaleChunk(error: unknown): Promise<boolean> {
  * document, and it does not distinguish a link that LOADED from one that
  * ERRORED. So after one failed CSS fetch, every retry of that route "found"
  * its stylesheet and rendered without it. Removing the failed link clears the
- * DOM entry, but Vite also remembers it in an internal seen-dependency map.
- * The guarded document recovery below resets that map for the next load.
+ * DOM entry. The maintained Vite preload-helper transform also invalidates
+ * the failed dependency memo before rejection, so a later import waits for
+ * the stylesheet again. Document replacement below needs stale-build evidence.
  */
 function failedStylesheetHref(error: unknown): string | undefined {
   const message = (error as { message?: string } | null)?.message ?? '';
@@ -500,8 +528,8 @@ function reinstateStylesheet(href: string, onError: () => void): void {
  *   - 'unknown': cannot tell, which is what a departure looks like from inside
  *                it. Ask again after each grace, for up to
  *                CURRENT_BUILD_PATIENCE_MS; a page that really left is gone
- *                long before then, and one that is really offline recovers
- *                at the end of it.
+ *                long before then. An unreadable answer at the deadline
+ *                ends this bounded probe without replacing the document.
  * A stylesheet the server answers with 404 is retired and recovers at once.
  */
 async function recoverStylesheetUnlessLive(
@@ -516,10 +544,11 @@ async function recoverStylesheetUnlessLive(
       reinstateStylesheet(href, () => void recoverStylesheetUnlessLive(error, undefined, since));
     return;
   }
-  if (live === 'other' || Date.now() - since >= CURRENT_BUILD_PATIENCE_MS) {
+  if (live === 'other') {
     void recoverFromStaleChunk(error);
     return;
   }
+  if (Date.now() - since >= CURRENT_BUILD_PATIENCE_MS) return;
   setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
 }
 
@@ -536,6 +565,7 @@ export async function recoverFailedStylesheet(href: string, error: unknown): Pro
     void recoverFromStaleChunk(error);
     return;
   }
+  if (Date.now() - since >= CURRENT_BUILD_PATIENCE_MS) return;
   setTimeout(() => void recoverStylesheetUnlessLive(error, href, since), NAVIGATION_GRACE_MS);
 }
 
@@ -613,9 +643,12 @@ export function lazyWithRetry<T extends ComponentType<any>>(
                 `[lazyWithRetry] Chunk load failed after ${retries} retries. Reloading page (attempt ${getReloadCount() + 1}/${MAX_RELOADS})...`
               );
             }
-            void recoverFromStaleChunk(error);
-            // Return a never-resolving promise to prevent rendering during reload
-            return new Promise<never>(() => {});
+            // Suspend only while recovery can still replace this document.
+            // If bounded navigation verification declines it, reject into the
+            // ordinary route boundary so its explicit Reload action remains.
+            return new Promise<never>((_resolve, reject) => {
+              void recoverFromStaleChunk(error, () => reject(error));
+            });
           }
           throw error;
         }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
 import { supabase } from './supabase.js';
@@ -76,5 +77,29 @@ describe('every automated MTT caller shares the T-10 purchase choice', () => {
     const h = harness({ format_contract: 'sng-v1', max_players: 6 });
     await h.svc.registerHorses('event', 4);
     expect(h.load).toHaveBeenCalledOnce();
+  });
+});
+
+describe('scheduled horse timing stays in required native accounting', () => {
+  const source = (path: string) =>
+    readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+  it('keeps Accounting4 → daily counts → purchase budget → timing checked and bounded', () => {
+    expect(source('.github/workflows/ci.yml')).toMatch(
+      /- name: Horse daily counts share the original accepted-hand receipt\s+if: matrix\.shard == 4\s+env:\s+PG_BIN: \/usr\/lib\/postgresql\/17\/bin\s+run: python3 scripts\/ci\/test-horse-daily-counts\.py/
+    );
+    expect(source('scripts/ci/test-horse-daily-counts.py')).toContain(
+      "subprocess.run([sys.executable, '-B', str(ROOT/'scripts/ci/test-horse-future-purchase-budget.py')], cwd=ROOT, env={**ENV, 'PG_BIN':str(PG), 'TMPDIR':str(BASE)}, check=True, timeout=120)"
+    );
+    const budget = source('scripts/ci/test-horse-future-purchase-budget.py');
+    const invocation = `subprocess.run([
+        sys.executable, '-B', str(ROOT/'scripts/ci/test-horse-registration-timing.py'),
+    ], cwd=ROOT, env={**ENV, 'PG_BIN':str(PG), 'TMPDIR':str(BASE)}, check=True, timeout=120)`;
+    expect(budget).toContain(invocation);
+    expect(budget.indexOf(invocation)).toBeGreaterThan(
+      budget.indexOf("finally: command([PG/'pg_ctl'")
+    );
+    expect(budget.indexOf(invocation)).toBeLessThan(
+      budget.indexOf("if __name__=='__main__':main()")
+    );
   });
 });

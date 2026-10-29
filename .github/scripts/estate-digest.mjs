@@ -22,6 +22,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { supabaseServerHeaders } from '../../scripts/ci/supabase-auth-headers.mjs';
+import {assertClubArenaRepository} from '../../scripts/ci/repository-identity.mjs';
 import { digestRecipients } from './estate-digest-recipients.mjs';
 
 const REPO = process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena';
@@ -50,7 +51,18 @@ const ghWith = (token) => async (path, init = {}) => {
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
   return res.json();
 };
-const gh = ghWith(TOKEN);
+// Existing personal reads remain on their installation; only this transferred
+// repository uses the separately scoped organization token.
+const gh = async (path, init = {}) => {
+  const transferred = REPO === 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+  const currentRepository = path === `/repos/${REPO}` || path.startsWith(`/repos/${REPO}/`);
+  if (transferred && currentRepository) {
+    assertClubArenaRepository(REPO, process.env.GITHUB_REPOSITORY_ID);
+    if (!process.env.GH_TOKEN_CA) throw Error('Transferred repository read token unavailable');
+    return ghWith(process.env.GH_TOKEN_CA)(path, init);
+  }
+  return ghWith(TOKEN)(path, init);
+};
 const ghIssues = ghWith(TOKEN_ISSUES);
 
 const sb = async (pathAndQuery, init = {}) => {

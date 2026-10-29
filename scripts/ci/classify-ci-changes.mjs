@@ -64,7 +64,7 @@ const cssBeatInput = cssBeatJobInputs() || ((p) => /^tests\/e2e\//.test(p) && !p
 
 const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture: true });
 const wide =
-  /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate)\.mjs)/;
+  /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate|ui-test-selection)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/(?:classify-ci-changes\.mjs|test-v4-policy-metadata\.mjs$)|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/(?:20260909(165541|170039|170749|171644|172537|175000|180000)_|20261007043848_v4_policy_schema_is_immutable_input_metadata\.sql$|20261007043945_solver_v4_nodes_prove_complete_public_state\.sql$|20261007051641_v4_consumers_bind_the_immutable_policy_schema\.sql$)|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31|GtoV31EvaluationConfig\.(?:test\.)?ts$)|scripts\/gtoV31Evaluate\.ts$|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const breakfastWitness =
@@ -342,7 +342,7 @@ export function classifyChangedPaths(paths) {
   );
   // Script/fixture-only edits must admit accounting and its routing tests.
   const commitmentAudit = matches(
-    /^(scripts\/ci\/test-horse-(?:commitment-audit|own-public-history)\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/unit\/horseCi\.test\.ts$)/
+    /^(scripts\/ci\/test-horse-(?:commitment-audit|own-public-history|daily-counts|future-purchase-budget|registration-timing)\.py$|scripts\/ci\/probes\/horse-commitment-audit\/|tests\/sql\/fixtures\/(?:horse-daily-counts\/(?:schema|add|projector-before)\.sql|horse-future-purchase-(?:lock|before)\.sql)$|tests\/unit\/horseCi\.test\.ts$)/
   );
   // THE LAW REGISTRY IS READ FROM DISK, SO IT HAS TO SEE ITS OWN DIRECTORY
   // (2026-09-20). `tests/law-registry.law.test.ts` readdirSync's docs/laws.d/

@@ -75,7 +75,7 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -260,7 +260,7 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -310,7 +310,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -361,7 +361,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -671,7 +671,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -782,7 +782,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -862,18 +862,21 @@ jobs:
             provenance &&
             !Array.isArray(provenance) &&
             provenance.schema === 1 &&
+            (repository === 'Smarter-Poker/Smarter-Poker-Club-Arena'
+              ? (provenance.repositoryId == null || provenance.repositoryId === '1132369872')
+              : repository === 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' && provenance.repositoryId === '1132369872') &&
             (!Object.prototype.hasOwnProperty.call(provenance, 'validationOnly') || provenance.validationOnly === false) &&
             provenance.commit === expectedSha &&
             provenance.builtBy === 'github-actions' &&
             provenance.dirty === false &&
             provenance.historyComplete === true &&
             Number.isSafeInteger(provenance.behindMain) && provenance.behindMain >= 0 &&
-            ((provenance.behindMain === 0 && provenance.publication == null) ||
+            ((repository === 'Smarter-Poker/Smarter-Poker-Club-Arena' && provenance.behindMain === 0 && provenance.publication == null) ||
              (provenance.publication && typeof provenance.publication === 'object' && !Array.isArray(provenance.publication) &&
               provenance.publication.admittedMain === expectedSha &&
               typeof provenance.publication.observedMain === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.observedMain) &&
               (provenance.behindMain === 0 ? provenance.publication.observedMain === expectedSha : provenance.publication.observedMain !== expectedSha) &&
-              provenance.publication.workflowRef === 'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main' &&
+              provenance.publication.workflowRef === `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main` &&
               typeof provenance.publication.workflowSha === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.workflowSha) &&
               provenance.publication.triggerSha === provenance.publication.workflowSha &&
               ['push','repository_dispatch'].includes(provenance.publication.eventName))) &&

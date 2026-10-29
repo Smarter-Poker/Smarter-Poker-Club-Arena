@@ -153,6 +153,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { customCashGameName } from '../utils/customCashGameName';
 import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
@@ -957,6 +958,7 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 import {
   sortCardsByRank,
   heroDisplayHoleCards,
+  heroWinningHoleCardIndexes,
   getGameVariantLabel,
   heroCardsCollideWithBoard,
   heroHoleCardsAreForThisHand,
@@ -2702,6 +2704,10 @@ function LiveTablePage({
 
   // A roster arriving during restoration supplies a placeholder, not a top-up.
   const sessionBuyInSeedRef = useRef(0);
+  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
+   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
+   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
+  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   /* LIGHTNING TRANSITION, PHASE 3: THE FOLDED HAND LEAVES THE FELT, IT DOES
      NOT VANISH. The engine answers a Lightning fold with the fold, the table,
      then the idle snapshot one macrotask later. Applied verbatim, that took
@@ -2827,6 +2833,13 @@ function LiveTablePage({
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
         if (sp.isHero && sp.holeCards && sp.holeCards.length > 0) {
+          // A reload may recover the shown hand through this snapshot alone.
+          // Retain its dealt order before preserving/sorting the hero's row.
+          if (sp.holeCards.every((card) => card != null)) {
+            heroEngineCardOrderRef.current = sp.holeCards.map(
+              (card) => `${card!.rank}${card!.suit}`
+            );
+          }
           const prevRow = prev.players[i];
           sp = {
             ...sp,
@@ -3186,10 +3199,6 @@ function LiveTablePage({
    * variant correctly and the people never got to play it at all.
    */
   const [pineappleDeadline, setPineappleDeadline] = useState<number | null>(null);
-  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
-   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
-   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
-  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
     /* ═══ A BACKGROUND TABLE MAY NOT PUT A PICKER ON YOUR SCREEN ═══════════
        MultiTablePage mounts up to four TablePages at once and only the active
@@ -17862,7 +17871,16 @@ function LiveTablePage({
             }
             if (seatIdx >= 0) {
               const existing = updatedPlayers[seatIdx];
-              if (sp.user_id === userId) syncedHeroSeat = sp.seat;
+              const publicHeroCards =
+                sp.user_id === userId ? (canonicalCards(sp.cards || []) as Card[]) : [];
+              if (sp.user_id === userId) {
+                syncedHeroSeat = sp.seat;
+                if (publicHeroCards.length && publicHeroCards.length === sp.cards?.length) {
+                  heroEngineCardOrderRef.current = publicHeroCards.map(
+                    (card) => `${card.rank}${card.suit}`
+                  );
+                }
+              }
               updatedPlayers[seatIdx] = {
                 ...(existing || {}),
                 id: sp.user_id,
@@ -18446,6 +18464,7 @@ function LiveTablePage({
           });
         }
         // Reset visual state instantly so the new hand starts crisp.
+        heroEngineCardOrderRef.current = null;
         setTableState((prev) => {
           // ANIMATION AUDIT 2026-08-19: 'folded' is per-hand state. It was
           // never reset here, so DealAnimation (which mounts off this event,
@@ -27052,6 +27071,13 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
+                          {customCashGameName(tableState.tableName) && (
+                            <span className="table-brand__line table-brand__line--level">
+                              <MastheadGameLine className="table-brand__game">
+                                {customCashGameName(tableState.tableName)}
+                              </MastheadGameLine>
+                            </span>
+                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."
@@ -28203,14 +28229,21 @@ function LiveTablePage({
                      the union of every board's winning hole cards. */
                   winningHoleCardIndexes={
                     winnerBandActive && player && winnerInfo.playerIds.includes(player.id)
-                      ? ritWinnerHoleIndices[player.id]
-                        ? [
-                            ...new Set([
-                              ...(winnerInfo.holeCardIndices[player.id] ?? []),
-                              ...ritWinnerHoleIndices[player.id],
-                            ]),
-                          ]
-                        : winnerInfo.holeCardIndices[player.id]
+                      ? player.isHero
+                        ? heroWinningHoleCardIndexes(
+                            winnerInfo.holeCardIndices[player.id],
+                            ritWinnerHoleIndices[player.id],
+                            player.holeCards ?? [],
+                            heroEngineCardOrderRef.current
+                          )
+                        : ritWinnerHoleIndices[player.id]
+                          ? [
+                              ...new Set([
+                                ...(winnerInfo.holeCardIndices[player.id] ?? []),
+                                ...ritWinnerHoleIndices[player.id],
+                              ]),
+                            ]
+                          : winnerInfo.holeCardIndices[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine

@@ -169,6 +169,11 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # refuses paid books and admits the exact unpaid atomic-history liabilities.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-unpaid-atomic-cash-contracts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
+# Historical own playing earnings preserve paid legacy receipts and route new
+# typed destinations through the actual document pipeline and original R0/R2/R3.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-own-agent-rakeback-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-own-agent-financial-postgres.py'), '--pg-bin', str(pg), '--scratch-root', str(args.scratch), '--output', str(args.output.with_name('own-agent-v1.json'))], text=True))
+
 # A single weekly player entitlement preserves every historical payer through
 # native R3 payments, documents, retired reserves and interruption/replay.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-historical-rakeback-payers-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

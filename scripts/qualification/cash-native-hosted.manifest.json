@@ -217,8 +217,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42854,
-      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
+      "bytes": 43037,
+      "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4385,5 +4385,17 @@
         }
       }
     }
+  },
+  "horseTimingInputRouting20261029": {
+    "review": "Only additive admission for the existing horse daily-counts, purchase-budget and timing drivers and five SQL inputs. All cash financial sources, assertions, timeouts and historical receipts unchanged. CI workflow bytes are exact protected main. Current classifier identity only, not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42854,
+      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
+    },
+    "currentClassifierPin": {
+      "bytes": 43037,
+      "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
+    },
+    "validation": "Eight sole-input routing cases fail before, all65horse routing cases pass after; connected native horse chain passes timing31 and budget27."
   }
 }

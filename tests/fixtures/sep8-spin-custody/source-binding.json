@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9",
+    "tests/unit/fixtureNativeCi.test.ts": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1414,6 +1414,47 @@
       }
     }
   },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+  },
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+    "current": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7",
+    "evidence": [
+      "716 focused routing/native-input tests passed locally",
+      "actual Node22.23.3 SQLite process-kill/restart, exclusive owner and corrupt-state cases passed",
+      "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
+    ]
+  },
+  "retentionMainIntegration20261028": {
+    "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "interruptedPostflopNativeRouting20261028": {
+    "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "before_sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804",
+    "after_sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
+  },
+  "legacyPostflopCapsuleFloorRouting20261029": {
+    "reason": "Reviewed legacy postflop prerequisite-version, captured exact current disposition guards, continuation assertion and played-clock-floor classification assertions in the existing required F06 runner. Active source identity only; preserve every prior audit, financial input, assertion and qualification status. No financial recertification or production claim.",
+    "files": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747",
+        "after": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92"
+      }
+    }
+  },
   "uiPresentationSelection20261028": {
     "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
     "changes": {
@@ -1441,36 +1482,19 @@
       }
     }
   },
-  "nativeAlertRuntimeAudit20261027": {
-    "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
-    "path": "scripts/ci/classify-ci-changes.mjs",
-    "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-    "current": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7",
-    "evidence": [
-      "716 focused routing/native-input tests passed locally",
-      "actual Node22.23.3 SQLite process-kill/restart, exclusive owner and corrupt-state cases passed",
-      "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
-    ]
-  },
-  "supersededHorseActionQualification20261028": {
-    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
-    "bindings": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
-      }
-    },
-    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
-  },
-  "retentionMainIntegration20261028": {
-    "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
-    "path": "scripts/ci/classify-ci-changes.mjs",
-    "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
-  },
   "organizationHostedRunnerTrust20261028": {
     "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
     "previousInputs": {
       "tests/unit/fixtureNativeCi.test.ts": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+    }
+  },
+  "postflopOrganizationMainIntegration20261029": {
+    "reason": "Normal integration of protected organization runner trust and UI selection with retained postflop native routing. Active source identities only; all prior audits, financial inputs, assertions and qualification states preserved. Not financial/native/live recertification.",
+    "changes": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "before": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92",
+        "after": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57"
+      }
     }
   },
   "horseTimingInputRouting20261029": {

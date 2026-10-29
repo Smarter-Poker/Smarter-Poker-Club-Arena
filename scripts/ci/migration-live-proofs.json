@@ -99,16 +99,6 @@
       "proofs": [
         "(SELECT count(*)=1 AND bool_and(md5(pg_get_functiondef(p.oid))='11ffdbe0a66d2fa02df78111c971f834' AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, extensions','statement_timeout=240s','lock_timeout=1s']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_gto_v31_build_cell(uuid,jsonb)')) AND (SELECT rolconfig @> ARRAY['statement_timeout=8s']::text[] FROM pg_roles WHERE rolname='service_role')"
       ]
-    },
-    {
-      "file": "20261029011340_legacy_postflop_void_preserves_original_principal.sql",
-      "sha256": "53431ffdabd682f27dc4718775eaa149ae13fc91e2c43910b789cd40782411a7",
-      "replaces": [
-        "SELECT md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d' AS installed;"
-      ],
-      "proofs": [
-        "md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'"
-      ]
     }
   ]
 }

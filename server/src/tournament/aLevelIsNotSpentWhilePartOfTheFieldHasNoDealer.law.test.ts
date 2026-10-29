@@ -16,7 +16,9 @@
  * 2026-10-21, Turbo Tuesday PKO bc8e3d86: the hold had no end. One table that
  * never dealt kept about 170 players at one level for 19 hours. Past
  * FIELD_WITHOUT_DEALER_HOLD_MAX_MS (the table's critical page) the field plays
- * on, announced once per table.
+ * on, announced once per table, while another current table has a dealer.
+ * The exception never releases an entirely unavailable field, even if a
+ * recently closed table supplied this level's most recent completed hand.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,6 +60,10 @@ function manager(failingSinceMsAgo: number | null) {
   m.stalledLevelHoldAnnouncedFor = new Set<number>();
   m.fieldWithoutDealerHoldAnnouncedFor = new Set<number>();
   m.fieldWithoutDealerReleaseAnnouncedFor = new Set<string>();
+  m.tableEngines = new Map([
+    [PARKED, {}],
+    ['healthy-table', {}],
+  ]);
   m.tableAdmissionFailingSince = new Map<string, number>();
   if (failingSinceMsAgo !== null) m.tableAdmissionFailingSince.set(PARKED, now - failingSinceMsAgo);
   m.askForConsolidationIfSpread = vi.fn();
@@ -142,6 +148,26 @@ describe('a level is not spent while part of the field has no dealer', () => {
     await m.advanceBlindLevel(STRUCTURE).catch(() => undefined);
     expect(m.publicationReached).toHaveBeenCalledTimes(2);
     expect(log.mock.calls.flat().join(' ')).not.toContain('the field no longer waits for it');
+  });
+
+  it('never releases an entirely unavailable field after the minority hold bound', async () => {
+    const m = manager(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    m.tableAdmissionFailingSince.set(
+      'healthy-table',
+      Date.now() - TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS - 5_000
+    );
+    // A hand on a now-closed table can still be the current level's witness.
+    // It cannot establish that any of the remaining field can play.
+    await m.advanceBlindLevel(STRUCTURE);
+    expect(m.publicationReached).not.toHaveBeenCalled();
+    expect(m.scheduleBlindLevelWake).toHaveBeenCalledWith(
+      STRUCTURE,
+      TournamentManagerBase.STALLED_LEVEL_RECHECK_MS
+    );
+    m.tableAdmissionFailingSince.delete('healthy-table');
+    await m.advanceBlindLevel(STRUCTURE);
+    expect(m.publicationReached).toHaveBeenCalledOnce();
   });
 
   it('a second, younger stuck table still holds while the old one is released', async () => {

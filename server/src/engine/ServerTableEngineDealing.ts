@@ -115,6 +115,44 @@ type PreparedHandNumberOutcome =
   | null;
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
+  /** Measure before the original continuation queues this street behind retention. */
+  protected captureStreetIntegrityEvent(event: HandEvent, controller: HandController): HandEvent {
+    if (event.type !== 'COMMUNITY_CARDS') return event;
+    try {
+      const live = controller.getState();
+      const result = this.stateVerifier.measure({
+        tableId: this.tableId,
+        handNumber: this.handCount,
+        players: live.players,
+        communityCards: live.communityCards,
+        pot: live.pot,
+        stage: live.stage,
+        phase: 'in_hand',
+        rakeTaken: 0,
+      });
+      return {
+        ...event,
+        integrityVerification: {
+          handNumber: this.handCount,
+          stage: live.stage,
+          pot: live.pot,
+          result: {
+            ...result,
+            // Retain the verdict, never private cards or mutable player references.
+            violations: result.violations.map(({ type, message, severity }) => ({
+              type,
+              message: type === 'DUPLICATE_CARD' ? 'Duplicate card detected' : message,
+              severity,
+            })),
+          },
+        },
+      };
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.street_integrity_threw`);
+      return event;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -4142,6 +4180,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {
+          event = this.captureStreetIntegrityEvent(event, controllerForHand);
           if (this.handContinuation) this.handContinuation.enqueue(event);
           else
             void dispatchOriginalEvent(event).catch((error) =>

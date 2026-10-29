@@ -225,6 +225,28 @@ describe('a merged migration must be live', () => {
     }
   });
 
+  it('runs the principal proof as one expression without rewriting its migration', () => {
+    const name = '20261029011340_legacy_postflop_void_preserves_original_principal.sql';
+    const sql = fs.readFileSync(path.join(MIGRATIONS, name), 'utf8');
+    const predicate =
+      "md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'";
+    const registry = JSON.parse(read('scripts/ci/migration-live-proofs.json'));
+    const entry = registry.entries.find((e: any) => e.file === name);
+    expect(entry).toBeDefined();
+    expect(entry.sha256).toBe(createHash('sha256').update(sql).digest('hex'));
+    expect(entry.replaces).toEqual(['SELECT ' + predicate + ' AS installed;']);
+    expect(declaredProofs(sql)).toEqual([predicate]);
+    expect(proofIsRunnable(predicate)).toBe(true);
+    // The database check still receives the original exact hash comparison.
+    // An unrelated declaration or a changed migration cannot replace it.
+    const wrongMarker = structuredClone(registry);
+    wrongMarker.entries.find((e: any) => e.file === name).replaces = [predicate];
+    expect(() => resolveDeclaredProofs(sql, wrongMarker, MIGRATIONS)).toThrow();
+    const wrongBytes = structuredClone(registry);
+    wrongBytes.entries.find((e: any) => e.file === name).sha256 = '0'.repeat(64);
+    expect(() => resolveDeclaredProofs(sql, wrongBytes, MIGRATIONS)).toThrow('bytes changed');
+  });
+
   it('decides by name, then by live objects, then by a declared proof', () => {
     expect(SRC).toContain('supabase_migrations.schema_migrations');
     // Step 2 reads the LIVE catalogue. A snapshot is what let the existing

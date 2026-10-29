@@ -111,19 +111,11 @@ describe('horses do not occupy an event that has not started', () => {
    */
   it('the seed window stays far shorter than the look-ahead', () => {
     expect(HORSE_SEED_WITHIN_MS).toBeLessThan(TIMED_WINDOW_AHEAD_MS);
-    expect(HORSE_SEED_WITHIN_MS).toBe(60 * 60 * 1000);
+    expect(HORSE_SEED_WITHIN_MS).toBe(10 * 60 * 1000);
   });
 
-  it('is DELIBERATELY shorter than the ramp window', () => {
-    /* These were aligned on 2026-08-23, when both meant "about to start".
-       They mean different things now. MTT_PRESTART_RAMP_MS is the whole field
-       build and runs for the full 72-hour publish window, so the board is
-       never a wall of empty games. This constant is the head start given at
-       SPAWN, before the ramp has ticked once - and seeding three days early
-       would put chips into a pool for an event that has only just appeared,
-       for no gain, since the ramp reaches it within one tick anyway. */
-    expect(HORSE_SEED_WITHIN_MS).toBeLessThan(MTT_PRESTART_RAMP_MS);
-    expect(HORSE_SEED_WITHIN_MS).toBe(60 * 60 * 1000);
+  it('shares the ten-minute ramp window rather than seeding an hour early', () => {
+    expect(HORSE_SEED_WITHIN_MS).toBe(MTT_PRESTART_RAMP_MS);
   });
 
   it('an event published a day out is outside the seed window', () => {
@@ -136,9 +128,10 @@ describe('horses do not occupy an event that has not started', () => {
     expect(2 * tomorrow <= HORSE_SEED_WITHIN_MS).toBe(false);
   });
 
-  it('an event an hour or less away is inside it', () => {
+  it('only an event ten minutes or less away is inside it', () => {
     expect(5 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(true);
-    expect(59 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(true);
+    expect(10 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(true);
+    expect(10 * 60 * 1000 + 1 <= HORSE_SEED_WITHIN_MS).toBe(false);
     expect(61 * 60 * 1000 <= HORSE_SEED_WITHIN_MS).toBe(false);
   });
 });

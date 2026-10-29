@@ -1,3 +1,4 @@
+import type { HorseOwnPublicHistoryLoader } from './ownPublicHistoryProvenance.js';
 import {
   V31ControlClient,
   type V31ControlRequest,
@@ -130,7 +131,7 @@ export interface HorseDecisionJobOptions {
 }
 
 export interface LiveHorseDecisionWorkerClientOptions {
-  ownPublicHistory?: (context: HorseObserverReadContext) => Promise<unknown>;
+  ownPublicHistory?: HorseOwnPublicHistoryLoader;
   workerFactory?: () => WorkerLike;
   /** Legacy injection retained for source compatibility; pooled reads are never fetched. */
   opponentProfiles?: (
@@ -801,6 +802,9 @@ export class LiveHorseDecisionWorkerClient {
         ? this.ownPublicHistory?.forSnapshot(context, captured.decisionTimeMs)
         : undefined,
       ownPublicHistoryState: context ? this.ownPublicHistory?.state(context) : undefined,
+      ownPublicHistoryProvenance: context
+        ? this.ownPublicHistory?.provenance(context, captured.decisionTimeMs)
+        : undefined,
     };
     return this.enqueue<FastHorseDecisionResult>(
       request,

@@ -8,9 +8,14 @@ import {
   confirmTableSettingIntent,
   orderTableSettingWrite,
   readTableSettingIntent,
+  registerPreferenceFlush,
 } from '../lib/tableSettingIntents';
 
 const PREFIX = 'ca_player_preference:';
+const CHANGED = 'ca-player-preference-changed';
+// Keep the latest identity even after confirmation removes its durable journal.
+// Other mounted consumers can still hold an older deferred save.
+const latestSelections = new Map<string, { id: string; journaled: boolean }>();
 
 function validShape(value: unknown, fallback: unknown): boolean {
   if (fallback === null) return value === null || typeof value === 'string';
@@ -49,13 +54,23 @@ function cache(owner: string, name: string, value: unknown): void {
   try {
     localStorage.setItem(`${PREFIX}${owner}:${name}`, JSON.stringify(value));
   } catch {
-    /* Keep the live selection and attempt the account write. */
+    /* Keep the selection even if browser storage is unavailable. */
   }
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: { owner, name, value } }));
 }
 
 async function save(owner: string, name: string, value: unknown, id: string): Promise<void> {
   if (owner === 'guest') return;
+  const selectionKey = `${owner}:${name}`;
+  if (
+    readTableSettingIntent(owner, `page:${name}`)?.id === id &&
+    latestSelections.get(selectionKey)?.journaled !== false
+  )
+    latestSelections.set(selectionKey, { id, journaled: true });
   await orderTableSettingWrite(owner, `page:${name}`, async () => {
+    const held = readTableSettingIntent(owner, `page:${name}`);
+    const latest = latestSelections.get(selectionKey);
+    if (latest?.id !== id || (latest.journaled && held && held.id !== id)) return;
     try {
       const { error } = await awaitPreferenceSave(
         supabase.from('user_page_preferences').upsert(
@@ -107,8 +122,45 @@ export function usePlayerPreference<T>(
     timerRef.current = null;
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending) void save(pending.owner, pending.name, pending.value, pending.id);
+    if (pending) return save(pending.owner, pending.name, pending.value, pending.id);
   }, []);
+
+  useEffect(() => registerPreferenceFlush(owner, flush), [owner, flush]);
+
+  // Closed, mounted settings sheets share the same preference owner too.
+  // A second instance must not reopen with the value from before the last gesture.
+  useEffect(() => {
+    const accept = (value: unknown) => {
+      if (!validShape(value, fallbackRef.current)) return;
+      // A newer consumer/tab owns this choice. Retire this instance's older
+      // debounce without replaying it after the other writer has confirmed.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      pendingRef.current = null;
+      latestSelections.delete(`${owner}:${scopedName}`);
+      revisionRef.current += 1;
+      valueRef.current = { scope, value: value as T };
+      setState({ scope, value: value as T });
+    };
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.owner === owner && detail?.name === scopedName) accept(detail.value);
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key !== `${PREFIX}${owner}:${scopedName}` || event.newValue === null) return;
+      try {
+        accept(JSON.parse(event.newValue));
+      } catch {
+        /* Ignore invalid external cache data. */
+      }
+    };
+    window.addEventListener(CHANGED, changed);
+    window.addEventListener('storage', storage);
+    return () => {
+      window.removeEventListener(CHANGED, changed);
+      window.removeEventListener('storage', storage);
+    };
+  }, [owner, scopedName, scope]);
 
   useEffect(() => {
     let active = true;
@@ -164,6 +216,10 @@ export function usePlayerPreference<T>(
       valueRef.current = { scope, value };
       cache(owner, scopedName, value);
       const id = beginTableSettingIntent(owner, `page:${scopedName}`, value);
+      latestSelections.set(`${owner}:${scopedName}`, {
+        id,
+        journaled: readTableSettingIntent(owner, `page:${scopedName}`)?.id === id,
+      });
       setState({ scope, value });
       pendingRef.current = { owner, name: scopedName, value, id };
       if (timerRef.current) clearTimeout(timerRef.current);

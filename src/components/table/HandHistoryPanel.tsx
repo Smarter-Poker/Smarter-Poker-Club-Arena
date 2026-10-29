@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA — Hand History Panel  #ClubArenaConsole
@@ -478,7 +479,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
    * word from a note - because a player at a table remembers "the one against
    * KingFish", not its position in a list.
    */
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('handHistoryPanel.search', '', 'global');
   /**
    * THE VIEWER'S OWN NOTES ON THESE HANDS, because the box beside this says it
    * searches tags and it could not: the panel never loaded a note, so

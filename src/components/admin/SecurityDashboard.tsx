@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SecurityDashboard — Club Security Overview Widget
@@ -6,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import CircularGauge from '../common/CircularGauge';
 
 interface SecurityDashboardProps {
@@ -30,7 +31,7 @@ export default function SecurityDashboard({
   isPublic,
   requiresApproval,
 }: SecurityDashboardProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = usePlayerPreference('securityDashboard.showDetails', false);
 
   const checks = useMemo<SecurityCheck[]>(() => {
     const list: SecurityCheck[] = [];

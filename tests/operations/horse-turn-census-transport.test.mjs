@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { REMOTE_OBSERVER } from '../../server/scripts/phase6d-population.mjs';
 import {
   horseTurnCensusPacketDigest,
+  horseTurnContextBinding,
+  validateHorseTurnCensusPacket,
   sanitizeHorseTurnCensusResult,
 } from '../../scripts/ci/horse-turn-census-proof.mjs';
 import {
@@ -237,7 +239,7 @@ for (const [name, mutate] of [
     assert.equal(JSON.stringify(saved).includes('As'), false);
   });
 
-test('the predeclared256turn partition plus worst closed phase rows and outer envelope fits remote stdout', () => {
+test('the predeclared256turn partition plus worst closed phase rows and outer envelope fits remote stdout', (t) => {
   const helper = readFileSync(
     new URL('../../scripts/ci/horse-turn-census-packet.py', import.meta.url),
     'utf8'
@@ -246,6 +248,7 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   assert.equal(limit, 256);
   const packet = fixture(),
     result = observation(packet);
+  result.version = 4;
   const phase = {
     status: 'applicable-active',
     capability: 'unobserved',
@@ -258,18 +261,25 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   // actual interpreter combinations as well as every possible hashed reason.
   const turn = {
     ...result.turns[0],
+    contextBinding: 'matched',
+    rangeStatus: 'observed',
+    rangeUse: [
+      3, 134217727, 3, 0, 9007199254740991, 134217727, 134217727, 134217727, 134217727, 134217727,
+      0, 0, 0, 0, 0, 134217727, 134217727, 134217727, 0,
+    ],
+    historyReason: 'unknown',
     actorIndex: 999,
     actionOrdinal: 4095,
     stage: 'pineapple_discard',
-    action: 'discard',
+    action: 'raise',
     origin: 'horse_fallback',
     expectedBinding: 'matched',
     capture: 'present',
     execution: 'intended',
     selection: 'matched',
-    inputBinding: 'original_discard_request_and_controller',
-    publicRead: 'not_applicable',
-    historicalRead: 'not_applicable',
+    inputBinding: 'canonical_digest_and_read_frame',
+    publicRead: 'pooled_public',
+    historicalRead: 'unavailable',
     handReconciliation: 'reconciled',
     phases: Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`phase${i + 1}`, phase])),
   };
@@ -298,6 +308,9 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
     observerRemoved: true,
   };
   const size = Buffer.byteLength(JSON.stringify(envelope));
+  t.diagnostic(`Closed version4 envelope ${size} bytes for256 turns`);
+  const reasonHeadroom = limit * ('retention_heap_unavailable'.length - 'unknown'.length);
+  assert.ok(size + reasonHeadroom < 1572864, 'longest closed history reason must also fit');
   assert.ok(size < 1572864, `closed envelope ${size} must fit remote stdout1572864`);
   const old = {
     ...envelope,
@@ -307,4 +320,63 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
     Buffer.byteLength(JSON.stringify(old)) > 1572864,
     'the former512turn bound overflows this same closed shape'
   );
+});
+
+test('version3 carries original closed context through maintained installed observer program', () => {
+  const p = fixture();
+  p.version = 3;
+  p.hands[0].context = { variant: 'plo8', format: 'cash', provenance: 'committed_hand_history' };
+  assert.equal(validateHorseTurnCensusPacket(p), p);
+  const program = turnCensusProgram(p);
+  assert.match(program, /horseTurnContextBinding\(expected.context,\s*s\)/);
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo8', gameMode: 'cash' },
+    }),
+    'matched'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo6', gameMode: 'cash' },
+    }),
+    'contradictory'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo8', gameMode: 'tournament' },
+    }),
+    'contradictory'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, { gameState: { gameVariant: 'plo8' } }),
+    'unknown'
+  );
+  p.hands[0].context.variant = 'eight_cards';
+  assert.throws(() => validateHorseTurnCensusPacket(p));
+});
+
+test('version4 permits only compact bound range summaries and preserves older packet versions', () => {
+  const p = fixture();
+  p.version = 4;
+  p.hands[0].context = { variant: 'nlh', format: 'cash', provenance: 'committed_hand_history' };
+  assert.equal(validateHorseTurnCensusPacket(p), p);
+  assert.ok(turnCensusProgram(p).includes('/app/dist/engine/HorseRangeConsumptionReceipt.js'));
+  const o = observation(p);
+  o.version = 4;
+  Object.assign(o.turns[0], {
+    contextBinding: 'unknown',
+    historyReason: 'unknown',
+    rangeStatus: 'unknown',
+    rangeUse: null,
+  });
+  assert.deepEqual(sanitizeHorseTurnCensusResult(o), o);
+  for (const changes of [
+    { rangeUse: [] },
+    { rangeStatus: 'observed', rangeUse: Array(19).fill(0) },
+    { rangeStatus: 'unknown', opponentCards: ['As', 'Ah'] },
+  ]) {
+    const bad = structuredClone(o);
+    Object.assign(bad.turns[0], changes);
+    assert.throws(() => sanitizeHorseTurnCensusResult(bad));
+  }
 });

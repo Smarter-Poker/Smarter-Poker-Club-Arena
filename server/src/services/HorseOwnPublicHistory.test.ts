@@ -196,8 +196,9 @@ it.each(['missing', 'stale', 'throw', 'captured'] as const)(
     const second = vi.fn(async (_signal: AbortSignal) => {
       if (mode === 'throw') throw Error('missing RPC');
       if (mode === 'missing') return { data: null, error: { message: 'missing RPC' } };
-      const { HORSE_RIVER_NODE_DEFINITION_MD5, riverNodeBindings } =
-        await import('../engine/horseDecision/riverNodeSidecar.js');
+      const { HORSE_RIVER_NODE_DEFINITION_MD5, riverNodeBindings } = await import(
+        '../engine/horseDecision/riverNodeSidecar.js'
+      );
       return {
         error: null,
         data: {
@@ -232,3 +233,55 @@ it.each(['missing', 'stale', 'throw', 'captured'] as const)(
     expect(fixture.response.data.window).toEqual(base);
   }
 );
+
+it.each([
+  ['error', 'provider_error'],
+  ['empty', 'provider_empty_response'],
+  ['source', 'provider_source_mismatch'],
+  ['invalid', 'provider_invalid_window'],
+  ['throw', 'provider_thrown'],
+  ['deadline', 'provider_deadline'],
+] as const)(
+  'carries original %s cause through the actual service and cache',
+  async (fault, reason) => {
+    const { HorseOwnPublicHistoryCache } = await import(
+      '../engine/horseDecision/ownPublicHistory.js'
+    );
+    const now = Date.now();
+    if (fault === 'error') fixture.response.error = { message: 'never copied' };
+    if (fault === 'empty') fixture.response.data = null;
+    if (fault === 'source') fixture.response.data.definitionMd5 = '0'.repeat(32);
+    if (fault === 'invalid') fixture.response.data.window.hands = [{ private: 'never copied' }];
+    if (fault === 'throw') fixture.abort.mockRejectedValueOnce(Error('never copied'));
+    const timeout =
+      fault === 'deadline'
+        ? vi.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort())
+        : null;
+    if (fault === 'deadline') fixture.response.error = { message: 'never copied' };
+    const cache = new HorseOwnPublicHistoryCache(readHorseOwnPublicHistory, () => now);
+    try {
+      expect(cache.forSnapshot(context, now)).toBeUndefined();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const provenance = cache.provenance(context, now);
+      expect(provenance).toEqual({
+        version: 1,
+        context,
+        decisionTimeMs: now,
+        state: 'unavailable',
+        reason,
+      });
+      expect(JSON.stringify(provenance)).not.toMatch(/never copied|private|message/);
+    } finally {
+      cache.dispose();
+      timeout?.mockRestore();
+    }
+  }
+);
+it('diagnostic callback failure cannot change an existing null read outcome', async () => {
+  fixture.response.error = { message: 'not transported' };
+  expect(
+    await readHorseOwnPublicHistory(context, () => {
+      throw Error('diagnostic');
+    })
+  ).toBeNull();
+});

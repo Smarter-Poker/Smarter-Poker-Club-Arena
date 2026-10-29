@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import {
   claimReturnWallets,
   CLAIM_DESTINATION_LABELS,
@@ -462,7 +463,11 @@ export default function WalletCashierModal({
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
   const [ledgerTypes, setLedgerTypes] = useState<string[]>([]);
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = usePlayerPreference<string | null>(
+    'walletCashier.historyTypeFilter',
+    null,
+    clubId
+  );
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -862,7 +867,6 @@ export default function WalletCashierModal({
     setSearch('');
     setConfirming(false);
     setLedger([]);
-    setTypeFilter(null);
     /* THE ROSTER BELONGS TO THE CLUB THAT WAS OPEN. It was not cleared here,
        so reopening the cashier for a DIFFERENT club rendered the previous
        club's members as selectable recipients for the whole window between

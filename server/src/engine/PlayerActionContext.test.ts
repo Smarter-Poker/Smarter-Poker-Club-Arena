@@ -42,6 +42,9 @@ function hand() {
 function harness() {
   const h = hand();
   const engine = Object.create(ServerTableEngine.prototype) as any;
+  // Match the fresh engine constructor: no retained original or replay lane.
+  engine.pendingOriginalContinuation = null;
+  engine.handContinuation = null;
   engine.handController = h;
   engine.lifecycleCanMutate = () => true;
   engine.actionLock = false;

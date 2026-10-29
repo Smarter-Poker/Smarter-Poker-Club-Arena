@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MYSTERY BOUNTY LOBBY PANEL — sections 31 to 36, 41, 47, 67, 68, 73
@@ -139,7 +140,11 @@ export default function MysteryBountyPanel({
 }: MysteryBountyPanelProps) {
   const { inventory, awards, awardsTotal, leaderboard, isLoading, pendingReveals } = data;
 
-  const [showAllAwards, setShowAllAwards] = useState(false);
+  const [showAllAwards, setShowAllAwards] = usePlayerPreference(
+    'mysteryBounty.showAllAwards',
+    false,
+    'global'
+  );
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [playerPayout, setPlayerPayout] = useState<PlayerPayout | null>(null);
 

@@ -198,6 +198,7 @@ vi.mock('../../src/lib/supabase', () => ({
 
 import { useSettingsStore } from '../../src/stores/useSettingsStore';
 import { useWalletStore } from '../../src/stores/useWalletStore';
+import { useUserStore } from '../../src/stores/useUserStore';
 import { ThemeSettingsModal } from '../../src/components/table/ThemeSettingsModal';
 import { masterBus } from '../../src/core/MasterBus';
 import {
@@ -242,10 +243,12 @@ describe('ThemeSettingsModal hardening', () => {
     view.unmount();
     const returning = renderStudio();
     expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    act(() => useUserStore.setState({ user: { id: 'user-2' } as any }));
     returning.rerender(
       <ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-2" isVip={false} />
     );
     expect(screen.getByLabelText('Apply To')).toHaveValue('ALL');
+    act(() => useUserStore.setState({ user: { id: 'user-1' } as any }));
     returning.rerender(
       <ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />
     );
@@ -255,7 +258,10 @@ describe('ThemeSettingsModal hardening', () => {
 
   it('a Studio kept mounted while closed opens on the scope another Studio saved', async () => {
     // Settings, the hamburger menu and the table panel each keep one mounted.
-    localStorage.setItem('ca_table_studio_scope:user-1', JSON.stringify('ALL'));
+    localStorage.setItem(
+      'ca_player_preference:user-1:tableStudio.gameType:global',
+      JSON.stringify('ALL')
+    );
     const resident = render(
       <ThemeSettingsModal isOpen={false} onClose={vi.fn()} userId="user-1" isVip={false} />
     );
@@ -270,6 +276,7 @@ describe('ThemeSettingsModal hardening', () => {
   });
 
   beforeEach(() => {
+    useUserStore.setState({ user: { id: 'user-1' } as any });
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });
     mocks.unlockResult = Promise.resolve({ data: [], error: null });

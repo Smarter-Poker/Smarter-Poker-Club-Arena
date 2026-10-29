@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -93,7 +94,10 @@ export default function AnalyticsDashboard() {
     livePlayersNow: 0,
   });
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [timeRange, setTimeRange] = useState<TimeRange>('all'); // Enhancement #1
+  const [timeRange, setTimeRange] = usePlayerPreference<TimeRange>(
+    'AnalyticsDashboard:timeRange',
+    'all'
+  ); // Enhancement #1
   const [isLoading, setIsLoading] = useState(true); // Enhancement #7
   const mountedRef = useIsMounted();
   const toast = useToast();

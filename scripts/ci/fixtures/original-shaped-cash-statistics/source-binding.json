@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "source_sha256": {
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-connected-owners.json": "460de22b968b2091566158214db56c0883f172725d483a6cd775b7315dc898da",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-shaped-owner.json": "365f2c1b395c1834a512b394e38b75581d4e23201061556851598689af72743a",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/actual-table-authority.json": "0544c0b29dce1c42aebfa7ef75d0a873e2e5441d152e369198f99b114182c006",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/meaningful-table-contract.json": "d497b7b64f9bf66ccd7867501e06f7298904b5b9d7fbdd67c38f0ffe298e0a7a",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/original-shaped-hands.sql": "38b827948955b4d46ab780a5c7bfa8e6ac016e9f22892a3eadc38a189f5e8d29",
+    "scripts/ci/fixtures/original-shaped-cash-boolgate/original-touch-producers.sql": "20c1c0cffe6b6c46b359dc839c2e60045dd5491292d47b11e8da26132bef60c2",
+    "scripts/ci/fixtures/original-shaped-cash-statistics/README.md": "a8131a9cf16f88e7bff1989f781b5d82e44f7b294d4994832a2c1aab463ffb23",
+    "scripts/ci/fixtures/original-shaped-cash-statistics/causal-200k.sql": "5ea29066978fc30cb56d03f0c0a062f0f2ae7e5aa6c0f2a8824b4fe702e71b78",
+    "scripts/ci/fixtures/original-shaped-cash-statistics/qualification-evidence.json": "e357a6f9836ffc78d252057e12888b3b8fcc573c2057c75802a59887f6d06c45",
+    "scripts/ci/test-original-shaped-cash-statistics-postgres.py": "afe505f0ea4f6d854065b848f861cb501a9fae3caf8e7bb60d3267681bbd6cf1",
+    "supabase/migrations/20261029071236_original_shaped_cash_selects_the_stored_boolean_gate.sql": "7b29ac92bc3f68052c70d66166d1a4177c6de0118bee7d081190255c6c8cf658",
+    "supabase/migrations/20261029084451_original_shaped_cash_collects_its_boolean_index_statistics.sql": "ff95e063eb10d840e7000c7fcb45e6b44d0970782153a133b00f762821807aa6"
+  },
+  "qualification": "private PG17 guarded real statistics collection; generic index choice is not forced; production report capacity unqualified"
+}

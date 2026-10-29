@@ -82,6 +82,16 @@ export function useRabbitHuntReveal({
     inFlightRef.current = false;
   }
 
+  // A panel can close while its paid request is pending. Its owner still
+  // receives the response, but a discarded surface must not toast or paint it.
+  useEffect(
+    () => () => {
+      requestRef.current += 1;
+      inFlightRef.current = false;
+    },
+    []
+  );
+
   const stateBelongsToActiveUser = stateUserId === userId;
   const visibleIsRevealing = stateBelongsToActiveUser ? isRevealing : false;
   const visibleHasRevealed = stateBelongsToActiveUser ? hasRevealed : false;

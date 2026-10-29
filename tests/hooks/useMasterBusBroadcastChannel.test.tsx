@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   payloadCallbacks: [] as Array<(payload: unknown) => void>,
 }));
 
+vi.mock('../../src/services/PrivateRecordTransport', () => ({
+  privateRecordTransport: { onPrivateRecord: mocks.privateRecord, getStatus: mocks.engineStatus },
+}));
+
 vi.mock('../../src/services/EngineStateClient', () => ({
   engineChannelClient: {
     onPrivateRecord: mocks.privateRecord,
@@ -63,6 +67,7 @@ vi.mock('../../src/utils/errorReporter', () => ({
 
 import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadcastChannel';
 import { __resetRealtimeTransportLossForTests } from '../../src/lib/realtimeTransportLoss';
+import { PrivateRecordFailover } from '../../src/services/PrivateRecordFailover';
 
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
@@ -108,6 +113,41 @@ describe('useMasterBusBroadcastChannel', () => {
     for (const listener of [...mocks.authListeners]) listener(event);
   };
 
+  it.each(['reconnecting', 'failed', 'auth_failed', 'access_refused'])(
+    'does not demote an already-ready standby when the primary is %s',
+    async (primaryStatus) => {
+      const trace: Array<[string, string]> = [];
+      mocks.engineStatus.mockReturnValue(primaryStatus);
+      const failover = new PrivateRecordFailover(
+        {
+          onPrivateRecord(topic, callback) {
+            callback({ type: 'PRIVATE_RECORD_STATUS', topic, ready: false, phase: 'connecting' });
+            return vi.fn();
+          },
+        },
+        {
+          onPrivateRecord(topic, callback) {
+            callback({ type: 'PRIVATE_RECORD_STATUS', topic, ready: true });
+            return vi.fn();
+          },
+        }
+      );
+      mocks.privateRecord.mockImplementation((topic, callback) =>
+        failover.onPrivateRecord(topic, callback)
+      );
+      renderHook(() =>
+        useMasterBusBroadcastChannel({
+          channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+          event: 'record_changed',
+          onPayload: vi.fn(),
+          onSubscriptionStatus: (status) => trace.push(['status', status]),
+          onSubscriptionError: (status) => trace.push(['error', status]),
+        })
+      );
+      await waitFor(() => expect(trace.at(-1)).toEqual(['status', 'SUBSCRIBED']));
+    }
+  );
+
   it('keeps paid fallback until an authorized ready acknowledgment and restores it on loss', async () => {
     const status = vi.fn();
     const payload = vi.fn();
@@ -123,6 +163,7 @@ describe('useMasterBusBroadcastChannel', () => {
       })
     );
     await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
     await waitFor(() => expect(mocks.removeRegisteredChannel).toHaveBeenCalled());
     expect(status).toHaveBeenCalledWith('SUBSCRIBED');
@@ -152,6 +193,7 @@ describe('useMasterBusBroadcastChannel', () => {
         })
       );
       await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+      await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
       act(() => {
         mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true });
         // Network callbacks can share a React batch: cleanup has not run yet.
@@ -176,6 +218,7 @@ describe('useMasterBusBroadcastChannel', () => {
         onSubscriptionStatus: status,
       })
     );
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     status.mockClear();
     const retired = mocks.privateListener;
     expect(mocks.privateRecord).toHaveBeenCalledTimes(1);
@@ -213,6 +256,7 @@ describe('useMasterBusBroadcastChannel', () => {
       })
     );
     await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    await waitFor(() => expect(mocks.privateListener).toBeTypeOf('function'));
     act(() =>
       mocks.privateListener?.({
         type: 'PRIVATE_RECORD_STATUS',

@@ -1435,6 +1435,7 @@ export default function PlayerStatsPage() {
       metric_availability: statsContract.quality.metric_availability,
       total_profit: overall.total_profit,
       hours_played: overall.hours_played,
+      cash_hours_played: overall.cash_hours_played,
       showdowns_won: overall.showdowns_won,
       showdowns_total: overall.showdowns_total,
       aggression_factor: overall.aggression_factor,

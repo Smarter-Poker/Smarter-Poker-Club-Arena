@@ -153,6 +153,8 @@ const memberStats = {
 };
 
 beforeEach(() => {
+  // Each independent scenario starts with an account that has no saved preferences.
+  localStorage.clear();
   state.params = {
     clubId: 'shark-club',
     userId: '11111111-1111-4111-8111-111111111111',

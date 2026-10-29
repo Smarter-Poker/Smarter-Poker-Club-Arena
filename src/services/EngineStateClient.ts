@@ -1964,6 +1964,7 @@ export class EngineChannelClient {
   // send() records the net desired state below; every onopen replays it.
   // Stateful messages live only here while offline. Replaying both this state
   // and an old message queue duplicates JOINs and can trip the server rate cap.
+  private sessionResetListeners = new Set<(allowReconnect: boolean) => void>();
   private privateRecordListeners = new Map<string, Set<Listener<PrivateRecordMessage>>>();
   private desiredClubs = new Set<string>();
   private desiredTournaments = new Set<string>();
@@ -2204,6 +2205,12 @@ export class EngineChannelClient {
     this.setStatus('idle');
   }
 
+  /** Independent record sockets retire synchronously at the same identity boundary. */
+  onSessionReset(callback: (allowReconnect: boolean) => void): () => void {
+    this.sessionResetListeners.add(callback);
+    return () => this.sessionResetListeners.delete(callback);
+  }
+
   /** Account changes discard intent; an ordinary disconnect retains it. */
   resetSession(allowReconnect: boolean): void {
     this.sessionBlocked = !allowReconnect;
@@ -2216,6 +2223,7 @@ export class EngineChannelClient {
     this.lastPresence.clear();
     for (const listeners of Object.values(this.listeners)) listeners.clear();
     this.handshakeFailures = 0;
+    for (const reset of this.sessionResetListeners) reset(allowReconnect);
   }
 
   /** Current connection status. */

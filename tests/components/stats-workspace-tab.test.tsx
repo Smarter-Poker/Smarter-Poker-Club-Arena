@@ -18,6 +18,8 @@ vi.mock('../../src/services/StatsWorkspaceService', async (importOriginal) => {
 });
 
 import WorkspaceTab from '../../src/pages/stats/WorkspaceTab';
+import { useUserStore } from '../../src/stores/useUserStore';
+import { flushPreferencesBeforeLogout } from '../../src/lib/tableSettingIntents';
 
 const snapshot = {
   reports: [],
@@ -33,6 +35,9 @@ const snapshot = {
 describe('WorkspaceTab mutations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    useUserStore.setState({ user: { id: 'workspace-owner' } as any });
+    service.savePreferences.mockResolvedValue({ ok: true, data: true });
     service.load.mockResolvedValue({ ok: true, data: snapshot });
     service.saveReport.mockResolvedValue({ ok: true, data: 'report-1' });
     service.saveLeak.mockResolvedValue({ ok: true, data: 'leak-1' });
@@ -78,7 +83,7 @@ describe('WorkspaceTab mutations', () => {
     );
   });
 
-  it('normalizes a legacy dashboard before saving presentation privacy', async () => {
+  it('changes privacy without overwriting a legacy or concurrently selected dashboard', async () => {
     service.load.mockResolvedValue({
       ok: true,
       data: {
@@ -96,18 +101,52 @@ describe('WorkspaceTab mutations', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use Presentation Mode' }));
 
     await waitFor(() => expect(service.savePreferences).toHaveBeenCalledTimes(1));
-    expect(service.savePreferences).toHaveBeenCalledWith({
-      dashboardLayout: [
-        'hands',
-        'overview',
-        'performance',
-        'positions',
-        'tournaments',
-        'analysis',
-        'trophies',
-        'rake',
-      ],
-      privacyPresentationMode: true,
+    expect(service.savePreferences).toHaveBeenCalledWith(
+      { privacyPresentationMode: true },
+      'workspace-owner'
+    );
+  });
+
+  it('autosaves valid complete dashboard choices, ignores partial typing and tracks the original save through logout', async () => {
+    let finish!: (value: { ok: true; data: boolean }) => void;
+    service.load.mockResolvedValue({ ok: true, data: snapshot });
+    service.savePreferences.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const onLayout = vi.fn();
+    render(<WorkspaceTab isOwnProfile onDashboardLayoutChange={onLayout} />);
+    await screen.findByText('Workspace Builder');
+    const zones = screen.getByLabelText('Dashboard Zones');
+    onLayout.mockClear();
+    fireEvent.change(zones, { target: { value: 'over' } });
+    fireEvent.change(zones, { target: { value: 'overview,' } });
+    expect(service.savePreferences).not.toHaveBeenCalled();
+    expect(onLayout).not.toHaveBeenCalled();
+    fireEvent.change(zones, { target: { value: 'hands, overview' } });
+    expect(onLayout).toHaveBeenCalledTimes(1);
+    expect(onLayout.mock.calls[0][0].slice(0, 2)).toEqual(['hands', 'overview']);
+    await waitFor(() =>
+      expect(service.savePreferences).toHaveBeenCalledWith(
+        { dashboardLayout: ['hands', 'overview'] },
+        'workspace-owner'
+      )
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Use Presentation Mode' }));
+    expect(service.savePreferences).toHaveBeenCalledTimes(1);
+    let flushed = false;
+    const logout = flushPreferencesBeforeLogout('workspace-owner').then(() => {
+      flushed = true;
     });
+    await Promise.resolve();
+    expect(flushed).toBe(false);
+    finish({ ok: true, data: true });
+    await logout;
+    expect(flushed).toBe(true);
+    expect(service.savePreferences.mock.calls.map((call) => call[0])).toEqual([
+      { dashboardLayout: ['hands', 'overview'] },
+      { privacyPresentationMode: true },
+    ]);
   });
 });

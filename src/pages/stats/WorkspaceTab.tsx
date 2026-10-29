@@ -1,9 +1,18 @@
+import { useUserStore } from '../../stores/useUserStore';
+import {
+  beginTableSettingIntent,
+  confirmTableSettingIntent,
+  orderTableSettingWrite,
+  readTableSettingIntent,
+  trackPreferenceWrite,
+} from '../../lib/tableSettingIntents';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import StatsWorkspacePanel from '../../components/stats/StatsWorkspacePanel';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
 import {
   statsWorkspaceService,
   type StatsWorkspaceSnapshot,
+  type StatsWorkspacePreferences,
   type WorkspaceLeakStatus,
 } from '../../services/StatsWorkspaceService';
 import { BASE_TABS, normalizeDashboardLayout, type StatCategory } from './playerStatsPageModel';
@@ -51,6 +60,7 @@ export default function WorkspaceTab({
   onDashboardLayoutChange,
   ruleReport = null,
 }: Props) {
+  const owner = useUserStore((state) => state.user?.id ?? 'guest');
   const [workspace, setWorkspace] = useState<StatsWorkspaceSnapshot | null>(null);
   const [loading, setLoading] = useState(isOwnProfile);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +101,39 @@ export default function WorkspaceTab({
     }
   }
 
+  const persistPreference = useCallback(
+    (patch: Partial<StatsWorkspacePreferences>, recovered?: string) => {
+      loadSequence.current += 1;
+      const field =
+        patch.dashboardLayout !== undefined ? 'dashboardLayout' : 'privacyPresentationMode';
+      const key = `stats-workspace:${field}`;
+      const id = recovered ?? beginTableSettingIntent(owner, key, patch[field]);
+      setWorkspace((current) =>
+        current ? { ...current, preferences: { ...current.preferences, ...patch } } : current
+      );
+      if (patch.dashboardLayout !== undefined)
+        onDashboardLayoutChange?.(
+          normalizeDashboardLayout(patch.dashboardLayout, OWNER_STATS_TABS)
+        );
+      if (patch.privacyPresentationMode !== undefined)
+        onPresentationModeChange?.(patch.privacyPresentationMode);
+      const write = orderTableSettingWrite(owner, 'stats-workspace', async () => {
+        if (useUserStore.getState().user?.id !== owner && owner !== 'guest') return;
+        const result = await statsWorkspaceService.savePreferences(patch, owner);
+        if (!result.ok) {
+          setNotice('Preference Was Not Saved. Reopen Workspace To Retry.');
+          return;
+        }
+        confirmTableSettingIntent(owner, key, id);
+        if (useUserStore.getState().user?.id !== owner && owner !== 'guest') return;
+        setNotice('Preference Saved.');
+      });
+      trackPreferenceWrite(owner, write);
+      return write;
+    },
+    [owner, onDashboardLayoutChange, onPresentationModeChange]
+  );
+
   const load = useCallback(async () => {
     if (!isOwnProfile) return;
     const sequence = ++loadSequence.current;
@@ -99,7 +142,25 @@ export default function WorkspaceTab({
     const result = await statsWorkspaceService.load();
     if (sequence !== loadSequence.current) return;
     if (result.ok) {
+      const pendingLayout = readTableSettingIntent(owner, 'stats-workspace:dashboardLayout');
+      const pendingPrivacy = readTableSettingIntent(
+        owner,
+        'stats-workspace:privacyPresentationMode'
+      );
+      if (pendingLayout) result.data.preferences.dashboardLayout = pendingLayout.value as unknown[];
+      if (pendingPrivacy)
+        result.data.preferences.privacyPresentationMode = pendingPrivacy.value as boolean;
       setWorkspace(result.data);
+      if (pendingLayout)
+        void persistPreference(
+          { dashboardLayout: pendingLayout.value as unknown[] },
+          pendingLayout.id
+        );
+      if (pendingPrivacy)
+        void persistPreference(
+          { privacyPresentationMode: pendingPrivacy.value as boolean },
+          pendingPrivacy.id
+        );
       const normalizedLayout = normalizeDashboardLayout(
         result.data.preferences.dashboardLayout,
         OWNER_STATS_TABS
@@ -109,7 +170,7 @@ export default function WorkspaceTab({
       onDashboardLayoutChange?.(normalizedLayout);
     } else setError(result.error);
     setLoading(false);
-  }, [isOwnProfile, onPresentationModeChange, onDashboardLayoutChange]);
+  }, [isOwnProfile, owner, onPresentationModeChange, onDashboardLayoutChange, persistPreference]);
 
   useEffect(() => {
     void load();
@@ -243,34 +304,24 @@ export default function WorkspaceTab({
     }
   };
 
-  const saveLayout = async (event: FormEvent) => {
-    event.preventDefault();
-    const dashboardLayout = normalizeDashboardLayout(
-      layout.split(',').map((value) => value.trim()),
-      OWNER_STATS_TABS
-    ).filter((tab) => tab !== 'workspace');
-    const result = await guardedMutation(() =>
-      statsWorkspaceService.savePreferences({
-        dashboardLayout,
-        privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
-      })
-    );
-    if (!result) return;
-    setNotice(result.ok ? 'Dashboard Layout Saved.' : 'Dashboard Layout Was Not Saved.');
-    if (result.ok) await load();
+  const chooseLayout = (value: string) => {
+    setLayout(value);
+    const zones = value.split(',').map((zone) => zone.trim());
+    const allowed = new Set<string>(OWNER_STATS_TABS.filter((tab) => tab !== 'workspace'));
+    // Keep incomplete typing local. Only complete, distinct known zones alter
+    // the dashboard or its canonical account preference.
+    if (
+      !zones.length ||
+      zones.some((zone) => !allowed.has(zone)) ||
+      new Set(zones).size !== zones.length
+    )
+      return;
+    void persistPreference({ dashboardLayout: zones });
   };
 
   const restoreLayout = async () => {
-    const result = await guardedMutation(() =>
-      statsWorkspaceService.savePreferences({
-        dashboardLayout: [],
-        privacyPresentationMode: workspace?.preferences.privacyPresentationMode ?? false,
-      })
-    );
-    if (!result) return;
     setLayout(OWNER_STATS_TABS.filter((tab) => tab !== 'workspace').join(', '));
-    setNotice(result.ok ? 'Default Dashboard Restored.' : 'Dashboard Was Not Restored.');
-    if (result.ok) await load();
+    await persistPreference({ dashboardLayout: [] });
   };
 
   const trackLeak = async (event: FormEvent) => {
@@ -311,21 +362,7 @@ export default function WorkspaceTab({
   };
 
   const changePrivacy = async (enabled: boolean) => {
-    const dashboardLayout = normalizeDashboardLayout(
-      workspace?.preferences.dashboardLayout ?? [],
-      OWNER_STATS_TABS
-    ).filter((tab) => tab !== 'workspace');
-    const result = await guardedMutation(() =>
-      statsWorkspaceService.savePreferences({
-        dashboardLayout,
-        privacyPresentationMode: enabled,
-      })
-    );
-    if (!result) return;
-    setNotice(
-      result.ok ? 'Presentation Preference Saved.' : 'Presentation Preference Was Not Saved.'
-    );
-    if (result.ok) await load();
+    await persistPreference({ privacyPresentationMode: enabled });
   };
 
   const changeLeakStatus = async (leakId: string, status: WorkspaceLeakStatus) => {
@@ -544,13 +581,13 @@ export default function WorkspaceTab({
               </label>
               <button type="submit">Add Owned Hand</button>
             </form>
-            <form onSubmit={saveLayout}>
+            <div>
               <label>
                 Dashboard Zones
-                <input value={layout} onChange={(event) => setLayout(event.target.value)} />
+                <input value={layout} onChange={(event) => chooseLayout(event.target.value)} />
               </label>
-              <button type="submit">Save Dashboard Layout</button>
-            </form>
+              <p>Valid Dashboard Zones Save Automatically.</p>
+            </div>
             <button type="button" onClick={() => void restoreLayout()}>
               Restore Default Dashboard
             </button>

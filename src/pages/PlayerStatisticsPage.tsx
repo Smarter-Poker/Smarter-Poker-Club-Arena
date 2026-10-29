@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PLAYER STATISTICS - one member, one variant, one span of days
@@ -137,14 +138,58 @@ export default function PlayerStatisticsPage() {
   const [variant, setVariant] = useState<string | null>(null);
   // Opened from the record, the link carries the record's window.
   const [initialRange] = useState(() => readMemberRangeSearch(searchParams));
-  const [rangeMode, setRangeMode] = useState<StatsRange>(initialRange.mode);
-  const [customFrom, setCustomFrom] = useState<string>(
+  const [savedRangeMode, saveRangeMode] = usePlayerPreference<StatsRange>(
+    'PlayerStatisticsPage:rangeMode',
+    initialRange.mode
+  );
+  const [savedRange, saveRange] = usePlayerPreference<MemberRange>(
+    'PlayerStatisticsPage:range',
+    initialRange.range
+  );
+  // A carried record window controls this visit, while plain navigation uses
+  // the account preference. A late account read cannot replace the link.
+  const [linkedWindow, setLinkedWindow] = useState(() =>
+    searchParams.has('range') ? initialRange : null
+  );
+  const rangeMode = linkedWindow?.mode ?? savedRangeMode;
+  const range = linkedWindow?.range ?? savedRange;
+  const setRangeMode = useCallback(
+    (mode: StatsRange) => {
+      setLinkedWindow((current) => (current ? { ...current, mode } : null));
+      saveRangeMode(mode);
+    },
+    [saveRangeMode]
+  );
+  const setRange = useCallback(
+    (next: MemberRange) => {
+      setLinkedWindow((current) => (current ? { ...current, range: next } : null));
+      saveRange(next);
+    },
+    [saveRange]
+  );
+  const [savedCustomFrom, saveCustomFrom] = usePlayerPreference<string>(
+    'PlayerStatisticsPage:customFrom',
     () => initialRange.range.from ?? isoDate(new Date())
   );
-  const [customTo, setCustomTo] = useState<string>(
+  const [savedCustomTo, saveCustomTo] = usePlayerPreference<string>(
+    'PlayerStatisticsPage:customTo',
     () => initialRange.range.to ?? isoDate(new Date())
   );
-  const [range, setRange] = useState<MemberRange>(initialRange.range);
+  const [linkedCustom, setLinkedCustom] = useState(() =>
+    searchParams.has('range') && initialRange.mode === 'custom'
+      ? { from: initialRange.range.from!, to: initialRange.range.to! }
+      : null
+  );
+  const customFrom = linkedCustom?.from ?? savedCustomFrom;
+  const customTo = linkedCustom?.to ?? savedCustomTo;
+  const setCustomFrom = (from: string) => {
+    setLinkedCustom((current) => (current ? { ...current, from } : null));
+    saveCustomFrom(from);
+  };
+  const setCustomTo = (to: string) => {
+    setLinkedCustom((current) => (current ? { ...current, to } : null));
+    saveCustomTo(to);
+  };
 
   /**
    * The variant list only exists once a response has come back, and a response
@@ -352,14 +397,17 @@ export default function PlayerStatisticsPage() {
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
-  const chooseRange = useCallback((mode: StatsRange) => {
-    setRangeMode(mode);
-    if (mode === 'overall') setRange(RANGE_OVERALL);
-    const days = relativeDays(mode);
-    if (days !== null) setRange(lastDaysRange(days));
-    // 'custom' waits for Confirm: a date field fires onChange while the year is
-    // still half typed, and each fire would be a round trip.
-  }, []);
+  const chooseRange = useCallback(
+    (mode: StatsRange) => {
+      setRangeMode(mode);
+      if (mode === 'overall') setRange(RANGE_OVERALL);
+      const days = relativeDays(mode);
+      if (days !== null) setRange(lastDaysRange(days));
+      // 'custom' waits for Confirm: a date field fires onChange while the year is
+      // still half typed, and each fire would be a round trip.
+    },
+    [setRangeMode, setRange]
+  );
 
   const confirmCustomRange = useCallback(() => {
     if (!customFrom || !customTo) {
@@ -371,7 +419,7 @@ export default function PlayerStatisticsPage() {
       return;
     }
     setRange({ from: customFrom, to: customTo });
-  }, [customFrom, customTo, toast]);
+  }, [customFrom, customTo, toast, setRange]);
 
   const hasHands = !!stats && stats.hands > 0;
 

@@ -42,7 +42,7 @@ def main():
         sql('''CREATE SCHEMA smarter_private;
 CREATE TABLE public.ca_horse_fleet_register(horse_id uuid PRIMARY KEY,retired_at timestamptz);
 INSERT INTO public.ca_horse_fleet_register SELECT ('00000000-0000-4000-8000-'||lpad(to_hex(n),12,'0'))::uuid,NULL FROM generate_series(0,999)n;
-CREATE TABLE public.hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,created_at timestamptz,actions jsonb);
+CREATE TABLE public.hand_history(id uuid PRIMARY KEY,table_id uuid,hand_number bigint,created_at timestamptz,actions jsonb,game_variant text DEFAULT 'nlh',tournament_id uuid);
 CREATE INDEX idx_hand_history_created ON public.hand_history USING btree(created_at DESC);
 CREATE TABLE public.lightning_hand(hand_id uuid PRIMARY KEY,hand_history_id uuid,settled_at timestamptz,host_table_id uuid,hand_number bigint);
 CREATE INDEX idx_lightning_hand_hand_history_id ON public.lightning_hand USING btree(hand_history_id);
@@ -53,12 +53,12 @@ CREATE TABLE smarter_private.hand_submissions(submission_id uuid PRIMARY KEY,tab
         actions=[{**base,'action':kind,'origin':'forced','amount':1} for kind in ('sb','bb')]+[{**base,'userId':HUMAN,'origin':'player'}]+[{**base,'origin':origin} for origin in sorted(census.ORIGINS)]+[{**base,'action':'return','historyEvent':'uncalled_bet_returned','amount':1}]
         lightning=[{**base,'stage':'flop','origin':'horse_policy','action':'bet','amount':1.0}]
         facts={'accepted_hand_facts':{'horse_journal_identity':{'version':1,'lease_generation':LEASE}}}
-        sql(f"""INSERT INTO hand_history VALUES
+        sql(f"""INSERT INTO hand_history(id,table_id,hand_number,created_at,actions) VALUES
 ('{uid(1)}','{TABLE}',1000001,'2026-10-28T01:00:01Z',{literal(actions)}),
 ('{uid(2)}','{TABLE}',1000002,'2026-10-28T01:00:02Z','[]'),
 ('{uid(3)}','{TABLE}',1000003,'2026-10-28T01:00:03Z',{literal(lightning)});
 INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,created_at,{literal(facts)} FROM hand_history;
-INSERT INTO smarter_private.hand_submissions SELECT id,table_id,hand_number,'{LEASE}',jsonb_build_object('p_hand_row',jsonb_build_object('actions',actions)) FROM hand_history WHERE hand_number<>1000003;
+INSERT INTO smarter_private.hand_submissions SELECT id,table_id,hand_number,'{LEASE}',jsonb_build_object('p_hand_row',jsonb_build_object('actions',actions,'game_variant',game_variant,'tournament_id',tournament_id)) FROM hand_history WHERE hand_number<>1000003;
 INSERT INTO lightning_hand VALUES('40000000-0000-4000-8000-000000000001','{uid(3)}','2026-10-28T01:00:03Z','{TABLE}',1000003);
 """)
         def observe():return census.packet_from_rows(json.loads(sql(census.query(START,END))),SHA,START,END)
@@ -82,9 +82,9 @@ INSERT INTO lightning_hand VALUES('40000000-0000-4000-8000-000000000001','{uid(3
                 else:raise AssertionError('expected_refusal')
             finally:sql(restore)
         refused(f"UPDATE smarter_private.hand_submissions SET submission_id='{uid(99)}' WHERE submission_id='{uid(1)}';",f"UPDATE smarter_private.hand_submissions SET submission_id='{uid(1)}' WHERE submission_id='{uid(99)}';")
-        refused(f"UPDATE smarter_private.hand_submissions SET request='{{}}' WHERE submission_id='{uid(1)}';",f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(actions)})) WHERE submission_id='{uid(1)}';")
+        refused(f"UPDATE smarter_private.hand_submissions SET request='{{}}' WHERE submission_id='{uid(1)}';",f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(actions)},'game_variant','nlh','tournament_id',NULL)) WHERE submission_id='{uid(1)}';")
         changed=[{**a,'amount':99} for a in actions]
-        refused(f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(changed)})) WHERE submission_id='{uid(1)}';",f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(actions)})) WHERE submission_id='{uid(1)}';")
+        refused(f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(changed)},'game_variant','nlh','tournament_id',NULL)) WHERE submission_id='{uid(1)}';",f"UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(actions)},'game_variant','nlh','tournament_id',NULL)) WHERE submission_id='{uid(1)}';")
         refused(f"UPDATE hand_atomic_commits SET post_commit_completed_at=NULL WHERE hand_id='{uid(1)}';",f"UPDATE hand_atomic_commits SET post_commit_completed_at='2026-10-28T01:00:01Z' WHERE hand_id='{uid(1)}';")
         refused(f"UPDATE hand_atomic_commits SET post_commit_payload='{{}}' WHERE hand_id='{uid(3)}';",f"UPDATE hand_atomic_commits SET post_commit_payload={literal(facts)} WHERE hand_id='{uid(3)}';")
         malformed={'accepted_hand_facts':{'horse_journal_identity':{'version':1,'lease_generation':'not-a-uuid'}}}
@@ -95,8 +95,13 @@ INSERT INTO lightning_hand VALUES('40000000-0000-4000-8000-000000000001','{uid(3
         for unexpected in ({**base,'action':'sb','origin':'horse_policy'},{**base,'action':'bb','origin':'horse_fallback'},{**base,'action':'unrecognized','origin':'forced'}):
             bad=actions+[unexpected]
             def replace_original(value):
-                return f"UPDATE hand_history SET actions={literal(value)} WHERE id='{uid(1)}'; UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(value)})) WHERE submission_id='{uid(1)}';"
+                return f"UPDATE hand_history SET actions={literal(value)} WHERE id='{uid(1)}'; UPDATE smarter_private.hand_submissions SET request=jsonb_build_object('p_hand_row',jsonb_build_object('actions',{literal(value)},'game_variant','nlh','tournament_id',NULL)) WHERE submission_id='{uid(1)}';"
             refused(replace_original(bad),replace_original(actions))
+        refused(f"UPDATE hand_history SET game_variant='plo8' WHERE id='{uid(1)}';",f"UPDATE hand_history SET game_variant='nlh' WHERE id='{uid(1)}';")
+        refused(f"UPDATE hand_history SET tournament_id='{TABLE}' WHERE id='{uid(1)}';",f"UPDATE hand_history SET tournament_id=NULL WHERE id='{uid(1)}';")
+        refused(f"UPDATE hand_history SET game_variant='unsupported' WHERE id='{uid(3)}';",f"UPDATE hand_history SET game_variant='nlh' WHERE id='{uid(3)}';")
+        assert packet['hands'][0]['context']=={'variant':'nlh','format':'cash','provenance':'retained_submission_and_committed_history'};checks+=1
+        assert packet['hands'][2]['context']['provenance']=='committed_hand_history';checks+=1
         assert observe()[1]['expectedActions']==7;checks+=1
         print(json.dumps({'status':'passed','nativePostgresCensusAssertions':checks,'productionQueries':0}));return 0
     finally:

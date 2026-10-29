@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * PositionalRadar — VPIP / PFR / 3-Bet plotted across every position.
  *
@@ -155,12 +156,20 @@ function toPath(values: number[]): string {
 const pct = (n: number, d: number): number => (d > 0 ? (n / d) * 100 : 0);
 
 export default function PositionalRadar({ positions, minHands = 30 }: Props) {
-  const [visible, setVisible] = useState<Record<MetricKey, boolean>>({
-    vpip: true,
-    pfr: true,
-    three_bet: false,
-  });
-  const [showReference, setShowReference] = useState(true);
+  const [visible, setVisible] = usePlayerPreference<Record<MetricKey, boolean>>(
+    'positionalRadar.visibleMetrics',
+    {
+      vpip: true,
+      pfr: true,
+      three_bet: false,
+    },
+    'global'
+  );
+  const [showReference, setShowReference] = usePlayerPreference(
+    'positionalRadar.showReference',
+    true,
+    'global'
+  );
   const [focused, setFocused] = useState<number | null>(null);
 
   const rows = useMemo(() => {

@@ -6043,7 +6043,7 @@ function ClubHomePageContent({
           {(lobbyEntries.length > 0 || loading) && (
             <LobbyTable
               entries={lobbyEntries}
-              clubId={resolvedClubId || clubId}
+              clubId={club.id}
               category={gameType as LobbyCategory}
               selectedId={panelOpen ? selectedId : null}
               onSelect={openEntry}

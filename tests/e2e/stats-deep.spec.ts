@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Request } from '@playwright/test';
+import { mountStatsPaneBeforeDebounce } from './support/statsClock';
 import { recordNonVerdict } from './support/nonVerdict';
 
 test.describe('Player Stats production experience', () => {
@@ -58,39 +59,78 @@ test.describe('Player Stats production experience', () => {
   }, testInfo) => {
     // Use the lane's existing isolated session. Only these three read responses
     // are synthetic; authentication and every published JS/CSS asset stay real.
-    const expected = process.env.LIVE_SHA;
-    expect(expected, 'The trusted publication lane must supply its exact client SHA').toMatch(
+    const expected = process.env.DOWNLINE_JOURNEY_SHA;
+    if (!expected || expected === 'UNKNOWN') {
+      const description = await recordNonVerdict(testInfo, {
+        title: 'The Stats journey source pin is unavailable',
+        detail:
+          'The closed source resolver did not qualify this journey; the original job pin cannot substitute for it.',
+        evidence: { originalJobSha: process.env.LIVE_SHA, journeySha: expected ?? null },
+      });
+      console.log(
+        `[downline-journey-release] ${JSON.stringify({ originalJobSha: process.env.LIVE_SHA, journeySha: expected ?? null, status: 'unknown' })}`
+      );
+      test.skip(true, description);
+    }
+    expect(expected, 'The closed Stats resolver must supply its exact client SHA').toMatch(
       /^[a-f0-9]{40}$/
     );
-    const bracket: Array<{ point: string; sha: string | null; reason: string | null }> = [];
+    const bracket: Array<{
+      point: string;
+      origin: string;
+      sha: string | null;
+      reason: string | null;
+    }> = [];
     const release = async (point: 'before' | 'after') => {
-      let sha: string | null = null;
-      let reason: string | null = null;
-      try {
-        const response = await page.request.get('build-info.json');
-        if (!response.ok()) reason = 'build_info_unreadable';
-        else {
-          const value = (await response.json()).ca_sha;
-          if (typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) sha = value;
-          else reason = 'build_info_identity_unreadable';
-        }
-      } catch {
-        reason = 'build_info_unreadable';
-      }
-      bracket.push({ point, sha, reason });
-      if (reason || sha !== expected) {
+      const reads = await Promise.all(
+        ['https://ca-static.smarter.poker', 'https://smarter.poker/hub/club-arena'].map(
+          async (origin) => {
+            let sha: string | null = null;
+            let reason: string | null = null;
+            try {
+              const response = await page.request.get(
+                `${origin}/build-info.json?downline-journey=${Date.now()}`,
+                {
+                  headers: { 'Cache-Control': 'no-cache' },
+                }
+              );
+              if (!response.ok()) reason = 'build_info_unreadable';
+              else {
+                const value = (await response.json()).ca_sha;
+                if (typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) sha = value;
+                else reason = 'build_info_identity_unreadable';
+              }
+            } catch {
+              reason = 'build_info_unreadable';
+            }
+            return { point, origin, sha, reason };
+          }
+        )
+      );
+      bracket.push(...reads);
+      console.log(`[downline-journey-release] ${JSON.stringify({ expected, point, reads })}`);
+      if (reads.some((read) => read.reason || read.sha !== expected)) {
         const description = await recordNonVerdict(testInfo, {
           title: 'Published downline pagination release was not established',
           detail:
-            'The exact expected client was not readable before and after this proof; the maintained outer release-window classifier decides forward publication or rollback.',
-          evidence: { expected, bracket },
+            'Both origins must serve the exact qualified Stats client before and after this journey.',
+          evidence: { originalJobSha: process.env.LIVE_SHA, expected, bracket },
         });
         test.skip(true, description);
       }
     };
     await release('before');
     const reads: Array<{ limit: number; search: string | null }> = [];
+    const warmupReads: Array<{ limit: number; search: string | null }> = [];
     const blockedWrites: string[] = [];
+    const pendingRest = new Set<Request>();
+    const started = (request: Request) => {
+      if (new URL(request.url()).pathname.includes('/rest/v1/')) pendingRest.add(request);
+    };
+    const finished = (request: Request) => pendingRest.delete(request);
+    page.on('request', started);
+    page.on('requestfinished', finished);
+    page.on('requestfailed', finished);
     let armed = false;
     let clockInstalled = false;
     const syntheticClub = 'ee871000-0000-4000-8000-000000000001';
@@ -158,40 +198,72 @@ test.describe('Player Stats production experience', () => {
       }
     });
     try {
-      const start = Date.now();
-      await page.clock.install({ time: start });
+      // Install before the new document imports Framer: its frame scheduler
+      // captures requestAnimationFrame at module initialization. Keep it running
+      // through warmup and initial reads; pause only for the fresh timed mount.
+      await page.clock.install({ time: Date.now() });
       clockInstalled = true;
       await page.reload();
-      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
-      // Roles must resolve before Rake is available. Pause before its panel
-      // mounts, then allow the real 220ms outgoing animation less than the
-      // initial 300ms debounce budget. Show More therefore precedes that timer
-      // even on the old component, without blocking the role-gated tab.
+      const overview = page.getByRole('tab', { name: 'Overview', exact: true });
       const rake = page.getByRole('tab', { name: 'Rake', exact: true });
+      const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
+      await expect(overview).toBeVisible();
       await expect(rake).toBeVisible();
+      // Resolve the real lazy chunks and auth-backed RPC transport while time
+      // runs normally. A cold import can finish after runFor has returned; its
+      // passive work must not be mistaken for a failed ledger response.
+      await rake.click();
+      await expect(panel.getByRole('row')).toHaveCount(501);
+      warmupReads.push(...reads.splice(0));
+      expect(warmupReads).toEqual([{ limit: 501, search: null }]);
+      await overview.click();
+      await expect(page.locator('#stats-panel-overview')).toBeVisible();
+      await expect(panel).toHaveCount(0);
+      await expect(page.locator('.stats-range-status.is-refreshing')).toHaveCount(0);
+      await expect.poll(() => pendingRest.size).toBe(0);
+      // This is a new component mount, with its own initial debounce. The
+      // outgoing animation consumes 220ms, leaving the initial 300ms timer
+      // unexpired when Show More is clicked, including on the old component.
       await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+      const pausedRows = async (count: number) => {
+        await expect
+          .poll(async () => {
+            // Flush only work due now after asynchronous responses. Wall-clock
+            // polling never consumes the remaining debounce budget.
+            await page.clock.runFor(0);
+            return panel.getByRole('row').count();
+          })
+          .toBe(count);
+      };
+      // pauseAt advances time before stopping; drain reads it may have started
+      // while the ledger is still unmounted and no debounce budget exists.
+      await expect
+        .poll(async () => {
+          await page.clock.runFor(0);
+          return pendingRest.size;
+        })
+        .toBe(0);
       armed = true;
       await rake.click();
-      await page.clock.runFor(299);
+      await mountStatsPaneBeforeDebounce(page, page.locator('#stats-panel-rake'));
       await expect(page.locator('#stats-panel-rake')).toBeVisible();
-      const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
-      await expect(panel.getByRole('row')).toHaveCount(501);
+      await pausedRows(501);
       expect(reads).toEqual([{ limit: 501, search: null }]);
       await panel.getByRole('button', { name: 'Show 500 More Members' }).click();
-      await expect(panel.getByRole('row')).toHaveCount(621);
+      await pausedRows(621);
       expect(reads).toEqual([
         { limit: 501, search: null },
         { limit: 1001, search: null },
       ]);
       await page.clock.runFor(300);
-      await expect(panel.getByRole('row')).toHaveCount(621);
+      await pausedRows(621);
       await expect(panel.getByRole('button', { name: 'Show 500 More Members' })).toHaveCount(0);
       expect(reads).toHaveLength(2);
       await panel.getByRole('textbox', { name: 'Search Downline Players' }).fill('river');
       await page.clock.runFor(299);
       expect(reads).toHaveLength(2);
       await page.clock.runFor(1);
-      await expect(panel.getByRole('row')).toHaveCount(501);
+      await pausedRows(501);
       expect(reads).toEqual([
         { limit: 501, search: null },
         { limit: 1001, search: null },
@@ -200,6 +272,9 @@ test.describe('Player Stats production experience', () => {
       expect(blockedWrites).toEqual([]);
     } finally {
       armed = false;
+      page.off('request', started);
+      page.off('requestfinished', finished);
+      page.off('requestfailed', finished);
       try {
         if (clockInstalled) await page.clock.resume();
         await page.unroute('**/rest/v1/**');
@@ -212,10 +287,12 @@ test.describe('Player Stats production experience', () => {
     await testInfo.attach('published-downline-pagination', {
       body: JSON.stringify({
         clientSha: expected,
+        originalJobSha: process.env.LIVE_SHA,
         bracket,
         syntheticReadResponses: true,
         actualPublishedAssets: true,
         reads,
+        warmupReads,
         blockedWrites: 0,
       }),
       contentType: 'application/json',

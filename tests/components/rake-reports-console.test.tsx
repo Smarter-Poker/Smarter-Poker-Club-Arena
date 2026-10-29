@@ -235,6 +235,7 @@ import RakeReports, { parseHandBreakdownPayload } from '../../src/components/adm
 import { parseClubFinancialsPayload } from '../../src/utils/clubFinancialsPayload';
 
 beforeEach(() => {
+  localStorage.clear();
   vi.clearAllMocks();
   m.isMounted.current = true;
   m.resolveClub.mockResolvedValue(CLUB_ID);

@@ -467,7 +467,7 @@ jobs:
         run: npx vitest run tests/an-asset-never-ships-a-white-matte.law.test.ts
 
       - name: UI selection proves presentation boundaries and retains unknown readers
-        run: node --test tests/operations/ui-test-selection.test.mjs
+        run: node --test tests/operations/ui-test-selection.test.mjs tests/operations/publisher-ui-selection-base.test.mjs
       - name: Actual client runtime retention refuses incomplete and changed inputs
         run: node --test tests/operations/client-runtime-retention.test.mjs
 
@@ -1268,6 +1268,9 @@ jobs:
         needs.changes.outputs.head_current != 'false' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
+    # Each paid hosted VM owns its CPU; the fallback keeps the two-worker cap.
+    env:
+      VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
     # Every pull-request shard gets a fresh hosted image. A dependency or test
     # from a branch cannot persist into any later credential-bearing job.
     runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
@@ -2496,6 +2499,9 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: Club promo payments retain their journal source across every destination
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-club-promo-journal-source.py --pg-bin /usr/lib/postgresql/17/bin --work-root "$RUNNER_TEMP/club-promo-journal" --evidence artifacts/club-promo-journal
       - name: Durable private original hands survive restart and settle once
         id: hand_continuation
         if: matrix.shard == 3

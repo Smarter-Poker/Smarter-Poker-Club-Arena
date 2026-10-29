@@ -2,6 +2,7 @@ import {
   beginTableSettingIntent,
   confirmTableSettingIntent,
   readTableSettingIntent,
+  registerPreferenceFlush,
 } from '../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -224,17 +225,24 @@ export default function SettingsPage() {
   const saveTailRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSaveCountRef = useRef(0);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSaveRef = useRef<(() => void) | null>(null);
+  const autoSaveRef = useRef<(() => Promise<void>) | null>(null);
   const flushAutoSave = () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = null;
     const save = autoSaveRef.current;
     autoSaveRef.current = null;
-    save?.();
+    return save?.();
   };
   useEffect(() => {
+    const unregister = authUser?.id
+      ? registerPreferenceFlush(authUser.id, async () => {
+          await flushAutoSave();
+          await saveTailRef.current;
+        })
+      : () => {};
     window.addEventListener('pagehide', flushAutoSave);
     return () => {
+      unregister();
       window.removeEventListener('pagehide', flushAutoSave);
       flushAutoSave();
     };
@@ -967,9 +975,7 @@ export default function SettingsPage() {
       const themeStore = useSettingsStore.getState();
       if (changedKeys.includes('theme') && themeStore.interfaceThemeUserId === ownerId)
         themeStore.setTheme(next.theme, ownerId);
-      autoSaveRef.current = () => {
-        void saveSettings(true, next, intentId, keys);
-      };
+      autoSaveRef.current = () => saveSettings(true, next, intentId, keys);
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(flushAutoSave, 500);
     }

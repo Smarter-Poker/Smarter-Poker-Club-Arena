@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * DOWNLINE RAKE — live.
  *
@@ -39,9 +40,16 @@ const PAGE_SIZE = 500;
 type Crumb = { userId: string; name: string };
 
 export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) {
-  const [clubId, setClubId] = useState<string>(roles[0]?.club_id ?? '');
-  const [win, setWin] = useState<RakeWindowKey>('week');
-  const [search, setSearch] = useState('');
+  const [savedClubId, setClubId] = usePlayerPreference<string>(
+    'downlineRake.club',
+    roles[0]?.club_id ?? '',
+    'global'
+  );
+  const clubId = roles.some((role) => role.club_id === savedClubId)
+    ? savedClubId
+    : (roles[0]?.club_id ?? '');
+  const [win, setWin] = usePlayerPreference<RakeWindowKey>('downlineRake.window', 'week', clubId);
+  const [search, setSearch] = usePlayerPreference('downlineRake.search', '', clubId);
   const [debounced, setDebounced] = useState('');
   const [rows, setRows] = useState<DownlineRakeRow[]>([]);
   const [summary, setSummary] = useState<DownlineRakeSummary | null>(null);
@@ -148,7 +156,6 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
     if (!AGENT_ROLES.has(r.role)) return;
     setRowLimit(PAGE_SIZE);
     setCrumbs((c) => [...c, { userId: r.player_id, name: r.username ?? 'Agent' }]);
-    setSearch('');
   };
 
   const popTo = (i: number) => {

@@ -1,0 +1,7 @@
+# Horse public ranges distinguish an all-in call from aggression
+
+`HorseMind.bandFor` replayed public wagers correctly when classifying aggression, but its separate large-bet scan treated every `all_in` of at least 20 big blinds as a bet. A capped all-in call therefore set `bigBet`, even though it had not raised the price. That flag strengthens the sampled range in Hold'em and can advance the Omaha aggressor tier after an earlier ordinary bet.
+
+The large-bet flag now uses the same captured public-node or historical wager replay as the range reader. It retains the existing 20-big-blind street-total threshold and newest-street boundary. An opening all-in bet and a short all-in raise remain aggression even without a full-reopening flag. Opponent priors, range thresholds, sampler policies, game rules and feature activation are unchanged.
+
+Focused regressions exercise real controller histories for NLH, PLO4, PLO5, PLO6 and PLO8 (four-card Omaha Hi-Lo eight-or-better), captured-node and historical replay, actual short/full raises, threshold boundaries, street reset and the downstream Omaha tier. Six regression assertions failed before the source repair; all 63 tests across the new suite and existing public-range/V16/V40 suites passed afterward. Server typecheck result is recorded in the task evidence. These are source/regression results, not evidence of installation, fleet-wide qualification or profitability; protected delivery and affected live proof remain required.

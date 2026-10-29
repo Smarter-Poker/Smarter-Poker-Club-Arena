@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "scripts/ci/classify-ci-changes.mjs": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1557,5 +1557,20 @@
     },
     "financial_recertification": false,
     "execution_performed": false
+  },
+  "publisherBacklogSelectionIdentity20261029": {
+    "review": "Reviewed the single classifier prefix extension admitting the new publisher published-baseline authority to full qualification. All financial/native job commands, matrices, assertions, fixtures, SQL, historical receipts and verdicts remain unchanged. Only current classifier source identity changes; not renewed execution or certification.",
+    "previous_sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current_sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0",
+    "financial_recertification": false
+  },
+  "clubPromoJournalSource20261029": {
+    "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0"
+  },
+  "clubPromoProtectedMainIntegration20261029": {
+    "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
   }
 }

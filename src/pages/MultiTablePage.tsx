@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { setVisiblePokerTable } from '../lib/visiblePokerTable';
 import { arenaDisplayText } from '../lib/arenaDisplay/text';
@@ -835,7 +836,12 @@ export default function MultiTablePage() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [isTileView, setIsTileView] = useState(false);
+  const [preferredTileView, setIsTileView] = usePlayerPreference(
+    'multiTable:tileView',
+    false,
+    'global'
+  );
+  const isTileView = preferredTileView && tables.length > 1;
   // Single-table mode: skip entrance animation entirely (prevents blank screen)
   const [tabEntranceComplete, setTabEntranceComplete] = useState(() => tables.length <= 1);
 
@@ -2408,29 +2414,16 @@ export default function MultiTablePage() {
   } | null>(null);
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
-  /* Dan 2026-08-30: "MULTI TABLE PROFIT TRACKING" is a switch the player owns.
-     OFF kills the chip and the aggregation loop entirely; ON restores it.
-     Persisted per device - a preference, not account data. Also togglable by
-     right-click / long-press on the chip itself. */
-  const [profitTracking, setProfitTracking] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('ca-multi-table-profit-tracking') !== 'off';
-    } catch {
-      return true;
-    }
-  });
+  // Profit tracking follows this account; opening another device never resets it.
+  const [profitTracking, setProfitTracking] = usePlayerPreference(
+    'multiTable:profitTracking',
+    true,
+    'global'
+  );
   const toggleProfitTracking = useCallback(() => {
-    setProfitTracking((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('ca-multi-table-profit-tracking', next ? 'on' : 'off');
-      } catch {
-        /* preference only */
-      }
-      return next;
-    });
+    setProfitTracking((prev) => !prev);
     setShowSessionAgg(false);
-  }, []);
+  }, [setProfitTracking]);
   /* Long-press (mobile) support for turning the chip off. */
   const pnlPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -4325,16 +4318,7 @@ export default function MultiTablePage() {
     }
   }, [tables.length, activeIndex]);
 
-  /**
-   * Tile view is only reachable at 2+ tables (the toggle is gated on it), but
-   * `isTileView` was never reset when the count fell back to one. The flag then
-   * sat true and invisible — no toggle rendered to turn it off — and opening a
-   * second table later snapped straight into a grid the player had not asked
-   * for.
-   */
-  useEffect(() => {
-    if (tables.length <= 1 && isTileView) setIsTileView(false);
-  }, [tables.length, isTileView]);
+  // A single table uses the focused view without erasing the player's grid preference.
 
   /**
    * The aggregated-session popover is gated on `sessionAgg &&`, so when the

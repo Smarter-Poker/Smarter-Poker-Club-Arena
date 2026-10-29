@@ -203,6 +203,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The original standalone weekly bank is funding once, with its native mint lineage.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-standalone-weekly-statement-funding-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 
+# The fee fingerprint serializes its unchanged economic object once; native
+# semantic, admission ABI and atomic installer faults remain in this required floor.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-fee-fingerprint-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-fee-fingerprint.json"))], text=True))
+
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
@@ -217,3 +221,9 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original tournament membership keeps raw Union equality in its physical key.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-membership-union-key-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-membership-union-key.json'))], text=True))
+
+# Original shaped cash keeps its exact Boolean evidence gate in a fixed-width physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-boolgate-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-boolgate.json'))], text=True))
+
+# Original Boolean index statistics are collected by the guarded owning migration.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-statistics.json'))], text=True))

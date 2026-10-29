@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Link,
@@ -52,7 +53,7 @@ import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib
 import {
   ROSTER_ROW_HEIGHT,
   defaultRosterWorkspace,
-  readRosterWorkspace,
+  loadRosterWorkspace,
   writeRosterWorkspace,
   writeRosterReturnPosition,
   takeRosterReturnPosition,
@@ -266,8 +267,12 @@ export default function ClubMembersPage() {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [filter, setFilter] = useState<RosterFilter>(() => readFilter(searchParams.get('view')));
   const [sortKey, setSortKey] = useState<RosterSort>(() => readSort(searchParams.get('sort')));
-  const [simpleMode, setSimpleMode] = useState(true);
-  const [winLossPeriod, setWinLossPeriod] = useState<WinLossPeriod>('week');
+  const [simpleMode, setSimpleMode] = usePlayerPreference('roster:simpleMode', true, routeClub);
+  const [winLossPeriod, setWinLossPeriod] = usePlayerPreference<WinLossPeriod>(
+    'roster:winLossPeriod',
+    'week',
+    routeClub
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(defaultRosterWorkspace().columns)
@@ -506,9 +511,10 @@ export default function ClubMembersPage() {
     }
 
     void resolveClubUUIDStrict(routeClub)
-      .then((id) => {
+      .then(async (id) => {
         if (!active) return;
-        const saved = user?.id ? readRosterWorkspace(user.id, id) : null;
+        const saved = user?.id ? await loadRosterWorkspace(user.id, id) : null;
+        if (!active) return;
         const workspace = saved ?? defaultRosterWorkspace();
         if (explicitFilter) workspace.filter = readFilter(searchParams.get('view'));
         if (explicitSort) workspace.sort = readSort(searchParams.get('sort'));
@@ -1668,7 +1674,8 @@ export default function ClubMembersPage() {
             <button
               type="button"
               className="members-group-role"
-              aria-pressed={sortKey === 'hierarchy'}
+              aria-pressed={!searchQuery.trim() && sortKey === 'hierarchy'}
+              disabled={Boolean(searchQuery.trim())}
               onClick={() => setSortKey(sortKey === 'hierarchy' ? 'name' : 'hierarchy')}
             >
               Group By Role
@@ -1694,9 +1701,11 @@ export default function ClubMembersPage() {
             <span className="members-sort__label">Sort By</span>
             <select
               aria-label="Sort Players"
-              value={sortKey}
+              disabled={Boolean(searchQuery.trim())}
+              value={searchQuery.trim() ? 'search' : sortKey}
               onChange={(event) => setSortKey(event.target.value as RosterSort)}
             >
+              {searchQuery.trim() && <option value="search">Player Name Matches</option>}
               {sorts.map((value) => (
                 <option key={value} value={value}>
                   {SORT_LABEL[value]}
@@ -1843,8 +1852,10 @@ export default function ClubMembersPage() {
                 ? `${exportOperation.selectedCount.toLocaleString()} Selected Loaded Players.`
                 : 'All Matching Players Across Every Page.'}{' '}
               Filter: {FILTER_LABEL[exportOperation.filter]}. Sort:{' '}
-              {SORT_LABEL[exportOperation.sort]}. Search:{' '}
-              {exportOperation.searchApplied ? 'Applied' : 'None'}.
+              {exportOperation.searchApplied
+                ? 'Player Name Matches'
+                : SORT_LABEL[exportOperation.sort]}
+              . Search: {exportOperation.searchApplied ? 'Applied' : 'None'}.
               {exportOperation.auditId ? ` Audit Reference: ${exportOperation.auditId}.` : ''}
             </p>
           )}

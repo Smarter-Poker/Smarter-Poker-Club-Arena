@@ -196,6 +196,8 @@ export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
   /** Private individual read hydration, not a caller policy control or action authority. */
   ownPublicHistory?: import('./ownPublicHistory.js').HorseOwnPublicHistoryPacket;
   ownPublicHistoryState?: 'pending' | 'available' | 'unavailable';
+  /** Original request-bound cache diagnostic, not a loaded-history qualification. */
+  ownPublicHistoryProvenance?: import('./ownPublicHistoryProvenance.js').HorseHistoryReadProvenance;
   /** Existing nearest-size evidence, separately validated at the same <=10 cap. */
   durableOpponentDonorProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];

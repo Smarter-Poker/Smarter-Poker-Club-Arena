@@ -1,0 +1,233 @@
+[
+  {
+    "name": "Burls RIT fold before public second board",
+    "sourceHand": "1e483974-f9f0-4652-913a-10eb64cad773",
+    "hero": "20000000-0000-0000-0000-000000000001",
+    "bigBlind": 1,
+    "aggressive": 0,
+    "calls": 0,
+    "actions": [
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "ante",
+        "amount": 0.5,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "sb",
+        "amount": 0.5,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": false
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "ante",
+        "amount": 0.5,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "bb",
+        "amount": 1,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": false
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "ante",
+        "amount": 0.5,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "ante",
+        "amount": 0.5,
+        "stage": "preflop",
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "raise",
+        "amount": 2,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "fold",
+        "amount": 0,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "raise",
+        "amount": 7,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "fold",
+        "amount": 0,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "raise",
+        "amount": 17,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "all_in",
+        "amount": 138.45,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "all_in",
+        "amount": 92.87,
+        "stage": "preflop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "return",
+        "amount": 45.58,
+        "stage": "preflop"
+      },
+      {
+        "userId": "system",
+        "seat": 0,
+        "action": "rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts",
+        "stage": "river",
+        "timestamp": 1792548768346
+      }
+    ]
+  },
+  {
+    "name": "Burls forced bomb ante and flop fold",
+    "sourceHand": "d8cd30ce-fa79-4446-8e34-e0cb7b76be7c",
+    "hero": "20000000-0000-0000-0000-000000000001",
+    "bigBlind": 1,
+    "aggressive": 0,
+    "calls": 0,
+    "actions": [
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "bomb_ante",
+        "amount": 2,
+        "stage": "preflop",
+        "seat": 1,
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "bomb_ante",
+        "amount": 2,
+        "stage": "preflop",
+        "seat": 2,
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "bomb_ante",
+        "amount": 2,
+        "stage": "preflop",
+        "seat": 3,
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "bomb_ante",
+        "amount": 2,
+        "stage": "preflop",
+        "seat": 4,
+        "origin": "forced",
+        "dead": true
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "check",
+        "amount": 0,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "check",
+        "amount": 0,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "bet",
+        "amount": 6,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000003",
+        "action": "fold",
+        "amount": 0,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000001",
+        "action": "fold",
+        "amount": 0,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "call",
+        "amount": 6,
+        "stage": "flop"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "check",
+        "amount": 0,
+        "stage": "turn"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "bet",
+        "amount": 9,
+        "stage": "turn"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "call",
+        "amount": 9,
+        "stage": "turn"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "check",
+        "amount": 0,
+        "stage": "river"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000002",
+        "action": "bet",
+        "amount": 47,
+        "stage": "river"
+      },
+      {
+        "userId": "20000000-0000-0000-0000-000000000004",
+        "action": "call",
+        "amount": 47,
+        "stage": "river"
+      }
+    ]
+  }
+]

@@ -210,6 +210,30 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.announceAtChicagoMinutes).toEqual([53]);
     expect(recovery.migrations).toEqual([]);
   });
+  it('keeps the corrective started-original delivery separate from the consumed first window', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const recovery = windows.find(
+      (entry: { id: string }) => entry.id === '2026-10-29-started-original-actuation-recovery'
+    );
+    const path =
+      'supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql';
+    expect(recovery.releaseWitness).toEqual({
+      path,
+      sha256: createHash('sha256')
+        .update(readFileSync(join(root, path)))
+        .digest('hex'),
+    });
+    expect(recovery.contains).toBe('ddb62f02f5475538dd07fb6571375d444d1bdd04');
+    expect(recovery.notBefore).toBe('2026-10-29T06:35:00Z');
+    expect(recovery.notAfter).toBe('2026-10-29T08:50:00Z');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
+    expect(recovery.migrations).toEqual([]);
+    expect(recovery.ownerOrder).toContain('1a2aee9264a6ee30ede540c2655ee32e860a22bf');
+    expect(recovery.ownerOrder).toContain('aca0b52c832447c5f0e4636a19a4fcdbe2f1047a');
+    expect(recovery.ownerOrder).toContain('full 285-second');
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  FRIEND LIST PANEL — Social Friends Component
@@ -74,7 +75,7 @@ function FriendListPanelInner({
     onProfileClick ? onProfileClick(friendId) : navigate(`/profile/${friendId}`);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('friendList.search', '', 'global');
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addFriendInput, setAddFriendInput] = useState('');
   const [addingFriend, setAddingFriend] = useState(false);

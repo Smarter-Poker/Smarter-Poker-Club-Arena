@@ -133,3 +133,81 @@ describe('the publication gate and a publisher that never reached the origin', (
     expect(result.error).not.toBeNull();
   });
 });
+
+describe('a gateway component is not a static client publication', () => {
+  it('leaves client certification unclaimed after a qualified gateway-only publication', () => {
+    const gateway = job('publish-record-gateway', 'success');
+    gateway.steps = [
+      'Activate only the prepared independent service',
+      'Verify authenticated gateway record delivery',
+      'Ensure the reserved gateway canary account is retired',
+    ].map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      gateway,
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+  it('does not hide an incomplete gateway installation as a successful client standdown', () => {
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success', 5),
+      job('publish-record-gateway', 'failure', 2),
+      job('publish-to-origin', 'skipped'),
+      job('retain-runtime', 'skipped'),
+    ]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+});
+
+describe('read-only gateway inspection is not publication', () => {
+  it.each(['success', 'failure'])(
+    'preserves the actual %s result without certifying a client',
+    (conclusion) => {
+      const inspection = job('inspect-record-gateway-host', conclusion);
+      inspection.steps = [
+        {
+          name: 'Read fixed gateway host metadata without changing host state',
+          status: 'completed',
+          conclusion,
+        },
+      ];
+      const result = runGate([
+        job('publish-needed', 'success', 8),
+        inspection,
+        job('publish-to-origin', 'skipped'),
+      ]);
+      expect(result.error === null).toBe(conclusion === 'success');
+      expect(result.output).not.toContain('should_run=true');
+    }
+  );
+});
+
+describe('gateway certification requires its real consumer proof and cleanup', () => {
+  it.each([
+    'Verify authenticated gateway record delivery',
+    'Ensure the reserved gateway canary account is retired',
+  ])('refuses a missing %s step', (missing) => {
+    const gateway = job('publish-record-gateway', 'success');
+    gateway.steps = [
+      'Activate only the prepared independent service',
+      'Verify authenticated gateway record delivery',
+      'Ensure the reserved gateway canary account is retired',
+    ]
+      .filter((name) => name !== missing)
+      .map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+    const result = runGate([
+      job('publish-needed', 'success', 8),
+      job('build-record-gateway', 'success'),
+      gateway,
+      job('publish-to-origin', 'skipped'),
+    ]);
+    expect(result.error).not.toBeNull();
+    expect(result.output).not.toContain('should_run=true');
+  });
+});

@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import threading
 import time
 sys.dont_write_bytecode = True
@@ -75,6 +76,14 @@ CREATE FUNCTION smarter_private.horse_cash_retention_accounting_ready(uuid,bigin
 CREATE FUNCTION smarter_private.horse_adaptive_disposal_certificate_matches(uuid,uuid,bigint,text) RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
 CREATE FUNCTION smarter_private.horse_stats_basis_matches(uuid,uuid,bigint,jsonb) RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
 """
+
+def run_retention_progress(pg_bin, out):
+    # Existing required owner qualifies both transitions; a failed child must
+    # prevent the parent passed verdict. Its evidence stays in the same artifact.
+    subprocess.run([sys.executable, str(ROOT / 'scripts/ci/test-superseded-retention-progress.py'),
+                    '--pg-bin', str(pg_bin), '--evidence', str(out / 'retention-progress')],
+                   check=True)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -275,6 +284,7 @@ def main():
         e.discard(rolled)
         e.report['candidate_postimages'] = json.loads(scalar(base, "SELECT jsonb_object_agg(p.oid::regprocedure::text,md5(pg_get_functiondef(p.oid))) FROM pg_proc p WHERE p.oid IN('smarter_private.hand_submission_immutable()'::regprocedure,'smarter_private.assert_retained_hand_submission(jsonb)'::regprocedure,'public.fn_ca_commit_hand_submission(uuid,text,uuid)'::regprocedure,'smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'::regprocedure,'public.fn_ca_dispose_superseded_hand_submissions(uuid,uuid,text,integer)'::regprocedure,'smarter_private.original_hand_correction_sources_match()'::regprocedure,'smarter_private.original_inventory_source_ref_md5(jsonb)'::regprocedure);", 'exact-candidate-postimages'))
         e.discard(base)
+        run_retention_progress(args.pg_bin, out)
         e.report['status'] = 'passed'
     except BaseException as exc:
         e.report.update(status='failed', failure=repr(exc))

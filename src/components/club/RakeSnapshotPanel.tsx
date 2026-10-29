@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * RAKE SNAPSHOT — one strip that answers "how are we doing", then "who did it".
  *
@@ -208,9 +209,22 @@ export default function RakeSnapshotPanel({
   // Memoised: a fresh array identity on every render would re-run the effect
   // below on every render, and that effect can call setScope.
   const available = useMemo<RakeScope[]>(() => (scopes.length ? scopes : ['club']), [scopes]);
-  const [scope, setScope] = useState<RakeScope>(available[0]);
-  const [period, setPeriod] = useState<PeriodKey>('month');
-  const [custom, setCustom] = useState(() => periodToRange('month'));
+  const preferenceContext = clubId ?? unionId ?? 'global';
+  const [savedScope, setScope] = usePlayerPreference<RakeScope>(
+    'rakeSnapshot.scope',
+    available[0],
+    preferenceContext
+  );
+  const [period, setPeriod] = usePlayerPreference<PeriodKey>(
+    'rakeSnapshot.period',
+    'month',
+    preferenceContext
+  );
+  const [custom, setCustom] = usePlayerPreference(
+    'rakeSnapshot.customRange',
+    () => periodToRange('month'),
+    preferenceContext
+  );
   const [snapshot, setSnapshot] = useState<RakeSnapshot | null>(null);
   /** The complete reporting question that produced the painted snapshot. */
   const [snapshotViewKey, setSnapshotViewKey] = useState<string | null>(null);
@@ -239,9 +253,19 @@ export default function RakeSnapshotPanel({
    */
   const [clubCrumb, setClubCrumb] = useState<{ clubId: string; name: string } | null>(null);
   /** What is typed, and what has actually been asked for. */
-  const [search, setSearch] = useState('');
+  const scope =
+    available.includes(savedScope) ||
+    (savedScope === 'agent' && crumbs.length > 0) ||
+    (savedScope === 'club' && clubCrumb)
+      ? savedScope
+      : available[0];
+  const [search, setSearch] = usePlayerPreference('rakeSnapshot.search', '', preferenceContext);
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<RakeSortKey>('rake');
+  const [sort, setSort] = usePlayerPreference<RakeSortKey>(
+    'rakeSnapshot.sort',
+    'rake',
+    preferenceContext
+  );
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ClubDataExportProgress | null>(null);
   const [exportAnnouncement, setExportAnnouncement] = useState('');
@@ -301,20 +325,7 @@ export default function RakeSnapshotPanel({
     return () => clearTimeout(t);
   }, [search]);
 
-  // If the viewer's roles resolve after first paint, the selected chip may no
-  // longer be one they hold. Fall back rather than keep asking for a refusal.
-  useEffect(() => {
-    // A club owner holds no downline of their own, so 'agent' is not among the
-    // scopes they are offered - but opening an agent FROM the club list puts
-    // them in it legitimately. Without this the fallback fires on the next
-    // render and bounces them straight back out of the row they just opened.
-    if (scope === 'agent' && crumbs.length > 0) return;
-    // Same reasoning for a club opened from the union list: a union lead who
-    // holds no club role is not offered the Club chip, but opening a member
-    // club from their own union list is legitimate.
-    if (scope === 'club' && clubCrumb) return;
-    if (!available.includes(scope)) setScope(available[0]);
-  }, [available, scope, crumbs.length, clubCrumb]);
+  // Unsupported saved scopes fall back for this context without replacing the choice.
 
   // Leaving the downline scope must drop the trail with it, or coming back
   // lands you inside somebody else's book with no visible reason why.
@@ -637,16 +648,15 @@ export default function RakeSnapshotPanel({
   /**
    * Sorting by Cost and then switching to the downline list would ask for a
    * column that list does not have. The server falls back to rake and says so,
-   * but the control would still be reading "Cost" - so it is reset here rather
-   * than left describing something that is not happening.
+   * but the control must show the fallback without erasing the saved choice.
    */
   const sortOptions = useMemo(
     () => RAKE_SORTS[(snapshot?.breakdown_kind ?? 'club') as 'club' | 'agent' | 'downline'] ?? [],
     [snapshot?.breakdown_kind]
   );
-  useEffect(() => {
-    if (sortOptions.length && !sortOptions.some((o) => o.key === sort)) setSort('rake');
-  }, [sortOptions, sort]);
+  // A drill may omit the saved column. Display the server's supported fallback
+  // without replacing the player's explicit preference for their original view.
+  const displayedSort = sortOptions.some((option) => option.key === sort) ? sort : 'rake';
 
   const summary = snapshot?.summary ?? null;
   const delta = snapshot?.delta ?? null;
@@ -1078,7 +1088,8 @@ export default function RakeSnapshotPanel({
 
       {snapshot?.accounting_basis === 'chicago_net_money_flow' && !isAgent ? (
         <p className={`sc-ink--muted ${styles.meta}`}>
-          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished
+          MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
           {scope === 'union' ? ' All Member Clubs And Union Account.' : ''}
         </p>
       ) : null}
@@ -1291,7 +1302,7 @@ export default function RakeSnapshotPanel({
           ) : null}
           <label className={styles.toolSort}>
             <span className={styles.srOnly}>Sort This List</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value as RakeSortKey)}>
+            <select value={displayedSort} onChange={(e) => setSort(e.target.value as RakeSortKey)}>
               {sortOptions.map((o) => (
                 <option key={o.key} value={o.key}>
                   Sort By {o.label}

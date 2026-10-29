@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * NemesisPanel — who has been taking chips off you, and who you have been
  * taking them off.
@@ -121,7 +122,7 @@ export default function NemesisPanel({
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = usePlayerPreference('nemesis.showFullList', false, 'global');
   useEffect(() => {
     if (!userId) {
       setLoading(false);

@@ -44,10 +44,119 @@ on:
     workflows: ['Publish Club Arena']
     types: [completed]
   repository_dispatch:
-    types: [run-post-deploy-e2e]
+    types: [run-post-deploy-e2e, run-stats-pagination-proof]
 
 jobs:
+  # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
+  stats-pagination-proof:
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
+    name: Exact published Stats pagination proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: stats-pagination-proof-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Admit only the fixed protected-main proof
+        id: admit
+        env:
+          STATS_PROOF_ACTION: ${{ github.event.action }}
+          STATS_PROOF_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/stats-pagination-proof.mjs admit
+          git fetch --no-tags --filter=blob:none origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium only
+        timeout-minutes: 5
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+      - name: Create the owned isolated account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Pin both origins immediately before the one case
+        id: pin
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-report/stats-pagination
+          git fetch --no-tags --filter=blob:none origin main
+          SHA=$(node scripts/ci/stats-pagination-proof.mjs pin e2e-report/stats-pagination/before.json)
+          git cat-file -e "$SHA^{commit}"
+          git merge-base --is-ancestor "$SHA" origin/main
+          echo "LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Execute exactly the published pagination case
+        id: proof
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          E2E_STATS_PAGINATION_PROOF: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/stats-pagination/report.json
+        run: >-
+          npx playwright test tests/e2e/stats-deep.spec.ts
+          --grep '^.*published downline pagination survives the initial debounce and resets only for changed search$'
+          --project=chromium --workers=1 --retries=0 --reporter=line,json
+          --trace=retain-on-failure --output=test-results/stats-pagination
+      - name: Require the same two origins immediately after the case
+        id: after_pin
+        if: always() && steps.pin.outcome == 'success'
+        run: node scripts/ci/stats-pagination-proof.mjs pin e2e-report/stats-pagination/after.json
+      - name: Verify cleanup of this exact isolated account
+        id: cleanup
+        if: always() && steps.admit.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from 'node:fs';
+          import { cleanupProductionE2EAccount } from './scripts/ci/production-e2e-account.mjs';
+          if (await cleanupProductionE2EAccount() !== true) throw new Error('Owned account cleanup did not verify retirement');
+          mkdirSync('e2e-report/stats-pagination', { recursive: true });
+          writeFileSync('e2e-report/stats-pagination/cleanup.json', JSON.stringify({ verified: true }));
+          NODE
+      - name: Require one first-attempt pass, exact release and actual cleanup
+        if: always()
+        env:
+          ACCOUNT_OUTCOME: ${{ steps.account.outcome }}
+          PROOF_OUTCOME: ${{ steps.proof.outcome }}
+          AFTER_PIN_OUTCOME: ${{ steps.after_pin.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: >-
+          node scripts/ci/stats-pagination-proof.mjs verify
+          e2e-report/stats-pagination/report.json e2e-report/stats-pagination/before.json
+          e2e-report/stats-pagination/after.json e2e-report/stats-pagination/cleanup.json
+      - name: Retain the one-case proof on every outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stats-pagination-proof
+          path: |
+            e2e-report/stats-pagination/
+            test-results/stats-pagination/
+          if-no-files-found: error
+          retention-days: 14
+
   publication-gate:
+    if: github.event_name != 'repository_dispatch' || github.event.action != 'run-stats-pagination-proof'
     name: Confirm The Hetzner Web Publish Reached Production
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -160,6 +269,42 @@ jobs:
           // source run's own top-level conclusion is still never consulted -
           // an optional Capgo failure must not suppress web E2E.
           if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
+          const inspection = payload.jobs.filter(entry => entry?.name === 'inspect-record-gateway-host');
+          if (inspection.length === 1 && inspection[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const read = (inspection[0].steps ?? []).filter(entry => entry.name === 'Read fixed gateway host metadata without changing host state');
+            if (inspection[0].status !== 'completed' || inspection[0].conclusion !== 'success' || read.length !== 1 || read[0].conclusion !== 'success') throw new Error('Gateway host inspection is incomplete; no installation or publication certified.');
+            console.log('Read-only host inspection; no installation or publication certified.');
+            process.exit(0);
+          }
+          const credential = payload.jobs.filter(entry => entry?.name === 'install-record-gateway-credentials');
+          if (credential.length === 1 && credential[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (credential[0].steps ?? []).filter(entry => entry.name === 'Install only the dedicated listener credential');
+            if (credential[0].status !== 'completed' || credential[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Dedicated listener credential is incomplete; no gateway activation or client publication certified.');
+            console.log('Dedicated listener credential only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const bootstrap = payload.jobs.filter(entry => entry?.name === 'bootstrap-record-gateway');
+          if (bootstrap.length === 1 && bootstrap[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
+            const install = (bootstrap[0].steps ?? []).filter(entry => entry.name === 'Install inert prerequisites through the existing protected provider');
+            if (bootstrap[0].status !== 'completed' || bootstrap[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Gateway bootstrap is incomplete; no activation or client publication is certified.');
+            console.log('Gateway bootstrap only; no gateway activation or client publication certified.');
+            process.exit(0);
+          }
+          const gateway = payload.jobs.filter((entry) => entry?.name === 'publish-record-gateway');
+          const gatewayOnly = gateway.length === 1 && gateway[0].conclusion !== 'skipped' &&
+            jobs.length === 1 && jobs[0].conclusion === 'skipped' &&
+            payload.jobs.filter(entry => entry?.name === 'retain-runtime').every(entry => entry.conclusion === 'skipped');
+          if (gatewayOnly) {
+            const builds = payload.jobs.filter(entry => entry?.name === 'build-record-gateway');
+            const proofNames = ['Activate only the prepared independent service', 'Verify authenticated gateway record delivery', 'Ensure the reserved gateway canary account is retired'];
+            const proofsComplete = proofNames.every(name => {
+              const matching = (gateway[0].steps ?? []).filter(entry => entry.name === name);
+              return matching.length === 1 && matching[0].status === 'completed' && matching[0].conclusion === 'success';
+            });
+            if (builds.length !== 1 || builds[0].conclusion !== 'success' || gateway[0].status !== 'completed' || gateway[0].conclusion !== 'success' || !proofsComplete) throw new Error('Independent gateway installation or authenticated verification is incomplete; no client publication is certified.');
+            console.log('Gateway component only; client publication and client E2E remain unclaimed.');
+            process.exit(0);
+          }
           const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
           const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
             ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
@@ -969,8 +1114,16 @@ jobs:
 
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+          # This journey starts well after the job-level LIVE_SHA read. Qualify
+          # its current published test/harness source without repinning the job
+          # or any other suite/certificate. UNKNOWN never uses the stale pin.
+          stats_pin_rc=0
+          stats_pin="$(node scripts/ci/downline-journey-pin.mjs)" || stats_pin_rc=$?
+          [ "$stats_pin_rc" -eq 0 ] || stats_pin=UNKNOWN
+          DOWNLINE_JOURNEY_SHA="$stats_pin" run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          stats_rc=$?
+          if [ "$stats_pin_rc" -ne 0 ] && [ "$stats_pin_rc" -ne 3 ]; then stats_rc=$stats_pin_rc; fi
+          [ $stats_rc -ne 0 ] && rc=$stats_rc
 
           # Financial Admin is the staff-scoped sibling of the Stats and Club
           # Data deep certificates. It runs against this job's disposable,
@@ -2315,6 +2468,7 @@ jobs:
   stood-down-is-not-green:
     name: A stood-down run is marked superseded, not passed
     needs:
+      - stats-pagination-proof
       - publication-gate
       - post-deploy-verdict
       - club-channel-lifecycle-e2e

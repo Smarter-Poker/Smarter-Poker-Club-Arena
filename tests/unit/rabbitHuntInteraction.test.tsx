@@ -178,10 +178,45 @@ describe('Rabbit Hunt human decision safety', () => {
     fireEvent.click(button);
     expect(onReveal).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.querySelector('.rabbit-hunt__cost')?.textContent).toBe('5');
 
     release({ success: true, cards: [{ rank: 'A', suit: 'c' }], diamondsSpent: 5 });
     await waitFor(() => expect(queryByRole('button')).toBeNull());
     expect(toast.info).toHaveBeenCalledWith('5 Diamonds Charged');
+  });
+
+  it('keeps a refused offer usable for a deliberate retry', async () => {
+    const onReveal = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: 'Not Enough Diamonds' })
+      .mockResolvedValueOnce({ success: true, cards: [{ rank: 'A', suit: 'c' }] });
+    const { getByRole, queryByRole } = render(
+      <RabbitHunt isAvailable cardsAvailable={1} userId="retry-viewer" onReveal={onReveal} />
+    );
+    fireEvent.click(getByRole('button'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Not Enough Diamonds'));
+    await waitFor(() => expect((getByRole('button') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByRole('button'));
+    await waitFor(() => expect(queryByRole('button')).toBeNull());
+    expect(onReveal).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not toast a paid response from a closed surface', async () => {
+    let finish!: (value: any) => void;
+    const pending = new Promise<any>((resolve) => {
+      finish = resolve;
+    });
+    const { getByRole, unmount } = render(
+      <RabbitHunt isAvailable cardsAvailable={1} userId="closed-viewer" onReveal={() => pending} />
+    );
+    fireEvent.click(getByRole('button'));
+    unmount();
+    await act(async () => {
+      finish({ success: true, cards: [{ rank: 'A', suit: 'c' }], diamondsSpent: 5 });
+      await pending;
+    });
+    expect(toast.info).not.toHaveBeenCalled();
   });
 
   it('does not call the paid endpoint without an authenticated player', () => {

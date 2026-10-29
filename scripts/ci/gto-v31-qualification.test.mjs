@@ -37,8 +37,8 @@ test('promotion admission refuses partial, losing, duplicated or different-datas
     assert.throws(() => promotionReady({ ...candidate, ...changed }, id));
 });
 
-test('the existing CLI receives no source override, shell interpolation or environment-file argument', () => {
-  assert.deepEqual(evaluatorArguments(id, 'evaluate'), ['node_modules/tsx/dist/cli.mjs', 'src/scripts/gtoV31Evaluate.ts', `--dataset=${id}`]);
+test('the finite worker CLI receives no source override, shell interpolation or environment-file argument', () => {
+  assert.deepEqual(evaluatorArguments(id, 'evaluate'), ['scripts/gto-v31-evaluate-worker.mjs', `--dataset=${id}`]);
   assert.equal(evaluatorArguments(id, 'promote').at(-1), '--promote');
   assert.throws(() => evaluatorArguments('not-a-uuid', 'promote'));
 });

@@ -330,6 +330,8 @@ export interface LateRegEvent {
   entriesAtStart: number;
   /** Planned complete field; independent of any house-funded prize pool. */
   plannedField?: number;
+  /** Published field capacity; leave the remaining seats for the late curve. */
+  maxPlayers?: number | null;
   /** Duration of the level window, read from the published blind ladder. */
   levelWindowMs?: number;
   /** Entries registered after the start, by anybody, through any path. */
@@ -386,11 +388,16 @@ export function lateRegArrivalsFor(ev: LateRegEvent): number {
   // Only the authoritative open door may overrule that estimate.
   if (progress >= 1 && ev.registrationOpen !== true) return 0;
   const atStart = Math.max(0, Math.floor(Number(ev.entriesAtStart) || 0));
-  const expected = Math.max(
+  const plannedArrivals = Math.max(
     LATE_REG_MIN_ARRIVALS,
     Math.round(atStart * lateRegShareFor(ev.tournament_id)),
     Math.max(0, (ev.plannedField ?? atStart * 2) - atStart)
   );
+  const capacity = Number(ev.maxPlayers);
+  const expected =
+    Number.isSafeInteger(capacity) && capacity > 0
+      ? Math.min(plannedArrivals, Math.max(0, capacity - atStart))
+      : plannedArrivals;
   // A few arrive in one cycle, none in the next: a deterministic -1/0/+1
   // around the curve, keyed on the event and the cycle.
   const cycle = Math.max(0, Math.floor((ev.nowMs - ev.startedAtMs) / CYCLE_MS));
@@ -430,6 +437,7 @@ interface LateRegRow {
   bounty_amount?: number | string | null;
   guaranteed_prize?: number | string | null;
   blind_structure?: unknown;
+  max_players: number | null;
   prize_pool_finalized: boolean | null;
 }
 
@@ -478,7 +486,7 @@ export async function lateRegisterHorsesOnce(
     const { data: rows, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, status, format_contract, started_at, current_level, late_reg_levels, rebuy_levels, late_reg_mins, buy_in_amount, bounty_amount, guaranteed_prize, blind_structure, prize_pool_finalized'
+        'id, name, status, format_contract, started_at, current_level, late_reg_levels, rebuy_levels, late_reg_mins, buy_in_amount, bounty_amount, guaranteed_prize, blind_structure, max_players, prize_pool_finalized'
       )
       .eq('status', 'RUNNING')
       .eq('prize_pool_finalized', false)
@@ -520,6 +528,7 @@ export async function lateRegisterHorsesOnce(
 
       const want = lateRegArrivalsFor({
         registrationOpen: true,
+        maxPlayers: t.max_players,
         tournament_id: t.id,
         startedAtMs,
         nowMs,

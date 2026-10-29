@@ -319,12 +319,12 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
 
   it('STILL leaves a seat for a human, whatever the guarantee asks for', () => {
     /* Safety property 1, and the one a guarantee must never be allowed to
-       override: a 40-seat event with an enormous guarantee fills to 39, not
-       40. A full field is a table no human can join. */
+       override: a 40-seat event with an enormous guarantee targets20 before
+       the start, leaving the other20 for paced late entry. */
     const ask = mttPrestartHorseTarget(
       deepStack({ maxPlayers: 40, currentPlayers: 0, guaranteedPrize: 1_000_000 })
     );
-    expect(ask).toBeLessThanOrEqual(39);
+    expect(ask).toBeLessThanOrEqual(20);
   });
 
   it('never asks for more than the event can seat', () => {

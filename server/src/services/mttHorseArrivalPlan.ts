@@ -10,8 +10,9 @@ export function mttPrizeShare(row: { buy_in_amount?: unknown; bounty_amount?: un
 }
 
 export function mttPrestartPlan(field: number, maxPlayers: number | null): number {
-  const goal = Math.ceil(field / 2);
-  return maxPlayers === null ? goal : Math.min(maxPlayers - 1, goal);
+  const boundedField = maxPlayers === null ? field : Math.min(field, maxPlayers);
+  const goal = Math.ceil(boundedField / 2);
+  return maxPlayers === null ? goal : Math.max(0, Math.min(maxPlayers - 1, goal));
 }
 
 /** Stored schedules use JSON text and durationMinutes; legacy ladders use seconds. */

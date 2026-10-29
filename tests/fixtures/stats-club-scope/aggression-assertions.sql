@@ -1,4 +1,17 @@
 BEGIN;
+DO $$ DECLARE s text; v jsonb; BEGIN
+ FOREACH s IN ARRAY ARRAY['pineapple_discard','flop','turn','river'] LOOP
+  v:=public.ca_fact_aggression_counts(jsonb_build_array(
+   jsonb_build_object('userId','20000000-0000-0000-0000-000000000001','action','call','stage','flop','amount',2),
+   jsonb_build_object('userId','20000000-0000-0000-0000-000000000001','action','discard','stage',s,'amount',0)),
+   '20000000-0000-0000-0000-000000000001');
+  IF v IS DISTINCT FROM jsonb_build_object('bets_raises',0,'calls',1)
+  THEN RAISE EXCEPTION 'Valid Pineapple discard invalidated AF at %: %',s,v; END IF;
+ END LOOP;
+ IF public.ca_fact_aggression_counts('[{"userId":"20000000-0000-0000-0000-000000000001","action":"discard","stage":"pineapple_discard","amount":1}]','20000000-0000-0000-0000-000000000001') IS NOT NULL
+ OR public.ca_fact_aggression_counts('[{"userId":"20000000-0000-0000-0000-000000000001","action":"discard","stage":"preflop","amount":0}]','20000000-0000-0000-0000-000000000001') IS NOT NULL
+ THEN RAISE EXCEPTION 'Malformed Pineapple discard certified AF'; END IF;
+END $$;
 DO $$ DECLARE v jsonb; a jsonb; BEGIN
  FOR a IN SELECT value FROM jsonb_array_elements('[
  {"userId":"system","seat":0,"action":"rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts","stage":"river","timestamp":123},

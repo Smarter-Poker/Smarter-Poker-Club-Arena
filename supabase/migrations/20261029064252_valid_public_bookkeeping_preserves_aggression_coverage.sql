@@ -23,11 +23,12 @@ AS $function$
  ) SELECT CASE WHEN jsonb_typeof(p_actions) IS DISTINCT FROM 'array' OR
    jsonb_array_length(CASE WHEN jsonb_typeof(p_actions)='array' THEN p_actions ELSE '[]'::jsonb END)=0 OR p_user IS NULL
    OR EXISTS(SELECT 1 FROM ordered WHERE action IS NULL OR action NOT IN
-     ('fold','check','call','bet','raise','all_in','allin','sb','bb','post','blind','post_sb','post_bb','small_blind','big_blind','straddle','kill_blind','ante','post_ante','dead_blind','bring_in','return','bomb_ante')
+     ('fold','check','call','bet','raise','all_in','allin','sb','bb','post','blind','post_sb','post_bb','small_blind','big_blind','straddle','kill_blind','ante','post_ante','dead_blind','bring_in','return','bomb_ante','discard')
      AND NOT coalesce((action ~ '^rit_board_[23]:([2-9tjqka](hearts|diamonds|clubs|spades),){4}[2-9tjqka](hearts|diamonds|clubs|spades)$'
        AND actor='system' AND stage='river' AND a->'seat'='0'::jsonb
        AND CASE WHEN jsonb_typeof(a->'timestamp')='number' AND a->>'timestamp' ~ '^[0-9]+$' THEN (a->>'timestamp')::numeric<=9007199254740991 ELSE false END
        AND (SELECT count(DISTINCT card) FROM unnest(string_to_array(split_part(action,':',2),',')) card)=5),false)
+     OR (action='discard' AND (amount IS DISTINCT FROM 0 OR jsonb_typeof(a->'amount') IS DISTINCT FROM 'number' OR stage NOT IN ('pineapple_discard','flop','turn','river')))
      OR (action='bomb_ante' AND (a->>'origin' IS DISTINCT FROM 'forced' OR a->'dead' IS DISTINCT FROM 'true'::jsonb
        OR stage IS DISTINCT FROM 'preflop' OR amount IS NULL OR amount<=0))
      OR stage IS NULL OR stage='' OR actor IS NULL OR actor=''

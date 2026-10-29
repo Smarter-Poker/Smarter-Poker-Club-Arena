@@ -58,12 +58,20 @@ function publicActionCounts(
         'dead_blind',
         'bring_in',
         'bomb_ante',
+        'discard',
         // Uncalled chips returning to their owner are settlement bookkeeping.
         'return',
       ].includes(action) ||
       typeof actor !== 'string' ||
       !actor ||
       !stage
+    )
+      return null;
+    if (
+      action === 'discard' &&
+      (typeof a.amount !== 'number' ||
+        a.amount !== 0 ||
+        !['pineapple_discard', 'flop', 'turn', 'river'].includes(stage))
     )
       return null;
     if (

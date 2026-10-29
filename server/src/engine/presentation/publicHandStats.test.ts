@@ -21,6 +21,35 @@ const input = {
   ],
 };
 describe('committed public tendency frame', () => {
+  it.each(['pineapple_discard', 'flop', 'turn', 'river'])(
+    'ignores zero-chip Pineapple discard at %s',
+    (stage) => {
+      const frame = publicHandStatsFrame({
+        ...input,
+        actions: [
+          { action: 'bet', userId: 'a', stage: 'flop', amount: 2 },
+          { action: 'discard', userId: 'a', stage, amount: 0 },
+          { action: 'call', userId: 'a', stage: 'turn', amount: 2 },
+        ],
+      })!;
+      expect(frame.players).toEqual([
+        { user_id: 'a', vpip: true, pfr: false, won: true, aggressive_actions: 1, call_actions: 1 },
+      ]);
+    }
+  );
+  it.each([
+    { stage: 'preflop', amount: 0 },
+    { stage: 'pineapple_discard', amount: 1 },
+  ])('rejects malformed discard $stage/$amount', (discard) => {
+    const frame = publicHandStatsFrame({
+      ...input,
+      actions: [
+        { action: 'call', userId: 'a', stage: 'flop', amount: 2 },
+        { action: 'discard', userId: 'a', ...discard },
+      ],
+    })!;
+    expect(frame.players).toEqual([{ user_id: 'a', vpip: true, pfr: false, won: true }]);
+  });
   it.each(recordedBookkeeping)(
     'preserves anonymized recorded public history: $name',
     (recorded) => {

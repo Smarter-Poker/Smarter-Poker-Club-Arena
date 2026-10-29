@@ -105,7 +105,41 @@ function stepsOf(file: string): Step[] {
 
 const WORKFLOWS = readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f));
 
+function isGitHubHostedRunner(runsOn: string): boolean {
+  return (
+    runsOn === 'ubuntu-latest' ||
+    ['ca-linux-4core', 'ca-linux-8core'].some(
+      (label) =>
+        runsOn ===
+        "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+          label +
+          "' || 'ubuntu-latest' }}"
+    )
+  );
+}
+
 describe('a browser install never gambles on the apt lock', () => {
+  it('only the exact approved repository route admits paid hosted labels', () => {
+    for (const label of ['ca-linux-4core', 'ca-linux-8core']) {
+      const route =
+        "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+        label +
+        "' || 'ubuntu-latest' }}";
+      expect(isGitHubHostedRunner(route)).toBe(true);
+      for (const unknown of [
+        route.replace('1132369872', '42'),
+        route.replace('Smarter-Software-PIQ', 'other'),
+        route.replace(label, 'self-hosted'),
+        route.replace('ubuntu-latest', 'self-hosted'),
+        label,
+        'self-hosted',
+        '',
+      ]) {
+        expect(isGitHubHostedRunner(unknown)).toBe(false);
+      }
+    }
+  });
+
   it('finds the workflows at all', () => {
     // A glob that silently matches nothing is a green test that checks
     // nothing - the exact shape 10.86 is about. Prove the corpus is real
@@ -121,7 +155,7 @@ describe('a browser install never gambles on the apt lock', () => {
     for (const file of WORKFLOWS) {
       for (const step of stepsOf(file)) {
         if (!step.body.includes('--with-deps')) continue;
-        if (step.runsOn === 'ubuntu-latest') {
+        if (isGitHubHostedRunner(step.runsOn)) {
           hosted += 1;
           continue;
         }

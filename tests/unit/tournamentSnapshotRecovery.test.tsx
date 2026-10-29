@@ -140,7 +140,12 @@ vi.mock('../../src/components/tournament/details/DetailOverviewTab', async (impo
             id: tournament.id,
             name: tournament.name,
             level: tournament.current_level,
-            entries: entries.map((e: any) => ({ id: e.id, chips: e.chips, table: e.table_id })),
+            entries: entries.map((e: any) => ({
+              id: e.id,
+              chips: e.chips,
+              table: e.table_id,
+              bounty: e.bounty_winnings,
+            })),
             tables: tables.map((t: any) => t.id),
             isRegistered,
           })}
@@ -257,6 +262,35 @@ afterEach(() => {
 });
 
 describe('Tournament details snapshot recovery', () => {
+  it('carries received bounties through initial load, realtime and reconnect', async () => {
+    rows('tournament_players', {
+      data: [entry('entry-a', { bounty_winnings: '12.25' })],
+      error: null,
+    });
+    render(<Page />);
+    await flush();
+    expect(snapshot().entries[0].bounty).toBe(12.25);
+    const channel = fixture.channels.find((c) =>
+      c.bindings.some((b: any) => b.filter.table === 'tournament_players')
+    );
+    const changed = channel.bindings.find(
+      (b: any) => b.filter.table === 'tournament_players'
+    ).callback;
+    act(() => changed({ eventType: 'UPDATE', new: entry('entry-a', { bounty_winnings: '25.5' }) }));
+    await flush();
+    expect(snapshot().entries[0].bounty).toBe(25.5);
+    act(() => changed({ eventType: 'UPDATE', new: entry('entry-a', { chips: 600 }) }));
+    await flush();
+    expect(snapshot().entries[0].bounty).toBe(25.5);
+    rows('tournament_players', {
+      data: [entry('entry-a', { bounty_winnings: '40' })],
+      error: null,
+    });
+    act(() => update());
+    await flush();
+    expect(snapshot().entries[0].bounty).toBe(40);
+  });
+
   it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
     'keeps the footer caption compact while preserving late-entry context for %s',
     async (clubId) => {

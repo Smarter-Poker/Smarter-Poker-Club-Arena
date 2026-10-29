@@ -50,7 +50,7 @@ export function installNaturalAuthAdmissionDiagnosticScript(): void {
     }
   };
   let installed = false;
-  if (locks && original) {
+  if (locks && typeof original === 'function') {
     try {
       locks.request = wrapped;
       installed = locks.request === wrapped;

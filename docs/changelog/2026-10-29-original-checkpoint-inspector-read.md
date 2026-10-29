@@ -21,3 +21,11 @@ headroom calculation; satisfying it is explicitly not readiness certification.
 The existing pinned Actions observer remains the only delivery/read route.
 Native scalar and exact-file/ownership/refusal fixtures cover this mode;
 production access and publication are intentionally left to the owning task.
+
+A terminal failed release retires both request records. When and only when
+both are absent, the immutable private failed-result receipt supplies the
+original candidate/control binding. Its recovered desired source and image
+must match the still-running original engine; invocation, positive exit status
+and completion time must be valid. Partial request retirement, missing or
+changed receipts and every identity mismatch refuse. The failure attestation
+CLI is never invoked, since it can write audit state.

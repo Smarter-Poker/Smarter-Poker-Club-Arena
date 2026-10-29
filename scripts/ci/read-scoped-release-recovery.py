@@ -608,14 +608,39 @@ def inspector_intent(request, directory):
             or type(value['at']) not in (int, float) or not 946684800 <= value['at'] < 4102444800
             or value['retryAllowed'] is not False):
         raise ValueError('Inspector intent unknown')
-    # Both existing six-line durable release records must bind this control and
-    # candidate. A checkpoint intent does not itself store the candidate SHA.
-    rows = read_lines(directory, request['runKey'] + '.request')
-    original = read_lines(directory, request['runKey'] + '.intent')
-    control, _, _ = pending_metadata(request, rows, original, None, None)
-    if control != value['controlSha']:
-        raise ValueError('Inspector control differs')
     return value
+
+
+def inspector_binding(request, directory, root_fd, intent):
+    # Terminal failure retires BOTH request records, not the independent
+    # checkpoint intent. Partial retirement never selects the receipt route.
+    rows = read_lines(directory, request['runKey'] + '.request', optional=True)
+    original = read_lines(directory, request['runKey'] + '.intent', optional=True)
+    if rows is not None or original is not None:
+        if rows is None or original is None:
+            raise ValueError('Inspector partial request records')
+        control, _, _ = pending_metadata(request, rows, original, None, None)
+        if control != intent['controlSha']:
+            raise ValueError('Inspector control differs')
+        return {'kind': 'retained_request', 'rows': rows, 'intent': original}
+    result_fd = os.open('engine-release-results', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    try:
+        result = read_json(result_fd, request['runKey'] + '.json', private=True)
+    finally:
+        os.close(result_fd)
+    fields = {'schema', 'runId', 'result', 'sha', 'controlSha', 'invocationId',
+              'transactionExitStatus', 'recoveredDesiredSha', 'recoveredDesiredImageId', 'completedAt'}
+    if (set(result) != fields or type(result['schema']) is not int or result['schema'] != 1
+            or result['runId'] != request['runKey'] or result['result'] != 'failed'
+            or result['sha'] != request['releaseSha'] or result['controlSha'] != intent['controlSha']
+            or result['recoveredDesiredSha'] != intent['source']
+            or not isinstance(result['invocationId'], str) or not INVOCATION.fullmatch(result['invocationId'])
+            or not isinstance(result['recoveredDesiredImageId'], str)
+            or not re.fullmatch('sha256:[0-9a-f]{64}', result['recoveredDesiredImageId'])
+            or type(result['transactionExitStatus']) is not int or not 1 <= result['transactionExitStatus'] <= 255
+            or type(result['completedAt']) is not int or not intent['at'] <= result['completedAt'] < 4102444800):
+        raise ValueError('Inspector retired failure receipt unknown')
+    return {'kind': 'retired_failure', 'result': result}
 
 
 def inspector_endpoint(raw, at):
@@ -680,6 +705,7 @@ def inspector_remote(request, root_fd):
     try:
         try:
             intent = inspector_intent(request, directory)
+            binding = inspector_binding(request, directory, root_fd, intent)
         except (OSError, ValueError):
             raise ScopedRefusal('inspector', 'intent_unavailable') from None
         before = inspector_identity(deadline)
@@ -687,6 +713,9 @@ def inspector_remote(request, root_fd):
         if (intent['container'] != before['container'] or intent['startedAt'] != before['startedAt']
                 or str(intent['hostPid']) != before['hostPid'] or intent['instance'] != health['instance']):
             return answer
+        if (binding['kind'] == 'retired_failure'
+                and binding['result']['recoveredDesiredImageId'] != before['image']):
+            raise ScopedRefusal('inspector', 'identity_changed')
         label = inspector_command(['docker', 'image', 'inspect', '--format',
             '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256).decode().strip()
         if label != intent['source']:
@@ -721,7 +750,8 @@ def inspector_remote(request, root_fd):
                     else:
                         answer['reason'] = 'native_read_unproved'
         if (before != inspector_identity(deadline) or health != inspector_health(deadline)
-                or intent != inspector_intent(request, directory)):
+                or intent != inspector_intent(request, directory)
+                or binding != inspector_binding(request, directory, root_fd, intent)):
             raise ScopedRefusal('inspector', 'identity_changed')
         return answer
     finally:

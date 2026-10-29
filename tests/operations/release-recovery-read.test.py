@@ -681,5 +681,58 @@ class InspectorTests(unittest.TestCase):
             target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close()
 
 
+    def retired(self):
+        for suffix in ['.request','.intent']:(self.d/(REQUEST['runKey']+suffix)).unlink()
+        directory=self.root/'engine-release-results';directory.mkdir()
+        self.receipt=directory/(REQUEST['runKey']+'.json')
+        self.failed={'schema':1,'runId':REQUEST['runKey'],'result':'failed','sha':REQUEST['releaseSha'],
+            'controlSha':self.intent['controlSha'],'invocationId':'f'*32,'transactionExitStatus':1,
+            'recoveredDesiredSha':R.EED,'recoveredDesiredImageId':self.identity['image'],'completedAt':int(self.intent['at'])+30}
+        self.write_failed()
+    def write_failed(self):
+        self.receipt.write_text(json.dumps(self.failed));self.receipt.chmod(0o600)
+    def test_retired_failure_preserves_original_closed_and_owned_read(self):
+        self.retired()
+        v,_=self.run_probe([{'state':'closed','endpointSha256':None}]);self.assertEqual(v['status'],'closed')
+        v,_=self.run_probe([{'state':'open','endpointSha256':self.digest},{'state':'owned','endpointSha256':self.digest,'native':self.native}]);self.assertEqual(v['status'],'owned')
+        self.assertNotIn('invocationId',json.dumps(v));self.assertNotIn('transactionExitStatus',json.dumps(v))
+    def test_retired_missing_receipt_refuses_before_any_probe(self):
+        self.retired();self.receipt.unlink()
+        with patch.object(R,'inspector_probe') as probe,self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        probe.assert_not_called()
+    def test_retired_wrong_control_target_and_desired_refuse(self):
+        self.retired()
+        for key,value in [('controlSha','e'*40),('sha','e'*40),('runId','1-1'),('recoveredDesiredSha','e'*40),('result','sealed')]:
+            original=dict(self.failed);self.failed[key]=value;self.write_failed()
+            with patch.object(R,'inspector_probe') as probe,self.subTest(key=key),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();self.failed=original
+    def test_retired_wrong_image_and_failure_metadata_refuse(self):
+        self.retired()
+        for key,value in [('recoveredDesiredImageId','sha256:'+'e'*64),('schema',True),('transactionExitStatus',0),('transactionExitStatus',True),('invocationId','bad'),('completedAt',self.intent['at']-1),('completedAt',4102444800),('raw','private')]:
+            original=dict(self.failed);self.failed[key]=value;self.write_failed()
+            with patch.object(R,'inspector_probe') as probe,self.subTest(key=key),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();self.failed=original
+    def test_partial_request_records_never_fall_back_to_valid_failure(self):
+        self.retired()
+        for suffix in ['.request','.intent']:
+            path=self.d/(REQUEST['runKey']+suffix);path.write_text('private invalid retained record');path.chmod(0o600)
+            with patch.object(R,'inspector_probe') as probe,self.subTest(suffix=suffix),self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+            probe.assert_not_called();path.unlink()
+    def test_changed_retired_receipt_invalidates_closed_observation(self):
+        self.retired()
+        def change(*args):
+            self.failed['invocationId']='e'*32;self.write_failed()
+            return {'state':'closed','endpointSha256':None}
+        with patch.object(R,'inspector_command',side_effect=self.command),patch.object(R,'inspector_probe',side_effect=change),self.assertRaises(R.ScopedRefusal) as caught:R.remote(self.request)
+        self.assertEqual(caught.exception.code,'identity_changed')
+    def test_retired_receipt_permissions_symlinks_and_oversize_refuse(self):
+        self.retired();self.receipt.chmod(0o644)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        self.write_failed();self.receipt.write_text('x'*65537)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+        self.receipt.unlink();self.receipt.symlink_to(self.path)
+        with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+
+
 if __name__ == '__main__':
     unittest.main()

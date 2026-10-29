@@ -233,8 +233,8 @@
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 31582,
-      "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
+      "bytes": 32026,
+      "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3454,
@@ -4738,6 +4738,21 @@
         "current": {
           "bytes": 44380,
           "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+        }
+      }
+    }
+  },
+  "handHistoryIncidentIdentitySourceAudit20261029": {
+    "reason": "Reviewed four additive lines registering the hand-history identity fixture, migration and native runner and invoking it through the existing composed alert qualification. No cash source, financial assertion, native scheduler test, historical qualification state or verdict changes. This refresh records current source identity only, not financial recertification.",
+    "changes": {
+      "scripts/ci/test-production-alert-core-postgres.py": {
+        "previous": {
+          "bytes": 31582,
+          "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
+        },
+        "current": {
+          "bytes": 32026,
+          "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
         }
       }
     }

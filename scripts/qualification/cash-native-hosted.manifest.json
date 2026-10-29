@@ -267,8 +267,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4354,5 +4354,19 @@
       "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
     },
     "validation": "Eight sole-input routing cases fail before, all65horse routing cases pass after; connected native horse chain passes timing31 and budget27."
+  },
+  "horseTurnCensusEnforcement20261029": {
+    "reason": "Reviewed the exact additive eight-line Accounting PostgreSQL shard3 horse census enforcement step. Existing signed PG17/pg_cron setup, cash-native inputs, financial assertions, deadlines, matrix, status SOURCE_ONLY_UNRUN and all historical audits remain unchanged. Current workflow identity only; no cash native execution, financial recertification or production claim.",
+    "previousWorkflowPin": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "currentWorkflowPin": {
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
+    },
+    "existing_cash_native_execution_performed": false,
+    "hosted_execution_performed": false,
+    "financial_recertification": false
   }
 }

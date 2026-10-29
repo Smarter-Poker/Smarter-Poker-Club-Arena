@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * HAND REVIEW
  *
@@ -100,7 +101,7 @@ export default function ClubHandReviewPage() {
   const [resolvedScope, setResolvedScope] = useState<HandReviewScope | null>(null);
   const [state, setState] = useState<PageState>('loading');
   const [flags, setFlags] = useState<HandFlag[]>([]);
-  const [filter, setFilter] = useState<QueueFilter>('open');
+  const [filter, setFilter] = usePlayerPreference<QueueFilter>('ClubHandReviewPage:filter', 'open');
   const [busyFlag, setBusyFlag] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState<Record<string, string>>({});
   const [handNumber, setHandNumber] = useState('');
@@ -135,7 +136,6 @@ export default function ClubHandReviewPage() {
     setResolvedScope(null);
     setState('loading');
     setFlags([]);
-    setFilter('open');
     setBusyFlag(null);
     setReplyDraft({});
     setHandNumber('');

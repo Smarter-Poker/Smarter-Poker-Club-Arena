@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  COMMERCE DESK - platform staff decide refunds and run the diamond catalog
@@ -459,7 +460,10 @@ type QueueFilter = RefundState | 'all';
 
 function RefundQueue({ me }: { me: string | null }) {
   const isMounted = useIsMounted();
-  const [filter, setFilter] = useState<QueueFilter>('requested');
+  const [filter, setFilter] = usePlayerPreference<QueueFilter>(
+    'admin/CommerceDeskPage:filter',
+    'requested'
+  );
   const [requests, setRequests] = useState<RefundRequest[] | null>(null);
   const [names, setNames] = useState<DeskNames>({ people: {}, clubs: {}, unions: {} });
   const [error, setError] = useState<string | null>(null);

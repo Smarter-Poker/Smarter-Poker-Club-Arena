@@ -1,5 +1,5 @@
 import type { InterfaceTheme as StoreInterfaceTheme } from '../stores/useSettingsStore';
-import { createMutationId } from './mutationId';
+import { beginTableSettingIntent, confirmTableSettingIntent } from './tableSettingIntents';
 import { supabase } from './supabase';
 
 export type InterfaceTheme = StoreInterfaceTheme;
@@ -83,11 +83,12 @@ const writeTails = new Map<string, Promise<void>>();
 
 export async function persistInterfaceTheme(
   userId: string,
-  theme: InterfaceTheme
+  theme: InterfaceTheme,
+  recoveryId?: string
 ): Promise<PersistInterfaceThemeResult> {
   if (!userId) return { ok: false, error: new Error('not signed in') };
 
-  const mutationId = createMutationId();
+  const mutationId = recoveryId ?? beginTableSettingIntent(userId, 'interface-theme', theme);
   const previousTail = writeTails.get(userId) ?? Promise.resolve();
   const task = previousTail.then(async (): Promise<unknown | undefined> => {
     let lastError: unknown;
@@ -104,5 +105,6 @@ export async function persistInterfaceTheme(
   const error = await task;
   if (writeTails.get(userId) === tail) writeTails.delete(userId);
 
+  if (!error) confirmTableSettingIntent(userId, 'interface-theme', mutationId);
   return error ? { ok: false, error } : { ok: true };
 }

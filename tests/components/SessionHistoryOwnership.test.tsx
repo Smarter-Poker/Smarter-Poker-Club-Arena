@@ -86,6 +86,7 @@ async function resolve(index: number, data: unknown[], error: unknown = null) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   mocks.userId = 'player-a';
   mocks.reads.length = 0;
   mocks.error.mockReset();

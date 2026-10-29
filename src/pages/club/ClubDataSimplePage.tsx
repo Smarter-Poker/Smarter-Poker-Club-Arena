@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * CLUB DATA (the owner's everyday screen)
  * ============================================================================
@@ -213,12 +214,18 @@ export default function ClubDataSimplePage() {
   const clubParam = params.clubId || searchParams.get('club') || '';
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
-  const [preset, setPreset] = useState<Preset>(1);
+  const [preset, setPreset] = usePlayerPreference<Preset>('club/ClubDataSimplePage:preset', 1);
   const [endDate, setEndDate] = useState<string>(() => clubDataToday());
   const observedDayRef = useRef(endDate);
-  const [game, setGame] = useState<GameFilter>('ALL');
-  const [stakes, setStakes] = useState<StakesFilter>('ALL');
-  const [searchInput, setSearchInput] = useState('');
+  const [game, setGame] = usePlayerPreference<GameFilter>('club/ClubDataSimplePage:game', 'ALL');
+  const [stakes, setStakes] = usePlayerPreference<StakesFilter>(
+    'club/ClubDataSimplePage:stakes',
+    'ALL'
+  );
+  const [searchInput, setSearchInput] = usePlayerPreference(
+    'club/ClubDataSimplePage:searchInput',
+    ''
+  );
   const [search, setSearch] = useState('');
   const [playerResults, setPlayerResults] = useState<{
     key: string;

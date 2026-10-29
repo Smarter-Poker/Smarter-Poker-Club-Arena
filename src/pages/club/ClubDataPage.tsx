@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * CLUB DATA
  * ============================================================================
@@ -884,12 +885,15 @@ export default function ClubDataPage() {
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
   const [clubName, setClubName] = useState<string>('');
   const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
-  const [preset, setPreset] = useState<PresetId>(14);
+  const [preset, setPreset] = usePlayerPreference<PresetId>('club/ClubDataPage:preset', 14);
   const [endDate, setEndDate] = useState<string>(() => chicagoDay());
-  const [game, setGame] = useState<GameFilter>('ALL');
-  const [stakes, setStakes] = useState<StakesFilter>('ALL');
-  const [gameSort, setGameSort] = useState<GameSort>('recent');
-  const [searchInput, setSearchInput] = useState('');
+  const [game, setGame] = usePlayerPreference<GameFilter>('club/ClubDataPage:game', 'ALL');
+  const [stakes, setStakes] = usePlayerPreference<StakesFilter>('club/ClubDataPage:stakes', 'ALL');
+  const [gameSort, setGameSort] = usePlayerPreference<GameSort>(
+    'club/ClubDataPage:gameSort',
+    'recent'
+  );
+  const [searchInput, setSearchInput] = usePlayerPreference('club/ClubDataPage:searchInput', '');
   const [search, setSearch] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [, setGameCursor] = useState<PageCursor | null>(null);
@@ -909,8 +913,8 @@ export default function ClubDataPage() {
   const [ledgerSource, setLedgerSource] = useState<'cold' | 'cached' | 'live' | 'degraded'>('cold');
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
-  const [advanced, setAdvanced] = useState(false);
-  const [tab, setTab] = useState<'games' | 'players'>('games');
+  const [advanced, setAdvanced] = usePlayerPreference('club/ClubDataPage:advanced', false);
+  const [tab, setTab] = usePlayerPreference<'games' | 'players'>('club/ClubDataPage:tab', 'games');
   /** Read by the poll/visibility handlers, which must not re-register per tab. */
   const tabRef = useRef<'games' | 'players'>('games');
   useEffect(() => {
@@ -919,7 +923,10 @@ export default function ClubDataPage() {
   const [players, setPlayers] = useState<PlayerBreakdown | null>(null);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
-  const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
+  const [playerSort, setPlayerSort] = usePlayerPreference<PlayerSort>(
+    'club/ClubDataPage:playerSort',
+    'winners'
+  );
   const [, setPlayerCursor] = useState<PageCursor | null>(null);
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);

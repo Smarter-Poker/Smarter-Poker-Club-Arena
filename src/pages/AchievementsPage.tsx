@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ACHIEVEMENTS PAGE — Player Achievements & Badges with Real-Time Unlocks
@@ -558,7 +559,10 @@ export default function AchievementsPage() {
     [loadAchievements]
   );
 
-  const [sortMode, setSortMode] = useState<SortMode>('default');
+  const [sortMode, setSortMode] = usePlayerPreference<SortMode>(
+    'AchievementsPage:sortMode',
+    'default'
+  );
 
   const filteredAchievements = useMemo(() => {
     const list =

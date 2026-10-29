@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RATE AUDIT PAGE — Commission & Rake Rate Change History
@@ -134,7 +135,7 @@ export default function RateAuditPage() {
      reads destructured only `data`, so a refused or failed query rendered an
      empty audit table indistinguishable from a clean history. */
   const [storedError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [filter, setFilter] = usePlayerPreference<FilterType>('RateAuditPage:filter', 'all');
   const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   /* WHOSE RATES (2026-09-10). This route had no role gate and no club filter,

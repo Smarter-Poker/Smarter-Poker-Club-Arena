@@ -106,6 +106,7 @@ function rows(prefix: string, count: number) {
   }));
 }
 beforeEach(() => {
+  localStorage.clear();
   state.userId = 'a';
   state.search = '';
   state.refresh = null;

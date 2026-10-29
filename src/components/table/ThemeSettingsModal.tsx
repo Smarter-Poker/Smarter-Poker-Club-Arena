@@ -1,3 +1,8 @@
+import {
+  pendingAppearancePatch,
+  pendingAppearanceIntents,
+} from '../../lib/appearanceIntentJournal';
+import { resumePendingAppearance } from '../../lib/applyTableAppearance';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THEME SETTINGS MODAL — Bible V8 §11.2
@@ -1459,6 +1464,7 @@ export function ThemeSettingsModal({
             // tile at all and the tab looks like it forgot the user's choice.
             cards_id: normalizeCardBack(row?.cards_id || DEFAULT_SELECTION.cards_id),
             faceDeckId: normalizeFaceDeckId(row?.face_deck_id),
+            ...pendingAppearancePatch(userId, gameType),
           });
           themeLoadReadyScopeRef.current = requestedScope;
           setThemeLoadState('ready');
@@ -1524,10 +1530,24 @@ export function ThemeSettingsModal({
     };
   }, [appearanceRealtime.state, isOpen, userId]);
 
+  // Resume an interrupted choice once on this explicit editor opening. The
+  // existing observation cadence below/above never retries a save.
+  useEffect(() => {
+    if (!isOpen || !userId || !pendingAppearanceIntents(userId).length) return;
+    let current = true;
+    void resumePendingAppearance(userId).then(() => {
+      if (!current) return;
+      themeReadRef.current = null;
+      setThemeLoadRevision((revision) => revision + 1);
+    });
+    return () => {
+      current = false;
+    };
+  }, [isOpen, userId]);
+
   const handleUiModeChange = useCallback(
     async (mode: InterfaceTheme) => {
       if (mode === uiPreference) return;
-      const previous = uiPreference;
       const revision = ++modeRevisionRef.current;
       setUiMode(mode, userId || undefined);
 
@@ -1536,8 +1556,7 @@ export function ThemeSettingsModal({
       setModeSaving(true);
       const result = await persistInterfaceTheme(userId, mode);
       if (!result.ok && modeRevisionRef.current === revision) {
-        setUiMode(previous, userId);
-        toast.error('Could Not Save Interface Mode. Please Try Again.');
+        toast.error('Interface Mode Saved On This Device Only. Could Not Sync To Your Account.');
         reportError(result.error, 'ThemeSettingsModal.Interface_mode_save_failed');
       }
       if (modeRevisionRef.current === revision) setModeSaving(false);
@@ -1546,7 +1565,7 @@ export function ThemeSettingsModal({
   );
 
   /**
-   * APPLY NOW, PERSIST, AND UNDO IF THE PERSIST FAILED.
+   * APPLY NOW AND PERSIST. INTERRUPTED SAVES KEEP THE CHOSEN VALUE.
    *
    * Dan 2026-08-25: a selection must "actually change and update in real time
    * when selected" AND "need a success toast or save feature". Both, and they
@@ -1555,8 +1574,8 @@ export function ThemeSettingsModal({
    *   1. the new selection is broadcast on the bus IMMEDIATELY, so the felt
    *      under the modal repaints on the tap rather than after a round trip;
    *   2. it is written to user_theme_settings;
-   *   3. if that write fails the UI is put BACK — state, bus and all — and the
-   *      failure is reported. It previously toasted the error while leaving the
+   *   3. a definitive refusal restores the prior value; a network interruption
+   *      keeps the choice and original request pending, and reports the failure. It previously toasted the error while leaving the
    *      tile ticked and the table repainted, so the next time the player
    *      opened the modal their choice had silently reverted.
    */
@@ -1644,7 +1663,8 @@ export function ThemeSettingsModal({
       /* Optimistic, then honest: if the save could not happen at all (no
          signed-in user), put the tick back where it was rather than leaving
          the player looking at a selection the server never received. A
-         FAILED write already restores `previous` inside handleSave. */
+         definitive refusal restores `previous` inside handleSave; interrupted
+         writes retain the selected value and original mutation identity. */
       const before = selectionRef.current;
       const next = { ...before, ...newSel };
       replaceSelection(next);

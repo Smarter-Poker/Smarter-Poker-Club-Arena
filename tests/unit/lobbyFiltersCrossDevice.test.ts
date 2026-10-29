@@ -104,7 +104,7 @@ describe('a late remote value can never land on top of a live edit', () => {
        it can drift while staying green. That exact mistake cost this estate a
        39-minute publish outage on 2026-08-28, and the repo has a meta-test
        forbidding it, which is what caught this on the first CI run. */
-    const effect = sliceStatement(src, 'void fetchRemoteFilters(clubId)');
+    const effect = sliceStatement(src, 'void fetchRemoteFilters(clubId, ownerId)');
     expect(effect).toMatch(/touchedRef\.current/);
   });
 });

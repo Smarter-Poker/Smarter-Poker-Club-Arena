@@ -1,3 +1,4 @@
+import type { HorsePlanReadCapture } from './HorsePlanReadReceipt.js';
 import type { HorseRangeConsumptionCapture } from './HorseRangeConsumptionReceipt.js';
 import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
@@ -3821,7 +3822,8 @@ export class HorseLogic {
     style: HorseStyle = 'balanced',
     mods: HorseProfileMods = {},
     opts: HorseDecideOpts = {},
-    rangeCapture?: HorseRangeConsumptionCapture
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     try {
       if (
@@ -3844,7 +3846,15 @@ export class HorseLogic {
           return shortAllInCallFloorOutsideGraph(
             holdemPremiumAggressionOutsideGraph(
               pairedBoardFoldOutsideGraph(
-                this.decideInternal(player, gameState, style, mods, opts, rangeCapture),
+                this.decideInternal(
+                  player,
+                  gameState,
+                  style,
+                  mods,
+                  opts,
+                  rangeCapture,
+                  planReadCapture
+                ),
                 player,
                 gameState,
                 opts
@@ -3863,7 +3873,15 @@ export class HorseLogic {
       return shortAllInCallFloorOutsideGraph(
         holdemPremiumAggressionOutsideGraph(
           pairedBoardFoldOutsideGraph(
-            this.decideInternal(player, gameState, style, mods, opts, rangeCapture),
+            this.decideInternal(
+              player,
+              gameState,
+              style,
+              mods,
+              opts,
+              rangeCapture,
+              planReadCapture
+            ),
             player,
             gameState,
             opts
@@ -3876,6 +3894,7 @@ export class HorseLogic {
         gameState
       );
     } catch (err) {
+      planReadCapture?.refuse();
       // Absolute safety net: never let a horse hang the table.
       // V13: it used to swallow the error entirely. This is the innermost and
       // most consequential catch in the brain — if a systematic defect were
@@ -3914,7 +3933,8 @@ export class HorseLogic {
     styleName: HorseStyle,
     mods: HorseProfileMods,
     opts: HorseDecideOpts = {},
-    rangeCapture?: HorseRangeConsumptionCapture
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     phase7EquityEvidence = null;
     phase10EquityEvidence = null;
@@ -4091,7 +4111,8 @@ export class HorseLogic {
           opts.handReading !== false,
           v7,
           opts,
-          rangeCapture
+          rangeCapture,
+          planReadCapture
         );
       }
       // MANIAC CALL-DOWN, inside the reference like the floor call-down, so
@@ -6380,7 +6401,8 @@ export class HorseLogic {
     useHR: boolean = true,
     useV7: boolean = true,
     opts: HorseDecideOpts = {},
-    rangeCapture?: HorseRangeConsumptionCapture
+    rangeCapture?: HorseRangeConsumptionCapture,
+    planReadCapture?: HorsePlanReadCapture
   ): HorseDecision {
     const planHandKey = horsePlanHandKey(gs.actionHistory, opts.mindPlanContext);
     const useSizeReads = opts.v7SizeReads ?? useV7;
@@ -7487,6 +7509,7 @@ export class HorseLogic {
     // planned barrels continue on safe cards; unplanned stabs give up.
     const handKey = useBarrels ? planHandKey : null;
     const barrelPlan = useBarrels ? HorseMind.getPlan(handKey, player.user_id) : undefined;
+    if (useBarrels) planReadCapture?.note('barrel', handKey, player.user_id, street, barrelPlan);
     /**
      * ═══ V39 THE NEXT CARD, READ AGAINST WHAT THE BET EXPECTED (2026-09-03) ═══
      * The bet on the previous street recorded which cards were good for hero
@@ -7507,6 +7530,8 @@ export class HorseLogic {
             `${newCard39.rank}${newCard39.suit[0]}`
           )
         : undefined;
+    if (useBarrels && prevStreet39 && newCard39)
+      planReadCapture?.note('outlook', handKey, player.user_id, prevStreet39, outlook39);
     if (tele15 && outlook39) noteFire(`v39_outlook_${outlook39}`);
     // ═══ TOURNAMENT AGGRESSION (Dan 2026-10-25) ═══════════════════════════
     // Real players called the tournament horses passive and scared. In 48
@@ -9482,6 +9507,7 @@ export class HorseLogic {
     let planCallOnly23 = false;
     if (useV23Plan && raisedAfterAggr) {
       const plan23 = HorseMind.getRaisePlan(planHandKey, player.user_id, street);
+      planReadCapture?.note('raise', planHandKey, player.user_id, street, plan23);
       // V28: the postflop mirror of the V25 commitment law — a stack that
       // already put ~30% of itself in this hand does not raise-FOLD at any
       // reasonable price. investedShare is hero's total commitment this hand

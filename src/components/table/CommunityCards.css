@@ -898,6 +898,10 @@
    ================================================================================= */
 
 @media (prefers-reduced-motion: reduce) {
+  .community-cards__rabbit-flip {
+    will-change: auto;
+  }
+
   .community-cards__card--flop-deal,
   .community-cards__flip,
   .community-cards__rabbit-flip,

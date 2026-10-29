@@ -217,7 +217,7 @@ describe('the engine embeds through a NAMED relationship, so a second key cannot
     // people learn to edit rather than read (CLAUDE.md 10.86).
     const flat = launch.replace(/\s+/g, ' ');
     expect(flat).toContain(
-      ".select( 'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)' )"
+      ".select( 'id, user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)' )"
     );
   });
 

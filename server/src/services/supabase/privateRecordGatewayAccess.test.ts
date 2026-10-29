@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   createPrivateRecordGatewayAccess,
+  privateRecordGatewaySourceReady,
   PRIVATE_RECORD_GATEWAY_API_URL,
   PRIVATE_RECORD_GATEWAY_PUBLISHABLE_KEY,
 } from './privateRecordGatewayAccess.js';
@@ -54,12 +55,7 @@ describe('gateway-only actor-bound read access', () => {
       ])
     );
     expect(await access.authorize('actor-one', 'two', 'member-record:foreign')).toBe(false);
-    expect(await access.sourceReady()).toBe(true);
-    expect(requests.at(-1)).toEqual({
-      path: '/rest/v1/rpc/fn_ca_private_record_gateway_ready',
-      token: null,
-      body: {},
-    });
+    expect(requests.every((r) => r.token !== null)).toBe(true);
     expect(
       requests.every((r) => r.path === '/auth/v1/user' || r.path.startsWith('/rest/v1/rpc/'))
     ).toBe(true);
@@ -87,28 +83,44 @@ describe('gateway-only actor-bound read access', () => {
     });
   });
   it('retries only bounded pre-execution PGRST 503s', async () => {
-    const responses = [reply({ code: 'PGRST002' }, 503), reply(true)];
+    const responses = [reply({ id: 'one' }), reply({ code: 'PGRST002' }, 503), reply(true)];
     const fetch = vi.fn(async () => responses.shift()!);
     const wait = vi.fn(async () => {});
-    expect(await createPrivateRecordGatewayAccess(environment, { fetch, wait }).sourceReady()).toBe(
-      true
-    );
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      await createPrivateRecordGatewayAccess(environment, { fetch, wait }).authenticate('actor')
+    ).toEqual({ userId: 'one' });
+    expect(fetch).toHaveBeenCalledTimes(3);
     expect(wait).toHaveBeenCalledWith(300);
     for (const data of [{ code: 'OTHER503' }, { message: 'unknown' }]) {
       const raw = vi.fn(async () => reply(data, 503));
-      await expect(
-        createPrivateRecordGatewayAccess(environment, { fetch: raw, wait }).sourceReady()
-      ).rejects.toThrow();
+      expect(
+        await createPrivateRecordGatewayAccess(environment, { fetch: raw, wait }).authenticate(
+          'actor'
+        )
+      ).toMatchObject({ denied: 'unavailable' });
       expect(raw).toHaveBeenCalledTimes(1);
     }
     const network = vi.fn(async () => {
       throw Error('network');
     });
-    await expect(
-      createPrivateRecordGatewayAccess(environment, { fetch: network, wait }).sourceReady()
-    ).rejects.toThrow('network');
+    expect(
+      await createPrivateRecordGatewayAccess(environment, { fetch: network, wait }).authenticate(
+        'actor'
+      )
+    ).toMatchObject({ denied: 'unavailable' });
     expect(network).toHaveBeenCalledTimes(1);
+  });
+  it('queries readiness only on the supplied dedicated raw session', async () => {
+    const query = vi.fn(async () => ({ rows: [{ ready: true }] }));
+    const client = { query } as any;
+    expect(await privateRecordGatewaySourceReady(client)).toBe(true);
+    expect(query).toHaveBeenCalledWith(
+      'SELECT public.fn_private_record_transport_ready() AS ready'
+    );
+    query.mockResolvedValueOnce({ rows: [{ ready: false }] });
+    expect(await privateRecordGatewaySourceReady(client)).toBe(false);
+    query.mockRejectedValueOnce(Error('database unavailable'));
+    await expect(privateRecordGatewaySourceReady(client)).rejects.toThrow('database unavailable');
   });
   it('bounds an unresponsive fetch and never turns it into session revocation', async () => {
     const access = createPrivateRecordGatewayAccess(environment, {

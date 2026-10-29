@@ -15,7 +15,8 @@ ALTER DATABASE postgres OWNER TO postgres;
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN;
-GRANT anon,authenticated TO postgres;
+CREATE ROLE ca_record_gateway NOLOGIN;
+GRANT anon,authenticated,ca_record_gateway TO postgres;
 SQL
 python3 - "$repo" "$work" <<'PY'
 from pathlib import Path
@@ -37,7 +38,7 @@ if "${psql[@]}" -f "$migration" > "$work/preimage-refusal.log" 2>&1; then
  echo 'Gateway access ownership drift unexpectedly accepted' >&2; exit 1
 fi
 grep -q PRIVATE_RECORD_GATEWAY_ACCESS_PREIMAGE_CHANGED "$work/preimage-refusal.log"
-[ "$("${psql[@]}" -At -c "SELECT to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NULL AND to_regprocedure('public.fn_ca_private_record_gateway_ready()') IS NULL")" = t ]
+[ "$("${psql[@]}" -At -c "SELECT to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NULL AND NOT has_function_privilege('ca_record_gateway','public.fn_private_record_transport_ready()','EXECUTE')")" = t ]
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$work/socket" -p 57651 -U fixture_admin -d postgres -c 'ALTER FUNCTION public.fn_ca_player_session_live(uuid,uuid) OWNER TO postgres'
 "${psql[@]}" -f "$migration"
 "${psql[@]}" -f "$repo/scripts/ci/fixtures/private-record-gateway-access-proof.sql"
@@ -45,7 +46,7 @@ if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then
  echo 'Gateway access migration replay unexpectedly accepted' >&2; exit 1
 fi
 grep -q PRIVATE_RECORD_GATEWAY_ACCESS_ALREADY_EXISTS "$work/replay.log"
-"${psql[@]}" -At -c "SELECT jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('fn_ca_player_session_live','fn_private_record_transport_ready','fn_ca_private_record_gateway_session_live','fn_ca_private_record_gateway_ready')" > "$work/functions.json"
+"${psql[@]}" -At -c "SELECT jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('fn_ca_player_session_live','fn_private_record_transport_ready','fn_ca_private_record_gateway_session_live')" > "$work/functions.json"
 python3 - "$repo" "$work/functions.json" > "$work/receipt.json" <<'PYRECEIPT'
 from pathlib import Path
 import sys,json,hashlib

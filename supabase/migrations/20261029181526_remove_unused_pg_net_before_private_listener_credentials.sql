@@ -5,7 +5,7 @@
 -- freeze, or replay. Recreate only through a separately qualified rollback if a
 -- future product needs HTTP webhooks; this migration never recreates the grants.
 -- https://supabase.com/kb/troubleshooting/revoking-access-to-pg_net-objects-has-no-effect
--- @live-proof: (NOT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net') AND (SELECT supabase_enabled FROM public.ca_private_record_transport_state WHERE singleton) AND NOT (SELECT rolcanlogin FROM pg_roles WHERE rolname='ca_record_gateway') AND public.fn_private_record_transport_ready())
+-- @live-proof: (NOT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_net'))
 BEGIN;
 SET LOCAL lock_timeout='500ms';
 SET LOCAL statement_timeout='5s';

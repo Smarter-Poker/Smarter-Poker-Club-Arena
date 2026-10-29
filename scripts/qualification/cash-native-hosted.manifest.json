@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252075,
-      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+      "bytes": 252649,
+      "sha256": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44380,
-      "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+      "bytes": 44520,
+      "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4741,5 +4741,31 @@
         }
       }
     }
+  },
+  "privateGatewaySafetySourceAudit20261029": {
+    "review": "Reviewed Accounting shard2 isolated pg_net build prerequisites and additive exact gateway native/fixture classification. Existing cash native commands, financial source/fixtures, assertions, input set, race permutations and deadlines unchanged. Current CI input identity only; not a financial qualification restamp.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "current": {
+      "bytes": 252649,
+      "sha256": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
+    },
+    "financial_recertification": false,
+    "additional_changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": {
+          "bytes": 44380,
+          "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+        },
+        "current": {
+          "bytes": 44520,
+          "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+        }
+      }
+    ]
   }
 }

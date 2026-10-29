@@ -1,14 +1,13 @@
 -- Gateway-only read capabilities replace its process-wide service-role key.
 -- Existing engine clients, session semantics, topic ACLs and transport flags stay unchanged.
 -- Version reserved by scripts/new-migration.mjs.
--- @live-proof: (SELECT to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NOT NULL AND to_regprocedure('public.fn_ca_private_record_gateway_ready()') IS NOT NULL)
+-- @live-proof: (SELECT to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NOT NULL AND has_function_privilege('ca_record_gateway','public.fn_private_record_transport_ready()','EXECUTE'))
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
 DO $guard$
 BEGIN
- IF to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NOT NULL
- OR to_regprocedure('public.fn_ca_private_record_gateway_ready()') IS NOT NULL THEN
+ IF to_regprocedure('public.fn_ca_private_record_gateway_session_live()') IS NOT NULL THEN
    RAISE EXCEPTION 'PRIVATE_RECORD_GATEWAY_ACCESS_ALREADY_EXISTS';
  END IF;
  IF md5(pg_get_functiondef('public.fn_ca_player_session_live(uuid,uuid)'::regprocedure))
@@ -37,11 +36,7 @@ END $$;
 ALTER FUNCTION public.fn_ca_private_record_gateway_session_live() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.fn_ca_private_record_gateway_session_live() FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_ca_private_record_gateway_session_live() TO authenticated;
-CREATE FUNCTION public.fn_ca_private_record_gateway_ready() RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public AS $$
- SELECT public.fn_private_record_transport_ready();
-$$;
-ALTER FUNCTION public.fn_ca_private_record_gateway_ready() OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.fn_ca_private_record_gateway_ready() FROM PUBLIC,anon,authenticated,service_role;
-GRANT EXECUTE ON FUNCTION public.fn_ca_private_record_gateway_ready() TO anon,authenticated;
+-- Readiness stays on the dedicated session; no anonymous operator telemetry.
+-- GRANT changes neither the existing owner/body nor any other ACL entry.
+GRANT EXECUTE ON FUNCTION public.fn_private_record_transport_ready() TO ca_record_gateway;
 COMMIT;

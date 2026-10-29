@@ -9,7 +9,10 @@ import { createServer } from 'node:http';
 import { PrivateRecordGateway } from './transport/PrivateRecordGateway.js';
 import { PrivateRecordListener } from './services/supabase/privateRecordListener.js';
 import { defaultOpenSession } from './services/supabase/pgListenSession.js';
-import { createPrivateRecordGatewayAccess } from './services/supabase/privateRecordGatewayAccess.js';
+import {
+  createPrivateRecordGatewayAccess,
+  privateRecordGatewaySourceReady,
+} from './services/supabase/privateRecordGatewayAccess.js';
 
 // Supplied to this service by the canonical secret store, never copied from an engine file.
 const connection = process.env.PRIVATE_RECORD_GATEWAY_DATABASE_URL;
@@ -37,7 +40,7 @@ const gateway = new PrivateRecordGateway({
       readiness,
       async () => connection,
       (url) => defaultOpenSession(url, `club-arena-private-record-gateway:${process.pid}`),
-      access.sourceReady
+      privateRecordGatewaySourceReady
     ),
 });
 const server = createServer((req, res) => {

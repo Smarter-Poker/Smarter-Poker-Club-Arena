@@ -1,3 +1,4 @@
+import type { OutboxListenerClient } from './pgListenSession.js';
 import { verifySupabaseToken, type TokenVerdict } from '../../transport/wsHelpers.js';
 
 export const PRIVATE_RECORD_GATEWAY_API_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
@@ -27,7 +28,7 @@ export function createPrivateRecordGatewayAccess(
   const wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   async function request(
     path: string,
-    token?: string,
+    token: string,
     body: Record<string, unknown> = {}
   ): Promise<JsonResult> {
     // All paths and methods originate below; no generic query/write API escapes.
@@ -73,7 +74,7 @@ export function createPrivateRecordGatewayAccess(
       }
     }
   }
-  const booleanRpc = async (name: string, token?: string): Promise<boolean> => {
+  const booleanRpc = async (name: string, token: string): Promise<boolean> => {
     const result = await request(`/rest/v1/rpc/${name}`, token);
     if (result.status < 200 || result.status >= 300 || typeof result.data !== 'boolean')
       throw new Error('gateway read-only authorization unavailable');
@@ -116,6 +117,19 @@ export function createPrivateRecordGatewayAccess(
         throw new Error('record authorization unavailable');
       return result.data;
     },
-    sourceReady: () => booleanRpc('fn_ca_private_record_gateway_ready'),
   };
+}
+
+/** Operator readiness uses only the dedicated LISTEN session, never a public RPC. */
+export async function privateRecordGatewaySourceReady(
+  client: OutboxListenerClient
+): Promise<boolean> {
+  const result = await client.query('SELECT public.fn_private_record_transport_ready() AS ready');
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'rows' in result &&
+    Array.isArray(result.rows) &&
+    result.rows[0]?.ready === true
+  );
 }

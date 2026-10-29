@@ -37,8 +37,9 @@ Provider references:
 
 The gateway entry also imported the engine's privileged Supabase singleton.
 It now uses a gateway-only public-key client and the requesting player's JWT.
-Two narrowly granted boolean RPCs preserve the original live-session and source
-readiness authorities without exposing the service-role credential. The native
+One actor-bound session RPC and a dedicated-session grant on the existing
+readiness verifier preserve both authorities without exposing the service-role
+credential or anonymous operator telemetry. The native
 fixture loads the real maintained source functions and runs the production
 preimage guards unchanged. Bootstrap refuses a service-role key and installs
 only the dedicated listener URL, pinned API URL and publishable key. The engine's

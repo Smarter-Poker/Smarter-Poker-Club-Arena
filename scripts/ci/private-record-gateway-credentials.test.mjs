@@ -8,6 +8,7 @@ import {
   installGatewayCredential,
   disabledMarker,
   roleAdmissionSql,
+  requireGatewaySourceReady,
 } from './private-record-gateway-credentials.mjs';
 const password = 'f'.repeat(96);
 const canonical =
@@ -211,4 +212,39 @@ test('PG17 trusted nonsuperuser creator ADMIN edge is not listener membership pr
   const extra = audit();
   extra.memberships = [edge, edge];
   assert.throws(() => assertRoleAdmission(extra), /membership/);
+});
+
+test('dedicated source readiness requires actual true row before verification', async () => {
+  const calls = [];
+  await requireGatewaySourceReady({
+    query: async (sql) => {
+      calls.push(sql);
+      return { rows: [{ ready: true }] };
+    },
+  });
+  assert.deepEqual(calls, ['SELECT public.fn_private_record_transport_ready() AS ready']);
+  for (const result of [
+    { rows: [{ ready: false }] },
+    { rows: [] },
+    { rows: [{ ready: 'true' }] },
+    {},
+  ])
+    await assert.rejects(requireGatewaySourceReady({ query: async () => result }), /not ready/);
+  await assert.rejects(
+    requireGatewaySourceReady({
+      query: async () => {
+        throw Error('permission denied');
+      },
+    }),
+    /permission denied/
+  );
+});
+test('only exact existing read-only readiness definition is admitted', () => {
+  const value = audit();
+  value.executableDefiners = [
+    { name: 'public.fn_private_record_transport_ready', hash: '07c92fe5dc7018f15a23d34f9bb2b386' },
+  ];
+  assert.equal(assertRoleAdmission(value).name, 'ca_record_gateway');
+  value.executableDefiners[0].hash = '0'.repeat(32);
+  assert.throws(() => assertRoleAdmission(value), /unreviewed privileged/);
 });

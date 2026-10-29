@@ -145,7 +145,10 @@ try:
     sql("CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text,name text);")
     def readiness(expected):
         program = r"""
-import pg from 'pg';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+// Accounting CI installs the server lockfile, not root dependencies.
+const pg = createRequire(resolve(process.cwd(), 'server/package.json'))('pg');
 import { classifyProof, readProof } from './scripts/ci/await-certification-cleanup-safety.mjs';
 const client = new pg.Client({host:'127.0.0.1',port:Number(process.argv[2]),user:'postgres',database:'postgres',options:'-c default_transaction_read_only=on',statement_timeout:500,query_timeout:1000});
 try {

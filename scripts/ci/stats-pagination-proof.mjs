@@ -132,10 +132,15 @@ export function assertStatsPaginationProof(
         { limit: 501, search: 'river' },
       ]) ||
     !Array.isArray(evidence.bracket) ||
-    evidence.bracket.length !== 2 ||
-    evidence.bracket.some(
-      (point, i) =>
-        point.point !== ['before', 'after'][i] || point.sha !== expected || point.reason !== null
+    evidence.bracket.length !== 4 ||
+    ['before', 'after'].some((phase) =>
+      origins.some((url) => {
+        const origin = url.slice(0, -'/build-info.json'.length);
+        const matches = evidence.bracket.filter(
+          (point) => point?.point === phase && point.origin === origin
+        );
+        return matches.length !== 1 || matches[0].sha !== expected || matches[0].reason !== null;
+      })
     )
   ) {
     throw new Error(

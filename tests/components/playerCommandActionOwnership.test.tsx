@@ -725,6 +725,8 @@ it('keeps the real boundary and record mounted on recipient access invalidation 
 });
 
 it('the mounted boundary delivers authoritative access withdrawal without rereading downline', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const priorUser = useUserStore.getState().user;
   useUserStore.setState({ user: { id: state.viewerId } as never });
   const view = render(
@@ -733,9 +735,18 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
     </ClubPrivateDataBoundary>
   );
   try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    // The hook fixture exposes callbacks during render. Finish bootstrap before
+    // signalling the mounted authority lane, then own its exact response.
+    await act(async () => initial.resolve(memberDetail));
     await screen.findByRole('textbox', { name: 'Nickname' });
+    const authorityReads = state.getMemberDetail.mock.calls.length;
+    let rejectAuthority!: (error: unknown) => void;
+    const deniedAuthority = new Promise<typeof memberDetail>((_resolve, reject) => {
+      rejectAuthority = reject;
+    });
     const reads = state.getDownline.mock.calls.length;
-    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
+    state.getMemberDetail.mockReturnValueOnce(deniedAuthority);
     await act(async () => {
       masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
         clubId: '22222222-2222-4222-8222-222222222222',
@@ -744,6 +755,13 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
         scopeId: '22222222-2222-4222-8222-222222222222',
       });
     });
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1));
+    expect(state.getMemberDetail.mock.calls[authorityReads]?.slice(0, 3)).toEqual([
+      '22222222-2222-4222-8222-222222222222',
+      state.params.userId,
+      undefined,
+    ]);
+    await act(async () => rejectAuthority(new MemberAccessDeniedError()));
     expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
     expect(screen.queryByText('River Shark')).not.toBeInTheDocument();

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DIAMOND WALLET MODAL — Transaction History Popup
@@ -219,7 +220,7 @@ export default function DiamondWalletModal({
   const [transactions, setTransactions] = useState<DiamondTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = usePlayerPreference('diamondWallet.filter', 'all', 'global');
   const [balanceRevision, setBalanceRevision] = useState(0);
   const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
   /* THE HISTORY PAGES (2026-10-17). It read the newest 50 and stopped, so a

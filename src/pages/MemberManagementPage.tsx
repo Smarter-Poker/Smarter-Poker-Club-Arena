@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MEMBER MANAGEMENT - one member, everything about them
@@ -164,10 +165,21 @@ export default function MemberManagementPage() {
   const detailAbortRef = useRef<AbortController | null>(null);
   const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
-  const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
-  const [customFrom, setCustomFrom] = useState<string>(() => isoDate(new Date()));
-  const [customTo, setCustomTo] = useState<string>(() => isoDate(new Date()));
-  const [range, setRange] = useState<MemberRange>(RANGE_OVERALL);
+  const [rangeMode, setRangeMode] = usePlayerPreference<RangeMode>(
+    'MemberManagementPage:rangeMode',
+    'overall'
+  );
+  const [customFrom, setCustomFrom] = usePlayerPreference<string>(
+    'MemberManagementPage:customFrom',
+    () => isoDate(new Date())
+  );
+  const [customTo, setCustomTo] = usePlayerPreference<string>('MemberManagementPage:customTo', () =>
+    isoDate(new Date())
+  );
+  const [range, setRange] = usePlayerPreference<MemberRange>(
+    'MemberManagementPage:range',
+    RANGE_OVERALL
+  );
 
   type WalletRow = {
     user_id: string;
@@ -637,13 +649,16 @@ export default function MemberManagementPage() {
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
-  const chooseRange = useCallback((mode: RangeMode) => {
-    setRangeMode(mode);
-    if (mode === 'overall') setRange(RANGE_OVERALL);
-    if (mode === 'week') setRange(lastDaysRange(7));
-    // 'custom' waits for Confirm: re-fetching on every keystroke of a date field
-    // would fire three times before the year is finished being typed.
-  }, []);
+  const chooseRange = useCallback(
+    (mode: RangeMode) => {
+      setRangeMode(mode);
+      if (mode === 'overall') setRange(RANGE_OVERALL);
+      if (mode === 'week') setRange(lastDaysRange(7));
+      // 'custom' waits for Confirm: re-fetching on every keystroke of a date field
+      // would fire three times before the year is finished being typed.
+    },
+    [setRangeMode, setRange]
+  );
 
   const confirmCustomRange = useCallback(() => {
     if (!customFrom || !customTo) {
@@ -655,7 +670,7 @@ export default function MemberManagementPage() {
       return;
     }
     setRange({ from: customFrom, to: customTo });
-  }, [customFrom, customTo, toast]);
+  }, [customFrom, customTo, toast, setRange]);
 
   /* ── Derived ────────────────────────────────────────────────────────────── */
 

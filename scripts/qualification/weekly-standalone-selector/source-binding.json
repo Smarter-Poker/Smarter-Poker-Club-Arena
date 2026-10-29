@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 250121,
-      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
+      "bytes": 250705,
+      "sha256": "eebb38c9ac3849ef680707e40af3652a6ff01c0c82568cd97aeb1e7010e289d6"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -841,26 +841,6 @@
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
   },
-  "horseTurnCensusEnforcement20261029": {
-    "reason": "Reviewed exact eight-line additive Accounting PostgreSQL shard3 census step. PostgreSQL17 installation, signed setup, existing qualification commands, financial sources, fixtures, assertions, budgets, historical audit records and result states remain unchanged. Refresh only current workflow identity; no financial recertification, installation or live behavior claim.",
-    "previousWorkflowPin": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
-    },
-    "currentWorkflowPin": {
-      "bytes": 249046,
-      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
-    },
-    "new_census_checks": {
-      "pure_python_tests": 26,
-      "transport_tests": 10,
-      "native_postgres_assertions": 22
-    },
-    "local_results_authority": "Current exact-candidate local qualification reported by coordinating root; native PostgreSQL census independently executed in owned SSD socket-only cluster.",
-    "existing_financial_qualification_reexecuted": false,
-    "hosted_execution_performed": false,
-    "financial_recertification": false
-  },
   "durableOriginalContinuationCiIdentity20261029": {
     "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
     "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
@@ -924,24 +904,39 @@
     "financial_recertification": false,
     "execution_performed": false
   },
-  "horseCensusContinuationProtectedMainComposition20261029": {
-    "review": "Three-way composition preserves all parent historical audits, census eight-line shard3 enforcement and protected-main fourteen-line original-continuation proof/artifact step. Reviewed incoming classifier continuation/floor alternatives and six interruption/floor selector cases. Existing signed PG17 setup, financial SQL/fixtures/assertions, amounts, qualification commands, budgets and result states are unchanged. Only composed current workflow identity is renewed; incoming classifier/test pins retain their actual reviewed main-source identity. No native financial recertification, installation or live verification claim.",
-    "protected_main": "af2870a51f638572250c02dbc69f3ba118550f91",
-    "census_parent": "43aa9ec6eef39cd0b3a647c5f45abee5ce508dfe",
-    "census_workflow_pin": {
-      "bytes": 249046,
-      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
-    },
-    "main_workflow_pin": {
-      "bytes": 249502,
-      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
-    },
-    "composed_workflow_pin": {
-      "bytes": 249944,
-      "sha256": "a2761aed24c10439e325d9f435eed4b4e0f4b9dc769283d301e7561bc6b94489"
+  "hostedClientWorkerIdentity20261029": {
+    "review": "Reviewed the exact three-line client unit-shard worker override. Four Vitest workers are selected only by the existing approved repository identity on its dedicated 8-core hosted VM; fallback remains two. Existing tests, four shards, assertions, deadlines, accounting/server/native commands, financial fixtures, historical evidence and qualification states remain unchanged. Current source identity only, not renewed financial execution or certification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        },
+        "current": {
+          "bytes": 249727,
+          "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
+        }
+      }
     },
     "financial_recertification": false,
-    "existing_financial_qualification_reexecuted": false
+    "execution_performed": false
+  },
+  "publisherBacklogSelectionIdentity20261029": {
+    "review": "Reviewed unchanged financial job programs and matrices. Compiler adds only the published-baseline regression; classifier adds only the new publisher-selection authority to the existing full-qualification prefix. The publisher proves both actual origins, successful protected publisher, immutable artifact source, origin verification and ancestry before selecting the complete unpublished backlog; unknown or mixed financial backlog remains full. No financial fixture, SQL, amount, assertion, timeout, native command, historical receipt or qualification verdict is altered. Current source identity only.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 249727,
+          "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
+        },
+        "current": {
+          "bytes": 249781,
+          "sha256": "53740dec70b3d55a4c425f55d3d13974bd965c3e50ff8a79094dde50da65699e"
+        }
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
   },
   "playerManagementPeriodFees20261029": {
     "reason": "Add one required server shard 4 native qualification step for the compatible Chicago-period fee reader. Existing commands, assertions, financial rules and historical qualification remain unchanged. Current workflow source identity only; not installation or production certification.",
@@ -963,6 +958,45 @@
       "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
     }
   },
+  "horseTurnCensusEnforcement20261029": {
+    "reason": "Reviewed exact eight-line additive Accounting PostgreSQL shard3 census step. PostgreSQL17 installation, signed setup, existing qualification commands, financial sources, fixtures, assertions, budgets, historical audit records and result states remain unchanged. Refresh only current workflow identity; no financial recertification, installation or live behavior claim.",
+    "previousWorkflowPin": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "currentWorkflowPin": {
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
+    },
+    "new_census_checks": {
+      "pure_python_tests": 26,
+      "transport_tests": 10,
+      "native_postgres_assertions": 22
+    },
+    "local_results_authority": "Current exact-candidate local qualification reported by coordinating root; native PostgreSQL census independently executed in owned SSD socket-only cluster.",
+    "existing_financial_qualification_reexecuted": false,
+    "hosted_execution_performed": false,
+    "financial_recertification": false
+  },
+  "horseCensusContinuationProtectedMainComposition20261029": {
+    "review": "Three-way composition preserves all parent historical audits, census eight-line shard3 enforcement and protected-main fourteen-line original-continuation proof/artifact step. Reviewed incoming classifier continuation/floor alternatives and six interruption/floor selector cases. Existing signed PG17 setup, financial SQL/fixtures/assertions, amounts, qualification commands, budgets and result states are unchanged. Only composed current workflow identity is renewed; incoming classifier/test pins retain their actual reviewed main-source identity. No native financial recertification, installation or live verification claim.",
+    "protected_main": "af2870a51f638572250c02dbc69f3ba118550f91",
+    "census_parent": "43aa9ec6eef39cd0b3a647c5f45abee5ce508dfe",
+    "census_workflow_pin": {
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
+    },
+    "main_workflow_pin": {
+      "bytes": 249502,
+      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+    },
+    "composed_workflow_pin": {
+      "bytes": 249944,
+      "sha256": "a2761aed24c10439e325d9f435eed4b4e0f4b9dc769283d301e7561bc6b94489"
+    },
+    "financial_recertification": false,
+    "existing_financial_qualification_reexecuted": false
+  },
   "horseTurnCensusProtectedComposition6fac20261029": {
     "reason": "Compose the independent original-turn census with protected main 6facda55be without changing financial commands, assertions, native fixtures, or historical evidence. Preserve both parent audit histories and all non-workflow source pins. This updates only current composed workflow identity and does not certify hosted execution or live behavior.",
     "oursRevision": "3c2bb4a2ea00c8381c67c9cc796494748924e0cf",
@@ -980,5 +1014,20 @@
       "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
     },
     "execution_performed": false
+  },
+  "clubPromoJournalSource20261029": {
+    "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 250121,
+      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
+    },
+    "current": {
+      "sha256": "0b5b84af81e42ea5a0e72dec50b9ceca4f002e5eaf1d706b8235a711e35643c3",
+      "bytes": 250426
+    }
+  },
+  "clubPromoProtectedMainIntegration20261029": {
+    "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
   }
 }

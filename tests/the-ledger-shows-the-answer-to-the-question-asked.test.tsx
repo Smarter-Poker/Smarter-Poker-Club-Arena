@@ -60,6 +60,8 @@ const payload = (rows: ReturnType<typeof row>[]) => ({
 
 describe('the purchase ledger shows the answer to the question actually asked', () => {
   beforeEach(() => {
+    // Each independent scenario starts with an account that has no saved preferences.
+    localStorage.clear();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mocks.toast.error.mockClear();
   });

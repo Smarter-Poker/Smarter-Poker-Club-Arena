@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -83,9 +84,21 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
   // list, which reads as "this club has no members".
   const [loadError, setLoadError] = useState(false);
   const isMounted = useIsMounted();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'balance' | 'rake' | 'joined'>('name');
+  const [searchTerm, setSearchTerm] = usePlayerPreference(
+    'clubMemberManagement.search',
+    '',
+    clubId
+  );
+  const [roleFilter, setRoleFilter] = usePlayerPreference<string>(
+    'clubMemberManagement.roleFilter',
+    'all',
+    clubId
+  );
+  const [sortBy, setSortBy] = usePlayerPreference<'name' | 'balance' | 'rake' | 'joined'>(
+    'clubMemberManagement.sort',
+    'name',
+    clubId
+  );
   // Keyed by member id, not list index: the rendered list is searched,
   // filtered and sorted, so an index into the unfiltered array named a
   // different row and a search left survivors stuck at opacity 0.

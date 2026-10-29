@@ -204,7 +204,7 @@ DECLARE original text; expected text:=$original$
 select case
          when pg_try_advisory_lock(hashtext('sp-prune-hand-history'))
            then (select set_config('statement_timeout','30s',true) is not null
-                    and public.sp_prune_hand_history(5000) >=0)::text
+                    and public.sp_prune_hand_history(5000) >= 0)::text
          else 'skipped: previous run still in progress'
        end;
 $original$;

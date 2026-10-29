@@ -86,6 +86,7 @@ jobs:
       target_sha: ${{ steps.target.outputs.sha }}
       component: ${{ steps.target.outputs.component }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
+      selection_base: ${{ steps.selection-base.outputs.base_sha }}
       publish: ${{ steps.runtime.outputs.publish }}
     steps:
       # ═══════════════════════════════════════════════════════════════════════
@@ -153,6 +154,13 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           persist-credentials: false
+
+      - name: Bind UI selection to the complete published backlog
+        id: selection-base
+        if: steps.target.outputs.component == 'client'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/publisher-ui-selection-base.mjs "${{ steps.target.outputs.sha }}"
 
       - name: Prove unchanged client runtime
         id: runtime
@@ -281,11 +289,15 @@ jobs:
         shard: [1, 2, 3, 4]
     env:
       HUSKY: '0'
+      VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
     steps:
       - name: Checkout Club Arena at the publish target
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # Compare every unpublished commit, including financial predecessors.
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -308,7 +320,10 @@ jobs:
         run: npm ci
 
       - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
-        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
+        env:
+          CI_BASE_SHA: ${{ needs.publish-needed.outputs.selection_base }}
+          CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
 
   # Retention qualifies the CURRENT source tests and preserves the already
   # published immutable bytes. It never writes the origin or fabricates dist.

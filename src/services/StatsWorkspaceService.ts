@@ -1,4 +1,5 @@
-import { supabase } from '../lib/supabase';
+import { getAuthUser, supabase } from '../lib/supabase';
+import { awaitPreferenceSave } from '../lib/tableSettingIntents';
 import { handNotesService, type HandNote } from './HandNotesService';
 import { reportError } from '../utils/errorReporter';
 
@@ -431,14 +432,54 @@ export const statsWorkspaceService = {
     }
   },
 
-  async savePreferences(preferences: StatsWorkspacePreferences): Promise<WorkspaceResult<boolean>> {
+  async savePreferences(
+    preferences: Partial<StatsWorkspacePreferences>,
+    expectedOwner?: string
+  ): Promise<WorkspaceResult<boolean>> {
     try {
-      const { data, error } = await supabase.rpc('fn_ca_stats_workspace_preferences_save', {
-        p_dashboard_layout: preferences.dashboardLayout,
-        p_privacy_presentation_mode: preferences.privacyPresentationMode,
-      });
+      const allowed = new Set([
+        'overview',
+        'performance',
+        'positions',
+        'hands',
+        'tournaments',
+        'analysis',
+        'trophies',
+        'rake',
+      ]);
+      const layout = preferences.dashboardLayout;
+      if (
+        layout !== undefined &&
+        (!Array.isArray(layout) ||
+          layout.length > 40 ||
+          layout.some((zone) => typeof zone !== 'string' || !allowed.has(zone)) ||
+          new Set(layout).size !== layout.length)
+      )
+        throw new Error('invalid_dashboard_layout');
+      if (
+        preferences.privacyPresentationMode !== undefined &&
+        typeof preferences.privacyPresentationMode !== 'boolean'
+      )
+        throw new Error('invalid_privacy_preference');
+      if (layout === undefined && preferences.privacyPresentationMode === undefined)
+        throw new Error('empty_preference_patch');
+      const { data: auth, error: authError } = await getAuthUser();
+      if (authError || !auth.user || (expectedOwner && auth.user.id !== expectedOwner))
+        throw new Error('authentication_required');
+      // RLS enforces this account. Omit unchanged columns so PostgREST's
+      // conflict update cannot overwrite a concurrent layout/privacy choice.
+      const patch = {
+        user_id: auth.user.id,
+        ...(layout !== undefined ? { dashboard_layout: layout } : {}),
+        ...(preferences.privacyPresentationMode !== undefined
+          ? { privacy_presentation_mode: preferences.privacyPresentationMode }
+          : {}),
+      };
+      const { error } = await awaitPreferenceSave(
+        supabase.from('ca_stats_workspace_preferences').upsert(patch, { onConflict: 'user_id' })
+      );
       if (error) throw error;
-      return { ok: true, data: rpcValue<boolean>(data) };
+      return { ok: true, data: true };
     } catch (error) {
       return failure(error, 'savePreferences');
     }

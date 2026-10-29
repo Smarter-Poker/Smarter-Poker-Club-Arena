@@ -1817,9 +1817,15 @@ export class LightningHandHost {
             retireHorseExecutionWitness(witness, 'turn_abandoned');
             return;
           }
-          const run = () => this.executeHorseFastFold(userId, decision);
-          const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
-          if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+          let transferred = false;
+          const run = () => (transferred = this.executeHorseFastFold(userId, decision));
+          try {
+            const landed = decision.fast ? lane().runWithDispatchBarrier(run) : run();
+            if (!landed) retireHorseExecutionWitness(witness, 'action_rejected');
+          } catch (error) {
+            if (!transferred) retireHorseExecutionWitness(witness, 'turn_abandoned');
+            throw error;
+          }
         };
         pressTimer = setTimeout(press, Math.max(0, decisionAt + reactionMs - this.now()));
         (pressTimer as { unref?: () => void }).unref?.();
@@ -2105,8 +2111,13 @@ export class LightningHandHost {
         // As at a physical table, the plan commit enters the lane's effect
         // lane, ahead of older unposted work and of any decision the next
         // turn enqueues.
-        if (decision.fast) lane().runWithDispatchBarrier(execute);
-        else execute();
+        try {
+          if (decision.fast) lane().runWithDispatchBarrier(execute);
+          else execute();
+        } catch (error) {
+          retireHorseExecutionWitness(decision.fast?.decision.executionWitness, 'turn_abandoned');
+          throw error;
+        }
       }, delay);
       (this.horseTimer as { unref?: () => void }).unref?.();
     };
@@ -2181,8 +2192,14 @@ export class LightningHandHost {
               }
               if (foldingOnTurn()) {
                 abort.signal.removeEventListener('abort', abandon);
-                const run = () => this.executeHorseFastFold(userId, decision);
-                if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
+                let transferred = false;
+                const run = () => (transferred = this.executeHorseFastFold(userId, decision));
+                try {
+                  if (decision.fast ? lane().runWithDispatchBarrier(run) : run()) return;
+                } catch (error) {
+                  if (!transferred) abandon();
+                  throw error;
+                }
                 if (!current()) {
                   abandon();
                   return;
@@ -2262,91 +2279,100 @@ export class LightningHandHost {
     allInOrFold: boolean,
     lane: () => LiveHorseDecisionLane
   ): void {
-    const hc = this.hc!;
-    let featureRefused = false;
-    if (decision.fast) {
-      const result = this.recheckHorseDecisionAtDoor(userId, decision);
-      if (!result) return;
-      featureRefused = result.featureRefused;
-      decision = {
-        ...decision,
-        action: result.checked.action,
-        amount: result.checked.amount,
-        workerFallback: decision.workerFallback || featureRefused,
-      };
-    }
-    // A rejected candidate has no qualified aggressive substitute. Do not let
-    // AoF shaping convert its free check into an all-in wager.
-    const shaped = featureRefused
-      ? { action: decision.action, amount: undefined }
-      : shapeLightningHorseAction(hc, userId, decision, allInOrFold);
-    const fast = decision.fast;
     const acceptedActions: HorseAcceptedAction[] = [];
-    let intended = true;
-    // Always observed: the controller record, not the submission or the
-    // boolean, says what landed.
-    const observe = (record: Readonly<ActionRecord>) => acceptedActions.push({ record, intended });
-    const r = this.applyAction(
-      userId,
-      shaped.action,
-      shaped.amount,
-      decision.workerFallback ? 'horse_fallback' : 'horse_policy',
-      undefined,
-      observe
-    );
-    if (
-      r.success &&
-      fast &&
-      fast.planBinding !== null &&
-      fast.planIssueDisposition === 'issued' &&
-      fast.effects.length > 0
-    ) {
-      const submitted = { action: shaped.action, amount: shaped.amount ?? null };
-      const exact =
-        (shaped.action === 'bet' || shaped.action === 'raise') &&
-        horsePlanWagerAcceptedExactly({
-          issued: fast.decision,
-          submitted,
-          acceptedActions,
-          witness: fast.decision.executionWitness,
-        });
-      if (exact) {
-        noteFire('lightning_phase15_plan_accepted_exact');
-        void lane()
-          .commitDecisionEffects(
-            fast,
-            // Phase 15.1: the exact accepted wager joins the durable receipt.
-            horsePlanAcceptanceFromController(
-              acceptedActions[0]?.record,
-              submitted,
-              fast.decision.executionWitness?.identity
-            )
-          )
-          .catch((err) =>
-            this.logger.error(
-              `[LightningHost:${this.instanceId}] horse decision effects not committed`,
-              err
-            )
-          );
-      } else noteFire('lightning_phase15_plan_retired_inexact');
-    }
-    let applied = r.success;
-    if (!r.success && this.hc) {
-      intended = false;
-      const auth = this.hc.getAuthoritativeActionState(userId);
-      applied = this.applyAction(
+    let applied = false;
+    try {
+      const hc = this.hc!;
+      let featureRefused = false;
+      if (decision.fast) {
+        const result = this.recheckHorseDecisionAtDoor(userId, decision);
+        if (!result) return;
+        featureRefused = result.featureRefused;
+        decision = {
+          ...decision,
+          action: result.checked.action,
+          amount: result.checked.amount,
+          workerFallback: decision.workerFallback || featureRefused,
+        };
+      }
+      // A rejected candidate has no qualified aggressive substitute. Do not let
+      // AoF shaping convert its free check into an all-in wager.
+      const shaped = featureRefused
+        ? { action: decision.action, amount: undefined }
+        : shapeLightningHorseAction(hc, userId, decision, allInOrFold);
+      const fast = decision.fast;
+      let intended = true;
+      // Always observed: the controller record, not the submission or the
+      // boolean, says what landed.
+      const observe = (record: Readonly<ActionRecord>) =>
+        acceptedActions.push({ record, intended });
+      const r = this.applyAction(
         userId,
-        auth?.legalActions.includes('check') ? 'check' : 'fold',
-        undefined,
-        'horse_fallback',
+        shaped.action,
+        shaped.amount,
+        decision.workerFallback ? 'horse_fallback' : 'horse_policy',
         undefined,
         observe
-      ).success;
+      );
+      if (
+        r.success &&
+        fast &&
+        fast.planBinding !== null &&
+        fast.planIssueDisposition === 'issued' &&
+        fast.effects.length > 0
+      ) {
+        const submitted = { action: shaped.action, amount: shaped.amount ?? null };
+        const exact =
+          (shaped.action === 'bet' || shaped.action === 'raise') &&
+          horsePlanWagerAcceptedExactly({
+            issued: fast.decision,
+            submitted,
+            acceptedActions,
+            witness: fast.decision.executionWitness,
+          });
+        if (exact) {
+          noteFire('lightning_phase15_plan_accepted_exact');
+          void lane()
+            .commitDecisionEffects(
+              fast,
+              // Phase 15.1: the exact accepted wager joins the durable receipt.
+              horsePlanAcceptanceFromController(
+                acceptedActions[0]?.record,
+                submitted,
+                fast.decision.executionWitness?.identity
+              )
+            )
+            .catch((err) =>
+              this.logger.error(
+                `[LightningHost:${this.instanceId}] horse decision effects not committed`,
+                err
+              )
+            );
+        } else noteFire('lightning_phase15_plan_retired_inexact');
+      }
+      applied = r.success;
+      if (!r.success && this.hc) {
+        intended = false;
+        const auth = this.hc.getAuthoritativeActionState(userId);
+        applied = this.applyAction(
+          userId,
+          auth?.legalActions.includes('check') ? 'check' : 'fold',
+          undefined,
+          'horse_fallback',
+          undefined,
+          observe
+        ).success;
+      }
+      // After the commit decision, so an accepted batch is already committing
+      // and only a non-exact one is retired by the finalizer.
+      settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
+      if (fast) observeHorsePhase14Execution(fast.decision);
+    } finally {
+      settleHorseExecutionWitness(decision.fast?.decision.executionWitness, {
+        applied,
+        acceptedActions,
+      });
     }
-    // After the commit decision, so an accepted batch is already committing
-    // and only a non-exact one is retired by the finalizer.
-    settleHorseExecutionWitness(fast?.decision.executionWitness, { applied, acceptedActions });
-    if (fast) observeHorsePhase14Execution(fast.decision);
   }
 
   // ─── ACTIONS ────────────────────────────────────────────────────────────

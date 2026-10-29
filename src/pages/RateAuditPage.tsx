@@ -136,7 +136,10 @@ export default function RateAuditPage() {
      empty audit table indistinguishable from a clean history. */
   const [storedError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = usePlayerPreference<FilterType>('RateAuditPage:filter', 'all');
-  const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
+  const [dateRange, setDateRange] = usePlayerPreference<'all' | '7d' | '30d' | '90d'>(
+    'RateAuditPage:dateRange',
+    'all'
+  );
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   /* WHOSE RATES (2026-09-10). This route had no role gate and no club filter,
      so it listed every club's rake-rate changes RLS let the viewer read,

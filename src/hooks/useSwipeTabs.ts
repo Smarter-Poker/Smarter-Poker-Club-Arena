@@ -37,6 +37,20 @@ export function useSwipeTabs<T extends string>({
   const startY = useRef<number | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Descendant controls own their taps, text selection and dragging. Capturing
+    // their pointer on the pane retargets pointerup/click to the pane and can
+    // prevent the control's onClick from running (Stats Show More, for example).
+    const control =
+      e.target instanceof Element
+        ? e.target.closest(
+            'button, a[href], input, select, textarea, label, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="spinbutton"], [role="combobox"], [role="listbox"], [role="textbox"], [role="searchbox"], [role="tab"], [role="menuitem"], [role="option"]'
+          )
+        : null;
+    if (control && control !== e.currentTarget && e.currentTarget.contains(control)) {
+      startX.current = null;
+      startY.current = null;
+      return;
+    }
     startX.current = e.clientX;
     startY.current = e.clientY;
     // Capture the pointer, or a swipe that lifts outside this element never

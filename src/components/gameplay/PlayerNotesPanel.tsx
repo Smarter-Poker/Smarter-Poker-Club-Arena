@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PLAYER NOTES PANEL — In-Game Note Taking
@@ -66,7 +67,7 @@ export default function PlayerNotesPanel({
   const tagPurchaseRef = useRef(false);
   const accountRequestRef = useRef(0);
   const tagPurchaseRequestRef = useRef(0);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('playerNotes.search', '', 'global');
   const [isVIP, setIsVIP] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
@@ -110,7 +111,6 @@ export default function PlayerNotesPanel({
     setCurrentNote('');
     setSelectedTags([]);
     setSelectedColor('none');
-    setSearchQuery('');
     setIsVIP(false);
     setSaving(false);
     setNoteLoadFailed(false);

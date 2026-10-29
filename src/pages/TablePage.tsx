@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
   allInEquityBoardKey,
@@ -9454,9 +9455,9 @@ function LiveTablePage({
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<
+  const [leaderboardPeriod, setLeaderboardPeriod] = usePlayerPreference<
     'session' | 'day' | 'week' | 'month' | 'allTime'
-  >('session');
+  >('table:leaderboardPeriod', 'session', 'global');
   const [leaderboardPlayers, setLeaderboardPlayers] = useState<
     Array<{
       rank: number;

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Club Detail Page
@@ -11,7 +12,6 @@ import { roleColor } from '../components/club/RoleBadge';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { formatGameTitle } from '../utils/formatGameTitle';
-import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
 import CircularGauge from '../components/common/CircularGauge';
@@ -351,15 +351,9 @@ export default function ClubDetailPage() {
   useVisibilityRefresh(() => loadClubData());
   const navigate = useNavigate();
   const toast = useToast();
-  const [activeTab, setActiveTabRaw] = useState<
+  const [activeTab, setActiveTab] = usePlayerPreference<
     'overview' | 'tables' | 'members' | 'agents' | 'operations' | 'settings'
-  >(() => getLocalStorage('ca_club_detail_tab', 'overview'));
-  const setActiveTab = (t: typeof activeTab) => {
-    setActiveTabRaw(t);
-    setLocalStorage('ca_club_detail_tab', t);
-    // Reset member search when leaving members tab
-    if (t !== 'members' && memberSearch) setMemberSearch('');
-  };
+  >('ClubDetailPage:activeTab', 'overview');
 
   // Swipe gesture support for tab navigation
   const swipeHandlers = useSwipeTabs({
@@ -375,7 +369,7 @@ export default function ClubDetailPage() {
   >([]);
   // Bumped after an approve/deny to re-fetch the pending-members list.
   const [pendingRefresh, setPendingRefresh] = useState(0);
-  const [memberSearch, setMemberSearch] = useState('');
+  const [memberSearch, setMemberSearch] = usePlayerPreference('ClubDetailPage:memberSearch', '');
   const [tables, setTables] = useState<ClubTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -435,7 +429,6 @@ export default function ClubDetailPage() {
     setAgents([]);
     setAgentsLoading(false);
     setMemberLimit(50);
-    setMemberSearch('');
     setShowMemberMenu(null);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setDeletingTableId(null);

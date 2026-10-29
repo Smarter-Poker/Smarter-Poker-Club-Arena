@@ -44,7 +44,13 @@ def main():
             raise AssertionError(label)
     def simple(db, command, label, check=True):
         return e.run(label, [e.pg/'psql','-X','-qAt','-h',e.socket,'-p',e.port,'-U','postgres','-d',db,'-v','ON_ERROR_STOP=1','-c',command], check=check)
-    original = "\nselect case\n         when pg_try_advisory_lock(hashtext('sp-prune-hand-history'))\n           then (select set_config('statement_timeout','30s',true) is not null\n                    and public.sp_prune_hand_history(5000) >=0)::text\n         else 'skipped: previous run still in progress'\n       end;\n"
+    captured_job = json.loads(actions.PREIMAGE.read_text())['retention_cron_preimage']
+    budget_migration = ROOT/'supabase/migrations/20261029083417_retention_discovery_commits_bounded_chunks_within_its_budget.sql'
+    original = captured_job['command']
+    assert len(original.encode()) == 301
+    assert hashlib.md5(original.encode()).hexdigest() == captured_job['command_md5'] == '96244362bf46b39e75ef1100b1372203'
+    assert {k: captured_job[k] for k in ['jobid', 'jobname', 'schedule', 'active', 'username']} == {'jobid': 117, 'jobname': 'sp_prune_hand_history_10m', 'schedule': '30 seconds', 'active': True, 'username': 'postgres'}
+
     try:
         e.start()
         e.env['PGOPTIONS']='-c cron.use_background_workers=off'
@@ -71,9 +77,20 @@ def main():
         before_global=sql(base,'SELECT smarter_private.original_hand_correction_sources_match();','before-global-matcher')
         old_private=sql(base,"SELECT pg_get_functiondef('smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'::regprocedure);",'old-executing-producer-body')
         empty=e.database(base)
+        for label, changed_command in [('old-spacing', original.replace('>= 0', '>=0')), ('changed-batch', original.replace('(5000)', '(5001)'))]:
+            refused = e.database(empty)
+            sql(refused, 'UPDATE cron.job SET command=' + lit(changed_command) + ' WHERE jobid=117;', label+'-fixture-command')
+            code, _, err = e.sql(refused, 'BEGIN;' + migration.read_text() + 'COMMIT;', label=label+'-candidate-refusal', check=False)
+            expect(label+' exact cron preimage refuses', code != 0 and 'SUPERSEDED_RETENTION_CRON_PREIMAGE_CHANGED' in err)
+            expect(label+' transaction leaves no partial schema', sql(refused, "SELECT to_regclass('smarter_private.superseded_action_retention_due') IS NULL AND to_regclass('smarter_private.superseded_action_retention_cursor') IS NULL AND to_regprocedure('smarter_private.progress_superseded_action_retention()') IS NULL;", label+'-no-partial-schema') == 't')
+            expect(label+' original command remains unchanged', sql(refused, 'SELECT command FROM cron.job WHERE jobid=117;', label+'-original-command') == changed_command.strip())
+            expect(label+' original owner remains unchanged', sql(refused, "SELECT pg_get_functiondef('smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'::regprocedure);", label+'-original-owner') == old_private)
+            expect(label+' original source pins remain unchanged', json.loads(sql(refused, "SELECT split_part(pg_get_functiondef('smarter_private.original_hand_correction_sources_match()'::regprocedure),'$sourcepins$',2)::jsonb;", label+'-original-pins')) == before_pins)
+            e.discard(refused)
         sql(base,actions.SEED,'aged-authoritative-receipt')
         expect('BEFORE no future age owner exists',sql(base,"SELECT to_regprocedure('smarter_private.progress_superseded_action_retention()') IS NULL;",'before-missing-owner')=='t')
         e.sql(base,file=migration,label='exact-progress-candidate')
+        e.sql(base,file=budget_migration,label='budgeted-discovery-upgrade')
         after_pins=json.loads(sql(base,"SELECT split_part(pg_get_functiondef('smarter_private.original_hand_correction_sources_match()'::regprocedure),'$sourcepins$',2)::jsonb;",'after-pins'))
         sig='smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'
         expect('exactly one existing source pin advances',len(before_pins)==26 and [x for x in before_pins if x['signature']!=sig]==[x for x in after_pins if x['signature']!=sig] and before_pins!=after_pins)
@@ -92,6 +109,14 @@ def main():
         expect('public original limit remains unchanged',sql(base,"SELECT position('LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 2000), 20000))' IN pg_get_functiondef('public.fn_ca_dispose_superseded_hand_submissions(uuid,uuid,text,integer)'::regprocedure))>0;",'public-cap')=='t')
         expect('all new helpers inaccessible to service role',sql(base,"SELECT bool_and(NOT has_function_privilege('service_role',oid,'execute')) FROM pg_proc WHERE pronamespace='smarter_private'::regnamespace AND proname IN ('progress_superseded_action_retention','discover_superseded_action_retention','superseded_action_retention_due_at');",'helper-acl')=='t')
         e.sql(empty,file=migration,label='empty-progress-candidate')
+        e.sql(empty,file=budget_migration,label='empty-budgeted-upgrade')
+        replay=e.database(empty)
+        replay_before=sql(replay,"SELECT jsonb_build_object('body',pg_get_functiondef(p.oid),'owner',proowner,'acl',proacl,'config',proconfig,'secdef',prosecdef,'cursor',(SELECT to_jsonb(c) FROM smarter_private.superseded_action_retention_cursor c)) FROM pg_proc p WHERE p.oid='smarter_private.discover_superseded_action_retention()'::regprocedure;",'budget-replay-before')
+        replay_code,_,replay_error=e.sql(replay,budget_migration.read_text(),label='budget-replay-refusal',check=False)
+        expect('budget upgrade replay refuses exact prior body mismatch',replay_code!=0 and 'RETENTION_DISCOVERY_BUDGET_PREIMAGE_CHANGED' in replay_error)
+        expect('budget upgrade replay retains body authority and cursor atomically',replay_before==sql(replay,"SELECT jsonb_build_object('body',pg_get_functiondef(p.oid),'owner',proowner,'acl',proacl,'config',proconfig,'secdef',prosecdef,'cursor',(SELECT to_jsonb(c) FROM smarter_private.superseded_action_retention_cursor c)) FROM pg_proc p WHERE p.oid='smarter_private.discover_superseded_action_retention()'::regprocedure;",'budget-replay-after'))
+        e.discard(replay)
+
         for owner in ['private','public']:
             future=e.database(empty)
             seed=actions.SEED.split('INSERT INTO smarter_private.hand_submission_disposals')[0].replace("interval '10 days'", "interval '1 day'")
@@ -115,6 +140,14 @@ def main():
         expect('separate historical transaction examines bounded page',sql(backlog,'SELECT smarter_private.discover_superseded_action_retention();','separate-backlog-page')=='5000')
         expect('cursor advances only exact first five-thousand keys',sql(backlog,"SELECT last_table_id='10000000-0000-4000-8000-000000000001' AND last_hand_number=2005000 AND NOT completed FROM smarter_private.superseded_action_retention_cursor;",'page-examined-keys')=='t')
         expect('settled receipts never pollute due queue',sql(backlog,'SELECT count(*) FROM smarter_private.superseded_action_retention_due;','settled-not-queued')=='0')
+        slow=e.database(backlog)
+        sql(slow,"UPDATE smarter_private.superseded_action_retention_cursor SET last_table_id=NULL,last_hand_number=NULL; CREATE FUNCTION public.slow_retention_chunk() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.2); RETURN NULL; END $$; CREATE TRIGGER slow_retention_chunk BEFORE INSERT ON smarter_private.superseded_action_retention_due FOR EACH STATEMENT EXECUTE FUNCTION public.slow_retention_chunk();",'controlled-slow-chunk')
+        slow_count=int(sql(slow,'SELECT smarter_private.discover_superseded_action_retention();','budgeted-slow-page'))
+        expect('slow chunks stop before full page without timeout',250<=slow_count<5000 and slow_count%250==0)
+        expect('slow completed chunks advance exact cursor',int(sql(slow,'SELECT last_hand_number FROM smarter_private.superseded_action_retention_cursor;','slow-committed-cursor'))==2000000+slow_count)
+        next_count=int(sql(slow,'SELECT smarter_private.discover_superseded_action_retention();','next-budgeted-slow-page'))
+        expect('next invocation continues completed chunk keys',next_count>=250 and int(sql(slow,'SELECT last_hand_number FROM smarter_private.superseded_action_retention_cursor;','next-slow-cursor'))==2000000+slow_count+next_count)
+        e.discard(slow)
         e.discard(backlog)
         late=e.database(empty)
         sql(late,old_private.replace('FUNCTION smarter_private.hand_submission_dispose_dealt_past(', 'FUNCTION smarter_private.native_old_disposal(')+';', 'native-preserved-old-body')
@@ -213,7 +246,7 @@ def main():
         sql(base,"CREATE OR REPLACE FUNCTION public.sp_prune_hand_history(integer) RETURNS integer LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'ORIGINAL_PRUNE_FAILED'; END $$; CREATE OR REPLACE FUNCTION smarter_private.progress_superseded_action_retention() RETURNS integer LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.progress_prune_receipts VALUES(99); RETURN 0; END $$;",'original-failure-injection-only-native')
         code,_,err=simple(base,command,'simple-query-first-phase-failure',False)
         expect('original failure prevents new phase',code!=0 and 'ORIGINAL_PRUNE_FAILED' in err and sql(base,'SELECT count(*) FROM public.progress_prune_receipts;','first-failure-readback')=='2')
-        e.report.update(status='passed',checks=checks,source_sha256={str(path.relative_to(ROOT)):sha(path) for path in [migration,Path(__file__),actions.MIGRATION,actions.PREIMAGE,ROOT/doors.WORLD,ROOT/doors.MIGRATION]},simple_query_timeout_seconds=elapsed)
+        e.report.update(status='passed',checks=checks,source_sha256={str(path.relative_to(ROOT)):sha(path) for path in [migration,budget_migration,Path(__file__),actions.MIGRATION,actions.PREIMAGE,ROOT/doors.WORLD,ROOT/doors.MIGRATION]},simple_query_timeout_seconds=elapsed)
     except BaseException as exc:
         e.report.update(status='failed',failure=repr(exc))
         raise

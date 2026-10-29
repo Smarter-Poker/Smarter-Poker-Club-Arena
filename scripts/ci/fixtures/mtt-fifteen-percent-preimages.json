@@ -1,0 +1,42 @@
+{
+  "observedAt": "2026-10-29T20:26:00Z",
+  "project": "kuklfnapbkmacvwxktbh",
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "md5": "2b32bfb102985c3a57d2cc39e589f4f8",
+      "owner": "postgres",
+      "body_md5": "dafe18495a329eccfc7c57fdd0dd9677",
+      "settings": ["search_path=public, pg_temp"],
+      "signature": "fn_ca_effective_payout_depth(numeric,smallint)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_effective_payout_depth(p_depth numeric, p_legacy_percent smallint)\n RETURNS numeric\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(p_depth, p_legacy_percent::numeric, 12.5);\n$function$\n",
+      "security_definer": false,
+      "postimage_md5": "2b32bfb102985c3a57d2cc39e589f4f8",
+      "postimage": "CREATE OR REPLACE FUNCTION public.fn_ca_effective_payout_depth(p_depth numeric, p_legacy_percent smallint)\n RETURNS numeric\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(p_depth, p_legacy_percent::numeric, 12.5);\n$function$\n"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "md5": "df4e5b504f5c8a2e30a01ac870899774",
+      "owner": "postgres",
+      "body_md5": "b2967617604fadfa2eb6108642e7f63a",
+      "settings": ["search_path=public, pg_temp"],
+      "signature": "fn_ca_mtt_payout_depth_guard()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_mtt_payout_depth_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_club_union uuid;\n  v_asset text;\n  v_is_mtt boolean;\n  v_enforced boolean;\n  v_depth numeric;\nBEGIN\n  -- Payout terms that are already committed never move.\n  IF TG_OP = 'UPDATE' AND COALESCE(OLD.prize_pool_finalized, false) THEN\n    NEW.payout_depth_percent := OLD.payout_depth_percent;\n    RETURN NEW;\n  END IF;\n\n  v_is_mtt := upper(COALESCE(NEW.tournament_type,'')) = 'MTT'\n          AND lower(COALESCE(NEW.variant,'')) NOT IN ('spin','sng','satellite')\n          AND NEW.satellite_target_id IS NULL\n          AND NOT COALESCE(NEW.is_premium_spin, false);\n  IF NOT v_is_mtt THEN\n    NEW.payout_depth_percent := NULL;\n    RETURN NEW;\n  END IF;\n\n  SELECT c.union_id, c.asset INTO v_club_union, v_asset\n    FROM public.clubs c WHERE c.id = NEW.club_id;\n  v_enforced := NEW.union_id IS NOT NULL\n             OR v_club_union IS NOT NULL\n             OR v_asset = 'diamonds'\n             OR NEW.club_id IS NULL\n             OR COALESCE(NEW.is_xmtt, false)\n             OR NEW.club_id = 'fade0000-0000-0000-0000-000000000001'::uuid;\n\n  IF v_enforced THEN\n    v_depth := 12.5;\n  ELSE\n    v_depth := COALESCE(\n      CASE WHEN NEW.payout_depth_percent > 0 AND NEW.payout_depth_percent <= 100\n           THEN NEW.payout_depth_percent END,\n      CASE WHEN NEW.payout_percent IN (15, 20) THEN NEW.payout_percent::numeric END,\n      12.5);\n  END IF;\n\n  -- Never produce a diff an UPDATE did not need (Diamond and lifecycle guards\n  -- compare whole rows).\n  IF TG_OP = 'UPDATE' AND OLD.payout_depth_percent IS NOT DISTINCT FROM v_depth THEN\n    NEW.payout_depth_percent := OLD.payout_depth_percent;\n  ELSE\n    NEW.payout_depth_percent := v_depth;\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+      "security_definer": true,
+      "postimage_md5": "83b17642b8aba085666fa8261bf165bd",
+      "postimage": "CREATE OR REPLACE FUNCTION public.fn_ca_mtt_payout_depth_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_club_union uuid;\n  v_asset text;\n  v_is_mtt boolean;\n  v_enforced boolean;\n  v_depth numeric;\nBEGIN\n  -- Payout terms that are already committed never move.\n  IF TG_OP = 'UPDATE' AND COALESCE(OLD.prize_pool_finalized, false) THEN\n    NEW.payout_depth_percent := OLD.payout_depth_percent;\n    RETURN NEW;\n  END IF;\n\n  v_is_mtt := upper(COALESCE(NEW.tournament_type,'')) = 'MTT'\n          AND lower(COALESCE(NEW.variant,'')) NOT IN ('spin','sng','satellite')\n          AND NEW.satellite_target_id IS NULL\n          AND NEW.satellite_target IS NULL\n          AND NOT COALESCE(NEW.is_premium_spin, false);\n  IF NOT v_is_mtt THEN\n    NEW.payout_depth_percent := NULL;\n    RETURN NEW;\n  END IF;\n\n  -- Owner October 29: every new MTT pays the top fifteen percent.\n  v_depth := 15;\n\n  -- Never produce a diff an UPDATE did not need (Diamond and lifecycle guards\n  -- compare whole rows).\n  IF TG_OP = 'UPDATE' AND OLD.payout_depth_percent IS NOT DISTINCT FROM v_depth THEN\n    NEW.payout_depth_percent := OLD.payout_depth_percent;\n  ELSE\n    NEW.payout_depth_percent := v_depth;\n  END IF;\n  RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "md5": "ca2aae4023d6711400263d674b4721ed",
+      "owner": "postgres",
+      "body_md5": "1b8fb29c68327cb50e56b8bce5a7f24c",
+      "settings": ["search_path=public, pg_temp"],
+      "signature": "fn_ca_payout_structure(integer,numeric)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_places int;\n  v_pct    numeric;\n  v_out    jsonb;\nBEGIN\n  v_pct := CASE WHEN p_percent > 0 AND p_percent <= 100 THEN p_percent ELSE 12.5 END;\n  IF COALESCE(p_entrants,0) <= 0 THEN\n    RETURN '[]'::jsonb;\n  END IF;\n  -- at least one place, never more places than players, rounded up\n  v_places := GREATEST(1, LEAST(p_entrants, ceil(p_entrants * v_pct / 100.0)::int));\n\n  WITH w AS (\n    SELECT i AS place, 1.0 / power(i, 0.8) AS weight\n      FROM generate_series(1, v_places) i\n  ), n AS (\n    SELECT place, 100.0 * weight / SUM(weight) OVER () AS exact FROM w\n  ), f AS (\n    SELECT place, floor(exact * 100) / 100 AS floored,\n           (exact * 100) - floor(exact * 100) AS frac\n      FROM n\n  ), r AS (\n    SELECT place, floored,\n           row_number() OVER (ORDER BY frac DESC, place ASC) AS rk,\n           round((100.0 - SUM(floored) OVER ()) * 100)::int AS cents_left\n      FROM f\n  )\n  SELECT jsonb_agg(jsonb_build_object('place', place,\n           'percentage', floored + CASE WHEN rk <= cents_left THEN 0.01 ELSE 0 END)\n           ORDER BY place)\n    INTO v_out FROM r;\n  RETURN COALESCE(v_out, '[]'::jsonb);\nEND;\n$function$\n",
+      "security_definer": false,
+      "postimage_md5": "ca2aae4023d6711400263d674b4721ed",
+      "postimage": "CREATE OR REPLACE FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_places int;\n  v_pct    numeric;\n  v_out    jsonb;\nBEGIN\n  v_pct := CASE WHEN p_percent > 0 AND p_percent <= 100 THEN p_percent ELSE 12.5 END;\n  IF COALESCE(p_entrants,0) <= 0 THEN\n    RETURN '[]'::jsonb;\n  END IF;\n  -- at least one place, never more places than players, rounded up\n  v_places := GREATEST(1, LEAST(p_entrants, ceil(p_entrants * v_pct / 100.0)::int));\n\n  WITH w AS (\n    SELECT i AS place, 1.0 / power(i, 0.8) AS weight\n      FROM generate_series(1, v_places) i\n  ), n AS (\n    SELECT place, 100.0 * weight / SUM(weight) OVER () AS exact FROM w\n  ), f AS (\n    SELECT place, floor(exact * 100) / 100 AS floored,\n           (exact * 100) - floor(exact * 100) AS frac\n      FROM n\n  ), r AS (\n    SELECT place, floored,\n           row_number() OVER (ORDER BY frac DESC, place ASC) AS rk,\n           round((100.0 - SUM(floored) OVER ()) * 100)::int AS cents_left\n      FROM f\n  )\n  SELECT jsonb_agg(jsonb_build_object('place', place,\n           'percentage', floored + CASE WHEN rk <= cents_left THEN 0.01 ELSE 0 END)\n           ORDER BY place)\n    INTO v_out FROM r;\n  RETURN COALESCE(v_out, '[]'::jsonb);\nEND;\n$function$\n"
+    }
+  ]
+}

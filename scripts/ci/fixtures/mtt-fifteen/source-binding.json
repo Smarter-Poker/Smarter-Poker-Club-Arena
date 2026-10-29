@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "scope": "Owner October29 MTT fifteen-percent authority and bounded native proof; excludes finalized and committed contracts.",
+  "files": {
+    "scripts/ci/test-mtt-unlimited.py": "09a224758539d72c8348d09682ac72a4dce4108800d59a506270fb64fe76e82e",
+    "scripts/ci/test-mtt-fifteen-percent.py": "baa87d9c5cf20b254ec023a1bb3cce70444383e0e2949f5ac82ba398c87c4155",
+    "scripts/ci/fixtures/mtt-fifteen-percent-preimages.json": "7ac104cee819880c785e3a682e819de6ccc5801534f1aa3a733f521181e14cfe",
+    "scripts/ci/fixtures/mtt-fifteen-provisional-authorities.json": "d0d9e01fec08d468cc9edb99b73a9093a9cae9df9a9149cfc9a1f16511455a68",
+    "scripts/ci/fixtures/mtt-fifteen-place-key-authority.sql": "a0e2cfce690346ad33134758afbb03f11a3e3a05d4c527402ba11dc9203936c9",
+    "supabase/migrations/20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql": "355fc62d8124afd08741e01f6efe90e4c0f6379f82256719c73c808c119c4d40",
+    "supabase/migrations/20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql": "87b6e252cae55ec6bdba1aeb5f62774f17b329d6678e8718e86590be97ccd3e8"
+  }
+}

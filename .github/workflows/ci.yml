@@ -2496,6 +2496,9 @@ jobs:
           path: artifacts/hand-submission/
           if-no-files-found: error
           retention-days: 7
+      - name: Club promo payments retain their journal source across every destination
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-club-promo-journal-source.py --pg-bin /usr/lib/postgresql/17/bin --work-root "$RUNNER_TEMP/club-promo-journal" --evidence artifacts/club-promo-journal
       - name: Durable private original hands survive restart and settle once
         id: hand_continuation
         if: matrix.shard == 3

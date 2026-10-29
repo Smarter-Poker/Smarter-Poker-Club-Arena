@@ -394,6 +394,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      matches(/^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/) ||
       matches(nativeAlertSql) ||
       cashHalfNative ||
       // Default opening reuses funded welcome reserves and the real publisher.

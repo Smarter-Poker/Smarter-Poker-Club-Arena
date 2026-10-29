@@ -258,6 +258,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // the database terminal authority to settle completed play; operator-managed
 // cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { readCompletingBoard } from './tournament/completingBoard.js';
 import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import {
@@ -9169,18 +9170,22 @@ export class GameServer {
         // recovery off the back of a finish that is still paying - the row is
         // flipped to COMPLETING BEFORE the money moves, and a manager leaves
         // `tournamentEngines` the moment it stops.
-        const { data: stuckTournaments, error: completingScanErr } = await supabase
-          .from('tournaments')
-          .select('id, name, status')
-          .eq('status', 'COMPLETING');
+        const stuckTournaments = await readCompletingBoard<{
+          id: string;
+          name: string | null;
+          status: string;
+        }>('id, name, status', {
+          shouldContinue: () => this.directAdmissionIsCurrent(generation),
+        });
+        if (!this.directAdmissionIsCurrent(generation)) break;
 
         // An unreadable scan is not an empty one: forgetting every dwell here
         // would restart all five-minute clocks on a transient error, which is
         // the one way this gate could hold a genuinely stuck row forever.
-        if (completingScanErr) {
+        if (!stuckTournaments) {
           reportError(
             new Error(
-              `[GameServer] COMPLETING scan failed: ${completingScanErr.message} - dwell clocks kept, nothing recovered this pass`
+              '[GameServer] COMPLETING scan incomplete or unreadable - dwell clocks kept, nothing recovered this pass'
             ),
             'GameServer.completing_scan_failed'
           );

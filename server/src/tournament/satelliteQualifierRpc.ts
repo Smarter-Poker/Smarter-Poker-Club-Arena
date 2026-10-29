@@ -1,4 +1,4 @@
-import { supabase } from '../services/supabase.js';
+import { maintenanceSupabase } from '../services/supabase.js';
 import { uuidShape } from '../lib/uuidShape.js';
 import {
   verifySatelliteQualifierReceipt,
@@ -13,6 +13,11 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { isLaneContention, isRolledBackStatementError } from './settlementRefusal.js';
+
+// These serialized eligibility, settlement and outcome functions permit 30 seconds
+// in PostgreSQL. Keep their responses within the existing 50-second authority
+// transport; ordinary game-data reads retain their shorter deadline.
+const authority = maintenanceSupabase;
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') {
@@ -54,7 +59,7 @@ export type SatelliteQualifierState =
 export async function readSatelliteQualifierState(
   tournamentId: string
 ): Promise<SatelliteQualifierState> {
-  const { data, error } = await supabase.rpc('fn_get_satellite_qualifier_state', {
+  const { data, error } = await authority.rpc('fn_get_satellite_qualifier_state', {
     p_tournament_id: tournamentId,
   });
   if (error) throw error;
@@ -128,7 +133,7 @@ export async function requestSatelliteQualifierReceipt(
   const request = { p_tournament_id: tournamentId, p_observed_qualifier_ids: [...qualifierIds] };
   let failure = 'Satellite qualifier settlement did not return a valid receipt';
   try {
-    const { data, error } = await supabase.rpc('fn_settle_satellite_qualifiers', request);
+    const { data, error } = await authority.rpc('fn_settle_satellite_qualifiers', request);
     if (!error) {
       const receipt = verifySatelliteQualifierReceipt(data, tournamentId, qualifierIds);
       if (receipt) return receipt;
@@ -167,7 +172,7 @@ async function readSerializedOutcome(
   failure: string
 ): Promise<SerializedOutcome> {
   try {
-    const { data, error } = await supabase.rpc('fn_resolve_satellite_qualifier_outcome', request);
+    const { data, error } = await authority.rpc('fn_resolve_satellite_qualifier_outcome', request);
     if (error) {
       // Contention (55P03 lock_timeout behind the exclusive finish lane, a
       // serialization or deadlock victim, a statement timeout) read nothing;

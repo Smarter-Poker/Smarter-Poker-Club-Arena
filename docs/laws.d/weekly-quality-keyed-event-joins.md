@@ -1,3 +1,3 @@
 # tests/weekly-quality-keyed-event-joins.law.test.ts
 
-Weekly quality preserves source and receipt bags, shared scope and all contract/numerical checks while materializing only three source keys and joining physical sources/recognized receipts at the original validation boundary. All three plan modes retain excluded malformed-contract domains and complete original FOR results.
+Weekly quality preserves every source/receipt bag and proof rule while choosing dense sequential versus sparse keyed physical access. Both branches fence survivor qualification before contract casts, share the original predicates, and remain qualified across all3 plan modes.

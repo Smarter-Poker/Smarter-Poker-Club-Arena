@@ -245,7 +245,12 @@ def qualify_rr_membership_bags(q,before,after,rec):
   if name in('duplicate','mixed_NULL_duplicate'):need(len(json.loads(new))>=2,'nonempty duplicate membership proof vacuous')
   rec('original_rr_all_fields_NULL_duplicate_empty_foreign_semijoin_bag_'+name)
 
-def qualify_excluded_contract_domains(q,before,after,rec):
+def adaptive_mode(source,stream):
+ start=source.index('   SELECT (SELECT count(*) FROM selected_event_sources)>=')
+ end=source.index(' AS stream',start)
+ return source[:start]+'   SELECT '+('true'if stream else'false')+source[end:]
+
+def qualify_excluded_contract_domains(q,before,after,rec,fn_after='public.fn_accounting_tournament_week_quality',suffix=''):
  # NOT MATERIALIZED must not expose contract casts on excluded sources.
  import re
  def prepared_query(source):
@@ -262,15 +267,18 @@ def qualify_excluded_contract_domains(q,before,after,rec):
     setup+="UPDATE public.accounting_tournament_fee_recognitions SET recognized_at='2026-09-28'WHERE tournament_id=fixture.u(200);UPDATE public.tournament_rake_settlements SET settled_at='2026-09-28'WHERE tournament_id=fixture.u(200);INSERT INTO public.tournament_terminal_settlements VALUES(fixture.u(200),'2026-10-06',NULL);"
    setup+='UPDATE public.accounting_tournament_fee_sources SET contract=contract||'+lit(json.dumps(invalid))+"::jsonb WHERE tournament_id=fixture.u(200);ANALYZE;";q(setup)
    for mode in ['auto','force_custom_plan','force_generic_plan']:
-    body=q('SET plan_cache_mode='+mode+";PREPARE body_before(uuid,timestamptz,timestamptz)AS SELECT fixture.quality_before($1,$2,$3);PREPARE body_after(uuid,timestamptz,timestamptz)AS SELECT public.fn_accounting_tournament_week_quality($1,$2,$3);EXECUTE body_before(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z');EXECUTE body_after(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z');")
+    body=q('SET plan_cache_mode='+mode+";PREPARE body_before(uuid,timestamptz,timestamptz)AS SELECT fixture.quality_before($1,$2,$3);PREPARE body_after(uuid,timestamptz,timestamptz)AS SELECT "+fn_after+"($1,$2,$3);EXECUTE body_before(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z');EXECUTE body_after(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z');")
     results=[json.loads(row)for row in body.splitlines()];need(results==[{'status':'ready','checked':1}]*2,'excluded malformed contract full quality domain changed:'+excluded+':'+domain+':'+mode+':'+body)
     sql='SET plan_cache_mode='+mode+';PREPARE rows_before(timestamptz,timestamptz,uuid,uuid)AS '+prepared_query(before)+';PREPARE rows_after(timestamptz,timestamptz,uuid,uuid)AS '+prepared_query(after)+";EXECUTE rows_before('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10));EXECUTE rows_after('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10));"
     rows=[json.loads(row)for row in q(sql).splitlines()];need(len(rows)==2 and rows[0]==rows[1]and len(rows[0])==1 and rows[0][0]['tournament_id']=='00000000-0000-0000-0000-000000000100','excluded malformed contract fullFOR bag changed:'+excluded+':'+domain+':'+mode)
-    rec('excluded_contract_domain_fullquality_and_fullFOR_'+excluded+'_'+domain+'_'+mode)
+    rec('excluded_contract_domain_fullquality_and_fullFOR_'+excluded+'_'+domain+'_'+mode+suffix)
+
+ if 'receipt_access AS MATERIALIZED'in after and not suffix:
+  forced=adaptive_mode(after,False)
+  q(forced.replace('FUNCTION public.fn_accounting_tournament_week_quality(','FUNCTION fixture.quality_forced_keyed(',1)+';')
+  qualify_excluded_contract_domains(q,before,forced,rec,fn_after='fixture.quality_forced_keyed',suffix='_forced_keyed')
 
 def qualify_keyed_event_bags(q,before,after,rec):
- # Original selected-source/receipt bags contain duplicate IDs, NULLs and
- # wrong-event receipts. Direct physical lookup must not multiply membership.
  def selected(source):
   start=source.index('selected_event_sources AS ');end=source.index('), scope_bad AS',start)
   return(source[start:end]+')').replace('public.accounting_tournament_fee_sources','fixture.membership_sources').replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts')
@@ -279,14 +287,19 @@ def qualify_keyed_event_bags(q,before,after,rec):
   return source[start:end].replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts').replace('public.accounting_tournament_fee_sources','fixture.membership_sources')
  for name,ids,want in [('empty',[],0),('NULL',['NULL::uuid'],0),('duplicate',['fixture.u(100)','fixture.u(100)'],12),('missing',['fixture.u(777)'],0),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(101)','fixture.u(100)'],13)]:
   members='SELECT NULL::uuid tournament_id,NULL::timestamptz recognized_at WHERE false'if not ids else"SELECT tournament_id,'2026-10-20'::timestamptz recognized_at FROM(VALUES"+','.join('('+v+')'for v in ids)+')m(tournament_id)'
+  variants=[('original',before)]+([(label,adaptive_mode(after,stream))for label,stream in [('stream',True),('keyed',False)]]if'receipt_access AS MATERIALIZED'in after else[('candidate',after)])
   bags=[]
-  for source in [before,after]:
-   sql='WITH survivors AS MATERIALIZED('+members+'),'+selected(source)+",actual AS(SELECT jsonb_build_object('source',to_jsonb(s),'receipt',to_jsonb(rs),'survivor',to_jsonb(k))row"+joins(source)+")SELECT COALESCE(jsonb_agg(row ORDER BY row::text),'[]')FROM actual"
+  for label,source in variants:
+   adaptive='receipt_access AS MATERIALIZED'in source;extra=''
+   if adaptive:
+    a=source.index('receipt_access AS MATERIALIZED');z=source.index('), receipt_bad AS',a)
+    extra=','+(source[a:z]+')').replace('public.accounting_tournament_fee_sources','fixture.membership_sources')
+   projection="jsonb_build_object('source',to_jsonb(s)-'receipt_recognized_at','receipt',to_jsonb(rs),'survivor',jsonb_build_object('tournament_id',s.tournament_id,'recognized_at',s.receipt_recognized_at))"if adaptive else"jsonb_build_object('source',to_jsonb(s),'receipt',to_jsonb(rs),'survivor',to_jsonb(k))"
+   sql='WITH survivors AS MATERIALIZED('+members+'),'+selected(source)+extra+",actual AS(SELECT "+projection+' row'+joins(source)+")SELECT COALESCE(jsonb_agg(row ORDER BY row::text),'[]')FROM actual"
    bags.append(json.loads(q(sql)))
-  need(bags[0]==bags[1]and len(bags[1])==want,'NOTMATERIALIZED original full source/receipt/survivor bag differs:'+name)
-  if name in('duplicate','mixed'):
-   need(sum(1 for row in bags[1]if row['receipt']is not None and row['receipt']['tournament_id']!=row['source']['tournament_id'])==8,'wrong-event receipt multiplicity changed:'+name)
-  rec('narrow_source_physical_receipt_full_join_bag_'+name)
+  need(all(b==bags[0]and len(b)==want for b in bags),'adaptive original full source/receipt/survivor bag differs:'+name)
+  if name in('duplicate','mixed'):need(sum(1 for row in bags[-1]if row['receipt']is not None and row['receipt']['tournament_id']!=row['source']['tournament_id'])==8,'wrong-event receipt multiplicity changed:'+name)
+  for label,_ in variants[1:]:rec('adaptive_receipt_full_join_bag_'+name+'_'+label)
 
 def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
  q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
@@ -331,7 +344,17 @@ def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
    need(plan['Plan'].get('Actual Rows')==5000,'complete FOR event cardinality changed:'+mode)
    receipts=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_recognized_sources'and n.get('Alias')=='original_receipt']
    need(receipts and all('source_id ='in n.get('Index Cond','')and n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index'in n['Node Type']for n in receipts),'combined physical receipt probe not bounded:'+mode)
-   rec('actual_full_FOR_narrow_source_keys_and_physical_receipt_probe_'+mode)
+   if 'receipt_access AS MATERIALIZED'in after:
+    raw=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw'];keyed=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw_1']
+    need(raw and raw[0]['Node Type']=='Seq Scan'and raw[0]['Actual Loops']==1 and keyed and keyed[0]['Actual Loops']==0,'dense receipt branch did not stream exclusively:'+mode)
+   rec('actual_full_FOR_adaptive_dense_stream_receipt_'+mode)
+  if 'receipt_access AS MATERIALIZED'in after:
+   q("UPDATE public.accounting_tournament_fee_recognitions SET recognized_at='2026-09-01'WHERE tournament_id>fixture.u(1050);UPDATE public.tournament_rake_settlements SET settled_at='2026-09-01'WHERE tournament_id>fixture.u(1050);ANALYZE;")
+   for mode in ['auto','force_custom_plan','force_generic_plan']:
+    plan=json.loads(q('SET plan_cache_mode='+mode+';'+prepare+"EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON,TIMING OFF)EXECUTE native_keyed_events('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10))"))[0];plans['sparse_'+mode]=plan
+    raw=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw'];keyed=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw_1']
+    need(plan['Plan']['Actual Rows']==50 and raw and raw[0]['Actual Loops']==0 and keyed and keyed[0]['Actual Loops']==50 and 'Index'in keyed[0]['Node Type'],'sparse receipt branch was not exclusively bounded:'+mode)
+    rec('actual_full_FOR_adaptive_sparse_keyed_receipt_'+mode)
   q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
  else:
   need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'direct bank bulk access was not proven')

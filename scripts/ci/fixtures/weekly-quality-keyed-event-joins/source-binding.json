@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
   "sourceFiles": {
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "31ffba692d81e4fb47784712bcf00a863da61d1202953e1cb1981828fc2cea2b",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "f44fe0b0a684af7977b0fb15cf57e9531491c8caef183b3a4b3f5310d3ff888f",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "5afe4f3acb8db582211cd001b3066d2a1257fec247bce4b07a825f6832c0fa12",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "532f666297648156bc8fb458861dbd7375bcec8c14ce78f81bc8ec165c655b94",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "3047518836fc6028349faa4f3fa3b0b3c042657c3aaaca663468c18553ea1dcd",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "7b346c195666d2c708a90518480d9e231b438a39fe503fcdae1bd54fb3244263",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "fc67270716389ece2ee949bb3061e04ba9744051f8ec0693ddeb203c5d034edf",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "0b33d0fb94da56fb88b6c16fd296f99b6661bfec7b23d5d420ad2850fc51e54d",
     "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-before.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
-    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "0c29f380047ac522a239072a93c2ac2509964c42b478c7e44c85b4b876496288",
+    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "de5a93fe6edfefa79b46fe71a1d227840d72379e53b011f033d22c261d7b6f0a",
     ".github/workflows/weekly-close-hour-guard.yml": "2afbc02b180384be27bab4026413f3f1c442945f74510de7b4708b896743930e",
-    "tests/weekly-quality-keyed-event-joins.law.test.ts": "2a82129262c9b3635656fd675cb5c6d070b6528b48c587fa9c3f59d7c9f9478b",
-    "docs/laws.d/weekly-quality-keyed-event-joins.md": "81cb573969deaa976011e9e609d46db77ba9262429ad10ee7e50a03331d2c45f",
-    "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "5afe4f3acb8db582211cd001b3066d2a1257fec247bce4b07a825f6832c0fa12",
-    "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "f2c1c861cbc41c299f3a7018848b7afca7392de08ebdd33de7933f45ad0782ba"
+    "tests/weekly-quality-keyed-event-joins.law.test.ts": "8418e04970b4485ab4d5064af28ae5fe72981f97196c14a4b16f180f17361c84",
+    "docs/laws.d/weekly-quality-keyed-event-joins.md": "6b99b1fd470f22bf56d6e8e5f464aa5c078c954ab1c3b62652d3e03447bf9b51",
+    "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "fc67270716389ece2ee949bb3061e04ba9744051f8ec0693ddeb203c5d034edf",
+    "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "cb7a9865fcd0025c9a3aaefa435ed4a652f60eca5a40565cdc71dd53589a9320"
   },
   "audit": {
-    "reason": "Candidate541b narrows materialized sources to three UUID keys and validates physical source/receipt bags; native115 exact inputs updated. Normal commit hook formatted the evidence and receipt JSON; only their reviewed byte pins were restamped after that formatting.",
-    "candidate_full_md5": "541b13417ffd614be148737ae33242b1"
+    "reason": "Adaptive receipt producer preserves one original predicate block and both source bags; native147 adds dense/sparse natural plans and forced-keyed excluded domains. Exact formatted reviewed source/evidence pins refreshed.",
+    "candidate_full_md5": "f78bb6693535f595d21018c4bb7edff2"
   }
 }

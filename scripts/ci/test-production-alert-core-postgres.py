@@ -53,6 +53,9 @@ CHECKOUT_INPUTS.update({
 CHECKOUT_INPUTS.update({
  'storm_declare_guard':'scripts/qualification/fixtures/tournament-finish-storm/declare-guard.sql',
  'hand_identity_native':'scripts/qualification/hand-history-incident-identity/native.mjs',
+ 'hand_refusal_native':'scripts/qualification/hand-refusal-outcome/native.mjs',
+ 'hand_refusal_preimage':'scripts/qualification/fixtures/hand-refusal-outcome/preimage.sql',
+ 'hand_refusal_migration':'supabase/migrations/20261029205730_hand_commit_detector_requires_exact_original_outcome.sql',
  'hand_identity_preimages':'scripts/qualification/fixtures/hand-history-incident-identity/preimages.sql',
  'hand_identity_migration':'supabase/migrations/20261029180738_hand_history_incidents_retain_exact_original_identity.sql',
  'storm_component':'supabase/components/tournament-finish-storm-members.sql',
@@ -429,6 +432,7 @@ def main():
         require(node is not None, 'existing Node runtime required for real storm concurrency')
         command('storm_original_members_concurrent', [node, ROOT / CHECKOUT_INPUTS['storm_native'], work], timeout=30)
         command('hand_history_original_identity', [node, ROOT / CHECKOUT_INPUTS['hand_identity_native'], work], timeout=30)
+        command('hand_refusal_exact_outcomes', [node, ROOT / CHECKOUT_INPUTS['hand_refusal_native'], work], timeout=30)
         sql('cash_actual_connected_chain', ROOT / CHECKOUT_INPUTS['cash_connected'], user='postgres')
         sql('cash_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         # Extend the same actual component check; no new job, provider or sender.

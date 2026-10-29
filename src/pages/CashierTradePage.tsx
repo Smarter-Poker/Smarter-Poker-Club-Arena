@@ -1,3 +1,4 @@
+import { BUY_IN_LADDER } from '../utils/buyIn';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import {
   SEND_SOURCE_LABELS,
@@ -157,7 +158,6 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 import { creditHeadroomOf, readCashierBalances } from '../services/cashierBalanceRead';
 import {
   buildTournamentTicketItem,
-  listTicketableTournaments,
   tournamentTicketIdempotencyKey,
   type TicketableTournament,
 } from '../services/CashierTournamentTickets';
@@ -696,12 +696,12 @@ function CashierTradeWorkspace() {
    * would refuse.
    */
   const [claimOpen, setClaimOpen] = useState(false);
-  /* SEND TICKET INTO ONE TOURNAMENT (Dan 2026-10-15): the ticket is bound to
-     a future or running tournament the cashier picks, priced by the SERVER
-     from that tournament and paid from the sender's player wallet. */
-  const [ticketTournaments, setTicketTournaments] = useState<TicketableTournament[] | null>(null);
-  const [ticketTournamentsError, setTicketTournamentsError] = useState<string | null>(null);
+  // Event ids survive only for exact replay of previously submitted tickets.
   const [ticketTournamentId, setTicketTournamentId] = useState<string>('');
+  const ticketValues = useMemo(
+    () => [...new Set<number>([...BUY_IN_LADDER, 40])].sort((a, b) => a - b),
+    []
+  );
   /* The Club Bank figure, read when a dialog spends or fills it: a self send
      (owner, co owner) and a management claim back (Dan 2026-10-15). */
   const [bankBalance, setBankBalance] = useState<number | null>(null);
@@ -2531,7 +2531,6 @@ function CashierTradeWorkspace() {
   const retainedTicketTournament = useMemo<TicketableTournament | null>(() => {
     const saved = transferRecovery;
     if (!saved || saved.kind !== 'ticket' || !saved.tournamentId) return null;
-    if (ticketTournaments?.some((row) => row.tournamentId === saved.tournamentId)) return null;
     return {
       tournamentId: saved.tournamentId,
       name: 'Original Tournament (Retry Only)',
@@ -2546,28 +2545,23 @@ function CashierTradeWorkspace() {
       currentPlayers: null,
       maxPlayers: null,
     } as TicketableTournament;
-  }, [transferRecovery, ticketTournaments]);
-  const ticketTournament = useMemo(
-    () =>
-      ticketTournaments?.find((row) => row.tournamentId === ticketTournamentId) ??
-      (retainedTicketTournament?.tournamentId === ticketTournamentId
-        ? retainedTicketTournament
-        : null),
-    [ticketTournaments, ticketTournamentId, retainedTicketTournament]
-  );
+  }, [transferRecovery]);
+  const ticketTournament =
+    retainedTicketTournament?.tournamentId === ticketTournamentId ? retainedTicketTournament : null;
+  const ticketValue = ticketValues.includes(Number(amount)) ? Number(amount) : null;
   const batchPlan = useMemo(() => {
     if (amountModal === 'ticket') {
-      // A ticket is the tournament's entry: the price is the server's, never
-      // typed, and the same for every recipient.
-      if (!ticketTournament) {
+      // Every recipient receives the selected entry value. Previously submitted
+      // event-bound tickets retain their original price for exact retry.
+      if (!ticketTournament && !ticketValue) {
         return {
           ok: false as const,
           userId: picked[0]?.userId ?? '',
-          error: 'Choose A Tournament',
+          error: 'Choose A Ticket Value',
         };
       }
       const amounts = Object.fromEntries(
-        picked.map((row) => [row.userId, ticketTournament.price])
+        picked.map((row) => [row.userId, ticketTournament?.price ?? ticketValue!])
       ) as Record<string, number>;
       return {
         ok: true as const,
@@ -2580,7 +2574,7 @@ function CashierTradeWorkspace() {
       amount,
       recipientAmounts
     );
-  }, [picked, amount, recipientAmounts, amountModal, ticketTournament]);
+  }, [picked, amount, recipientAmounts, amountModal, ticketTournament, ticketValue]);
   const previewTotal = batchPlan.ok ? batchPlan.total : 0;
   const uniformAmountValue =
     picked.length === 1 ? (recipientAmounts[picked[0].userId] ?? amount) : amount;
@@ -2791,8 +2785,8 @@ function CashierTradeWorkspace() {
       );
       return;
     }
-    if (kind === 'ticket' && !ticketTournament) {
-      toast?.error?.('Choose A Tournament For The Ticket');
+    if (kind === 'ticket' && !ticketTournament && !ticketValue) {
+      toast?.error?.('Choose A Ticket Value');
       return;
     }
     if (!canHoldAgentWallet(myRole)) {
@@ -3701,33 +3695,6 @@ function CashierTradeWorkspace() {
       if (isMounted.current) setMgmtClaiming(false);
     }
   };
-
-  // The tournaments a ticket can be sent into, read whenever Send Ticket opens.
-  useEffect(() => {
-    if (amountModal !== 'ticket' || !clubUuid) return;
-    let live = true;
-    setTicketTournamentsError(null);
-    listTicketableTournaments(clubUuid)
-      .then((rows) => {
-        if (!live) return;
-        setTicketTournaments(rows);
-        setTicketTournamentId((current) =>
-          rows.some((row) => row.tournamentId === current) ||
-          (current !== '' && current === transferRecoveryRef.current?.tournamentId)
-            ? current
-            : ''
-        );
-      })
-      .catch((error: Error) => {
-        if (!live) return;
-        reportError(error, 'CashierTradePage.listTicketableTournaments');
-        setTicketTournaments(null);
-        setTicketTournamentsError(error.message || 'Could Not Load Tournaments');
-      });
-    return () => {
-      live = false;
-    };
-  }, [amountModal, clubUuid]);
 
   // The bank figure each Club Bank dialog spends or fills.
   useEffect(() => {
@@ -5952,7 +5919,7 @@ function CashierTradeWorkspace() {
                           picked.length === 0 ||
                           cashierAuthorityBlocked ||
                           (amountModal === 'send' && selectedSourceBalance === null) ||
-                          (amountModal === 'ticket' && !ticketTournament) ||
+                          (amountModal === 'ticket' && !ticketTournament && !ticketValue) ||
                           !canHoldAgentWallet(myRole),
                         onClick: () => void runTransfers(amountModal),
                       },
@@ -6069,52 +6036,32 @@ function CashierTradeWorkspace() {
                 ) : (
                   <>
                     {amountModal === 'ticket' ? (
-                      /* SEND TICKET INTO ONE TOURNAMENT (Dan 2026-10-15). The
-                         list is every future or running event this club's
-                         cashier may ticket; the price is the server's. */
                       <label className={styles.entryRow}>
-                        <span className={styles.entryRowSlot}>Event</span>
+                        <span className={styles.entryRowSlot}>Value</span>
                         <span className={styles.entryRowPlate}>
                           <select
                             className={styles.entrySelect}
-                            aria-label="Tournament"
-                            value={ticketTournamentId}
-                            disabled={busy || ticketTournaments === null}
+                            aria-label="Ticket Value"
+                            value={ticketTournament ? String(ticketTournament.price) : amount}
+                            disabled={busy || !!ticketTournament}
                             onChange={(event) => {
-                              setTicketTournamentId(event.target.value);
+                              setAmount(event.target.value);
+                              setRecipientAmounts({});
                               if (transferFailures.length) setTransferFailures([]);
                             }}
                           >
-                            <option value="">
-                              {ticketTournamentsError
-                                ? 'Tournaments Unavailable'
-                                : ticketTournaments === null
-                                  ? 'Loading Tournaments'
-                                  : ticketTournaments.length === 0
-                                    ? 'No Open Tournaments'
-                                    : 'Choose A Tournament'}
-                            </option>
-                            {retainedTicketTournament ? (
-                              <option value={retainedTicketTournament.tournamentId}>
-                                {retainedTicketTournament.name} ·{' '}
-                                {exactChipFigure(retainedTicketTournament.price)}
+                            <option value="">Choose A Ticket Value</option>
+                            {ticketTournament ? (
+                              <option value={String(ticketTournament.price)}>
+                                {exactChipFigure(ticketTournament.price)} Ticket (Original Retry)
                               </option>
-                            ) : null}
-                            {(ticketTournaments ?? []).map((row) => (
-                              <option key={row.tournamentId} value={row.tournamentId}>
-                                {titleCase(row.name)}
-                                {row.startTime
-                                  ? ` · ${new Date(row.startTime).toLocaleString([], {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      hour: 'numeric',
-                                      minute: '2-digit',
-                                    })}`
-                                  : ''}
-                                {row.status === 'RUNNING' ? ' · Late Reg' : ''}
-                                {` · ${exactChipFigure(row.price)}`}
-                              </option>
-                            ))}
+                            ) : (
+                              ticketValues.map((value) => (
+                                <option key={value} value={String(value)}>
+                                  {exactChipFigure(value)} Ticket
+                                </option>
+                              ))
+                            )}
                           </select>
                         </span>
                       </label>

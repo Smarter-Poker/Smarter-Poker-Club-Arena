@@ -313,8 +313,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 116303,
-      "sha256": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57"
+      "bytes": 117164,
+      "sha256": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d"
     }
   },
   "nativePgCron": {
@@ -4765,6 +4765,18 @@
           "bytes": 44520,
           "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
         }
+      },
+      {
+        "file": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 116303,
+          "sha256": "1be5e3fde33c6a46bc587b32c687f1b6204b19f775557e9a324de7e42930ed57"
+        },
+        "current": {
+          "bytes": 117164,
+          "sha256": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d"
+        },
+        "review": "Retain original runtime/pg_cron prerequisite refusals and all other shards; add explicit private pg_net tool requirements and a positive already-equipped shard2 case. No financial fixture, amount, native assertion or deadline changes."
       }
     ]
   }

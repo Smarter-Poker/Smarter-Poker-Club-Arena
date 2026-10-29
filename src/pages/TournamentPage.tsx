@@ -1,3 +1,4 @@
+import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 /**
  * ♠ CLUB ARENA — Tournament Lobby Page
  * Register and view upcoming tournaments
@@ -573,6 +574,7 @@ export default function TournamentPage() {
         is_pko: !!(selectedTournament as any).is_pko,
         is_mystery_bounty: !!(selectedTournament as any).is_mystery_bounty,
         start_time: (selectedTournament as any).start_time ?? null,
+        startsWhenFull: satelliteStartsWhenFull(selectedTournament),
         club_id: (selectedTournament as any).club_id ?? null,
         status: selectedTournament.status,
       },

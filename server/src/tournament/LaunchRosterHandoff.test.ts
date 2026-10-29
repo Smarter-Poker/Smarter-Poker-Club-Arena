@@ -324,3 +324,58 @@ describe('large MTT launch proof', () => {
     ).toBe(expected);
   });
 });
+
+describe('balancing sees every occupied tournament table', () => {
+  it.each([1000, 1001, 1009, 9001])('includes all tables holding %i seats', async (count) => {
+    const tables = Array.from({ length: Math.ceil(count / 9) }, (_, i) => ({ id: id(50000 + i) }));
+    const seats = Array.from({ length: count }, (_, i) => ({
+      id: id(60000 + i),
+      table_id: tables[Math.floor(i / 9)].id,
+    }));
+    transport.read.mockImplementation((table: string, q: any) => ({
+      data: (table === 'tables' ? tables : seats)
+        .filter((r: any) => !q.cursor || r.id > q.cursor)
+        .slice(0, Math.min(q.limitTo ?? 1000, 1000)),
+      error: null,
+    }));
+    const manager: any = Object.create(TournamentManagerBase.prototype);
+    manager.tournamentId = tournamentId;
+    manager.captureLifecycleToken = () => ({});
+    manager.lifecycleIsCurrent = () => true;
+    expect(await manager.liveTournamentTableIdsWithPlayers()).toEqual(tables.map((t) => t.id));
+    expect(transport.rpc).not.toHaveBeenCalled();
+  });
+});
+
+it.each(['table-page', 'seat-page', 'withdrawn'])(
+  'keeps a partial live field unknown: %s',
+  async (fault) => {
+    let current = true;
+    const manager: any = Object.create(TournamentManagerBase.prototype);
+    manager.tournamentId = tournamentId;
+    manager.captureLifecycleToken = () => ({});
+    manager.lifecycleIsCurrent = () => current;
+    transport.read.mockImplementation((table: string, q: any) => {
+      if (
+        q.cursor &&
+        ((fault === 'table-page' && table === 'tables') ||
+          (fault === 'seat-page' && table === 'table_seats'))
+      ) {
+        return { data: null, error: new Error('later page unavailable') };
+      }
+      if (fault === 'withdrawn') current = false;
+      const rows =
+        table === 'tables'
+          ? Array.from({ length: fault === 'table-page' ? 1001 : 1 }, (_, i) => ({
+              id: id(50000 + i),
+            }))
+          : Array.from({ length: 1001 }, (_, i) => ({ id: id(60000 + i), table_id: id(50000) }));
+      return {
+        data: rows.filter((r) => !q.cursor || r.id > q.cursor).slice(0, q.limitTo ?? 1000),
+        error: null,
+      };
+    });
+    expect(await manager.liveTournamentTableIdsWithPlayers()).toBeNull();
+    expect(transport.rpc).not.toHaveBeenCalled();
+  }
+);

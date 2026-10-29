@@ -90,7 +90,8 @@ def _number(value,kind):
     if kind=='seat' and not 1<=value<=10:raise ValueError('action_seat')
     return value
 
-def packet_from_rows(rows,sha,start,end):
+def packet_from_rows(rows,sha,start,end,version=5):
+    if version not in (4,5):raise ValueError('packet_version')
     legacy.inputs({'FLEET_SOURCE_SHA':sha,'FLEET_FROM_UTC':start,'FLEET_TO_UTC':end})
     if not isinstance(rows,dict) or rows.get('timeIndexValid') is not True or not rows.get('snapshot') or not rows.get('readAt'):raise ValueError('snapshot_or_index')
     ids=rows.get('horseIds');hands=rows.get('hands')
@@ -128,10 +129,10 @@ def packet_from_rows(rows,sha,start,end):
         if action_count>MAX_ACTIONS:raise ValueError('action_bound')
         owners[h['source_owner']]+=1
         out.append({'context':context,'handKey':key,'committedAtMs':at,'actions':sorted(actions,key=lambda a:a['actionOrdinal'])})
-    packet={'version':4,'sourceSha':sha,'window':{'startUtc':start,'endUtc':end},'horseIds':ids,'hands':sorted(out,key=lambda h:(h['committedAtMs'],h['handKey']))}
+    packet={'version':version,'sourceSha':sha,'window':{'startUtc':start,'endUtc':end},'horseIds':ids,'hands':sorted(out,key=lambda h:(h['committedAtMs'],h['handKey']))}
     if len(json.dumps(packet,separators=(',',':')).encode())>MAX_BYTES:raise ValueError('packet_byte_bound')
     partition_packets(packet) # refuse before any event if all original hands cannot fit
-    attestation={'version':4,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_fleet_register','rosterPredicate':'retired_at IS NULL','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':transport_digest(packet),'cohortDigest':digest({'version':1,'horseIds':ids}),'rosterCount':1000,'selectedHands':len(out),'expectedActions':action_count,'sourceOwnerCounts':owners,'ownership':'accepted_hand_commit_window','handDomains':[{'handKey':h['handKey'],'committedAtMs':h['committedAtMs'],'expectedActions':len(h['actions']),'domainDigest':digest(h['actions']),'nonDecisionDiagnostics':diagnostics[h['handKey']], 'context':h['context']} for h in packet['hands']],'completePopulation':False,'allPhasesVerified':False}
+    attestation={'version':version,'authority':'canonical_database_snapshot','rosterTable':'public.ca_horse_fleet_register','rosterPredicate':'retired_at IS NULL','snapshot':rows['snapshot'],'readAt':rows['readAt'],'sourceSha':sha,'packetDigest':transport_digest(packet),'cohortDigest':digest({'version':1,'horseIds':ids}),'rosterCount':1000,'selectedHands':len(out),'expectedActions':action_count,'sourceOwnerCounts':owners,'ownership':'accepted_hand_commit_window','handDomains':[{'handKey':h['handKey'],'committedAtMs':h['committedAtMs'],'expectedActions':len(h['actions']),'domainDigest':digest(h['actions']),'nonDecisionDiagnostics':diagnostics[h['handKey']], 'context':h['context']} for h in packet['hands']],'completePopulation':False,'allPhasesVerified':False}
     return packet,attestation
 
 def validate_diagnostics(d):
@@ -175,8 +176,17 @@ def validate_range_summary(row):
             if any(v[i]&v[j] for i in range(12,16) for j in range(i+1,16)):raise ValueError('turn_range_tiers')
     if status!='unknown' and (row['inputBinding']!='canonical_digest_and_read_frame' or row['contextBinding']!='matched' or row['execution']!='intended' or row['selection']!='matched'):raise ValueError('turn_range_consumption')
 
-def validate_turn(row, contextual=False, ranged=False):
-    if not isinstance(row,dict) or set(row)!=(TURN_FIELDS|({'contextBinding','historyReason'} if contextual else set())|(RANGE_FIELDS if ranged else set())):raise ValueError('turn_shape')
+PLAN_FIELDS={'planStatus','planUse'}
+def validate_plan_summary(row):
+    status=row['planStatus'];v=row['planUse']
+    if status not in ('unknown','observed','not_reached','outside_domain','refused'):raise ValueError('turn_plan_status')
+    if status!='observed':
+        if v is not None:raise ValueError('turn_plan_nonobserved')
+    elif (not isinstance(v,list) or len(v)!=3 or any(type(n) is not int or not -1<=n<=(2 if i==0 else 3) for i,n in enumerate(v)) or not any(n>=0 for n in v)):raise ValueError('turn_plan_tuple')
+    if status!='unknown' and any(row[k]!=v for k,v in {'inputBinding':'canonical_digest_and_read_frame','contextBinding':'matched','execution':'intended','selection':'matched','handReconciliation':'reconciled','capture':'present','expectedBinding':'matched'}.items()):raise ValueError('turn_plan_consumption')
+
+def validate_turn(row, contextual=False, ranged=False, planned=False):
+    if not isinstance(row,dict) or set(row)!=(TURN_FIELDS|({'contextBinding','historyReason'} if contextual else set())|(RANGE_FIELDS if ranged else set())|(PLAN_FIELDS if planned else set())):raise ValueError('turn_shape')
     if type(row['actorIndex']) is not int or not 0<=row['actorIndex']<1000 or type(row['actionOrdinal']) is not int or not 0<=row['actionOrdinal']<MAX_ACTIONS or not isinstance(row['handKey'],str) or not re.fullmatch('[0-9a-f]{64}',row['handKey']) or row['stage'] not in STAGES or row['action'] not in ACTIONS or row['origin'] not in ORIGINS:raise ValueError('turn_domain')
     for k,values in TURN_ENUMS.items():
         if row[k] not in values:raise ValueError('turn_status')
@@ -184,6 +194,7 @@ def validate_turn(row, contextual=False, ranged=False):
     if contextual and ((row['contextBinding']=='matched' and (row['inputBinding']!='canonical_digest_and_read_frame' or row['capture']!='present' or row['expectedBinding']!='matched' or row['handReconciliation']!='reconciled')) or (row['inputBinding']=='canonical_digest_and_read_frame' and row['contextBinding']!='matched')):raise ValueError('turn_context_consumption')
     if contextual and (row['historyReason'] not in HISTORY_REASONS or (row['historyReason']!='unknown' and row['inputBinding']!='canonical_digest_and_read_frame')):raise ValueError('turn_history_reason')
     if ranged:validate_range_summary(row)
+    if planned:validate_plan_summary(row)
     discard=row['action']=='discard' and row['stage'] in ('flop','pineapple_discard')
     if row['inputBinding']=='original_discard_request_and_controller' and not discard:raise ValueError('turn_discard_context')
     if (row['publicRead']=='not_applicable' or row['historicalRead']=='not_applicable') and not (discard or row['origin']=='forced'):raise ValueError('turn_read_context')
@@ -198,16 +209,18 @@ def validate_turn(row, contextual=False, ranged=False):
         if reason is not None and (not isinstance(reason,str) or not re.fullmatch('[0-9a-f]{64}',reason)):raise ValueError('turn_phase_reason')
     return row
 
-def missing_row(expected,contextual=False,ranged=False):
+def missing_row(expected,contextual=False,ranged=False,planned=False):
     row={**expected,**{k:('missing' if k in ('capture','execution') else 'unknown') for k in TURN_ENUMS},'phases':{f'phase{i}':{'status':'unknown','eligibility':'unknown','application':'unknown','capability':'unobserved','qualification':'unknown','reasonSha256':None} for i in range(1,16)}}
     if contextual:row.update(contextBinding='unknown',historyReason='unknown')
     if ranged:row.update(rangeStatus='unknown',rangeUse=None)
+    if planned:row.update(planStatus='unknown',planUse=None)
     return row
 
 def summarize(packet,attestation,results):
     parts=partition_packets(packet)
     contextual=packet['version']>=3
-    ranged=packet['version']==4
+    ranged=packet['version']>=4
+    planned=packet['version']==5
     base_domains=[{'handKey':h['handKey'],'committedAtMs':h['committedAtMs'],'expectedActions':len(h['actions']),'domainDigest':digest(h['actions']),**({'context':h['context']} if contextual else {})} for h in packet['hands']]
     domains=attestation.get('handDomains')
     if not isinstance(domains,list) or len(domains)!=len(base_domains):raise ValueError('census_domains')
@@ -219,7 +232,7 @@ def summarize(packet,attestation,results):
     turns=[];bindings=[];identity=None;extras=unbound=0
     for index,part in enumerate(parts):
         expected=expected_rows(part)
-        if index>=len(results):turns.extend(missing_row(r,contextual,ranged) for r in expected);continue
+        if index>=len(results):turns.extend(missing_row(r,contextual,ranged,planned) for r in expected);continue
         result=results[index];e=result.get('execution',{});o=e.get('observation',{})
         if (result.get('qualifiedExecution') is not True or result.get('sourceSha')!=packet['sourceSha'] or result.get('packetDigest')!=transport_digest(part)
             or e.get('release')!=packet['sourceSha'] or e.get('exitCode') not in (0,2) or e.get('containerExitCode')!=e.get('exitCode') or e.get('sameServingIdentityAfter') is not True
@@ -234,18 +247,19 @@ def summarize(packet,attestation,results):
             if type(o[k]) is not int or o[k]<0:raise ValueError('census_count')
         if type(o['boundReached']) is not bool or o['inspectedHands']+o['remainingHands']!=len(part['hands']):raise ValueError('census_hand_counts')
         for original,row in zip(expected,o['turns']):
-            validate_turn(row,contextual,ranged)
+            validate_turn(row,contextual,ranged,planned)
             if any(row[k]!=v for k,v in original.items()):raise ValueError('census_expected_omission')
             turns.append(row)
         extras+=o['extraneousCaptures'];unbound+=o['unboundCaptures']
         bindings.append({'packetDigest':transport_digest(part),'servingContainer':current[0],'imageId':current[1],'servingStartedAt':current[2]})
-    ledger={'schema':('horse-turn-census-ledger-v3' if ranged else 'horse-turn-census-ledger-v2' if contextual else 'horse-turn-census-ledger-v1'),'sourceSha':packet['sourceSha'],'cohortDigest':attestation['cohortDigest'],'rosterCount':1000,'observations':[{'packetDigest':transport_digest(packet),'window':packet['window'],'handDomains':domains,'partitions':bindings}],'turns':turns,'extraneousCaptures':extras,'unboundCaptures':unbound,'completePopulation':False,'allPhasesVerified':False,'strategyCorrectnessVerified':False,'durablePersistenceVerified':False}
+    ledger={'schema':('horse-turn-census-ledger-v4' if planned else 'horse-turn-census-ledger-v3' if ranged else 'horse-turn-census-ledger-v2' if contextual else 'horse-turn-census-ledger-v1'),'sourceSha':packet['sourceSha'],'cohortDigest':attestation['cohortDigest'],'rosterCount':1000,'observations':[{'packetDigest':transport_digest(packet),'window':packet['window'],'handDomains':domains,'partitions':bindings}],'turns':turns,'extraneousCaptures':extras,'unboundCaptures':unbound,'completePopulation':False,'allPhasesVerified':False,'strategyCorrectnessVerified':False,'durablePersistenceVerified':False}
     return ledger_summary(validate_ledger(ledger))
 
 def validate_ledger(ledger):
-    if not isinstance(ledger,dict) or set(ledger)!={'schema','sourceSha','cohortDigest','rosterCount','observations','turns','extraneousCaptures','unboundCaptures','completePopulation','allPhasesVerified','strategyCorrectnessVerified','durablePersistenceVerified'} or ledger['schema'] not in ('horse-turn-census-ledger-v1','horse-turn-census-ledger-v2','horse-turn-census-ledger-v3') or ledger['rosterCount']!=1000 or not re.fullmatch('[0-9a-f]{40}',ledger['sourceSha']) or not re.fullmatch('[0-9a-f]{64}',ledger['cohortDigest']) or any(ledger[k] is not False for k in ('completePopulation','allPhasesVerified','strategyCorrectnessVerified','durablePersistenceVerified')):raise ValueError('census_ledger')
+    if not isinstance(ledger,dict) or set(ledger)!={'schema','sourceSha','cohortDigest','rosterCount','observations','turns','extraneousCaptures','unboundCaptures','completePopulation','allPhasesVerified','strategyCorrectnessVerified','durablePersistenceVerified'} or ledger['schema'] not in ('horse-turn-census-ledger-v1','horse-turn-census-ledger-v2','horse-turn-census-ledger-v3','horse-turn-census-ledger-v4') or ledger['rosterCount']!=1000 or not re.fullmatch('[0-9a-f]{40}',ledger['sourceSha']) or not re.fullmatch('[0-9a-f]{64}',ledger['cohortDigest']) or any(ledger[k] is not False for k in ('completePopulation','allPhasesVerified','strategyCorrectnessVerified','durablePersistenceVerified')):raise ValueError('census_ledger')
     contextual=ledger['schema']!='horse-turn-census-ledger-v1'
-    ranged=ledger['schema']=='horse-turn-census-ledger-v3'
+    ranged=ledger['schema'] in ('horse-turn-census-ledger-v3','horse-turn-census-ledger-v4')
+    planned=ledger['schema']=='horse-turn-census-ledger-v4'
     intervals=[];packets=set();domains={}
     if not isinstance(ledger['observations'],list) or not 1<=len(ledger['observations'])<=16:raise ValueError('census_observations')
     for b in ledger['observations']:
@@ -267,7 +281,7 @@ def validate_ledger(ledger):
     keys=set();counts={k:0 for k in domains}
     if not isinstance(ledger['turns'],list) or len(ledger['turns'])>16*MAX_ACTIONS:raise ValueError('census_turn_bound')
     for row in ledger['turns']:
-        validate_turn(row,contextual,ranged);key=(row['actorIndex'],row['handKey'],row['actionOrdinal'])
+        validate_turn(row,contextual,ranged,planned);key=(row['actorIndex'],row['handKey'],row['actionOrdinal'])
         if key in keys:raise ValueError('census_duplicate_turn')
         keys.add(key)
         if row['handKey'] not in counts:raise ValueError('census_unexpected_turn')

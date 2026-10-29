@@ -11,8 +11,28 @@ def fixture():
     return {'timeIndexValid':True,'snapshot':'1:2:','readAt':END,'horseIds':IDS[::-1],
       'hands':[{'id':'10000000-0000-4000-8000-000000000001','table_id':'20000000-0000-4000-8000-000000000001','lease_generation':'30000000-0000-4000-8000-000000000001','hand_number':'1000001','source_owner':'classic','accepted':True,'actions_valid':True,'original_actions_match':True,'non_decision_diagnostics':{'forcedPosts':0,'uncalledReturns':0,'unknownNonDecision':0},'committed_at_ms':1793149201000,'original_context_match':True,'original_context':{'variant':'nlh','format':'cash','provenance':'retained_submission_and_committed_history'},
        'actions':[{'actorId':IDS[1],'actionOrdinal':3,'stage':'preflop','action':'check','origin':'horse_policy','amount':0,'seat':1,'timestamp':1793149199000}]}]}
-def make(v=None):return c.packet_from_rows(v or fixture(),SHA,START,END)
+def make(v=None):return c.packet_from_rows(v or fixture(),SHA,START,END,version=4)
 class CensusTests(unittest.TestCase):
+    def test_v5_plan_ledger_closes_codes_bindings_and_preserves_old_schemas(self):
+        p,a=c.packet_from_rows(fixture(),SHA,START,END)
+        self.assertEqual(p['version'],5)
+        l=c.summarize(p,a,[])['turnCensusLedger'];self.assertEqual(l['schema'],'horse-turn-census-ledger-v4')
+        row=l['turns'][0];self.assertEqual((row['planStatus'],row['planUse']),('unknown',None))
+        row.update(expectedBinding='matched',capture='present',execution='intended',selection='matched',inputBinding='canonical_digest_and_read_frame',contextBinding='matched',handReconciliation='reconciled',publicRead='independent',planStatus='observed',planUse=[0,-1,3])
+        c.validate_ledger(l)
+        for changes in ({'planUse':[-1,-1,-1]},{'planUse':[3,0,0]},{'planUse':[True,0,0]},{'planUse':[0,4,0]},{'planUse':[0,0,4]},{'planStatus':'not_reached'},{'planStatus':'private'},{'selection':'unknown'},{'execution':'coerced'},{'capture':'ambiguous'},{'handReconciliation':'incomplete'}):
+            bad=copy.deepcopy(l);bad['turns'][0].update(changes)
+            with self.assertRaises(ValueError):c.validate_ledger(bad)
+        for state in ('not_reached','outside_domain','refused'):
+            value=copy.deepcopy(l);value['turns'][0].update(planStatus=state,planUse=None);c.validate_ledger(value)
+        legacy_p,legacy_a=make();old=c.summarize(legacy_p,legacy_a,[])['turnCensusLedger'];before=copy.deepcopy(old)
+        self.assertEqual(c.validate_ledger(old),before);self.assertNotIn('planStatus',old['turns'][0])
+        with self.assertRaisesRegex(ValueError,'census_union_mismatch'):c.union_ledgers([old,l])
+    def test_v5_packet_denominator_and_query_are_unchanged_except_version_digest(self):
+        p,a=c.packet_from_rows(fixture(),SHA,START,END);old,oa=make()
+        q=copy.deepcopy(p);q['version']=4;self.assertEqual(q,old)
+        q=copy.deepcopy(a);q.update(version=4,packetDigest=oa['packetDigest']);self.assertEqual(q,oa)
+
     def test_context_all_supported_variants_and_original_match(self):
         for variant in sorted(c.VARIANTS):
             v=fixture();v['hands'][0]['original_context']['variant']=variant

@@ -1,0 +1,290 @@
+{
+  "qualification": "passed",
+  "case_count": 33,
+  "cases": [
+    "full15columns5constraints14indexes8trigger_contracts_wide_JSON_fixture",
+    "before_dense_old28a_and_541b_all3_modes_exact_full_FOR_bags",
+    "before_sparse_old28a_and_541b_all3_modes_exact_full_FOR_bags",
+    "one_actual_CCI_fixed_three_UUID_catalog_and_full_actual_table_guard",
+    "after_dense_old28a_and_541b_all3_modes_exact_full_FOR_bags",
+    "after_sparse_old28a_and_541b_all3_modes_exact_full_FOR_bags",
+    "after_full_FOR_NULL_receipt_fields_bags_all3_modes",
+    "after_full_FOR_wrong_event_receipt_bags_all3_modes",
+    "after_full_FOR_foreign_source_scope_bags_all3_modes",
+    "after_full_FOR_NULL_source_union_bags_all3_modes",
+    "all_original_source_rows_contracts_14_indexes_ACL_RLS_constraints_triggers_unchanged",
+    "actual_complete_old28a_and_541b_quality_functions_run_with_narrow_index",
+    "actual_atomic_history_template_failure_retains_VALID_prefix_without_history",
+    "VALID_prefix_IF_NOT_EXISTS_resume_never_rebuilds_or_drops_index",
+    "installer_role_refuses_atomically",
+    "installer_jwt_refuses_atomically",
+    "installer_boundary_refuses_atomically",
+    "installer_force_RLS_refuses_atomically",
+    "installer_constraint_refuses_atomically",
+    "installer_old_index_refuses_atomically",
+    "installer_source65_refuses_atomically",
+    "installer_generation_refuses_atomically",
+    "installer_freeze_refuses_atomically",
+    "installer_window_refuses_atomically",
+    "installer_override_refuses_atomically",
+    "installer_ACL_refuses_atomically",
+    "installer_column_refuses_atomically",
+    "installer_trigger_refuses_atomically",
+    "installer_invalid_prefix_refuses_atomically",
+    "INVALID_prefix_is_not_repaired_by_IF_NOT_EXISTS_and_cannot_record_history",
+    "real_CCI_old_RR_snapshot_and_concurrent_FK_writer_complete_without_source_mutation",
+    "all_original_public_private_function_definitions_and_metadata_unchanged",
+    "exact_file_history_commit_and_replay_refusal_preserve_valid_physical_prefix"
+  ],
+  "migration_sha256": "e8d5dd8d5254b16259f8884d04427848dc4c14bb94af0071f5c92bc8ad56adba",
+  "runner_sha256": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
+  "fixture_contract_width": {
+    "rows": 5000,
+    "avg_contract_bytes": 1140.0
+  },
+  "limits": "Private PG17 source-only physical index. Exact full15column/default/5constraint/14index/access and eight trigger ABI/catalog contracts; trigger bodies and source65/GEN/maintenance/net-plan helpers are controlled external boundaries. Exact old28a and uninstalled541b query snapshots, density/mode full FOR bags. Does not qualify production build latency, whole Scope capacity, all source paths as zero heap, or original financial producers.",
+  "plan_count": 24,
+  "raw_native_sha256": "b26030ef24f40238e1a24227e0c2cc5f931ea011a07eeaedbd51da06ac207249",
+  "natural_source_plans": [
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "current",
+      "mode": "auto",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "current",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "current",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "541b",
+      "mode": "auto",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "541b",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "dense",
+      "query": "541b",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "current",
+      "mode": "auto",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "current",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "current",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "auto",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "before",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "current",
+      "mode": "auto",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "current",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "current",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "541b",
+      "mode": "auto",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "541b",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "dense",
+      "query": "541b",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "a700df962e438628056aff7bd149da72",
+        "count": 5000
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "current",
+      "mode": "auto",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "current",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "current",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "auto",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "force_custom_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    },
+    {
+      "stage": "after",
+      "density": "sparse",
+      "query": "541b",
+      "mode": "force_generic_plan",
+      "bag": {
+        "bag": "b0c7b644f31bb7b1c77337c1fd9a935b",
+        "count": 50
+      }
+    }
+  ]
+}

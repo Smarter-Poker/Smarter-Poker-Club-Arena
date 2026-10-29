@@ -57,8 +57,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 245805,
-      "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+      "bytes": 246563,
+      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -753,5 +753,20 @@
     "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
+  },
+  "sourceIdentityCoverWorkflowAudit20261029": {
+    "review": "Adds one PG17 identity-cover command and retained artifact to required accounting shard2. Every earlier command/source qualification unchanged. Binding composition only; no execution or live proof.",
+    "before": [
+      {
+        "bytes": 245805,
+        "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+      }
+    ],
+    "after": {
+      "bytes": 246563,
+      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
+    },
+    "prior_commands_preserved": true,
+    "execution_performed": false
   }
 }

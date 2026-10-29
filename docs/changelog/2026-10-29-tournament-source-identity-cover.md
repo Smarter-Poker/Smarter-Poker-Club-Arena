@@ -1,0 +1,7 @@
+# Tournament source identity cover
+
+The DSS quality path reads a wide fee source heap when it needs only UUID identity and tournament/rake keys. A single fixed-width `(id) INCLUDE(tournament_id,rake_record_id)` index covers those keys without changing source rows, financial rules, quality functions or generation seals.
+
+The reserved migration uses the existing protected-main concurrent-index prelude and atomic exact history route, preserving full actual table authority and every original trigger's raw catalog/definition. A private PG17 qualification covers actual old28a/uninstalled541b full FOR bags, natural density/plan modes, wrong-event/NULL/foreign boundaries, arbitrary contract width, CCI concurrent snapshots/writers, invalid and valid prefixes, atomic history failure and replay. Required accounting shard 2 executes and retains its native evidence.
+
+Source-only qualification is separate from root-owned production installation, actual catalog/history readback and whole Scope completion. Local TypeScript/hooks and exact-head hosted checks are recorded in the existing incident checkpoint. No wallets or already paid accounts are touched.

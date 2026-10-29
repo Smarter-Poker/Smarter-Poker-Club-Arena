@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/mtt-certification-lock-scope-01a18860",
+  "_comment": "Source declaration, not installed-state evidence.",
+  "functions": ["smarter_private.certification_club_admission"]
+}

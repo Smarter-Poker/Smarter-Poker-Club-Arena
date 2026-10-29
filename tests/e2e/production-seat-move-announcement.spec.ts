@@ -94,17 +94,20 @@ test('the published table explains controlled seat moves without moving a player
       await route.abort('blockedbyclient');
       return;
     }
-    if (
-      url.pathname.endsWith('/rest/v1/table_seats') &&
-      (url.searchParams.get('select') || '').startsWith('table_id') &&
-      (url.searchParams.get('user_id') || '').startsWith('eq.')
-    )
-      observedViewerId = url.searchParams.get('user_id')!.slice(3);
     if (url.pathname.endsWith('/rest/v1/tables') && url.searchParams.get('select') === 'name') {
       const id = url.searchParams.get('id') || '';
       nameReads.set(id, (nameReads.get(id) || 0) + 1);
     }
     await route.continue();
+  });
+  await context.route('**/rest/v1/table_seats?**', async (route) => {
+    const url = new URL(route.request().url());
+    if (
+      (url.searchParams.get('select') || '').startsWith('table_id') &&
+      (url.searchParams.get('user_id') || '').startsWith('eq.')
+    )
+      observedViewerId = url.searchParams.get('user_id')!.slice(3);
+    await route.fallback();
   });
   await context.routeWebSocket(
     (url) => url.hostname === ENGINE_HOST && url.pathname === '/ws/multi',

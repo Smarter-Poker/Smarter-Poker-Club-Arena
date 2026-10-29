@@ -1,3 +1,4 @@
+import type { HorseRangeSampleUse } from './HorseRangeConsumptionReceipt.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HORSE EVAL — Hand Evaluators, Monte Carlo Equity, Preflop Scores (V7 split)
@@ -2432,7 +2433,8 @@ export function simulateEquity(
   outcomeOut?: HorseEquityOutcomeCollector,
   // A hero's known discard stays out of every future board and opponent hand.
   // Callers may provide only cards already known to that decision's owner.
-  knownDeadCards: readonly Card[] = []
+  knownDeadCards: readonly Card[] = [],
+  rangeUse?: HorseRangeSampleUse
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -2494,7 +2496,10 @@ export function simulateEquity(
   // hold 3 preflop but 2 after the discard — opponents mirror that).
   const oppHole = vi.isOmaha ? vi.holeCount : holeCards.length;
   const cardsNeeded = boardNeeded + numOpponents * oppHole;
-  if (deck.length < cardsNeeded || holeCards.length < 2) return 0.5;
+  if (deck.length < cardsNeeded || holeCards.length < 2) {
+    if (rangeUse) rangeUse.invalidDeck = true;
+    return 0.5;
+  }
 
   let score = 0; // pot share accumulated across iterations
   const n = deck.length;
@@ -2611,6 +2616,7 @@ export function simulateEquity(
     }
 
     for (let o = 0; o < numOpponents; o++) {
+      if (rangeUse) rangeUse.reachedMask |= 1 << o;
       const windowStart = dealIdx;
       for (let c = 0; c < oppHole; c++) oppCards[c] = deck[dealIdx++];
 
@@ -2621,6 +2627,7 @@ export function simulateEquity(
       // stay tight instead of degrading toward random.
       const band = oppBands ? oppBands[o] : null;
       if (band) {
+        if (rangeUse) rangeUse.bandMask |= 1 << o;
         const scoreOf = (cards: Card[]): number =>
           vi.isOmaha
             ? omahaPreflopScore(cards, vi.isHiLo)
@@ -2736,7 +2743,16 @@ export function simulateEquity(
         // standing in for made hands. Tight bands (a 3-bet range) keep the
         // in-band sampler on every redraw so the V13 collapse cannot recur.
         const tier40 = read.streets != null ? omahaAggressorTier(read) : 0;
+        if (rangeUse && read.streets != null) {
+          rangeUse.tierMask |= 1 << o;
+          rangeUse.tiers |= tier40 << (2 * o);
+          // Mirror the actual short-circuit accesses inside omahaAggressorTier.
+          // A pot-sized fraction can establish the tier without reading bigBet.
+          if (tier40 > 0 && (read.lastFrac == null || !(read.lastFrac >= 0.7)))
+            rangeUse.bigBetMask |= 1 << o;
+        }
         if (tier40 >= 1 && omahaTierShape != null) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const req = omahaTierRequirement(tier40, boardCards.length, omahaTierShape);
           if (read.strictPressureRange === true && !vi.isHiLo) {
             if (
@@ -2778,6 +2794,7 @@ export function simulateEquity(
             }
           }
         } else if (bandWidth >= 0.45 && read.aggrW > 0) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
           for (let t = 0; t < 2; t++) {
             if (omahaConnectsBoard(oppCards, boardCards)) break;
@@ -2830,6 +2847,10 @@ export function simulateEquity(
           }
         };
         if (read.aggrW > 0) {
+          if (rangeUse) {
+            rangeUse.conditionedMask |= 1 << o;
+            rangeUse.bigBetMask |= 1 << o;
+          }
           // V16: a BIG bet is sampled toward REAL strength (two pair+), not
           // just any contact — an overbettor's range is not middle pair.
           const wantCat = read.bigBet ? 3 : 2;
@@ -2841,6 +2862,7 @@ export function simulateEquity(
             redraw();
           }
         } else if (read.checked >= 1) {
+          if (rangeUse) rangeUse.conditionedMask |= 1 << o;
           const cat = connectsBoard(oppCards, boardCards, vi.isShortDeck);
           if (cat >= 4 && fastRandom() < 0.55 + Math.min(0.25, read.checked * 0.12)) {
             redraw();
@@ -2936,15 +2958,21 @@ export function simulateEquity(
         const d = Math.abs(eq - t);
         if (d < minDist) minDist = d;
       }
-      if (minDist > 3.5 * se) return finalizeSplit(splitOut, done, eq);
+      if (minDist > 3.5 * se) return finalizeSplit(splitOut, done, eq, rangeUse);
     }
   }
 
-  return finalizeSplit(splitOut, done, score / done);
+  return finalizeSplit(splitOut, done, score / done, rangeUse);
 }
 
 /** Normalize a HiLoSplit accumulator by the iterations actually run. */
-function finalizeSplit(splitOut: HiLoSplit | undefined, done: number, eq: number): number {
+function finalizeSplit(
+  splitOut: HiLoSplit | undefined,
+  done: number,
+  eq: number,
+  rangeUse?: HorseRangeSampleUse
+): number {
+  if (rangeUse) rangeUse.samples = done;
   if (splitOut && done > 0) {
     splitOut.hi /= done;
     splitOut.lo /= done;

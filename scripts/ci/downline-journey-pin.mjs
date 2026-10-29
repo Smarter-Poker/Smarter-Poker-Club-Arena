@@ -58,6 +58,39 @@ export function statsHarnessInputs(root, verifyImport = () => {}) {
   };
   const dependency = (from, spec) => {
     if (++edges > 128) refuse('Stats harness imports exceed their bound.');
+    if (!spec.startsWith('.')) {
+      if (
+        aliases.some((pattern) => {
+          const [prefix, suffix] = pattern.split('*');
+          return suffix === undefined
+            ? spec === prefix
+            : spec.startsWith(prefix) && spec.endsWith(suffix);
+        })
+      )
+        refuse('Stats harness package is shadowed by compiler paths.');
+      if (baseUrl !== null && !isBuiltin(spec)) {
+        if (
+          spec.includes('\\') ||
+          spec.includes('..') ||
+          posix.isAbsolute(spec) ||
+          /[\x00-\x1f]/.test(spec)
+        )
+          refuse('Stats harness package path is unsupported.');
+        const base = posix.join(baseUrl, spec);
+        if (
+          extensions.some((extension) => {
+            try {
+              lstatSync(resolve(root, base + extension));
+              return true;
+            } catch {
+              return false;
+            }
+          })
+        )
+          refuse('Stats harness package is shadowed by compiler baseUrl.');
+        verifyImport(base, null);
+      }
+    }
     if (isBuiltin(spec)) return;
     if (spec.startsWith('.')) {
       const base = posix.normalize(posix.join(posix.dirname(from), spec));
@@ -95,6 +128,34 @@ export function statsHarnessInputs(root, verifyImport = () => {}) {
   );
   if (config.error || config.config.extends || config.config.references)
     refuse('Stats harness compiler configuration requires a separately qualified closure.');
+  const options = config.config.compilerOptions ?? {};
+  const paths = options.paths ?? {};
+  if (
+    !paths ||
+    typeof paths !== 'object' ||
+    Array.isArray(paths) ||
+    Object.keys(paths).length > 128
+  )
+    refuse('Stats compiler paths exceed the closed configuration.');
+  const aliases = Object.keys(paths);
+  for (const pattern of aliases)
+    if (
+      pattern.split('*').length > 2 ||
+      !Array.isArray(paths[pattern]) ||
+      paths[pattern].length > 16 ||
+      paths[pattern].some((target) => typeof target !== 'string')
+    )
+      refuse('Stats compiler paths exceed the closed configuration.');
+  const baseUrl = options.baseUrl === undefined ? null : options.baseUrl;
+  if (
+    baseUrl !== null &&
+    (typeof baseUrl !== 'string' ||
+      posix.isAbsolute(baseUrl) ||
+      baseUrl.split('/').includes('..') ||
+      baseUrl.includes('\\') ||
+      /[\x00-\x1f]/.test(baseUrl))
+  )
+    refuse('Stats compiler baseUrl escapes the closed checkout.');
   while (queue.length) {
     const path = queue.shift();
     if (inputs.has(path)) continue;
@@ -202,6 +263,12 @@ export function qualifyStatsJourneyPin({ root, originalSha, bodies, git }) {
   }
   const modes = new Map();
   const inputs = statsHarnessInputs(root, (base, actualPath) => {
+    if (actualPath === null) {
+      for (const extension of extensions)
+        if (git('ls-tree', live, '--', base + extension).trim())
+          refuse('Stats canonical package is shadowed by compiler baseUrl.');
+      return;
+    }
     const canonicalPath = extensions
       .map((extension) => base + extension)
       .find((path) => {

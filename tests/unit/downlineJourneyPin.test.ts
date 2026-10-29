@@ -114,6 +114,31 @@ describe('the exact downline journey is pinned at its own start', () => {
       expect(requireUnchangedBuildInfoSha(f.body(served), proof.journeySha)).toBe(served);
     }));
 
+  it('refuses compiler paths shadowing a LOCKED package with changed local source', () =>
+    withFixture((f) => {
+      const config = JSON.parse(readFileSync(join(f.root, 'tsconfig.json'), 'utf8'));
+      config.compilerOptions.paths['@axe-core/playwright'] = ['tests/e2e/support/locked-shadow.ts'];
+      writeFileSync(join(f.root, 'tsconfig.json'), JSON.stringify(config));
+      const original = f.forward('tests/e2e/support/locked-shadow.ts', 'export const old = true;');
+      f.git('update-ref', 'refs/heads/main', original);
+      const served = f.forward(
+        'tests/e2e/support/locked-shadow.ts',
+        'export const changed = true;'
+      );
+      expect(() => f.qualify(served, served, original)).toThrow('shadowed by compiler paths');
+    }));
+
+  it.each([false, true])(
+    'refuses baseUrl package shadow including canonical-only source: %s',
+    (canonicalOnly) =>
+      withFixture((f) => {
+        const path = '@axe-core/playwright.ts';
+        const served = f.forward(path, 'export const shadow = true;');
+        if (canonicalOnly) rmSync(join(f.root, path));
+        expect(() => f.qualify(served)).toThrow('shadowed by compiler baseUrl');
+      })
+  );
+
   it('keeps disagreeing or unreadable origin reads UNKNOWN', () =>
     withFixture((f) => {
       const served = f.forward();

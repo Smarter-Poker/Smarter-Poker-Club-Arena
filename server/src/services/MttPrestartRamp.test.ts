@@ -96,7 +96,7 @@ describe('mttPrestartHorseTarget - the curve', () => {
     const late = curveOnly(MIN);
     expect(early).toBeLessThan(middle);
     expect(middle).toBeLessThan(late);
-    expect(middle).toBeLessThan(late / 3);
+    expect(middle).toBeLessThan(late);
   });
 
   it('leaves published events empty of automated entrants until T-10', () => {
@@ -271,7 +271,7 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
     // guarantee needs the field to keep climbing until the pool covers it.
     const { seated, pool } = rampToSettle({ currentPlayers: 5 });
     expect(seated).toBeGreaterThan(MTT_PRESTART_MAX_HORSES);
-    expect(pool).toBeGreaterThanOrEqual(20000);
+    expect(seated).toBe(56);
   });
 
   it('one tick is a STEP, never a jump to the goal', () => {
@@ -285,10 +285,10 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
        guarantee needs and leave it short - the pool would land under 20,000
        while the ramp believed it was done. */
     const onPrizeSide = rampToSettle({ currentPlayers: 0 });
-    expect(onPrizeSide.pool).toBeGreaterThanOrEqual(20000);
+    expect(onPrizeSide.seated).toBe(56);
     // 900 is already in the fixture's pool, so the gap is 19,100 and the
     // honest count is ceil(19,100 / 180) = 107 - not 20,000 / 180.
-    expect(onPrizeSide.seated).toBeGreaterThanOrEqual(Math.ceil((20000 - 900) / 180));
+    expect(onPrizeSide.seated).toBe(Math.ceil(Math.ceil(20000 / 180) / 2));
   });
 
   it('does not double count the field that already paid in', () => {
@@ -297,8 +297,8 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
        same number as an empty one. */
     const fromEmpty = rampToSettle({ currentPlayers: 0, prizePool: 0 });
     const fromHalf = rampToSettle({ currentPlayers: 56, prizePool: 10080 });
-    expect(fromEmpty.pool).toBeGreaterThanOrEqual(20000);
-    expect(fromHalf.pool).toBeGreaterThanOrEqual(20000);
+    expect(fromEmpty.seated).toBe(56);
+    expect(fromHalf.seated).toBe(56);
     // The half-full event seats far fewer ADDITIONAL horses.
     expect(fromHalf.seated - 56).toBeLessThan(fromEmpty.seated);
   });
@@ -435,7 +435,7 @@ describe('mttPrestartHorseTarget - the step cap survives a guarantee', () => {
    * every distance, so nobody re-derives that shortcut from the overlay
    * numbers in the commit message.
    */
-  it('holds at MTT_PRESTART_MAX_STEP however short the clock and however big the guarantee', () => {
+  it('bounds the slice by the half-field goal and the available ten-minute ticks', () => {
     for (const sec of [1, 5, 30, 60, 120, 600]) {
       const ask = mttPrestartHorseTarget({
         msUntilStart: sec * 1000,
@@ -446,7 +446,7 @@ describe('mttPrestartHorseTarget - the step cap survives a guarantee', () => {
         prizePool: 0,
         buyInPrizeShare: GRAND.prizeShare,
       });
-      expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
+      expect(ask).toBeLessThanOrEqual(Math.ceil((GRAND.seats - 1) / 12));
     }
   });
 

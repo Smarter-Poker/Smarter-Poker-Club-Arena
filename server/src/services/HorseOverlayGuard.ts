@@ -1,3 +1,5 @@
+/** Owner 2026-10-29 supersedes the historical 25-40% share below: 50% before start, remainder during late entry. */
+import { mttPlannedField, mttPrizeShare, mttLevelWindowMs } from './mttHorseArrivalPlan.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * MTT OVERLAY GUARD — Dan 2026-08-27, binding
@@ -227,6 +229,7 @@ export async function fillFreerollsOnce(
     const targets = (data ?? []) as FreerollTarget[];
     for (const t of targets) {
       if (!shouldContinue()) return added;
+      if (t.status === 'RUNNING') continue; // Late arrivals own the running field.
       const target = freerollTargetFor(t);
       if (target <= t.current_players) continue;
       const n = await seeder.topUpWithHorses(t.tournament_id, target, { allLanes: true });
@@ -268,6 +271,7 @@ export async function runOverlayGuardOnce(
 
     for (const risk of risks) {
       if (!shouldContinue()) return acted;
+      if (risk.status === 'RUNNING') continue; // Spread the remainder across late registration.
       if (risk.shortfall <= 0) continue;
       const target = topUpTargetFor(risk);
       if (target <= risk.current_players) continue;
@@ -303,8 +307,8 @@ export async function runOverlayGuardOnce(
 /* ─── LATE REGISTRATION (Dan 2026-10-19) ─── see the header of this file. ─── */
 
 /** Share of the starting field that late-registers: 25% plus up to 15% more. */
-export const LATE_REG_SHARE_MIN = 0.25;
-export const LATE_REG_SHARE_SPREAD = 0.15;
+export const LATE_REG_SHARE_MIN = 1;
+export const LATE_REG_SHARE_SPREAD = 0;
 /** Even a small field sees a couple of late arrivals. */
 export const LATE_REG_MIN_ARRIVALS = 2;
 /** Most late entrants one event takes in one cycle: arrivals, not a burst. */
@@ -324,6 +328,10 @@ export interface LateRegEvent {
   currentLevel: number;
   /** Entries registered at or before the start. */
   entriesAtStart: number;
+  /** Planned complete field; independent of any house-funded prize pool. */
+  plannedField?: number;
+  /** Duration of the level window, read from the published blind ladder. */
+  levelWindowMs?: number;
   /** Entries registered after the start, by anybody, through any path. */
   lateEntries: number;
 }
@@ -350,7 +358,13 @@ export function lateRegProgress(ev: LateRegEvent): number | null {
     if (!Number.isFinite(ev.startedAtMs) || !Number.isFinite(ev.nowMs)) return null;
     progress = Math.max(progress, (ev.nowMs - ev.startedAtMs) / (mins * 60_000));
   }
-  if (levels > 0) progress = Math.max(progress, (Number(ev.currentLevel) || 0) / levels);
+  if (levels > 0) {
+    progress = Math.max(progress, (Number(ev.currentLevel) || 0) / levels);
+    // A persisted level can lag the manager. The published ladder gives a
+    // continuous clock between levels, while the DB door still closes entry.
+    if (ev.levelWindowMs && ev.levelWindowMs > 0)
+      progress = Math.max(progress, (ev.nowMs - ev.startedAtMs) / ev.levelWindowMs);
+  }
   return Math.min(1, Math.max(0, progress));
 }
 
@@ -369,15 +383,32 @@ export function lateRegArrivalsFor(ev: LateRegEvent): number {
   const atStart = Math.max(0, Math.floor(Number(ev.entriesAtStart) || 0));
   const expected = Math.max(
     LATE_REG_MIN_ARRIVALS,
-    Math.round(atStart * lateRegShareFor(ev.tournament_id))
+    Math.round(atStart * lateRegShareFor(ev.tournament_id)),
+    Math.max(0, (ev.plannedField ?? atStart * 2) - atStart)
   );
   // A few arrive in one cycle, none in the next: a deterministic -1/0/+1
   // around the curve, keyed on the event and the cycle.
   const cycle = Math.max(0, Math.floor((ev.nowMs - ev.startedAtMs) / CYCLE_MS));
   const wobble = (horseHash(`${ev.tournament_id}:late-cycle:${cycle}`) % 3) - 1;
-  const goal = Math.min(expected, Math.max(0, Math.ceil(expected * progress) + wobble));
   const late = Math.max(0, Math.floor(Number(ev.lateEntries) || 0));
-  return Math.max(0, Math.min(LATE_REG_MAX_STEP, goal - late));
+  const windows = [
+    ev.lateRegMins > 0 ? ev.lateRegMins * 60_000 : Infinity,
+    ev.levelWindowMs && ev.levelWindowMs > 0 ? ev.levelWindowMs : Infinity,
+  ];
+  const windowMs = Math.min(...windows);
+  // Complete the planned arrivals on the last legal cycle, not after entry
+  // has closed. A closed DB door is still checked before any payment.
+  const scheduledProgress = Number.isFinite(windowMs)
+    ? Math.min(1, progress + CYCLE_MS / windowMs)
+    : progress;
+  const goal =
+    scheduledProgress >= 1
+      ? expected
+      : Math.min(expected, Math.max(0, Math.ceil(expected * scheduledProgress) + wobble));
+  const step = Number.isFinite(windowMs)
+    ? Math.max(LATE_REG_MAX_STEP, Math.ceil((expected * CYCLE_MS) / windowMs) + 1)
+    : LATE_REG_MAX_STEP;
+  return Math.max(0, Math.min(step, goal - late));
 }
 
 interface LateRegRow {
@@ -391,6 +422,9 @@ interface LateRegRow {
   rebuy_levels: number | null;
   late_reg_mins: number | null;
   buy_in_amount: number | string | null;
+  bounty_amount?: number | string | null;
+  guaranteed_prize?: number | string | null;
+  blind_structure?: unknown;
   prize_pool_finalized: boolean | null;
 }
 
@@ -439,7 +473,7 @@ export async function lateRegisterHorsesOnce(
     const { data: rows, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, status, format_contract, started_at, current_level, late_reg_levels, rebuy_levels, late_reg_mins, buy_in_amount, prize_pool_finalized'
+        'id, name, status, format_contract, started_at, current_level, late_reg_levels, rebuy_levels, late_reg_mins, buy_in_amount, bounty_amount, guaranteed_prize, blind_structure, prize_pool_finalized'
       )
       .eq('status', 'RUNNING')
       .eq('prize_pool_finalized', false)
@@ -488,6 +522,11 @@ export async function lateRegisterHorsesOnce(
         lateRegLevels: Number(t.late_reg_levels ?? t.rebuy_levels ?? 0) || 0,
         currentLevel: Number(t.current_level) || 0,
         entriesAtStart: total - late,
+        plannedField: mttPlannedField(Number(t.guaranteed_prize) || 0, mttPrizeShare(t)),
+        levelWindowMs: mttLevelWindowMs(
+          t.blind_structure,
+          Number(t.late_reg_levels ?? t.rebuy_levels ?? 0)
+        ),
         lateEntries: late,
       });
       if (want <= 0) continue;

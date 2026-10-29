@@ -1,3 +1,4 @@
+import { mttPrizeShare } from './services/mttHorseArrivalPlan.js';
 import {
   completeF06Custody,
   createCompletedF06DiagnosticWindow,
@@ -8389,6 +8390,7 @@ export class GameServer {
           variant: string | null;
           tournament_type: string | null;
           buy_in_amount: number | null;
+          bounty_amount: number | null;
           buy_in_fee: number | null;
           guaranteed_prize: number | null;
           prize_pool: number | null;
@@ -8398,7 +8400,7 @@ export class GameServer {
             let q = supabase
               .from('tournaments')
               .select(
-                'format_contract, id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
+                'format_contract, id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, bounty_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
               )
               .eq('status', 'REGISTERING')
               .order('id', { ascending: true })
@@ -8809,7 +8811,7 @@ export class GameServer {
           const msUntilStart = startTime - now;
           if (!poolFinalized && msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
             const lastRamp = this.lastMttRampAt.get(tournament.id) ?? 0;
-            if (now - lastRamp >= 45_000) {
+            if (now - lastRamp >= MTT_PRESTART_TICK_MS) {
               // The whole decision - window, curve, seat-first exclusion, pool
               // cap and per-tick step - is inside this pure function, so the
               // rule is tested without a database and this call site cannot
@@ -8826,7 +8828,7 @@ export class GameServer {
                    the fee is rake and never reaches the pool. */
                 guaranteedPrize: Number(tournament.guaranteed_prize) || 0,
                 prizePool: Number((tournament as { prize_pool?: unknown }).prize_pool) || 0,
-                buyInPrizeShare: Number(tournament.buy_in_amount) || 0,
+                buyInPrizeShare: mttPrizeShare(tournament),
               });
               const redeemTickets =
                 ticketEligible(tournament) && ticketTargets?.has(tournament.id) === true;

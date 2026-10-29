@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { preparePrivateRecordGatewaySocket } from './transport/privateRecordGatewaySocket.js';
 import {
+  createPrivateRecordGatewayHealthHandler,
   gatewayListenTarget,
   PRIVATE_RECORD_GATEWAY_ORIGINS,
 } from './transport/privateRecordGatewayRuntime.js';
@@ -43,23 +44,9 @@ const gateway = new PrivateRecordGateway({
       privateRecordGatewaySourceReady
     ),
 });
-const server = createServer((req, res) => {
-  if (req.url !== '/health') {
-    res.writeHead(404).end();
-    return;
-  }
-  // Process reachability is deliberately not named source readiness.
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(
-    JSON.stringify({
-      service: 'private-record-gateway',
-      revision: release.revision,
-      processReachable: true,
-      ...gateway.sourceState(),
-    })
-  );
-});
+const server = createServer(
+  createPrivateRecordGatewayHealthHandler(release.revision, () => gateway.sourceState())
+);
 if ('socket' in listenTarget) await preparePrivateRecordGatewaySocket(listenTarget.socket);
 gateway.attach(server);
 if ('socket' in listenTarget) server.listen(listenTarget.socket);

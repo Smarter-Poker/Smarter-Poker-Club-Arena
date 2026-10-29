@@ -1699,6 +1699,7 @@ export class HorseMind {
         : undefined;
     let pot = forced ? 0 : (initial?.pot ?? (bigBlind > 0 ? bigBlind * 1.5 : 3));
     let curStreet: string = 'preflop';
+    let newestStreetBigBet = false;
     let streetBets = new Map<string, number>(initial?.streetBets);
     let price = Math.max(bigBlind > 0 ? bigBlind : 0, ...streetBets.values());
     const userBySeat = new Map(history.map((entry) => [entry.seat, entry.userId]));
@@ -1706,6 +1707,7 @@ export class HorseMind {
       if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
         curStreet = a.stage;
+        newestStreetBigBet = false;
         streetBets = new Map();
         price = 0;
       }
@@ -1742,6 +1744,13 @@ export class HorseMind {
         pot += increment;
         if (!dead) streetBets.set(a.userId, liveTotal);
         continue;
+      }
+
+      // Reuse the controller/public-node wager replay: an all-in call is
+      // not a bet, while a short all-in raise still is aggression. Keep the
+      // existing 20bb street-total threshold and newest-street scope.
+      if (a.userId === userId && isAggr && a.amount >= 20 * (bigBlind > 0 ? bigBlind : 1)) {
+        newestStreetBigBet = true;
       }
 
       if (a.stage !== 'preflop') {
@@ -1959,24 +1968,9 @@ export class HorseMind {
       let checked = 0;
       for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
       readOut.checked = checked;
-      // V16 SIZE-CONDITIONED SAMPLING: did this opponent fire a BIG bet
-      // (>= 20bb) on the newest street in the history? A pot-sized-plus
-      // barrel is strength-heavier than a stab, and the sampler can use it.
-      if (history && history.length > 0) {
-        const lastStage = history[history.length - 1].stage;
-        for (let i = history.length - 1; i >= 0; i--) {
-          const a = history[i];
-          if (a.stage !== lastStage) break;
-          if (
-            a.userId === userId &&
-            (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in') &&
-            (a.amount ?? 0) >= 20 * (bigBlind > 0 ? bigBlind : 1)
-          ) {
-            readOut.bigBet = true;
-            break;
-          }
-        }
-      }
+      // V16: the newest street's large AGGRESSIVE wager, classified above
+      // against its actual price rather than the all_in action label alone.
+      if (newestStreetBigBet) readOut.bigBet = true;
     }
 
     lo = Math.max(0, Math.min(0.9, lo));

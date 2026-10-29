@@ -1,3 +1,4 @@
+import type { HorseHistoryLoadReporter } from '../engine/horseDecision/ownPublicHistoryProvenance.js';
 import {
   attachRiverNodeSidecar,
   riverNodeBindings,
@@ -35,11 +36,21 @@ export const HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS = 5_000;
 /** A read of already accepted public hands only. Caller stamps availability
  * after resolution; this SQL cutoff alone never proves earlier visibility. */
 export async function readHorseOwnPublicHistory(
-  context: HorseObserverReadContext
+  context: HorseObserverReadContext,
+  report?: HorseHistoryLoadReporter
 ): Promise<unknown> {
   if (!horseObserverReadContextIsValid(context)) return null;
+  // A diagnostic callback cannot change the read result or introduce an error.
+  const failed: HorseHistoryLoadReporter = (reason) => {
+    try {
+      report?.(reason);
+    } catch {
+      /* diagnostic only */
+    }
+  };
+  let deadline: AbortSignal | undefined;
   try {
-    const deadline = AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS);
+    deadline = AbortSignal.timeout(HORSE_OWN_PUBLIC_HISTORY_TIMEOUT_MS);
     const before = new Date().toISOString();
     const { data, error } = await supabase
       .rpc('fn_horse_own_public_history_read_v3', {
@@ -53,6 +64,13 @@ export async function readHorseOwnPublicHistory(
     if (error || !data || typeof data !== 'object' || Array.isArray(data)) {
       noteFire('horse_observer_history_unavailable');
       noteFire(error ? 'horse_observer_history_error' : 'horse_observer_history_empty_response');
+      failed(
+        deadline.aborted
+          ? 'provider_deadline'
+          : error
+            ? 'provider_error'
+            : 'provider_empty_response'
+      );
       return null;
     }
     if (
@@ -62,13 +80,17 @@ export async function readHorseOwnPublicHistory(
       horseObserverReadContextKey(data.window.context) !== horseObserverReadContextKey(context)
     ) {
       noteFire('horse_observer_history_source_mismatch');
+      failed('provider_source_mismatch');
       return null;
     }
     // Validate original dealt participation and the bounded closed schema
     // BEFORE selecting public categories by those exact hand IDs. The SQL
     // reader stays unchanged; older engines never receive additional fields.
     const packet = makeOwnPublicHistoryPacket(data.window, Date.now());
-    if (!packet) return null;
+    if (!packet) {
+      failed('provider_invalid_window');
+      return null;
+    }
     if (!packet.hands.length) return data.window;
     const window = structuredClone(data.window);
     try {
@@ -135,6 +157,7 @@ export async function readHorseOwnPublicHistory(
   } catch {
     noteFire('horse_observer_history_unavailable');
     noteFire('horse_observer_history_thrown');
+    failed(deadline?.aborted ? 'provider_deadline' : 'provider_thrown');
     return null;
   }
 }

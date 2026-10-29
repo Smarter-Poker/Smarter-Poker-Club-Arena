@@ -85,7 +85,10 @@ import SatelliteCard from './SatelliteCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import MultiDayStagePanel from './MultiDayStagePanel';
 import { isBaggedStatus } from '../../../utils/multiDaySchedule';
-import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
+import {
+  isRecordedSatelliteQualifier,
+  satelliteStartsWhenFull,
+} from '../../../utils/satelliteQualification';
 import {
   activationStatusLine,
   formatCents,
@@ -213,6 +216,8 @@ export default function DetailOverviewTab({
      neither finished nor about to start, so it gets its own hero line and no
      one-second heartbeat. */
   const isBagged = isBaggedStatus(status);
+  const startsWhenFull =
+    satelliteStartsWhenFull(tournament) && !isRunning && !isCompleted && !isCancelled && !isBagged;
   const { maintenanceBreak } = useMaintenanceBreak();
   const eventPaused = isRunning && tournament?.on_break === true;
   const [observedPause, setObservedPause] = useState<{
@@ -272,11 +277,11 @@ export default function DetailOverviewTab({
     startAtMs - Date.now() > -86_400_000;
 
   useEffect(() => {
-    if (isCompleted || isBagged || isCancelled) return;
+    if (isCompleted || isBagged || isCancelled || startsWhenFull) return;
     if (!isRunning && !startsWithinADay) return;
     const id = setInterval(() => setTick((n) => (n + 1) % 86_400), 1000);
     return () => clearInterval(id);
-  }, [isCompleted, isBagged, isCancelled, isRunning, startsWithinADay]);
+  }, [isCompleted, isBagged, isCancelled, isRunning, startsWithinADay, startsWhenFull]);
 
   /* Who is still in, counted ONCE. `field` below builds its figures from this
      same list, so the deal gate and the displayed count cannot disagree -- and
@@ -643,9 +648,11 @@ export default function DetailOverviewTab({
       {
         key: 'when',
         label: isRunning ? 'Started' : isCompleted ? 'Ended' : isCancelled ? 'Was Due' : 'Starts',
-        value: shortDate(
-          isRunning ? t.started_at : isCompleted ? t.ended_at || t.started_at : t.start_time
-        ),
+        value: startsWhenFull
+          ? 'When Full'
+          : shortDate(
+              isRunning ? t.started_at : isCompleted ? t.ended_at || t.started_at : t.start_time
+            ),
       },
       { key: 'entries', label: 'Entries', value: chips(field.entries) },
     ];
@@ -726,6 +733,7 @@ export default function DetailOverviewTab({
     isRunning,
     isCompleted,
     isCancelled,
+    startsWhenFull,
     field.entries,
     mysteryBounty?.inventory,
     overviewUnitCents,
@@ -889,7 +897,9 @@ export default function DetailOverviewTab({
       ? lateRegTime
       : isCompleted || isBagged || isCancelled
         ? '-'
-        : untilText(secondsToStart);
+        : startsWhenFull
+          ? 'When Full'
+          : untilText(secondsToStart);
   const heroEyebrow = clockPaused
     ? pauseLabel
     : isRunning
@@ -900,7 +910,9 @@ export default function DetailOverviewTab({
         ? 'Day Complete'
         : isCancelled
           ? 'Cancelled'
-          : 'Starts In';
+          : startsWhenFull
+            ? 'Starts'
+            : 'Starts In';
   const heroNote = clockPaused
     ? `Level ${level.index + 1} Clock Paused`
     : maintenanceNote ||
@@ -910,7 +922,9 @@ export default function DetailOverviewTab({
           ? 'Chips Are Bagged Until The Next Day Starts'
           : isCancelled
             ? 'This Event Was Cancelled And Will Not Run'
-            : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
+            : startsWhenFull
+              ? `${chips(field.entries)} Registered`
+              : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`);
 
   return (
     <section className="dov" aria-label="Tournament Overview">

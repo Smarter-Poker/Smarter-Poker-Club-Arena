@@ -109,6 +109,7 @@ describe('dedicated authenticated tournament observation route', () => {
       originals: movements.map((movement, index) => ({
         tableId: TABLE.slice(0, -1) + String(index + 2),
         movement,
+        physicalIdentityRefusal: ['lifecycle_missing', 'generation_mismatch', null][index],
       })),
     };
     const capture = vi.fn(() =>

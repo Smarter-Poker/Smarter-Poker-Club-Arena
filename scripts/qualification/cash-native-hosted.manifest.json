@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 251615,
-      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44224,
-      "sha256": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab"
+      "bytes": 44380,
+      "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4716,5 +4716,30 @@
       "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
     },
     "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
+  },
+  "retentionPageAdmissionSourceAudit20261029": {
+    "reason": "Reviewed additive native one-page retention step and exact fixture accounting/test classification. Refresh current source identities only; preserve every financial assertion, qualification state and historical receipt.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 252075,
+          "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 44224,
+          "sha256": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab"
+        },
+        "current": {
+          "bytes": 44380,
+          "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+        }
+      }
+    }
   }
 }

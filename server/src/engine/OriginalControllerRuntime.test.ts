@@ -1,12 +1,15 @@
 import { afterEach, expect, it, vi } from 'vitest';
+const { timeBankRpc } = vi.hoisted(() => ({
+  timeBankRpc: vi.fn((..._args: unknown[]): any => {
+    throw Error('Unexpected RPC');
+  }),
+}));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     from: () => {
       throw Error('Unexpected SQL');
     },
-    rpc: () => {
-      throw Error('Unexpected RPC');
-    },
+    rpc: (...args: unknown[]) => timeBankRpc(...args),
   },
   maintenanceSupabase: {},
 }));
@@ -62,6 +65,9 @@ const binding = {
 const engines: any[] = [];
 afterEach(() => {
   originalAuth.userId = 'u1';
+  timeBankRpc.mockReset().mockImplementation(() => {
+    throw Error('Unexpected RPC');
+  });
   for (const e of engines.splice(0)) {
     e.running = false;
     e.activeHandWaitRelease?.release('test_cleanup');
@@ -909,4 +915,247 @@ it('serializes the retained old consumer before a new capsule and publishes orig
     e.releasePendingPauseWait();
     await resumed;
   }
+});
+
+// A bank stop belongs to the retained terminal event. Re-enqueueing it after
+// that event's atomic acceptance attempts to reopen an accepted original.
+it.each([false, true])(
+  'consumes terminal time-bank stops before accepting an original (recovered=%s)',
+  async (recovered) => {
+    const { e, roster } = fixture();
+    const writes: any[] = [];
+    const debits: Array<{ user: string; seconds: number; id: string }> = [];
+    const publicStops: unknown[] = [];
+    let accepted = false;
+    let lateWrites = 0;
+    e.hub = {
+      emitEvent: (_table: string, event: any) => {
+        if (event.type === 'time_bank_stopped') publicStops.push(event);
+      },
+    };
+    e.submitTimeBankDebit = (user: string, seconds: number, id: string) => {
+      expect(accepted).toBe(false);
+      debits.push({ user, seconds, id });
+    };
+    e.timeBankMeta.set('u1', { initialSeconds: 40, baseSeconds: 0, dbConsumedSeconds: 0 });
+    e.timeBankEngine.initializePlayer(config.tableId, 'u1', {
+      remainingSeconds: 40,
+      usesRemaining: 2,
+    });
+    e.retainOriginalBatch = async (_o: unknown, _s: unknown, batch: any) => {
+      if (accepted) {
+        lateWrites++;
+        throw new Error('HAND_CONTINUATION_ORIGINAL_UNPROVEN');
+      }
+      writes.push(structuredClone(batch));
+    };
+    e.handleHandEvent = async (event: HandEvent) => {
+      if (event.type === 'HAND_COMPLETE') {
+        // The production settlement's existing hand-boundary bank cleanup,
+        // followed by its accepted original transaction.
+        e.timeBankEngine.cancelActiveForTable(config.tableId);
+        accepted = true;
+      }
+    };
+    let controller: HandController = e.handController;
+    if (recovered) {
+      const terminal: HandEvent[] = [];
+      controller.onEvent((event) => terminal.push(event));
+      controller.start();
+      controller.performAction(controller.getState().currentPlayerSeat, 'fold');
+      const encoded = controller.serializeRecoveryState();
+      controller = HandController.fromRecoveryState(encoded, config.tableId, 42);
+      e.handController = controller;
+      e.pendingOriginalContinuation = {
+        version: 1,
+        original: binding,
+        seats: roster.map((p) => ({
+          user_id: p.user_id,
+          seat_id: p.seat_id,
+          seat_joined_at: p.seat_joined_at,
+          stack_before: 1000,
+        })),
+        batch: {
+          version: 1,
+          sequence: 3,
+          controller: encoded,
+          events: terminal.filter((event) => ['WINNERS', 'HAND_COMPLETE'].includes(event.type)),
+          engine: { fields: {} },
+        },
+      };
+      expect(e.timeBankEngine.tryActivate(config.tableId, 'u1', () => {})).toBe('activated');
+    }
+    const started = e.runOriginalController(roster, controller, 42, Date.now(), {
+      started: recovered,
+      cause: null,
+    });
+    if (!recovered) {
+      await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
+      await e.handContinuation.join();
+      expect(e.timeBankEngine.tryActivate(config.tableId, 'u1', () => {})).toBe('activated');
+      await e.handContinuation.join();
+      controller.performAction(controller.getState().currentPlayerSeat, 'fold');
+    }
+    await started;
+    await expect(e.handContinuation.join()).resolves.toBeUndefined();
+    expect(accepted).toBe(true);
+    expect(lateWrites).toBe(0);
+    expect(debits).toHaveLength(1);
+    expect(debits[0]).toMatchObject({ user: 'u1', seconds: 20 });
+    expect(debits[0].id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(publicStops).toHaveLength(1);
+    expect(e.timeBankEngine.getPlayerBank(config.tableId, 'u1')).toMatchObject({
+      isActive: false,
+      remainingSeconds: 20,
+      usesRemaining: 1,
+    });
+    e.timeBankEngine.cancelActiveForTable(config.tableId);
+    await e.handContinuation.join();
+    expect(debits).toHaveLength(1);
+    expect(e.killForRestart).not.toHaveBeenCalled();
+  }
+);
+
+it.each(['answered', 'unknown', 'fenced'])(
+  'proves the terminal bank debit before original acceptance (outcome=%s)',
+  async (outcome) => {
+    const answered = outcome !== 'unknown';
+    const { e, roster } = fixture();
+    let accepted = false;
+    let reply!: (value: unknown) => void;
+    let debitId: string | undefined;
+    timeBankRpc.mockImplementation(((name: string, args: any) => {
+      if (name !== 'fn_consume_time_bank') throw Error('Unexpected RPC');
+      expect(args.p_user_id).toBe('u1');
+      expect(args.p_seconds).toBe(20);
+      debitId = args.p_request_id;
+      return new Promise((resolve) => {
+        reply = resolve;
+      });
+    }) as any);
+    e.timeBankMeta.set('u1', { initialSeconds: 40, baseSeconds: 0, dbConsumedSeconds: 0 });
+    e.timeBankEngine.initializePlayer(config.tableId, 'u1', {
+      remainingSeconds: 40,
+      usesRemaining: 2,
+    });
+    e.retainOriginalBatch = async () => {};
+    e.handleHandEvent = async (event: HandEvent) => {
+      if (event.type === 'HAND_COMPLETE') {
+        e.timeBankEngine.cancelActiveForTable(config.tableId);
+        accepted = true;
+      }
+    };
+    const controller: HandController = e.handController;
+    const started = e.runOriginalController(roster, controller, 42, Date.now(), {
+      started: false,
+      cause: null,
+    });
+    await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
+    await e.handContinuation.join();
+    e.timeBankEngine.tryActivate(config.tableId, 'u1', () => {});
+    await e.handContinuation.join();
+    controller.performAction(controller.getState().currentPlayerSeat, 'fold');
+    await vi.waitFor(() => expect(debitId).toBeTruthy());
+    const acceptedWhileDebitPending = accepted;
+    if (outcome === 'fenced') e.lifecycleCanMutate = () => false;
+    reply(
+      answered
+        ? { data: { success: true }, error: null }
+        : { data: null, error: { message: 'reply lost' } }
+    );
+    if (outcome === 'fenced') {
+      await expect(e.handContinuation.join()).rejects.toThrow('Fenced');
+      expect(accepted).toBe(false);
+    } else if (answered) {
+      await started;
+      await expect(e.handContinuation.join()).resolves.toBeUndefined();
+      expect(accepted).toBe(true);
+      expect(e.unresolvedTimeBankDebits.size).toBe(0);
+    } else {
+      await expect(e.handContinuation.join()).rejects.toThrow('Completion Bank Debit Is Unproven');
+      expect(accepted).toBe(false);
+      expect(e.unresolvedTimeBankDebits.has(debitId)).toBe(true);
+    }
+    expect(acceptedWhileDebitPending).toBe(false);
+  }
+);
+
+it('replays the captured terminal bank after an applied debit loses its answer without another charge', async () => {
+  const first = fixture();
+  let saved: any;
+  let accepted = 0;
+  let chargedSeconds = 0;
+  const receiptIds: string[] = [];
+  const receipts = new Set<string>();
+  timeBankRpc.mockImplementation(((name: string, args: any) => {
+    if (name !== 'fn_consume_time_bank') throw Error('Unexpected RPC');
+    receiptIds.push(args.p_request_id);
+    if (!receipts.has(args.p_request_id)) {
+      receipts.add(args.p_request_id);
+      chargedSeconds += args.p_seconds;
+      return Promise.resolve({ data: null, error: { message: 'committed answer lost' } });
+    }
+    return Promise.resolve({ data: { success: true, idempotent_replay: true }, error: null });
+  }) as any);
+  first.e.timeBankMeta.set('u1', { initialSeconds: 40, baseSeconds: 0, dbConsumedSeconds: 0 });
+  first.e.timeBankEngine.initializePlayer(config.tableId, 'u1', {
+    remainingSeconds: 40,
+    usesRemaining: 2,
+  });
+  first.e.retainOriginalBatch = async (original: unknown, seats: unknown, batch: any) => {
+    saved = structuredClone({ version: 1, original, seats, batch });
+  };
+  first.e.handleHandEvent = async (event: HandEvent) => {
+    if (event.type === 'HAND_COMPLETE') accepted++;
+  };
+  const controller: HandController = first.e.handController;
+  const started = first.e.runOriginalController(first.roster, controller, 42, Date.now(), {
+    started: false,
+    cause: null,
+  });
+  await vi.waitFor(() => expect(first.e.handContinuation).toBeTruthy());
+  await first.e.handContinuation.join();
+  first.e.timeBankEngine.tryActivate(config.tableId, 'u1', () => {});
+  await first.e.handContinuation.join();
+  controller.performAction(controller.getState().currentPlayerSeat, 'fold');
+  await expect(first.e.handContinuation.join()).rejects.toThrow(
+    'Completion Bank Debit Is Unproven'
+  );
+  expect(accepted).toBe(0);
+  expect(chargedSeconds).toBe(20);
+  expect(saved.batch.engine.timeBankMeta.get('u1').dbConsumedSeconds).toBe(0);
+  expect(
+    saved.batch.engine.timeBanks.find((entry: any) => entry.userId === 'u1').bank
+  ).toMatchObject({ isActive: true, currentUseSeconds: 20 });
+  first.e.running = false;
+  first.e.activeHandWaitRelease.release('simulated_process_loss');
+  await started;
+  first.e.handContinuation.close();
+  (ServerTableEngine as any).releaseCurrentEngine(config.tableId, first.e);
+
+  const successor = fixture();
+  successor.e.pendingOriginalContinuation = saved;
+  successor.e.retainOriginalBatch = async () => {
+    throw Error('Unexpected replacement continuation');
+  };
+  successor.e.handleHandEvent = async (event: HandEvent) => {
+    if (event.type === 'HAND_COMPLETE') {
+      successor.e.timeBankEngine.cancelActiveForTable(config.tableId);
+      accepted++;
+    }
+  };
+  await successor.e.resumeOriginalController();
+  await successor.e.handContinuation.join();
+  expect(receiptIds).toHaveLength(2);
+  expect(receiptIds[1]).toBe(receiptIds[0]);
+  expect(receipts.size).toBe(1);
+  expect(chargedSeconds).toBe(20);
+  expect(accepted).toBe(1);
+  expect(successor.e.timeBankEngine.getPlayerBank(config.tableId, 'u1')).toMatchObject({
+    isActive: false,
+    remainingSeconds: 20,
+    usesRemaining: 1,
+  });
+  expect(successor.e.unresolvedTimeBankDebits.size).toBe(0);
+  expect(successor.e.killForRestart).not.toHaveBeenCalled();
 });

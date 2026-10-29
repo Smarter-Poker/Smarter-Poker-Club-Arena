@@ -1245,3 +1245,413 @@ export async function loadInstalledAcceptedAllInExecutionApi() {
     ...(await import('/app/dist/services/horseDecisionJournal/lifecycle.js')),
   };
 }
+
+// Version 7 observes only original stored JSON after canonical whole-hand binding.
+const originalTurnActions = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in']);
+const tournamentGapReasons = new Set([
+  'original_snapshot_missing',
+  'domain_metadata_invalid',
+  'street_metadata_invalid',
+  'betting_metadata_invalid',
+  'chip_unit_missing_or_invalid',
+  'ante_metadata_missing_or_invalid',
+  'board_metadata_missing_or_invalid',
+  'tournament_context_incomplete',
+  'tournament_identity_missing',
+  'tournament_status_invalid',
+  'tournament_variant_mismatch',
+  'tournament_type_mismatch',
+  'lifecycle_flag_missing_or_invalid',
+  'field_metadata_missing_or_invalid',
+  'payout_shape_missing_or_invalid',
+  'payout_terms_missing_or_invalid',
+  'finalized_pool_binding_missing_or_invalid',
+  'original_provenance_missing_or_mismatched',
+  'seat_census_missing',
+  'seat_census_invalid',
+  'original_stack_or_contribution_missing',
+  'public_holdings_not_causal',
+  'actor_original_state_mismatch',
+  'opponent_stack_flag_mismatch',
+  'wager_metadata_missing_or_invalid',
+  'funded_contribution_mismatch',
+  'legal_menu_missing_or_invalid',
+  'original_field_stack_conservation',
+  'original_metadata_unreadable',
+]);
+const tournamentExcludedReasons = new Set([
+  'outside_tournament_domain',
+  'outside_river',
+  'outside_no_limit',
+  'outside_cent_prize_unit',
+  'ante_geometry',
+  'multiple_boards',
+  'tournament_not_running',
+  'outside_winner_take_all',
+  'open_or_special_lifecycle',
+  'bounty_pool',
+  'prize_pool_not_finalized',
+  'bubble_protection',
+  'outside_two_dealt_seats',
+  'outside_heads_up_field',
+  'folded_or_ante_geometry',
+  'hero_all_in_or_ante',
+  'opponent_not_all_in',
+  'call_requires_all_in_or_no_call',
+  'outside_whole_chip_domain',
+  'outside_fold_call_menu',
+]);
+export function originalStoredAmount(object, key = 'amount') {
+  if (!object || typeof object !== 'object' || Array.isArray(object)) throw Error();
+  if (!Object.hasOwn(object, key)) return { kind: 'absent', value: null };
+  if (object[key] === null) return { kind: 'null', value: null };
+  if (typeof object[key] !== 'number' || !Number.isFinite(object[key]) || object[key] < 0)
+    throw Error();
+  return { kind: 'number', value: object[key] };
+}
+function originalAmountComparison(a, b) {
+  if (a.kind === b.kind) return a.value === b.value ? 'equal' : 'number_changed';
+  return [a.kind, b.kind].sort().join('_vs_');
+}
+/** These conjuncts intentionally mirror horse-turn-census-proof.mjs, including null/zero. */
+export function originalTurnSelectionFailures(capture, witness) {
+  const failures = [];
+  if (witness.executionStatus !== 'intended') failures.push('execution_status_not_intended');
+  if (witness.executedAction !== witness.selected?.action)
+    failures.push('executed_selected_action_mismatch');
+  if (witness.selected?.action !== capture.decision?.action)
+    failures.push('selected_captured_action_mismatch');
+  if (['fold', 'check'].includes(witness.executedAction)) {
+    if (witness.executedAmount !== null) failures.push('zero_executed_amount_not_null');
+    if (witness.expectedExecutionAmount !== 0) failures.push('zero_expected_amount_not_zero');
+    if (witness.acceptedActions?.[0]?.record?.amount !== 0)
+      failures.push('zero_accepted_amount_not_zero');
+  } else if (witness.executedAmount !== witness.expectedExecutionAmount)
+    failures.push('wager_executed_expected_amount_mismatch');
+  return failures;
+}
+const originalWithdrawalVerdicts = new Set([
+  'usable',
+  'unselected',
+  'refused',
+  'refresh_failed',
+  'withdrawn',
+  'restarted',
+  'stale_generation',
+  'mismatched',
+  'expired',
+  'missing_receipt',
+]);
+/** Observed original receipts only; absence is not a historical no-withdrawal claim. */
+export function originalWitnessWithdrawals(witness) {
+  const out = [];
+  for (const [owner, field] of [
+    ['phase8', 'phase8Authority'],
+    ['phase8_guard', 'phase8GuardAuthority'],
+    ['phase10', 'phase10Authority'],
+    ['phase11', 'phase11Authority'],
+    ['phase12', 'phase12Authority'],
+    ['phase13', 'phase13Authority'],
+    ['phase14', 'phase14Authority'],
+  ]) {
+    const receipt = witness[field];
+    if (!receipt || receipt.selection !== 'withdrawn_before_acceptance') continue;
+    let match = null;
+    const verdict = originalWithdrawalVerdicts.has(receipt.verdict) ? receipt.verdict : null;
+    try {
+      if (
+        verdict !== null &&
+        originalTurnActions.has(receipt.reference?.action) &&
+        Object.hasOwn(receipt.reference, 'amount')
+      )
+        match =
+          receipt.reference.action === witness.selected.action &&
+          originalAmountComparison(
+            originalStoredAmount(receipt.reference),
+            originalStoredAmount(witness.selected)
+          ) === 'equal';
+    } catch {
+      /* An unreadable portion remains unknown, never a raw reason. */
+    }
+    out.push([owner, verdict, match]);
+  }
+  return out;
+}
+export function originalTurnGapInputIsValid(input, source) {
+  return (
+    exact(input, ['version', 'sourceRelease', 'probe', 'cases']) &&
+    input.version === 7 &&
+    input.probe === 'original_turn_gap' &&
+    cashTurnFoldInputIsValid({ ...input, version: 5, probe: 'cash_turn_fold' }, source)
+  );
+}
+function originalTournamentClassification(snapshot, api) {
+  const gs = snapshot.gameState;
+  const result = (status, reason) => ({ status, reason, derivedFromOriginalSnapshot: true });
+  if (gs.gameVariant !== 'nlh' || gs.gameMode !== 'tournament' || gs.stage !== 'river')
+    return result('not_applicable', 'outside_original_nlh_tournament_river');
+  if (typeof api.classifyTournamentRiverSnapshot !== 'function')
+    return result('unknown', 'installed_classifier_unavailable');
+  try {
+    const value = api.classifyTournamentRiverSnapshot(snapshot);
+    if (exact(value, ['status']) && value.status === 'eligible') return result('eligible', null);
+    if (
+      exact(value, ['status', 'reason']) &&
+      ((value.status === 'gap' && tournamentGapReasons.has(value.reason)) ||
+        (value.status === 'excluded' && tournamentExcludedReasons.has(value.reason)))
+    )
+      return result(value.status, value.reason);
+    return result('unknown', 'installed_classifier_result_unrecognized');
+  } catch {
+    return result('unknown', 'installed_classifier_unavailable');
+  }
+}
+export function inspectOriginalTurnGapRecords(input, batch, api) {
+  const base = {
+    version: 7,
+    probe: 'original_turn_gap',
+    status: 'unknown',
+    rawRecordsExported: false,
+    replayVerified: false,
+    causalReplayVerified: false,
+    activationAllowed: false,
+  };
+  if (!originalTurnGapInputIsValid(input, input?.sourceRelease))
+    return { ...base, reason: 'input_refused' };
+  if (
+    !batch ||
+    batch.status !== 'canonical_journal_export' ||
+    batch.sourceRelease !== input.sourceRelease ||
+    !Array.isArray(batch.recordsByHand) ||
+    batch.recordsByHand.length !== input.cases.length
+  )
+    return { ...base, reason: 'journal_source_or_shape_mismatch' };
+  const deadline = performance.now() + 5000;
+  const budget = () => {
+    if (performance.now() >= deadline) throw Error();
+  };
+  let cases = input.cases.map((target, index) => {
+    const unknown = (reason) => ({ handKey: target.handKey, status: 'unknown', reason });
+    try {
+      const entry = batch.recordsByHand[index];
+      if (
+        !entry ||
+        entry.handKey !== target.handKey ||
+        !Array.isArray(entry.records) ||
+        !entry.records.length ||
+        entry.records.length > 256
+      )
+        return unknown('journal_missing_or_bounds');
+      const seen = new Set(),
+        decisions = [],
+        executions = [],
+        accepted = [];
+      for (const record of entry.records) {
+        budget();
+        api.validateHorseJournalRecord(record);
+        if (
+          record.handKey !== target.handKey ||
+          record.sourceRelease !== input.sourceRelease ||
+          seen.has(record.eventId)
+        )
+          return unknown('record_binding_or_duplicate');
+        seen.add(record.eventId);
+        if (record.kind === 'decision') decisions.push(record);
+        if (record.kind === 'execution') executions.push(record);
+        if (record.kind === 'accepted_hand') accepted.push(record);
+      }
+      if (accepted.length !== 1) return unknown('accepted_hand_missing_or_ambiguous');
+      const hand = JSON.parse(accepted[0].body);
+      const coordinate = `${target.tableId}:${target.handNumber}:${target.leaseGeneration}`;
+      if (
+        hand.committedHandId !== target.handId ||
+        api.horseCompletedHandKey(hand) !== coordinate ||
+        accepted[0].turnKey !== target.handKey
+      )
+        return unknown('accepted_hand_binding_mismatch');
+      const action = hand.actions?.[target.actionOrdinal];
+      if (
+        !Array.isArray(hand.actions) ||
+        hand.actions.length > 4096 ||
+        !action ||
+        !originalTurnActions.has(action.action) ||
+        action.origin !== 'horse_policy' ||
+        action.userId !== target.actorId ||
+        action.seat !== target.seat ||
+        !['preflop', 'flop', 'turn', 'river'].includes(action.stage)
+      )
+        return unknown('accepted_action_not_observed');
+      const anchorMatches = (a) =>
+        a?.status === 'anchored' &&
+        api.horseHandAnchorKey(a) === coordinate &&
+        a.actionOrdinal === target.actionOrdinal &&
+        a.actorId === target.actorId &&
+        a.seat === target.seat &&
+        a.earlyLook !== true;
+      const selectedDecisions = [];
+      for (const record of decisions) {
+        budget();
+        if (target.decisionRecordSha256 !== null && record.sha256 !== target.decisionRecordSha256)
+          continue;
+        const capture = JSON.parse(record.body),
+          s = capture.snapshot;
+        if (
+          anchorMatches(api.anchorHorseDecisionHand(s)) &&
+          s?.player?.user_id === target.actorId &&
+          s.player.seat === target.seat &&
+          s.gameState?.stage === action.stage &&
+          s.gameState.currentPlayerSeat === target.seat
+        )
+          selectedDecisions.push({ record, capture });
+      }
+      const selectedExecutions = [];
+      for (const record of executions) {
+        budget();
+        const witness = JSON.parse(record.body);
+        if (!anchorMatches(witness.handAnchor) || witness.identity?.stage !== action.stage)
+          continue;
+        const bound = api.bindHorseDecisionToCommittedHand(witness, hand);
+        if (bound.status === 'bound' && bound.actionOrdinal === target.actionOrdinal)
+          selectedExecutions.push({ record, witness });
+      }
+      const pairs = [];
+      for (const d of selectedDecisions)
+        for (const e of selectedExecutions)
+          if (d.record.producerId === e.record.producerId && d.record.turnKey === e.record.turnKey)
+            pairs.push({ d, e });
+      if (pairs.length !== 1)
+        return unknown(pairs.length ? 'matching_pair_ambiguous' : 'matching_pair_missing');
+      const { d, e } = pairs[0],
+        capture = d.capture,
+        witness = e.witness,
+        s = capture.snapshot;
+      if (
+        d.record.sequence >= e.record.sequence ||
+        (e.record.producerId === accepted[0].producerId &&
+          e.record.sequence >= accepted[0].sequence) ||
+        !['intended', 'coerced'].includes(witness.executionStatus) ||
+        witness.retirementReason !== null ||
+        witness.policyFallback === 'brain_exception' ||
+        witness.acceptedActions?.length !== 1 ||
+        witness.acceptedActions[0].intended !== true
+      )
+        return unknown('execution_binding_mismatch');
+      const whole = api.reconcileHorseJournalHand(entry.records, target.handKey);
+      if (
+        whole.status !== 'reconciled' ||
+        !Array.isArray(whole.gaps) ||
+        whole.gaps.length ||
+        !(whole.matchedActions > 0) ||
+        whole.matchedActions !== whole.acceptedHorseActions
+      )
+        return unknown('hand_not_reconciled');
+      if (s.decisionKey !== api.buildHorseDecisionKey(s))
+        return unknown('input_binding_unavailable');
+      const plan = api.horseRetainedPlanContext(capture, s);
+      if (plan.kind === 'invalid') return unknown('input_binding_unavailable');
+      const context = plan.kind === 'current' ? plan.context : undefined;
+      api.decodeHorseDecisionReads(
+        capture.readFrame,
+        s.gameState.players,
+        api.horsePlanHandKey(s.gameState.actionHistory, context),
+        context
+      );
+      budget();
+      const acceptedAction = witness.acceptedActions[0].record;
+      if (
+        !originalTurnActions.has(capture.decision?.action) ||
+        !originalTurnActions.has(witness.selected?.action) ||
+        witness.executedAction !== acceptedAction.action ||
+        acceptedAction.action !== action.action ||
+        acceptedAction.stage !== action.stage ||
+        acceptedAction.userId !== target.actorId ||
+        acceptedAction.seat !== target.seat ||
+        acceptedAction.amount !== action.amount ||
+        !['nlh', 'plo4', 'plo5', 'plo6', 'plo8'].includes(s.gameState.gameVariant) ||
+        !['cash', 'tournament'].includes(s.gameState.gameMode)
+      )
+        return unknown('stored_fields_unavailable');
+      const amounts = {
+        captured: originalStoredAmount(capture.decision),
+        selected: originalStoredAmount(witness.selected),
+        expected: originalStoredAmount(witness, 'expectedExecutionAmount'),
+        executed: originalStoredAmount(witness, 'executedAmount'),
+        accepted: originalStoredAmount(action),
+      };
+      const failures = originalTurnSelectionFailures(capture, witness);
+      return {
+        handKey: target.handKey,
+        status: 'observed',
+        actionOrdinal: target.actionOrdinal,
+        variant: s.gameState.gameVariant,
+        mode: s.gameState.gameMode,
+        stage: action.stage,
+        executionStatus: witness.executionStatus,
+        contextSource: 'captured_original_snapshot',
+        recordHashes: {
+          decision: d.record.sha256,
+          execution: e.record.sha256,
+          accepted: accepted[0].sha256,
+        },
+        inputDigest: digest(api.horseJournalJson(s)),
+        readFrameDigest: capture.readFrame.sha256,
+        actions: {
+          captured: capture.decision.action,
+          selected: witness.selected.action,
+          executed: witness.executedAction,
+          accepted: action.action,
+        },
+        amounts,
+        comparisons: {
+          capturedSelectedAction:
+            capture.decision.action === witness.selected.action ? 'equal' : 'different',
+          capturedSelectedAmount: originalAmountComparison(amounts.captured, amounts.selected),
+          expectedExecutedAmount: originalAmountComparison(amounts.expected, amounts.executed),
+          executedAcceptedAmount: originalAmountComparison(amounts.executed, amounts.accepted),
+        },
+        selection: { matched: failures.length === 0, failures },
+        originalWitnessWithdrawals: originalWitnessWithdrawals(witness),
+        phase14: originalTournamentClassification(s, api),
+        guards: {
+          recordHashesVerified: true,
+          originalHandBound: true,
+          uniqueOriginalPair: true,
+          wholeHandReconciled: true,
+          canonicalInputAndReadFrameBound: true,
+        },
+      };
+    } catch {
+      return unknown('record_or_validator_unavailable');
+    }
+  });
+  let result = {
+    ...base,
+    sourceRelease: input.sourceRelease,
+    cases,
+    status: cases.every((c) => c.status === 'observed') ? 'observed' : 'unknown',
+  };
+  for (let i = cases.length - 1; i >= 0 && Buffer.byteLength(JSON.stringify(result)) > 8192; i--) {
+    cases[i] = { handKey: input.cases[i].handKey, status: 'unknown', reason: 'output_bound' };
+    result = { ...base, sourceRelease: input.sourceRelease, cases };
+  }
+  return result;
+}
+export async function loadInstalledOriginalTurnGapApi() {
+  const api = { ...(await loadInstalledAcceptedAllInExecutionApi()) };
+  for (const path of [
+    '/app/dist/engine/horseDecision/protocol.js',
+    '/app/dist/engine/HorseDecisionReadFrame.js',
+    '/app/dist/services/horseDecisionJournal/effects.js',
+    '/app/dist/engine/HorseDecisionEffects.js',
+  ])
+    Object.assign(api, await import(path));
+  try {
+    Object.assign(
+      api,
+      await import('/app/dist/services/horseCorrectiveReview/kernelTournamentEligibility.js')
+    );
+  } catch {
+    /* Optional installed classifier availability remains unknown. */
+  }
+  return api;
+}

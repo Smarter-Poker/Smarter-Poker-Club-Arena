@@ -4041,6 +4041,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // write) vanished into index.ts's unhandled-rejection swallow while the
           // hand silently stopped advancing. Catch it here so at minimum it is
           // reported and the watchdog can see the table stop making progress.
+          if (event.type === 'HAND_COMPLETE' && original && identity) {
+            await this.consumeRetainedCompletionTimeBanks((userId) =>
+              continuationEventId(
+                original,
+                identity.sequence,
+                identity.index,
+                `hand_complete:time_bank_stop:${userId}`
+              )
+            );
+            if (
+              !this.running ||
+              !this.isCurrentEngine() ||
+              !this.lifecycleCanMutate() ||
+              this.handController !== controllerForHand
+            )
+              throw new Error('Hand Continuation Is Fenced');
+          }
           const dispatch = () => this.handleHandEvent(event, players, persistenceGeneration);
           const handled =
             event.type === 'HAND_COMPLETE'

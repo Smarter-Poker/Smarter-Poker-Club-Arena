@@ -20,6 +20,7 @@ from satellite_qualifier_fixture import module, lit, sha
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = next((ROOT / 'supabase/migrations').glob('20261028152912_*.sql'))
+PREFLIGHT = ROOT / 'supabase/migrations/20261029153123_superseded_compaction_refuses_impossible_physical_savings_be.sql'
 PREIMAGE = ROOT / 'scripts/ci/fixtures/superseded-action-preimages.json'
 TABLE = '9d700000-0000-4000-8000-000000000001'
 HAND = '9d700000-0000-4000-8000-000000000002'
@@ -147,6 +148,43 @@ def main():
             return scalar(db, 'SELECT smarter_private.test_two_source_pins();', label + '-answer')
         expect('actual matcher changed2 pins true before', scoped_matcher(base, 'before-scoped-matcher') == 't')
         e.sql(base, file=MIGRATION, label='exact-candidate-migration')
+        # Actual BEFORE/AFTER on a semantically eligible but physically small
+        # stored request. Sequence advances survive the compactor's per-row
+        # rollback, unlike a table counter, so doomed write attempts are visible.
+        probe = e.database(base)
+        compressed = "UPDATE smarter_private.hand_submissions SET request=jsonb_set(request,'{p_hand_row,actions}',(SELECT jsonb_agg(jsonb_build_object('action','call','amount',10)) FROM generate_series(1,1500))); UPDATE smarter_private.hand_submissions SET request_hash=encode(extensions.digest(convert_to(request::text,'UTF8'),'sha256'),'hex'); UPDATE smarter_private.hand_submission_disposals SET expected=jsonb_set(expected,'{request_hash}',to_jsonb((SELECT request_hash FROM smarter_private.hand_submissions)));"
+        sql(probe, 'ALTER TABLE smarter_private.hand_submissions DISABLE TRIGGER hand_submission_immutable; ALTER TABLE smarter_private.hand_submission_disposals DISABLE TRIGGER hand_submission_disposal_immutable;' + SEED + compressed + 'ALTER TABLE smarter_private.hand_submissions ENABLE TRIGGER hand_submission_immutable; ALTER TABLE smarter_private.hand_submission_disposals ENABLE TRIGGER hand_submission_disposal_immutable;', 'preflight-compressed-original')
+        stored_small = int(scalar(probe, 'SELECT pg_column_size(request) FROM smarter_private.hand_submissions;', 'preflight-small-stored-bytes'))
+        expect('physical preflight fixture is compressed below existing overhead', stored_small <= 4096)
+        expect('physical preflight fixture passes unchanged semantic eligibility', scalar(probe, f'SELECT smarter_private.superseded_horse_actions_eligible({lit(HAND)});', 'preflight-unchanged-eligible') == 't')
+        original_state = scalar(probe, "SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d));", 'preflight-original-state')
+        sql(probe, "CREATE SEQUENCE native_certificate_attempts; CREATE SEQUENCE native_payload_attempts; CREATE FUNCTION public.native_cost_write_attempt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN PERFORM nextval(TG_ARGV[0]::regclass); RETURN NEW; END$$; CREATE TRIGGER a_native_certificate_attempt BEFORE INSERT ON smarter_private.superseded_horse_action_certificates FOR EACH ROW EXECUTE FUNCTION public.native_cost_write_attempt('native_certificate_attempts'); CREATE TRIGGER a_native_payload_attempt BEFORE UPDATE ON smarter_private.hand_submissions FOR EACH ROW EXECUTE FUNCTION public.native_cost_write_attempt('native_payload_attempts');", 'preflight-nontransactional-attempt-observers')
+        def attempts(db, label):
+            return json.loads(scalar(db, "SELECT jsonb_build_object('certificate',(SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM native_certificate_attempts),'payload',(SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM native_payload_attempts));", label))
+        expect('BEFORE impossible saving refuses after attempted writes', scalar(probe, CALL, 'preflight-before-call') == '0')
+        before_attempts = attempts(probe, 'preflight-before-attempts')
+        expect('BEFORE both certificate and payload attempted despite final rollback', before_attempts == {'certificate':1, 'payload':1})
+        sql(probe, 'ALTER SEQUENCE native_certificate_attempts RESTART; ALTER SEQUENCE native_payload_attempts RESTART;', 'preflight-reset-observers')
+        e.sql(probe, file=PREFLIGHT, label='preflight-exact-upgrade')
+        expect('AFTER impossible saving returns without attempting writes', scalar(probe, CALL, 'preflight-after-call') == '0')
+        after_attempts = attempts(probe, 'preflight-after-attempts')
+        expect('AFTER certificate and payload never attempted', after_attempts == {'certificate':0, 'payload':0})
+        expect('physical preflight preserves every original source and receipt byte', scalar(probe, "SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d));", 'preflight-after-state') == original_state)
+        expect('physical preflight creates no certificate', scalar(probe, 'SELECT count(*) FROM smarter_private.superseded_horse_action_certificates;', 'preflight-no-certificate') == '0')
+        e.report['impossible_physical_savings'] = {'stored_request_bytes':stored_small, 'overhead_reserve_bytes':4096, 'before_attempts':before_attempts, 'after_attempts':after_attempts}
+        e.discard(probe)
+        authority_query = "SELECT jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'secdef',prosecdef,'volatility',provolatile) FROM pg_proc WHERE oid='smarter_private.compact_superseded_horse_actions(uuid[])'::regprocedure;"
+        authority_before = scalar(base, authority_query, 'preflight-authority-before')
+        denied = e.database(base)
+        sql(denied, 'GRANT EXECUTE ON FUNCTION smarter_private.compact_superseded_horse_actions(uuid[]) TO service_role;', 'preflight-authority-drift')
+        code, _, err = e.sql(denied, file=PREFLIGHT, label='preflight-authority-refusal', check=False)
+        expect('preflight refuses unexpected execute authority', code != 0 and 'SUPERSEDED_COMPACTION_PREFLIGHT_AUTHORITY_CHANGED' in err)
+        expect('preflight authority refusal leaves original body intact', scalar(denied, "SELECT md5(pg_get_functiondef('smarter_private.compact_superseded_horse_actions(uuid[])'::regprocedure));", 'preflight-refused-body') == 'a4098dcde967f64c98ea73ad706726ea')
+        e.discard(denied)
+        e.sql(base, file=PREFLIGHT, label='exact-preflight-migration')
+        expect('preflight preserves exact owner ACL configuration and security metadata', scalar(base, authority_query, 'preflight-authority-after') == authority_before)
+        code, _, err = e.sql(base, file=PREFLIGHT, label='preflight-migration-replay-refused', check=False)
+        expect('preflight migration replay refuses', code != 0 and 'SUPERSEDED_COMPACTION_PREFLIGHT_PREIMAGE_CHANGED' in err)
         final_pins = pins(base, 'final26pins')
         unchanged = lambda rows: [x for x in rows if x['signature'] not in ['smarter_private.assert_retained_hand_submission(jsonb)', 'smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)']]
         expect('other24 source pins unchanged', unchanged(original_pins) == unchanged(final_pins))
@@ -295,7 +333,7 @@ def main():
             e.close()
         except BaseException as exc:
             e.report.update(status='failed', cleanup_failure=repr(exc))
-        e.report.update(checks=checks, source_sha256={str(x.relative_to(ROOT)): sha(x) for x in [MIGRATION, PREIMAGE, Path(__file__)]}, ended_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        e.report.update(checks=checks, source_sha256={str(x.relative_to(ROOT)): sha(x) for x in [MIGRATION, PREFLIGHT, PREIMAGE, Path(__file__)]}, ended_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
         (out / 'result.json').write_text(json.dumps(e.report, indent=2) + '\n')
         print(json.dumps({k:e.report.get(k) for k in ['status','failure','cleanup_failure']}))
     return 0 if e.report.get('status') == 'passed' else 1

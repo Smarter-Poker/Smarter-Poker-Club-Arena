@@ -78,3 +78,12 @@ The existing owner reader-silence trigger reads these canonical native receipts
 and pending-delivery age. It never treats another chat's investigation edit as
 native intake, invents a read timestamp at installation, or pages for an empty or
 fresh inbox. Its existing twelve-hour and duplicate-page behavior is preserved.
+
+Individual failed reads use service-only `fn_ca_defer_native_alert` with the real
+reader chat identity and a concrete reason. This records a terminal intake
+attempt, preserves read_at=NULL and all original evidence, and releases the
+accepted batch so unrelated deliveries advance. The reader-silence alert still
+counts these unread failures. They are never silently retried or called read.
+A later complete read can ACK normally; the failure history remains.
+Full-read envelopes include stored JSON length and digest. Stored summaries
+ending mid-sentence are source limitations, distinct from tool truncation.

@@ -33,7 +33,7 @@ describe('exact operator-hold predecessor provenance', () => {
       python(
         fixture + `assert m.validate_result(result,request) is result\nprint(len(result['files']))`
       )
-    ).toBe('14');
+    ).toBe('24');
   });
   it.each([
     [`result['hostAfter']['instanceId']='2-successor'`, 'replaced process'],

@@ -658,7 +658,7 @@ def sanitize_decision_8464_result(result, value):
             extra = {'variant', 'stage', 'exposure', 'physicalStack', 'raiseTo', 'helperEligible',
                      'coveringStack', 'finalWagerMatchesHelper'}
             if (set(case) != common | extra or case['observation'] != 'accepted_matched_risk_bounded_wager'
-                    or case['variant'] not in ('nlh', 'plo4', 'plo5', 'plo6')
+                    or case['variant'] not in ('nlh', 'plo4', 'plo5', 'plo6', 'plo8')
                     or case['stage'] not in ('flop', 'turn', 'river')
                     or any(case[k] is not True for k in ('helperEligible','coveringStack','finalWagerMatchesHelper'))
                     or any(type(case[k]) not in (int,float) or not math.isfinite(case[k]) or case[k] <= 0

@@ -2,14 +2,16 @@ import type { HorseDecision, SeatPlayer } from '../types.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 
 /** The existing low-SPR policy may risk only money its sole opponent can match.
- * This qualification is cash NLH and high-only PLO4/5/6: tournament survival,
- * multiway side pots, binding commitment caps and all-in-only fields retain their
- * existing policy. Missing canonical action rights never create a wager. */
+ * This physical exposure is cash NLH and pot-limit Omaha (including PLO8).
+ * The caller still prices expected whole-pot share, scoop/quarter risk and
+ * strategy thresholds; no hand-strength assumption enters matched-risk math.
+ * Tournament survival, multiway side pots, binding caps and all-in-only fields
+ * retain their existing policy. Missing action rights never create a wager. */
 export function headsUpCashCommitment(
   hero: SeatPlayer,
   gs: HorseGameStateV2
 ): { exposure: number; wager: HorseDecision } | null {
-  const potLimit = ['plo4', 'plo5', 'plo6'].includes(gs.gameVariant ?? '');
+  const potLimit = ['plo4', 'plo5', 'plo6', 'plo8'].includes(gs.gameVariant ?? '');
   if (
     gs.stateSchemaVersion !== 1 ||
     gs.gameMode !== 'cash' ||

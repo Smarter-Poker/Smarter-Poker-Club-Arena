@@ -1109,9 +1109,13 @@ test('account roster preferences survive logout and a cache-empty second device'
     createTemporaryCustomizationAccount,
     cleanupTemporaryCustomizationAccount,
     requireCustomizationCertificationEnvironment,
+    withCauses,
   } = await import('./support/temporaryCustomizationAccount');
-  const { openFreshPreferenceDevice, logoutAndOpenFreshPreferenceDevice } =
-    await import('./support/accountPreferenceSession');
+  const {
+    openFreshPreferenceDevice,
+    logoutAndOpenFreshPreferenceDevice,
+    acknowledgePreferenceWelcome,
+  } = await import('./support/accountPreferenceSession');
   const { ensureAcceptedTerms } = await import('./support/ensureAcceptedTerms');
   const { ensurePlayableProfile } = await import('./support/ensurePlayableProfile');
   const { prepareProductionE2EStaffMembership } =
@@ -1132,6 +1136,7 @@ test('account roster preferences survive logout and a cache-empty second device'
   const record = join(scratch, `roster-preference-${account.id}.json`);
   let writer: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
   let reader: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
+  const failures: unknown[] = [];
   try {
     await writeFile(
       record,
@@ -1153,6 +1158,7 @@ test('account roster preferences survive logout and a cache-empty second device'
     await writer.page.goto('settings', { waitUntil: 'domcontentloaded' });
     await ensureAcceptedTerms(writer.page);
     await ensurePlayableProfile(writer.page);
+    await acknowledgePreferenceWelcome(writer.page);
     const route = `clubs/${clubId}/members`;
     await writer.page.goto(route, { waitUntil: 'domcontentloaded' });
     await expect(
@@ -1184,15 +1190,19 @@ test('account roster preferences survive logout and a cache-empty second device'
       .toMatchObject({ search: 'Preference Proof', filter: 'online', sort: 'name' });
     reader = await logoutAndOpenFreshPreferenceDevice(writer.page, baseURL, account);
     await reader.page.goto(route, { waitUntil: 'domcontentloaded' });
+    await acknowledgePreferenceWelcome(reader.page);
     await expect(
       reader.page.getByRole('combobox', { name: 'Filter Players', exact: true })
     ).toHaveValue('online', { timeout: 45_000 });
-    await expect(
-      reader.page.getByRole('combobox', { name: 'Sort Players', exact: true })
-    ).toHaveValue('name');
-    await expect(
-      reader.page.getByRole('searchbox', { name: 'Search Club Members', exact: true })
-    ).toHaveValue('Preference Proof');
+    const restoredSearch = reader.page.getByRole('searchbox', {
+      name: 'Search Club Members',
+      exact: true,
+    });
+    const restoredSort = reader.page.getByRole('combobox', { name: 'Sort Players', exact: true });
+    await expect(restoredSearch).toHaveValue('Preference Proof');
+    // A name search deliberately presents relevance; the account keeps its chosen sort.
+    await expect(restoredSort).toHaveValue('search');
+    await expect(restoredSort).toBeDisabled();
     const saved = await reader.client
       .from('user_page_preferences')
       .select('value')
@@ -1205,22 +1215,61 @@ test('account roster preferences survive logout and a cache-empty second device'
       filter: 'online',
       sort: 'name',
     });
+    await restoredSearch.fill('');
+    await expect(restoredSort).toBeEnabled();
+    await expect(restoredSort).toHaveValue('name');
+    await restoredSearch.fill('Preference Proof');
+    await expect(restoredSort).toHaveValue('search');
+    await expect(restoredSort).toBeDisabled();
+    const restoredReader = reader;
+    await expect
+      .poll(async () => {
+        const row = await restoredReader.client
+          .from('user_page_preferences')
+          .select('value')
+          .eq('user_id', account.id)
+          .eq('preference_key', preferenceKey)
+          .maybeSingle();
+        if (row.error) throw row.error;
+        return row.data?.value;
+      })
+      .toMatchObject({ search: 'Preference Proof', filter: 'online', sort: 'name' });
     await testInfo.attach('roster-account-fresh-device-proof.json', {
       body: Buffer.from(
         JSON.stringify({
           ownerId: account.id,
           preferenceKey,
           workspace: saved.data?.value,
+          activeSearchSortOverride: { displayedSort: 'search', disabled: true },
+          retainedSortAfterClearingSearch: 'name',
+          restoredSearchAfterProof: 'Preference Proof',
           authOnlyContext: true,
           logout: 'real-ui',
         })
       ),
       contentType: 'application/json',
     });
+  } catch (error) {
+    failures.push(error);
   } finally {
-    await reader?.context.close();
-    await writer?.context.close();
-    await cleanupTemporaryCustomizationAccount(environment, account);
-    await unlink(record).catch(() => {});
+    const closed = await Promise.allSettled([reader?.context.close(), writer?.context.close()]);
+    for (const result of closed) if (result.status === 'rejected') failures.push(result.reason);
+    try {
+      await cleanupTemporaryCustomizationAccount(environment, account);
+      await testInfo.attach('roster-account-cleanup-proof.json', {
+        body: Buffer.from(JSON.stringify({ ownerId: account.id, cleanupVerified: true })),
+        contentType: 'application/json',
+      });
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      try {
+        await unlink(record);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') failures.push(error);
+      }
+    }
   }
+  if (failures.length)
+    throw new AggregateError(failures, withCauses('Roster Preference Lifecycle Failed', failures));
 });

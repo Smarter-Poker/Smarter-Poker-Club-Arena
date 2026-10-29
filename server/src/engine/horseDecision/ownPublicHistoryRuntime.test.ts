@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { expect, it } from 'vitest';
 import { LiveHorseDecisionWorkerClient, type WorkerLike } from './client.js';
 import { HORSE_HISTORY_RETRY_COOLDOWN_MS } from './ownPublicHistory.js';
+import { horseJournalJson } from '../../services/horseDecisionJournal/record.js';
 import type {
   HorseDecisionWorkerRequest,
   HorseDecisionWorkerResponse,
@@ -161,6 +162,14 @@ it.each([
       await worker.h.runtime.start();
       await client.ready();
       await client.decideFast(first);
+      const firstCapture = JSON.parse(horseJournalJson(worker.h.captures.at(-1)!));
+      expect(firstCapture.snapshot.ownPublicHistoryProvenance).toMatchObject({
+        version: 1,
+        context,
+        decisionTimeMs: first.decisionTimeMs,
+        state: 'pending',
+        reason: 'loading',
+      });
       expect(reads[0]).toMatchObject({ hands: 1, folds: 0, wins: 0 });
       let latestDecisionTimeMs = first.decisionTimeMs;
       if (failed) {
@@ -221,6 +230,15 @@ it.each([
       expect(reads[failed ? 3 : 1].wins).toBeGreaterThan(32);
       expect(reads[failed ? 3 : 1].wins).toBeLessThanOrEqual(33);
       const capture = worker.h.captures.at(-1)!;
+      const retainedCapture = JSON.parse(horseJournalJson(capture));
+      expect(retainedCapture.snapshot.ownPublicHistoryProvenance).toMatchObject({
+        version: 1,
+        context,
+        decisionTimeMs: next.decisionTimeMs,
+        state: 'available',
+        reason: 'packet_ready',
+      });
+      expect(firstCapture.snapshot.ownPublicHistoryProvenance.reason).toBe('loading');
       expect(capture.observerReads).toMatchObject({
         version: 2,
         history: 'own_public_window',

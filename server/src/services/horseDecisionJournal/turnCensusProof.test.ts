@@ -4,6 +4,8 @@ vi.hoisted(() => {
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'unit-test-placeholder-key');
 });
 afterAll(() => vi.unstubAllEnvs());
+import * as rangeApi from '../../engine/HorseRangeConsumptionReceipt.js';
+import { simulateEquity, variantInfo } from '../../engine/HorseEval.js';
 import * as recordsApi from './record.js';
 import * as bindingApi from '../../engine/HorseDecisionHandBinding.js';
 import * as reviewApi from './review.js';
@@ -47,6 +49,7 @@ import * as historyContextApi from '../../engine/HorseObserverReadContext.js';
 import * as observerApi from '../../engine/HorseObserverReadEvidence.js';
 const api = {
   ...recordsApi,
+  ...rangeApi,
   ...bindingApi,
   ...reviewApi,
   ...effectsApi,
@@ -60,7 +63,7 @@ const api = {
 };
 const source = 'a'.repeat(40),
   handId = '32345678-abcd-4321-abcd-123456789abc';
-function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
+function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk', ranged = false) {
   const snapshot = decisionRequest();
   if (probe === 'matched_risk') {
     const p = snapshot.player,
@@ -143,6 +146,7 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
     snapshot.gameState.actionHistory!
   );
   snapshot.decisionKey = buildHorseDecisionKey(snapshot);
+  const rangeCapture = ranged ? new rangeApi.HorseRangeConsumptionCapture(snapshot) : undefined;
   const before = saveFastRandom();
   let decision;
   try {
@@ -152,7 +156,8 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
       snapshot.gameState,
       'balanced',
       {},
-      { ...opts, telemetry: false, decisionTimeMs: snapshot.decisionTimeMs }
+      { ...opts, telemetry: false, decisionTimeMs: snapshot.decisionTimeMs },
+      rangeCapture
     );
   } finally {
     restoreFastRandom(before);
@@ -169,6 +174,7 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
     snapshot,
     decision,
     readFrame,
+    ...(rangeCapture ? { rangeConsumption: rangeCapture.finish(readFrame.sha256) } : {}),
     effects: [],
     rngBefore: 1,
     rngAfter: 2,
@@ -279,8 +285,8 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
   return { input, batch, capture, witness, hand, rows };
 }
 afterEach(() => HorseMind.reset());
-function census() {
-  const f = fixture();
+function census(ranged = false) {
+  const f = fixture('matched_risk', ranged);
   // Include every roster actor in the hand, including prior public actions.
   const ids = Array.from(
     { length: 998 },
@@ -873,4 +879,202 @@ it('v3 history reason binds original observer partition, state and decision cuto
   }
   delete s.ownPublicHistoryProvenance;
   expect(inspectHorseTurnCensus(packet, x.batch(), api).turns[2].historyReason).toBe('unknown');
+});
+
+function rangeCensus() {
+  const x = census(true);
+  const p: any = x.packet;
+  p.version = 4;
+  p.hands[0].context = {
+    variant: 'nlh',
+    format: 'cash',
+    provenance: 'retained_submission_and_committed_history',
+  };
+  return x;
+}
+it('v4 joins original producer sampler receipt through hashed journal and accepted controller binding', () => {
+  const x = rangeCensus();
+  const result = inspectHorseTurnCensus(x.packet, x.batch(), api);
+  const row = result.turns.at(-1);
+  expect(row).toMatchObject({
+    capture: 'present',
+    execution: 'intended',
+    selection: 'matched',
+    contextBinding: 'matched',
+    inputBinding: 'canonical_digest_and_read_frame',
+    rangeStatus: 'observed',
+  });
+  expect(row.rangeUse[0]).toBeGreaterThan(0);
+  expect(row.rangeUse[4]).toBeGreaterThan(0);
+  expect(row.rangeUse[5]).toBeGreaterThan(0);
+  expect(result.turns[0]).toMatchObject({
+    capture: 'missing',
+    rangeStatus: 'unknown',
+    rangeUse: null,
+  });
+  expect(sanitizeHorseTurnCensusResult(result)).toEqual(result);
+  expect(JSON.stringify(result)).not.toContain('rangeConsumption');
+  const original = structuredClone((x.f.capture as any).rangeConsumption);
+  for (const change of [
+    { inputSha256: 'f'.repeat(64) },
+    { readFrameSha256: 'e'.repeat(64) },
+    { extra: ['As', 'Ah'] },
+    { variant: 'plo8' },
+  ]) {
+    (x.f.capture as any).rangeConsumption = { ...original, ...change };
+    const refused = inspectHorseTurnCensus(x.packet, x.batch(), api);
+    expect(refused.expectedTurns).toBe(result.expectedTurns);
+    expect(refused.turns.at(-1)).toMatchObject({ rangeStatus: 'unknown', rangeUse: null });
+  }
+  (x.f.capture as any).rangeConsumption = original;
+  const oldApi = { ...api, horseRangeConsumptionIsValid: undefined };
+  expect(inspectHorseTurnCensus(x.packet, x.batch(), oldApi).turns.at(-1).rangeStatus).toBe(
+    'unknown'
+  );
+});
+it('v4 reports exact TRUE FALSE ABSENT and original pre-action large all-in-call evidence without policy replay', () => {
+  const savedRng = saveFastRandom();
+  try {
+    const s: any = decisionRequest();
+    const g = s.gameState;
+    g.stage = 'flop';
+    g.bigBlind = 2;
+    g.gameVariant = 'nlh';
+    g.gameMode = 'cash';
+    g.players[1].is_all_in = true;
+    g.players[1].stack = 0;
+    const opponent = g.players[1];
+    g.actionHistory = [
+      {
+        stage: 'flop',
+        seat: opponent.seat,
+        userId: opponent.user_id,
+        action: 'all_in',
+        amount: 40,
+        publicNode: {
+          version: 1,
+          status: 'captured',
+          actorSeat: opponent.seat,
+          street: 'flop',
+          variant: 'nlh',
+          mode: 'cash',
+          bigBlind: 2,
+          currentBet: 60,
+          toCall: 60,
+          seats: [[opponent.seat, 40, 0, 0, 0, 0, 0]],
+        },
+      },
+    ];
+    const make = (value: boolean | undefined) => {
+      const capture = new rangeApi.HorseRangeConsumptionCapture(s);
+      const use = capture.begin(0, g.players, [opponent], 1, undefined, [
+        { aggrW: 0.1, checked: 0, ...(value === undefined ? {} : { bigBet: value }) },
+      ])!;
+      simulateEquity(
+        s.player.cards,
+        g.communityCards,
+        1,
+        variantInfo('nlh'),
+        30,
+        undefined,
+        false,
+        undefined,
+        [{ aggrW: 0.1, checked: 0, ...(value === undefined ? {} : { bigBet: value }) }],
+        undefined,
+        [],
+        use
+      );
+      return {
+        snapshot: s,
+        readFrame: { sha256: 'a'.repeat(64) },
+        rangeConsumption: capture.finish('a'.repeat(64)),
+      };
+    };
+    for (const [value, index] of [
+      [true, 9],
+      [false, 10],
+      [undefined, 11],
+    ] as const) {
+      const c = make(value),
+        out = censusApi.horseTurnRangeEvidence(c, api);
+      expect(out.rangeStatus).toBe('observed');
+      expect(out.rangeUse[index] & 1).toBe(1);
+      expect(out.rangeUse[16] & 1).toBe(1);
+      expect(out.rangeUse[17] & 1).toBe(value === true ? 1 : 0);
+      expect(out.rangeUse[8] & 1).toBe(1);
+    }
+    const original = g.actionHistory[0];
+    for (const prior of [
+      { action: 'check', amount: 0 },
+      { action: 'bet', amount: 10 },
+    ]) {
+      g.actionHistory = [{ ...original, ...prior }, original];
+      const afterPrior = censusApi.horseTurnRangeEvidence(make(true), api);
+      expect(afterPrior.rangeStatus).toBe('observed');
+      expect(afterPrior.rangeUse[16] & 1).toBe(1);
+      expect(afterPrior.rangeUse[17] & 1).toBe(1);
+    }
+    g.actionHistory = [{ ...original, action: 'raise', amount: 40 }, original];
+    expect(censusApi.horseTurnRangeEvidence(make(true), api).rangeUse[16]).toBe(0);
+    for (const prior of [
+      { action: 'all_in', amount: 10 },
+      { action: 'fold', amount: 0 },
+    ]) {
+      g.actionHistory = [{ ...original, ...prior }, original];
+      const uncertain = censusApi.horseTurnRangeEvidence(make(true), api);
+      expect(uncertain.rangeUse[16]).toBe(0);
+      expect(uncertain.rangeUse[18] & 1).toBe(1);
+    }
+    g.actionHistory = [{ ...original, action: 'bet', amount: Number.NaN }, original];
+    expect(censusApi.horseTurnRangeEvidence(make(true), api)).toEqual({
+      rangeStatus: 'unknown',
+      rangeUse: null,
+    });
+    g.actionHistory = [original];
+    original.publicNode.actorSeat++;
+    const wrongNode = censusApi.horseTurnRangeEvidence(make(true), api);
+    expect(wrongNode.rangeUse[16]).toBe(0);
+    expect(wrongNode.rangeUse[18] & 1).toBe(1);
+    original.publicNode.actorSeat--;
+    delete g.actionHistory[0].publicNode;
+    const unknown = censusApi.horseTurnRangeEvidence(make(undefined), api);
+    expect(unknown.rangeUse[16]).toBe(0);
+    expect(unknown.rangeUse[18] & 1).toBe(1);
+  } finally {
+    restoreFastRandom(savedRng);
+  }
+});
+
+it('v4 treats original not-reached, refused and invalid-deck diagnostics as distinct from sampled consumption', () => {
+  const x = rangeCensus();
+  const s = x.f.capture.snapshot;
+  const frame = x.f.capture.readFrame;
+  const read = (capture: rangeApi.HorseRangeConsumptionCapture) =>
+    censusApi.horseTurnRangeEvidence(
+      { snapshot: s, readFrame: frame, rangeConsumption: capture.finish(frame.sha256) },
+      api
+    );
+  const untouched = new rangeApi.HorseRangeConsumptionCapture(s);
+  expect(read(untouched)).toEqual({ rangeStatus: 'not_reached', rangeUse: Array(19).fill(0) });
+  const invalid = new rangeApi.HorseRangeConsumptionCapture(s);
+  const use = invalid.begin(
+    0,
+    s.gameState.players,
+    s.gameState.players.slice(1),
+    1,
+    undefined,
+    undefined
+  )!;
+  use.invalidDeck = true;
+  const out = read(invalid);
+  expect(out.rangeStatus).toBe('observed');
+  expect(out.rangeUse[0]).toBe(1);
+  expect(out.rangeUse[1]).toBe(1);
+  expect(out.rangeUse[3]).toBe(1);
+  expect(out.rangeUse[4]).toBe(0);
+  expect(out.rangeUse[5]).toBe(0);
+  expect(out.rangeUse[7]).toBe(0);
+  const refused = new rangeApi.HorseRangeConsumptionCapture(s);
+  refused.begin(4, s.gameState.players, s.gameState.players.slice(1), 1, undefined, undefined);
+  expect(read(refused)).toEqual({ rangeStatus: 'refused', rangeUse: null });
 });

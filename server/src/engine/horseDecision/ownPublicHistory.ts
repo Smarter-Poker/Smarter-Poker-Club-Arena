@@ -1,4 +1,11 @@
 import {
+  HORSE_HISTORY_LOAD_FAILURES,
+  type HorseOwnPublicHistoryLoader,
+  type HorseHistoryLoadFailure,
+  type HorseHistoryReadProvenance,
+  type HorseHistoryReadReason,
+} from './ownPublicHistoryProvenance.js';
+import {
   HISTORY_ACTIVE_LOADS,
   HISTORY_WINDOW_MAX_BYTES,
   HISTORY_PACKET_MAX_BYTES,
@@ -320,11 +327,12 @@ export class HorseOwnPublicHistoryCache {
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
+      reason: HorseHistoryReadReason;
     }
   >();
 
   constructor(
-    private readonly load: (context: HorseObserverReadContext) => Promise<unknown>,
+    private readonly load: HorseOwnPublicHistoryLoader,
     private readonly now: () => number = Date.now,
     private readonly maxEntries = 2048,
     private readonly retentionBudget: HorseHistoryRetentionBudget = mainHorseHistoryRetentionBudget
@@ -351,7 +359,10 @@ export class HorseOwnPublicHistoryCache {
         return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
       return undefined;
     }
-    if (activeLoads >= HISTORY_ACTIVE_LOADS) return undefined;
+    if (activeLoads >= HISTORY_ACTIVE_LOADS) {
+      if (known) known.reason = 'retry_load_capacity';
+      return undefined;
+    }
     if (!known && this.entries.size >= this.maxEntries) {
       const oldest = this.entries.keys().next().value!;
       this.retentionBudget.release(this.entries.get(oldest)!);
@@ -364,9 +375,11 @@ export class HorseOwnPublicHistoryCache {
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
+      reason: HorseHistoryReadReason;
     } = {
       acknowledged: false,
       settled: false,
+      reason: 'loading',
       retryAfterMs: cutoffMs + HORSE_HISTORY_RETRY_COOLDOWN_MS,
     };
     const evict = () => {
@@ -374,7 +387,12 @@ export class HorseOwnPublicHistoryCache {
       entry.packet = undefined;
       entry.serialized = undefined;
     };
-    if (!this.retentionBudget.reserve(entry, HISTORY_PACKET_MAX_BYTES, evict)) {
+    const reserve = (bytes: number) =>
+      this.retentionBudget.reserve(entry, bytes, evict, (reason) => {
+        entry.reason =
+          reason === 'retention_capacity' ? 'retention_capacity' : `retention_${reason}`;
+      });
+    if (!reserve(HISTORY_PACKET_MAX_BYTES)) {
       entry.settled = true;
       entry.retryAfterMs = this.now() + HORSE_HISTORY_RETRY_COOLDOWN_MS;
       this.entries.set(key, entry);
@@ -393,28 +411,37 @@ export class HorseOwnPublicHistoryCache {
       }
     };
     try {
-      void this.load(Object.freeze({ ...context }))
+      void this.load(Object.freeze({ ...context }), (reason: HorseHistoryLoadFailure) => {
+        if (HORSE_HISTORY_LOAD_FAILURES.includes(reason)) entry.reason = reason;
+      })
         .then((value) => {
           if (this.entries.get(key) !== entry) return;
           const packet = makeOwnPublicHistoryPacket(value, this.now());
           if (packet && horseObserverReadContextKey(packet.context) === key) {
             const bytes = Buffer.byteLength(JSON.stringify(packet));
-            if (
-              bytes <= HISTORY_PACKET_MAX_BYTES &&
-              this.retentionBudget.reserve(entry, bytes, evict)
-            )
+            if (bytes <= HISTORY_PACKET_MAX_BYTES && reserve(bytes)) {
               entry.packet = packet;
-            else this.retentionBudget.release(entry);
-          } else this.retentionBudget.release(entry);
+              entry.reason = 'packet_ready';
+            } else {
+              if (bytes > HISTORY_PACKET_MAX_BYTES) entry.reason = 'packet_size_refused';
+              this.retentionBudget.release(entry);
+            }
+          } else {
+            if (entry.reason === 'loading')
+              entry.reason = packet ? 'context_mismatch' : 'invalid_window';
+            this.retentionBudget.release(entry);
+          }
         })
         .catch(() => {
           // Both transport rejection and response-processing failure leave
           // this observer explicitly unavailable, never a partial history.
           entry.packet = undefined;
+          if (entry.reason === 'loading') entry.reason = 'load_rejected';
           this.retentionBudget.release(entry);
         })
         .finally(settle);
     } catch {
+      if (entry.reason === 'loading') entry.reason = 'load_thrown';
       this.retentionBudget.release(entry);
       settle();
     }
@@ -463,6 +490,35 @@ export class HorseOwnPublicHistoryCache {
       : entry?.settled
         ? 'unavailable'
         : 'pending';
+  }
+  /** Called immediately after forSnapshot on the same synchronous request boundary.
+   * This describes the cache path, never worker hydration or durable persistence. */
+  provenance(context: HorseObserverReadContext, cutoffMs: number): HorseHistoryReadProvenance {
+    const key = horseObserverReadContextKey(context);
+    if (!key || !clock(cutoffMs)) throw Error('Invalid individual history provenance context');
+    const entry = this.entries.get(key);
+    const state = this.state(context);
+    const availableAt = entry?.packet?.availableAtMs ?? entry?.serialized?.availableAtMs;
+    const reason: HorseHistoryReadReason = this.disposed
+      ? 'cache_disposed'
+      : availableAt !== undefined
+        ? entry?.acknowledged
+          ? 'worker_acknowledged'
+          : availableAt > cutoffMs
+            ? 'packet_after_cutoff'
+            : 'packet_ready'
+        : entry?.settled
+          ? entry.reason
+          : entry
+            ? 'loading'
+            : 'load_capacity';
+    return Object.freeze({
+      version: 1,
+      context: Object.freeze({ ...context }),
+      decisionTimeMs: cutoffMs,
+      state,
+      reason,
+    });
   }
   acknowledge(context: HorseObserverReadContext, digest: string | null): void {
     const key = horseObserverReadContextKey(context);

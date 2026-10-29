@@ -25,6 +25,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'bounded exact-context public river checkraise observations with canonical chip conservation for originally multiway hands',
     'src/engine/horseDecision/riverNodeSidecar.ts':
       'exact source and action-bound public node sidecar, preserving the original history on unavailable evidence',
+    'src/engine/horseDecision/ownPublicHistoryProvenance.ts':
+      'closed individual-history diagnostic validation bound to the original observer context, state and decision timestamp at the worker request boundary',
     'src/engine/HorseNearNutRiverValue.ts':
       'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':
@@ -63,7 +65,7 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
     'src/engine/HorseHeadsUpCommitment.ts':
-      'qualified cash NLH and high-only PLO heads-up matchable exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
+      'qualified cash NLH and pot-limit Omaha including PLO8 heads-up matchable physical exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
@@ -99,6 +101,10 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'validates original host coordinates and accepted action provenance used by hand-scoped learning',
     'src/engine/HorseObservationWindow.ts':
       'the original public observation time windows that qualify individual read history and cutoff coverage',
+    'src/services/horseDecisionJournal/record.ts':
+      'the bounded canonical original-request encoding and digest bound into producer-time range consumption evidence',
+    'src/engine/HorseRangeConsumptionReceipt.ts':
+      'bounded producer-time public range inputs and actual sampler consumption masks bound to the original decision and read frame',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
     'src/engine/HorseRiverPositionRead.ts':

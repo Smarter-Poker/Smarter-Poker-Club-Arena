@@ -18,65 +18,46 @@ if ! git check-ref-format "refs/heads/$BRANCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Only this transferred repository gains a new namespace. Legacy destinations
-# retain their existing behavior; neither a lookalike host nor another new-org
-# repository can acquire authority through a substring match.
-TRANSFERRED=false
-case "$REMOTE_URL" in
-  https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena|https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git|git@github.com:Smarter-Software-PIQ/Smarter-Poker-Club-Arena|git@github.com:Smarter-Software-PIQ/Smarter-Poker-Club-Arena.git)
-    TRANSFERRED=true
-    SLUG="Smarter-Software-PIQ/Smarter-Poker-Club-Arena"
-    ;;
-  https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena|https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git|git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena|git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git)
-    TRANSFERRED=true
-    SLUG="Smarter-Poker/Smarter-Poker-Club-Arena"
-    ;;
-  *)
-    case "$REMOTE_URL" in
-      *github.com:Smarter-Poker/*|*github.com/Smarter-Poker/*) ;;
-      *)
-        echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter-Poker GitHub destination." >&2
-        exit 1
-        ;;
-    esac
-    REPO="${REMOTE_URL##*Smarter-Poker/}"
-    REPO="${REPO%.git}"
-    REPO="${REPO%/}"
-    if [[ ! "$REPO" =~ ^[A-Za-z0-9._-]+$ ]]; then
-      echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' has an unreadable repository name." >&2
-      exit 1
-    fi
-    SLUG="Smarter-Poker/$REPO"
-
-    ;;
-esac
-HEAD_OWNER="Smarter-Poker"
+if [[ "$REMOTE_URL" =~ ^(git@github.com:|https://github.com/|ssh://git@github.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
+  OWNER="${BASH_REMATCH[2]}"
+  REPO="${BASH_REMATCH[3]}"
+  REPO="${REPO%.git}"
+else
+  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter Poker GitHub destination." >&2
+  exit 1
+fi
+SLUG="$OWNER/$REPO"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "[merged-branch guard] BLOCKED: GitHub CLI is required to verify destination branch '$BRANCH'." >&2
   exit 1
 fi
 
-if [[ "$TRANSFERRED" == true ]]; then
-  if ! IDENTITY="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null)"; then
-    echo "[merged-branch guard] BLOCKED: repository identity authority is unreadable." >&2
-    exit 1
-  fi
-  if ! SLUG="$(printf '%s' "$IDENTITY" | python3 -c '
-import json, sys
-try:
-    row = json.load(sys.stdin)
-    assert row.get("id") == 1132369872
-    assert row.get("full_name") in ("Smarter-Poker/Smarter-Poker-Club-Arena", "Smarter-Software-PIQ/Smarter-Poker-Club-Arena")
-    print(row["full_name"])
-except Exception:
-    raise SystemExit(1)
-')"; then
-    echo "[merged-branch guard] BLOCKED: repository identity does not match transferred Club Arena." >&2
-    exit 1
-  fi
-  HEAD_OWNER="${SLUG%%/*}"
+# Resolve transfers before filtering heads: GitHub redirects the old repository
+# API, but does not rewrite an old-owner head filter. Trust the maintained
+# approved names plus immutable ID, never an arbitrary redirected owner.
+IDENTITY="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
+TRUST_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci/repository-identity.mjs"
+RESOLVED="$(printf '%s' "$IDENTITY" | node --input-type=module -e '
+import {readFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+const {isClubArenaRepository}=await import(pathToFileURL(process.argv[1]));
+try {
+  const r=JSON.parse(readFileSync(0,"utf8"));
+  const requested=process.argv[2];
+  if (requested.endsWith("/Smarter-Poker-Club-Arena")) {
+    if (!isClubArenaRepository(requested,r.id) || !isClubArenaRepository(r.full_name,r.id)) throw Error();
+  } else if (!requested.startsWith("Smarter-Poker/") || r.full_name!==requested) throw Error();
+  if (r.owner?.login !== r.full_name.split("/")[0]) throw Error();
+  console.log(r.full_name);
+} catch { process.exitCode=1; }
+' "$TRUST_HELPER" "$SLUG" 2>/dev/null)"
+if [[ -z "$RESOLVED" ]]; then
+  echo "[merged-branch guard] BLOCKED: GitHub did not identify the trusted destination repository." >&2
+  exit 1
 fi
+SLUG="$RESOLVED"
+HEAD_OWNER="${SLUG%%/*}"
 
 # `gh` uses its credential store or a standard process-level GH_TOKEN. This
 # guard never opens a repository `.env`, never scrapes another product's

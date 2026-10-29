@@ -18,7 +18,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -51,13 +51,21 @@ function runScript(env: Record<string, string>, cwd = root) {
   delete clean.DATABASE_URL;
   delete clean.ENGINE_DOORS_LIVE_FIXTURE;
   delete clean.ENGINE_DOORS_MIGRATIONS_FIXTURE;
+  delete clean.ENGINE_DOORS_CHECKPOINT_FIXTURE;
   const dir = mkdtempSync(join(tmpdir(), 'door-history-'));
   try {
     const histories = join(dir, 'histories.json');
-    writeFileSync(histories, JSON.stringify(continuationHistory()));
+    writeFileSync(histories, JSON.stringify(targetHistory()));
+    const catalog = join(dir, 'checkpoint-catalog.json');
+    writeFileSync(catalog, JSON.stringify(checkpointCatalog()));
     return spawnSync(process.execPath, [SCRIPT], {
       cwd,
-      env: { ...clean, ENGINE_DOORS_MIGRATIONS_FIXTURE: histories, ...env },
+      env: {
+        ...clean,
+        ENGINE_DOORS_MIGRATIONS_FIXTURE: histories,
+        ENGINE_DOORS_CHECKPOINT_FIXTURE: catalog,
+        ...env,
+      },
       encoding: 'utf8',
     });
   } finally {
@@ -102,7 +110,7 @@ describe('the extractor finds every door the engine calls, and only those', () =
 describe('the real script, end to end', () => {
   it('fails, and names the door, when production lacks one the build calls', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
     writeFileSync(
@@ -118,7 +126,7 @@ describe('the real script, end to end', () => {
 
   it('can prepare before the optional downline observation migration installs at the daily break', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     expect(all).toContain('fn_agent_can_watch_table');
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
@@ -131,7 +139,7 @@ describe('the real script, end to end', () => {
 
   it('passes when every door exists', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
     writeFileSync(fixture, JSON.stringify(all));
@@ -207,13 +215,45 @@ function continuationHistory() {
       .digest('hex'),
   }));
 }
+function targetHistory() {
+  const file = '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
+  return [
+    ...continuationHistory(),
+    ...(existsSync(resolve(root, 'server/scripts/retained-original-checkpoint-guard.mjs'))
+      ? [
+          {
+            version: file.slice(0, 14),
+            name: file.slice(15, -4),
+            statement_count: 1,
+            sql_md5: createHash('md5')
+              .update(readFileSync(join(root, 'supabase/migrations', file)))
+              .digest('hex'),
+          },
+        ]
+      : []),
+  ];
+}
+function targetFunctionNames(doors: Doors) {
+  const names = new Set(doors.engineDoors(resolve(root, 'server/src')).keys());
+  const guard = resolve(root, 'server/scripts/retained-original-checkpoint-guard.mjs');
+  if (existsSync(guard))
+    for (const name of doors.doorsIn(readFileSync(guard, 'utf8'))) names.add(name);
+  return [...names];
+}
 function runContinuationFixture(functions: string[], histories: unknown, extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'continuation-doors-'));
   try {
     const names = join(dir, 'functions.json');
     const rows = join(dir, 'migrations.json');
     writeFileSync(names, JSON.stringify(functions));
-    writeFileSync(rows, JSON.stringify(histories));
+    writeFileSync(
+      rows,
+      JSON.stringify(
+        Array.isArray(histories)
+          ? [...histories, ...targetHistory().filter((row) => row.version === '20261029093051')]
+          : histories
+      )
+    );
     return runScript({
       ENGINE_DOORS_LIVE_FIXTURE: names,
       ENGINE_DOORS_MIGRATIONS_FIXTURE: rows,
@@ -227,7 +267,7 @@ function runContinuationFixture(functions: string[], histories: unknown, extra =
 describe('continuation migration prerequisites in the existing door job', () => {
   it('a continuation target refuses an absent played-level migration', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     expect(all).toContain('fn_f06_claim_legacy_river_continuation');
     const res = runContinuationFixture(
       all,
@@ -238,14 +278,14 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('refuses an absent private continuation migration even if every RPC name is present', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, continuationHistory().slice(1));
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('20261028233353');
   });
 
   it('refuses an absent authorized-chair projection even if every RPC name is present', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(
       all,
       continuationHistory().filter((row) => row.version !== '20261029170914')
@@ -258,7 +298,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   it.each(['sql_md5', 'name', 'statement_count'] as const)(
     'refuses changed installed migration %s rather than trusting its version alone',
     async (field) => {
-      const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+      const all = targetFunctionNames(await load());
       const history = continuationHistory();
       const row = history[1] as Record<string, unknown>;
       row[field] = field === 'statement_count' ? 2 : 'changed';
@@ -270,7 +310,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   );
 
   it('requires exactly one history witness for each immutable target file', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const history = continuationHistory();
     const res = runContinuationFixture(all, [...history, history[1]]);
     expect(res.status).toBe(1);
@@ -278,7 +318,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('passes all exact SQL histories without pinning a later compatible function body', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, continuationHistory());
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('all exact continuation migration histories are installed');
@@ -292,16 +332,141 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('a rollback flag cannot waive the new target migration prerequisite', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, [], { ROLLBACK_REQUESTED: 'true' });
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
   });
 
   it('an unreadable history fixture is a failure, including the outer script error path', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, null);
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('CONTINUATION PREREQUISITES UNCHECKED');
+  });
+});
+
+function checkpointCatalog() {
+  const common = {
+    argument_types: 'uuid, uuid, uuid, bigint, bigint, text',
+    owner: 'postgres',
+    security_definer: true,
+    volatility: 's',
+    return_type: 'jsonb',
+    config: ['search_path=pg_catalog, public, smarter_private'],
+    anon_execute: false,
+    authenticated_execute: false,
+    service_private_read: false,
+  };
+  return [
+    {
+      ...common,
+      schema_name: 'public',
+      proname: 'fn_f06_attest_frozen_hand_continuation',
+      body_md5: 'd47f131bbecd7fd7aaba9873af68285e',
+      acl: '{postgres=X/postgres,service_role=X/postgres}',
+      service_execute: true,
+    },
+    {
+      ...common,
+      schema_name: 'smarter_private',
+      proname: 'attest_frozen_hand_continuation',
+      body_md5: '7e5ebd0b8f622ba6daa596c2d2e45db0',
+      acl: '{postgres=X/postgres}',
+      service_execute: false,
+    },
+  ];
+}
+
+function runCheckpointFixture(
+  catalog: unknown,
+  historyMutation?: (row: Record<string, unknown>) => void
+) {
+  const dir = mkdtempSync(join(tmpdir(), 'frozen-checkpoint-door-'));
+  try {
+    mkdirSync(join(dir, 'server/src'), { recursive: true });
+    mkdirSync(join(dir, 'server/scripts'), { recursive: true });
+    mkdirSync(join(dir, 'supabase/migrations'), { recursive: true });
+    writeFileSync(join(dir, 'server/src/legacy.ts'), "supabase.rpc('legacy');");
+    writeFileSync(
+      join(dir, 'server/scripts/retained-original-checkpoint-guard.mjs'),
+      "modules.client.supabase.rpc('fn_f06_attest_frozen_hand_continuation');"
+    );
+    const file = '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
+    const sql = readFileSync(resolve(root, 'supabase/migrations', file));
+    writeFileSync(join(dir, 'supabase/migrations', file), sql);
+    const row: Record<string, unknown> = {
+      version: file.slice(0, 14),
+      name: file.slice(15, -4),
+      statement_count: 1,
+      sql_md5: createHash('md5').update(sql).digest('hex'),
+    };
+    historyMutation?.(row);
+    const names = join(dir, 'names.json'),
+      histories = join(dir, 'histories.json'),
+      functions = join(dir, 'catalog.json');
+    writeFileSync(names, JSON.stringify(['legacy', 'fn_f06_attest_frozen_hand_continuation']));
+    writeFileSync(histories, JSON.stringify([row]));
+    writeFileSync(functions, JSON.stringify(catalog));
+    return runScript(
+      {
+        ENGINE_DOORS_LIVE_FIXTURE: names,
+        ENGINE_DOORS_MIGRATIONS_FIXTURE: histories,
+        ENGINE_DOORS_CHECKPOINT_FIXTURE: functions,
+      },
+      dir
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('the selected retained-original guard requires its real read-only native contract', () => {
+  it('proves exact history, public wrapper, private kernel and role denials', () => {
+    const result = runCheckpointFixture(checkpointCatalog());
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('both exact read-only custody doors are installed');
+  });
+  it('refuses an absent private kernel even when the public door name exists', () => {
+    const result = runCheckpointFixture(checkpointCatalog().slice(0, 1));
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('FROZEN ORIGINAL ATTESTATION UNPROVED');
+  });
+  it.each(['sql_md5', 'name', 'statement_count'] as const)(
+    'refuses a changed target attestation history %s',
+    (field) => {
+      const result = runCheckpointFixture(checkpointCatalog(), (row) => {
+        row[field] = field === 'statement_count' ? 2 : 'changed';
+      });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('20261029093051');
+    }
+  );
+  it.each([
+    ['body_md5', 'changed'],
+    ['owner', 'service_role'],
+    ['security_definer', false],
+    ['volatility', 'v'],
+    ['return_type', 'text'],
+    ['acl', '{postgres=X/postgres,anon=X/postgres}'],
+    ['config', ['search_path=public']],
+    ['anon_execute', true],
+    ['authenticated_execute', true],
+    ['service_execute', false],
+    ['service_private_read', true],
+    ['argument_types', 'uuid'],
+  ])('refuses a changed public attestation %s', (field, value) => {
+    const rows = checkpointCatalog();
+    Object.assign(rows[0], { [field as string]: value });
+    const result = runCheckpointFixture(rows);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('FROZEN ORIGINAL ATTESTATION UNPROVED');
+  });
+  it('refuses direct service execution on the private kernel and duplicate witnesses', () => {
+    const rows = checkpointCatalog();
+    rows[1].service_execute = true;
+    expect(runCheckpointFixture(rows).status).toBe(1);
+    expect(runCheckpointFixture([...checkpointCatalog(), checkpointCatalog()[1]]).status).toBe(1);
+    expect(runCheckpointFixture(null).status).toBe(1);
   });
 });

@@ -109,6 +109,8 @@ function transport(answer: (request: Request) => Answer): Request[] {
       is: (column: string, value: unknown) => filter(column, 'is', value),
       // An ORDER BY shapes the answer, not the trip.
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: (column: string, op: string, value: unknown) => filter(column, `not.${op}`, value),
       then: (resolve: (value: Answer) => unknown, reject: (reason: unknown) => unknown) =>
         reply(request).then(resolve, reject),
@@ -133,9 +135,10 @@ function oneBustOfTwo(overrides: (request: Request) => Answer | undefined = () =
     const override = overrides(request);
     if (override) return override;
     if (request.table === 'tournament_players') {
-      if (request.columns === 'user_id, chips') return { data: [{ user_id: bustedId, chips: 0 }] };
+      if (request.columns === 'id, user_id, chips')
+        return { data: [{ user_id: bustedId, chips: 0 }] };
       if (isPlayingCount(request)) return { count: 2 };
-      if (request.columns === 'position') return { data: [] };
+      if (request.columns === 'id, position') return { data: [] };
       if (request.head && has(request, 'position', 'is', null)) return { count: 2 };
       if (request.head) return { count: 2 };
     }
@@ -219,9 +222,9 @@ function backlog(options: { budget?: boolean; unknownCount?: boolean; refuse?: b
   const ranks: number[] = [];
   transport((r) => {
     if (r.table === 'tournament_players') {
-      if (r.columns === 'user_id, chips')
+      if (r.columns === 'id, user_id, chips')
         return { data: [...pending].map((user_id) => ({ user_id, chips: 0 })) };
-      if (r.columns === 'position') return { data: ranks.map((position) => ({ position })) };
+      if (r.columns === 'id, position') return { data: ranks.map((position) => ({ position })) };
       if (r.head)
         return options.unknownCount && ranks.length === 20
           ? { count: null, error: { message: 'count unavailable' } }

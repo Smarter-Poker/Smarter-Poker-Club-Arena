@@ -31,6 +31,103 @@ function setup(persist: (b: Readonly<HandContinuationBatch>) => Promise<void> = 
 }
 
 describe('the hand continuation retains before publishing', () => {
+  it('retains one coherent post-dispatch accounting capture without repeating full engine work', async () => {
+    const writes: Readonly<HandContinuationBatch>[] = [];
+    const captures: Array<{
+      fields: { version: number };
+      timeBankMeta: Map<string, { version: number }>;
+      timeBankDebits: Map<string, { version: number }>;
+    }> = [];
+    const capture = vi.fn(() => {
+      const version = captures.length + 1;
+      const value = {
+        fields: { version },
+        timeBankMeta: new Map([['player', { version }]]),
+        timeBankDebits: new Map([['debit', { version }]]),
+        capturedAt: version,
+        disconnectStates: { version },
+      };
+      captures.push(value);
+      return value;
+    });
+    const lane = new HandContinuationLane(
+      0,
+      () => 'controller',
+      capture,
+      async (batch) => {
+        writes.push(batch);
+      },
+      async () => {},
+      () => true,
+      () => {}
+    );
+    lane.enqueue(action);
+    await lane.join();
+    expect(writes[0].engine).toEqual({
+      fields: { version: 2 },
+      timeBankMeta: new Map([['player', { version: 2 }]]),
+      timeBankDebits: new Map([['debit', { version: 2 }]]),
+      capturedAt: 1,
+      disconnectStates: { version: 1 },
+    });
+    expect(capture).toHaveBeenCalledTimes(2);
+    captures[1].fields.version = 99;
+    captures[1].timeBankMeta.get('player')!.version = 99;
+    captures[1].timeBankDebits.get('debit')!.version = 99;
+    expect(writes[0].engine.fields).toEqual({ version: 2 });
+    expect(writes[0].engine.timeBankMeta).toEqual(new Map([['player', { version: 2 }]]));
+    expect(writes[0].engine.timeBankDebits).toEqual(new Map([['debit', { version: 2 }]]));
+  });
+
+  it('refreshes accounting only after the preceding consumer finishes', async () => {
+    let version = 0;
+    let release!: () => void;
+    let entered!: () => void;
+    const consuming = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writes: Readonly<HandContinuationBatch>[] = [];
+    const lane = new HandContinuationLane(
+      0,
+      () => 'controller',
+      () => ({
+        fields: { version },
+        timeBankMeta: { version },
+        timeBankDebits: { version },
+        capturedAt: version,
+      }),
+      async (batch) => {
+        writes.push(batch);
+      },
+      async (_event, identity) => {
+        if (identity.sequence === 1) {
+          entered();
+          await held;
+          version = 7;
+        }
+      },
+      () => true,
+      () => {}
+    );
+    lane.enqueue(action);
+    const joined = lane.join();
+    await consuming;
+    lane.enqueue(action);
+    await Promise.resolve();
+    expect(writes).toHaveLength(1);
+    release();
+    await joined;
+    expect(writes[1].engine).toEqual({
+      fields: { version: 7 },
+      timeBankMeta: { version: 7 },
+      timeBankDebits: { version: 7 },
+      capturedAt: 0,
+    });
+  });
+
   it('acknowledges durable bytes without waiting for the next turn animation', async () => {
     let releaseDispatch!: () => void;
     let retained = false;

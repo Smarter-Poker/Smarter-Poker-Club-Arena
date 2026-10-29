@@ -270,6 +270,21 @@
       "path": "scripts/qualification/fixtures/tournament-finish-storm/declare-guard.sql",
       "bytes": 2019,
       "sha256": "cf12f27e760b12e715574f14ce109da82ada1e88fc14e9cc008ab5aba58f92ea"
+    },
+    "hand_identity_native": {
+      "path": "scripts/qualification/hand-history-incident-identity/native.mjs",
+      "bytes": 27612,
+      "sha256": "2bd9719154a7b240a35971bf5dc0181c5249301438379c42391af230e5dc6c65"
+    },
+    "hand_identity_preimages": {
+      "path": "scripts/qualification/fixtures/hand-history-incident-identity/preimages.sql",
+      "bytes": 27179,
+      "sha256": "61b196bfc40c957b5a030a97a06c64677a1694f8f5b9b3b05c9fab53116a91ba"
+    },
+    "hand_identity_migration": {
+      "path": "supabase/migrations/20261029180738_hand_history_incidents_retain_exact_original_identity.sql",
+      "bytes": 16713,
+      "sha256": "68b5d96b84bc1f34d338ed1fe1e7fdc03bebe79a6f9b87673ca439e738b99789"
     }
   },
   "sequenceContract": {

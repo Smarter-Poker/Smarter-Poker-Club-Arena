@@ -334,7 +334,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(
       new Set(
-        ['ca-linux-4core', 'ca-linux-8core'].map(
+        ['ca-linux-4core', 'ca-linux-8core', 'ca-linux-delivery'].map(
           (label) =>
             "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
             label +

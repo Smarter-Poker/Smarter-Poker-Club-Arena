@@ -2411,7 +2411,12 @@ export abstract class TournamentManagerBase {
     if (!this.successorDrainRequested || this.successorHandoffIssued || !this.isRunning())
       return false;
     for (const table of this.tableEngines.values()) {
-      if (table.isRunning() && !table.isBetweenHands()) return false;
+      if (
+        table.isRunning() &&
+        !table.isBetweenHands() &&
+        table.isPreparedOriginalParkedForSuccessor?.() !== true
+      )
+        return false;
     }
     // Mark before calling the owner: a synchronous callback or duplicate park
     // edge must never submit another handoff of this generation.

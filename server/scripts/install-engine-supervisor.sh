@@ -44,6 +44,7 @@ REQUIRED_FILES=(
   legacy-engine-checkpoint.sh
   legacy-engine-checkpoint.mjs
   legacy-engine-checkpoint-guard.mjs
+  retained-original-checkpoint-guard.mjs
   engine-release-recover.sh
   engine-release-unit-wrapper.sh
   observe-engine-release.sh

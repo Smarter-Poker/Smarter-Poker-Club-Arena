@@ -7,19 +7,19 @@
  * pool, its split, the activation rule, the payout ladder and the entry count
  * from the tournament, and hands them to `projectMysteryBountyLadder`, which
  * runs the engine's own builders. The pool keeps growing until entry closes,
- * so the read repeats every 30 seconds while the hook is enabled.
+ * so the existing tournament event feed invalidates the projection.
  */
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { resolvePayoutStructure } from '../lib/payoutStructure';
+import { readTournamentStandings } from '../services/readTournamentStandings';
+import { subscribeTournamentStandings } from '../services/tournamentStandingsUpdates';
 import {
   projectMysteryBountyLadder,
   type MysteryBountyProjection,
 } from '../lib/mysteryBountyProjection';
-
-const REFRESH_MS = 30_000;
 
 const COLUMNS =
   'bounty_pool, bounty_pool_paid, mystery_bounty_pool_percent, mystery_bounty_regular_pool_percent, ' +
@@ -34,12 +34,22 @@ export function useMysteryBountyProjection(
   const [projection, setProjection] = useState<MysteryBountyProjection | null>(null);
 
   useEffect(() => {
+    // A prior event's ladder is never the next event's loading placeholder.
+    setProjection(null);
     if (!enabled || !tournamentId || !(unitCents > 0)) {
       setProjection(null);
       return;
     }
     let alive = true;
+    let inFlight = false;
+    let queued = false;
     const load = async () => {
+      if (!alive) return;
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      inFlight = true;
       try {
         const { data: row, error } = await supabase
           .from('tournaments')
@@ -55,10 +65,10 @@ export function useMysteryBountyProjection(
         const t = row as unknown as Record<string, unknown>;
         // Every entry the event has taken: one row per player plus each of
         // that row's rebuys and re-entries (totalEntriesFromRows' rule).
-        const { data: entries, error: entriesError } = await supabase
-          .from('tournament_players')
-          .select('rebuys')
-          .eq('tournament_id', tournamentId);
+        const { data: entries, error: entriesError } = await readTournamentStandings(
+          tournamentId,
+          'id, rebuys'
+        );
         if (entriesError) throw entriesError;
         if (!alive) return;
         let totalEntries = 0;
@@ -66,9 +76,7 @@ export function useMysteryBountyProjection(
           const extra = Math.floor(Number(e.rebuys) || 0);
           totalEntries += 1 + (extra > 0 ? extra : 0);
         }
-        const places = resolvePayoutStructure(
-          t as Parameters<typeof resolvePayoutStructure>[0]
-        );
+        const places = resolvePayoutStructure(t as Parameters<typeof resolvePayoutStructure>[0]);
         setProjection(
           projectMysteryBountyLadder({
             bountyPool: t.bounty_pool as number | string | null,
@@ -85,14 +93,21 @@ export function useMysteryBountyProjection(
           })
         );
       } catch (err) {
-        reportError(err, 'useMysteryBountyProjection.load');
+        if (alive) reportError(err, 'useMysteryBountyProjection.load');
+      } finally {
+        inFlight = false;
+        if (alive && queued) {
+          queued = false;
+          void load();
+        }
       }
     };
+    const unsubscribe = subscribeTournamentStandings(tournamentId, () => void load());
     void load();
-    const id = setInterval(() => void load(), REFRESH_MS);
     return () => {
       alive = false;
-      clearInterval(id);
+      queued = false;
+      unsubscribe();
     };
   }, [tournamentId, enabled, unitCents]);
 

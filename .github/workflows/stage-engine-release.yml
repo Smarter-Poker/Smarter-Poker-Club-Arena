@@ -133,7 +133,7 @@ jobs:
                   if "releaseWitness" in w:
                       valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
                       if valid: path, digest = witness["path"], witness["sha256"]
-                      if not (valid and isinstance(path, str) and re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path)
+                      if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs")
                               and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
                           print("invalid - -")
                           break

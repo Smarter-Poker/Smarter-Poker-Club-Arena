@@ -234,6 +234,26 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.ownerOrder).toContain('aca0b52c832447c5f0e4636a19a4fcdbe2f1047a');
     expect(recovery.ownerOrder).toContain('full 285-second');
   });
+  it('binds the retained checkpoint continuation to its exact guard and a new finite tournament-aligned window', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const recovery = windows.find(
+      (entry: { id: string }) => entry.id === '2026-10-29-retained-original-checkpoint-recovery'
+    );
+    const path = 'server/scripts/retained-original-checkpoint-guard.mjs';
+    expect(recovery.releaseWitness).toEqual({
+      path,
+      sha256: createHash('sha256')
+        .update(readFileSync(join(root, path)))
+        .digest('hex'),
+    });
+    expect(recovery.contains).toBe('aca3bb78ee4821ec425b5acaf303869106b4a21a');
+    expect(recovery.notBefore).toBe('2026-10-29T15:20:00Z');
+    expect(recovery.notAfter).toBe('2026-10-29T21:20:00Z');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
+    expect(recovery.migrations).toEqual([]);
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',
@@ -270,6 +290,21 @@ describe('daily routine admission uses the existing protected receiver only', ()
         undefined,
         { windows, ancestor, served, witness: mode }
       );
+    // Only this exact maintained bootstrap source may be a non-migration
+    // feature witness. Its bytes and unserved history keep the same once rule.
+    const guardWitness = {
+      ...witness,
+      path: 'server/scripts/retained-original-checkpoint-guard.mjs',
+    };
+    expect(check('unserved', doc(guardWitness))).toBe(true);
+    for (const mode of ['served', 'deleted', 'mismatch', 'unreadable'])
+      expect(check(mode, doc(guardWitness)), mode).toBe(false);
+    expect(check('unserved', doc({ ...guardWitness, path: guardWitness.path + '.other' }))).toBe(
+      false
+    );
+    expect(
+      check('unserved', doc({ ...guardWitness, path: 'server/scripts/other-guard.mjs' }))
+    ).toBe(false);
     // The peer has our shared base, but has never contained our actual feature.
     expect(check('unserved')).toBe(true);
     // A consumed specific order does not revoke an independent legacy order.

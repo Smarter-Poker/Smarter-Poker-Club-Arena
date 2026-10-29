@@ -1,0 +1,104 @@
+{
+  "tables": [
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "signature": "engine_presence_parked",
+      "definition": "CREATE TABLE engine_presence_parked (table_id uuid NOT NULL, disconnect_states jsonb NOT NULL DEFAULT '{}'::jsonb, parked_at timestamp with time zone NOT NULL DEFAULT now(), engine_instance text, time_bank_snapshot jsonb, PRIMARY KEY (table_id));"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "signature": "smarter_private.f06_absent_permit_releases",
+      "definition": "CREATE TABLE smarter_private.f06_absent_permit_releases (permit_id uuid NOT NULL, tournament_id uuid NOT NULL, generation uuid NOT NULL, table_id uuid NOT NULL, hand_number bigint NOT NULL, custody_hand_number bigint NOT NULL, released_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), CHECK ((hand_number > custody_hand_number)), PRIMARY KEY (permit_id));"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "signature": "smarter_private.f06_manager_custody_completions",
+      "definition": "CREATE TABLE smarter_private.f06_manager_custody_completions (transfer_id uuid NOT NULL, tournament_id uuid NOT NULL, generation uuid NOT NULL, admission jsonb NOT NULL, operation_receipts jsonb NOT NULL, presence_receipts jsonb NOT NULL, completed_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), PRIMARY KEY (transfer_id));"
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "signature": "smarter_private.f06_manager_custody_transfers",
+      "definition": "CREATE TABLE smarter_private.f06_manager_custody_transfers (transfer_id uuid NOT NULL, tournament_id uuid NOT NULL, origin_generation uuid NOT NULL, successor_generation uuid NOT NULL, local_proof jsonb NOT NULL, canonical_proof jsonb NOT NULL, created_at timestamp with time zone NOT NULL DEFAULT clock_timestamp(), CHECK ((jsonb_typeof(canonical_proof) = 'object'::text)), CHECK ((origin_generation <> successor_generation)), CHECK ((jsonb_typeof(local_proof) = 'object'::text)), PRIMARY KEY (transfer_id), UNIQUE (tournament_id, origin_generation), UNIQUE (tournament_id, successor_generation));"
+    }
+  ],
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=pg_catalog"],
+      "body_md5": "ba77322bd9871035163194300fa37790",
+      "signature": "smarter_private.f06_retired_origin_lock(uuid)",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_retired_origin_lock(t uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n IF NOT pg_try_advisory_xact_lock(hashtextextended('f06:retired-origin:'||t::text,0)) THEN\n RAISE EXCEPTION 'F06_RETIRED_CLAIM_BUSY' USING ERRCODE='55P03'; END IF;\nEND $function$\n",
+      "definition_md5": "4cb4a1612313b536195bc0151c1240d3"
+    },
+    {
+      "signature": "smarter_private.f06_manager_transfer_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_manager_transfer_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_MANAGER_TRANSFER_IMMUTABLE' USING ERRCODE='55000'; END $function$\n",
+      "definition_md5": "d595b68fa3464e5d56b5bc5395b5eb08",
+      "body_md5": "0daf117b8c81a351771c5fa802d22c62",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"]
+    },
+    {
+      "signature": "smarter_private.fn_fenced_manager_stopped_custody_park()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE\n  v_snapshot jsonb;\n  v_hand jsonb;\n  v_tournament uuid;\n  v_generation uuid;\n  v_result jsonb;\nBEGIN\n  /* Every other writer - the service actor, a live manager, legacy-unmarked,\n     and fn_park_stopped_time_bank_custody's own insert below - passes\n     untouched. */\n  IF current_setting('app.smarter_data_actor', true)\n       IS DISTINCT FROM 'fenced-manager-stopped-custody' THEN\n    RETURN NEW;\n  END IF;\n\n  v_snapshot := NEW.time_bank_snapshot;\n  v_hand := v_snapshot -> 'handNumber';\n  IF right(COALESCE(NEW.engine_instance, ''), 16) IS DISTINCT FROM ':stopped_custody'\n     OR jsonb_typeof(v_snapshot) IS DISTINCT FROM 'object'\n     OR (v_snapshot -> 'version') IS DISTINCT FROM '1'::jsonb\n     OR jsonb_typeof(v_hand) IS DISTINCT FROM 'number'\n     OR (v_hand::text)::numeric < 0\n     OR (v_hand::text)::numeric <> trunc((v_hand::text)::numeric)\n     OR jsonb_typeof(v_snapshot -> 'players') IS DISTINCT FROM 'object'\n     OR jsonb_typeof(NEW.disconnect_states) IS DISTINCT FROM 'object' THEN\n    RAISE EXCEPTION\n      'TOURNAMENT_MANAGER_FENCED: lease generation is no longer current'\n      USING ERRCODE = '42501';\n  END IF;\n\n  BEGIN\n    v_tournament := NULLIF(current_setting('app.smarter_tournament_id', true), '')::uuid;\n    v_generation :=\n      NULLIF(current_setting('app.smarter_tournament_lease_generation', true), '')::uuid;\n  EXCEPTION WHEN invalid_text_representation THEN\n    v_tournament := NULL;\n  END;\n  IF v_tournament IS NULL OR v_generation IS NULL THEN\n    RAISE EXCEPTION\n      'TOURNAMENT_MANAGER_FENCED: lease generation is no longer current'\n      USING ERRCODE = '42501';\n  END IF;\n\n  /* The custody is written as the process, by the reviewed refusing write.\n     Transaction-local, and restored before anything else can read it. */\n  PERFORM set_config('app.smarter_data_actor', 'service', true);\n  v_result := public.fn_park_stopped_time_bank_custody(\n    NEW.table_id,\n    v_tournament,\n    v_generation,\n    (v_hand::text)::bigint,\n    NEW.parked_at::text,\n    NEW.disconnect_states,\n    v_snapshot -> 'players',\n    NEW.engine_instance\n  );\n  PERFORM set_config('app.smarter_data_actor', 'fenced-manager-stopped-custody', true);\n\n  IF (v_result ->> 'ok') = 'true' THEN\n    -- The function wrote the row. Suppress the raw ON CONFLICT DO UPDATE.\n    RETURN NULL;\n  END IF;\n  RAISE EXCEPTION 'STOPPED_CUSTODY_REFUSED: %', COALESCE(v_result ->> 'refused', 'unknown')\n    USING ERRCODE = '42501';\nEND\n$function$\n",
+      "definition_md5": "1e845634a69b4e09171a8003306fda3b",
+      "body_md5": "7b8e397b654e5176f6091dcfd9a8a4d7",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog, pg_temp"]
+    },
+    {
+      "signature": "smarter_private.f06_absent_permit_release_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_absent_permit_release_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN RAISE EXCEPTION 'F06_ABSENT_PERMIT_RELEASE_IMMUTABLE' USING ERRCODE = '55000'; END $function$\n",
+      "definition_md5": "ee3110e40d8c252f97735c0d5d40d298",
+      "body_md5": "647d4a60d53327dfd13a64ebf67fb00b",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "config": ["search_path=pg_catalog"]
+    }
+  ],
+  "triggers": [
+    {
+      "relation": "engine_presence_parked",
+      "tgname": "trg_fenced_manager_stopped_custody_park",
+      "definition": "CREATE TRIGGER trg_fenced_manager_stopped_custody_park BEFORE INSERT ON public.engine_presence_parked FOR EACH ROW EXECUTE FUNCTION smarter_private.fn_fenced_manager_stopped_custody_park()",
+      "enabled": "O"
+    },
+    {
+      "relation": "smarter_private.f06_absent_permit_releases",
+      "tgname": "f06_absent_permit_release_immutable",
+      "definition": "CREATE TRIGGER f06_absent_permit_release_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_absent_permit_releases FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_absent_permit_release_immutable()",
+      "enabled": "O"
+    },
+    {
+      "relation": "smarter_private.f06_manager_custody_completions",
+      "tgname": "immutable",
+      "definition": "CREATE TRIGGER immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_manager_custody_completions FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_manager_transfer_immutable()",
+      "enabled": "O"
+    },
+    {
+      "relation": "smarter_private.f06_manager_custody_completions",
+      "tgname": "no_truncate",
+      "definition": "CREATE TRIGGER no_truncate BEFORE TRUNCATE ON smarter_private.f06_manager_custody_completions FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.f06_manager_transfer_immutable()",
+      "enabled": "O"
+    },
+    {
+      "relation": "smarter_private.f06_manager_custody_transfers",
+      "tgname": "f06_manager_transfer_immutable",
+      "definition": "CREATE TRIGGER f06_manager_transfer_immutable BEFORE DELETE OR UPDATE ON smarter_private.f06_manager_custody_transfers FOR EACH ROW EXECUTE FUNCTION smarter_private.f06_manager_transfer_immutable()",
+      "enabled": "O"
+    },
+    {
+      "relation": "smarter_private.f06_manager_custody_transfers",
+      "tgname": "f06_manager_transfer_no_truncate",
+      "definition": "CREATE TRIGGER f06_manager_transfer_no_truncate BEFORE TRUNCATE ON smarter_private.f06_manager_custody_transfers FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.f06_manager_transfer_immutable()",
+      "enabled": "O"
+    }
+  ]
+}

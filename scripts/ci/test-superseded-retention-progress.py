@@ -46,6 +46,7 @@ def main():
         return e.run(label, [e.pg/'psql','-X','-qAt','-h',e.socket,'-p',e.port,'-U','postgres','-d',db,'-v','ON_ERROR_STOP=1','-c',command], check=check)
     captured_job = json.loads(actions.PREIMAGE.read_text())['retention_cron_preimage']
     budget_migration = ROOT/'supabase/migrations/20261029083417_retention_discovery_commits_bounded_chunks_within_its_budget.sql'
+    queue_exit_migration = ROOT/'supabase/migrations/20261029200737_physically_impossible_superseded_action_work_exits_its_exist.sql'
     original = captured_job['command']
     assert len(original.encode()) == 301
     assert hashlib.md5(original.encode()).hexdigest() == captured_job['command_md5'] == '96244362bf46b39e75ef1100b1372203'
@@ -66,6 +67,7 @@ def main():
             sql(base,'REVOKE ALL ON FUNCTION '+row['signature']+' FROM PUBLIC,anon,authenticated,service_role;'+('' if row['signature'].startswith('smarter_private.') else 'GRANT EXECUTE ON FUNCTION '+row['signature']+' TO service_role;'),'owner-acl')
         sql(base,"CREATE TRIGGER hand_submission_immutable BEFORE UPDATE OR DELETE ON smarter_private.hand_submissions FOR EACH ROW EXECUTE FUNCTION smarter_private.hand_submission_immutable(); CREATE TRIGGER hand_submission_no_truncate BEFORE TRUNCATE ON smarter_private.hand_submissions FOR EACH STATEMENT EXECUTE FUNCTION smarter_private.hand_submission_immutable();",'actual-immutable-triggers')
         e.sql(base,file=actions.MIGRATION,label='installed-8445-baseline')
+        e.sql(base,file=actions.PREFLIGHT,label='installed-physical-compaction-preflight')
         sql(base,"CREATE SCHEMA cron; CREATE TABLE cron.job(jobid bigint PRIMARY KEY,jobname text,schedule text,active boolean,username text,command text); CREATE FUNCTION cron.alter_job(job_id bigint,command text) RETURNS void LANGUAGE sql AS $$ UPDATE cron.job SET command=$2 WHERE jobid=$1 $$; CREATE TABLE public.progress_prune_receipts(n integer); CREATE FUNCTION public.sp_prune_hand_history(integer) RETURNS integer LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.progress_prune_receipts VALUES($1); RETURN 0; END $$; INSERT INTO cron.job VALUES(117,'sp_prune_hand_history_10m','30 seconds',true,'postgres',"+lit(original)+");",'existing-cron-shape-only')
         unsupported=e.database(base)
         code,_,err=e.sql(unsupported,"SET cron.use_background_workers='on';"+migration.read_text(),label='unsupported-cron-mode-refusal',check=False)
@@ -91,6 +93,45 @@ def main():
         expect('BEFORE no future age owner exists',sql(base,"SELECT to_regprocedure('smarter_private.progress_superseded_action_retention()') IS NULL;",'before-missing-owner')=='t')
         e.sql(base,file=migration,label='exact-progress-candidate')
         e.sql(base,file=budget_migration,label='budgeted-discovery-upgrade')
+        # The current compactor already refuses physically impossible work
+        # without writing; reproduce its caller's old daily requeue before the
+        # new caller-only upgrade. Source and receipt stay immutable throughout.
+        physical=e.database(base)
+        physical_mutation="UPDATE smarter_private.hand_submissions SET request=jsonb_set(request,'{p_hand_row,actions}',(SELECT jsonb_agg(jsonb_build_object('action','call','amount',10)) FROM generate_series(1,1500))); UPDATE smarter_private.hand_submissions SET request_hash=encode(extensions.digest(convert_to(request::text,'UTF8'),'sha256'),'hex'); UPDATE smarter_private.hand_submission_disposals SET expected=jsonb_set(expected,'{request_hash}',to_jsonb((SELECT request_hash FROM smarter_private.hand_submissions)));"
+        sql(physical,'ALTER TABLE smarter_private.hand_submissions DISABLE TRIGGER hand_submission_immutable; ALTER TABLE smarter_private.hand_submission_disposals DISABLE TRIGGER hand_submission_disposal_immutable;'+physical_mutation+"ALTER TABLE smarter_private.hand_submissions ENABLE TRIGGER hand_submission_immutable; ALTER TABLE smarter_private.hand_submission_disposals ENABLE TRIGGER hand_submission_disposal_immutable; INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;", 'physical-impossible-current-source')
+        physical_size=int(sql(physical,'SELECT pg_column_size(request) FROM smarter_private.hand_submissions;','physical-impossible-stored-size'))
+        expect('physical queue fixture is stored below unchanged overhead',physical_size<=4096)
+        expect('physical queue fixture passes unchanged semantic qualifier',sql(physical,f'SELECT smarter_private.superseded_horse_actions_eligible({lit(actions.HAND)});','physical-impossible-semantic-qualifier')=='t')
+        physical_original=sql(physical,"SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d));",'physical-impossible-original')
+        expect('BEFORE physical impossible work returns zero',sql(physical,'SELECT smarter_private.progress_superseded_action_retention();','physical-impossible-before-turn')=='0')
+        expect('BEFORE physical impossible queue entry is deferred daily',sql(physical,'SELECT count(*) FROM smarter_private.superseded_action_retention_due WHERE next_at>now();','physical-impossible-before-requeue')=='1')
+        e.sql(physical,file=queue_exit_migration,label='physical-impossible-exact-upgrade')
+        sql(physical,'UPDATE smarter_private.superseded_action_retention_due SET next_at=now();','physical-impossible-native-next-turn')
+        expect('AFTER physical impossible work returns zero without compaction',sql(physical,'SELECT smarter_private.progress_superseded_action_retention();','physical-impossible-after-turn')=='0')
+        expect('AFTER only physical impossible queue bookkeeping exits',sql(physical,'SELECT count(*) FROM smarter_private.superseded_action_retention_due;','physical-impossible-after-queue')=='0' and sql(physical,'SELECT count(*) FROM smarter_private.superseded_horse_action_certificates;','physical-impossible-no-certificate')=='0')
+        expect('physical impossible exit preserves exact source and receipt',physical_original==sql(physical,"SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d));",'physical-impossible-final-state'))
+        code,_,err=e.sql(physical,"UPDATE smarter_private.hand_submissions SET request=jsonb_set(request,'{p_hand_row,actions}','[]');",label='physical-impossible-immutable-expansion',check=False)
+        expect('physical impossible original remains enforced immutable after exit',code!=0 and 'HAND_SUBMISSION_IMMUTABLE' in err)
+        e.report['physical_impossible_queue']={'stored_request_bytes':physical_size,'before_daily_requeue':True,'after_queue_entries':0,'original_source_and_receipt_preserved':True}
+        e.discard(physical)
+        authority_query="SELECT jsonb_build_object('body',pg_get_functiondef(p.oid),'owner',proowner,'acl',proacl,'config',proconfig,'secdef',prosecdef,'cursor',(SELECT to_jsonb(c) FROM smarter_private.superseded_action_retention_cursor c),'job',(SELECT to_jsonb(j) FROM cron.job j WHERE jobid=117)) FROM pg_proc p WHERE p.oid='smarter_private.progress_superseded_action_retention()'::regprocedure;"
+        for label,mutation,error in [
+            ('unexpected-ACL','GRANT EXECUTE ON FUNCTION smarter_private.progress_superseded_action_retention() TO service_role;','SUPERSEDED_QUEUE_PHYSICAL_EXIT_AUTHORITY_CHANGED'),
+            ('disabled-immutability','ALTER TABLE smarter_private.hand_submissions DISABLE TRIGGER hand_submission_immutable;','SUPERSEDED_QUEUE_PHYSICAL_EXIT_IMMUTABILITY_CHANGED'),
+            ('disabled-no-truncate','ALTER TABLE smarter_private.hand_submissions DISABLE TRIGGER hand_submission_no_truncate;','SUPERSEDED_QUEUE_PHYSICAL_EXIT_IMMUTABILITY_CHANGED'),
+        ]:
+            refused=e.database(base)
+            sql(refused,mutation,label+'-native-drift')
+            before=sql(refused,authority_query,label+'-before')
+            code,_,err=e.sql(refused,file=queue_exit_migration,label=label+'-upgrade-refused',check=False)
+            expect(label+' prevents physical queue upgrade',code!=0 and error in err)
+            expect(label+' refusal preserves body authority cursor and job',before==sql(refused,authority_query,label+'-after'))
+            e.discard(refused)
+        e.sql(base,file=queue_exit_migration,label='exact-physical-queue-upgrade')
+        replay_before=sql(base,authority_query,'physical-queue-upgrade-before-replay')
+        code,_,err=e.sql(base,file=queue_exit_migration,label='physical-queue-upgrade-replay-refused',check=False)
+        expect('physical queue upgrade replay refuses',code!=0 and 'SUPERSEDED_QUEUE_PHYSICAL_EXIT_PREIMAGE_CHANGED' in err)
+        expect('physical queue upgrade replay retains exact authority cursor and job',replay_before==sql(base,authority_query,'physical-queue-upgrade-after-replay'))
         after_pins=json.loads(sql(base,"SELECT split_part(pg_get_functiondef('smarter_private.original_hand_correction_sources_match()'::regprocedure),'$sourcepins$',2)::jsonb;",'after-pins'))
         sig='smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'
         expect('exactly one existing source pin advances',len(before_pins)==26 and [x for x in before_pins if x['signature']!=sig]==[x for x in after_pins if x['signature']!=sig] and before_pins!=after_pins)
@@ -110,6 +151,7 @@ def main():
         expect('all new helpers inaccessible to service role',sql(base,"SELECT bool_and(NOT has_function_privilege('service_role',oid,'execute')) FROM pg_proc WHERE pronamespace='smarter_private'::regnamespace AND proname IN ('progress_superseded_action_retention','discover_superseded_action_retention','superseded_action_retention_due_at');",'helper-acl')=='t')
         e.sql(empty,file=migration,label='empty-progress-candidate')
         e.sql(empty,file=budget_migration,label='empty-budgeted-upgrade')
+        e.sql(empty,file=queue_exit_migration,label='empty-physical-queue-upgrade')
         replay=e.database(empty)
         replay_before=sql(replay,"SELECT jsonb_build_object('body',pg_get_functiondef(p.oid),'owner',proowner,'acl',proacl,'config',proconfig,'secdef',prosecdef,'cursor',(SELECT to_jsonb(c) FROM smarter_private.superseded_action_retention_cursor c)) FROM pg_proc p WHERE p.oid='smarter_private.discover_superseded_action_retention()'::regprocedure;",'budget-replay-before')
         replay_code,_,replay_error=e.sql(replay,budget_migration.read_text(),label='budget-replay-refusal',check=False)
@@ -201,13 +243,41 @@ def main():
         cost=e.database(empty)
         compressible=actions.SEED.replace("'seq',n,'action','call','amount',n,'event_digest',md5(n::text)||md5((n*37)::text)||md5((n*47)::text)","'action','call','amount',10")
         if compressible==actions.SEED: raise AssertionError('compressible seed replacement missing')
-        sql(cost,compressible+"INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;",'net-negative-source')
+        larger_nonbeneficial=compressible.replace("'p_ref','original-ref'","'p_ref',(SELECT string_agg(md5(n::text),'') FROM generate_series(1,500)n)")
+        if larger_nonbeneficial==compressible: raise AssertionError('large net-negative seed replacement missing')
+        sql(cost,larger_nonbeneficial+"INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;",'net-negative-source')
+        expect('larger net-negative original exceeds physical exit threshold',int(sql(cost,'SELECT pg_column_size(request) FROM smarter_private.hand_submissions;','larger-net-negative-stored-size'))>4096)
         cost_before=sql(cost,"SELECT jsonb_build_object('source',to_jsonb(s),'disposal',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d)) FROM smarter_private.hand_submissions s;",'net-negative-before')
         expect('net-negative request passes semantic eligibility',sql(cost,f'SELECT smarter_private.superseded_horse_actions_eligible({lit(actions.HAND)});','net-negative-qualifier')=='t')
         expect('net-negative stored benefit refuses compaction',sql(cost,'SELECT smarter_private.progress_superseded_action_retention();','net-negative-turn')=='0')
         expect('net-negative source and disposal remain byte identical',cost_before==sql(cost,"SELECT jsonb_build_object('source',to_jsonb(s),'disposal',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d)) FROM smarter_private.hand_submissions s;",'net-negative-after'))
         expect('net-negative retry retains queue without certificate',sql(cost,'SELECT (SELECT count(*) FROM smarter_private.superseded_action_retention_due WHERE next_at>now())=1 AND NOT EXISTS(SELECT 1 FROM smarter_private.superseded_horse_action_certificates);','net-negative-retry')=='t')
         e.discard(cost)
+        # A concurrent source owner keeps its retry class, including the new
+        # physically small case; the terminal check must really acquire its lock.
+        small_held=e.database(empty)
+        sql(small_held,compressible+"INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;",'small-locked-source')
+        def hold_small_source():
+            e.sql(small_held,f"BEGIN; SELECT 1 FROM smarter_private.hand_submissions WHERE submission_id={lit(actions.HAND)} FOR UPDATE; SELECT pg_advisory_xact_lock(789005,1); SELECT pg_sleep(1.5); COMMIT;",label='small-source-concurrent-holder')
+        small_thread=threading.Thread(target=hold_small_source)
+        threads.append(small_thread)
+        small_thread.start()
+        until=time.monotonic()+2
+        while time.monotonic()<until:
+            if sql(small_held,"SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=789005 AND objid=1 AND granted);",'small-source-holder-admitted')=='t': break
+        else: raise AssertionError('small source holder never admitted')
+        expect('locked physical impossible source returns without compaction',sql(small_held,'SELECT smarter_private.progress_superseded_action_retention();','small-locked-turn')=='0')
+        expect('locked physical impossible source keeps its future retry entry',sql(small_held,'SELECT count(*) FROM smarter_private.superseded_action_retention_due WHERE next_at>now();','small-locked-retry')=='1')
+        small_thread.join()
+        sql(small_held,'UPDATE smarter_private.superseded_action_retention_due SET next_at=now();','small-unlocked-native-next-turn')
+        expect('released physical impossible queue item exits without compaction',sql(small_held,'SELECT smarter_private.progress_superseded_action_retention(); SELECT count(*) FROM smarter_private.superseded_action_retention_due;','small-unlocked-exit')=='0\n0')
+        e.discard(small_held)
+        small_rolled=e.database(empty)
+        sql(small_rolled,compressible+"INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;",'small-rollback-source')
+        small_rollback_before=sql(small_rolled,"SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d),'queue',(SELECT to_jsonb(q) FROM smarter_private.superseded_action_retention_due q));",'small-rollback-before')
+        sql(small_rolled,'BEGIN; SELECT smarter_private.progress_superseded_action_retention(); ROLLBACK;','small-queue-exit-rollback')
+        expect('queue exit rollback restores exact bookkeeping source and receipt',small_rollback_before==sql(small_rolled,"SELECT jsonb_build_object('source',(SELECT to_jsonb(s) FROM smarter_private.hand_submissions s),'receipt',(SELECT to_jsonb(d) FROM smarter_private.hand_submission_disposals d),'queue',(SELECT to_jsonb(q) FROM smarter_private.superseded_action_retention_due q));",'small-rollback-after'))
+        e.discard(small_rolled)
         frozen=e.database(empty)
         sql(frozen,actions.SEED+"INSERT INTO smarter_private.superseded_action_retention_due SELECT submission_id,now()-interval '1 day',now()-interval '1 day' FROM smarter_private.hand_submissions;",'frozen-seed')
         expect('freeze declines both phases without cursor or certificate mutation',sql(frozen,"SET app.test_platform_frozen='true'; SELECT smarter_private.progress_superseded_action_retention()=0 AND smarter_private.discover_superseded_action_retention()=0 AND NOT EXISTS(SELECT 1 FROM smarter_private.superseded_horse_action_certificates) AND (SELECT discovery_cutoff IS NULL FROM smarter_private.superseded_action_retention_cursor);",'freeze-refusal')=='t')
@@ -246,7 +316,7 @@ def main():
         sql(base,"CREATE OR REPLACE FUNCTION public.sp_prune_hand_history(integer) RETURNS integer LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'ORIGINAL_PRUNE_FAILED'; END $$; CREATE OR REPLACE FUNCTION smarter_private.progress_superseded_action_retention() RETURNS integer LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.progress_prune_receipts VALUES(99); RETURN 0; END $$;",'original-failure-injection-only-native')
         code,_,err=simple(base,command,'simple-query-first-phase-failure',False)
         expect('original failure prevents new phase',code!=0 and 'ORIGINAL_PRUNE_FAILED' in err and sql(base,'SELECT count(*) FROM public.progress_prune_receipts;','first-failure-readback')=='2')
-        e.report.update(status='passed',checks=checks,source_sha256={str(path.relative_to(ROOT)):sha(path) for path in [migration,budget_migration,Path(__file__),actions.MIGRATION,actions.PREIMAGE,ROOT/doors.WORLD,ROOT/doors.MIGRATION]},simple_query_timeout_seconds=elapsed)
+        e.report.update(status='passed',checks=checks,source_sha256={str(path.relative_to(ROOT)):sha(path) for path in [migration,budget_migration,queue_exit_migration,actions.PREFLIGHT,Path(__file__),actions.MIGRATION,actions.PREIMAGE,ROOT/doors.WORLD,ROOT/doors.MIGRATION]},simple_query_timeout_seconds=elapsed)
     except BaseException as exc:
         e.report.update(status='failed',failure=repr(exc))
         raise

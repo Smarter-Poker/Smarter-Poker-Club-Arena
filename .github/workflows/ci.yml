@@ -374,7 +374,7 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript compilation and repository checks
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # 8443 job122933361176 completed every functional step at14:59, then
     # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
     # Preserve all commands/test deadlines and reserve5minutes for the
@@ -1273,7 +1273,7 @@ jobs:
       VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
     # Every pull-request shard gets a fresh hosted image. A dependency or test
     # from a branch cannot persist into any later credential-bearing job.
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -3438,6 +3438,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The retained-original qualification compiles one exact historical
+          # engine and verifies its observed source bytes before any admission.
+          fetch-depth: 0
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -3650,7 +3654,7 @@ jobs:
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -4117,14 +4121,16 @@ jobs:
     # the beats, on one worker for 7.1 of the job's 16 test minutes (run
     # 36886817861); it builds its own bundle and needs neither this build nor
     # the shared preview, so it runs beside this job instead of after it.
-    name: CSS Beat suites shard ${{ matrix.shard }}/3 (multi-table, animations, Table Studio)
+    name: CSS Beat suites shard ${{ matrix.shard }}/5 (multi-table, animations, Table Studio)
     # Paid VMs run disjoint Playwright shards. The required aggregate waits for
     # every shard; independent real-component gates execute once across them.
+    # Five partitions split the measured geometry cluster across shards 3/4;
+    # Studio, financial decisions and push retain one execution on 1/2/5.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+        shard: [1, 2, 3, 4, 5]
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
     # Preserve every suite and its own deadlines, with room for cleanup.
@@ -4400,7 +4406,7 @@ jobs:
           # The JSON report beside the line reporter feeds the flaky-case
           # summary step below: these suites have run with one retry since
           # before 2026-09-26, and a case that passed only on retry is named.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" node scripts/ci/ui-test-selection.mjs browser tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/3
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/css-beats-report.json" node scripts/ci/ui-test-selection.mjs browser tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/css/diamond-wheel-reveal.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/mobile-lobby-chrome.spec.ts tests/e2e/css/club-lobby-sticky-selector.spec.ts tests/e2e/css/club-members-containment.spec.ts tests/e2e/css/player-detail-containment.spec.ts tests/e2e/css/hand-review-awards.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts tests/e2e/header-portrait-frame.spec.ts --project=chromium --project=webkit-footer --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/5
 
       # The CSS Beat suites run with one retry: a case that passed only on
       # retry is named, never counted as clean.
@@ -4457,7 +4463,7 @@ jobs:
       # login and no production data. Guards the shared /push/ registration,
       # the Not Now cool-down and the owner receipt exception (2026-09-27).
       - name: Push enrollment opt-in browser gate
-        if: matrix.shard == 3
+        if: matrix.shard == 5
         run: npm run test:e2e:push-enrollment
 
       # if: always() because the preview is now started outside the step that
@@ -4487,8 +4493,13 @@ jobs:
       !cancelled() && github.event_name == 'pull_request' &&
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
-    name: Diamond playfield (software WebGL)
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    name: Diamond playfield shard ${{ matrix.shard }}/3 (software WebGL)
+    # Separate VMs retain one software-WebGL worker each and the complete cases.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # 7.1 minutes measured inside the old job; room for a slow browser install.
     timeout-minutes: 25
 
@@ -4535,7 +4546,7 @@ jobs:
           # every flaky case as a warning and in the job summary, so a retried
           # pass is seen rather than counted as clean. A case that fails twice
           # still fails the job.
-          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1
+          PLAYWRIGHT_JSON_OUTPUT_NAME="$RUNNER_TEMP/diamond-playfield-report.json" npx playwright test tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/3
 
       # Reads the playfield invocation's JSON report and names every case that
       # passed only on retry. Runs whether the suite passed or failed, and
@@ -4551,7 +4562,7 @@ jobs:
         if: ${{ failure() && steps.diamond-playfield.outcome == 'failure' }}
         uses: actions/upload-artifact@v4
         with:
-          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}
+          name: diamond-playfield-failure-${{ github.sha }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: test-results/
           retention-days: 3
           if-no-files-found: warn

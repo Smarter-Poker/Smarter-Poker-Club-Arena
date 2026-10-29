@@ -1,5 +1,5 @@
 """Finite synthetic two-context boundary checks. No models fitted or real data."""
-import copy,hashlib,importlib.util,json,math,os,struct,tempfile,unittest
+import copy,hashlib,importlib.util,json,math,os,struct,sys,tempfile,unittest
 from pathlib import Path
 SPEC=importlib.util.spec_from_file_location('model_index',Path(__file__).with_name('assemble-public215-model-index.py'))
 h=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(h)
@@ -11,6 +11,31 @@ def decode(word):
  return value
 def cases():return[{'board':b,'own':['2c','2d'],'features_f64':[ZERO]*215,'raw_heads_f64':[ZERO]*5,'policy_ev_f64':ZERO,'Q_f64':[ZERO]*2,'frequency_f64':[HALF]*2}for b in['Qh9d7c2h','Qh9d7c3h']]
 class PublicModelIndexTests(unittest.TestCase):
+ def test_repository_root_imports_nested_codec_and_stays_manifest_root(self):
+  with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR'])as d:
+   root=Path(d).resolve();folder=root/'scripts'/'horse-solver-v31';folder.mkdir(parents=True)
+   names=['contract.py','pio_upi.py','gateway.py','worker.py','compactor.py','prepare_bundle.py','public_hist215.py','public_hist215_feature_descriptor.json','final_public215_training.py']
+   relative=['scripts/horse-solver-v31/'+n for n in names]
+   code='PUBLIC215_PIPELINE_FILES=frozenset('+repr(relative)+')\ndef load_manifest(*,pipeline_root):\n from pathlib import Path\n root=Path(pipeline_root)\n assert all((root/p).is_file() for p in PUBLIC215_PIPELINE_FILES)\n return root\n'
+   for name in names:(folder/name).write_text(code if name=='contract.py'else '# public synthetic source fixture\n')
+   pins=[{'path':str(folder/n),'sha256':h.SHA((folder/n).read_bytes())}for n in names]
+   lock=root/'source-lock.json';lock.write_text(json.dumps({'format':'public_hist215_encoder_source_graph_v1','files':pins}))
+   config={'pipeline_root':str(root),'pipeline_source_lock':{'path':str(lock),'sha256':h.SHA(lock.read_bytes())}}
+   prior_path=sys.path[:];prior={key:sys.modules.pop(key,None)for key in ['contract','public_hist215']}
+   try:
+    contract,codec=h.import_pipeline(config)
+    self.assertEqual(Path(contract.__file__).parent,folder)
+    self.assertEqual(Path(codec.__file__).parent,folder)
+    self.assertEqual(contract.load_manifest(pipeline_root=config['pipeline_root']),root)
+    self.assertEqual(h.pinned({'path':str(root/'scripts'/'horse-solver-v31'/'final_public215_training.py'),'sha256':pins[-1]['sha256']}),(folder/'final_public215_training.py').read_bytes())
+    with self.assertRaises((ValueError,FileNotFoundError)):h.import_pipeline({**config,'pipeline_root':str(folder)})
+    lock.write_text(json.dumps({'format':'public_hist215_encoder_source_graph_v1','files':pins[:-1]}))
+    with self.assertRaisesRegex(ValueError,'SOURCE_PIN'):h.import_pipeline({**config,'pipeline_source_lock':{'path':str(lock),'sha256':h.SHA(lock.read_bytes())}})
+   finally:
+    sys.path[:]=prior_path
+    for key,value in prior.items():
+     sys.modules.pop(key,None)
+     if value is not None:sys.modules[key]=value
  def test_two_context_all215_allheads_and_normalized_words_are_exact(self):
   for context_index in range(2):
    reference=cases()

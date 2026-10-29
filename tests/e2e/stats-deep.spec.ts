@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Request } from '@playwright/test';
+import { mountStatsPaneBeforeDebounce } from './support/statsClock';
 import { recordNonVerdict } from './support/nonVerdict';
 
 test.describe('Player Stats production experience', () => {
@@ -167,6 +168,11 @@ test.describe('Player Stats production experience', () => {
       }
     });
     try {
+      // Install before the new document imports Framer: its frame scheduler
+      // captures requestAnimationFrame at module initialization. Keep it running
+      // through warmup and initial reads; pause only for the fresh timed mount.
+      await page.clock.install({ time: Date.now() });
+      clockInstalled = true;
       await page.reload();
       const overview = page.getByRole('tab', { name: 'Overview', exact: true });
       const rake = page.getByRole('tab', { name: 'Rake', exact: true });
@@ -188,8 +194,6 @@ test.describe('Player Stats production experience', () => {
       // This is a new component mount, with its own initial debounce. The
       // outgoing animation consumes 220ms, leaving the initial 300ms timer
       // unexpired when Show More is clicked, including on the old component.
-      await page.clock.install({ time: Date.now() });
-      clockInstalled = true;
       await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
       const pausedRows = async (count: number) => {
         await expect
@@ -211,7 +215,7 @@ test.describe('Player Stats production experience', () => {
         .toBe(0);
       armed = true;
       await rake.click();
-      await page.clock.runFor(299);
+      await mountStatsPaneBeforeDebounce(page, page.locator('#stats-panel-rake'));
       await expect(page.locator('#stats-panel-rake')).toBeVisible();
       await pausedRows(501);
       expect(reads).toEqual([{ limit: 501, search: null }]);

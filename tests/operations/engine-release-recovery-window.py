@@ -578,16 +578,29 @@ class OwnerWitnessRealHistory(unittest.TestCase):
         # retained while the isolated shell executes its real read-only Git.
         with tempfile.TemporaryDirectory(prefix='owner-witness-history-') as tmp:
             repo = Path(tmp)
-            env = {**os.environ, 'GIT_AUTHOR_NAME': 'Owner witness fixture',
-                   'GIT_AUTHOR_EMAIL': 'fixture@example.invalid',
-                   'GIT_COMMITTER_NAME': 'Owner witness fixture',
-                   'GIT_COMMITTER_EMAIL': 'fixture@example.invalid'}
+            # Git hooks export repository locations which override `git -C`.
+            # Poison only paths inside this disposable fixture, then remove
+            # every inherited Git override before creating or reading its repo.
+            foreign = repo / 'foreign.git'
+            inherited = {**os.environ, 'GIT_DIR': str(foreign),
+                         'GIT_COMMON_DIR': str(foreign),
+                         'GIT_WORK_TREE': str(repo / 'foreign-tree'),
+                         'GIT_INDEX_FILE': str(foreign / 'index')}
+            empty_config = repo / 'empty-gitconfig'
+            empty_config.write_text('')
+            env = {k: v for k, v in inherited.items() if not k.startswith('GIT_')}
+            env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': str(empty_config),
+                        'GIT_AUTHOR_NAME': 'Owner witness fixture',
+                        'GIT_AUTHOR_EMAIL': 'fixture@example.invalid',
+                        'GIT_COMMITTER_NAME': 'Owner witness fixture',
+                        'GIT_COMMITTER_EMAIL': 'fixture@example.invalid'})
             def git(*args):
                 r = subprocess.run(['git', '-C', tmp, *args], text=True,
                                    capture_output=True, env=env, timeout=10)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 return r.stdout.strip()
             git('init', '-q')
+            self.assertEqual(Path(git('rev-parse', '--show-toplevel')).resolve(), repo.resolve())
             git('config', 'commit.gpgsign', 'false')
             (repo / 'base').write_text('shared protected base\n')
             git('add', 'base'); git('commit', '-qm', 'fixture shared base')

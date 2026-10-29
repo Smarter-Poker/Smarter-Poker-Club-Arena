@@ -18,3 +18,9 @@ missing-representation storage boundaries. Storage probes roll back; source,
 model, heldout and certification gates remain separate and unchanged. A sixth
 installed readback binds the validator definitions and all three validated
 constraints.
+
+The post-training index assembler consistently treats `pipeline_root` as the
+protected repository root, deriving its nested nine-file codec and trainer
+paths before importing them. It passes the same repository root to manifest
+validation; a codec-directory root is refused rather than inferred. Focused
+fixtures cover nested imports, complete source pins and manifest-root agreement.

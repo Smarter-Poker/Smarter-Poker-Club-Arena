@@ -119,3 +119,65 @@ test.describe('showdown beats match the measured reference with the CSS producti
     expect(result.lowRendered).toBe(true);
   });
 });
+
+// Owner 2026-10-28: the winning hole cards must stand above the unused cards.
+// Read actual browser geometry, including the transform rules that flatten rows.
+test('winning hole cards stay raised for hero and villain, and reset afterward', async ({
+  page,
+}) => {
+  await loadLiveCss(page);
+  for (const width of [393, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      await page.emulateMedia({ reducedMotion });
+      const rows = await page.evaluate(() => {
+        document.body.innerHTML = '';
+        const result = [];
+        for (const hero of [true, false]) {
+          const seat = document.createElement('div');
+          seat.className = `seat seat--cards-right${hero ? ' seat--hero' : ''}`;
+          seat.style.cssText =
+            'position:relative; width:150px; height:180px; --seat-avatar-size:84px';
+          const row = document.createElement('div');
+          row.className = `seat__cards seat__cards--${hero ? 'hero' : 'opponent'} seat__cards--revealed`;
+          row.style.cssText = '--vh-n:5; --sp-hfan-n:5; --vh-rot-step:7deg';
+          for (let i = 0; i < 5; i++) {
+            const pick = document.createElement('span');
+            pick.className = 'seat__card-pick';
+            const card = document.createElement('div');
+            card.className = `seat__card seat__card--face${i === 1 || i === 2 ? ' seat__card--winner' : ''}`;
+            card.style.setProperty('--vh-i', String(i));
+            if (hero) {
+              pick.append(card);
+              row.append(pick);
+            } else row.append(card);
+          }
+          seat.append(row);
+          document.body.append(seat);
+          const cards = [...row.querySelectorAll<HTMLElement>('.seat__card')];
+          // Finish any existing entrance animation, then compare each card
+          // against ITS OWN unraised rectangle, so fan/row spacing cannot fake a pass.
+          for (const a of row.getAnimations({ subtree: true })) a.finish();
+          const lifted = cards.map((card) => card.getBoundingClientRect());
+          for (const card of cards) card.classList.remove('seat__card--winner');
+          const flat = cards.map((card) => card.getBoundingClientRect());
+          result.push(
+            cards.map((card, i) => ({
+              height: flat[i].height,
+              lift: flat[i].top - lifted[i].top,
+              reset: getComputedStyle(card).translate,
+            }))
+          );
+        }
+        return result;
+      });
+      for (const cards of rows) {
+        for (const [i, card] of cards.entries()) {
+          expect(card.height).toBeGreaterThan(10);
+          expect(card.lift).toBeCloseTo(i === 1 || i === 2 ? card.height * 0.2 : 0, 1);
+          expect(card.reset).toBe('none');
+        }
+      }
+    }
+  }
+});

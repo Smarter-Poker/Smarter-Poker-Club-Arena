@@ -227,6 +227,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // via hand-for-hand. Same shape as the start-up loop gate on the base
         // class, on purpose.
         if (
+          this.weeklyPayoutPauseOwners.size > 0 ||
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
@@ -1141,6 +1142,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // awaitPauseGate on the base class.
         if (
           (this.handForHandPaused ||
+            this.weeklyPayoutPauseOwners.size > 0 ||
             this.maintenancePaused ||
             this.finalTableDealPaused ||
             this.terminalCloseoutPaused ||
@@ -3611,7 +3613,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             if (handWaitReleased) return;
             handWaitReleased = true;
             try {
-              clearTimeout(handTimeout);
+              this.clearHandTimeout(handTimeout);
               if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
               unsub();
             } catch (error) {
@@ -3632,7 +3634,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               resolve();
             }
           };
-          const handTimeout = setTimeout(() => {
+          const handTimeout = this.setHandTimeout(() => {
             // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
             // or superseded while the void timer was armed, the shared timers now
             // belong to the replacement engine — clearing them here would wipe the
@@ -3700,6 +3702,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               event.type === 'HAND_COMPLETE'
                 ? this.dispatchFinancialHandComplete(dispatch)
                 : dispatch();
+            if (['CARDS_DEALT', 'PINEAPPLE_DISCARDED', 'HAND_COMPLETE'].includes(event.type))
+              this.trackWeeklyPayoutOriginalWork(handled);
             void handled.catch((err) =>
               reportError(err, 'ServerTableEngine.' + this.tableId + '.handleHandEvent_rejected', {
                 eventType: event.type,
@@ -3752,6 +3756,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             const startExactController = () => {
               persistenceGeneration = this.beginTerminalBoundaryPersistence();
               handStarted = true;
+              this.weeklyPayoutStartedController = controllerForHand;
               controllerForHand.start();
             };
             const startWithPermit = () => {

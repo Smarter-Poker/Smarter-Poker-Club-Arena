@@ -1,3 +1,4 @@
+import { customCashGameName } from '../../utils/customCashGameName';
 import { cashGameNeverMovesPlayers } from '../../config/classicNeverMovesPlayers';
 import {
   getTournamentEntryCapacity,
@@ -2037,7 +2038,11 @@ export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle:
      'ACTION' OR 'MADNESS'." */
   const templateLabel = entry.game?.style?.label ?? cashTemplateLabel(entry.game?.template);
   if (templateLabel) {
-    return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
+    const customName = customCashGameName(entry.name);
+    return {
+      headline: headline || String(entry.name || ''),
+      subtitle: customName ? `${templateLabel} · ${customName}` : templateLabel,
+    };
   }
   /* Strip in BOTH orders. A host may type "NLH 1/2 Late Night" or
      "1/2 NLH Late Night", and stripping only variant-then-stakes left the

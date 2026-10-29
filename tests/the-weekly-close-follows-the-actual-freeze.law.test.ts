@@ -29,4 +29,34 @@ describe('the weekly close follows the actual freeze', () => {
     expect(workflow.on.pull_request.paths).toContain('supabase/migrations/**');
     expect(workflow.jobs['weekly-close-hour-guard'].steps.length).toBeGreaterThan(2);
   });
+  it('enforces the original four-AM all-game pause and financial phase through both native proofs', () => {
+    const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+    const accounting = workflow.jobs.accounting_postgres;
+    for (const [script, log] of [
+      ['test-weekly-payout-owned-phase-postgres.py', 'protocol.log'],
+      ['test-weekly-payout-financial-phase-postgres.py', 'financial.log'],
+    ]) {
+      const step = accounting.steps.find((candidate: { run?: string }) =>
+        candidate.run?.includes('python3 -B scripts/ci/' + script)
+      );
+      expect(step).toBeDefined();
+      expect(step.if).toBe('matrix.shard == 1');
+      expect(step.run).toContain('set -o pipefail');
+      expect(step.run).toContain('tee artifacts/weekly-payout-owned-pause/' + log);
+    }
+    const evidence = accounting.steps.find(
+      (step: { with?: { path?: string } }) =>
+        step.with?.path === 'artifacts/weekly-payout-owned-pause'
+    );
+    expect(evidence.if).toBe('always() && matrix.shard == 1');
+    expect(evidence.uses).toBe('actions/upload-artifact@v4');
+    expect(evidence.with['retention-days']).toBeGreaterThan(0);
+    expect(workflow.jobs.server.needs).toContain('accounting_postgres');
+    expect(
+      workflow.jobs.server.steps.some(
+        (step: { env?: { ACCOUNTING_RESULT?: string } }) =>
+          step.env?.ACCOUNTING_RESULT === '${{ needs.accounting_postgres.result }}'
+      )
+    ).toBe(true);
+  });
 });

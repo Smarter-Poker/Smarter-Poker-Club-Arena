@@ -612,9 +612,11 @@ describe('live runout source has no authoritative-thread equity escape', () => {
 
   it('re-proves process, lease, controller, and hand authority after worker pricing', () => {
     const runout = readFileSync(new URL('../ServerTableEngineRunout.ts', import.meta.url), 'utf8');
-    expect(runout).toContain('await getEquityPool().estimateInsurance(');
     expect(runout).toMatch(
-      /await getEquityPool\(\)\.estimateInsurance\([\s\S]{0,1200}this\.lifecycleCanMutate\(\)[\s\S]{0,400}this\.handController !== controller[\s\S]{0,400}this\.handCount !== pricingHandNumber/
+      /await this\.weeklyPayoutContinuation\(\s*getEquityPool\(\)\.estimateInsurance\(/
+    );
+    expect(runout).toMatch(
+      /await this\.weeklyPayoutContinuation\(\s*getEquityPool\(\)\.estimateInsurance\([\s\S]{0,1200}this\.lifecycleCanMutate\(\)[\s\S]{0,400}this\.handController !== controller[\s\S]{0,400}this\.handCount !== pricingHandNumber/
     );
   });
 });

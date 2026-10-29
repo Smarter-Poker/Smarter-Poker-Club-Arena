@@ -11,7 +11,8 @@ vi.mock('../services/supabase/client.js', () => ({
 }));
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
 const { ServerTableEngineBase } = await import('./ServerTableEngineBase.js');
-const { setMaintenanceFrozen } = await import('../maintenance/freezeState.js');
+const { setMaintenanceFrozen, setWeeklyPayoutFrozen } =
+  await import('../maintenance/freezeState.js');
 function fixture() {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-10-28T16:00:00Z'));
@@ -30,6 +31,7 @@ function fixture() {
   return e;
 }
 afterEach(() => {
+  setWeeklyPayoutFrozen('expiry-proof', null);
   setMaintenanceFrozen(false);
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -97,6 +99,51 @@ describe('Lightning rebuy expiry', () => {
     await e.standUpBustedCashPlayers();
     expect(e.releaseBustedSeat).toHaveBeenCalledTimes(1);
   });
+  it('excludes a weekly payout hold and resumes the remaining rebuy decision time', async () => {
+    const e = fixture();
+    await e.standUpBustedCashPlayers();
+    vi.setSystemTime(Date.now() + 10_000);
+    setWeeklyPayoutFrozen('expiry-proof', 'draining');
+    vi.setSystemTime(Date.now() + 60_000);
+    setWeeklyPayoutFrozen('expiry-proof', 'ready');
+    vi.setSystemTime(Date.now() + 60_000);
+    setWeeklyPayoutFrozen('expiry-proof', 'paying');
+    vi.setSystemTime(Date.now() + 60_000);
+    setWeeklyPayoutFrozen('expiry-proof', null);
+    await e.standUpBustedCashPlayers();
+    expect(e.releaseBustedSeat).not.toHaveBeenCalled();
+    vi.setSystemTime(Date.now() + 9_999);
+    await e.standUpBustedCashPlayers();
+    expect(e.releaseBustedSeat).not.toHaveBeenCalled();
+    vi.setSystemTime(Date.now() + 1);
+    await e.standUpBustedCashPlayers();
+    expect(e.releaseBustedSeat).toHaveBeenCalledTimes(1);
+  });
+  it.each(['weekly', 'maintenance'])(
+    'does not resume the rebuy clock when only the %s overlapping hold ends',
+    async (first) => {
+      const e = fixture();
+      await e.standUpBustedCashPlayers();
+      vi.setSystemTime(Date.now() + 10_000);
+      setMaintenanceFrozen(true);
+      vi.setSystemTime(Date.now() + 30_000);
+      setWeeklyPayoutFrozen('expiry-proof', 'paying');
+      vi.setSystemTime(Date.now() + 30_000);
+      if (first === 'weekly') setWeeklyPayoutFrozen('expiry-proof', null);
+      else setMaintenanceFrozen(false);
+      vi.setSystemTime(Date.now() + 300_000);
+      await e.standUpBustedCashPlayers();
+      expect(e.releaseBustedSeat).not.toHaveBeenCalled();
+      if (first === 'weekly') setMaintenanceFrozen(false);
+      else setWeeklyPayoutFrozen('expiry-proof', null);
+      vi.setSystemTime(Date.now() + 9_999);
+      await e.standUpBustedCashPlayers();
+      expect(e.releaseBustedSeat).not.toHaveBeenCalled();
+      vi.setSystemTime(Date.now() + 1);
+      await e.standUpBustedCashPlayers();
+      expect(e.releaseBustedSeat).toHaveBeenCalledTimes(1);
+    }
+  );
   it('protects an unsettled all-in hand', async () => {
     const e = fixture();
     await e.standUpBustedCashPlayers();

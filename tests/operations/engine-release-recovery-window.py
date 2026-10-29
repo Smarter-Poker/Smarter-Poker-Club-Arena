@@ -2,6 +2,8 @@
 """Execute the actual transaction's bounded recovery request with isolated I/O."""
 from pathlib import Path
 import json
+import hashlib
+import os
 import shlex
 import subprocess
 import tempfile
@@ -22,7 +24,7 @@ NEWER = 'c' * 40
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False,
            health_extra=None, maintenance_extra=None, missed=False, urgent=False, recovers_on_lock=False,
            certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0,
-           owner_windows='', owner_contains_ok='', owner_served=False):
+           owner_windows='', owner_contains_ok='', owner_served=False, witness_mode='unserved'):
     """Run the real request_recovery_window `calls` times, `advance` seconds apart.
 
     `requests` are other durable requests on this host: (run, sha, unit state,
@@ -68,6 +70,7 @@ RECOVERY_URGENT={int(urgent)}
 OWNER_WINDOWS={shlex.quote(owner_windows)}
 OWNER_CONTAINS_OK={shlex.quote(owner_contains_ok)}
 OWNER_SERVED={int(owner_served)}
+WITNESS_MODE={shlex.quote(witness_mode)}
 LOCK_HELD=0
 NOW={1800000000 + minute * 60}
 HEALTH={shlex.quote(health)}
@@ -88,9 +91,13 @@ systemctl() {{
 }}
 fixture_git() {{
   if [ "$1" = show ]; then
-    [ "$2" = "$SHA:server/release/owner-maintenance-windows.json" ] || exit 94
-    [ -n "$OWNER_WINDOWS" ] || return 128
-    printf '%s' "$OWNER_WINDOWS"
+    if [ "$2" = "$SHA:server/release/owner-maintenance-windows.json" ]; then
+      [ -n "$OWNER_WINDOWS" ] || return 128
+      printf '%s' "$OWNER_WINDOWS"
+      return 0
+    fi
+    [ "$WITNESS_MODE" != missing ] || return 128
+    if [ "$WITNESS_MODE" = mismatch ]; then printf changed; else printf 'fixture SQL\\n'; fi
     return 0
   fi
   if [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$4" = "$SHA" ]; then
@@ -100,6 +107,16 @@ fixture_git() {{
   if [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$4" = {SERVING} ]; then
     [ "$OWNER_SERVED" = 1 ]
     return
+  fi
+  if [ "$1" = rev-parse ]; then
+    [ "$WITNESS_MODE" != unreadable ] || return 128
+    if [ "$WITNESS_MODE" = shallow ]; then echo true; else echo false; fi
+    return
+  fi
+  if [ "$1" = rev-list ]; then
+    [ "$WITNESS_MODE" != unknown-serving ] || return 128
+    case "$WITNESS_MODE" in served|deleted) printf '%040d' 1 ;; esac
+    return 0
   fi
   [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$3" = "$SHA" ] || exit 94
   case " {' '.join(ancestors)} " in *" $4 "*) return 0 ;; *) return 1 ;; esac
@@ -509,6 +526,39 @@ class OwnerOrderedWindow(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, [])
 
+    def test_exact_feature_witness_is_not_consumed_by_a_peer_shared_base(self):
+        witness = {'path': 'supabase/migrations/20261028171228_fixture_rebuy.sql',
+                   'sha256': hashlib.sha256(b'fixture SQL\n').hexdigest()}
+        def doc(w):
+            d = json.loads(owner_doc())
+            d['windows'][0]['releaseWitness'] = w
+            legacy = json.loads(owner_doc())['windows'][0]
+            legacy['id'] = 'legacy-first'
+            d['windows'].insert(0, legacy)
+            return json.dumps(d)
+        result, events = self.healthy(minute=53, owner_windows=doc(witness), owner_served=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('REQUEST', events)
+        result, events = self.healthy(minute=53, owner_windows=doc(witness),
+                                       owner_served=False, witness_mode='served')
+        self.assertIn('REQUEST', events)
+        self.assertIn('reason: owner-ordered legacy-first', result.stdout)
+        result, events = self.healthy(minute=53, owner_windows=doc(witness),
+                                       owner_served=False, witness_mode='unreadable')
+        self.assertEqual(events, [])
+        for mode in ('served', 'deleted', 'unreadable', 'shallow', 'missing', 'mismatch', 'unknown-serving'):
+            with self.subTest(mode=mode):
+                result, events = self.healthy(minute=53, owner_windows=doc(witness),
+                                               owner_served=True, witness_mode=mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+        for invalid in (None, {}, {**witness, 'path': '../escape.sql'},
+                        {**witness, 'sha256': 'bad'}, {**witness, 'extra': True}):
+            with self.subTest(invalid=invalid):
+                result, events = self.healthy(minute=53, owner_windows=doc(invalid), owner_served=False)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+
     def test_an_unreadable_serving_identity_grants_nothing(self):
         result, events = self.healthy(minute=53, owner_windows=owner_doc(), health={'liveness': 'ok'})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -520,6 +570,78 @@ class OwnerOrderedWindow(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('REQUEST', events)
         self.assertNotIn('RESERVE:--cause urgent', events)
+
+class OwnerWitnessRealHistory(unittest.TestCase):
+    def test_both_actual_selectors_remember_a_deleted_witness(self):
+        # Real Git objects, including an actual later deletion. The outer
+        # subprocess budget bounds the test; timeout's production flags are
+        # retained while the isolated shell executes its real read-only Git.
+        with tempfile.TemporaryDirectory(prefix='owner-witness-history-') as tmp:
+            repo = Path(tmp)
+            env = {**os.environ, 'GIT_AUTHOR_NAME': 'Owner witness fixture',
+                   'GIT_AUTHOR_EMAIL': 'fixture@example.invalid',
+                   'GIT_COMMITTER_NAME': 'Owner witness fixture',
+                   'GIT_COMMITTER_EMAIL': 'fixture@example.invalid'}
+            def git(*args):
+                r = subprocess.run(['git', '-C', tmp, *args], text=True,
+                                   capture_output=True, env=env, timeout=10)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                return r.stdout.strip()
+            git('init', '-q')
+            git('config', 'commit.gpgsign', 'false')
+            (repo / 'base').write_text('shared protected base\n')
+            git('add', 'base'); git('commit', '-qm', 'fixture shared base')
+            base = git('rev-parse', 'HEAD')
+            path = 'supabase/migrations/20261028171228_fixture_rebuy.sql'
+            witness = repo / path
+            witness.parent.mkdir(parents=True)
+            witness.write_bytes(b'fixture SQL\n')
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(timezone.utc)
+            doc = {'version': 1, 'windows': [{'id': 'fixture',
+                'ownerOrder': 'Owner order: make this exact feature live.', 'contains': base,
+                'notBefore': (now - timedelta(minutes=1)).isoformat(),
+                'notAfter': (now + timedelta(minutes=2)).isoformat(),
+                'releaseWitness': {'path': path,
+                    'sha256': hashlib.sha256(witness.read_bytes()).hexdigest()}}]}
+            legacy = dict(doc['windows'][0])
+            legacy.pop('releaseWitness'); legacy['id'] = 'legacy-first'
+            doc['windows'].insert(0, legacy)
+            manifest = repo / 'server/release/owner-maintenance-windows.json'
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps(doc))
+            git('add', '.'); git('commit', '-qm', 'fixture feature and owner window')
+            target = git('rev-parse', 'HEAD')
+            git('rm', '-q', path); git('commit', '-qm', 'fixture later deletion')
+            deleted = git('rev-parse', 'HEAD')
+            git('checkout', '-q', target)
+            function = SOURCE[SOURCE.index('owner_window_reason() {'):SOURCE.index(
+                '\n# The seal and the serving engine already know')]
+            stage_source = (ROOT / '.github/workflows/stage-engine-release.yml').read_text()
+            stage_lines = stage_source.split('        id: admission\n', 1)[1].split('        run: |\n', 1)[1].splitlines()
+            stage = []
+            for line in stage_lines:
+                if line and not line.startswith('          '): break
+                stage.append(line[10:] if line else '')
+            stage = '\n'.join(stage)
+            for serving, expected in ((base, True), (target, False), (deleted, False), ('f' * 40, False)):
+                for selector in ('host', 'stage'):
+                    with self.subTest(selector=selector, serving=serving):
+                        output = repo / 'output'
+                        output.unlink(missing_ok=True)
+                        health = json.dumps({'liveness': 'ok', 'releaseSha': serving})
+                        prefix = 'timeout() { shift 3; "$@"; }\n'
+                        if selector == 'host':
+                            script = 'set -euo pipefail\n' + prefix + function + '\nowner_window_reason "$HEALTH"\n'
+                        else:
+                            script = prefix + 'date() { printf 14; }\ncurl() { printf "%s" "$HEALTH"; }\n' + stage + '\ncat "$GITHUB_OUTPUT"\n'
+                        result = subprocess.run(['bash', '-c', script], cwd=repo,
+                            env={**env, 'REPO_DIR': tmp, 'SHA': target, 'HEALTH': health,
+                                 'EVENT_NAME': 'push', 'GITHUB_OUTPUT': str(output)},
+                            text=True, capture_output=True, timeout=15)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        admitted = ('owner-ordered fixture' if selector == 'host' else 'allowed=true') in result.stdout
+                        self.assertEqual(admitted, expected, result.stdout + result.stderr)
 
 if __name__ == '__main__':
     unittest.main()

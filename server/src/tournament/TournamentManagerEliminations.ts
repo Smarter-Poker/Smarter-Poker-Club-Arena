@@ -12,6 +12,7 @@ import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 import { isMaintenanceFrozen, isTerminalSettlementFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError, reportWarning } from '../services/errorReporter.js';
 import {
@@ -4759,11 +4760,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * final pool is known; the atomic finish moves the money later.
    */
   protected async recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean> {
-    const { data: eliminated, error: eliminatedErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, position, prize')
-      .eq('tournament_id', this.tournamentId)
-      .eq('status', 'eliminated');
+    const lifecycle = this.captureLifecycleToken();
+    const current = () =>
+      Boolean(lifecycle && this.lifecycleIsCurrent(lifecycle) && this.eliminationMutationAllowed());
+    if (!current()) return false;
+    const field = await fetchAllRows<{
+      id: string;
+      user_id: string;
+      position: number | null;
+      prize: number | null;
+    }>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_players')
+          .select('id, user_id, position, prize')
+          .eq('tournament_id', this.tournamentId)
+          .eq('status', 'eliminated')
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.reprice_field', shouldContinue: current }
+    );
+    if (!current()) return false;
+    const eliminated = field.rows;
+    const eliminatedErr = field.complete ? null : new Error('eliminated field read incomplete');
 
     /* Zero cannot be used as the ITM filter. A guaranteed freeroll that ends
        before its usual funding point records every early prize as zero; those
@@ -4793,6 +4815,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // column here meant a top-up computed from a DIFFERENT structure than the
     // payment it is topping up.
     const finalField = await this.finalFieldSize();
+    if (!current()) return false;
     if (typeof finalField !== 'number') {
       reportError(
         new Error(
@@ -4836,6 +4859,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let complete = true;
     let mutations = 0;
     for (const player of eliminated) {
+      if (!current()) return false;
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
         ? computePlacePrize(
@@ -4896,6 +4920,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             p_new_prize: correctPrize,
           }
         );
+        if (!current()) return false;
         const record = recordRaw as {
           ok?: boolean;
           tournament_id?: string;

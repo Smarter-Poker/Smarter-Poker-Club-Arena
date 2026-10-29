@@ -80,9 +80,11 @@ describe('live horse decisions stay outside the table event loop', () => {
   it('counts queue and compute latency inside the chosen visible think time', () => {
     const schedule = sliceMethod(turns, '  protected scheduleHorseAction(');
 
+    expect(schedule).toContain('const turnStartedAtMs = Date.now();');
+    expect(schedule).toContain('decisionTimeMs: Date.now(),');
     expect(schedule).toContain('const remainingThinkMs = Math.min(');
     expect(schedule).toContain(
-      'Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs - decisionPauseShift()))'
+      'Math.max(0, thinkTimeMs - (Date.now() - turnStartedAtMs - decisionPauseShift()))'
     );
     expect(schedule).toContain('Math.max(0, protectedClockDeadline()! - Date.now() - 100)');
     // 2026-10-16: the second look is budgeted from the turn clock, not from

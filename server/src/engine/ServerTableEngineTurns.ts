@@ -3500,7 +3500,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const turnToken = this.horseTurnToken;
     const abortController = new AbortController();
     this.horseDecisionAbortController = abortController;
-    const decisionTimeMs = Date.now();
+    const turnStartedAtMs = Date.now();
     const decisionPauseStamp = this.weeklyPayoutPausedMilliseconds();
     const decisionPauseShift = () => this.weeklyPayoutPausedMilliseconds() - decisionPauseStamp;
     const protectedClockDeadline = () =>
@@ -3849,7 +3849,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       generation: turnToken,
       fence,
       decisionKey: '',
-      decisionTimeMs,
+      decisionTimeMs: Date.now(),
       player: decisionPlayer,
       gameState,
       style: horseStyle,
@@ -4075,7 +4075,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // A loaded process must never add compute delay on top of the selected
         // cadence or let a stale answer fire after the authoritative clock.
         const remainingThinkMs = Math.min(
-          Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs - decisionPauseShift())),
+          Math.max(0, thinkTimeMs - (Date.now() - turnStartedAtMs - decisionPauseShift())),
           protectedDeadlineMs === undefined
             ? Infinity
             : Math.max(0, protectedClockDeadline()! - Date.now() - 100)

@@ -2515,12 +2515,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (let i = 0; i < userIds.length; i += TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {
       if (!mayAnswer()) return false;
       const batch = userIds.slice(i, i + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
-      const { answered, horses, deferredUntil } = await this.tryTournamentRebuys(
-        batch,
-        handNumbers,
-        timings,
-        mayAnswer
-      );
+      const { answered, horses, deferredUntil, identificationUnproven } =
+        await this.tryTournamentRebuys(batch, handNumbers, timings, mayAnswer);
+      if (identificationUnproven) stillOpen = true;
       for (const due of deferredUntil.values()) {
         if (nextDueAtMs === null || due < nextDueAtMs) nextDueAtMs = due;
       }
@@ -2575,6 +2572,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     answered: Set<string>;
     horses: Set<string>;
     deferredUntil: Map<string, number>;
+    identificationUnproven?: boolean;
   }> {
     const rebought = new Set<string>();
     /** Horses that chose to rebuy but whose answer is not due yet, with the
@@ -2641,14 +2639,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (closedWindow) return { rebought, answered, horses, deferredUntil };
       // Open, malformed or unreadable policy retains the original purchase
       // authority, including its exact receipt replay and fresh locked checks.
-      const { data: horseRows, error: horseErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', batch)
-        .eq('is_horse', true);
-      if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
-      if (horseErr || !horseRows || horseRows.length === 0)
-        return { rebought, answered, horses, deferredUntil };
+      let horseRows: Array<{ id: string }>;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .in('id', batch)
+          .eq('is_horse', true);
+        if (!mayMutate()) return { rebought, answered, horses, deferredUntil };
+        if (error || !Array.isArray(data)) throw error ?? new Error('Horse profiles unreadable');
+        horseRows = data;
+      } catch (error) {
+        reportError(error, 'Tournament.rebuy_profile_identification_unproven');
+        // Unknown identity is not an empty human-only batch. Preserve the
+        // original input device's bounded continuation; never infer a choice,
+        // purchase, or decline while the profile read is unavailable.
+        return { rebought, answered, horses, deferredUntil, identificationUnproven: true };
+      }
+      if (horseRows.length === 0) return { rebought, answered, horses, deferredUntil };
       for (const horse of horseRows) horses.add(String(horse.id));
 
       const declined = new Map<string, number>();

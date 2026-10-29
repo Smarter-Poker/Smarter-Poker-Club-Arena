@@ -15,8 +15,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: v31-explicit-store-control
-  cancel-in-progress: false
+  group: v31-explicit-store-control-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   contract:
     runs-on: ubuntu-24.04

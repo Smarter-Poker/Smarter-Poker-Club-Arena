@@ -53,3 +53,5 @@ container identity. It cannot build, promote, activate or restart an engine.
 A timed-out load remains unconfirmed; a separate explicit status request retains
 the same UUID and never repeats the POST. Scheduled or automatic execution and
 workflow reruns cannot invoke the control job.
+
+The explicit control workflow cancels superseded PR checks per PR while keeping manual production operations serialized and non-cancelling. The existing 98 workflow cancellation laws and four control boundary checks passed.

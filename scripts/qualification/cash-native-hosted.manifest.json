@@ -258,8 +258,8 @@
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 14262,
-      "sha256": "37365207cb29068e286bf22aeb88e3d3026706a64561d74fc10e950f6a5c6274"
+      "sha256": "cc099116d3bf8e2e1366667e42d03c5d42f98a3b7ff706203f7e8452491294b9",
+      "bytes": 14262
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
@@ -4891,6 +4891,21 @@
         "current": {
           "bytes": 14262,
           "sha256": "37365207cb29068e286bf22aeb88e3d3026706a64561d74fc10e950f6a5c6274"
+        }
+      }
+    }
+  },
+  "handRefusalWatchlistDeclarationAudit20261029": {
+    "reason": "Preserve actual installed watchlist/declaration refusal behavior in the exact original outcome native fixture; condition declarations on the same watched function. No detector body, workflow identity, financial assertions or prior verdict changes.",
+    "changes": {
+      "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+        "previous": {
+          "bytes": 14262,
+          "sha256": "37365207cb29068e286bf22aeb88e3d3026706a64561d74fc10e950f6a5c6274"
+        },
+        "current": {
+          "sha256": "cc099116d3bf8e2e1366667e42d03c5d42f98a3b7ff706203f7e8452491294b9",
+          "bytes": 14262
         }
       }
     }

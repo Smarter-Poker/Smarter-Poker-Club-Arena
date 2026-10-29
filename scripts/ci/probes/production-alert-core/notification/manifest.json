@@ -288,18 +288,18 @@
     },
     "hand_refusal_native": {
       "path": "scripts/qualification/hand-refusal-outcome/native.mjs",
-      "bytes": 7747,
-      "sha256": "99ad1b1ae13343c17dd2fb8136ac1124bd720176f824320e0cfc807e01025c28"
+      "bytes": 9483,
+      "sha256": "d5d8a8e68444a2ed047c518b5412acd175cdc6ce2be20a26796abe1a07fedb04"
     },
     "hand_refusal_preimage": {
       "path": "scripts/qualification/fixtures/hand-refusal-outcome/preimage.sql",
-      "bytes": 3100,
-      "sha256": "0aae913e2ddace2d8a0da104204d7b0454de997fe550358ab8199c3649ae02fb"
+      "bytes": 8623,
+      "sha256": "f917a3fb983eb5c1391774df4701bb9cc25fe15a055cd7610903ba82039637c1"
     },
     "hand_refusal_migration": {
       "path": "supabase/migrations/20261029205730_hand_commit_detector_requires_exact_original_outcome.sql",
-      "bytes": 4474,
-      "sha256": "b3780a598420c37eb2afbcf4fdd6289caf29c38198d624f53fe2de036a995e20"
+      "bytes": 4646,
+      "sha256": "6a8e0fd06c7c51f9bc4bdc8486346f2e5de81cf9375a46860c7c1963beb23169"
     }
   },
   "sequenceContract": {

@@ -49,8 +49,12 @@ BEGIN
          AND c.post_commit_result->>'hand_id'=c.hand_id::text
          AND c.post_commit_result->'hand_number'=to_jsonb(c.hand_number))
        /* A DETECTOR DOES NOT REPORT WHAT IT ALREADY ANSWERED FOR (2026-09-10).$replacement$);
+ IF 'fn_ca_hand_commit_refusals' = ANY (public.fn_ca_guard_watchlist()) THEN
  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_hand_commit_refusals','migration 20261029205730_hand_commit_detector_requires_exact_original_outcome');
+ END IF;
  EXECUTE changed;
+ IF 'fn_ca_hand_commit_refusals' = ANY (public.fn_ca_guard_watchlist()) THEN
  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_hand_commit_refusals','migration 20261029205730_hand_commit_detector_requires_exact_original_outcome');
+ END IF;
 END $migration$;
 COMMIT;

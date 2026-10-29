@@ -25,12 +25,27 @@ try{
  CREATE INDEX alert_source_time ON financial_alerts(source,created_at);
  CREATE TABLE hand_atomic_commits(hand_id uuid PRIMARY KEY,table_id uuid,hand_number bigint,payload_hash text,post_commit_request_hash text,post_commit_payload_hash text,post_commit_payload jsonb,post_commit_completed_at timestamptz,post_commit_result jsonb);
  CREATE TABLE ca_drift_incidents(source text,status text,resolved_at timestamptz,correction_ref text);
- CREATE FUNCTION fn_ca_declare_guard_redefinition(text,text) RETURNS text LANGUAGE sql AS 'SELECT NULL::text';`);
+ CREATE TABLE ca_guard_def_history(proname text,def_hash text,def_text text,UNIQUE(proname,def_hash));
+ CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text,declared_ref text,declared_at timestamptz,updated_at timestamptz);`);
  sql(preimage);sql('REVOKE ALL ON FUNCTION fn_ca_hand_commit_refusals(integer) FROM PUBLIC;GRANT EXECUTE ON FUNCTION fn_ca_hand_commit_refusals(integer) TO postgres,service_role;');
+ assert.equal(sql("SELECT 'fn_ca_hand_commit_refusals'=ANY(public.fn_ca_guard_watchlist())"),'f','actual installed watchlist excludes detector');
+ assert.throws(()=>sql("SELECT fn_ca_declare_guard_redefinition('fn_ca_hand_commit_refusals','qualification unwatched refusal')"),/not on the guard watchlist/,'actual installed declaration helper refuses unwatched detector');
  seed();assert.equal(count(),'43','actual old source restates all43 exact completed originals');
  console.log('PASS fail-before: actual installed detector reports43 completed exact originals');
  sql(migration);assert.equal(count(),'0','same-original accepted and required postcommit complete removes false finding');
  console.log('PASS after: all43 exact originals proven complete, immutable alerts retained');
+ assert.equal(sql('SELECT count(*) FROM ca_guard_defs'),'0','unwatched detector creates no declaration');
+ // Exercise the same migration if this detector joins the watchlist later.
+ // Use the actual installed helper and watchlist definition, adding only the
+ // named detector to the isolated fixture's list; no production list changes.
+ sql(preimage);
+ const watchDef=sql("SELECT pg_get_functiondef('fn_ca_guard_watchlist()'::regprocedure)");
+ assert.equal(watchDef.split("'fn_ca_guard_watchlist'").length,2);
+ sql(watchDef.replace("'fn_ca_guard_watchlist'","'fn_ca_guard_watchlist','fn_ca_hand_commit_refusals'"));
+ sql(migration);
+ assert.equal(sql("SELECT def_hash=md5(pg_get_functiondef('fn_ca_hand_commit_refusals(integer)'::regprocedure)) AND declared_ref='migration 20261029205730_hand_commit_detector_requires_exact_original_outcome' FROM ca_guard_defs WHERE proname='fn_ca_hand_commit_refusals'"),'t','watched detector records actual final helper baseline');
+ assert.equal(sql('SELECT count(*) FROM ca_guard_def_history'),'2','actual helper records before and after definitions');
+ console.log('PASS actual declaration helper: unwatched refuses direct declaration; conditional skips; watched records both exact definitions');
  const cases=[
  ['manual resolved flag only',"UPDATE financial_alerts SET context=context-'hand_request_identity_v1'"],
  ['unresolved source flag does not defeat exact proof',"UPDATE financial_alerts SET resolved=false",'0'],

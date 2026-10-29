@@ -61,6 +61,7 @@ import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
+  MTT_PRESTART_RAMP_MS,
   fixedBoardTemplate,
   fixedFreeBuyRow,
   recurringMttRow,
@@ -237,35 +238,8 @@ export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
   }
   return byRule;
 }
-/**
- * Horses are seeded at SPAWN only when the start is this close.
- *
- * Seeding at spawn was harmless at a 30-minute look-ahead and is actively
- * harmful at 24 hours: a horse registered into tomorrow's event is a horse
- * that cannot deal a cash table or fill a spin today, and the pool is finite.
- *
- * Dan 2026-08-23: aligned to the one-hour MTT ramp (MTT_PRESTART_RAMP_MS), so
- * an event that spawns already inside the hour gets its opening field
- * immediately instead of waiting up to a ramp tick for it.
- *
- * WHAT THIS CONSTANT NO LONGER MEANS. It used to be the whole policy, and the
- * note here used to say events "open EMPTY and stay genuinely open", with the
- * past-start top-up as the only filler. That was checked ONCE, at creation, so
- * a day-ahead event answered "no" and was never asked again - which is how a
- * 200-seat MTT sat in the lobby for seventeen hours reading 0/200. The field
- * is now built by the pre-start ramp in GameServer.discoverTournaments, which
- * re-evaluates every REGISTERING tournament on a timer. This is just the
- * head start; the ramp is the rule.
- */
-export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
-/* DELIBERATELY NO LONGER EQUAL TO MTT_PRESTART_RAMP_MS (2026-08-26).
-   They were aligned on 2026-08-23 when both meant "about to start". The ramp
-   now runs for the full 72-hour publish window so the board is never a wall of
-   empty games; this constant is a different thing - the head start given at
-   SPAWN, before the ramp has ticked once. Seeding three days early would put
-   chips into a pool for an event that has only just appeared, and the ramp
-   reaches it within one tick anyway. One hour is still exactly right for a
-   head start. */
+/** Owner October 28: spawn-time seeding shares the T-10 MTT clock. */
+export const HORSE_SEED_WITHIN_MS = MTT_PRESTART_RAMP_MS;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB
@@ -1333,9 +1307,7 @@ export class ScheduledTournamentService {
     // opened at the money and splits its entry 50/50 (mysteryBountyTerms.ts).
     // The row is in chips here; the Diamond door scales it to whole Diamonds.
     const row = built
-      ? withMysteryBountyTerms(
-          withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built))
-        )
+      ? withMysteryBountyTerms(withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built)))
       : built;
     if (!row) {
       // A satellite whose target event does not exist yet is not a missed

@@ -278,3 +278,251 @@ export async function loadInstalledTournamentPredicateApi() {
   const modules = await Promise.all(paths.map((path) => import(/* @vite-ignore */ path)));
   return Object.assign({}, ...modules);
 }
+
+/** #8464: observe original accepted behavior and installed interpretation only.
+ * A helper/wager agreement is deliberately not a causal replay certificate. */
+export function inspectDecision8464Records(input, batch, api) {
+  const base = {
+    version: 4,
+    probe: input?.probe,
+    status: 'unknown',
+    rawRecordsExported: false,
+    replayVerified: false,
+    causalReplayVerified: false,
+    activationAllowed: false,
+  };
+  if (
+    !exact(input, ['version', 'sourceRelease', 'probe', 'cases']) ||
+    input.version !== 4 ||
+    Buffer.byteLength(JSON.stringify(input)) > 8192 ||
+    !['matched_risk', 'phase7_allocated'].includes(input.probe)
+  )
+    return { status: 'unknown', reason: 'input_refused' };
+  const ordinary = { version: 2, sourceRelease: input.sourceRelease, cases: input.cases };
+  if (
+    input.version !== 4 ||
+    !['matched_risk', 'phase7_allocated'].includes(input.probe) ||
+    !tournamentPredicateInputIsValid(ordinary, input.sourceRelease)
+  )
+    return { ...base, reason: 'input_refused' };
+  if (
+    !batch ||
+    batch.status !== 'canonical_journal_export' ||
+    batch.sourceRelease !== input.sourceRelease ||
+    !Array.isArray(batch.recordsByHand) ||
+    batch.recordsByHand.length !== input.cases.length
+  )
+    return { ...base, reason: 'journal_source_or_shape_mismatch' };
+  const deadline = performance.now() + 5000;
+  const budget = () => {
+    if (performance.now() >= deadline) throw Error('inspection_bound');
+  };
+  const cases = input.cases.map((c, index) => {
+    const unknown = (reason) => ({ handKey: c.handKey, status: 'unknown', reason });
+    try {
+      budget();
+      const entry = batch.recordsByHand[index];
+      if (
+        !entry ||
+        entry.handKey !== c.handKey ||
+        !Array.isArray(entry.records) ||
+        !entry.records.length ||
+        entry.records.length > 256
+      )
+        return unknown('journal_missing_or_bounds');
+      const records = entry.records,
+        seen = new Set(),
+        decisions = [],
+        executions = [],
+        accepted = [];
+      for (const r of records) {
+        budget();
+        api.validateHorseJournalRecord(r);
+        if (
+          r.handKey !== c.handKey ||
+          r.sourceRelease !== input.sourceRelease ||
+          seen.has(r.eventId)
+        )
+          return unknown('record_binding_or_duplicate');
+        seen.add(r.eventId);
+        if (r.kind === 'accepted_hand') accepted.push(r);
+        if (r.kind === 'execution') executions.push(r);
+        if (r.kind === 'decision') decisions.push(r);
+      }
+      if (accepted.length !== 1) return unknown('accepted_hand_missing_or_ambiguous');
+      const hand = JSON.parse(accepted[0].body),
+        coordinate = `${c.tableId}:${c.handNumber}:${c.leaseGeneration}`;
+      if (
+        hand.committedHandId !== c.handId ||
+        api.horseCompletedHandKey(hand) !== coordinate ||
+        accepted[0].turnKey !== c.handKey
+      )
+        return unknown('accepted_hand_binding_mismatch');
+      if (
+        !Array.isArray(hand.actions) ||
+        hand.actions.length > 4096 ||
+        c.actionOrdinal >= hand.actions.length
+      )
+        return unknown('original_action_ordinal_unavailable');
+      const selected = [];
+      for (const r of decisions) {
+        if (c.decisionRecordSha256 !== null && r.sha256 !== c.decisionRecordSha256) continue;
+        const sameTurn = executions.filter(
+          (e) => e.turnKey === r.turnKey && e.producerId === r.producerId
+        );
+        if (sameTurn.length !== 1) continue;
+        const w = JSON.parse(sameTurn[0].body),
+          bound = api.bindHorseDecisionToCommittedHand(w, hand);
+        if (bound.status === 'bound' && bound.actionOrdinal === c.actionOrdinal)
+          selected.push({ r, e: sameTurn[0], w });
+      }
+      if (selected.length !== 1)
+        return unknown(
+          selected.length ? 'matching_decision_ambiguous' : 'matching_decision_missing'
+        );
+      const { r, e, w } = selected[0],
+        capture = JSON.parse(r.body),
+        s = capture.snapshot,
+        g = s.gameState,
+        p = s.player;
+      const anchor = api.anchorHorseDecisionHand(s);
+      if (anchor.status !== 'anchored' || api.horseHandAnchorKey(anchor) !== coordinate)
+        return unknown('original_snapshot_binding_mismatch');
+      if (
+        r.sequence >= e.sequence ||
+        w.executionStatus !== 'intended' ||
+        w.retirementReason !== null ||
+        w.policyFallback === 'brain_exception' ||
+        w.acceptedActions?.length !== 1 ||
+        w.acceptedActions[0].intended !== true ||
+        w.selected?.action !== capture.decision.action ||
+        (w.selected.amount ?? null) !== (capture.decision.amount ?? null) ||
+        w.executedAction !== capture.decision.action
+      )
+        return unknown('execution_not_intended');
+      const review = api.reconcileHorseJournalHand(records, c.handKey);
+      budget();
+      if (
+        review.status !== 'reconciled' ||
+        !Array.isArray(review.gaps) ||
+        review.gaps.length ||
+        !(review.matchedActions > 0) ||
+        review.matchedActions !== review.acceptedHorseActions
+      )
+        return unknown('hand_not_reconciled');
+      const common = {
+        handKey: c.handKey,
+        status: 'observed',
+        actionOrdinal: c.actionOrdinal,
+        decisionRecordSha256: r.sha256,
+        executionRecordSha256: e.sha256,
+        acceptedRecordSha256: accepted[0].sha256,
+        decisionKeySha256: digest(s.decisionKey),
+        recordHashesVerified: true,
+        originalHandBound: true,
+        intendedActionAccepted: true,
+        handReconciled: true,
+      };
+      if (input.probe === 'matched_risk') {
+        if (!['flop', 'turn', 'river'].includes(g.stage))
+          return unknown('matched_risk_not_observed');
+        const matched = api.headsUpCashCommitment(p, g);
+        if (
+          !matched ||
+          !Number.isFinite(matched.exposure) ||
+          !(matched.exposure > 0) ||
+          !(matched.exposure < p.stack) ||
+          matched.wager?.action !== 'raise' ||
+          !Number.isFinite(matched.wager.amount) ||
+          !(matched.wager.amount > g.currentBet)
+        )
+          return unknown('matched_risk_not_observed');
+        if (capture.decision.action !== 'raise' || capture.decision.amount !== matched.wager.amount)
+          return unknown('matched_wager_not_retained');
+        return {
+          ...common,
+          observation: 'accepted_matched_risk_bounded_wager',
+          variant: g.gameVariant,
+          stage: g.stage,
+          exposure: matched.exposure,
+          physicalStack: p.stack,
+          raiseTo: matched.wager.amount,
+          helperEligible: true,
+          coveringStack: true,
+          finalWagerMatchesHelper: true,
+        };
+      }
+      const plan = api.horseRetainedPlanContext(capture, s),
+        history = g.actionHistory;
+      if (plan.kind !== 'current' || !Array.isArray(history) || !history.length)
+        return unknown('allocated_nonempty_context_not_observed');
+      const allocated = api.horsePlanHandKey(history, plan.context),
+        legacy = api.horseMindHandKey(history);
+      if (
+        typeof allocated !== 'string' ||
+        !allocated.startsWith('plan-hand-v1:') ||
+        allocated === legacy
+      )
+        return unknown('allocated_nonempty_context_not_observed');
+      const envelope = (r) => ({
+        producerId: r.producerId,
+        sourceRelease: r.sourceRelease,
+        handKey: r.handKey,
+        sequence: r.sequence,
+      });
+      const captures = decisions
+        .filter((d) => d.producerId === r.producerId)
+        .map((d) => ({ ...JSON.parse(d.body), recordEnvelope: envelope(d) }));
+      const plans = api.reviewHorsePlanEffects(
+        records.filter(
+          (d) =>
+            d.kind === 'accepted_hand' || (d.turnKey === r.turnKey && d.producerId === r.producerId)
+        ),
+        c.handKey
+      );
+      const interpreter = new api.HorseFleetPhaseInterpreter(budget);
+      const proof = interpreter.interpret(capture, w, plans, captures, envelope(r)).phase7;
+      budget();
+      if (
+        proof?.status !== 'applicable-active' ||
+        proof.reason !== 'supported_uncalibrated_utility_baseline' ||
+        !['accepted', 'not-selected'].includes(proof.application)
+      )
+        return unknown('phase7_interpreter_not_observed');
+      return {
+        ...common,
+        observation: 'allocated_nonempty_phase7_interpreter_observed',
+        readFrameSha256: capture.readFrame.sha256,
+        allocatedContext: true,
+        nonemptyHistory: true,
+        allocatedKeyDiffersFromLegacy: true,
+        phase7: { status: proof.status, reason: proof.reason, application: proof.application },
+      };
+    } catch {
+      return unknown('record_or_validator_unavailable');
+    }
+  });
+  return {
+    ...base,
+    sourceRelease: input.sourceRelease,
+    cases,
+    status: cases.every((c) => c.status === 'observed') ? 'observed' : 'unknown',
+  };
+}
+
+/** Same fixed installed APIs as the fleet observer, never an uploaded module. */
+export async function loadInstalledDecision8464Api() {
+  const paths = [
+    '/app/dist/services/horseDecisionJournal/record.js',
+    '/app/dist/engine/HorseDecisionHandBinding.js',
+    '/app/dist/services/horseDecisionJournal/review.js',
+    '/app/dist/engine/HorseHeadsUpCommitment.js',
+    '/app/dist/services/horseDecisionJournal/phaseProof.js',
+    '/app/dist/services/horseDecisionJournal/effects.js',
+    '/app/dist/engine/HorseDecisionEffects.js',
+  ];
+  return Object.assign(
+    {},
+    ...(await Promise.all(paths.map((path) => import(/* @vite-ignore */ path))))
+  );
+}

@@ -46,29 +46,30 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-# A transfer preserves the immutable repository ID, but changes both canonical
-# API name and PR head owner. Resolve CA through the existing identity authority;
-# never let an obsolete owner filter turn a closed PR into an empty-list verdict.
-if [[ "$REPO" == "Smarter-Poker-Club-Arena" ]]; then
-  if ! command -v node >/dev/null 2>&1; then
-    echo "[merged-branch guard] BLOCKED: Node.js is required to verify repository identity." >&2
-    exit 1
-  fi
-  METADATA="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
-  IDENTITY_MODULE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci/repository-identity.mjs"
-  CANONICAL="$(printf '%s' "$METADATA" | node --input-type=module -e '
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-const { assertClubArenaRepository, CLUB_ARENA_REPOSITORY_ID } = await import(pathToFileURL(process.argv[1]).href);
-const metadata = JSON.parse(readFileSync(0, "utf8"));
-process.stdout.write(assertClubArenaRepository(metadata.full_name, metadata.id) + "\t" + CLUB_ARENA_REPOSITORY_ID);
-' "$IDENTITY_MODULE" 2>/dev/null || true)"
-  if [[ -z "$CANONICAL" ]]; then
-    echo "[merged-branch guard] BLOCKED: GitHub did not verify the exact Club Arena repository identity." >&2
-    exit 1
-  fi
-  IFS=$'\t' read -r SLUG HEAD_REPO_ID <<< "$CANONICAL"
+# Resolve transfers before filtering heads: GitHub redirects the old repository
+# API, but does not rewrite an old-owner head filter. Trust the maintained
+# approved names plus immutable ID, never an arbitrary redirected owner.
+IDENTITY="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
+TRUST_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci/repository-identity.mjs"
+RESOLVED="$(printf '%s' "$IDENTITY" | node --input-type=module -e '
+import {readFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+const {isClubArenaRepository}=await import(pathToFileURL(process.argv[1]));
+try {
+  const r=JSON.parse(readFileSync(0,"utf8"));
+  const requested=process.argv[2];
+  if (requested.endsWith("/Smarter-Poker-Club-Arena")) {
+    if (!isClubArenaRepository(requested,r.id) || !isClubArenaRepository(r.full_name,r.id)) throw Error();
+  } else if (!requested.startsWith("Smarter-Poker/") || r.full_name!==requested) throw Error();
+  if (r.owner?.login !== r.full_name.split("/")[0]) throw Error();
+  console.log(r.full_name + "\t" + (requested.endsWith("/Smarter-Poker-Club-Arena") ? r.id : ""));
+} catch { process.exitCode=1; }
+' "$TRUST_HELPER" "$SLUG" 2>/dev/null)"
+if [[ -z "$RESOLVED" ]]; then
+  echo "[merged-branch guard] BLOCKED: GitHub did not identify the trusted destination repository." >&2
+  exit 1
 fi
+IFS=$'\t' read -r SLUG HEAD_REPO_ID <<< "$RESOLVED"
 HEAD_OWNER="${SLUG%%/*}"
 
 # `gh` uses its credential store or a standard process-level GH_TOKEN. This

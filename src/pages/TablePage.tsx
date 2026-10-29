@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
   allInEquityBoardKey,
@@ -8283,7 +8284,6 @@ function LiveTablePage({
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
       if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
-      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
       if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
@@ -9222,6 +9222,17 @@ function LiveTablePage({
   // show, and nothing else. The cards come back in the response to
   // POST /rabbit-hunt, which charges first (VIP monthly pool, then a purchased
   // pack, then five diamonds) and answers only the caller that paid.
+  const rabbitViewerRef = useRef<{ tableId: typeof tableId; userId: typeof userId } | null>({
+    tableId,
+    userId,
+  });
+  if (rabbitViewerRef.current?.tableId !== tableId || rabbitViewerRef.current?.userId !== userId) {
+    rabbitViewerRef.current = { tableId, userId };
+  }
+  const rabbitStateViewerRef = useRef({ tableId, userId });
+  const rabbitViewIsCurrent =
+    rabbitStateViewerRef.current.tableId === tableId &&
+    rabbitStateViewerRef.current.userId === userId;
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
@@ -9257,17 +9268,23 @@ function LiveTablePage({
     },
     []
   );
-  const showRetainedRabbitBoard = retainedBoardShows(retainedRabbitBoard, {
-    handNumber: tableState.handNumber ?? 0,
-    cardCount: tableState.communityCards.length,
-  });
+  const showRetainedRabbitBoard = retainedBoardShows(
+    rabbitViewIsCurrent ? retainedRabbitBoard : null,
+    {
+      handNumber: tableState.handNumber ?? 0,
+      cardCount: tableState.communityCards.length,
+    }
+  );
   /* DISPLAY AND MOVE ON (Dan 2026-09-07): a newer hand owns the board from
      its first frame; only the reveal's ghost cards ride its empty preflop
      slots, and only until its flop. See retainedGhostsShow. */
-  const showRetainedRabbitGhosts = retainedGhostsShow(retainedRabbitBoard, {
-    handNumber: tableState.handNumber ?? 0,
-    cardCount: tableState.communityCards.length,
-  });
+  const showRetainedRabbitGhosts = retainedGhostsShow(
+    rabbitViewIsCurrent ? retainedRabbitBoard : null,
+    {
+      handNumber: tableState.handNumber ?? 0,
+      cardCount: tableState.communityCards.length,
+    }
+  );
   /* Stable array identities for the memoised board: a fresh spread per
      render would defeat CommunityCards' own JSON compare for nothing. */
   const retainedCards = useMemo(
@@ -9284,10 +9301,11 @@ function LiveTablePage({
      cards and the retained path would not have taken over yet - one flicker
      per reveal. While the retained copy is for the hand still on the felt,
      the live path borrows its ghost cards. */
-  const liveRabbitCards =
-    rabbitRevealedCards.length === 0 &&
-    retainedRabbitBoard !== null &&
-    retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
+  const liveRabbitCards = !rabbitViewIsCurrent
+    ? []
+    : rabbitRevealedCards.length === 0 &&
+        retainedRabbitBoard !== null &&
+        retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
       ? retainedRabbitCards
       : rabbitRevealedHandNumber === (tableState.handNumber ?? 0)
         ? rabbitRevealedCards
@@ -9302,11 +9320,6 @@ function LiveTablePage({
   }, []);
   /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
   const rabbitExpiryTimerRef = useRef<number | null>(null);
-  /** Dan 2026-08-26: the reveal itself must ALWAYS come down. Hand boundaries
-   *  are the primary clear, but an idle table has no next hand — this timer is
-   *  the unconditional backstop that removes the rabbit cards after they have
-   *  been seen. */
-  const rabbitRevealClearTimerRef = useRef<number | null>(null);
   /**
    * ── RABBIT HUNT TIMING (Dan 2026-08-27, binding) ──
    *
@@ -9357,6 +9370,21 @@ function LiveTablePage({
     rabbitFloorTimerRef.current = setTimeout(drop, RABBIT_MIN_VISIBLE_MS - shownFor);
   }, []);
 
+  // Private cards and an offer must never survive a table/account change.
+  useEffect(() => {
+    rabbitViewerRef.current = { tableId, userId };
+    rabbitStateViewerRef.current = { tableId, userId };
+    setRabbitRevealedCards([]);
+    setRabbitRevealedHandNumber(null);
+    setRetainedRabbitBoard(null);
+    clearRabbitOffer(true);
+    if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+    if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+    return () => {
+      rabbitViewerRef.current = null;
+    };
+  }, [tableId, userId, clearRabbitOffer]);
+
   /**
    * P5 2026-09-05: takes an explicit hand number so the HAND REPLAYER can buy
    * a reveal for an older hand (ClubWPT Gold parity - missing the window at
@@ -9374,7 +9402,11 @@ function LiveTablePage({
       const requestedHandNumber =
         handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
       const boardAtRequest = lastBoardOfHandRef.current;
+      const requestedViewer = rabbitViewerRef.current;
       const result = await requestRabbitHunt(tableId, requestedHandNumber);
+      if (rabbitViewerRef.current !== requestedViewer) {
+        return { success: false, error: 'Rabbit Hunt View Changed' };
+      }
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
@@ -9394,19 +9426,13 @@ function LiveTablePage({
         setRetainedRabbitBoard(
           boardForRabbitReveal(boardAtRequest, requestedHandNumber, parsedCards)
         );
+        // One expiry owns both copies, including an idle table with no next deal.
         if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
         retainedRabbitTimerRef.current = window.setTimeout(() => {
           retainedRabbitTimerRef.current = null;
           setRetainedRabbitBoard(null);
-        }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-        // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-        // this, a reveal on a table that never deals another hand stayed on the
-        // board forever (the only other clears are hand-boundary resets).
-        if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-        rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-          rabbitRevealClearTimerRef.current = null;
           setRabbitRevealedCards([]);
-        }, 8000);
+        }, RABBIT_REVEAL_MIN_VISIBLE_MS);
       }
       return {
         success: true,
@@ -9429,9 +9455,9 @@ function LiveTablePage({
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<
+  const [leaderboardPeriod, setLeaderboardPeriod] = usePlayerPreference<
     'session' | 'day' | 'week' | 'month' | 'allTime'
-  >('session');
+  >('table:leaderboardPeriod', 'session', 'global');
   const [leaderboardPlayers, setLeaderboardPlayers] = useState<
     Array<{
       rank: number;
@@ -18520,10 +18546,6 @@ function LiveTablePage({
           clearTimeout(rabbitExpiryTimerRef.current);
           rabbitExpiryTimerRef.current = null;
         }
-        if (rabbitRevealClearTimerRef.current) {
-          clearTimeout(rabbitRevealClearTimerRef.current);
-          rabbitRevealClearTimerRef.current = null;
-        }
         // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
         // the hand boundary — a hand starting inside the 1.8s window left
         // "ALL IN" splashed over the fresh deal.
@@ -21512,10 +21534,6 @@ function LiveTablePage({
         clearTimeout(rabbitExpiryTimerRef.current);
         rabbitExpiryTimerRef.current = null;
       }
-      if (rabbitRevealClearTimerRef.current) {
-        clearTimeout(rabbitRevealClearTimerRef.current);
-        rabbitRevealClearTimerRef.current = null;
-      }
       // No unconditional animation lives here. A snapshot transition can only
       // reach the shared deal scheduler while a reconnect/event-sequence gap
       // is armed; ordinary hydration and healthy snapshots remain inert.
@@ -23595,7 +23613,7 @@ function LiveTablePage({
     heroPromptedToAct,
     handSettling,
     handInProgress: tableState.isHandInProgress,
-    rabbitAvailable: isRabbitAvailable,
+    rabbitAvailable: isRabbitAvailable && rabbitViewIsCurrent,
     rabbitEnabled: v8Settings.rabbit_hunt_button,
   });
 
@@ -26736,6 +26754,7 @@ function LiveTablePage({
                 and 'timebank' wins. */}
             {hudSlotControl === 'rabbit' && (
               <RabbitHunt
+                key={rabbitHandNumberRef.current}
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
                 rabbitDiamondCost={rabbitDiamondCost}
@@ -27357,6 +27376,10 @@ function LiveTablePage({
                            showing, the felt paints THAT copy (cards, stage,
                            ghost cards, hand id) and the live hand plays on
                            around it. See retainedBoardShows. */
+                        rabbitStartIndex={
+                          showRetainedRabbitGhosts ? retainedRabbitBoard!.cards.length : undefined
+                        }
+                        rabbitHandId={retainedRabbitBoard?.handNumber ?? rabbitRevealedHandNumber}
                         cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
                         rabbitCards={
                           showRetainedRabbitBoard || showRetainedRabbitGhosts

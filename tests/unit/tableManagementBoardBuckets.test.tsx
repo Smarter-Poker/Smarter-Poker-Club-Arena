@@ -186,6 +186,8 @@ const clickTab = async (label: string) => {
 
 describe('the board classifies games by the server bucket', () => {
   beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
     mocks.page = PAGE;
     mocks.buckets = [];
     mocks.extraCalls = [];

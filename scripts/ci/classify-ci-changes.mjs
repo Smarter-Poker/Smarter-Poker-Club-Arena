@@ -64,7 +64,7 @@ const cssBeatInput = cssBeatJobInputs() || ((p) => /^tests\/e2e\//.test(p) && !p
 
 const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture: true });
 const wide =
-  /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate|ui-test-selection)\.mjs)/;
+  /^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github\/workflows\/|scripts\/ci\/(classify-ci-changes|fixture-native-gate|ui-test-selection|publisher-ui-selection-base)\.mjs)/;
 const phase4 =
   /^(\.github\/workflows\/ci\.yml|scripts\/ci\/(?:classify-ci-changes\.mjs|test-v4-policy-metadata\.mjs$)|scripts\/ci\/probes\/horse-phase4-certified-solver\/|supabase\/migrations\/(?:20260909(165541|170039|170749|171644|172537|175000|180000)_|20261007043848_v4_policy_schema_is_immutable_input_metadata\.sql$|20261007043945_solver_v4_nodes_prove_complete_public_state\.sql$|20261007051641_v4_consumers_bind_the_immutable_policy_schema\.sql$)|server\/src\/(benchmark\/(HorseLeague|HorseSolverAgreementV31|GtoV31EvaluationConfig\.(?:test\.)?ts$)|scripts\/gtoV31Evaluate\.ts$|engine\/(GtoDecisionContext|GtoPostflopV31|GtoV31|HorseDataLedger|HorseLogic|LiveHorseDecisionWorkerHealth|horseDecision\/)|services\/GtoPostflopV31Loader))/;
 const breakfastWitness =
@@ -83,7 +83,7 @@ const originalPaidCustody =
 // Accounting 3 loads these retained original sources and their native driver.
 // Input-only changes must execute that existing qualification too.
 const retainedOriginalCorrection =
-  /^(?:scripts\/qualification\/retained18-correction\/|scripts\/ci\/(?:test-superseded-horse-actions\.py$|fixtures\/superseded-action-preimages\.json$)|tests\/unit\/supersededHorseActionRetention\.test\.ts$)/;
+  /^(?:scripts\/qualification\/retained18-correction\/|scripts\/ci\/(?:test-superseded-(?:horse-actions|retention-progress)\.py$|fixtures\/superseded-action-preimages\.json$)|tests\/unit\/(?:supersededHorseActionRetention|supersededRetentionProgress)\.test\.ts$)/;
 const f06HandAuthority =
   /^(?:scripts\/ci\/(?:(?:test-f06-shared-hand-lane|build-f06-retired-origin|build-f06-stopped-bank-custody)\.py$|(?:test|build)-f06-(?:accepted-elimination|elimination-migration|movement-admission|drained-custody|mixed-custody)\.py$|fixtures\/f06-(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\/|probes\/f06-(?:retired-origin-cohorts\.json$|shared-hand-lane\/|mixed-restart-qualification\.py$|(?:accepted-elimination|movement-admission|drained-custody|mixed-custody)\.(?:sql|spec)$|(?:retired-origin-authority|movement-opening|drained-custody-authority|mixed-custody-authority|mixed-movement-authority)\.sql$)|schema-manifest\.d\/f06-(?:movement-admission|drained-custody|mixed-custody|retained-mtt-disposition|retired-origin|stopped-bank-custody|lease-retention)\.json$|(?:test-hand-continuation|test-hand-submission|build-hand-submission-migration|played_clock_floor_cases|build-played-level-recovery-migration)\.py$|schema-manifest\.d\/hand-continuation\.json$|probes\/hand-continuation-native\.sql$|fixtures\/(?:hand-continuation|played-clock-floor)\/|probes\/hand-submission-[a-z-]+\.(?:sql|spec)$|fixtures\/hand-submission\/)|tests\/operations\/f06-(?:elimination|movement)-results\.test\.py$)/;
 // The gateway consumer has its own native runtime and transactional intake
@@ -224,6 +224,11 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const privateRecordHosting =
+    paths.includes('server/tsconfig.private-record-gateway.json') ||
+    matches(
+      /^(?:infra\/ca-origin\/(?!.*\.md$)[^/]+$|scripts\/ci\/(?:private-record-gateway-[^/]+\.(?:mjs|sql)|private-record-compatibility\.test\.mjs|(?:test-private-record-hosting|test-private-record-bootstrap-linux|test-private-record-credentials-postgres|build-private-record-gateway)\.sh)$|scripts\/ci\/fixtures\/private-record-(?:bootstrap-linux|credentials-postgres)\.mjs$|server\/scripts\/privateRecordGateway[^/]+\.mts$|scripts\/dev\/test-member-record-live-postgres\.sh$|tests\/fixtures\/stats-club-scope\/member-record-live\/|tests\/unit\/privateRecordHosting\.test\.ts$)/
+    );
   const cashHalfNative = matches(/^scripts\/qualification\/test-cash-half-top-horses\.py$/);
   const onTimeMaintenance = matches(
     /^scripts\/ci\/(?:test-on-time-maintenance-thaw\.py$|test-multi-day-stage-foundation\.py$|fixtures\/on-time-start\/)/
@@ -395,6 +400,7 @@ export function classifyChangedPaths(paths) {
       matches(/^src\//),
     server:
       matches(/^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/) ||
+      privateRecordHosting ||
       matches(nativeAlertSql) ||
       cashHalfNative ||
       // Default opening reuses funded welcome reserves and the real publisher.
@@ -457,6 +463,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      privateRecordHosting ||
       matches(nativeAlerts) ||
       matches(nativeAlertSql) ||
       cashHalfNative ||

@@ -17,4 +17,10 @@ if ! grep -q 'Club join ordering regression' "$work/before.log"; then cat "$work
 "${psql[@]}" -f "$migration" -f "$fixture/assertions.sql"
 if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then echo 'Migration replay unexpectedly accepted'; exit 1; fi
 if ! grep -q 'Roster join sort source preimage changed' "$work/replay.log"; then cat "$work/replay.log"; exit 1; fi
+search_migration="$repo/supabase/migrations/20261029064232_player_name_search_ranks_direct_matches_before_upline.sql"
+if "${psql[@]}" -f "$fixture/search-assertions.sql" > "$work/search-before.log" 2>&1; then echo 'Name-search regression unexpectedly passed before repair'; exit 1; fi
+if ! grep -q 'Player name search regression' "$work/search-before.log"; then cat "$work/search-before.log"; exit 1; fi
+"${psql[@]}" -f "$search_migration" -f "$fixture/search-assertions.sql" -f "$fixture/assertions.sql"
+if "${psql[@]}" -f "$search_migration" > "$work/search-replay.log" 2>&1; then echo 'Search migration replay unexpectedly accepted'; exit 1; fi
+if ! grep -q 'Roster name search source preimage changed' "$work/search-replay.log"; then cat "$work/search-replay.log"; exit 1; fi
 echo 'ROSTER_JOIN_SORT PASS: regression, both directions, equal/null dates, three pages, search, scope, malformed/mismatched cursors, export and replay refusal'

@@ -95,3 +95,50 @@ export async function awaitPreferenceSave(
     if (timer) clearTimeout(timer);
   }
 }
+
+const logoutFlushers = new Map<symbol, { owner: string; flush: () => unknown }>();
+const otherWrites = new Map<string, Set<Promise<unknown>>>();
+/** Register the original gesture's deferred save, never a separate repair path. */
+export function registerPreferenceFlush(owner: string, flush: () => unknown): () => void {
+  const token = Symbol(owner);
+  logoutFlushers.set(token, { owner, flush });
+  return () => {
+    logoutFlushers.delete(token);
+  };
+}
+export function trackPreferenceWrite(owner: string, write: Promise<unknown>): void {
+  const writes = otherWrites.get(owner) ?? new Set<Promise<unknown>>();
+  otherWrites.set(owner, writes);
+  writes.add(write);
+  const retire = () => {
+    writes.delete(write);
+    if (!writes.size) otherWrites.delete(owner);
+  };
+  void write.then(retire, retire);
+}
+/** Preserve sign-out, but flush selected preferences while credentials are still live. */
+export async function flushPreferencesBeforeLogout(owner: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async () => {
+        await Promise.allSettled(
+          [...logoutFlushers.values()]
+            .filter((entry) => entry.owner === owner)
+            .map((entry) => Promise.resolve().then(entry.flush))
+        );
+        await Promise.allSettled([
+          ...[...tails.entries()]
+            .filter(([scope]) => scope.startsWith(`${PREFIX}${owner}:`))
+            .map(([, write]) => write),
+          ...(otherWrites.get(owner) ?? []),
+        ]);
+      })(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, 25_000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

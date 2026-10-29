@@ -243,11 +243,12 @@ describe('Players tab large-roster performance and cache integrity', () => {
 });
 
 describe('Players tab operational continuity', () => {
-  it('keeps views in the URL, but keeps typed player searches private to the tab', () => {
+  it('keeps views in the URL, but keeps typed player searches private to the account', () => {
     expect(PAGE_CODE).toContain("readFilter(searchParams.get('view'))");
     expect(PAGE_CODE).toContain("readSort(searchParams.get('sort'))");
     expect(PAGE_CODE).toContain("next.delete('q')");
-    expect(PAGE_CODE).toContain('readRosterWorkspace(user.id, id)');
+    expect(PAGE_CODE).toContain('await loadRosterWorkspace(user.id, id)');
+    expect(WORKSPACE.replace(/\s*\.\s*/g, '.')).toContain("supabase.from('user_page_preferences')");
     expect(WORKSPACE).toContain('sessionStorage.getItem(rosterWorkspaceKey(viewer, club))');
     expect(WORKSPACE).toContain('sessionStorage.getItem(rosterSearchKey(viewer, club))');
     expect(WORKSPACE).not.toContain('localStorage');

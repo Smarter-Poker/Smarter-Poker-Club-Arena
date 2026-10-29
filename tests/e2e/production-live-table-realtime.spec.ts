@@ -215,7 +215,10 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   }
 }
 
-type LivenessScope = { tableIds: string[] } | { gameFormat: (typeof TOURNAMENT_FORMATS)[number] };
+type LivenessScope =
+  | { tableIds: string[] }
+  | { candidateTableIds: string[] }
+  | { gameFormat: (typeof TOURNAMENT_FORMATS)[number] };
 
 async function readEngineHealth(
   request: APIRequestContext,
@@ -224,10 +227,11 @@ async function readEngineHealth(
 ): Promise<EngineHealth> {
   const url = new URL(ENGINE_HEALTH_URL);
   url.searchParams.set('cb', String(Date.now()));
-  if ('tableIds' in scope) {
-    expect(scope.tableIds.length).toBeGreaterThan(0);
-    expect(scope.tableIds.length).toBeLessThanOrEqual(32);
-    url.searchParams.set('liveness_table_ids', scope.tableIds.join(','));
+  if ('tableIds' in scope || 'candidateTableIds' in scope) {
+    const ids = 'tableIds' in scope ? scope.tableIds : scope.candidateTableIds;
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.length).toBeLessThanOrEqual(32);
+    url.searchParams.set('liveness_table_ids', ids.join(','));
   } else {
     url.searchParams.set('liveness_format', scope.gameFormat);
     url.searchParams.set('liveness_club_ids', [CLUB_ID, UNION_ID].join(','));
@@ -308,8 +312,11 @@ async function readEngineHealth(
     expect(table.msSinceProgress).toBeGreaterThanOrEqual(0);
     expect(typeof table.paused).toBe('boolean');
     expect(typeof table.loopPhase).toBe('string');
-    if ('tableIds' in scope)
-      expect(scope.tableIds, 'health returned an unrequested table').toContain(table.tableId);
+    if ('tableIds' in scope || 'candidateTableIds' in scope)
+      expect(
+        'tableIds' in scope ? scope.tableIds : scope.candidateTableIds,
+        'health returned an unrequested table'
+      ).toContain(table.tableId);
     else {
       expect(table.gameFormat).toBe(scope.gameFormat);
       expect([CLUB_ID, UNION_ID], 'health returned an out-of-scope tournament').toContain(
@@ -317,7 +324,7 @@ async function readEngineHealth(
       );
     }
   }
-  /* A READ BY TABLE ID IS THE SUBJECT; A READ BY FORMAT IS A CANDIDATE SEARCH.
+  /* OBSERVED TABLE IDS ARE THE SUBJECT; CANDIDATE IDS AND FORMAT ARE SEARCHES.
      When this case has named the tables it is tracking, one of them going
      silent past the engine's own two-minute stall threshold is production
      failing in front of the certificate, and it is named and red. A
@@ -466,7 +473,7 @@ async function selectOccupiedRunningCashTables(
     if (candidates.length === 0) continue;
     for (let offset = 0; offset < candidates.length; offset += 32) {
       const batch = candidates.slice(offset, offset + 32);
-      const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
+      const health = await readEngineHealth(request, { candidateTableIds: batch.map((c) => c.id) });
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
         if (
@@ -492,7 +499,7 @@ async function selectOccupiedRunningCashTables(
     // Tab scanning takes time. Start every contender from the same fresh
     // health observation, removing tables that departed during discovery.
     const health = await readEngineHealth(request, {
-      tableIds: tables.map(({ candidate }) => candidate.id),
+      candidateTableIds: tables.map(({ candidate }) => candidate.id),
     });
     const fresh = tables.flatMap(({ candidate, tabName }) => {
       const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
@@ -520,7 +527,7 @@ async function proveTableProgressedBeforeNavigation(
     .poll(
       async () => {
         after = await readEngineHealth(request, {
-          tableIds: contenders.map((contender) => contender.candidate.id),
+          candidateTableIds: contenders.map((contender) => contender.candidate.id),
         });
         for (const contender of contenders) {
           const id = contender.candidate.id;
@@ -691,7 +698,7 @@ async function selectProgressingTournamentTable(
     const discoveredIds = new Set(discovered);
     const scanned = await scanHudCandidateBatches({
       batches: hudCandidateTableIdBatches(tableIds),
-      read: (batch) => readEngineHealth(request, { tableIds: batch }, requestTimeoutMs()),
+      read: (batch) => readEngineHealth(request, { candidateTableIds: batch }, requestTimeoutMs()),
       usable: (health) =>
         readyTables(health).some(
           (table) => discoveredIds.size === 0 || discoveredIds.has(table.tableId)
@@ -915,7 +922,9 @@ async function selectProgressingTournamentTable(
             );
             baselines = selection.baselines;
             if (readmitted) return false;
-            after = await readEngineHealth(request, { tableIds: baselines.map((t) => t.tableId) });
+            after = await readEngineHealth(request, {
+              candidateTableIds: baselines.map((t) => t.tableId),
+            });
             for (const baseline of baselines) {
               const sampled = after.tableLiveness.find(
                 (table) => table.tableId === baseline.tableId
@@ -2494,6 +2503,24 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           }
           return {
             handIds: [...hands.keys()],
+            // Retain only public counters for independent hand-history comparison.
+            // Never attach a transport payload wholesale: it may grow private fields.
+            summaries: [...hands.values()].map((summary) => ({
+              hand_id: summary.hand_id,
+              public_stats_version: summary.public_stats_version,
+              players: summary.players.map((player) => ({
+                user_id: player.user_id,
+                vpip: player.vpip,
+                pfr: player.pfr,
+                won: player.won,
+                ...(player.aggressive_actions !== undefined && player.call_actions !== undefined
+                  ? {
+                      aggressive_actions: player.aggressive_actions,
+                      call_actions: player.call_actions,
+                    }
+                  : {}),
+              })),
+            })),
             observer: current.observer,
             playersChecked: expected.size,
             receipts: hands.size,

@@ -69,6 +69,8 @@ function runOriginVerification(liveSha: string) {
         GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       },
       encoding: 'utf8',
+      // The real shell performs 120 JSON interpreter checks on mismatch.
+      // Allow the measured concurrent-run cost without changing its loop or assertions.
       timeout: 15_000,
     });
     return { status: result.status, output: readFileSync(output, 'utf8'), error: result.error };
@@ -86,6 +88,42 @@ describe('native publishing requires the exact origin verification', () => {
   it('accepts the exact verified target and rejects a different one', () => {
     expect(eligible(target)).toBe(true);
     expect(eligible(other)).toBe(false);
+  });
+
+  it('uses the same conservative selector on the entire verified published backlog', () => {
+    const client = workflow.jobs['client-tests'];
+    const checkout = client.steps.find(
+      (step: { uses?: string }) => step.uses === 'actions/checkout@v4'
+    );
+    expect(checkout.with.ref).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(checkout.with['fetch-depth']).toBe(0);
+    expect(checkout.with.filter).toBe('blob:none');
+    const tests = client.steps.find((step: { name?: string }) =>
+      step.name?.startsWith('Client tests must pass')
+    );
+    expect(tests.env.CI_HEAD_SHA).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(tests.env.CI_BASE_SHA).toBe('${{ needs.publish-needed.outputs.selection_base }}');
+    expect(workflow.jobs['publish-needed'].outputs.selection_base).toBe(
+      '${{ steps.selection-base.outputs.base_sha }}'
+    );
+    expect(
+      workflow.jobs['publish-needed'].steps.find(
+        (step: { id?: string }) => step.id === 'selection-base'
+      ).if
+    ).toBe("steps.target.outputs.component == 'client'");
+    expect(tests.run).toContain(
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+    );
+    expect(tests.run).not.toMatch(/origin\/main|github\.event\.before|continue-on-error/);
+    const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
+    const workers =
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}";
+    expect(client.env.VITEST_MAX_THREADS).toBe(workers);
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
+    expect(workflow.concurrency).toEqual({
+      group: 'publish-club-arena-production',
+      'cancel-in-progress': false,
+    });
   });
 
   it('preserves the proved-tree client-test fast path', () => {

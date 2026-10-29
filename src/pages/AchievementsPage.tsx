@@ -386,7 +386,11 @@ export default function AchievementsPage() {
   }, []);
   const { user } = useAuthUser();
   const toast = useToast();
-  const [category, setCategory] = useState<AchievementCategory>('all');
+  const [category, setCategory] = usePlayerPreference<AchievementCategory>(
+    'achievements:category',
+    'all',
+    'global'
+  );
   const [storedAchievements, setAchievements] = useState<Achievement[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [storedError, setLoadError] = useState<string | null>(null);

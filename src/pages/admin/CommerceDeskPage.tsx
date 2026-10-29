@@ -1557,7 +1557,7 @@ function EvidencePanel({
   evidenceError: string | null;
   reloadEvidence: () => Promise<void>;
 }) {
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = usePlayerPreference('commerceDesk.catalogFilter', '', 'global');
 
   if (catalogError && !catalog) {
     return (

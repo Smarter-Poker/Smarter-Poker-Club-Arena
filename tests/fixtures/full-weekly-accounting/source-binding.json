@@ -1,4 +1,10 @@
 {
+  "accountPreferenceFixtureAudit20261029": {
+    "reason": "Reviewed exact fixture-only diff: replace the empty useUserStore mock with its selector bound to the existing synthetic auth identity. Preserve every cashout receipt, ABA, financial invariant and assertion. Connected 34-case fixture run passed; no production financial mutation or certificate restamp.",
+    "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
+    "previousSHA256": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
+    "currentSHA256": "75c66b74dee7cf90e92e48796aa46ee21253cc8ac949d77346c8d2089bee4723"
+  },
   "cashierAsyncMountAudit20261027": {
     "reason": "Reviewed full async-mount diff: await act around initial mocked identity/club/balance promises and await every mount. All eight existing assertions/cases and timeouts retained. Isolated eight cases pass; combined pre-push verification follows. No financial/native/live certificate restamp.",
     "path": "tests/cashier-weekly-statements.test.tsx",
@@ -248,7 +254,7 @@
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
     "tests/components/cashier-cashout-generations.test.tsx": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8",
-    "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "75c66b74dee7cf90e92e48796aa46ee21253cc8ac949d77346c8d2089bee4723",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
@@ -488,10 +494,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0",
+    "scripts/ci/classify-ci-changes.mjs": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "329940cc6f681a82631875ba57107e6eb8b3a5763aeaa119df67de4f5bf52bac",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "f4df1423e3a89903dde6445ab5f8e6ebf88c58d0ee35c5047e32e1ccab5d40b3",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -510,7 +516,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "fcd4d2ee0ac28651265e55fca44b5eaae39d45e91e7c4e16e4c9b2c11ea4d04e",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "db0555ae9998c0a5aae7522e35862404f45d95d8307b72f373bb98d343237611",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5746,6 +5752,22 @@
     "financial_recertification": false,
     "execution_performed": false
   },
+  "publisherBacklogSelectionIdentity20261029": {
+    "review": "Reviewed the single classifier prefix extension admitting the new publisher published-baseline authority to full qualification. All financial/native job commands, matrices, assertions, fixtures, SQL, historical receipts and verdicts remain unchanged. Only current classifier source identity changes; not renewed execution or certification.",
+    "previous_sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current_sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0",
+    "financial_recertification": false,
+    "dependent_binding_identities": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "25a972fef5504416c6965bb07f73523a7e52fca179d9adce42de093e9e0a0167",
+        "current": "53e38d16fa8c36c3ebd3c0692888de1c3be2e71e74000bc8e17eabcdbc930f9c"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "7ee41e452d50a169c68780e8ce4a74cc82ff17ac9254291829b6df804eba20bb",
+        "current": "c4b980328af20017ef29b5f223516dcb517091f71ba612fbe6d1cebeb922cb9a"
+      }
+    }
+  },
   "clubPromoJournalSource20261029": {
     "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
     "path": "scripts/ci/classify-ci-changes.mjs",
@@ -5764,5 +5786,8 @@
         "current": "fcd4d2ee0ac28651265e55fca44b5eaae39d45e91e7c4e16e4c9b2c11ea4d04e"
       }
     }
+  },
+  "clubPromoProtectedMainIntegration20261029": {
+    "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
   }
 }

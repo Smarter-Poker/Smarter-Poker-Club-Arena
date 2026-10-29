@@ -188,6 +188,8 @@ function installCompleteExport(total = 254) {
 }
 
 beforeEach(() => {
+  // Each independent scenario starts with an account that has no saved preferences.
+  localStorage.clear();
   rpcMock.mockReset();
   downloadCsvMock.mockClear();
   downloadCsvMock.mockReturnValue(true);

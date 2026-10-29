@@ -146,3 +146,29 @@ describe('the hand continuation retains before publishing', () => {
     ]);
   });
 });
+
+it('holds a failed original replay and never persists its queued successor batch', async () => {
+  const error = new Error('Original consumer outcome unknown');
+  const persist = vi.fn(),
+    dispatch = vi.fn(),
+    report = vi.fn();
+  const lane = new HandContinuationLane(
+    3,
+    () => 'state',
+    () => ({}),
+    persist,
+    dispatch,
+    () => true,
+    report,
+    async () => {
+      throw error;
+    }
+  );
+  lane.enqueue(action);
+  await expect(lane.join()).rejects.toBe(error);
+  expect(lane.isReplayingOriginal()).toBe(true);
+  expect(persist).not.toHaveBeenCalled();
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(report).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledWith(error);
+});

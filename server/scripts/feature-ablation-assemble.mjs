@@ -806,13 +806,14 @@ function argumentsFor(argv) {
 const jsonFile = (file) => JSON.parse(readFileSync(file, 'utf8'));
 const writeJson = (file, value, flag = 'w') =>
   writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { flag });
-async function providerState() {
+export async function providerState() {
   const repo = process.env.GITHUB_REPOSITORY,
     runId = process.env.GITHUB_RUN_ID,
     attempt = Number(process.env.GITHUB_RUN_ATTEMPT),
     token = process.env.GITHUB_TOKEN;
   if (
-    repo !== 'Smarter-Poker/Smarter-Poker-Club-Arena' ||
+    repo !== 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' ||
+    process.env.GITHUB_REPOSITORY_ID !== '1132369872' ||
     !/^\d+$/.test(runId ?? '') ||
     !Number.isSafeInteger(attempt) ||
     attempt < 1 ||
@@ -835,6 +836,8 @@ async function providerState() {
   const run = await get(`/actions/runs/${runId}`);
   if (
     String(run.id) !== runId ||
+    run.repository?.id !== 1132369872 ||
+    run.repository?.full_name !== repo ||
     run.event !== 'workflow_dispatch' ||
     run.head_branch !== 'main' ||
     run.path !== '.github/workflows/horse-feature-ablation-qualification.yml'

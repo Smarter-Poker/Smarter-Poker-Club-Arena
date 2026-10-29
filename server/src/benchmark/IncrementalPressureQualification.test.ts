@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 /** Structural fixtures only; never warm histories, consume seeds or execute deals. */
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -204,6 +204,7 @@ test('predeclaration requires original provider, protected merge and strict pre-
   const commit = 'b'.repeat(40),
     operation = {
       id: 42,
+      repository: { id: 1132369872, full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' },
       path: '.github/workflows/horse-feature-ablation-qualification.yml',
       event: 'workflow_dispatch',
       head_branch: 'main',
@@ -214,7 +215,10 @@ test('predeclaration requires original provider, protected merge and strict pre-
     {
       merge_commit_sha: commit,
       merged_at: '2026-10-27T17:00:00Z',
-      base: { ref: 'main', repo: { full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' } },
+      base: {
+        ref: 'main',
+        repo: { id: 1132369872, full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' },
+      },
     },
   ];
   assert.equal(assertIncrementalPlanProvenance(operation, prs, commit, '42'), operation);
@@ -223,17 +227,69 @@ test('predeclaration requires original provider, protected merge and strict pre-
     { ...operation, created_at: '2026-10-27T17:00:00Z' },
     { ...operation, event: 'pull_request' },
     { ...operation, head_sha: null },
+    ...[
+      undefined,
+      { ...operation.repository, id: 1132369873 },
+      { ...operation.repository, id: '1132369872' },
+      { ...operation.repository, full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' },
+      { ...operation.repository, full_name: 'foreign/Smarter-Poker-Club-Arena' },
+    ].map((repository) => ({ ...operation, repository })),
   ])
     assert.throws(() => assertIncrementalPlanProvenance(changed, prs, commit, '42'));
   assert.throws(() => assertIncrementalPlanProvenance(operation, [], commit, '42'));
-  assert.throws(() =>
-    assertIncrementalPlanProvenance(
-      operation,
-      [{ ...prs[0], base: { ref: 'main', repo: { full_name: 'foreign' } } }],
-      commit,
-      '42'
-    )
-  );
+  for (const repository of [
+    undefined,
+    { ...prs[0].base.repo, id: 1132369873 },
+    { ...prs[0].base.repo, id: '1132369872' },
+    { ...prs[0].base.repo, full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena' },
+    { ...prs[0].base.repo, full_name: 'foreign' },
+  ])
+    assert.throws(() =>
+      assertIncrementalPlanProvenance(
+        operation,
+        [{ ...prs[0], base: { ref: 'main', repo: repository } }],
+        commit,
+        '42'
+      )
+    );
+});
+
+test('workflow admission requires the canonical built-in repository identity before Git or provider access', async () => {
+  vi.stubEnv('GITHUB_REPOSITORY', 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena');
+  vi.stubEnv('GITHUB_RUN_ID', '42');
+  vi.stubEnv('GITHUB_TOKEN', 'structural-fixture-not-a-credential');
+  vi.stubEnv('GITHUB_REF', 'refs/heads/main');
+  vi.stubEnv('GITHUB_EVENT_NAME', 'workflow_dispatch');
+  try {
+    for (const repositoryId of [undefined, '', '1132369873', '01132369872']) {
+      vi.stubEnv('GITHUB_REPOSITORY_ID', repositoryId);
+      await assert.rejects(
+        authenticateIncrementalPlan(fixture('pressure_package')),
+        /provider unavailable/
+      );
+    }
+    vi.stubEnv('GITHUB_REPOSITORY_ID', '1132369872');
+    for (const repository of [
+      'Smarter-Poker/Smarter-Poker-Club-Arena',
+      'foreign/Smarter-Poker-Club-Arena',
+    ]) {
+      vi.stubEnv('GITHUB_REPOSITORY', repository);
+      await assert.rejects(
+        authenticateIncrementalPlan(fixture('pressure_package')),
+        /provider unavailable/
+      );
+    }
+    vi.stubEnv('GITHUB_REPOSITORY', 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena');
+    // Matching provider metadata reaches the real independent source/plan
+    // gates: shallow CI history, an unmerged branch, dirty source or empty
+    // registry still refuses it. The provider-only gate has already passed.
+    await assert.rejects(
+      authenticateIncrementalPlan(fixture('pressure_package')),
+      /Incremental (family history is shallow|source dirty|plan bytes changed)|Command failed: git merge-base --is-ancestor [0-9a-f]{40} origin\/main/
+    );
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test('actual worker flags require exactly the declared arm, including all five package flags', () => {

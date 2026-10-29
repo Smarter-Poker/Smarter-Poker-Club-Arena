@@ -239,46 +239,62 @@ describe('the pull-request workflow', () => {
     expect(code).toMatch(/persist-credentials: false/);
   });
 
-  it('mints only the personal World Hub read token before and after Club Arena transfers', async () => {
-    const steps = YAML.parse(yml).jobs.ledger.steps;
-    const mint = steps.find((step: { id?: string }) => step.id === 'estate-token');
-    expect(mint.uses).toBe('actions/create-github-app-token@v3');
-    expect(mint.with).toEqual({
-      'app-id': '${{ vars.AUTOPILOT_APP_ID }}',
-      'private-key': '${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}',
-      owner: 'Smarter-Poker',
-      repositories: 'Smarter-Poker-World-Hub',
-      'permission-contents': 'read',
-    }); // Default action cleanup revokes this narrowly scoped token.
-    for (const arenaOwner of ['Smarter-Poker', 'Smarter-Software-PIQ']) {
-      const tokenOwner = mint.with.owner.replace('${{ github.repository_owner }}', arenaOwner);
-      const target = `${tokenOwner}/${mint.with.repositories}`;
-      const requested: string[] = [];
-      vi.stubGlobal('fetch', async (url: string) => {
-        requested.push(url);
-        if (!url.startsWith(`https://api.github.com/repos/${target}/`))
-          return { ok: false, status: 404 };
-        return {
-          ok: true,
-          json: async () =>
-            url.includes('/contents/')
-              ? [{ type: 'dir', name: 'migrations', sha: 'retained-tree' }]
-              : { truncated: false, tree: [{ type: 'blob', path: '20260101000000_sibling.sql' }] },
-        };
-      });
-      try {
-        expect(await siblingMigrationFiles(undefined, 'fixture-read-token')).toEqual([
-          '20260101000000_sibling.sql',
-        ]);
-        expect(requested).toEqual([
-          'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/supabase?ref=main',
-          'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/git/trees/retained-tree',
-        ]);
-      } finally {
-        vi.unstubAllGlobals();
+  it.each([
+    'migration-ledger-reconciled.yml',
+    'applied-migrations-recorded.yml',
+    'schema-manifest-refresh.yml',
+  ])(
+    '%s mints only the personal World Hub read token before and after Club Arena transfers',
+    async (workflow) => {
+      const jobs = YAML.parse(
+        fs.readFileSync(path.join(REPO, '.github/workflows', workflow), 'utf8')
+      ).jobs;
+      const steps = Object.values(jobs).flatMap((job: { steps?: unknown[] }) => job.steps || []);
+      const mint = steps.find(
+        (step: { with?: { repositories?: string } }) =>
+          step.with?.repositories === 'Smarter-Poker-World-Hub'
+      );
+      expect(mint.uses).toBe('actions/create-github-app-token@v3');
+      expect(mint.with).toEqual({
+        'app-id': '${{ vars.AUTOPILOT_APP_ID }}',
+        'private-key': '${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}',
+        owner: 'Smarter-Poker',
+        repositories: 'Smarter-Poker-World-Hub',
+        ...(workflow === 'schema-manifest-refresh.yml' ? {} : { 'permission-contents': 'read' }),
+      }); // Preserve existing permissions; default action cleanup revokes this narrowly scoped token.
+      for (const arenaOwner of ['Smarter-Poker', 'Smarter-Software-PIQ']) {
+        const tokenOwner = mint.with.owner.replace('${{ github.repository_owner }}', arenaOwner);
+        const target = `${tokenOwner}/${mint.with.repositories}`;
+        const requested: string[] = [];
+        vi.stubGlobal('fetch', async (url: string) => {
+          requested.push(url);
+          if (!url.startsWith(`https://api.github.com/repos/${target}/`))
+            return { ok: false, status: 404 };
+          return {
+            ok: true,
+            json: async () =>
+              url.includes('/contents/')
+                ? [{ type: 'dir', name: 'migrations', sha: 'retained-tree' }]
+                : {
+                    truncated: false,
+                    tree: [{ type: 'blob', path: '20260101000000_sibling.sql' }],
+                  },
+          };
+        });
+        try {
+          expect(await siblingMigrationFiles(undefined, 'fixture-read-token')).toEqual([
+            '20260101000000_sibling.sql',
+          ]);
+          expect(requested).toEqual([
+            'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/supabase?ref=main',
+            'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/git/trees/retained-tree',
+          ]);
+        } finally {
+          vi.unstubAllGlobals();
+        }
       }
     }
-  });
+  );
 
   it.each([
     'Smarter-Software-PIQ/Smarter-Poker-World-Hub',

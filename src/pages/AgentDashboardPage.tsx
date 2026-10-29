@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  AGENT DASHBOARD PAGE — Agent Operations Center
@@ -194,7 +195,10 @@ function AgentDashboardContent() {
   const [recentTx, setRecentTx] = useState<ChipTransaction[]>([]);
 
   // Search / Filter
-  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerSearch, setPlayerSearch] = usePlayerPreference(
+    'AgentDashboardPage:playerSearch',
+    ''
+  );
   /* Both lists page from the SERVER. They used to fetch 100 transactions
      and 50 commissions once and page the 100 in the browser, so "Load More"
      could never reach row 101 and the commission list simply stopped at 50

@@ -1,3 +1,4 @@
+import { trackPreferenceWrite } from '../../lib/tableSettingIntents';
 import { awaitPreferenceSave } from '../../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -309,6 +310,7 @@ export function pushRemoteViewPrefs(
     }
   });
   pendingViewWrites.set(key, pending);
+  trackPreferenceWrite(userId, pending);
   void pending.then(() => {
     if (pendingViewWrites.get(key) === pending) pendingViewWrites.delete(key);
   });

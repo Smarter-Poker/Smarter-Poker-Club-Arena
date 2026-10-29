@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TRANSACTION HISTORY — Wallet Transaction Log
@@ -238,7 +239,11 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = usePlayerPreference<string>(
+    'transactionHistory.filter',
+    'all',
+    walletId || user?.id
+  );
   const isMounted = useIsMounted();
 
   const targetUserId = walletId || user?.id || null;

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Link,
@@ -52,7 +53,7 @@ import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib
 import {
   ROSTER_ROW_HEIGHT,
   defaultRosterWorkspace,
-  readRosterWorkspace,
+  loadRosterWorkspace,
   writeRosterWorkspace,
   writeRosterReturnPosition,
   takeRosterReturnPosition,
@@ -266,8 +267,12 @@ export default function ClubMembersPage() {
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [filter, setFilter] = useState<RosterFilter>(() => readFilter(searchParams.get('view')));
   const [sortKey, setSortKey] = useState<RosterSort>(() => readSort(searchParams.get('sort')));
-  const [simpleMode, setSimpleMode] = useState(true);
-  const [winLossPeriod, setWinLossPeriod] = useState<WinLossPeriod>('week');
+  const [simpleMode, setSimpleMode] = usePlayerPreference('roster:simpleMode', true, routeClub);
+  const [winLossPeriod, setWinLossPeriod] = usePlayerPreference<WinLossPeriod>(
+    'roster:winLossPeriod',
+    'week',
+    routeClub
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(defaultRosterWorkspace().columns)
@@ -506,9 +511,10 @@ export default function ClubMembersPage() {
     }
 
     void resolveClubUUIDStrict(routeClub)
-      .then((id) => {
+      .then(async (id) => {
         if (!active) return;
-        const saved = user?.id ? readRosterWorkspace(user.id, id) : null;
+        const saved = user?.id ? await loadRosterWorkspace(user.id, id) : null;
+        if (!active) return;
         const workspace = saved ?? defaultRosterWorkspace();
         if (explicitFilter) workspace.filter = readFilter(searchParams.get('view'));
         if (explicitSort) workspace.sort = readSort(searchParams.get('sort'));

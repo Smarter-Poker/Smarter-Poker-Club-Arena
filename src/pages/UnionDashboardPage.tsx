@@ -270,7 +270,10 @@ export default function UnionDashboardPage() {
     }[]
   >([]);
   const [rosterLoading, setRosterLoading] = useState(false);
-  const [rosterSearch, setRosterSearch] = useState('');
+  const [rosterSearch, setRosterSearch] = usePlayerPreference(
+    'UnionDashboardPage:rosterSearch',
+    ''
+  );
   const [clubs, setClubs] = useState<EnrichedClub[]>([]);
 
   /* THE JACKPOT TILE FOLLOWS THE SHARED POLL (BBJ phase 3.2, 2026-09-06).
@@ -361,8 +364,8 @@ export default function UnionDashboardPage() {
   const [clawbackForm, setClawbackForm] = useState({ target: '', amount: '', reason: '' });
 
   // Search / Filter
-  const [clubSearch, setClubSearch] = useState('');
-  const [agentSearch, setAgentSearch] = useState('');
+  const [clubSearch, setClubSearch] = usePlayerPreference('UnionDashboardPage:clubSearch', '');
+  const [agentSearch, setAgentSearch] = usePlayerPreference('UnionDashboardPage:agentSearch', '');
 
   // Settings form
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
@@ -376,7 +379,7 @@ export default function UnionDashboardPage() {
   const [annClub, setAnnClub] = useState('');
 
   // Admin search
-  const [adminSearch, setAdminSearch] = useState('');
+  const [adminSearch, setAdminSearch] = usePlayerPreference('UnionDashboardPage:adminSearch', '');
   const [adminResults, setAdminResults] = useState<
     { id: string; display_name?: string; username?: string }[]
   >([]);

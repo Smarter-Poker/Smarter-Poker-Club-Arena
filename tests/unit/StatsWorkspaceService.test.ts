@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { rpc, rows, queries } = vi.hoisted(() => ({
+const { rpc, rows, queries, upsert } = vi.hoisted(() => ({
   rpc: vi.fn(),
+  upsert: vi.fn(),
   rows: {} as Record<string, unknown[]>,
   queries: [] as Array<{
     table: string;
@@ -12,9 +13,11 @@ const { rpc, rows, queries } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
+  getAuthUser: async () => ({ data: { user: { id: 'workspace-owner' } }, error: null }),
   supabase: {
     rpc,
     from: (table: string) => ({
+      upsert: (patch: unknown, options: unknown) => upsert(table, patch, options),
       select: (columns = '*') => {
         const query: (typeof queries)[number] = { table, columns };
         queries.push(query);
@@ -57,6 +60,8 @@ import { statsWorkspaceService } from '../../src/services/StatsWorkspaceService'
 
 beforeEach(() => {
   rpc.mockReset();
+  upsert.mockReset();
+  upsert.mockResolvedValue({ error: null });
   queries.length = 0;
   for (const key of Object.keys(rows)) delete rows[key];
 });
@@ -163,4 +168,39 @@ describe('StatsWorkspaceService', () => {
     });
     expect(result).toEqual({ ok: false, error: 'idempotency_conflict' });
   });
+});
+
+it('writes only selected workspace columns under the authenticated owner', async () => {
+  expect(
+    await statsWorkspaceService.savePreferences(
+      { dashboardLayout: ['hands', 'overview'] },
+      'workspace-owner'
+    )
+  ).toEqual({ ok: true, data: true });
+  expect(upsert).toHaveBeenLastCalledWith(
+    'ca_stats_workspace_preferences',
+    { user_id: 'workspace-owner', dashboard_layout: ['hands', 'overview'] },
+    { onConflict: 'user_id' }
+  );
+  await statsWorkspaceService.savePreferences({ privacyPresentationMode: true }, 'workspace-owner');
+  expect(upsert).toHaveBeenLastCalledWith(
+    'ca_stats_workspace_preferences',
+    { user_id: 'workspace-owner', privacy_presentation_mode: true },
+    { onConflict: 'user_id' }
+  );
+  expect(rpc).not.toHaveBeenCalled();
+});
+it('refuses malformed layouts and a changed account before a workspace write', async () => {
+  for (const dashboardLayout of [['bogus'], ['hands', 'hands'], ['workspace'], [4]]) {
+    expect((await statsWorkspaceService.savePreferences({ dashboardLayout })).ok).toBe(false);
+  }
+  expect(
+    (
+      await statsWorkspaceService.savePreferences(
+        { privacyPresentationMode: true },
+        'another-owner'
+      )
+    ).ok
+  ).toBe(false);
+  expect(upsert).not.toHaveBeenCalled();
 });

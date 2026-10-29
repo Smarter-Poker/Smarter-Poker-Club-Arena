@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ♠ CLUB ARENA — Club Discovery
  * Browse and search for clubs to join
@@ -95,8 +96,12 @@ const rowAnimationStyle = (shown: boolean) => ({
 
 export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onViewClub }) => {
   const [clubs, setClubs] = useState<Club[]>([]);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<Filter>('popular');
+  const [search, setSearch] = usePlayerPreference('clubDiscovery.search', '', 'global');
+  const [filter, setFilter] = usePlayerPreference<Filter>(
+    'clubDiscovery.filter',
+    'popular',
+    'global'
+  );
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();

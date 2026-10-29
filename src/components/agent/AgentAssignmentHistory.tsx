@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AgentAssignmentService,
@@ -14,7 +15,7 @@ export default function AgentAssignmentHistory({
   clubId: string;
   revision: number;
 }) {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('agentAssignmentHistory.search', '', clubId);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<AssignmentHistoryRow[]>([]);
   const [hasMore, setHasMore] = useState(false);

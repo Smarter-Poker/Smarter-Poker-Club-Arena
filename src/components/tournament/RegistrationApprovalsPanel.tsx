@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  REGISTRATION APPROVALS PANEL (2026-08-23 — parity follow-up)
@@ -64,7 +65,7 @@ export default function RegistrationApprovalsPanel({
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [nameById, setNameById] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('registrationApprovals.search', '', clubId);
   const [loading, setLoading] = useState(true);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 

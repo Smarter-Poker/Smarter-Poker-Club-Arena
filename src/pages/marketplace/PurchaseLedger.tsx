@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * MARKETPLACE : club-wide purchase ledger (owner/admin only).
  *
@@ -45,7 +46,7 @@ export default function PurchaseLedger({ clubId, userId }: { clubId: string; use
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = usePlayerPreference('PurchaseLedger:query', '', clubId);
   /* One request per pause in typing, not one per keystroke: every change to
      the search box used to refetch /api/club-arena/shop-purchases through the
      World Hub. 300 ms is the same window the roster and hand searches use. */

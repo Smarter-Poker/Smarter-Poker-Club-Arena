@@ -1036,3 +1036,131 @@ test.describe('Production Kings Club Players', () => {
     expect(probe.criticalConsoleErrorCount).toBe(0);
   });
 });
+
+// Only the new account/device lifecycle is qualified here; the existing roster
+// layout, pagination and return-position journeys retain their own evidence.
+test('account roster preferences survive logout and a cache-empty second device', async ({
+  browser,
+  baseURL,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  if (!baseURL) throw new Error('A deployed base URL is required');
+  const {
+    createTemporaryCustomizationAccount,
+    cleanupTemporaryCustomizationAccount,
+    requireCustomizationCertificationEnvironment,
+  } = await import('./support/temporaryCustomizationAccount');
+  const { openFreshPreferenceDevice, logoutAndOpenFreshPreferenceDevice } =
+    await import('./support/accountPreferenceSession');
+  const { ensureAcceptedTerms } = await import('./support/ensureAcceptedTerms');
+  const { ensurePlayableProfile } = await import('./support/ensurePlayableProfile');
+  const { prepareProductionE2EStaffMembership } =
+    await import('../../scripts/ci/production-e2e-account.mjs');
+  const { writeFile, unlink } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const environment = requireCustomizationCertificationEnvironment();
+  const account = await createTemporaryCustomizationAccount(
+    environment,
+    'postdeploy-roster-lifecycle',
+    0
+  );
+  const scratch = process.env.RUNNER_TEMP || process.env.TMPDIR;
+  if (!scratch) {
+    await cleanupTemporaryCustomizationAccount(environment, account);
+    throw new Error('Owned scratch directory is required');
+  }
+  const record = join(scratch, `roster-preference-${account.id}.json`);
+  let writer: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
+  let reader: Awaited<ReturnType<typeof openFreshPreferenceDevice>> | undefined;
+  try {
+    await writeFile(
+      record,
+      JSON.stringify({ id: account.id, email: account.email, password: account.password }),
+      { mode: 0o600 }
+    );
+    const clubId = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+    await prepareProductionE2EStaffMembership({
+      environment: {
+        ...process.env,
+        SUPABASE_URL: environment.supabaseUrl,
+        SUPABASE_SERVICE_ROLE_KEY: environment.serviceRoleKey,
+        VITE_SUPABASE_ANON_KEY: environment.publishableKey,
+        E2E_TEST_ACCOUNT_FILE: record,
+        E2E_CLUB_ID: clubId,
+      },
+    });
+    writer = await openFreshPreferenceDevice(browser, baseURL, account);
+    await writer.page.goto('settings', { waitUntil: 'domcontentloaded' });
+    await ensureAcceptedTerms(writer.page);
+    await ensurePlayableProfile(writer.page);
+    const route = `clubs/${clubId}/members`;
+    await writer.page.goto(route, { waitUntil: 'domcontentloaded' });
+    await expect(
+      writer.page.getByRole('combobox', { name: 'Sort Players', exact: true })
+    ).toBeVisible({ timeout: 45_000 });
+    const advanced = writer.page.getByRole('button', { name: 'Advanced', exact: true });
+    if ((await advanced.getAttribute('aria-pressed')) !== 'true') await advanced.click();
+    await writer.page
+      .getByRole('combobox', { name: 'Sort Players', exact: true })
+      .selectOption('name');
+    await writer.page
+      .getByRole('combobox', { name: 'Filter Players', exact: true })
+      .selectOption('online');
+    await writer.page
+      .getByRole('searchbox', { name: 'Search Club Members', exact: true })
+      .fill('Preference Proof');
+    const preferenceKey = `roster:workspace:${clubId}`;
+    await expect
+      .poll(async () => {
+        const row = await account.client
+          .from('user_page_preferences')
+          .select('value')
+          .eq('user_id', account.id)
+          .eq('preference_key', preferenceKey)
+          .maybeSingle();
+        if (row.error) throw row.error;
+        return row.data?.value;
+      })
+      .toMatchObject({ search: 'Preference Proof', filter: 'online', sort: 'name' });
+    reader = await logoutAndOpenFreshPreferenceDevice(writer.page, baseURL, account);
+    await reader.page.goto(route, { waitUntil: 'domcontentloaded' });
+    await expect(
+      reader.page.getByRole('combobox', { name: 'Filter Players', exact: true })
+    ).toHaveValue('online', { timeout: 45_000 });
+    await expect(
+      reader.page.getByRole('combobox', { name: 'Sort Players', exact: true })
+    ).toHaveValue('name');
+    await expect(
+      reader.page.getByRole('searchbox', { name: 'Search Club Members', exact: true })
+    ).toHaveValue('Preference Proof');
+    const saved = await reader.client
+      .from('user_page_preferences')
+      .select('value')
+      .eq('user_id', account.id)
+      .eq('preference_key', preferenceKey)
+      .maybeSingle();
+    expect(saved.error).toBeNull();
+    expect(saved.data?.value).toMatchObject({
+      search: 'Preference Proof',
+      filter: 'online',
+      sort: 'name',
+    });
+    await testInfo.attach('roster-account-fresh-device-proof.json', {
+      body: Buffer.from(
+        JSON.stringify({
+          ownerId: account.id,
+          preferenceKey,
+          workspace: saved.data?.value,
+          authOnlyContext: true,
+          logout: 'real-ui',
+        })
+      ),
+      contentType: 'application/json',
+    });
+  } finally {
+    await reader?.context.close();
+    await writer?.context.close();
+    await cleanupTemporaryCustomizationAccount(environment, account);
+    await unlink(record).catch(() => {});
+  }
+});

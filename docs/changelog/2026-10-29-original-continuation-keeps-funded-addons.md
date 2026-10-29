@@ -1,0 +1,13 @@
+# Original continuation keeps a separately funded add-on
+
+Four tables in one event retained their original hands before twenty players bought 10,000-chip add-ons. The immutable funding receipts were recorded after the hand capsules. Current chairs, users and join times remained identical, but exact stack equality in the continuation claim rejected the extra 200,000 chips. Provider frames identify `HAND_CONTINUATION_ROSTER_CHANGED`; this differs from the separately corrected maintenance-lane contention.
+
+The claim now permits only the exact outside-hand increase proved by a successful immutable add-on funding receipt recorded after the capsule anchor. Receipt registration, user, table, seat, purchase key, chip amount and price must match. The current registration must still own that chair and hold the same funded stack. The immutable receipt's tournament snapshot supplies the purchased chip amount; mutable tournament settings cannot authorize an arbitrary increase.
+
+The original capsule, private controller, prehand stacks and live stacks are never rewritten. Existing delta settlement applies only the original hand's win or loss and preserves the separate credit. All lease, bounded maintenance lane, freeze, permit, sequence and original identity checks remain in place. The existing manager elimination scan reads authoritative registration chips; a funded live seat also vetoes a stale elimination candidate.
+
+Maintained native qualification uses the existing financial/F06 lane. It reproduces the predecessor claim refusal, checks installation drift and full rollback, and exercises the real atomic finalization and postcommit owners. A buyer loses their original ten-chip hand stack while their seat and playing registration keep the separately funded 10,000 chips. Duplicate completion must leave one atomic commit and unchanged balances. Unfunded, wrong-amount, earlier-receipt, failed-funding, no-add-on, wrong-user and changed-chair cases refuse.
+
+The same runner now feeds exact UTF-8 SQL files through its existing `Execution.sql(file=...)` interface. Native NOTICE output exposed an actual stdin/stderr pipe backpressure deadlock on the owner's Mac. A focused adapter assertion checks byte identity and file-only transport; capture, deadlines, assertions and rollback stay with the existing execution owner. Interrupted attempts remain failed evidence. This is qualification transport, not a new production pipeline.
+
+Source qualification, protected recording, database installation and affected-live resumption are separate outcomes. The root incident owner performs any production installation and subsequent verification.

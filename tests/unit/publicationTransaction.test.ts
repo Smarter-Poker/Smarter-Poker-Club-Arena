@@ -125,6 +125,18 @@ describe('one publication transaction follows parallel preparation', () => {
         body['runs-on'] = route.replace('ca-linux-delivery', 'ca-linux-8core');
       }
 
+      if (key === 'publish-to-origin') {
+        // Independently exercised by mttPayoutPublication.test.ts; the original
+        // transaction snapshot must remain identical after this narrow addition.
+        const additions = [
+          'Use the production Node major for payout admission',
+          'Install locked payout publication driver',
+          'Verify installed MTT payout policy before origin publication',
+        ];
+        expect(body.steps.filter((step: any) => additions.includes(step.name))).toHaveLength(3);
+        body.steps = body.steps.filter((step: any) => !additions.includes(step.name));
+      }
+
       expect(createHash('sha256').update(normalizeSteps(body)).digest('hex')).toBe(
         golden[key].bodySHA256
       );

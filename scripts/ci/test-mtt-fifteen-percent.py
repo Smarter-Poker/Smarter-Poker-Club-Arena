@@ -124,6 +124,36 @@ try:
     require(sql("SELECT count(*) FROM tournaments WHERE id IN(md5('finalized')::uuid,md5('committed')::uuid) AND payout_depth_percent=12.5 AND payout_percent=10 AND jsonb_array_length(payout_structure::jsonb)=1") == '2', 'finalized and committed prize contracts stay byte-equivalent')
     sql(configuration)
     require(sql("SELECT count(*) FROM tournaments WHERE payout_depth_percent=15") == '3', 'configuration replay has no duplicate or additional effect')
+    # Execute the real publisher admission against this private PG17 server.
+    # The connection is constructed from our just-created loopback port only.
+    sql('CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);')
+    publication_proof = r"""
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
+const [root, port] = process.argv.slice(1);
+const { requirements, verifyInstalled, payoutMigrations } = await import(pathToFileURL(root+'/scripts/ci/check-mtt-payout-publication.mjs'));
+const { Client } = createRequire(root+'/server/package.json')('pg');
+const client = new Client({ host:'127.0.0.1',port:Number(port),user:'postgres',database:'postgres',connectionTimeoutMillis:1000,statement_timeout:1000 });
+await client.connect();
+try {
+  const expected = requirements(root);
+  for (let count=0; count<2; count++) {
+    let refused = false;
+    try { await verifyInstalled(client, expected); } catch { refused = true; }
+    if (!refused) throw Error('publisher admitted an uninstalled migration');
+    const file = payoutMigrations[count];
+    await client.query('INSERT INTO supabase_migrations.schema_migrations VALUES($1,$2,$3)', [expected[count].version,expected[count].name,[readFileSync(root+'/supabase/migrations/'+file,'utf8')]]);
+  }
+  await verifyInstalled(client, expected);
+  await client.query("UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['changed'] WHERE version=$1", [expected[0].version]);
+  let refused = false;
+  try { await verifyInstalled(client, expected); } catch { refused = true; }
+  if (!refused) throw Error('publisher admitted changed installed SQL');
+} finally { await client.end(); }
+"""
+    run(['node', '--input-type=module', '-e', publication_proof, ROOT, port])
+    require(True, 'real publisher admission refuses either absent migration and changed SQL, admits exact installed bytes')
     print(json.dumps({'status':'passed','production_mutations':False,'migration_sha256':hashlib.sha256(candidate.encode()).hexdigest(),'capture_sha256':hashlib.sha256(CAPTURE.read_bytes()).hexdigest()}))
 finally:
     for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

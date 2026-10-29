@@ -13,3 +13,5 @@ Removing the call is a one-line diff that reads like tidying, and nothing else
 in the repo would notice. The guard uses the GitHub CLI credential store,
 refuses local env/token discovery and bypass flags, and the push test gate must
 diff the commits being pushed rather than an empty working tree.
+
+Transferred Club Arena remotes retain exact immutable repository identity, current PR head-owner checks and closed/merged/unreadable refusal.

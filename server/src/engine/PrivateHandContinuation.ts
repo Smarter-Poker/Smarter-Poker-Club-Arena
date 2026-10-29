@@ -101,19 +101,20 @@ export function decodePrivateHandContinuation(
 export function continuationEventId(
   original: F06HandIdentity,
   sequence: number,
-  index: number
+  index: number,
+  childKey?: string
 ): string {
-  const h = createHash('sha256')
-    .update(
-      JSON.stringify([
-        original.tournament_id,
-        original.table_id,
-        original.hand_number,
-        sequence,
-        index,
-      ])
-    )
-    .digest('hex');
+  const identity: Array<string | number> = [
+    original.tournament_id,
+    original.table_id,
+    original.hand_number,
+    sequence,
+    index,
+  ];
+  // Existing event IDs remain byte-identical. A deterministic terminal child
+  // has its own namespace while retaining the original parent's replay ID.
+  if (childKey !== undefined) identity.push(childKey);
+  const h = createHash('sha256').update(JSON.stringify(identity)).digest('hex');
   return (
     h.slice(0, 8) +
     '-' +

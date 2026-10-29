@@ -310,6 +310,7 @@ export abstract class ServerTableEngineBase {
   }
 
   protected handContinuation: HandContinuationLane | null = null;
+  private retainedCompletionBankConsumer: ((event: TimeBankEvent) => void) | null = null;
   protected pendingOriginalContinuation: PrivateHandContinuation | null = null;
   protected retainedPreparedOriginalController: HandController | null = null;
   private preparedOriginalRetentionUnconfirmed = false;
@@ -3249,6 +3250,10 @@ export abstract class ServerTableEngineBase {
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
+      if (this.retainedCompletionBankConsumer) {
+        this.retainedCompletionBankConsumer(event);
+        return;
+      }
       if (this.handContinuation)
         this.handContinuation.enqueue({
           type: 'CONTINUATION_TIME_BANK',
@@ -9410,6 +9415,43 @@ export abstract class ServerTableEngineBase {
     } catch {
       /* broadcast failure is non-fatal */
     }
+  }
+
+  /** A terminal bank stop is a deterministic consumer of the retained completion. */
+  protected async consumeRetainedCompletionTimeBanks(
+    receiptId: (userId: string) => string
+  ): Promise<void> {
+    if (this.retainedCompletionBankConsumer) throw new Error('Original Completion Is Reentrant');
+    const childReceipts = new Set<string>();
+    let failure: unknown;
+    this.retainedCompletionBankConsumer = (event) => {
+      try {
+        if (event.type !== 'TIME_BANK_STOPPED' || event.tableId !== this.tableId)
+          throw new Error('Original Completion Bank Event Is Unproven');
+        const id = receiptId(event.playerId);
+        childReceipts.add(id);
+        this.dispatchContinuationTimeBank(event, id);
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+    };
+    try {
+      // No await in this scope: all other bank mutations retain their existing
+      // lane. The saved terminal event and bank allocation already own this stop.
+      this.timeBankEngine.cancelActiveForTable(this.tableId);
+      if (failure) throw failure;
+    } finally {
+      this.retainedCompletionBankConsumer = null;
+    }
+    // Acceptance deletes the private original. Its deterministic child debit
+    // must have an answer first, so a crash can never lose its only replay source.
+    await Promise.all(this.timeBankAccountingPending);
+    if (
+      this.timeBankAccountingUnconfirmed ||
+      [...childReceipts].some((id) => this.unresolvedTimeBankDebits.has(id))
+    )
+      throw new Error('Completion Bank Debit Is Unproven');
   }
 
   protected dispatchContinuationTimeBank(event: TimeBankEvent, debitId?: string): void {

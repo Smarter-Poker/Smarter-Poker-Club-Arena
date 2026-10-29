@@ -343,106 +343,6 @@ def extract_lightning_fold_timings(raw):
             'absenceMeans': 'unknown; bounded retained logs and producer sampling may omit requests'}
 
 
-
-def restart_incident_requested(value, window):
-    if value is None:
-        return False
-    if value is not True or window is None:
-        raise ValueError('Restart evidence requires an explicit completed window')
-    return True
-
-
-def restart_log_signs(raw):
-    """Fixed fatal signatures only. Never export a log line or exception text."""
-    signatures = {
-        'v8_heap_exhausted': r'FATAL ERROR: (?:Ineffective mark-compacts near heap limit|Reached heap limit|CALL_AND_RETRY_LAST) .*Allocation failed',
-        'v8_allocation_failed': r'FATAL ERROR: .*Allocation failed - JavaScript heap out of memory',
-        'native_allocation_failed': r'(?:std::bad_alloc|FATAL ERROR:.*(?:Failed to reserve|Zone Allocation failed))',
-        'fatal_uncaught_exception': r'^\[GameServer\] FATAL \(GameServer\.Uncaught_exception\) - draining for supervisor restart$',
-        'fatal_unhandled_rejection': r'^\[GameServer\] FATAL \(GameServer\.Unhandled_rejection\) - draining for supervisor restart$',
-        'shutdown_started': r'^\[GameServer\] Received shutdown signal\.\.\.$',
-        'shutdown_deadline': r'^\[GameServer\] graceful shutdown exceeded [0-9]{1,6}ms before ownership release$',
-        'sigterm_received': r'\b(?:SIGTERM received|Received SIGTERM)\b',
-        'sigint_received': r'\b(?:SIGINT received|Received SIGINT)\b',
-    }
-    records = []
-    for line in raw.decode('utf-8', errors='replace').splitlines():
-        stamp = STAMP.match(line)
-        if not stamp:
-            continue
-        for kind, pattern in signatures.items():
-            if re.search(pattern, line[stamp.end():]):
-                records.append({'timestamp': stamp[1], 'kind': kind})
-    return {'records': records[-40:], 'matchingRecords': len(records),
-            'absenceMeans': 'unknown; bounded retained logs may omit the failure'}
-
-
-def read_restart_incident(window, raw):
-    """Read the fixed engine container and original host window; no mutation."""
-    result = {'engineLogSigns': restart_log_signs(raw), 'sources': {},
-              'absenceMeans': 'unknown; Docker events and host journals have finite retention'}
-    commands = {
-        'container': ['docker', 'inspect', '--format', '{{json .State}}', 'club-arena-engine'],
-        'events': ['docker', 'events', '--since', window['since'], '--until', window['until'],
-                   '--filter', 'container=club-arena-engine', '--format', '{{json .}}'],
-        'autoheal': ['docker', 'logs', '--since', window['since'], '--until', window['until'],
-                     '--tail', '1000', '--timestamps', 'sp-autoheal'],
-        'kernel': ['journalctl', '-k', '--since', window['since'], '--until', window['until'],
-                   '--no-pager', '-n', '1000', '-o', 'json', '--output-fields=MESSAGE'],
-    }
-    for source, command in commands.items():
-        try:
-            data = capture(command, seconds=4)
-            rows = []
-            if source == 'container':
-                value = json.loads(data)
-                row = {}
-                for key in ['OOMKilled', 'Running', 'Restarting']:
-                    if type(value.get(key)) is bool:
-                        row[key] = value[key]
-                if type(value.get('ExitCode')) is int and 0 <= value['ExitCode'] <= 255:
-                    row['ExitCode'] = value['ExitCode']
-                for key in ['StartedAt', 'FinishedAt']:
-                    if isinstance(value.get(key), str) and re.fullmatch(r'\d{4}-\d\d-\d\dT[0-9:.]+Z', value[key]):
-                        row[key] = value[key]
-                rows.append(row)
-            elif source == 'events':
-                for line in data.splitlines():
-                    value = json.loads(line)
-                    action = value.get('Action')
-                    if action not in {'oom', 'die', 'kill', 'restart', 'start', 'stop', 'health_status: unhealthy', 'health_status: healthy'}:
-                        continue
-                    attributes = value.get('Actor', {}).get('Attributes', {})
-                    if attributes.get('name') != 'club-arena-engine':
-                        continue
-                    if type(value.get('timeNano')) is not int:
-                        continue
-                    row = {'action': action, 'timeNano': value['timeNano']}
-                    for key in ['exitCode', 'signal']:
-                        v = attributes.get(key)
-                        if isinstance(v, str) and re.fullmatch(r'[0-9]{1,3}', v):
-                            row[key] = int(v)
-                    rows.append(row)
-            elif source == 'autoheal':
-                for line in data.decode('utf-8', errors='replace').splitlines():
-                    stamp = STAMP.match(line)
-                    if stamp and re.search(r'(?<![A-Za-z0-9_-])club-arena-engine(?![A-Za-z0-9_-])', line) and re.search(r'(?i)unhealthy|restart', line):
-                        rows.append({'timestamp': stamp[1], 'kind': 'autoheal_engine_restart_observed'})
-            else:
-                for line in data.splitlines():
-                    value = json.loads(line)
-                    message = value.get('MESSAGE', '')
-                    if isinstance(message, str) and re.search(r'Out of memory: Killed process|oom-kill:|Memory cgroup out of memory', message):
-                        timestamp = value.get('__REALTIME_TIMESTAMP')
-                        rows.append({'timestampUs': timestamp if isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}', timestamp) else None,
-                                     'kind': 'host_oom_observed', 'engineAttribution': 'unproven'})
-            result['sources'][source] = {'status': 'observed', 'records': rows[-40:],
-                                         'matchingRecords': len(rows), 'inputBytes': len(data)}
-        except Exception:
-            result['sources'][source] = {'status': 'unavailable'}
-    return result
-
-
 def selection(value):
     if not isinstance(value, list) or not 1 <= len(value) <= 2:
         raise ValueError('Invalid observation scope')
@@ -561,11 +461,11 @@ def extract(raw, scopes):
             'absenceMeans': 'unknown; some owner refusals are not logged, and this is a bounded window'}
 
 
-def capture(command=COMMAND, seconds=CAPTURE_TIMEOUT):
+def capture(command=COMMAND):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     stream = selectors.DefaultSelector()
     stream.register(process.stdout, selectors.EVENT_READ)
-    chunks, size, deadline = [], 0, time.monotonic()+seconds
+    chunks, size, deadline = [], 0, time.monotonic()+CAPTURE_TIMEOUT
     try:
         while True:
             remaining = deadline-time.monotonic()
@@ -877,13 +777,12 @@ def main():
         FAILURE_STAGE = 'remote_admission'
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
-            scopes, window, mux_timing, fold_timing, lease_metrics, restart_incident = selection(request), None, False, False, False, False
-        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming', 'leaseIncidentMetrics', 'restartIncident'}:
+            scopes, window, mux_timing, fold_timing, lease_metrics = selection(request), None, False, False, False
+        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming', 'leaseIncidentMetrics'}:
             scopes, window = selection(request['scopes']), log_window(request['windowStart'])
             mux_timing = mux_timing_requested(request.get('muxTiming'), window)
             fold_timing = lightning_fold_timing_requested(request.get('lightningFoldTiming'), window)
             lease_metrics = lease_metrics_requested(request.get('leaseIncidentMetrics'), window)
-            restart_incident = restart_incident_requested(request.get('restartIncident'), window)
         else:
             raise ValueError('Invalid observation request')
         FAILURE_STAGE = 'host_health_before'
@@ -899,12 +798,11 @@ def main():
         archives, archive_metadata = archived_window(
             window, raw, seconds=max(0, CAPTURE_TIMEOUT-(time.monotonic()-capture_started)),
             # Explicit anonymous timing reads retain their existing framing.
-            scopes=None if mux_timing or fold_timing or restart_incident else scopes)
+            scopes=None if mux_timing or fold_timing else scopes)
         current_raw = raw
         raw += b''.join(source for source, _identity in archives)
         FAILURE_STAGE = 'lease_metrics'
         metric_evidence = read_lease_metrics(window) if lease_metrics else None
-        restart_evidence = read_restart_incident(window, raw) if restart_incident else None
         FAILURE_STAGE = 'host_health_after'
         after = health('http://127.0.0.1:8080')
         if before != after:
@@ -915,8 +813,6 @@ def main():
             extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
         if lease_metrics:
             extra['leaseIncidentMetrics'] = metric_evidence
-        if restart_incident:
-            extra['restartIncident'] = restart_evidence
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
@@ -934,7 +830,6 @@ def main():
     mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
     fold_timing = lightning_fold_timing_requested(event.get('client_payload', {}).get('lightningFoldTiming'), window)
     lease_metrics = lease_metrics_requested(event.get('client_payload', {}).get('leaseIncidentMetrics'), window)
-    restart_incident = restart_incident_requested(event.get('client_payload', {}).get('restartIncident'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -959,8 +854,6 @@ def main():
             request['lightningFoldTiming'] = True
         if lease_metrics:
             request['leaseIncidentMetrics'] = True
-        if restart_incident:
-            request['restartIncident'] = True
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
@@ -970,7 +863,7 @@ def main():
                 'root@'+host, "python3 - --remote '"+encoded+"'"]
         FAILURE_STAGE = 'remote_transport'
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True,
-                               timeout=TRANSPORT_TIMEOUT+(LEASE_METRICS_TIMEOUT if lease_metrics else 0)+(20 if restart_incident else 0))
+                               timeout=TRANSPORT_TIMEOUT+(LEASE_METRICS_TIMEOUT if lease_metrics else 0))
         if reply.returncode:
             raise remote_failure(reply)
         if len(reply.stdout) > 262144:
@@ -987,8 +880,6 @@ def main():
             raise RuntimeError('Lightning timing observation differs')
         if ('leaseIncidentMetrics' in result) != lease_metrics:
             raise RuntimeError('Lease metric observation differs')
-        if ('restartIncident' in result) != restart_incident:
-            raise RuntimeError('Restart observation differs')
         FAILURE_STAGE = 'public_health_after'
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:

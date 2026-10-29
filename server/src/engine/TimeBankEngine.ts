@@ -171,6 +171,67 @@ export class TimeBankEngine {
     });
   }
 
+  private readonly recoveredAllocations = new Map<string, number>();
+
+  /** Restore the retained allocation without spending another activation. */
+  restorePlayerForRecovery(
+    tableId: string,
+    playerId: string,
+    saved: Omit<PlayerTimeBank, 'onExpire'>,
+    capturedAt: number
+  ): void {
+    if (
+      saved.tableId !== tableId ||
+      saved.playerId !== playerId ||
+      ![
+        saved.remainingSeconds,
+        saved.currentUseSeconds,
+        saved.usesRemaining,
+        saved.streetActivations,
+        capturedAt,
+      ].every(Number.isFinite) ||
+      saved.remainingSeconds < 0 ||
+      saved.currentUseSeconds < 0 ||
+      saved.usesRemaining < 0 ||
+      saved.streetActivations < 0 ||
+      saved.streetActivations > 2
+    )
+      throw new Error('Recovered Time Bank Is Invalid');
+    const key = `${tableId}:${playerId}`;
+    this.preciseTimer.cancelTimer(tableId, `timebank:${playerId}`);
+    this.playerBanks.set(key, { ...saved, onExpire: undefined });
+    if (saved.isActive) {
+      if (!Number.isFinite(saved.activatedAt))
+        throw new Error('Recovered Time Bank Clock Is Invalid');
+      this.recoveredAllocations.set(
+        key,
+        Math.max(
+          0.001,
+          saved.currentUseSeconds - Math.max(0, capturedAt - saved.activatedAt!) / 1000
+        )
+      );
+    }
+  }
+
+  resumeRecoveredAllocation(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void
+  ): number | null {
+    const key = `${tableId}:${playerId}`;
+    const seconds = this.recoveredAllocations.get(key);
+    if (seconds === undefined) return null;
+    this.recoveredAllocations.delete(key);
+    const bank = this.playerBanks.get(key);
+    if (!bank?.isActive) return null;
+    bank.onExpire = onExpire;
+    bank.activatedAt = Date.now() - (bank.currentUseSeconds - seconds) * 1000;
+    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, seconds * 1000, () =>
+      this.onTimeBankExpired(tableId, playerId)
+    );
+    return seconds;
+  }
+
   removePlayer(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);

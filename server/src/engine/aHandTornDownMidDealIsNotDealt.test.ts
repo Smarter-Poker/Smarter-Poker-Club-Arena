@@ -87,10 +87,19 @@ describe('dealHand re-reads the controller after every preparation await', () =>
 const tree = ts.createSourceFile('dealing.ts', SRC, ts.ScriptTarget.Latest, true);
 const begin = SRC.indexOf('const preparedController = this.handController;');
 const finish = SRC.indexOf('const controllerForHand = preparedController;', begin);
+const runnerCall = SRC.indexOf('await this.runOriginalController(', begin);
+const runner = SRC.indexOf('protected async runOriginalController(', runnerCall);
+const preparationEnd = SRC.lastIndexOf('const attempt =', runnerCall);
 const awaits: ts.AwaitExpression[] = [];
 const guards: ts.IfStatement[] = [];
 function visit(node: ts.Node): void {
-  if (node.getStart(tree) >= begin && node.getEnd() <= finish) {
+  // The original wait/start owner is shared with recovery. Follow its actual
+  // call rather than treating dealHand's subsequent cancellation/finally as
+  // preparation just because it is lexically before the extracted method.
+  if (
+    (node.getStart(tree) >= begin && node.getEnd() <= preparationEnd) ||
+    (node.getStart(tree) >= runner && node.getEnd() <= finish)
+  ) {
     if (ts.isAwaitExpression(node)) awaits.push(node);
     if (
       ts.isIfStatement(node) &&
@@ -101,6 +110,12 @@ function visit(node: ts.Node): void {
   ts.forEachChild(node, visit);
 }
 visit(tree);
+it('the normal deal invokes the same exact controller runner after preparation', () => {
+  expect(preparationEnd).toBeGreaterThan(begin);
+  expect(runnerCall).toBeGreaterThan(preparationEnd);
+  expect(runner).toBeGreaterThan(runnerCall);
+  expect(SRC.slice(runnerCall, SRC.indexOf(');', runnerCall))).toContain('preparedController');
+});
 for (const boundary of awaits) {
   const guard = guards.find((g) => g.getStart(tree) > boundary.getEnd());
   it('executes exact-owner refusal after ' + boundary.expression.getText(tree), async () => {
@@ -112,7 +127,7 @@ for (const boundary of awaits) {
       omitGuard = false,
       nullBoundary = false
     ): Promise<boolean | undefined> {
-      const controller = {};
+      const controller = { serializeRecoveryState: () => 'retained' };
       const replacement = {};
       let discarded = 0,
         released = 0;
@@ -174,6 +189,8 @@ for (const boundary of awaits) {
           },
         };
       };
+      engine.retainOriginalBatch = settle;
+      engine.captureContinuationEngine = () => ({});
       engine.fetchTimeBankExtras = settle;
       engine.acquireFinancialControllerStart = settle;
       if (nullBoundary) {
@@ -200,16 +217,14 @@ for (const boundary of awaits) {
       const isPublication = boundary.expression
         .getText(tree)
         .includes('acquireFinancialControllerStart');
-      const pauseAt = SRC.indexOf(
-        'if (this.discardPreparedHandForPause()) return;',
-        guard!.getEnd()
-      );
+      const pauseText =
+        boundary.getStart(tree) >= runner
+          ? 'if (!original && this.discardPreparedHandForPause()) return;'
+          : 'if (this.discardPreparedHandForPause()) return;';
+      const pauseAt = SRC.indexOf(pauseText, guard!.getEnd());
       expect(pauseAt).toBeGreaterThan(guard!.getEnd() - 1);
-      const pause = SRC.slice(
-        pauseAt,
-        pauseAt + 'if (this.discardPreparedHandForPause()) return;'.length
-      );
-      const code = `(async function() { const preparedController = this.handController; const publicationStart = ${boundary.getText(tree)}; try { ${omitGuard ? '' : guard!.getText(tree)} ${pause} return true; } finally { ${isPublication ? 'publicationStart?.release();' : ''} } })`;
+      const pause = SRC.slice(pauseAt, pauseAt + pauseText.length);
+      const code = `(async function() { const original = false; const seats=[]; const preparedController = this.handController; const publicationStart = ${boundary.getText(tree)}; try { ${omitGuard ? '' : guard!.getText(tree)} ${pause} return true; } finally { ${isPublication ? 'publicationStart?.release();' : ''} } })`;
       const js = ts.transpileModule(code, {
         compilerOptions: { target: ts.ScriptTarget.ES2022 },
       }).outputText;

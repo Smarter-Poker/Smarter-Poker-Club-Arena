@@ -1359,6 +1359,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (!this.timeBankEngine.arm(this.tableId, userId)) {
         return { success: false, error: 'No Time Bank Uses Remaining' };
       }
+      this.handContinuation?.checkpoint();
+      await this.awaitActionPersistence();
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} armed a time bank with ${Math.round(remainingBeforeBank)}s still on the clock. Nothing spent yet.`
       );
@@ -1481,6 +1483,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     );
 
     this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
+    await this.awaitActionPersistence();
 
     // Preserve the opponent-timer message without retaining a channel.
     void broadcastTimeBankActivation(this.tableId, {
@@ -1920,6 +1923,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     // HTTP always supplies a context; trusted in-process callers omit it.
     if (actionContext !== undefined) this.noteOwnClientClaim(userId);
+    if (actionContext !== undefined && this.handContinuation?.isUnretained()) {
+      return {
+        success: false,
+        code: 'ACTION_STATE_PENDING',
+        error: 'The previous action is being retained. Review the table before acting.',
+      };
+    }
     if (!this.lifecycleCanMutate()) {
       return {
         success: false,
@@ -2428,6 +2438,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       pot: 0,
     };
     if (!this.handController) return defaultResult;
+    if (this.handContinuation?.isUnretained()) return defaultResult;
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
@@ -2878,7 +2889,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Step 4: Start the authoritative turn timer — SAME for horses and real players
     // Bible V8 §3.3: Turn FSM — waiting → timer_running
     this.turnFSM.transition('timer_running');
-    this.startTurnTimer(player.user_id, seat, effectiveActionTime);
+    const recoveredSeconds = this.timeBankEngine.resumeRecoveredAllocation(
+      this.tableId,
+      player.user_id,
+      () => {
+        if (
+          !this.lifecycleCanMutate() ||
+          this.handController?.getState().currentPlayerSeat !== seat
+        )
+          return;
+        const current = this.handController.getState();
+        const actor = current.players.find((p) => p.seat === seat);
+        if (this.forceResolveSeat(seat, !!actor && current.currentBet <= actor.bet)) {
+          this.disconnectEngine.recordConnectedTimeout(this.tableId, player.user_id);
+          this.markProgress();
+        }
+      }
+    );
+    if (recoveredSeconds !== null) {
+      this.timeBankActivatedThisTurn = true;
+      this.startTurnTimer(player.user_id, seat, recoveredSeconds, 'time_bank');
+    } else this.startTurnTimer(player.user_id, seat, effectiveActionTime);
 
     // Step 5: If this is a horse, schedule their action after a realistic think time
     // The horse uses the SAME timer as a real player — the action fires within that timer window.

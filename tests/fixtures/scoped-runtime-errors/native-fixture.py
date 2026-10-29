@@ -22,51 +22,6 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
-    def test_restart_read_requires_opt_in_and_original_window(self):
-        self.assertFalse(reader.restart_incident_requested(None, None))
-        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
-        self.assertTrue(reader.restart_incident_requested(True, window))
-        for value, selected in [(True, None), (False, window), (1, window), ('true', window)]:
-            with self.assertRaises(ValueError):
-                reader.restart_incident_requested(value, selected)
-
-    def test_restart_signs_do_not_export_arbitrary_fatal_payloads(self):
-        raw = (STAMP+'FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory PRIVATE\n'
-               +STAMP+'unrelated PRIVATE text\n'
-               +'FATAL ERROR: Reached heap limit Allocation failed undated PRIVATE\n').encode()
-        result = reader.restart_log_signs(raw)
-        self.assertEqual(result['matchingRecords'], 2)
-        self.assertNotIn('PRIVATE', json.dumps(result))
-        self.assertTrue(all(set(r) == {'timestamp', 'kind'} for r in result['records']))
-
-    def test_restart_sources_are_fixed_bounded_read_only_and_sanitized(self):
-        window = {'since': '2026-10-28T23:00:00Z', 'until': '2026-10-28T23:15:00Z'}
-        events = [{'Action': 'die', 'timeNano': 1793228940000000000,
-                   'Actor': {'Attributes': {'name': 'club-arena-engine', 'exitCode': '137', 'PRIVATE': 'SECRET'}}},
-                  {'Action': 'die', 'timeNano': 1, 'Actor': {'Attributes': {'name': 'other'}}}]
-        sources = [json.dumps({'Running': True, 'OOMKilled': False, 'ExitCode': 0,
-                               'StartedAt': '2026-10-28T23:09:14Z', 'Error': 'SECRET'}).encode(),
-                   ('\n'.join(json.dumps(e) for e in events)).encode(),
-                   (STAMP+'Container /club-arena-engine unhealthy - Restarting PRIVATE\n').encode(),
-                   json.dumps({'MESSAGE': 'Out of memory: Killed process PRIVATE',
-                               '__REALTIME_TIMESTAMP': '1793228940000000'}).encode()]
-        with patch.object(reader, 'capture', side_effect=sources) as capture:
-            result = reader.read_restart_incident(window, b'')
-        self.assertEqual(len(capture.call_args_list), 4)
-        for call in capture.call_args_list:
-            command = call.args[0]
-            self.assertNotIn('restart', command)
-            self.assertNotIn('exec', command)
-            self.assertEqual(call.kwargs, {'seconds': 4})
-        self.assertEqual(result['sources']['events']['records'], [
-            {'action': 'die', 'timeNano': 1793228940000000000, 'exitCode': 137}])
-        self.assertEqual(result['sources']['kernel']['records'][0]['engineAttribution'], 'unproven')
-        self.assertNotIn('SECRET', json.dumps(result))
-        self.assertNotIn('PRIVATE', json.dumps(result))
-        with patch.object(reader, 'capture', side_effect=OSError('SECRET')):
-            failed = reader.read_restart_incident(window, b'')
-        self.assertTrue(all(s == {'status': 'unavailable'} for s in failed['sources'].values()))
-
     def test_failure_diagnostics_never_export_exception_or_transport_text(self):
         cases = [(RuntimeError('PRIVATE host token query'), 'refused'),
                  (ValueError('PRIVATE payload'), 'refused'),

@@ -95,6 +95,9 @@ function fixture(opts: { loseBeginReply?: number; loseCancelReply?: number } = {
   engine.eventShadowEnabled = false;
   engine.hub = { emitEvent: vi.fn() };
   engine.refreshRakeConfig = async () => {};
+  // The private writer is qualified separately by OriginalControllerRuntime
+  // and native PostgreSQL; this fixture isolates permit cancellation.
+  engine.retainOriginalBatch = vi.fn(async () => {});
   engine.saveSnapshot = vi.fn(async () => {});
   engine.persistPresenceForRestart = vi.fn(async () => {});
   const started = vi.fn();

@@ -20,6 +20,9 @@ import type { F06MovementAdmission } from '../tournament/f06MovementAdmission.js
  */
 
 import { HandController } from './HandController.js';
+import { HandContinuationLane } from './HandContinuationLane.js';
+import type { PrivateHandContinuation } from './PrivateHandContinuation.js';
+import { retainHandContinuation } from '../services/supabase/handContinuation.js';
 import {
   LifecycleDiagnostics,
   type LifecycleDetail,
@@ -185,6 +188,7 @@ import type {
   SeatedPlayer,
   TableInfo,
   RakeConfig,
+  GameState,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { isMissingFunctionError } from '../lightning/rpcErrors.js';
@@ -298,7 +302,113 @@ async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number
 
 export abstract class ServerTableEngineBase {
   public getActionContext(): string | null {
+    if (this.handContinuation?.isUnretained()) return null;
     return this.handController ? playerActionContext(this.handController) : null;
+  }
+
+  protected handContinuation: HandContinuationLane | null = null;
+  protected pendingOriginalContinuation: PrivateHandContinuation | null = null;
+  protected retainedPublicHandState: GameState | null = null;
+
+  /** HTTP success cannot precede the original accepted mutation's retention. */
+  public async awaitActionPersistence(): Promise<void> {
+    await this.handContinuation?.awaitRetention();
+  }
+
+  protected publishedHandState(): GameState | null {
+    return this.handContinuation?.isUnretained()
+      ? this.retainedPublicHandState
+      : (this.handController?.getState() ?? null);
+  }
+
+  /** All hand-owned capture fields survive together, including future additions. */
+  protected captureContinuationEngine(): Record<string, unknown> {
+    const self = this as unknown as Record<string, unknown>;
+    const fields = Object.fromEntries(
+      Object.keys(self)
+        .filter((k) => k.startsWith('currentHand'))
+        .map((k) => [k, structuredClone(self[k])])
+    );
+    return {
+      fields,
+      capturedAt: Date.now(),
+      disconnectStates: this.disconnectEngine.getFsmStatesForTable(this.tableId),
+      timeBankMeta: structuredClone(this.timeBankMeta),
+      timeBankDebits: structuredClone(this.unresolvedTimeBankDebits),
+      timeBanks:
+        this.handController?.getState().players.map((p) => {
+          const bank = this.timeBankEngine.getPlayerBank(this.tableId, p.user_id);
+          if (!bank) return { userId: p.user_id, bank: null };
+          const { onExpire: _callback, ...saved } = bank;
+          return { userId: p.user_id, bank: { ...saved } };
+        }) ?? [],
+    };
+  }
+
+  protected async retainOriginalBatch(
+    original: PrivateHandContinuation['original'],
+    seats: PrivateHandContinuation['seats'],
+    batch: PrivateHandContinuation['batch']
+  ): Promise<void> {
+    const authority = this.getEngineLeaseAuthority();
+    if (authority?.scope !== 'tournament' || !authority.verified || !authority.generation)
+      throw new Error('Hand Continuation Lease Is Unproven');
+    await retainHandContinuation(
+      original,
+      authority.generation,
+      seats,
+      batch,
+      () =>
+        this.lifecycleCanMutate() &&
+        this.isCurrentEngine() &&
+        this.handCount === Number(original.hand_number)
+    );
+    // State copied from these exact retained bytes, never a later controller
+    // mutation still waiting behind this batch. The future deck stays private.
+    const saved = JSON.parse(batch.controller).state;
+    this.retainedPublicHandState = { ...saved, deck: [] } as GameState;
+  }
+
+  protected async restoreContinuationAccounting(capture: Record<string, unknown>): Promise<void> {
+    if (capture.timeBankMeta instanceof Map)
+      this.timeBankMeta = structuredClone(capture.timeBankMeta);
+    if (capture.timeBankDebits instanceof Map) {
+      for (const [id, value] of capture.timeBankDebits)
+        this.unresolvedTimeBankDebits.set(id, structuredClone(value));
+      if (this.unresolvedTimeBankDebits.size) {
+        this.timeBankAccountingUnconfirmed = true;
+        await this.resolveUnconfirmedTimeBankDebits();
+        if (this.unresolvedTimeBankDebits.size)
+          throw new Error('Original Time Bank Accounting Is Unproven');
+      }
+    }
+  }
+
+  /** Admission already proved SQL custody; this does not allocate or deal. */
+  public installOriginalHandContinuation(
+    original: PrivateHandContinuation,
+    permit: F06HandPermit
+  ): void {
+    if (
+      this.running ||
+      this.pendingOriginalContinuation ||
+      this.handController ||
+      this.f06CurrentPermit ||
+      original.original.table_id !== this.tableId ||
+      original.original.tournament_id !== this.engineLeaseTournamentId ||
+      Object.entries(original.original).some(
+        ([key, value]) => permit.binding[key as keyof typeof permit.binding] !== value
+      ) ||
+      permit.recoveryState() !== 'attempted'
+    )
+      throw new Error('Hand Continuation Admission Is Unproven');
+    HandController.fromRecoveryState(
+      original.batch.controller,
+      this.tableId,
+      Number(original.original.hand_number)
+    );
+    this.pendingOriginalContinuation = original;
+    this.f06CurrentPermit = permit;
   }
 
   protected tableId: string;
@@ -3054,39 +3164,9 @@ export abstract class ServerTableEngineBase {
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
-      console.log(
-        `[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`
-      );
-      this.onTimeBankAccounting(event);
-      /* AND THE TABLE (Dan 2026-09-20: "the time bank badge never goes away").
-         TIME_BANK_ACTIVATED reaches the browser through its OWN hand-written
-         hub broadcast (ServerTableEngineTurns.activateTimeBank). The three
-         events that END a bank had no such path: this callback was the only
-         consumer and it does database accounting, so `setTimeBankActive(true)`
-         had no counterpart and the client's badge cleared only if a later
-         snapshot happened to disagree with it. The accounting call above is
-         untouched - this is a SECOND consumer of an event the engine already
-         produced, not a replacement.
-
-         Forwarded as a NARROWED object rather than the raw event: TimeBankEvent
-         carries an open index signature, and this frame goes to every seat at
-         the table, so only the four fields TablePage's persistTimeBankState
-         reads are named here. Values are passed through exactly as the engine
-         computed them; the client supplies its own defaults. */
-      if (
-        event.type === 'TIME_BANK_STOPPED' ||
-        event.type === 'TIME_BANK_EXPIRED' ||
-        event.type === 'TIME_BANK_DEPLETED'
-      ) {
-        emitToHub({
-          type: event.type,
-          tableId: event.tableId,
-          playerId: event.playerId,
-          secondsUsed: event.secondsUsed,
-          remainingSeconds: event.remainingSeconds,
-          usesRemaining: event.usesRemaining,
-        });
-      }
+      if (this.handContinuation)
+        this.handContinuation.enqueue({ type: 'CONTINUATION_TIME_BANK', event });
+      else this.dispatchContinuationTimeBank(event);
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
       console.log(
@@ -6659,6 +6739,7 @@ export abstract class ServerTableEngineBase {
       // replacement cannot claim the shared scheduler while module teardown
       // is still pending.
     }
+    this.handContinuation?.close();
     this.handController = null;
     // The line above is what makes an open terminal boundary unreachable: no
     // HAND_COMPLETE can dispatch without a controller, and every resolver is
@@ -8702,7 +8783,7 @@ export abstract class ServerTableEngineBase {
    * report a running table as busy forever and the phase would never open.
    */
   isBetweenHands(): boolean {
-    return this.handController === null;
+    return this.handController === null && !this.pendingOriginalContinuation;
   }
 
   /**
@@ -8935,7 +9016,43 @@ export abstract class ServerTableEngineBase {
    * session base is spent first; only the excess hits the DB. Best-effort:
    * accounting must never break gameplay.
    */
-  private onTimeBankAccounting(event: TimeBankEvent): void {
+  protected dispatchContinuationTimeBank(event: TimeBankEvent, debitId?: string): void {
+    console.log(
+      `[ServerTableEngine:${this.tableId}] TimeBank: ${event.type} player=${event.playerId}`
+    );
+    this.onTimeBankAccounting(event, debitId);
+    /* AND THE TABLE (Dan 2026-09-20: "the time bank badge never goes away").
+         TIME_BANK_ACTIVATED reaches the browser through its OWN hand-written
+         hub broadcast (ServerTableEngineTurns.activateTimeBank). The three
+         events that END a bank had no such path: this callback was the only
+         consumer and it does database accounting, so `setTimeBankActive(true)`
+         had no counterpart and the client's badge cleared only if a later
+         snapshot happened to disagree with it. The accounting call above is
+         untouched - this is a SECOND consumer of an event the engine already
+         produced, not a replacement.
+
+         Forwarded as a NARROWED object rather than the raw event: TimeBankEvent
+         carries an open index signature, and this frame goes to every seat at
+         the table, so only the four fields TablePage's persistTimeBankState
+         reads are named here. Values are passed through exactly as the engine
+         computed them; the client supplies its own defaults. */
+    if (
+      event.type === 'TIME_BANK_STOPPED' ||
+      event.type === 'TIME_BANK_EXPIRED' ||
+      event.type === 'TIME_BANK_DEPLETED'
+    ) {
+      this.hub?.emitEvent(this.tableId, {
+        type: event.type,
+        tableId: event.tableId,
+        playerId: event.playerId,
+        secondsUsed: event.secondsUsed,
+        remainingSeconds: event.remainingSeconds,
+        usesRemaining: event.usesRemaining,
+      });
+    }
+  }
+
+  private onTimeBankAccounting(event: TimeBankEvent, debitId?: string): void {
     if (
       event.type !== 'TIME_BANK_STOPPED' &&
       event.type !== 'TIME_BANK_EXPIRED' &&
@@ -8951,18 +9068,20 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.isUnlimited(this.tableId, event.playerId);
       if (unlimited) {
         const secondsUsed = Math.max(0, Number(event.secondsUsed) || 0);
-        if (secondsUsed > 0) this.consumeTimeBankSeconds(event.playerId, secondsUsed);
+        if (secondsUsed > 0) this.submitTimeBankDebit(event.playerId, secondsUsed, debitId);
         return;
       }
       if (!meta) return;
-      const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
+      const remaining = Number.isFinite(event.remainingSeconds)
+        ? Number(event.remainingSeconds)
+        : this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
       const usedTotal = Math.max(0, meta.initialSeconds - remaining);
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
       // Keep the issued amount reserved against duplicate terminal events.
       // The park must also wait for its acknowledgment: issued is not durable.
-      this.submitTimeBankDebit(event.playerId, owed);
+      this.submitTimeBankDebit(event.playerId, owed, debitId);
     } catch (err) {
       this.timeBankAccountingUnconfirmed = true;
       console.warn('[TimeBank] consume could not start:', (err as Error)?.message ?? err);
@@ -9006,6 +9125,7 @@ export abstract class ServerTableEngineBase {
         `(debit ${debitId}, table ${this.tableId})`
       );
     };
+    this.unresolvedTimeBankDebits.set(debitId, { userId, seconds });
     try {
       const pending = Promise.resolve(
         supabase.rpc('fn_consume_time_bank', {
@@ -9019,7 +9139,7 @@ export abstract class ServerTableEngineBase {
             unanswered(
               String(error?.message ?? (data as { error?: unknown })?.error ?? 'missing receipt')
             );
-          }
+          } else this.unresolvedTimeBankDebits.delete(debitId);
         })
         .catch((err: unknown) => unanswered(String((err as Error)?.message ?? err)))
         .finally(() => this.timeBankAccountingPending.delete(pending));
@@ -11331,11 +11451,16 @@ export abstract class ServerTableEngineBase {
 
   /**
    * Check for an incomplete hand snapshot on server startup.
-   * If found, log it for now — full resume requires reconstructing HandController
-   * from serialized state, which is a future enhancement.
+   * Tournament admission installs a claimed original before startup. Legacy
+   * snapshots without that private original retain their existing disposition
+   * rules; they cannot manufacture a missing deck.
    */
   async checkCrashRecovery(): Promise<boolean> {
     if (this.f06MovementAdmission) throw new Error('f06_movement_only_no_snapshot_disposition');
+    if (this.pendingOriginalContinuation) {
+      this.handCount = Number(this.pendingOriginalContinuation.original.hand_number);
+      return true;
+    }
     const authority = this.getEngineLeaseAuthority();
     // Tournament managers perform this before F06 admission. Cash enters here
     // before legacy snapshot cleanup, under the current table generation.

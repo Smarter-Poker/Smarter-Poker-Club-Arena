@@ -1,6 +1,11 @@
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
+import {
+  claimHandContinuation,
+  claimLegacyRiverContinuation,
+} from '../services/supabase/handContinuation.js';
+import type { PrivateHandContinuation } from '../engine/PrivateHandContinuation.js';
 import { channelHub } from '../hub/ChannelHub.js';
 import {
   LifecycleDiagnostics,
@@ -2599,6 +2604,47 @@ export abstract class TournamentManagerBase {
         unresolved_permit?: unknown;
         next_hand_number_candidate?: string | null;
       } | null;
+      let originalContinuation: PrivateHandContinuation | null = null;
+      if (
+        current() &&
+        !error &&
+        state?.ok === true &&
+        state.table_id === tableId &&
+        state.can_reserve === false &&
+        state.blocked_reason === 'hand_permit_unresolved'
+      ) {
+        // Claim the exact private original before any abandoned-generation
+        // disposition. A missing or unreadable acknowledgement stays held.
+        originalContinuation = await bindTournamentDataAuthority(
+          { tournamentId: this.tournamentId, leaseGeneration },
+          async () =>
+            (await claimHandContinuation(this.tournamentId, leaseGeneration, tableId, current)) ??
+            (await claimLegacyRiverContinuation(
+              this.tournamentId,
+              leaseGeneration,
+              tableId,
+              current
+            ))
+        )();
+        if (originalContinuation) {
+          const permit = state.unresolved_permit as Record<string, unknown> | null;
+          const original = originalContinuation.original;
+          if (
+            !current() ||
+            !permit ||
+            original.table_id !== tableId ||
+            original.tournament_id !== this.tournamentId ||
+            original.lifecycle !== state.lifecycle ||
+            original.permit_id !== permit.permit_id ||
+            original.hand_number !== String(permit.hand_number) ||
+            original.custody_id !== permit.custody_id ||
+            original.lease_generation !== permit.generation ||
+            permit.state !== 'reserved' ||
+            permit.evidence_id !== null
+          )
+            throw new Error('f06_recovered_original_projection_unproven');
+        }
+      }
       if (
         current() &&
         !error &&
@@ -2656,7 +2702,8 @@ export abstract class TournamentManagerBase {
         state?.ok === true &&
         state.table_id === tableId &&
         state.can_reserve === false &&
-        state.blocked_reason === 'hand_permit_unresolved'
+        state.blocked_reason === 'hand_permit_unresolved' &&
+        originalContinuation === null
       ) {
         const abandoned = abandonedPermitGeneration(
           state,
@@ -2688,8 +2735,8 @@ export abstract class TournamentManagerBase {
         !state ||
         state.ok !== true ||
         state.table_id !== tableId ||
-        state.can_reserve !== true ||
-        state.blocked_reason !== null ||
+        (!originalContinuation && state.can_reserve !== true) ||
+        (!originalContinuation && state.blocked_reason !== null) ||
         typeof state.lifecycle !== 'string' ||
         !/^[1-9][0-9]{0,18}$/.test(state.lifecycle) ||
         BigInt(state.lifecycle) > 9223372036854775807n
@@ -2698,13 +2745,17 @@ export abstract class TournamentManagerBase {
       // The singular projection is backed by f06_one_hand(table_id) WHERE
       // state='reserved', across every lifecycle and owner generation.
       if (
-        state.unresolved_permit !== null ||
+        (!originalContinuation && state.unresolved_permit !== null) ||
         typeof state.used_hand_number_max !== 'string' ||
         !/^(0|[1-9][0-9]{0,18})$/.test(state.used_hand_number_max) ||
         BigInt(state.used_hand_number_max) >= BigInt(Number.MAX_SAFE_INTEGER) ||
-        typeof state.next_hand_number_candidate !== 'string' ||
-        !/^[1-9][0-9]{0,18}$/.test(state.next_hand_number_candidate) ||
-        BigInt(state.next_hand_number_candidate) !== BigInt(state.used_hand_number_max) + 1n
+        (!originalContinuation &&
+          (typeof state.next_hand_number_candidate !== 'string' ||
+            !/^[1-9][0-9]{0,18}$/.test(state.next_hand_number_candidate) ||
+            BigInt(state.next_hand_number_candidate) !==
+              BigInt(state.used_hand_number_max) + 1n)) ||
+        (originalContinuation !== null &&
+          BigInt(originalContinuation.original.hand_number) > BigInt(state.used_hand_number_max))
       )
         throw new Error('f06_startup_permit_projection_unproven');
       const tableLifecycle = state.lifecycle;
@@ -2819,6 +2870,28 @@ export abstract class TournamentManagerBase {
       );
       if (!current() || !this.gameServer.tournamentRetirementCustody.admissionAllowed(tableId))
         throw new Error('f06_engine_admission_fenced');
+      if (originalContinuation) {
+        engine.installOriginalHandContinuation(
+          originalContinuation,
+          new F06HandPermit(
+            originalContinuation.original,
+            async (name, input) => {
+              const result = await supabase.rpc(name, input);
+              return { data: result.data, error: result.error };
+            },
+            current,
+            () => false,
+            leaseGeneration
+          )
+        );
+        // Another table of this dead generation may have met a conservative
+        // refusal while this original was still unfinished. Its next normal
+        // admission must observe the accepted hand without a stale cooldown.
+        this.recoveredOriginalAdmissions.set(tableId, {
+          engine,
+          generation: originalContinuation.original.lease_generation,
+        });
+      }
       if (this.successorDrainRequested) this.prepareManagedTableEngineForPlay(engine);
       await engine.start();
     })().catch(async (error) => {
@@ -3390,6 +3463,15 @@ export abstract class TournamentManagerBase {
    */
   protected wireEliminationWake(engine: ServerTableEngine): void {
     engine.onHandComplete((_tableId, finalStacks) => {
+      const recovered = this.recoveredOriginalAdmissions.get(_tableId);
+      if (
+        recovered?.engine === engine &&
+        this.tableEngines.get(_tableId) === engine &&
+        engine.getF06RetainedPermit() === null
+      ) {
+        this.abandonedGenerationAskedAt.delete(recovered.generation);
+        this.recoveredOriginalAdmissions.delete(_tableId);
+      }
       // The blind clock's witness. Every hand, not just the zero-stack shape
       // below: a level is spent by play, and play is what this records.
       this.lastObservedHandCompletedAtMs = Date.now();
@@ -7616,6 +7698,10 @@ export abstract class TournamentManagerBase {
    * that ask ended. Read ONLY by the table admission: the adoption is the
    * door's caller of record and asks exactly as it always has.
    */
+  private readonly recoveredOriginalAdmissions = new Map<
+    string,
+    { engine: ServerTableEngine; generation: string }
+  >();
   private readonly abandonedGenerationAskedAt = new Map<
     string,
     { at: number; ask: AbandonedGenerationAsk }

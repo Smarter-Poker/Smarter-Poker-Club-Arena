@@ -1,3 +1,4 @@
+vi.unmock('../../src/core/MasterBus');
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -31,6 +32,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useParams: () => state.params,
+  useLocation: () => ({ pathname: `/clubs/${state.params.clubId}/members/${state.params.userId}` }),
   useSearchParams: () => [new URLSearchParams(), vi.fn()],
   useNavigate: () => state.navigate,
 }));
@@ -49,6 +51,10 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     if (options.event === 'wallet_changed') state.walletChannel = options;
   },
 }));
+vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
+  useClubWorkspace: () => ({ clubUUID: '22222222-2222-4222-8222-222222222222' }),
+}));
+
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: state.viewerId }, isHydrating: false }),
 }));
@@ -102,6 +108,10 @@ vi.mock('../../src/services/ClubRosterService', async () => {
   };
 });
 
+import ClubPrivateDataBoundary from '../../src/components/auth/ClubPrivateDataBoundary';
+import { masterBus } from '../../src/core/MasterBus';
+import { useUserStore } from '../../src/stores/useUserStore';
+import { STATS_CACHE_PREFIX } from '../../src/lib/statsCache';
 import MemberManagementPage from '../../src/pages/MemberManagementPage';
 import PromoVaultPage from '../../src/pages/PromoVaultPage';
 import { MemberAccessDeniedError } from '../../src/services/ClubRosterService';
@@ -647,5 +657,243 @@ it('keeps the chosen ledger dates fixed across a day boundary until an explicit 
     expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
   } finally {
     vi.useRealTimers();
+  }
+});
+
+it('keeps the real boundary and record mounted on recipient access invalidation while clearing caches', async () => {
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    const nickname = await screen.findByRole('textbox', { name: 'Nickname' });
+    fireEvent.change(nickname, { target: { value: 'Mounted Boundary Draft' } });
+    const downlineReads = state.getDownline.mock.calls.length;
+    const cardReads = state.rpc.mock.calls.filter(([name]) =>
+      ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+    ).length;
+    const key =
+      STATS_CACHE_PREFIX +
+      JSON.stringify([
+        2,
+        state.viewerId,
+        state.params.userId,
+        '22222222-2222-4222-8222-222222222222',
+      ]);
+    localStorage.setItem(key, 'private');
+    const authorityReads = state.getMemberDetail.mock.calls.length;
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: 'other-club',
+        userId: state.viewerId,
+      });
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: 'other-viewer',
+      });
+    });
+    expect(localStorage.getItem(key)).toBe('private');
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads);
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Nickname' })).toBe(nickname);
+    expect(nickname).toHaveValue('Mounted Boundary Draft');
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+    expect(
+      state.rpc.mock.calls.filter(([name]) =>
+        ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+      )
+    ).toHaveLength(cardReads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('the mounted boundary delivers authoritative access withdrawal without rereading downline', async () => {
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await screen.findByRole('textbox', { name: 'Nickname' });
+    const reads = state.getDownline.mock.calls.length;
+    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+        scope: 'club',
+        scopeId: '22222222-2222-4222-8222-222222222222',
+      });
+    });
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(state.getDownline).toHaveBeenCalledTimes(reads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('an all-club recipient invalidation withdraws mounted note and role authority in place', async () => {
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await screen.findByRole('button', { name: /^Admin/ });
+    const heading = screen.getByText('River Shark');
+    const reads = state.getDownline.mock.calls.length;
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      capabilities: {
+        ...memberDetail.capabilities,
+        can_view_notes: false,
+        can_edit_notes: false,
+        can_manage_role: false,
+      },
+    });
+    state.viewerRole = 'player';
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', { userId: state.viewerId });
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument()
+    );
+    expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+    expect(screen.getByText('River Shark')).toBe(heading);
+    expect(state.getDownline).toHaveBeenCalledTimes(reads);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('a boundary access denial during the initial read cannot be undone by its late allowed answer', async () => {
+  state.viewerId = 'initial-denial-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.getByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('a positive boundary authority check fences the old initial response and admits one fresh record', async () => {
+  state.viewerId = 'initial-allowed-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  const authority = deferred<typeof memberDetail>();
+  const fresh = deferred<typeof memberDetail>();
+  state.getMemberDetail
+    .mockReturnValueOnce(initial.promise)
+    .mockReturnValueOnce(authority.promise)
+    .mockReturnValueOnce(fresh.promise);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(2);
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    await act(async () => authority.resolve(memberDetail));
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    await act(async () => fresh.resolve(memberDetail));
+    expect(await screen.findByText('River Shark')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Nickname' })).toHaveValue('The Closer');
+    expect(state.getDownline).toHaveBeenCalledTimes(2);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
+  }
+});
+
+it('an old initial answer arriving before the authority denial remains unverified', async () => {
+  state.viewerId = 'initial-reverse-denial-viewer';
+  const priorUser = useUserStore.getState().user;
+  useUserStore.setState({ user: { id: state.viewerId } as never });
+  const initial = deferred<typeof memberDetail>();
+  let deny!: (reason: unknown) => void;
+  const authority = new Promise<typeof memberDetail>((_resolve, reject) => {
+    deny = reject;
+  });
+  state.getMemberDetail.mockReturnValueOnce(initial.promise).mockReturnValueOnce(authority);
+  const view = render(
+    <ClubPrivateDataBoundary>
+      <MemberManagementPage />
+    </ClubPrivateDataBoundary>
+  );
+  try {
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+        clubId: '22222222-2222-4222-8222-222222222222',
+        userId: state.viewerId,
+      });
+    });
+    await act(async () => initial.resolve(memberDetail));
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
+    await act(async () => deny(new MemberAccessDeniedError()));
+    expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
+    expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+    expect(state.getDownline).toHaveBeenCalledTimes(1);
+  } finally {
+    view.unmount();
+    useUserStore.setState({ user: priorUser });
   }
 });

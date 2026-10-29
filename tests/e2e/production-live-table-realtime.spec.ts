@@ -2381,17 +2381,17 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           };
         };
         // Poll only for the already-observed original event to reach its consumer.
+        let beforeReload: Awaited<ReturnType<typeof assertPublicStatsCache>> | undefined;
         await expect(async () => {
-          await assertPublicStatsCache();
+          beforeReload = await assertPublicStatsCache();
         }).toPass({ timeout: 10_000 });
-        const beforeReload = await assertPublicStatsCache();
         await expectNoOpponentHud(page);
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
         await expect(page.locator('.table-surface')).toBeVisible({ timeout: 20_000 });
+        let afterReload: Awaited<ReturnType<typeof assertPublicStatsCache>> | undefined;
         await expect(async () => {
-          await assertPublicStatsCache();
+          afterReload = await assertPublicStatsCache();
         }).toPass({ timeout: 10_000 });
-        const afterReload = await assertPublicStatsCache();
         await expectNoOpponentHud(page);
         await testInfo.attach('committed-public-stats-cache-proof', {
           body: Buffer.from(

@@ -1,3 +1,4 @@
+import { awaitPreferenceSave } from '../../lib/tableSettingIntents';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * LOBBY VIEW PREFERENCES — the tab, the sort and the Favorites chip, remembered
@@ -275,14 +276,16 @@ export function pushRemoteViewPrefs(
   // Each action contributes one bounded write, with no timer or repair loop.
   const write = async (): Promise<boolean> => {
     try {
-      const { error } = await supabase.from('user_lobby_filters').upsert(
-        {
-          user_id: userId,
-          club_id: clubId,
-          view_prefs: prefs,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,club_id' }
+      const { error } = await awaitPreferenceSave(
+        supabase.from('user_lobby_filters').upsert(
+          {
+            user_id: userId,
+            club_id: clubId,
+            view_prefs: prefs,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,club_id' }
+        )
       );
       if (error) {
         if (!isAbortedRequest(error)) {

@@ -53,6 +53,7 @@ PY
  -f "$fixture/cohort-assertions.sql"
 "${psql[@]}" -f "$fixture/aggression-bootstrap.sql" \
  -f "$repo/supabase/migrations/20261027175924_record_call_only_aggression_at_fact_insertion.sql" \
+ -f "$repo/supabase/migrations/20261029044604_uncalled_returns_preserve_recorded_aggression_counts.sql" \
  -f "$fixture/aggression-assertions.sql"
 "${psql[@]}" -f "$fixture/cache-raises-bootstrap.sql" \
  -f "$repo/supabase/migrations/20261027182146_action_cache_distinguishes_all_in_calls_from_raises.sql" \

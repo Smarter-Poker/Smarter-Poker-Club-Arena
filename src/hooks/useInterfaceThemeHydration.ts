@@ -1,3 +1,4 @@
+import { readTableSettingIntent, tableSettingRevision } from '../lib/tableSettingIntents';
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { readLocalSession } from '../lib/authUtils';
@@ -91,9 +92,23 @@ export function useInterfaceThemeHydration(enabled = true): void {
     if (!enabled || !userId) return undefined;
     let current = true;
 
-    void readProfileTheme(userId)
+    const revisionAtRead = tableSettingRevision(userId);
+    const pending = readTableSettingIntent(userId, 'interface-theme');
+    const load = async () => {
+      if (pending && (pending.value === 'light' || pending.value === 'dark')) {
+        useSettingsStore.getState().receiveTheme(pending.value, userId);
+        const { persistInterfaceTheme } = await import('../lib/persistInterfaceTheme');
+        if (!current || readTableSettingIntent(userId, 'interface-theme')?.id !== pending.id) {
+          return pending.value;
+        }
+        const result = await persistInterfaceTheme(userId, pending.value, pending.id);
+        if (!result.ok) throw result.error;
+      }
+      return readProfileTheme(userId);
+    };
+    void load()
       .then((preference) => {
-        if (!current) return;
+        if (!current || tableSettingRevision(userId) !== revisionAtRead) return;
         useSettingsStore.getState().applyAuthoritativeInterfaceTheme(userId, preference);
       })
       .catch((error) => {

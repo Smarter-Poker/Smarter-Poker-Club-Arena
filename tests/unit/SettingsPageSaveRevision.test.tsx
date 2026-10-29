@@ -142,6 +142,7 @@ vi.mock('../../src/components/table/ThemeSettingsModal', () => ({
 import SettingsPage from '../../src/pages/SettingsPage';
 
 beforeEach(() => {
+  localStorage.clear();
   vi.clearAllMocks();
   mocks.settingsStoreState.interfaceThemeScopeReady = true;
   mocks.settingsStoreState.interfaceThemeUserId = 'account-a';
@@ -154,7 +155,10 @@ beforeEach(() => {
 describe('Settings Page Save Revision', () => {
   it('keeps a newer form edit dirty when an older save resolves', async () => {
     const save = deferred<{ ok: true }>();
-    mocks.persistAccountSettings.mockReturnValueOnce(save.promise);
+    const newerSave = deferred<{ ok: true }>();
+    mocks.persistAccountSettings
+      .mockReturnValueOnce(save.promise)
+      .mockReturnValueOnce(newerSave.promise);
 
     render(
       <MemoryRouter initialEntries={['/settings']}>
@@ -164,10 +168,10 @@ describe('Settings Page Save Revision', () => {
 
     const volume = await screen.findByRole('slider', { name: 'Sound Volume' });
     fireEvent.change(volume, { target: { value: '25' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     await waitFor(() => expect(mocks.persistAccountSettings).toHaveBeenCalledTimes(1));
-    expect(mocks.persistAccountSettings.mock.calls[0][1]).toMatchObject({ soundVolume: 25 });
+    expect(mocks.persistAccountSettings.mock.calls[0][1]).toEqual({ soundVolume: 25 });
+    expect(mocks.settingsStoreState.setTheme).not.toHaveBeenCalled();
 
     fireEvent.change(volume, { target: { value: '35' } });
     expect(volume).toHaveValue('35');
@@ -177,12 +181,20 @@ describe('Settings Page Save Revision', () => {
       await save.promise;
     });
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled());
-    expect(screen.getByText('Unsaved Controls Are Staged Locally.')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.persistAccountSettings).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByText('Choices Are Saved On This Device. Account Sync Is Pending.')
+    ).toBeInTheDocument();
     expect(volume).toHaveValue('35');
-    expect(mocks.writeSettingsPageCache).not.toHaveBeenCalled();
-    expect(mocks.updateTableSettings).not.toHaveBeenCalled();
-    expect(mocks.emit).not.toHaveBeenCalledWith('SETTINGS_UPDATED', expect.anything());
+    expect(mocks.persistAccountSettings.mock.calls[1][1]).toMatchObject({ soundVolume: 35 });
+    expect(mocks.updateTableSettings).toHaveBeenCalled();
+    await act(async () => {
+      newerSave.resolve({ ok: true });
+      await newerSave.promise;
+    });
+    await waitFor(() =>
+      expect(screen.getByText('All Visible Controls Are Saved.')).toBeInTheDocument()
+    );
     expect(mocks.toast.success).not.toHaveBeenCalledWith('Settings saved!');
   });
 });

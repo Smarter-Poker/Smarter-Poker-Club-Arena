@@ -1,3 +1,4 @@
+import { readTableSettingIntent } from '../lib/tableSettingIntents';
 import { create } from 'zustand';
 import { masterBus } from '../core/MasterBus';
 import {
@@ -144,6 +145,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
       if (!userId || !current.interfaceThemeScopeReady || current.interfaceThemeUserId !== userId) {
         return false;
       }
+      if (
+        readTableSettingIntent(userId, 'interface-theme') ||
+        readTableSettingIntent(userId, 'account-form')
+      )
+        return false;
       applyForOwner(userId, preference, 'ready');
       return true;
     },

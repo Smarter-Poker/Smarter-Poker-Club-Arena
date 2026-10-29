@@ -1,3 +1,8 @@
+import {
+  rememberAppearanceIntent,
+  finishAppearanceIntent,
+  pendingAppearanceIntents,
+} from './appearanceIntentJournal';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  ONE WRITER FOR TABLE APPEARANCE
@@ -20,7 +25,8 @@
  * Table Studio is now the one selectable-appearance owner, and every launcher
  * mounts that same component. This module remains its one mutation path: emit
  * first so every open felt repaints instantly, write only the columns being
- * changed, and revert the exact optimistic field if persistence fails.
+ * changed, keep interrupted writes pending, and revert only a definitive
+ * ownership or validation refusal.
  *
  * It deliberately does NOT own reading. `useUserThemeSettings` remains the one
  * reader; a writer that also reads is how the two drift apart again.
@@ -108,6 +114,8 @@ function retryableAppearanceWriteError(error: unknown): boolean {
         : String(error || '');
   return (
     name === 'AbortError' ||
+    ['28000', 'PGRST301', 'PGRST302'].includes(code) ||
+    /authenticated account changed|session expired|authentication required/i.test(message) ||
     /^PGRST00[013]$/.test(code) ||
     /abort|network|fetch|timeout|timed out|connection/i.test(message)
   );
@@ -214,8 +222,8 @@ function emitAppearance(
  * @param opts.gameType  which bucket to write. 'ALL' is the global default and
  *                       is what every non-per-variant surface should use.
  * @param opts.previous  what to put back if the write fails. Supply it and a
- *                       failed save visibly reverts instead of leaving the
- *                       felt showing something the server never accepted.
+ *                       definitive refusal visibly reverts. An interrupted
+ *                       network request keeps its original intent pending.
  */
 export async function applyTableAppearance(
   patch: AppearancePatch,
@@ -285,6 +293,18 @@ export async function applyTableAppearance(
     return { ok: false, error: new Error('not signed in'), reverted };
   }
 
+  const supersededIntents = pendingAppearanceIntents(opts.userId).filter(
+    (intent) => intent.gameType === gameType
+  );
+  // A later choice also carries any still-owed fields from earlier interrupted
+  // choices in this bucket. Once this request succeeds, replaying an older
+  // failed request would put the old selection back, so retire those originals.
+  const persistedPatch: AppearancePatch = {
+    ...supersededIntents.reduce((patch, intent) => ({ ...patch, ...intent.patch }), {}),
+    ...cleanPatch,
+  };
+  rememberAppearanceIntent(opts.userId, { mutationId, gameType, patch: persistedPatch });
+
   /* Seed the durable baseline only at the start of a write chain. A later
      optimistic tap's `previous` may itself never persist; using it as a
      rollback target leaves phantom artwork behind when two requests fail.
@@ -301,13 +321,27 @@ export async function applyTableAppearance(
   // and durable mutation UUID cross the RPC boundary.
   const previousTail = writeTails.get(scope) ?? Promise.resolve();
   const task = previousTail.then(() =>
-    persistAppearancePatch(opts.userId as string, mutationId, gameType, cleanPatch)
+    persistAppearancePatch(opts.userId as string, mutationId, gameType, persistedPatch)
   );
   const tail = task.then(() => undefined);
   writeTails.set(scope, tail);
   const error = await task;
   if (writeTails.get(scope) === tail) writeTails.delete(scope);
 
+  if (error && retryableAppearanceWriteError(error)) {
+    // An unavailable network is not permission to undo the player's choice.
+    // Keep the original mutation id for an exact-intent replay on next open.
+    masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'table-appearance',
+      scope,
+      mutationId,
+      state: 'save-failed',
+    });
+    pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
+    recordAppearanceResult('failed', startedAt, gameType, cleanPatch, opts.userId);
+    return { ok: false, error };
+  }
+  finishAppearanceIntent(opts.userId, mutationId);
   if (error) {
     // 3. PUT BACK ONLY FIELDS THIS MUTATION STILL OWNS. If a later tap is
     // already visible, an older failed request must never erase it.
@@ -351,8 +385,9 @@ export async function applyTableAppearance(
     return { ok: false, error, reverted };
   }
 
+  for (const intent of supersededIntents) finishAppearanceIntent(opts.userId, intent.mutationId);
   for (const field of APPEARANCE_FIELDS) {
-    const value = cleanPatch[field];
+    const value = persistedPatch[field];
     if (value) durableFieldValue.set(`${scope}:${field}`, value);
   }
   pendingWriteCount.set(scope, Math.max(0, (pendingWriteCount.get(scope) ?? 1) - 1));
@@ -365,4 +400,31 @@ export async function applyTableAppearance(
 
   recordAppearanceResult('saved', startedAt, gameType, cleanPatch, opts.userId);
   return { ok: true };
+}
+
+/** Resume the original interrupted requests on an explicit account/theme open. */
+const resumptions = new Map<string, Promise<void>>();
+export function resumePendingAppearance(userId: string): Promise<void> {
+  const existing = resumptions.get(userId);
+  if (existing) return existing;
+  const task = (async () => {
+    for (const intent of pendingAppearanceIntents(userId)) {
+      const scope = `${userId}:${intent.gameType}`;
+      const previous = writeTails.get(scope) ?? Promise.resolve();
+      const attempt = previous.then(() =>
+        persistAppearancePatch(userId, intent.mutationId, intent.gameType, intent.patch)
+      );
+      const tail = attempt.then(() => undefined);
+      writeTails.set(scope, tail);
+      const error = await attempt;
+      if (writeTails.get(scope) === tail) writeTails.delete(scope);
+      if (error && retryableAppearanceWriteError(error)) break;
+      finishAppearanceIntent(userId, intent.mutationId);
+    }
+  })();
+  resumptions.set(userId, task);
+  void task.finally(() => {
+    if (resumptions.get(userId) === task) resumptions.delete(userId);
+  });
+  return task;
 }

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * MARKETPLACE : Store tab: club shop items can be bought with Diamonds from
  * the player's global wallet or handed off in the same page for Card checkout
@@ -193,9 +194,18 @@ export default function StoreTab({
   const [processing, setProcessing] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
-  const [searchFilter, setSearchFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [searchFilter, setSearchFilter] = usePlayerPreference(
+    'marketplace/StoreTab:searchFilter',
+    ''
+  );
+  const [categoryFilter, setCategoryFilter] = usePlayerPreference(
+    'marketplace/StoreTab:categoryFilter',
+    'All'
+  );
+  const [sortMode, setSortMode] = usePlayerPreference<SortMode>(
+    'marketplace/StoreTab:sortMode',
+    'newest'
+  );
   const [pendingPurchasePrice, setPendingPurchasePrice] = useState<number | null>(null);
   const [resumingPurchase, setResumingPurchase] = useState(false);
   const [recoveryBlockedItemId, setRecoveryBlockedItemId] = useState<string | null>(null);

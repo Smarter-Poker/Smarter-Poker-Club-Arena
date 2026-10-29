@@ -1,6 +1,22 @@
 BEGIN;
 DO $$ DECLARE v jsonb; BEGIN
  v:=public.ca_fact_aggression_counts('[
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"raise","amount":6,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"fold","amount":0,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"return","amount":4,"stage":"preflop"}
+ ]'::jsonb,'20000000-0000-0000-0000-000000000001',2);
+ IF v IS DISTINCT FROM jsonb_build_object('bets_raises',1,'calls',0)
+ THEN RAISE EXCEPTION 'Uncalled return discarded measured aggression: %',v; END IF;
+ v:=public.ca_fact_aggression_counts('[
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"raise","amount":2,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000001","action":"fold","amount":0,"stage":"preflop"},
+ {"userId":"20000000-0000-0000-0000-000000000002","action":"return","amount":1,"stage":"preflop"}
+ ]'::jsonb,'20000000-0000-0000-0000-000000000001',1);
+ IF v IS DISTINCT FROM jsonb_build_object('bets_raises',0,'calls',0)
+ THEN RAISE EXCEPTION 'Opponent return made a folded hand unmeasured: %',v; END IF;
+END $$;
+DO $$ DECLARE v jsonb; BEGIN
+ v:=public.ca_fact_aggression_counts('[
  {"userId":"20000000-0000-0000-0000-000000000002","action":"bb","origin":"forced","amount":2,"stage":"preflop"},
  {"userId":"20000000-0000-0000-0000-000000000002","action":"raise","amount":10,"stage":"preflop"},
  {"userId":"20000000-0000-0000-0000-000000000001","action":"all_in","amount":6,"stage":"preflop"},

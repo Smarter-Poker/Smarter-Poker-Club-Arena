@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  *  PROMOTIONS PAGE — Club Promotions & Bonuses with Live Updates
  */
@@ -74,7 +75,10 @@ function PromotionsAccount({
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'upcoming'>('active');
+  const [filter, setFilter] = usePlayerPreference<'all' | 'active' | 'upcoming'>(
+    'PromotionsPage:filter',
+    'active'
+  );
   const [showReferral, setShowReferral] = useState(false);
   const [visiblePromoCards, setVisiblePromoCards] = useState(new Set<number>());
   const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());

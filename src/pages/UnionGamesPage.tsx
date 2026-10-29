@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
@@ -122,9 +123,9 @@ export default function UnionGamesPage() {
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
-  const [tournFilter, setTournFilter] = useState<'all' | 'registering' | 'running' | 'completed'>(
-    'all'
-  );
+  const [tournFilter, setTournFilter] = usePlayerPreference<
+    'all' | 'registering' | 'running' | 'completed'
+  >('UnionGamesPage:tournFilter', 'all');
 
   // Tables
   const [tables, setTables] = useState<UnionTable[]>([]);
@@ -139,7 +140,6 @@ export default function UnionGamesPage() {
   // ── CRITICAL: Reset per-union state when navigating between unions ──
   useEffect(() => {
     setTab('tournaments');
-    setTournFilter('all');
     setCanManageGames(false);
     setAuthorityError(null);
     setLoadError(null);

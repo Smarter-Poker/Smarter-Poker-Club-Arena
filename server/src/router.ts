@@ -165,6 +165,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'active',
   'archivedCount',
   'archivedScanned',
+  'archivedHistoryOmittedCount',
+  'archivedHistoryTruncated',
   'archivedTruncated',
   'packets',
   'originGeneration',

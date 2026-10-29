@@ -1,5 +1,8 @@
 import {
   completeF06Custody,
+  createCompletedF06DiagnosticWindow,
+  appendCompletedF06DiagnosticWindow,
+  type CompletedF06DiagnosticWindow,
   inspectCompletedF06Custody,
   inspectCompletedF06OmittedHistory,
   inspectCompletedF06DiagnosticWindow,
@@ -720,6 +723,7 @@ export class GameServer {
     { manager: TournamentManager; run: () => Promise<void> }
   >();
   private completedF06TournamentCustody = new Map<string, Set<CompletedF06Custody>>();
+  private completedF06DiagnosticWindows = new Map<string, Readonly<CompletedF06DiagnosticWindow>>();
   private tournamentDiagnosticIndexFailures = 0;
   private tournamentReleaseDiagnosticFailures = 0;
 
@@ -2186,6 +2190,32 @@ export class GameServer {
     return this.tournamentEngines.get(tournamentId) === manager;
   }
 
+  /** Terminal receipt adoption owns this synchronous archive transition. Unknown
+   * custody remains in the original Set; only authentic physical seals enter
+   * the bounded historical window. Never drop the drained owner on refusal. */
+  private archiveCompletedF06Custody(original: DrainedF06Custody, terminalProof: unknown): void {
+    const tournamentId = original.tournamentId;
+    const entry = completeF06Custody(original, terminalProof);
+    this.completedF06TournamentCustody ??= new Map();
+    this.completedF06DiagnosticWindows ??= new Map();
+    if (
+      !(this.completedF06TournamentCustody instanceof Map) ||
+      !(this.completedF06DiagnosticWindows instanceof Map)
+    )
+      throw Error('completed custody archive unavailable');
+    if (entry.status === 'sealed') {
+      const prior =
+        this.completedF06DiagnosticWindows.get(tournamentId) ??
+        createCompletedF06DiagnosticWindow(tournamentId);
+      const next = appendCompletedF06DiagnosticWindow(prior, entry);
+      this.completedF06DiagnosticWindows.set(tournamentId, next);
+    } else {
+      const unresolved = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
+      unresolved.add(entry);
+      this.completedF06TournamentCustody.set(tournamentId, unresolved);
+    }
+  }
+
   /** The verified terminal cleanup caller owns this exact manager. Retire only
    * detached historical data; unresolved or mismatched custody is untouched. */
   retireCompletedF06CustodyMetadata(
@@ -2210,19 +2240,29 @@ export class GameServer {
     ])
       if (!(active instanceof Map) || active.has(tournamentId)) return 0;
     if (!(this.completedF06TournamentCustody instanceof Map)) return 0;
+    if (!(this.completedF06DiagnosticWindows instanceof Map)) return 0;
+    const windowValue = this.completedF06DiagnosticWindows.get(tournamentId);
+    const window = windowValue
+      ? this.inspectCompletedF06DiagnosticWindow(windowValue, tournamentId)
+      : null;
+    if (windowValue && (!window || window.unsealed.length > 0)) return 0;
     const entries = this.completedF06TournamentCustody.get(tournamentId);
-    if (!(entries instanceof Set)) return 0;
+    if (entries !== undefined && !(entries instanceof Set)) return 0;
     let retired = 0;
-    for (const entry of entries) {
+    for (const entry of entries ?? []) {
       try {
         if (this.inspectCompletedF06Custody(entry)?.tournamentId !== tournamentId) continue;
       } catch {
         continue; /* unreadable evidence retains custody */
       }
-      entries.delete(entry);
+      entries!.delete(entry);
       retired++;
     }
-    if (entries.size === 0) this.completedF06TournamentCustody.delete(tournamentId);
+    if (entries?.size === 0) this.completedF06TournamentCustody.delete(tournamentId);
+    if (window) {
+      retired += window.sealed.length + (window.omitted?.count ?? 0);
+      this.completedF06DiagnosticWindows.delete(tournamentId);
+    }
     return retired;
   }
 
@@ -2292,9 +2332,23 @@ export class GameServer {
     }
     const custodyIndexAvailable =
       this.drainedF06TournamentCustody instanceof Map &&
-      this.completedF06TournamentCustody instanceof Map;
+      this.completedF06TournamentCustody instanceof Map &&
+      this.completedF06DiagnosticWindows instanceof Map;
     const activeCustody = this.drainedF06TournamentCustody?.get(tournamentId);
     const archivedCustody = this.completedF06TournamentCustody?.get(tournamentId);
+    const windowValue = this.completedF06DiagnosticWindows?.get(tournamentId);
+    const window = windowValue
+      ? this.inspectCompletedF06DiagnosticWindow(windowValue, tournamentId)
+      : null;
+    const windowAvailable = !windowValue || !!window;
+    const archivedEntryCount =
+      (archivedCustody?.size ?? 0) + (window?.unsealed.length ?? 0) + (window?.sealed.length ?? 0);
+    function* archivedEntries(): IterableIterator<CompletedF06Custody> {
+      yield* archivedCustody ?? [];
+      yield* window?.unsealed ?? [];
+      yield* window?.sealed ?? [];
+    }
+    const omittedHistoryCount = windowAvailable ? (window?.omitted?.count ?? 0) : null;
     const custodyOriginals: unknown[] = [];
     let archivedCustodyScanned = 0;
     const addCustody = (packet: DrainedF06Custody, role: string): void => {
@@ -2329,9 +2383,12 @@ export class GameServer {
       );
     };
     if (activeCustody) addCustody(activeCustody, 'drained-custody');
-    if (archivedCustody) {
-      for (const entry of archivedCustody) {
-        if (archivedCustodyScanned >= COMPLETED_F06_DIAGNOSTIC_LIMIT) break;
+    if (archivedEntryCount > 0) {
+      const iterator = archivedEntries();
+      for (let i = 0; i < COMPLETED_F06_DIAGNOSTIC_LIMIT; i++) {
+        const next = iterator.next();
+        if (next.done) break;
+        const entry = next.value;
         archivedCustodyScanned++;
         if (entry.status !== 'sealed') {
           addCustody(entry.original, 'completed-custody');
@@ -2373,7 +2430,7 @@ export class GameServer {
       }
     }
     retirementIndexComplete &&=
-      custodyIndexAvailable && (archivedCustody?.size ?? 0) <= archivedCustodyScanned;
+      custodyIndexAvailable && windowAvailable && archivedEntryCount <= archivedCustodyScanned;
     for (const entry of scheduler.entries) {
       if (entry.owner) add(entry.owner, 'scheduler');
       else if (entry.managerInstanceId) unavailableOwners++;
@@ -2413,11 +2470,16 @@ export class GameServer {
         : ('unavailable' as const),
       retirementOperationsCount: retirementIndexComplete ? (retiring?.size ?? 0) : null,
       custody: Object.freeze({
-        coverage: custodyIndexAvailable ? 'available' : 'unavailable',
+        coverage: custodyIndexAvailable && windowAvailable ? 'available' : 'unavailable',
         active: !!activeCustody,
-        archivedCount: custodyIndexAvailable ? (archivedCustody?.size ?? 0) : null,
+        archivedCount: custodyIndexAvailable && windowAvailable ? archivedEntryCount : null,
+        archivedHistoryOmittedCount: omittedHistoryCount,
+        archivedHistoryTruncated: omittedHistoryCount === null ? null : omittedHistoryCount > 0,
         archivedScanned: archivedCustodyScanned,
-        archivedTruncated: (archivedCustody?.size ?? 0) > archivedCustodyScanned,
+        archivedTruncated:
+          omittedHistoryCount === null
+            ? null
+            : omittedHistoryCount > 0 || archivedEntryCount > archivedCustodyScanned,
         packets: Object.freeze(custodyOriginals),
         missingMeans: 'unknown',
       }),
@@ -3333,10 +3395,7 @@ export class GameServer {
           // Terminal dispositions are monotonic. Preserve their evidence,
           // detaching original object graphs only when physical release is
           // proven. A later startup failure must not reapply the old roster.
-          this.completedF06TournamentCustody ??= new Map();
-          const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-          this.completedF06TournamentCustody.set(tournamentId, archive);
-          archive.add(completeF06Custody(packet, state.terminalProof));
+          this.archiveCompletedF06Custody(packet, state.terminalProof);
           this.drainedF06TournamentCustody.delete(tournamentId);
         }
       } catch (error) {
@@ -3409,11 +3468,8 @@ export class GameServer {
             return; // Unknown originals retain this admitted process and every reservation.
           }
           reservation.complete();
-          this.completedF06TournamentCustody ??= new Map();
           if (packet) {
-            const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-            archive.add(completeF06Custody(packet, completion));
-            this.completedF06TournamentCustody.set(tournamentId, archive);
+            this.archiveCompletedF06Custody(packet, completion);
             this.drainedF06TournamentCustody.delete(tournamentId);
           }
           this.durableMixedF06Custody.delete(tournamentId);

@@ -1,4 +1,8 @@
-import { completeF06Custody } from '../tournament/completedF06Custody.js';
+import {
+  completeF06Custody,
+  createCompletedF06DiagnosticWindow,
+  appendCompletedF06DiagnosticWindow,
+} from '../tournament/completedF06Custody.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import * as base from './ServerTableEngineBase.js';
@@ -167,6 +171,7 @@ async function nativeCheckpoint(
     tournamentDiagnosticRetirements: new Map(),
     drainedF06TournamentCustody: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tableEngineStartPromises: new Map(),
     directTableAdmissionOperations: new Map(),
     directTableRecoveryTimers: new Map(),
@@ -667,6 +672,7 @@ async function nativeCheckpoint(
     receipts,
     bankRows,
     b,
+    modules,
     run: () => legacyEngineCheckpointGuard.call(s, options, [s], modules),
     onBoundary: (fn: typeof boundary) => {
       boundary = fn;
@@ -727,6 +733,105 @@ describe('native retained 8825 release checkpoint', () => {
         id(1900),
         new Set([kind === 'copied' ? JSON.parse(JSON.stringify(entry)) : entry])
       );
+      expect(await f.run()).toMatchObject({ ok: kind === 'absent', restartAuthorized: false });
+      if (kind !== 'absent') expect(f.receipts.size).toBe(0);
+    }
+  );
+
+  it.each([
+    'absent',
+    'copied',
+    'wrong-epoch',
+    'stale-window',
+    'wrong-binding',
+    'wrong-module',
+    'unproved-omission',
+    'window-index-missing',
+    'active-reappeared',
+    'unsealed-present',
+  ] as const)(
+    'authenticates bounded window through maintained native absence consumer: %s',
+    async (kind) => {
+      const f = await nativeCheckpoint(false, false, true);
+      const table = kind === 'unsealed-present' ? '66b1cb1d-5056-41c1-a951-1bd078f8276f' : id(1990);
+      let window = createCompletedF06DiagnosticWindow(id(1900));
+      let previousWindow = window;
+      for (let n = 0; n < 34; n++) {
+        const generation = id(2000 + n);
+        const owner: any = new manager.TournamentManager(
+          id(1900),
+          f.s,
+          generation,
+          performance.now() + 30000
+        );
+        const e: any = new ServerTableEngine(table, {
+          scope: 'tournament',
+          verified: true,
+          tournamentId: id(1900),
+          generation,
+          proofDeadlineMonotonicMs: performance.now() + 30000,
+        });
+        e.installF06Allocator(
+          generation,
+          async () => 1,
+          () => true,
+          '1'
+        );
+        await e.stop();
+        owner.tableEngines.set(table, e);
+        vi.spyOn(owner, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
+        owner.fenceForTournamentLeaseLoss();
+        await expect(owner.stop()).rejects.toThrow('failed to stop');
+        const engines = owner.captureDrainedF06Originals();
+        if (kind === 'unsealed-present') owner.stoppedDiagnosticOriginals = undefined;
+        const entry = completeF06Custody(
+          {
+            manager: owner,
+            tournamentId: id(1900),
+            originGeneration: generation,
+            engines,
+            sources: [],
+            current: () => true,
+            proof: {},
+          },
+          []
+        );
+        expect(entry.status).toBe(kind === 'unsealed-present' ? 'unsealed' : 'sealed');
+        previousWindow = window;
+        window = appendCompletedF06DiagnosticWindow(window, entry);
+      }
+      expect(window.omitted?.count).toBe(kind === 'unsealed-present' ? undefined : 2);
+      if (kind === 'wrong-binding') f.s.inspectCompletedF06DiagnosticWindow = () => window;
+      if (kind === 'wrong-module') {
+        vi.resetModules();
+        const other = await import('../GameServer.js');
+        f.modules.gameServer = other;
+        f.s.inspectCompletedF06DiagnosticWindow =
+          other.GameServer.prototype.inspectCompletedF06DiagnosticWindow;
+        f.s.inspectCompletedF06OmittedHistory =
+          other.GameServer.prototype.inspectCompletedF06OmittedHistory;
+      }
+      let candidate: any = kind === 'stale-window' ? previousWindow : window;
+      if (kind === 'copied') candidate = JSON.parse(JSON.stringify(window));
+      if (kind === 'wrong-epoch') candidate = Object.freeze({ ...window, processEpoch: id(1998) });
+      if (kind === 'unproved-omission')
+        candidate = Object.freeze({
+          ...window,
+          omitted: Object.freeze({ ...window.omitted, count: 999 }),
+        });
+      f.s.completedF06DiagnosticWindows.set(id(1900), candidate);
+      if (kind === 'window-index-missing') delete f.s.completedF06DiagnosticWindows;
+      if (kind === 'active-reappeared') {
+        const target = '66b1cb1d-5056-41c1-a951-1bd078f8276f';
+        const reappeared: any = new manager.TournamentManager(
+          id(1997),
+          f.s,
+          id(1996),
+          performance.now() + 30000
+        );
+        reappeared.tableEngines.set(target, new ServerTableEngine(target));
+        f.s.tournamentEngines.set(id(1997), reappeared);
+      }
       expect(await f.run()).toMatchObject({ ok: kind === 'absent', restartAuthorized: false });
       if (kind !== 'absent') expect(f.receipts.size).toBe(0);
     }

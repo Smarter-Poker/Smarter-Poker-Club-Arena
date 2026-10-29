@@ -323,6 +323,7 @@ describe('dedicated authenticated tournament observation route', () => {
       tournamentManagerLeaseReleaseOperations: new Map(),
       tournamentManagerPendingLeaseReleases: new Map(),
       drainedF06TournamentCustody: new Map([[TID, packet]]),
+      completedF06DiagnosticWindows: new Map(),
       completedF06TournamentCustody: new Map([
         [TID, new Set([{ original: packet, terminalProof: { privateMoney: 123 } }])],
       ]),
@@ -375,6 +376,7 @@ describe('dedicated authenticated tournament observation route', () => {
       tournamentManagerPendingLeaseReleases: new Map(),
       drainedF06TournamentCustody: new Map(),
       completedF06TournamentCustody: new Map(),
+      completedF06DiagnosticWindows: new Map(),
       processStartedAt: 1,
     });
     const manager: any = new TournamentManager(TID, game, TID, performance.now() + 30000);
@@ -396,23 +398,25 @@ describe('dedicated authenticated tournament observation route', () => {
     vi.spyOn(manager, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
     manager.fenceForTournamentLeaseLoss();
     await expect(manager.stop()).rejects.toThrow('failed to stop');
-    const entry = completeF06Custody(
-      {
-        manager,
-        tournamentId: TID,
-        originGeneration: TID,
-        engines: manager.captureDrainedF06Originals(),
-        sources: [],
-        proof: {},
-        current: () => true,
-      },
-      [{ privateMoney: 123 }]
-    );
-    expect(entry.status).toBe('sealed');
-    game.completedF06TournamentCustody.set(TID, new Set([entry]));
+    const packet = {
+      manager,
+      tournamentId: TID,
+      originGeneration: TID,
+      engines: manager.captureDrainedF06Originals(),
+      sources: [],
+      proof: {},
+      current: () => true,
+    };
+    for (let n = 0; n < 34; n++) game.archiveCompletedF06Custody(packet, [{ privateMoney: 123 }]);
     const result = await request(path, game);
     expect(result.status).toBe(200);
     const parsed = JSON.parse(result.body);
+    expect(parsed.custody).toMatchObject({
+      archivedCount: 32,
+      archivedHistoryOmittedCount: 2,
+      archivedHistoryTruncated: true,
+      archivedTruncated: true,
+    });
     expect(parsed.custody.packets[0]).toMatchObject({
       historical: true,
       role: 'completed-custody-historical',

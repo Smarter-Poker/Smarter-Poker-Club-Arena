@@ -109,8 +109,7 @@ export function inspectCompletedF06Custody(
   return row.seal;
 }
 
-/** Existing archived diagnostic read ceiling. Window production is deliberately
- * not wired into the runtime archive until its full native consumer qualifies. */
+/** Existing archived diagnostic read ceiling, also bounding sealed history. */
 export const COMPLETED_F06_DIAGNOSTIC_LIMIT = 32;
 const processHistoryEpoch = randomUUID();
 export interface CompletedF06OmittedHistory {
@@ -166,7 +165,7 @@ export function createCompletedF06DiagnosticWindow(
   windowMembership.set(window, new WeakSet());
   return window;
 }
-/** Qualification prototype only. Every omitted entry was issued after the
+/** Every omitted entry was issued after the
  * exact irreversible manager/engine stop predicates; unknown custody never
  * enters the aggregate. No live source object or table identity union is kept.
  */

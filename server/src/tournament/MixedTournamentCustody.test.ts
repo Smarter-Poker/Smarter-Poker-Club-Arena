@@ -59,6 +59,7 @@ function server(): any {
     tournamentRetirementCustody: new TournamentRetirementCustody(),
     drainedF06TournamentCustody: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
@@ -1359,7 +1360,7 @@ it('receipt-only successor consumes separately absent original move before compl
 
 it('seals the real terminal mixed continuation without retaining its old manager or engines', async () => {
   const { s, m, engines } = await recoverableMixedScene();
-  const entry = [...s.completedF06TournamentCustody.get(id(1))][0];
+  const entry = s.completedF06DiagnosticWindows.get(id(1)).sealed[0];
   expect(entry.status).toBe('sealed');
   expect(s.inspectCompletedF06Custody(entry)?.sourceTableIds).toEqual(
     engines.map(([id]) => id).sort()

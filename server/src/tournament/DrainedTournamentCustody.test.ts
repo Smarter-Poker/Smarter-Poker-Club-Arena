@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TournamentManager } from './TournamentManager.js';
 import { GameServer } from '../GameServer.js';
 import { TournamentRetirementCustody } from '../services/TournamentRetirementCustody.js';
+import { accountingTerminalReceipts } from './__fixtures__/accountingTerminalReceipts.js';
+import { verifyTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import { prepareF06SuccessorAdmission } from './drainedF06Custody.js';
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -56,6 +58,9 @@ function server(): any {
     tournamentRetirementCustody: new TournamentRetirementCustody(),
     drainedF06TournamentCustody: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
+    durableMixedF06Custody: new Map(),
+    mixedF06AdmissionContinuations: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
@@ -384,7 +389,9 @@ it.each(['released', 'pending-writer', 'unknown-identity'] as const)(
     vi.spyOn(TournamentManager.prototype, 'resume').mockImplementation(async function (this: any) {
       managers.push(this);
     });
-    for (const generation of [2, 22]) {
+    for (const generation of condition === 'released'
+      ? Array.from({ length: 34 }, (_, n) => 2 + n)
+      : [2, 22]) {
       const m: any = new TournamentManager(id(1), s, id(generation), performance.now() + 30000);
       managers.push(m);
       const engines = await Promise.all(
@@ -434,27 +441,65 @@ it.each(['released', 'pending-writer', 'unknown-identity'] as const)(
         engines[0]![1].readContinuationTasks.add(new Promise(() => {}));
       if (condition === 'unknown-identity') engines[0]![1].f06TableLifecycle = undefined;
       await s.performTournamentManagerAdmission(id(1), 'resume', 'terminal graph regression', 1);
-      const entry = [...s.completedF06TournamentCustody.get(id(1))].at(-1);
+      const entry =
+        condition === 'released'
+          ? s.completedF06DiagnosticWindows.get(id(1)).sealed.at(-1)
+          : [...s.completedF06TournamentCustody.get(id(1))].at(-1);
       if (condition !== 'released') expect(entry.original).toBe(packet);
 
       engines[0]![1].readContinuationTasks.clear();
       s.tournamentEngines.get(id(1))?.fenceForTournamentLeaseLoss();
       s.tournamentEngines.delete(id(1));
     }
-    expect(s.completedF06TournamentCustody.get(id(1)).size).toBe(2);
+    if (condition === 'released') {
+      expect(s.completedF06DiagnosticWindows.get(id(1)).sealed.length).toBe(32);
+      expect(s.completedF06DiagnosticWindows.get(id(1)).omitted.count).toBe(2);
+      expect(s.completedF06TournamentCustody.has(id(1))).toBe(false);
+    } else expect(s.completedF06TournamentCustody.get(id(1)).size).toBe(2);
     for (const owner of oldOwners)
-      expect(reaches(s.completedF06TournamentCustody, owner)).toBe(condition !== 'released');
+      expect(
+        reaches([s.completedF06TournamentCustody, s.completedF06DiagnosticWindows], owner)
+      ).toBe(condition !== 'released');
     if (condition === 'released') {
       const diagnostic = s.getTournamentLifecycleDiagnostic(id(1));
       const historical = diagnostic.custody.packets.filter((p: any) => p.historical);
+      expect(diagnostic.custody).toMatchObject({
+        archivedHistoryOmittedCount: 2,
+        archivedHistoryTruncated: true,
+        archivedTruncated: true,
+      });
       expect(historical.length).toBeGreaterThan(0);
       expect(historical.at(-1).role).toBe('completed-custody-historical');
       expect(JSON.stringify(diagnostic)).not.toContain('sourceProofSha256');
       expect(
         s.inspectCompletedF06Custody(
-          JSON.parse(JSON.stringify([...s.completedF06TournamentCustody.get(id(1))].at(-1)))
+          JSON.parse(JSON.stringify(s.completedF06DiagnosticWindows.get(id(1)).sealed.at(-1)))
         )
       ).toBeNull();
+      // Same actual server: admission -> archive -> diagnostic -> verified
+      // terminal receipt cleanup, with no financial operation replay.
+      const terminal: any = new TournamentManager(id(1), s, id(900), performance.now() + 30000);
+      managers.push(terminal);
+      s.tournamentEngines.set(id(1), terminal);
+      const finalEngine = new ServerTableEngine(id(3));
+      terminal.tableEngines.set(id(3), finalEngine);
+      s.tableEngines.set(id(3), finalEngine);
+      const raw: any = JSON.parse(
+        JSON.stringify(accountingTerminalReceipts[0]).replaceAll(
+          accountingTerminalReceipts[0].tournament_id,
+          id(1)
+        )
+      );
+      raw.table_closure.closed_table_ids = [id(3)];
+      const receipt = verifyTournamentCompletionReceipt(raw, id(1), 'places', raw.winner_id);
+      expect(receipt).not.toBeNull();
+      vi.spyOn(terminal, 'broadcastCommittedOutcome').mockResolvedValue(undefined);
+      vi.spyOn(terminal, 'cleanupBroadcastChannel').mockResolvedValue(undefined);
+      const rpcCalls = mocks.rpc.mock.calls.length;
+      await expect(terminal.cleanupCommittedTournament(receipt)).resolves.toBe(true);
+      expect(s.completedF06DiagnosticWindows.has(id(1))).toBe(false);
+      expect(s.completedF06TournamentCustody.has(id(1))).toBe(false);
+      expect(mocks.rpc).toHaveBeenCalledTimes(rpcCalls);
     }
   }
 );

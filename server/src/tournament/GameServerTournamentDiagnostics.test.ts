@@ -30,6 +30,7 @@ function server(current?: any): any {
     drainedF06TournamentCustody: new Map(),
     tournamentManagerAdmissionLeaseGenerations: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentDiagnosticRetirements: new Map(),
     tournamentManagerLeaseReleaseOperations: new Map(),
@@ -304,4 +305,47 @@ it('observes custody-only originals, deduplicates managers and exposes unavailab
     retirementIndexCoverage: 'unavailable',
     custody: { coverage: 'unavailable', archivedCount: null },
   });
+});
+
+it('reads at most32 unresolved entries without materializing its full custody Set', () => {
+  scheduler();
+  const game = server();
+  let visited = 0;
+  const packet = {
+    tournamentId: id(1),
+    originGeneration: id(2),
+    engines: [],
+    manager: {
+      getLifecycleDiagnosticSnapshot: () => ({ instanceId: id(3) }),
+    },
+  };
+  const entries = new Set(
+    Array.from({ length: 100 }, () => ({ original: packet, terminalProof: [] }))
+  );
+  const original = entries.values.bind(entries);
+  entries[Symbol.iterator] = function () {
+    const iterator = original();
+    return {
+      next() {
+        visited++;
+        if (visited > 32) throw Error('unbounded traversal');
+        return iterator.next();
+      },
+      [Symbol.iterator]() {
+        return this;
+      },
+    };
+  };
+  game.completedF06TournamentCustody.set(id(1), entries);
+  const result = game.getTournamentLifecycleDiagnostic(id(1));
+  expect(visited).toBe(32);
+  expect(entries.size).toBe(100);
+  expect(result.custody).toMatchObject({
+    archivedCount: 100,
+    archivedScanned: 32,
+    archivedTruncated: true,
+    archivedHistoryOmittedCount: 0,
+    archivedHistoryTruncated: false,
+  });
+  expect(result.retirementIndexCoverage).toBe('unavailable');
 });

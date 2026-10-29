@@ -37,6 +37,7 @@ function server(): any {
     tableEngines: new Map(),
     tournamentOwnedTables: new Set(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     drainedF06TournamentCustody: new Map(),
     durableMixedF06Custody: new Map(),
     mixedF06AdmissionContinuations: new Map(),
@@ -167,6 +168,9 @@ it.each([
   async (kind, throwRetirement) => {
     const game = server();
     const { entry, packet } = await sealed(game);
+    for (let n = 0; n < 34; n++) game.archiveCompletedF06Custody(packet, []);
+    const windowBefore = game.completedF06DiagnosticWindows.get(TID);
+    expect(windowBefore.omitted.count).toBe(2);
     const unsealed = completeF06Custody(packet, null);
     const foreign = (await sealed(game, id(90))).entry;
     game.completedF06TournamentCustody.set(TID, new Set([entry, unsealed, foreign]));
@@ -198,6 +202,8 @@ it.each([
     expect(game.completedF06TournamentCustody.get(TID)).toEqual(
       new Set(throwRetirement ? [entry, unsealed, foreign] : [unsealed, foreign])
     );
+    expect(game.completedF06DiagnosticWindows.has(TID)).toBe(throwRetirement);
+    if (throwRetirement) expect(game.completedF06DiagnosticWindows.get(TID)).toBe(windowBefore);
     expect(manager.tournamentFinished).toBe(true);
     expect(manager.committedSatelliteQualifierReceipt ?? null).toBeNull();
     expect(manager.committedFinishReceipt ?? null).toBeNull();
@@ -231,6 +237,8 @@ it.each([
   'wrong-receipt',
   'unknown-index',
   'physical-owner',
+  'copied-window',
+  'unsealed-window',
 ])('preserves exact custody when terminal retirement is not owned: %s', async (reason) => {
   const game = server();
   const { entry, packet } = await sealed(game);
@@ -240,6 +248,16 @@ it.each([
   managers.push(manager);
   game.tournamentEngines.set(TID, manager);
   manager.fenceForTournamentLeaseLoss();
+  if (reason === 'copied-window') game.completedF06DiagnosticWindows.set(TID, { schema: 'copied' });
+  if (reason === 'unsealed-window') {
+    const { createCompletedF06DiagnosticWindow, appendCompletedF06DiagnosticWindow } =
+      await import('./completedF06Custody.js');
+    const window = appendCompletedF06DiagnosticWindow(
+      createCompletedF06DiagnosticWindow(TID),
+      completeF06Custody(packet, null)
+    );
+    game.completedF06DiagnosticWindows.set(TID, window);
+  }
   if (reason === 'active') game.drainedF06TournamentCustody.set(TID, packet);
   if (reason === 'mixed') game.durableMixedF06Custody.set(TID, {});
   if (reason === 'continuation') game.mixedF06AdmissionContinuations.set(TID, {});

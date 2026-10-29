@@ -1,4 +1,20 @@
 {
+  "retainedCheckpointMain35e20Composition20261029": {
+    "review": "Ordinary protected-main35e20c94f1 composition preserves its additive shard4 one-page retention fixture and server/tests classifier routing, together with this branch full-history server checkout. Both parents financial inputs, historical audit records, assertions, limits and qualification states are retained. Only the active current CI identity is composed here; existing financial commands are unchanged and no financial/native/live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 251812,
+      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "combinedWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
   "historicalRuntimeCheckoutAvailability20261029": {
     "review": "Exact historical runtime qualification needs the fixed deployed EED Git object and its old source blobs before its existing bounded native run. Only server_shards Checkout gains fetch-depth 0; the immutable auto-deploy preflight retains depth 0 and removes blob:none plus its obsolete no-historical-reads comment. Parsed workflow comparison proves all other jobs, test selection, financial owner commands, budgets, matrices, assertions and joins unchanged. Refresh only this current CI input identity; preserve every historical audit and qualification state. This is not native financial requalification, installation or live certification.",
     "changes": {
@@ -226,16 +242,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 251812,
-      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44224,
-      "sha256": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab"
+      "bytes": 44380,
+      "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4733,5 +4749,30 @@
       "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
     },
     "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
+  },
+  "retentionPageAdmissionSourceAudit20261029": {
+    "reason": "Reviewed additive native one-page retention step and exact fixture accounting/test classification. Refresh current source identities only; preserve every financial assertion, qualification state and historical receipt.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 252075,
+          "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 44224,
+          "sha256": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab"
+        },
+        "current": {
+          "bytes": 44380,
+          "sha256": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+        }
+      }
+    }
   }
 }

@@ -399,7 +399,10 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
-      matches(/^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/) ||
+      matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
+      matches(
+        /^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/
+      ) ||
       privateRecordHosting ||
       matches(nativeAlertSql) ||
       cashHalfNative ||
@@ -463,6 +466,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
       privateRecordHosting ||
       matches(nativeAlerts) ||
       matches(nativeAlertSql) ||

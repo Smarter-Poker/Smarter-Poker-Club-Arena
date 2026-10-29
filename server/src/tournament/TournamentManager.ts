@@ -2963,7 +2963,22 @@ export class TournamentManager extends TournamentManagerEliminations {
             engine.captureDrainedF06Identity?.(id, this.tournamentId, originGeneration) ?? null
         );
       const initial = physical();
-      if (initial.some((value) => value === null)) return refuse('physical_identity_unreadable');
+      const physicalRefusal = (values: ReturnType<typeof physical>) => {
+        const index = values.findIndex((value) => value === null);
+        if (index < 0) return null;
+        const [tableId, engine] = engines[index];
+        let reason = 'unavailable';
+        try {
+          reason =
+            engine.drainedF06IdentityRefusal?.(tableId, this.tournamentId, originGeneration) ??
+            'capture_unavailable';
+        } catch {
+          // Never expose arbitrary exception text or substitute identity data.
+        }
+        return `${tableId}:${reason}`;
+      };
+      const initialRefusal = physicalRefusal(initial);
+      if (initialRefusal) return refuse('physical_identity_unreadable', initialRefusal);
       // At the process root: see readMixedF06PresenceEvidence.
       const { data: presence, error: presenceError } = await readMixedF06PresenceEvidence(
         engines.map(([id]) => id)
@@ -3084,7 +3099,8 @@ export class TournamentManager extends TournamentManagerEliminations {
           )
         )
           return 'original_not_owned';
-        if (!physical().every((value) => value !== null)) return 'physical_identity_unreadable';
+        const physicalFailure = physicalRefusal(physical());
+        if (physicalFailure) return `physical_identity_unreadable:${physicalFailure}`;
         if (custodyJSON(vector()) !== custodyJSON(local)) return 'local_vector_changed';
         if (
           ![...this.retainedTournamentBreakSources].every(([id, value]) =>

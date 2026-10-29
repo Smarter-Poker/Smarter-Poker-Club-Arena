@@ -407,6 +407,11 @@ def reference_case_metadata(raw, expected):
             value[key] = item
         return value
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 7:
+        if set(value) != {'version','sourceRelease','probe','cases'} or value['probe'] != 'original_turn_gap':
+            raise ValueError('reference_cases_refused')
+        reference_case_metadata(json.dumps({**value,'version':5,'probe':'cash_turn_fold'}).encode('utf-8'),expected)
+        return value
     if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 6:
         if set(value) != {'version','sourceRelease','probe','cases'} or value['probe'] != 'accepted_all_in_execution':
             raise ValueError('reference_cases_refused')
@@ -434,6 +439,123 @@ def reference_case_metadata(raw, expected):
                                      'cases': value['cases']}).encode('utf-8'), expected)
         return value
     return reference_cases(raw, expected)
+
+
+def sanitize_original_turn_gap_result(result, value):
+    reasons = {'input_refused','journal_source_or_shape_mismatch','journal_missing_or_bounds',
+               'record_binding_or_duplicate','accepted_hand_missing_or_ambiguous','accepted_hand_binding_mismatch',
+               'accepted_action_not_observed','matching_pair_missing','matching_pair_ambiguous',
+               'execution_binding_mismatch','hand_not_reconciled','input_binding_unavailable',
+               'stored_fields_unavailable','record_or_validator_unavailable','journal_or_runtime_unavailable','output_bound'}
+    fixed = {'version':7,'probe':'original_turn_gap','rawRecordsExported':False,'replayVerified':False,
+             'causalReplayVerified':False,'activationAllowed':False}
+    def reject(): raise ValueError('original_turn_gap_result_refused')
+    if len(json.dumps(result,separators=(',',':')).encode('utf-8')) > 8192: reject()
+    if not isinstance(result,dict) or result.get('status') not in ('observed','unknown'): reject()
+    if set(result)=={'status','reason'}:
+        if result['status']!='unknown' or result['reason'] not in reasons: reject()
+        return result
+    if any(type(result.get(k)) is not type(v) or result[k]!=v for k,v in fixed.items()): reject()
+    if set(result)==set(fixed)|{'status','reason'}:
+        if result['status']!='unknown' or result['reason'] not in reasons: reject()
+        return result
+    if (set(result)!=set(fixed)|{'status','sourceRelease','cases'} or result['sourceRelease']!=value['sourceRelease']
+            or not isinstance(result['cases'],list) or len(result['cases'])!=len(value['cases'])): reject()
+    actions={'fold','check','call','bet','raise','all_in'}
+    names={'captured','selected','executed','accepted'}
+    amount_names=names|{'expected'}
+    guard_names={'recordHashesVerified','originalHandBound','uniqueOriginalPair','wholeHandReconciled','canonicalInputAndReadFrameBound'}
+    failure_names={'execution_status_not_intended','executed_selected_action_mismatch','selected_captured_action_mismatch',
+                   'zero_executed_amount_not_null','zero_expected_amount_not_zero','zero_accepted_amount_not_zero',
+                   'wager_executed_expected_amount_mismatch'}
+    gaps={'original_snapshot_missing','domain_metadata_invalid','street_metadata_invalid','betting_metadata_invalid',
+          'chip_unit_missing_or_invalid','ante_metadata_missing_or_invalid','board_metadata_missing_or_invalid',
+          'tournament_context_incomplete','tournament_identity_missing','tournament_status_invalid',
+          'tournament_variant_mismatch','tournament_type_mismatch','lifecycle_flag_missing_or_invalid',
+          'field_metadata_missing_or_invalid','payout_shape_missing_or_invalid','payout_terms_missing_or_invalid',
+          'finalized_pool_binding_missing_or_invalid','original_provenance_missing_or_mismatched','seat_census_missing',
+          'seat_census_invalid','original_stack_or_contribution_missing','public_holdings_not_causal',
+          'actor_original_state_mismatch','opponent_stack_flag_mismatch','wager_metadata_missing_or_invalid',
+          'funded_contribution_mismatch','legal_menu_missing_or_invalid','original_field_stack_conservation','original_metadata_unreadable'}
+    excluded={'outside_tournament_domain','outside_river','outside_no_limit','outside_cent_prize_unit','ante_geometry',
+              'multiple_boards','tournament_not_running','outside_winner_take_all','open_or_special_lifecycle','bounty_pool',
+              'prize_pool_not_finalized','bubble_protection','outside_two_dealt_seats','outside_heads_up_field',
+              'folded_or_ante_geometry','hero_all_in_or_ante','opponent_not_all_in','call_requires_all_in_or_no_call',
+              'outside_whole_chip_domain','outside_fold_call_menu'}
+    def number(n): return type(n) in (int,float) and math.isfinite(n) and n>=0
+    def compare(a,b):
+        return ('equal' if a['value']==b['value'] else 'number_changed') if a['kind']==b['kind'] else '_vs_'.join(sorted([a['kind'],b['kind']]))
+    for c,original in zip(result['cases'],value['cases']):
+        if not isinstance(c,dict) or c.get('handKey')!=original['handKey']: reject()
+        if c.get('status')=='unknown':
+            if set(c)!={'handKey','status','reason'} or c['reason'] not in reasons: reject()
+            continue
+        if (set(c)!={'handKey','status','actionOrdinal','variant','mode','stage','recordHashes','inputDigest','readFrameDigest',
+                     'actions','amounts','comparisons','selection','phase14','guards','executionStatus','contextSource','originalWitnessWithdrawals'} or c['status']!='observed'
+            or type(c['actionOrdinal']) is not int or c['actionOrdinal']!=original['actionOrdinal']
+            or c['variant'] not in ('nlh','plo4','plo5','plo6','plo8') or c['mode'] not in ('cash','tournament')
+            or c['stage'] not in ('preflop','flop','turn','river') or c['executionStatus'] not in ('intended','coerced') or c['contextSource']!='captured_original_snapshot'): reject()
+        if (not isinstance(c['recordHashes'],dict) or set(c['recordHashes'])!={'decision','execution','accepted'}
+            or any(not isinstance(h,str) or not re.fullmatch('[0-9a-f]{64}',h) for h in [*c['recordHashes'].values(),c['inputDigest'],c['readFrameDigest']])
+            or (original['decisionRecordSha256'] is not None and c['recordHashes']['decision']!=original['decisionRecordSha256'])
+            or not isinstance(c['guards'],dict) or set(c['guards'])!=guard_names or any(v is not True for v in c['guards'].values())): reject()
+        a,m=c['actions'],c['amounts']
+        if (not isinstance(a,dict) or set(a)!=names or any(v not in actions for v in a.values())
+            or not isinstance(m,dict) or set(m)!=amount_names): reject()
+        for amount in m.values():
+            if (not isinstance(amount,dict) or set(amount)!={'kind','value'} or amount['kind'] not in ('absent','null','number')
+                or (amount['kind']=='number' and not number(amount['value']))
+                or (amount['kind']!='number' and amount['value'] is not None)): reject()
+        if a['executed']!=a['accepted']: reject()
+        intended=(a['selected']==a['accepted'] and m['expected']==m['accepted'])
+        if (c['executionStatus']=='intended')!=intended: reject()
+        if a['executed'] in ('fold','check'):
+            if m['executed']!={'kind':'null','value':None} or m['accepted']!={'kind':'number','value':0}: reject()
+        elif m['executed']!=m['accepted']: reject()
+        expected={'capturedSelectedAction':'equal' if a['captured']==a['selected'] else 'different',
+                  'capturedSelectedAmount':compare(m['captured'],m['selected']),
+                  'expectedExecutedAmount':compare(m['expected'],m['executed']),
+                  'executedAcceptedAmount':compare(m['executed'],m['accepted'])}
+        if c['comparisons']!=expected: reject()
+        selection=c['selection']
+        if (not isinstance(selection,dict) or set(selection)!={'matched','failures'} or type(selection['matched']) is not bool
+            or not isinstance(selection['failures'],list) or len(set(selection['failures']))!=len(selection['failures'])
+            or not set(selection['failures'])<=failure_names or selection['matched']!=(not selection['failures'])): reject()
+        failures=selection['failures']
+        expected_failures=[]
+        if c['executionStatus']!='intended': expected_failures.append('execution_status_not_intended')
+        if a['executed']!=a['selected']: expected_failures.append('executed_selected_action_mismatch')
+        if a['selected']!=a['captured']: expected_failures.append('selected_captured_action_mismatch')
+        if a['executed'] in ('fold','check'):
+            if m['executed']['kind']!='null': expected_failures.append('zero_executed_amount_not_null')
+            if m['expected']!={'kind':'number','value':0}: expected_failures.append('zero_expected_amount_not_zero')
+            if m['accepted']!={'kind':'number','value':0}: expected_failures.append('zero_accepted_amount_not_zero')
+        elif m['executed']!=m['expected']: expected_failures.append('wager_executed_expected_amount_mismatch')
+        if failures!=expected_failures: reject()
+        withdrawals=c['originalWitnessWithdrawals']
+        owners=['phase8','phase8_guard','phase10','phase11','phase12','phase13','phase14']
+        verdicts={'usable','unselected','refused','refresh_failed','withdrawn','restarted','stale_generation','mismatched','expired','missing_receipt'}
+        if not isinstance(withdrawals,list) or len(withdrawals)>7: reject()
+        order=[]
+        for row in withdrawals:
+            if (not isinstance(row,list) or len(row)!=3 or row[0] not in owners
+                or (row[1] is not None and row[1] not in verdicts)
+                or (row[2] is not None and type(row[2]) is not bool)
+                or (row[1] is None and row[2] is not None)): reject()
+            order.append(owners.index(row[0]))
+        if order!=sorted(set(order)): reject()
+        phase=c['phase14']
+        if (not isinstance(phase,dict) or set(phase)!={'status','reason','derivedFromOriginalSnapshot'}
+            or phase['derivedFromOriginalSnapshot'] is not True): reject()
+        in_domain=c['variant']=='nlh' and c['mode']=='tournament' and c['stage']=='river'
+        if not in_domain:
+            if phase['status']!='not_applicable' or phase['reason']!='outside_original_nlh_tournament_river': reject()
+        elif not ((phase['status']=='eligible' and phase['reason'] is None)
+                  or (phase['status']=='gap' and phase['reason'] in gaps)
+                  or (phase['status']=='excluded' and phase['reason'] in excluded)
+                  or (phase['status']=='unknown' and phase['reason'] in ('installed_classifier_unavailable','installed_classifier_result_unrecognized'))): reject()
+    if (result['status']=='observed')!=all(c['status']=='observed' for c in result['cases']): reject()
+    return result
 
 
 def sanitize_accepted_all_in_result(result, value):
@@ -700,6 +822,8 @@ process.exit(0);
 
 ACCEPTED_ALL_IN_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledAcceptedAllInExecutionApi').replace('inspectDecision8464Records', 'inspectAcceptedAllInExecutionRecords')
 
+ORIGINAL_TURN_GAP_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledOriginalTurnGapApi').replace('inspectDecision8464Records', 'inspectOriginalTurnGapRecords')
+
 CASH_TURN_FOLD_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledCashTurnFoldApi').replace('inspectDecision8464Records', 'inspectCashTurnFoldRecords')
 
 
@@ -794,17 +918,19 @@ def reference_diagnostic(value):
         return diagnostic_failure('sanitizer', 'result_refused')
 
 def decision_case_diagnostic(value):
-    if value.get('version') not in (4,5,6):
+    if value.get('version') not in (4,5,6,7):
         return reference_diagnostic(value)
     try:
         diagnostic_js = REFERENCE_DIAGNOSTIC_JS
-        if value.get('version') in (4,5,6):
+        if value.get('version') in (4,5,6,7):
             helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
             if not helper or len(helper.encode('utf-8')) > 65536:
                 raise ValueError('decision_helper_unavailable')
             diagnostic_js = helper + '\n' + DECISION_8464_ADAPTER
             if value.get('version') == 6:
                 diagnostic_js = helper + '\n' + ACCEPTED_ALL_IN_ADAPTER
+            if value.get('version') == 7:
+                diagnostic_js = helper + '\n' + ORIGINAL_TURN_GAP_ADAPTER
             if value.get('version') == 5:
                 diagnostic_js = helper + '\n' + CASH_TURN_FOLD_ADAPTER
         raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
@@ -828,7 +954,8 @@ def decision_case_diagnostic(value):
                     or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
                 raise ValueError()
             return result
-        return (sanitize_accepted_all_in_result(result,value) if value.get('version') == 6
+        return (sanitize_original_turn_gap_result(result,value) if value.get('version') == 7 else
+                sanitize_accepted_all_in_result(result,value) if value.get('version') == 6
                 else sanitize_cash_turn_fold_result(result,value) if value.get('version') == 5
                 else sanitize_decision_8464_result(result, value))
     except Exception:

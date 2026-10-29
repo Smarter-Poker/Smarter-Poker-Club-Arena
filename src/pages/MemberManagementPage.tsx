@@ -347,6 +347,21 @@ export default function MemberManagementPage() {
     authorityRefreshRef.current();
   });
 
+  useMasterBusSubscriptions(['GAME_MANAGEMENT_ACCESS_CHANGED'], (payload) => {
+    const change = payload as {
+      clubId?: string;
+      userId?: string;
+      scope?: string;
+      scopeId?: string;
+    } | null;
+    // This carrier addresses the viewer whose authority changed, not the
+    // player being inspected. All-club reconnect signals omit clubId.
+    if (change?.userId && change.userId !== user?.id) return;
+    if (change?.clubId && change.clubId !== resolvedClubId) return;
+    if (change?.scope === 'club' && change.scopeId && change.scopeId !== resolvedClubId) return;
+    authorityRefreshRef.current();
+  });
+
   /* ── Load ───────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -530,7 +545,18 @@ export default function MemberManagementPage() {
     const live = () => !controller.signal.aborted && isMountedRef.current;
     recordRefreshRef.current = () => void loadDetail(range, live, true);
     const checkAuthority = () => {
-      if (!resolvedClubId || !userId || !user?.id || !recordShownRef.current) return;
+      // Permission signals also own the pending first read. A denial must
+      // retire that read before its older allowed answer can mount privately.
+      if (!resolvedClubId || !userId || !user?.id) return;
+      const initializing = !recordShownRef.current;
+      if (initializing) {
+        // Fence the old initial answer synchronously, before validation awaits
+        // the server. It cannot become verified while a newer hint is pending.
+        detailAbortRef.current?.abort();
+        setDetail(null);
+        setDownline([]);
+        setLoading(true);
+      }
       if (owner.active) {
         owner.queued = true;
         return;
@@ -578,13 +604,19 @@ export default function MemberManagementPage() {
           if (live() && !owner.queued) {
             setMyRole(normaliseRole(mine.data?.role));
             setMyRoleLoaded(true);
+            // An interrupted initial read starts once from the validated
+            // scope. Already displayed records never re-enter this full lane.
+            if (initializing) void loadDetail(range, live);
           }
         } catch (error) {
           if (!live()) return;
           if (error instanceof MemberAccessDeniedError) withdrawRecordAccess(null);
           else {
             reportError(error, 'MemberManagementPage.CheckAuthority');
-            setRefreshFailed(true);
+            if (initializing) {
+              setLoadError(true);
+              setLoading(false);
+            } else setRefreshFailed(true);
           }
         } finally {
           owner.active = false;

@@ -9177,6 +9177,7 @@ export class GameServer {
         }>('id, name, status', {
           shouldContinue: () => this.directAdmissionIsCurrent(generation),
         });
+        if (!this.directAdmissionIsCurrent(generation)) break;
 
         // An unreadable scan is not an empty one: forgetting every dwell here
         // would restart all five-minute clocks on a transient error, which is

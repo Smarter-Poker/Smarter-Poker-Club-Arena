@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import {
   horseSocialFrames,
   horseSocialTableEligible,
   rankHorseSocialCohorts,
+  selectHorseSocialSubjects,
   postHandChatDelay,
   sharedPayout,
   type HorseSocialFrame,
@@ -1251,6 +1253,84 @@ async function observeTournamentBoard(
   const hudScope = { tableId: candidate.id, tournamentId: selected.boardFacts?.tournamentId ?? '' };
   if (gameFormat === 'mtt' && !hudScope.tournamentId)
     throw new Error('MTT wire witness requires the qualified tournament identity');
+  // Observe the member-visible persisted row used by the actual table page.
+  // Missing authority fails; unsupported authority must omit Paid, never guess it.
+  const paidAuthority =
+    gameFormat === 'mtt'
+      ? page
+          .waitForResponse(
+            (response) => {
+              const url = new URL(response.url());
+              return (
+                url.pathname.endsWith('/rest/v1/tournaments') &&
+                url.searchParams.get('id') === `eq.${hudScope.tournamentId}` &&
+                (url.searchParams.get('select') || '').includes('payout_structure')
+              );
+            },
+            { timeout: CONNECT_DEADLINE_MS }
+          )
+          .then(async (response) => {
+            if (!response.ok()) throw new Error(`Paid authority HTTP ${response.status()}`);
+            const body = await response.json();
+            const row = Array.isArray(body) ? body[0] : body;
+            if (row?.id !== hudScope.tournamentId)
+              throw new Error('Paid witness requires the exact tournament row');
+            const omitted = (classification: string) => ({
+              expected: null,
+              ladder: row.payout_structure,
+              classification,
+              error: null,
+            });
+            if (row.prize_pool_finalized !== true) return omitted('unfinalized-omission');
+            if (
+              String(row.tournament_type).toUpperCase() === 'SATELLITE' ||
+              row.satellite_target_id
+            )
+              return omitted('satellite-omission');
+            let ladder = row.payout_structure;
+            if (typeof ladder === 'string') {
+              try {
+                ladder = JSON.parse(ladder);
+              } catch {
+                return omitted('invalid-ladder-omission');
+              }
+            }
+            if (!Array.isArray(ladder) || ladder.length === 0)
+              return omitted('invalid-ladder-omission');
+            const positions = new Set<number>();
+            for (const entry of ladder) {
+              if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+                return omitted('invalid-ladder-omission');
+              const scalar = (value: unknown) =>
+                typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')
+                  ? Number(value)
+                  : NaN;
+              const place = scalar(entry?.place);
+              const percent = scalar(entry?.percentage);
+              if (
+                !Number.isInteger(place) ||
+                place < 1 ||
+                place > 2_147_483_647 ||
+                !Number.isFinite(percent) ||
+                percent <= 0 ||
+                !Number.isSafeInteger(Math.round(percent * 100)) ||
+                Math.round(percent * 100) <= 0
+              )
+                return omitted('invalid-ladder-omission');
+              positions.add(place);
+            }
+            const places = [...positions].sort((a, b) => a - b);
+            if (places.some((place, index) => place !== index + 1))
+              return omitted('gapped-ladder-omission');
+            return {
+              expected: places.length,
+              ladder,
+              classification: 'positive-count-witness',
+              error: null,
+            };
+          })
+          .catch((error: unknown) => ({ expected: null, ladder: null, error: String(error) }))
+      : null;
   const hudLevels =
     gameFormat === 'mtt' ? observeEngineHudLevels(page, hudScope, ENGINE_HEALTH_URL) : [];
   const legacyHudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
@@ -1400,6 +1480,45 @@ async function observeTournamentBoard(
           }
         )
         .toBeGreaterThan(0);
+      const paid = await paidAuthority!;
+      expect(paid.error, 'the actual finalized Paid authority could not be verified').toBeNull();
+      const rendered = [];
+      for (const [index, target] of [page, peerPage].entries()) {
+        const dock = target.locator('.tournament-hud-bar');
+        const label = dock.getByText('Paid', { exact: true });
+        if (paid.expected === null) {
+          await expect(label).toHaveCount(0);
+          rendered.push({ context: index, value: null });
+          const imagePath = testInfo.outputPath(`mobile-live-table-paid-context-${index}.png`);
+          await dock.screenshot({ path: imagePath });
+          await testInfo.attach(`mtt-paid-omission-context-${index}`, {
+            path: imagePath,
+            contentType: 'image/png',
+          });
+          continue;
+        }
+        await expect(label).toBeVisible();
+        const segment = label.locator('..');
+        const value = segment.locator('.tournament-dock__value');
+        await expect(value).toHaveText(paid.expected!.toLocaleString('en-US'));
+        // Paid immediately follows Left in the same live information strip.
+        await expect(
+          segment.locator('xpath=preceding-sibling::*[1]').getByText('Left', { exact: true })
+        ).toBeVisible();
+        rendered.push({ context: index, value: await value.innerText() });
+        const imagePath = testInfo.outputPath(`mobile-live-table-paid-context-${index}.png`);
+        await dock.screenshot({ path: imagePath });
+        await testInfo.attach(`mtt-paid-hud-context-${index}`, {
+          path: imagePath,
+          contentType: 'image/png',
+        });
+      }
+      const authorityPath = testInfo.outputPath('mobile-live-table-paid-authority.json');
+      writeFileSync(authorityPath, JSON.stringify({ ...hudScope, ...paid, rendered }, null, 2));
+      await testInfo.attach('mtt-paid-hud-persisted-authority', {
+        path: authorityPath,
+        contentType: 'application/json',
+      });
     }
     await expect
       .poll(() => page.locator('.seat[role="region"]').count(), {
@@ -2408,281 +2527,394 @@ test('natural horse social behavior reaches the live table', async ({
     .limit(180);
   expect(showdowns.error).toBeNull();
   const cohorts = rankHorseSocialCohorts(eligible, showdowns.data || [], activitySince);
-  const candidate = cohorts[0].candidate;
+  const subjects = selectHorseSocialSubjects(cohorts);
+  expect(
+    subjects.length,
+    'No recently active natural horse cohort was discoverable'
+  ).toBeGreaterThan(0);
   const began = new Date().toISOString();
-  const frames: HorseSocialFrame[] = [];
-  const forbidden: string[] = [];
-  page.on('request', (req) => {
-    if (isSpectatorParticipationMutation(req.method(), req.url()))
-      forbidden.push(new URL(req.url()).pathname);
-  });
-  page.on('websocket', (socket) =>
-    socket.on('framereceived', ({ payload }) => {
-      try {
-        const raw = String(payload);
-        if (raw.includes(candidate.id))
-          frames.push(...horseSocialFrames(JSON.parse(raw), Date.now()));
-      } catch {
-        /* Non-JSON transport frames carry no evidence. */
-      }
-    })
-  );
-  await page.addInitScript(() => {
-    const records: { at: number; kind: string; text: string; item: string | null; seat: string }[] =
-      [];
-    Object.assign(window, { __horseSocialDOM: records });
-    const seen = new WeakSet<Element>();
-    const capture = () =>
-      document
-        .querySelectorAll('.tr-float, .thr[data-throwable], .chat-bubble:not(.chat-bubble--notice)')
-        .forEach((el) => {
-          if (seen.has(el)) return;
-          const box = el.getBoundingClientRect();
-          if (
-            !box.width ||
-            !box.height ||
-            getComputedStyle(el).visibility === 'hidden' ||
-            Number(getComputedStyle(el).opacity) < 0.1
-          )
-            return;
-          if (
-            el.matches('.thr') &&
-            !el.querySelector(
-              '.thr__proj svg, .thr__payload svg, .thr__proj img, .thr__payload img'
-            )
-          )
-            return;
-          seen.add(el);
-          records.push({
-            at: Date.now(),
-            kind: el.matches('.tr-float') ? 'reaction' : el.matches('.thr') ? 'throw' : 'text',
-            text: el.textContent || '',
-            item: el.getAttribute('data-throwable'),
-            seat: (el as HTMLElement).style.getPropertyValue('--seat-index'),
-          });
-        });
-    new MutationObserver(() => {
-      capture();
-      setTimeout(capture, 250);
-    }).observe(document, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-phase'],
-    });
-  });
-  await page.goto(`table/${candidate.id}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  expect(page.url()).not.toMatch(/\/auth(?:\/|\?|$)/);
-  await expect(page.locator('.seat__avatar').first()).toBeVisible({ timeout: 30_000 });
-  const proofs: Record<string, unknown>[] = [];
-  const screenshots = new Set<string>();
   const deadline = Date.now() + 20 * 60_000;
-  let lastDatabaseRead = 0;
-  const knownHorses = new Set<string>();
-  const checkedSenders = new Set<string>();
   let textProof = false;
   let reactionProof = false;
   let throwProof = false;
+  let aborted = false;
+  const extraPages: Page[] = [];
+  const observerEvidence: Record<string, unknown>[] = [];
   try {
-    while (Date.now() < deadline && !(textProof && reactionProof && throwProof)) {
-      expect(forbidden, 'The observer attempted player participation').toEqual([]);
-      const dom = await page.evaluate(
-        () =>
-          (
-            window as unknown as {
-              __horseSocialDOM: {
-                at: number;
-                kind: string;
-                text: string;
-                item: string | null;
-                seat: string;
-              }[];
-            }
-          ).__horseSocialDOM || []
-      );
-      const senders = [...new Set(frames.map((frame) => frame.sender))].filter(
-        (id) => !checkedSenders.has(id)
-      );
-      if (senders.length) {
-        const horses = await db
-          .from('profiles')
-          .select('id')
-          .in('id', senders)
-          .eq('is_horse', true);
-        expect(horses.error).toBeNull();
-        senders.forEach((id) => checkedSenders.add(id));
-        (horses.data || []).forEach((row) => knownHorses.add(row.id));
-      }
-      {
-        for (const frame of frames.filter((f) => knownHorses.has(f.sender))) {
-          const reaction = frame.message.match(/^\[REACTION:(.+):(\d+)\]$/);
-          const thrown = frame.message.match(/^\[THROW:([^:]+):(\d+)\]$/);
-          const rendered = dom.find(
-            (entry) =>
-              entry.at >= frame.at - 250 &&
-              entry.at <= frame.at + 5000 &&
-              (reaction
-                ? entry.kind === 'reaction' &&
-                  entry.text === reaction[1] &&
-                  entry.seat.trim() === reaction[2]
-                : thrown
-                  ? entry.kind === 'throw' && entry.item === thrown[1]
-                  : false)
+    const results = await Promise.allSettled(
+      subjects.map(async (entry, index) => {
+        const candidate = entry.candidate;
+        let observedPage: Page | null = null;
+        const frames: HorseSocialFrame[] = [];
+        const forbidden: string[] = [];
+        const proofs: Record<string, unknown>[] = [];
+        const screenshots = new Set<string>();
+        let lastDatabaseRead = 0;
+        const knownHorses = new Set<string>();
+        const checkedSenders = new Set<string>();
+        let observerError: string | null = null;
+        const presentation: Record<string, unknown>[] = [];
+        try {
+          const subjectPage = index === 0 ? page : await page.context().newPage();
+          observedPage = subjectPage;
+          if (index > 0) extraPages.push(subjectPage);
+          subjectPage.on('request', (req) => {
+            if (isSpectatorParticipationMutation(req.method(), req.url()))
+              forbidden.push(new URL(req.url()).pathname);
+          });
+          subjectPage.on('websocket', (socket) =>
+            socket.on('framereceived', ({ payload }) => {
+              try {
+                const raw = String(payload);
+                if (raw.includes(candidate.id))
+                  frames.push(...horseSocialFrames(JSON.parse(raw), Date.now()));
+              } catch {
+                /* Non-JSON transport frames carry no evidence. */
+              }
+            })
           );
-          if (!rendered || (reactionProof && throwProof)) continue;
-          const seats = await db
-            .from('table_seats')
-            .select('seat_number,user_id')
-            .is('left_at', null)
-            .eq('table_id', candidate.id);
-          expect(seats.error).toBeNull();
-          const ownSeat = seats.data?.find((seat) => seat.user_id === frame.sender);
-          if (!ownSeat) continue;
-          if (reaction && Number(reaction[2]) !== ownSeat.seat_number) continue;
-          if (
-            thrown &&
-            (Number(thrown[2]) === ownSeat.seat_number ||
-              !seats.data?.some((seat) => seat.seat_number === Number(thrown[2])))
-          )
-            continue;
-          if (reaction && !reactionProof) {
-            reactionProof = true;
-            proofs.push({ kind: 'reaction', frame, rendered, ownSeat: ownSeat.seat_number });
-          }
-          if (thrown && !throwProof && frame.throwId) {
-            const receipt = await db
-              .from('throwable_use_receipts')
-              .select('user_id,request_id,throwable_id,result,created_at')
-              .eq('user_id', frame.sender)
-              .eq('request_id', frame.throwId)
-              .single();
-            expect(receipt.error).toBeNull();
-            expect(receipt.data?.throwable_id).toBe(thrown[1]);
-            expect(receipt.data?.result?.success).toBe(true);
-            throwProof = true;
-            proofs.push({
-              kind: 'throw',
-              frame,
-              rendered,
-              ownSeat: ownSeat.seat_number,
-              targetSeat: Number(thrown[2]),
-              receipt: receipt.data,
+          await subjectPage.addInitScript(() => {
+            const records: {
+              at: number;
+              kind: string;
+              text: string;
+              item: string | null;
+              seat: string;
+              visibility: string;
+              paintAt: number;
+              paintFrames: number;
+            }[] = [];
+            Object.assign(window, { __horseSocialDOM: records });
+            const seen = new WeakSet<Element>();
+            const paint = { frames: 0, at: 0 };
+            Object.assign(window, { __horseSocialPaint: paint });
+            const painted = () => {
+              paint.frames++;
+              paint.at = Date.now();
+              requestAnimationFrame(painted);
+            };
+            requestAnimationFrame(painted);
+            const capture = () => {
+              if (document.visibilityState !== 'visible' || Date.now() - paint.at > 1000) return;
+              document
+                .querySelectorAll(
+                  '.tr-float, .thr[data-throwable], .chat-bubble:not(.chat-bubble--notice)'
+                )
+                .forEach((el) => {
+                  if (seen.has(el)) return;
+                  const box = el.getBoundingClientRect();
+                  if (
+                    !box.width ||
+                    !box.height ||
+                    getComputedStyle(el).visibility === 'hidden' ||
+                    Number(getComputedStyle(el).opacity) < 0.1
+                  )
+                    return;
+                  if (
+                    el.matches('.thr') &&
+                    !el.querySelector(
+                      '.thr__proj svg, .thr__payload svg, .thr__proj img, .thr__payload img'
+                    )
+                  )
+                    return;
+                  seen.add(el);
+                  records.push({
+                    at: Date.now(),
+                    kind: el.matches('.tr-float')
+                      ? 'reaction'
+                      : el.matches('.thr')
+                        ? 'throw'
+                        : 'text',
+                    text: el.textContent || '',
+                    item: el.getAttribute('data-throwable'),
+                    seat: (el as HTMLElement).style.getPropertyValue('--seat-index'),
+                    visibility: document.visibilityState,
+                    paintAt: paint.at,
+                    paintFrames: paint.frames,
+                  });
+                });
+            };
+            new MutationObserver(() => {
+              capture();
+              setTimeout(capture, 250);
+            }).observe(document, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ['data-phase'],
             });
+          });
+          await subjectPage.goto(`table/${candidate.id}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 60_000,
+          });
+          expect(subjectPage.url()).not.toMatch(/\/auth(?:\/|\?|$)/);
+          await expect(subjectPage.locator('.seat__avatar').first()).toBeVisible({
+            timeout: 30_000,
+          });
+          const readPresentation = () =>
+            subjectPage.evaluate(() => ({
+              visibility: document.visibilityState,
+              ...((window as unknown as { __horseSocialPaint: { frames: number; at: number } })
+                .__horseSocialPaint || { frames: 0, at: 0 }),
+            }));
+          const beforePaint = await readPresentation();
+          await subjectPage.waitForTimeout(100);
+          const afterPaint = await readPresentation();
+          presentation.push({ before: beforePaint, after: afterPaint });
+          expect(
+            afterPaint.visibility,
+            'A hidden spectator page cannot provide painted evidence'
+          ).toBe('visible');
+          expect(
+            afterPaint.frames,
+            'The spectator page did not advance animation frames'
+          ).toBeGreaterThan(beforePaint.frames);
+
+          while (!aborted && Date.now() < deadline && !(textProof && reactionProof && throwProof)) {
+            expect(forbidden, 'The observer attempted player participation').toEqual([]);
+            const dom = await subjectPage.evaluate(
+              () =>
+                (
+                  window as unknown as {
+                    __horseSocialDOM: {
+                      at: number;
+                      kind: string;
+                      text: string;
+                      item: string | null;
+                      seat: string;
+                    }[];
+                  }
+                ).__horseSocialDOM || []
+            );
+            const senders = [...new Set(frames.map((frame) => frame.sender))].filter(
+              (id) => !checkedSenders.has(id)
+            );
+            if (senders.length) {
+              const horses = await db
+                .from('profiles')
+                .select('id')
+                .in('id', senders)
+                .eq('is_horse', true);
+              expect(horses.error).toBeNull();
+              senders.forEach((id) => checkedSenders.add(id));
+              (horses.data || []).forEach((row) => knownHorses.add(row.id));
+            }
+            {
+              for (const frame of frames.filter((f) => knownHorses.has(f.sender))) {
+                const reaction = frame.message.match(/^\[REACTION:(.+):(\d+)\]$/);
+                const thrown = frame.message.match(/^\[THROW:([^:]+):(\d+)\]$/);
+                const rendered = dom.find(
+                  (entry) =>
+                    entry.at >= frame.at - 250 &&
+                    entry.at <= frame.at + 5000 &&
+                    (reaction
+                      ? entry.kind === 'reaction' &&
+                        entry.text === reaction[1] &&
+                        entry.seat.trim() === reaction[2]
+                      : thrown
+                        ? entry.kind === 'throw' && entry.item === thrown[1]
+                        : false)
+                );
+                if (!rendered || (reactionProof && throwProof)) continue;
+                const seats = await db
+                  .from('table_seats')
+                  .select('seat_number,user_id')
+                  .is('left_at', null)
+                  .eq('table_id', candidate.id);
+                expect(seats.error).toBeNull();
+                const ownSeat = seats.data?.find((seat) => seat.user_id === frame.sender);
+                if (!ownSeat) continue;
+                if (reaction && Number(reaction[2]) !== ownSeat.seat_number) continue;
+                if (
+                  thrown &&
+                  (Number(thrown[2]) === ownSeat.seat_number ||
+                    !seats.data?.some((seat) => seat.seat_number === Number(thrown[2])))
+                )
+                  continue;
+                if (reaction && !reactionProof) {
+                  reactionProof = true;
+                  proofs.push({
+                    kind: 'reaction',
+                    tableId: candidate.id,
+                    frame,
+                    rendered,
+                    ownSeat: ownSeat.seat_number,
+                  });
+                }
+                if (thrown && !throwProof && frame.throwId) {
+                  const receipt = await db
+                    .from('throwable_use_receipts')
+                    .select('user_id,request_id,throwable_id,result,created_at')
+                    .eq('user_id', frame.sender)
+                    .eq('request_id', frame.throwId)
+                    .single();
+                  expect(receipt.error).toBeNull();
+                  expect(receipt.data?.throwable_id).toBe(thrown[1]);
+                  expect(receipt.data?.result?.success).toBe(true);
+                  throwProof = true;
+                  proofs.push({
+                    kind: 'throw',
+                    tableId: candidate.id,
+                    frame,
+                    rendered,
+                    ownSeat: ownSeat.seat_number,
+                    targetSeat: Number(thrown[2]),
+                    receipt: receipt.data,
+                  });
+                }
+              }
+            }
+            const readDatabase = Date.now() - lastDatabaseRead >= 15_000;
+            if (readDatabase) lastDatabaseRead = Date.now();
+            const claims = readDatabase
+              ? await db
+                  .from('horse_table_talk_ledger')
+                  .select('table_id,hand_number,horse_id,event,said_at')
+                  .eq('table_id', candidate.id)
+                  .gte('said_at', began)
+                  .in('event', [
+                    'big_pot_won',
+                    'showdown_loss',
+                    'big_hand_shown',
+                    'pot_lost',
+                    'pot_won',
+                    'tilt',
+                    'heater',
+                  ])
+                  .order('said_at', { ascending: true })
+                  .limit(20)
+              : { data: [], error: null };
+            expect(claims.error).toBeNull();
+            for (const claim of claims.data || []) {
+              const chat = await db
+                .from('table_chat')
+                .select('id,user_id,message,created_at')
+                .eq('table_id', candidate.id)
+                .eq('user_id', claim.horse_id)
+                .gte('created_at', claim.said_at)
+                .lte('created_at', new Date(Date.parse(claim.said_at) + 20_000).toISOString());
+              expect(chat.error).toBeNull();
+              if (chat.data?.length !== 1) continue;
+              const hand = await db
+                .from('hand_history')
+                .select('id,hand_number,ended_at,winners')
+                .eq('table_id', candidate.id)
+                .eq('hand_number', claim.hand_number)
+                .single();
+              expect(hand.error).toBeNull();
+              expect(
+                sharedPayout(hand.data?.winners),
+                'A shared payout produced horse result chat'
+              ).toBe(false);
+              const row = chat.data[0];
+              const delayMs = postHandChatDelay(hand.data!.ended_at, row.created_at);
+              expect(
+                delayMs,
+                'Horse spoke less than five seconds after hand end'
+              ).toBeGreaterThanOrEqual(5000);
+              expect(row.message).not.toMatch(
+                /\d[\d.,]*\s*bbs?\b|\bbbs?\b|\bbig\s+blinds?\b|\bseat\s+\d+/i
+              );
+              if (
+                !textProof &&
+                dom.some(
+                  (entry) =>
+                    entry.kind === 'text' &&
+                    entry.at >= Date.parse(row.created_at) - 1000 &&
+                    entry.text.includes(row.message)
+                )
+              ) {
+                textProof = true;
+                proofs.push({
+                  kind: 'text',
+                  tableId: candidate.id,
+                  claim,
+                  chat: row,
+                  hand: hand.data,
+                  delayMs,
+                });
+              }
+            }
+            for (const [kind, ready] of [
+              ['text', textProof],
+              ['reaction', reactionProof],
+              ['throw', throwProof],
+            ] as const) {
+              if (ready && proofs.some((proof) => proof.kind === kind) && !screenshots.has(kind)) {
+                screenshots.add(kind);
+                await testInfo.attach(`horse-social-${kind}-table-${candidate.id}`, {
+                  body: await subjectPage.screenshot(),
+                  contentType: 'image/png',
+                });
+              }
+            }
+            if (!(textProof && reactionProof && throwProof)) await subjectPage.waitForTimeout(1000);
           }
-        }
-      }
-      const readDatabase = Date.now() - lastDatabaseRead >= 15_000;
-      if (readDatabase) lastDatabaseRead = Date.now();
-      const claims = readDatabase
-        ? await db
-            .from('horse_table_talk_ledger')
-            .select('table_id,hand_number,horse_id,event,said_at')
-            .eq('table_id', candidate.id)
-            .gte('said_at', began)
-            .in('event', [
-              'big_pot_won',
-              'showdown_loss',
-              'big_hand_shown',
-              'pot_lost',
-              'pot_won',
-              'tilt',
-              'heater',
-            ])
-            .order('said_at', { ascending: true })
-            .limit(20)
-        : { data: [], error: null };
-      expect(claims.error).toBeNull();
-      for (const claim of claims.data || []) {
-        const chat = await db
-          .from('table_chat')
-          .select('id,user_id,message,created_at')
-          .eq('table_id', candidate.id)
-          .eq('user_id', claim.horse_id)
-          .gte('created_at', claim.said_at)
-          .lte('created_at', new Date(Date.parse(claim.said_at) + 20_000).toISOString());
-        expect(chat.error).toBeNull();
-        if (chat.data?.length !== 1) continue;
-        const hand = await db
-          .from('hand_history')
-          .select('id,hand_number,ended_at,winners')
-          .eq('table_id', candidate.id)
-          .eq('hand_number', claim.hand_number)
-          .single();
-        expect(hand.error).toBeNull();
-        expect(sharedPayout(hand.data?.winners), 'A shared payout produced horse result chat').toBe(
-          false
-        );
-        const row = chat.data[0];
-        const delayMs = postHandChatDelay(hand.data!.ended_at, row.created_at);
-        expect(delayMs, 'Horse spoke less than five seconds after hand end').toBeGreaterThanOrEqual(
-          5000
-        );
-        expect(row.message).not.toMatch(
-          /\d[\d.,]*\s*bbs?\b|\bbbs?\b|\bbig\s+blinds?\b|\bseat\s+\d+/i
-        );
-        if (
-          !textProof &&
-          dom.some(
-            (entry) =>
-              entry.kind === 'text' &&
-              entry.at >= Date.parse(row.created_at) - 1000 &&
-              entry.text.includes(row.message)
-          )
-        ) {
-          textProof = true;
-          proofs.push({ kind: 'text', claim, chat: row, hand: hand.data, delayMs });
-        }
-      }
-      for (const [kind, ready] of [
-        ['text', textProof],
-        ['reaction', reactionProof],
-        ['throw', throwProof],
-      ] as const) {
-        if (ready && !screenshots.has(kind)) {
-          screenshots.add(kind);
-          await testInfo.attach(`horse-social-${kind}-table`, {
-            body: await page.screenshot(),
-            contentType: 'image/png',
+        } catch (error) {
+          observerError = error instanceof Error ? error.message : String(error);
+          aborted = true;
+          throw error;
+        } finally {
+          observerEvidence.push({
+            tableId: candidate.id,
+            tab: entry.tabName,
+            error: observerError,
+            presentation,
+            proofs,
+            forbidden,
+            frames,
+            rendered: observedPage
+              ? await observedPage
+                  .evaluate(
+                    () =>
+                      (window as unknown as { __horseSocialDOM: unknown[] }).__horseSocialDOM || []
+                  )
+                  .catch(() => [])
+              : [],
           });
         }
-      }
-      if (!(textProof && reactionProof && throwProof)) await page.waitForTimeout(1000);
-    }
+      })
+    );
+    expect(
+      observerEvidence.flatMap((entry) => entry.forbidden as string[]),
+      'The observer attempted player participation'
+    ).toEqual([]);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
     expect(
       { textProof, reactionProof, throwProof },
       'Natural observation ended without all three visible horse behaviors'
     ).toEqual({ textProof: true, reactionProof: true, throwProof: true });
-    await readEngineHealth(request, { tableIds: [candidate.id] });
-    expect(forbidden).toEqual([]);
+    await readEngineHealth(request, { tableIds: subjects.map((entry) => entry.candidate.id) });
   } finally {
-    await testInfo.attach('horse-social-evidence', {
-      body: Buffer.from(
-        JSON.stringify(
-          {
-            expectedEngine: EXPECTED_ENGINE_SHA,
-            tableId: candidate.id,
-            cohorts: cohorts.map((entry) => ({
-              tableId: entry.candidate.id,
-              tab: entry.tabName,
-              horseCount: entry.horseCount,
-              showdownCount: entry.showdownCount,
-            })),
-            activitySince,
-            began,
-            proofs,
-            forbidden,
-            frames,
-            rendered: await page
-              .evaluate(
-                () => (window as unknown as { __horseSocialDOM: unknown[] }).__horseSocialDOM || []
-              )
-              .catch(() => []),
-          },
-          null,
-          2
-        )
-      ),
-      contentType: 'application/json',
-    });
+    try {
+      await testInfo.attach('horse-social-evidence', {
+        body: Buffer.from(
+          JSON.stringify(
+            {
+              expectedEngine: EXPECTED_ENGINE_SHA,
+              tableIds: subjects.map((entry) => entry.candidate.id),
+              cohorts: cohorts.map((entry) => ({
+                tableId: entry.candidate.id,
+                tab: entry.tabName,
+                horseCount: entry.horseCount,
+                showdownCount: entry.showdownCount,
+              })),
+              activitySince,
+              began,
+              subjects: observerEvidence,
+              proofs: observerEvidence.flatMap((entry) => entry.proofs as unknown[]),
+              forbidden: observerEvidence.flatMap((entry) => entry.forbidden as unknown[]),
+            },
+            null,
+            2
+          )
+        ),
+        contentType: 'application/json',
+      });
+    } finally {
+      await Promise.all(extraPages.map((extraPage) => extraPage.close()));
+    }
   }
 });

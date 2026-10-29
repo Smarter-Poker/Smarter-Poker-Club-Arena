@@ -24,8 +24,27 @@ const report = () => ({
 });
 
 describe('complete production lobby coverage', () => {
-  it('requires all eight first-attempt cases', () => {
+  it('requires all ten first-attempt cases', () => {
     expect(lobbyCoverage(report())).toEqual({ complete: true, missing: [] });
+  });
+  it('refuses an otherwise passing report missing both maintained Madness cases', () => {
+    const r = report();
+    r.suites[0].specs = r.suites[0].specs.filter((spec) => !spec.title.includes('Madness'));
+    expect(lobbyCoverage(r).complete).toBe(false);
+  });
+  it.each([393, 1440])('requires the %ipx Madness case to execute once without retry', (width) => {
+    const title = `PLO5 1/2 Madness exposes its actual rules at ${width}px`;
+    expect(requiredLobbyCases).toContain(title);
+    for (const mode of ['missing', 'skipped', 'retried', 'duplicate']) {
+      const r = report();
+      const target = r.suites[0].specs.find((spec) => spec.title === title)!;
+      if (mode === 'missing')
+        r.suites[0].specs = r.suites[0].specs.filter((spec) => spec !== target);
+      if (mode === 'skipped') target.tests[0].results[0].status = 'skipped';
+      if (mode === 'retried') target.tests[0].results[0].retry = 1;
+      if (mode === 'duplicate') r.suites[0].specs.push(target);
+      expect(lobbyCoverage(r).complete, `${title}: ${mode}`).toBe(false);
+    }
   });
   it.each(['missing', 'skipped', 'retried', 'wrong-project', 'duplicate', 'error'])(
     'refuses %s evidence',

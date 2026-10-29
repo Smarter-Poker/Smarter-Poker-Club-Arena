@@ -23,7 +23,7 @@ vi.mock('../../src/lib/supabase', () => ({
       const read = { table, calls: [] as Array<[string, ...any[]]> };
       state.reads.push(read);
       const query: any = {};
-      for (const method of ['select', 'in', 'eq', 'contains', 'order', 'limit', 'range']) {
+      for (const method of ['select', 'in', 'eq', 'contains', 'lt', 'order', 'limit', 'range']) {
         query[method] = (...args: any[]) => {
           read.calls.push([method, ...args]);
           return query;
@@ -33,11 +33,23 @@ vi.mock('../../src/lib/supabase', () => ({
         if (table === 'ca_hand_facts')
           return Promise.resolve({ data: state.facts, error: null }).then(done);
         if (table !== 'hand_history') return Promise.resolve({ data: [], error: null }).then(done);
-        let data = state.rows;
-        const ids = read.calls.find((call) => call[0] === 'in' && call[1] === 'id')?.[2];
-        const tableId = read.calls.find((call) => call[0] === 'eq' && call[1] === 'table_id')?.[2];
-        if (ids) data = data.filter((row) => ids.includes(row.id));
-        if (tableId) data = data.filter((row) => row.table_id === tableId);
+        let data = [...state.rows];
+        for (const [method, column, value] of read.calls) {
+          if (method === 'in') data = data.filter((row) => column && value.includes(row[column]));
+          if (method === 'eq') data = data.filter((row) => row[column] === value);
+          if (method === 'contains' && column === 'players') {
+            const requested = JSON.parse(value) as Array<{ userId: string }>;
+            data = data.filter((row) =>
+              requested.every((player) => row.players.some((p: any) => p.userId === player.userId))
+            );
+          }
+          if (method === 'lt') data = data.filter((row) => row[column] < value);
+          if (method === 'order') {
+            data.sort((a, b) => (a[column] - b[column]) * (value?.ascending === false ? -1 : 1));
+          }
+          if (method === 'limit') data = data.slice(0, column);
+          if (method === 'range') data = data.slice(column, value + 1);
+        }
         if (state.switchViewerOnHistoryRead) state.viewer = 'other';
         return Promise.resolve({ data, error: state.historyError }).then(done);
       };
@@ -167,5 +179,76 @@ describe('Previous Hand reads a Lightning pool session, not a physical table', (
       'table_id',
       'physical-a',
     ]);
+  });
+
+  it('reaches an older bomb beyond fifty owned hands without shifting when a new hand arrives', async () => {
+    state.rows = Array.from({ length: 51 }, (_, index) =>
+      row(
+        `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        100 - index,
+        'physical-a'
+      )
+    );
+    const bomb = state.rows[50];
+    bomb.bomb_pot = { ante: 6, boards: 2 };
+    const foreign = row(OTHER, 200, 'physical-a');
+    foreign.players = [{ userId: 'someone-else', seat: 1, stack: 10 }];
+    state.rows.unshift(foreign, row('other-table', 300, 'physical-b'));
+    const first = await handHistoryService.getPlayerHands(HERO, 50, { tableId: 'physical-a' });
+    expect(first).toHaveLength(50);
+    expect(first.map((hand) => hand.hand_number)).toEqual(
+      Array.from({ length: 50 }, (_, index) => 100 - index)
+    );
+    expect(first.some((hand) => hand.id === bomb.id)).toBe(false);
+    state.rows.unshift(row('newly-finished', 101, 'physical-a'));
+    state.reads.length = 0;
+    const older = await handHistoryService.getPlayerHands(HERO, 50, {
+      tableId: 'physical-a',
+      beforeHandNumber: first[first.length - 1].hand_number,
+    });
+    expect(older.map((hand) => hand.id)).toEqual([bomb.id]);
+    expect(older[0].bomb_pot).toEqual(bomb.bomb_pot);
+    const query = state.reads.find((read) => read.table === 'hand_history')!.calls;
+    expect(query).toContainEqual(['contains', 'players', JSON.stringify([{ userId: HERO }])]);
+    expect(query).toContainEqual(['eq', 'table_id', 'physical-a']);
+    expect(query).toContainEqual(['lt', 'hand_number', 51]);
+    expect(query.findIndex((call) => call[0] === 'lt')).toBeLessThan(
+      query.findIndex((call) => call[0] === 'limit')
+    );
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'ignores invalid older-hand cursor %s',
+    async (beforeHandNumber) => {
+      expect(
+        (
+          await handHistoryService.getPlayerHands(HERO, 50, {
+            tableId: 'physical-a',
+            beforeHandNumber,
+          })
+        ).map((hand) => hand.id)
+      ).toEqual([A]);
+      expect(
+        state.reads
+          .find((read) => read.table === 'hand_history')!
+          .calls.some((call) => call[0] === 'lt')
+      ).toBe(false);
+    }
+  );
+
+  it('applies the physical-table cursor before an explicitly requested range', async () => {
+    state.rows = [row(A, 30, 'physical-a'), row(B, 20, 'physical-a'), row(OTHER, 10, 'physical-a')];
+    const hands = await handHistoryService.getPlayerHands(HERO, 1, {
+      tableId: 'physical-a',
+      beforeHandNumber: 30,
+      offset: 1,
+    });
+    expect(hands.map((hand) => hand.id)).toEqual([OTHER]);
+    const calls = state.reads.find((read) => read.table === 'hand_history')!.calls;
+    expect(calls.findIndex((call) => call[0] === 'lt')).toBeLessThan(
+      calls.findIndex((call) => call[0] === 'range')
+    );
+    expect(calls).toContainEqual(['range', 1, 1]);
   });
 });

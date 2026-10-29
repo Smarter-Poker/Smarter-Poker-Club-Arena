@@ -185,7 +185,7 @@ describe('Phase 6 real roster row render budget', () => {
     expect(item).toHaveAttribute('aria-setsize', '419');
     expect(item.querySelector('mark')).toHaveTextContent('Player');
     // Simple mode leads with fees generated, never a wallet balance.
-    expect(screen.getByText('87.5')).toBeVisible();
+    expect(screen.getByText('87.50')).toBeVisible();
     expect(screen.getByText('Fees Generated')).toBeVisible();
     expect(screen.queryByText('250.00')).not.toBeInTheDocument();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();

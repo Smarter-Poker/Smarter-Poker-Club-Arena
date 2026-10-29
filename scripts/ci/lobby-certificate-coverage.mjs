@@ -10,6 +10,8 @@ export const requiredLobbyCases = [
   'a clustered cash game reviews its game-level door without joining',
   'advanced filters open and close',
   'the bottom nav is pinned to the bottom of the viewport',
+  'PLO5 1/2 Madness exposes its actual rules at 393px',
+  'PLO5 1/2 Madness exposes its actual rules at 1440px',
 ];
 
 export function lobbyCoverage(report) {
@@ -49,7 +51,7 @@ export function lobbyCoverage(report) {
     !Array.isArray(report.errors) ||
     report.errors.length !== 0
   ) {
-    missing.push('Report must contain exactly eight error-free cases');
+    missing.push('Report must contain exactly ten error-free cases');
   }
   return { complete: missing.length === 0, missing };
 }

@@ -150,6 +150,51 @@ describe('Rewards says which player won which prize', () => {
   });
 });
 
+describe('Rewards includes all received bounties', () => {
+  it.each([{ is_bounty: true }, { is_pko: true }, { is_mystery_bounty: true }])(
+    'shows paid places, bounty-only finishers and live recipients: %j',
+    (flags) => {
+      const field = [
+        { ...entry(1, 'winner', 1, 500), bounty_winnings: 75.25 },
+        { ...entry(2, 'eliminated', 2, 300), bounty_winnings: 0 },
+        { ...entry(3, 'eliminated', 4), bounty_winnings: 25 },
+        { ...entry(4, 'playing', undefined, 0, 2000), bounty_winnings: 40 },
+        entry(5, 'eliminated', 5),
+      ];
+      const { container, rerender } = render(<RewardsTab {...props(field, [60, 40], flags)} />);
+      const rows = [...container.querySelectorAll('.rw-payouts .rw-row')];
+      expect(rows).toHaveLength(4);
+      expect(rows[0].textContent).toContain('Place Prize 500Bounties 75Total 575');
+      expect(rows[1].textContent).toContain('Place Prize 300Bounties 0Total 300');
+      expect(rows[2].textContent).toContain('4thplayer3Bounties 25Total 25');
+      expect(rows[3].textContent).toContain('In Playplayer4Bounties 40Total 40');
+      expect(container.querySelector('.rw-payouts')?.textContent).not.toContain('player5');
+      rerender(
+        <RewardsTab
+          {...props(
+            field.map((e) => (e.id === 'p4' ? { ...e, bounty_winnings: 65 } : e)),
+            [60, 40],
+            flags
+          )}
+        />
+      );
+      expect(container.querySelector('.rw-payouts')?.textContent).toContain('Bounties 65Total 65');
+    }
+  );
+
+  it('does not confuse a carried head with a received bounty or award a projection', () => {
+    const field = [
+      { ...entry(1, 'eliminated', 1), bounty_winnings: 10, current_bounty: 999 },
+      { ...entry(2, 'playing'), current_bounty: 200 },
+    ];
+    const { container } = render(<RewardsTab {...props(field, [100], { is_pko: true })} />);
+    const panel = container.querySelector('.rw-payouts')!;
+    expect(panel.textContent).toContain('Place Prize 0Bounties 10Total 10');
+    expect(panel.textContent).not.toContain('player2');
+    expect(panel.textContent).not.toContain('999');
+  });
+});
+
 describe('Ranking says what position each player busted in', () => {
   const rows = (c: HTMLElement) =>
     [...c.querySelectorAll('.rk-item')].map((row) => ({

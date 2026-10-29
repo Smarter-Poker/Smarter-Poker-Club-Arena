@@ -226,12 +226,17 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
       expect(seats.error, 'own seat state could not be verified').toBeNull();
       expect(registrations.error, 'own registration state could not be verified').toBeNull();
-      // Fresh browser contexts still restore the account's durable game filter.
-      // This case checks the cash floor, so select its complete catalog first.
-      const all = page.getByRole('tab', { name: 'ALL', exact: true });
-      await all.click();
-      await expect(all).toHaveAttribute('aria-selected', 'true');
       const context = authority.context!;
+      // This case certifies both cash and tournament doors. The account's saved
+      // MTT tab legitimately hides cash, so choose the complete board explicitly.
+      const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
+      await allGames.click();
+      await expect(allGames).toHaveAttribute('aria-selected', 'true');
+      const allStatuses = page
+        .getByLabel('Game Status', { exact: true })
+        .getByRole('button', { name: 'All', exact: true });
+      await allStatuses.click();
+      await expect(allStatuses).toHaveAttribute('aria-pressed', 'true');
       const cards = page.getByTestId('lobby-game-row');
       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
       const cashCards = page.locator('[data-testid="lobby-game-row"][data-kind="cash"]');
@@ -247,6 +252,7 @@ for (const [orientation, viewport] of ORIENTATIONS) {
         });
       } else {
         await expect(cashCards.first(), 'the arena stake ladder did not render').toBeVisible();
+        expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
       }
       for (const card of await cashCards.all()) {
         const id = await card.getAttribute('data-id');

@@ -48,6 +48,9 @@ export interface PlayerTimeBank {
   usesRemaining: number;
   isActive: boolean;
   activatedAt?: number;
+  /** Allocated once, but no player clock runs before private retention succeeds. */
+  pendingPublication?: boolean;
+  activationCause?: 'manual' | 'automatic';
   currentUseSeconds: number;
   onExpire?: () => void;
   /**
@@ -196,6 +199,105 @@ export class TimeBankEngine {
     });
   }
 
+  /** Compare saved active grants with the same capture wall time while held. */
+  capturePlayerForRecovery(
+    tableId: string,
+    playerId: string,
+    capturedAt: number
+  ): Omit<PlayerTimeBank, 'onExpire'> | null {
+    const bank = this.getPlayerBank(tableId, playerId);
+    if (!bank) return null;
+    const { onExpire: _callback, ...saved } = bank;
+    if (saved.activatedAt !== undefined)
+      saved.activatedAt += Math.max(0, capturedAt - this.weeklyClock.now(tableId));
+    return saved;
+  }
+
+  private readonly recoveredAllocations = new Map<string, number>();
+
+  /** Restore the retained allocation without spending another activation. */
+  restorePlayerForRecovery(
+    tableId: string,
+    playerId: string,
+    saved: Omit<PlayerTimeBank, 'onExpire'>,
+    capturedAt: number
+  ): void {
+    if (
+      saved.tableId !== tableId ||
+      saved.playerId !== playerId ||
+      ![
+        saved.remainingSeconds,
+        saved.currentUseSeconds,
+        saved.usesRemaining,
+        saved.streetActivations,
+        capturedAt,
+      ].every(Number.isFinite) ||
+      saved.remainingSeconds < 0 ||
+      saved.currentUseSeconds < 0 ||
+      saved.usesRemaining < 0 ||
+      saved.streetActivations < 0 ||
+      saved.streetActivations > 2
+    )
+      throw new Error('Recovered Time Bank Is Invalid');
+    const key = `${tableId}:${playerId}`;
+    this.preciseTimer.cancelTimer(tableId, `timebank:${playerId}`);
+    this.playerBanks.set(key, { ...saved, onExpire: undefined });
+    if (saved.isActive) {
+      if (!Number.isFinite(saved.activatedAt))
+        throw new Error('Recovered Time Bank Clock Is Invalid');
+      this.recoveredAllocations.set(
+        key,
+        Math.max(
+          0.001,
+          saved.pendingPublication
+            ? saved.currentUseSeconds
+            : saved.currentUseSeconds - Math.max(0, capturedAt - saved.activatedAt!) / 1000
+        )
+      );
+    }
+  }
+
+  resumeRecoveredAllocation(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void
+  ): number | null {
+    const key = `${tableId}:${playerId}`;
+    const seconds = this.recoveredAllocations.get(key);
+    if (seconds === undefined || this.playerBanks.get(key)?.pendingPublication) return null;
+    this.recoveredAllocations.delete(key);
+    const bank = this.playerBanks.get(key);
+    if (!bank?.isActive) return null;
+    bank.onExpire = onExpire;
+    bank.activatedAt = this.weeklyClock.now(tableId) - (bank.currentUseSeconds - seconds) * 1000;
+    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, seconds * 1000, () =>
+      this.onTimeBankExpired(tableId, playerId)
+    );
+    return seconds;
+  }
+
+  /** Publish one already allocated bank after retention, without spending again. */
+  resumeDeferredPublication(
+    tableId: string,
+    playerId: string,
+    recoveredExpiry: () => void
+  ): number | null {
+    const key = `${tableId}:${playerId}`;
+    const bank = this.playerBanks.get(key);
+    if (!bank?.isActive || !bank.pendingPublication) return null;
+    bank.pendingPublication = false;
+    this.recoveredAllocations.delete(key);
+    bank.activatedAt = this.weeklyClock.now(tableId);
+    bank.onExpire ??= recoveredExpiry;
+    this.preciseTimer.startTimer(
+      tableId,
+      `timebank:${playerId}`,
+      bank.currentUseSeconds * 1000,
+      () => this.onTimeBankExpired(tableId, playerId)
+    );
+    return bank.currentUseSeconds;
+  }
+
   removePlayer(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
@@ -232,12 +334,26 @@ export class TimeBankEngine {
    * one by pressing the button earlier in the turn. The armed case is what
    * keeps the manual button working on a table with autoActivate off.
    */
-  onPrimaryTimerExpired(tableId: string, playerId: string, onExpire: () => void): boolean {
+  onPrimaryTimerExpired(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void,
+    deferPublication = false
+  ): boolean {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     const bank = this.playerBanks.get(`${tableId}:${playerId}`);
     if ((!config.autoActivate || !this.isAutoActivateEnabled(tableId, playerId)) && !bank?.armed)
       return false;
-    return this.activate(tableId, playerId, onExpire);
+    return (
+      this.tryActivate(
+        tableId,
+        playerId,
+        onExpire,
+        0,
+        bank?.armed ? 'manual' : 'automatic',
+        deferPublication
+      ) === 'activated'
+    );
   }
 
   /**
@@ -314,7 +430,9 @@ export class TimeBankEngine {
     tableId: string,
     playerId: string,
     onExpire: () => void,
-    extraCountdownSeconds = 0
+    extraCountdownSeconds = 0,
+    activationCause: 'manual' | 'automatic' = 'manual',
+    deferPublication = false
   ): TimeBankActivationResult {
     if (this.weeklyClock.has(tableId)) return 'clock_not_exhausted';
     const key = `${tableId}:${playerId}`;
@@ -351,6 +469,8 @@ export class TimeBankEngine {
 
     bank.isActive = true;
     bank.activatedAt = this.weeklyClock.now(tableId);
+    bank.pendingPublication = deferPublication;
+    bank.activationCause = activationCause;
     bank.currentUseSeconds = useSeconds;
     bank.usesRemaining--;
     bank.streetActivations++;
@@ -359,6 +479,8 @@ export class TimeBankEngine {
 
     this.emitEvent({
       type: 'TIME_BANK_ACTIVATED',
+      publicationDeferred: deferPublication,
+      activationCause,
       tableId,
       playerId,
       secondsGranted: useSeconds,
@@ -370,9 +492,10 @@ export class TimeBankEngine {
     // The countdown IS the new clock: exactly the bank allocation, from zero.
     // The caller arms its turn timer with the same number, so the enforcement
     // deadline and the deadline the client is shown cannot disagree.
-    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, useSeconds * 1000, () => {
-      this.onTimeBankExpired(tableId, playerId);
-    });
+    if (!deferPublication)
+      this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, useSeconds * 1000, () => {
+        this.onTimeBankExpired(tableId, playerId);
+      });
 
     return 'activated';
   }

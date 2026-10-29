@@ -1,3 +1,8 @@
+import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
+import {
+  mainHorseHistoryRetentionBudget,
+  HISTORY_PACKET_MAX_BYTES,
+} from './ownPublicHistoryBudget.js';
 import {
   horsePlanBatchBindingFromRequest,
   horsePlanContextFromDecision,
@@ -3880,3 +3885,62 @@ it.each(['missing', 'malformed', 'wrong_shard', 'future', 'extra_field'])(
     expect(client.status().phase).toBe('ready');
   }
 );
+
+it('terminal client stop releases only its cache and prevents a pending load from resurrecting it', async () => {
+  const c = {
+    version: 1 as const,
+    observerId: '11111111-1111-4111-8111-111111111111',
+    variant: 'nlh' as const,
+    format: 'cash' as const,
+    dealtCount: 2,
+  };
+  const value = {
+    version: 1,
+    source: 'original_dealt_public_v1',
+    context: c,
+    capped: false,
+    hands: [],
+  };
+  let complete!: (value: unknown) => void;
+  const wa = new FakeWorker(),
+    wb = new FakeWorker();
+  const a = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => wa,
+    ownPublicHistory: () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  });
+  const b = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => wb,
+    ownPublicHistory: async () => value,
+  });
+  wa.emitMessage(ready);
+  wb.emitMessage(ready);
+  const ca = (a as unknown as { ownPublicHistory: HorseOwnPublicHistoryCache }).ownPublicHistory;
+  const cb = (b as unknown as { ownPublicHistory: HorseOwnPublicHistoryCache }).ownPublicHistory;
+  ca.forSnapshot(c, Date.now());
+  cb.forSnapshot(c, Date.now());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const packet = cb.forSnapshot(c, Date.now())!;
+  expect(packet).toBeDefined();
+  cb.acknowledge(c, packet.digest);
+  const before = mainHorseHistoryRetentionBudget.status().encodedBytes;
+  const stopped = a.stop();
+  wa.emitMessage({ type: 'STOPPED' });
+  await stopped;
+  expect(mainHorseHistoryRetentionBudget.status().encodedBytes).toBe(
+    before - HISTORY_PACKET_MAX_BYTES
+  );
+  expect(a.status().mainHistoryCache).toMatchObject({ entries: 0 });
+  complete(value);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(ca.forSnapshot(c, Date.now())).toBeUndefined();
+  expect(ca.status().entries).toBe(0);
+  expect(cb.forSnapshot(c, Date.now())).toBeUndefined(); // its own ACK survives
+  cb.acknowledge(c, null);
+  expect(cb.forSnapshot(c, Date.now())).toEqual(packet);
+  const stopB = b.stop();
+  wb.emitMessage({ type: 'STOPPED' });
+  await stopB;
+});

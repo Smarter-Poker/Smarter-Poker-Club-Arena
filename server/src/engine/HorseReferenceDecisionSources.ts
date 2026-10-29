@@ -109,6 +109,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':
       'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/ownPublicHistoryBudget.ts':
+      'the shared main-isolate byte reservations and heap-headroom admission that determine individual public-history availability',
     'src/engine/horseDecision/observerParticipants.ts':
       'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
     'src/engine/horseDecision/completedHandActions.ts':

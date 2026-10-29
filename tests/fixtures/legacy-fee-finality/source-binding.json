@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+    "scripts/ci/classify-ci-changes.mjs": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1187,5 +1187,54 @@
     "previous": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
     "current": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
     "validation": "Eight routing cases fail before the named selector; all65 horse routing cases pass after. Actual outer native chain passes including timing31 and purchase-budget27 checks."
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+        "current": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      }
+    },
+    "execution_performed": false
+  },
+  "playedClockFloorNativeLane20261029": {
+    "review": "Reviewed additive classifier alternatives for the played-clock-floor helper, builder and fixtures. The existing required continuation native lane invokes and source-binds the floor qualification. No workflow, financial fixture/owner, native command, assertion, budget or historical qualification verdict changes. Current source identity only, not financial recertification or production installation.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
+        "current": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
+      }
+    },
+    "execution_performed": false
+  },
+  "organizationUiContinuationComposition20261029": {
+    "review": "Composed both parent audit histories without loss. Reviewed protected runner/org-identity selection, presentation-only UI scope wrapper and its negative/source contract changes, retaining original financial/native accounting steps and continuation/floor lane selection. Only reviewed shared workflow/classifier/fixtureNativeCi test identities and directly dependent binding-file identities change; no monetary SQL, original financial fixture, amounts, assertions, native financial commands, limits or qualification status is altered. Matching identity is not renewed native financial execution, installation or production certification.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "candidateBeforeMerge": "de21f4ef570c5af97e08db4de3f633773213e8aa",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "continuation_parent": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704",
+        "protected_main": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
+        "current": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "horseTimingRecoveryMainComposition20261029": {
+    "review": "Preserved every financial source pin and all audit values from both parents, including protected-main own-agent and signup qualification notes. Reviewed the additive horse daily-counts/purchase-budget/registration-timing and five SQL fixture selector alternatives, alongside unchanged original-continuation/floor alternatives. Refresh only the composed classifier identity, existing workflow identity where parents differ, and direct legacy-fee/Spin binding dependencies. No monetary SQL, original financial fixtures, arithmetic, assertions, budgets, native commands or qualification result statuses are changed by this binding resolution. Native6 continuation/floor closure remains exactly source-bound; newly changed protected-main financial paths retain their own qualification requirements. This is not renewed financial execution, installation or production certification.",
+    "main": "cf5fa087169aab7f1c64947d1320ec0435ab9f60",
+    "candidateBeforeMerge": "0cc85eb852d7cf0f6cc2d10131572fdb7ce725d5",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "recovery_parent": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7",
+        "protected_main": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855",
+        "current": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
   }
 }

@@ -487,10 +487,20 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
         // The original controller/committed-hand binding above is required
         // before either selection or own-turn effect evidence is counted.
         const ownExecution = horse.executionEvidence;
+        // Controller records use zero for fold/check; the witness deliberately
+        // exposes a null display amount for those same no-chip actions. Keep
+        // both original representations and require their exact agreement.
+        const zeroChipAction =
+          witness.executedAction === 'fold' || witness.executedAction === 'check';
+        const amountMatches = zeroChipAction
+          ? witness.executedAmount === null &&
+            witness.expectedExecutionAmount === 0 &&
+            witness.acceptedActions[0]?.record.amount === 0
+          : witness.executedAmount === witness.expectedExecutionAmount;
         if (
           witness.executionStatus === 'intended' &&
           witness.executedAction === witness.selected.action &&
-          witness.executedAmount === witness.expectedExecutionAmount
+          amountMatches
         )
           ownExecution.selectedMatch++;
         else if (witness.executionStatus === 'coerced') ownExecution.controllerCoerced++;

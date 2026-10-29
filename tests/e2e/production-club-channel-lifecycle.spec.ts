@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { readFile } from 'node:fs/promises';
 import {
+  openChannelWithUnavailableRetry,
+  rejectedHandshakeStatus,
+} from './support/channelHandshake';
+import {
   CLEANUP_FREEZE_ALLOWANCE_MS,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
@@ -107,51 +111,99 @@ test('exact serving engine refuses absent and departed financial club channels',
     // Browser transport only: no application session or preexisting app socket.
     await page.goto('about:blank');
     async function open(token: string) {
-      return page.evaluate(
-        async ({ token, club }) => {
-          const scope = window as unknown as {
-            proofSockets: { socket: WebSocket; sync: boolean; pong: number; closed: boolean }[];
-          };
-          scope.proofSockets ||= [];
-          const state = {
-            socket: new WebSocket('wss://engine.smarter.poker/ws/channel?v=1', ['bearer', token]),
-            sync: false,
-            pong: 0,
-            closed: false,
-          };
-          const index = scope.proofSockets.push(state) - 1;
-          state.socket.onmessage = ({ data }) => {
-            const frame = JSON.parse(String(data));
-            if (frame.type === 'PING' || frame.type === 'CHANNEL_PING')
-              state.socket.send(JSON.stringify({ type: 'CHANNEL_PONG' }));
-            if (frame.type === 'CHANNEL_PONG') state.pong++;
-            if (frame.type === 'CLUB_PRESENCE_UPDATE' && frame.clubId === club) state.sync = true; // Any private club frame is a leak for a refused subject.
-          };
-          state.socket.onclose = () => {
-            state.closed = true;
-          };
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              state.socket.close();
-              reject(new Error('Channel open timed out'));
-            }, 15_000);
-            state.socket.onopen = () => {
-              clearTimeout(timeout);
-              resolve();
-            };
-            state.socket.onerror = () => {
-              clearTimeout(timeout);
-              reject(new Error('Channel open failed'));
-            };
+      return openChannelWithUnavailableRetry(
+        async () => {
+          const cdp = await page.context().newCDPSession(page);
+          let status: number | null = null;
+          let requestId: string | null = null;
+          await cdp.send('Network.enable');
+          // Retain only numeric status. Never copy headers, URL protocols or JWTs.
+          cdp.on('Network.webSocketCreated', (event) => {
+            if (event.url === 'wss://engine.smarter.poker/ws/channel?v=1')
+              requestId = event.requestId;
           });
-          state.socket.send(JSON.stringify({ type: 'JOIN_CLUB', clubId: club }));
-          state.socket.send(
-            JSON.stringify({ type: 'UPDATE_PRESENCE', clubId: club, status: 'online' })
-          );
-          state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
-          return index;
+          cdp.on('Network.webSocketHandshakeResponseReceived', (event) => {
+            if (event.requestId === requestId) status = event.response.status;
+          });
+          cdp.on('Network.webSocketFrameError', (event) => {
+            if (event.requestId === requestId && status !== 101)
+              status = rejectedHandshakeStatus(event.errorMessage);
+          });
+          try {
+            const result = await page.evaluate(
+              async ({ token, club }) => {
+                const scope = window as unknown as {
+                  proofSockets: {
+                    socket: WebSocket;
+                    sync: boolean;
+                    pong: number;
+                    closed: boolean;
+                  }[];
+                };
+                scope.proofSockets ||= [];
+                const state = {
+                  socket: new WebSocket('wss://engine.smarter.poker/ws/channel?v=1', [
+                    'bearer',
+                    token,
+                  ]),
+                  sync: false,
+                  pong: 0,
+                  closed: false,
+                };
+                const index = scope.proofSockets.push(state) - 1;
+                state.socket.onmessage = ({ data }) => {
+                  const frame = JSON.parse(String(data));
+                  if (frame.type === 'PING' || frame.type === 'CHANNEL_PING')
+                    state.socket.send(JSON.stringify({ type: 'CHANNEL_PONG' }));
+                  if (frame.type === 'CHANNEL_PONG') state.pong++;
+                  if (frame.type === 'CLUB_PRESENCE_UPDATE' && frame.clubId === club)
+                    state.sync = true; // Any private club frame is a leak for a refused subject.
+                };
+                state.socket.onclose = () => {
+                  state.closed = true;
+                };
+                const opened = await new Promise<boolean>((resolve, reject) => {
+                  const closeDeadline = setTimeout(
+                    () => reject(new Error('Channel socket close timed out')),
+                    17_000
+                  );
+                  const timeout = setTimeout(() => state.socket.close(), 15_000);
+                  state.socket.onopen = () => {
+                    clearTimeout(timeout);
+                    clearTimeout(closeDeadline);
+                    resolve(true);
+                  };
+                  // Failed handshakes close after error; await that close before retry.
+                  state.socket.onerror = () => state.socket.close();
+                  state.socket.onclose = (event) => {
+                    clearTimeout(timeout);
+                    clearTimeout(closeDeadline);
+                    state.closed = true;
+                    (state as typeof state & { closeCode?: number }).closeCode = event.code;
+                    resolve(false);
+                  };
+                });
+                if (!opened)
+                  return {
+                    opened: false,
+                    index,
+                    closeCode: (state as typeof state & { closeCode?: number }).closeCode ?? null,
+                  };
+                state.socket.send(JSON.stringify({ type: 'JOIN_CLUB', clubId: club }));
+                state.socket.send(
+                  JSON.stringify({ type: 'UPDATE_PRESENCE', clubId: club, status: 'online' })
+                );
+                state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+                return { opened: true, index, closeCode: null };
+              },
+              { token, club: CLUB }
+            );
+            return { ...result, status };
+          } finally {
+            await cdp.detach();
+          }
         },
-        { token, club: CLUB }
+        (diagnostic) => observed.push({ label: 'channel-handshake', ...diagnostic })
       );
     }
     async function state(index: number) {
@@ -161,7 +213,22 @@ test('exact serving engine refuses absent and departed financial club channels',
       }, index);
     }
     async function close(index: number) {
-      await page.evaluate((index) => (window as any).proofSockets[index].socket.close(), index);
+      await page.evaluate(async (index) => {
+        const socket = (window as any).proofSockets[index].socket as WebSocket;
+        if (socket.readyState === WebSocket.CLOSED) return;
+        await new Promise<void>((resolve, reject) => {
+          const deadline = setTimeout(() => reject(new Error('Channel close timed out')), 5_000);
+          socket.addEventListener(
+            'close',
+            () => {
+              clearTimeout(deadline);
+              resolve();
+            },
+            { once: true }
+          );
+          socket.close();
+        });
+      }, index);
     }
     async function positiveControl() {
       const i = await open(staffLogin.data.session!.access_token);
@@ -235,7 +302,18 @@ test('exact serving engine refuses absent and departed financial club channels',
       ),
     });
   } finally {
-    await cleanup();
+    try {
+      await info.attach('channel-handshakes', {
+        contentType: 'application/json',
+        body: Buffer.from(
+          JSON.stringify(
+            observed.filter((entry) => (entry as { label?: string }).label === 'channel-handshake')
+          )
+        ),
+      });
+    } finally {
+      await cleanup();
+    }
   }
   async function cleanup() {
     const failures: unknown[] = [];

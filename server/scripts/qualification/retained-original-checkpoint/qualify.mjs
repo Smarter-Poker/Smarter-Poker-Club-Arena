@@ -26,6 +26,13 @@ const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 function need(value, reason) {
   if (!value) throw new Error(reason);
 }
+// Git hooks export repository-local coordinates. Filesystem discovery in the
+// external scratch directory must not inherit the caller's repository binding.
+function isolatedEnvironment(extra = {}) {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name];
+  return { ...env, GIT_NO_LAZY_FETCH: '1', ...extra };
+}
 function run(program, args, cwd, timeout = 120000, extraEnv = {}) {
   const remaining = Math.floor(qualificationDeadline - performance.now());
   need(remaining > 0, 'historical qualification total 120-second budget exhausted');
@@ -35,7 +42,7 @@ function run(program, args, cwd, timeout = 120000, extraEnv = {}) {
     timeout: Math.min(timeout, remaining),
     maxBuffer: 8 * 1024 * 1024,
     env: {
-      ...process.env,
+      ...isolatedEnvironment(),
       SUPABASE_URL: 'https://supabase.invalid',
       SUPABASE_SERVICE_ROLE_KEY: 'unit-test-placeholder-key',
       ...extraEnv,
@@ -112,6 +119,7 @@ need(
 );
 const withinGit = spawnSync('git', ['-C', tempRoot, 'rev-parse', '--is-inside-work-tree'], {
   encoding: 'utf8',
+  env: isolatedEnvironment(),
 });
 need(
   withinGit.status !== 0,
@@ -119,9 +127,7 @@ need(
 );
 run('git', ['cat-file', '-e', EED + '^{commit}'], ROOT);
 const serverDependencies = realpathSync(join(ROOT, 'server/node_modules'));
-const rootDependencies = realpathSync(join(ROOT, 'node_modules'));
-for (const path of [serverDependencies, rootDependencies])
-  need(existsSync(path), 'existing locked dependencies required');
+need(existsSync(serverDependencies), 'existing locked server dependencies required');
 const folder = mkdtempSync(join(tempRoot, 'eed-checkpoint-'));
 try {
   const archive = join(folder, 'exact-eed.tar');
@@ -130,7 +136,8 @@ try {
   run('tar', ['-xf', archive, '-C', folder], ROOT);
   rmSync(archive);
   const server = join(folder, 'server');
-  symlinkSync(rootDependencies, join(folder, 'node_modules'), 'dir');
+  // Historical server sources use the same locked server package at both resolution roots.
+  symlinkSync(serverDependencies, join(folder, 'node_modules'), 'dir');
   symlinkSync(serverDependencies, join(server, 'node_modules'), 'dir');
   run(
     process.execPath,

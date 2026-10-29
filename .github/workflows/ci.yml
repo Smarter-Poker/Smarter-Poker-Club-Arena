@@ -3414,6 +3414,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The retained-original qualification compiles one exact historical
+          # engine and verifies its observed source bytes before any admission.
+          fetch-depth: 0
 
       - name: Setup Node 22
         uses: actions/setup-node@v4

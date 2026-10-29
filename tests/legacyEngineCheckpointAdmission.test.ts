@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 // File-scoped on purpose: no global testTimeout, no --no-file-parallelism.
 vi.setConfig({ testTimeout: 90_000 });
 import { sliceBetween } from './helpers/sourceWindow';
+import { parse } from 'yaml';
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
@@ -582,5 +583,26 @@ describe('installed mixed custody contract prerequisite', () => {
     const outcome = run(qualified, '', predecessor758);
     expect(outcome.exit).toBe(1);
     expect(outcome.requests).toEqual([]);
+  });
+});
+
+describe('historical checkpoint qualification inputs', () => {
+  it('supplies historical source objects and blobs before both existing hosted server gates', () => {
+    const ci = parse(read('.github/workflows/ci.yml'));
+    const release = parse(read('.github/workflows/auto-deploy-hetzner.yml'));
+    const ciCheckout = ci.jobs.server_shards.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout'
+    );
+    const releaseCheckout = release.jobs.preflight.steps.find(
+      (step: { name?: string }) => step.name === 'Checkout the requested immutable commit'
+    );
+    for (const checkout of [ciCheckout, releaseCheckout]) {
+      expect(checkout.with['fetch-depth']).toBe(0);
+      expect(checkout.with.filter).toBeUndefined();
+    }
+    const driver = read('server/scripts/qualification/retained-original-checkpoint/qualify.mjs');
+    expect(driver).toContain("GIT_NO_LAZY_FETCH: '1'");
+    expect(driver).toContain("name.startsWith('GIT_')");
+    expect(driver).not.toContain("realpathSync(join(ROOT, 'node_modules'))");
   });
 });

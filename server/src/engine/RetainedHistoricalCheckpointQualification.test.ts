@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isAbsolute } from 'node:path';
 import { expect, it } from 'vitest';
 
 // Existing required server shards execute this exact historical-owner proof.
@@ -10,12 +11,21 @@ it('qualifies the exact deployed EED owners before admitting the retained-origin
   const driver = fileURLToPath(
     new URL('../../scripts/qualification/retained-original-checkpoint/qualify.mjs', import.meta.url)
   );
+  // A real hook's exported repository binding must not make external scratch
+  // look like this checkout. Exercise the same boundary in hosted checks.
+  const repository = spawnSync('git', ['rev-parse', '--absolute-git-dir'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  expect(repository.status, repository.stderr).toBe(0);
+  const gitDirectory = repository.stdout.trim();
+  expect(isAbsolute(gitDirectory)).toBe(true);
   const result = spawnSync(process.execPath, [driver], {
     cwd: process.cwd(),
     encoding: 'utf8',
     timeout: 150_000,
     maxBuffer: 128 * 1024,
-    env: { ...process.env },
+    env: { ...process.env, GIT_DIR: gitDirectory },
   });
   expect(result.error?.message ?? null, result.stderr).toBeNull();
   expect(result.status, result.stderr).toBe(0);

@@ -75,8 +75,10 @@ try {
     [
       'export class GameServer {',
       ' calls=0;',
-      ' checkpoint(options,objects,modules,engines,managers){',
+      ' checkpoint(options,objects,modules,engines,managers,workers,hosts){',
       '  this.calls++;',
+      "  if(process.argv[3]==='engine_census' && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
+      "  if(process.argv[3]==='engine_census' && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
       "  if(process.argv[3]==='engine_census' && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
       "  if(process.argv[3]==='engine_census' && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
@@ -90,24 +92,28 @@ try {
       '}',
       'export class ServerTableEngine { constructor(kind){this.kind=kind;} }',
       'export class TournamentManager { constructor(kind){this.kind=kind;} }',
+      'export class LightningClusterWorker { constructor(kind){this.kind=kind;} }',
+      'export class LightningHandHost { constructor(kind){this.kind=kind;} }',
     ].join('\n')
   );
   writeFileSync(
     join(directory, 'target.mjs'),
     [
       "import {createInterface} from 'node:readline';",
-      "import {GameServer,ServerTableEngine,TournamentManager} from './owner.mjs';",
+      "import {GameServer,ServerTableEngine,TournamentManager,LightningClusterWorker,LightningHandHost} from './owner.mjs';",
       'const instances=Array.from({length:' + count + '},()=>new GameServer());',
       "const engineInstances=[new ServerTableEngine('registered'),new ServerTableEngine('detached')];",
       "const managerInstances=[new TournamentManager('registered'),new TournamentManager('detached')];",
+      "const lightningWorkerInstances=[new LightningClusterWorker('registered'),new LightningClusterWorker('detached')];",
+      "const lightningHostInstances=[new LightningHandHost('registered'),new LightningHandHost('detached')];",
       "const inspector=process.getBuiltinModule('node:inspector');",
       "const lines=createInterface({input:process.stdin});const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');",
       "lines.on('line',line=>{const {type}=JSON.parse(line);",
-      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length}:{})});",
+      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
-      "send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length}:{})});",
+      "send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(process.argv[3]==='engine_census'?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
     ].join('\n')
   );
   const allocation = createServer();
@@ -212,13 +218,13 @@ try {
   const inner =
     'import(' +
     JSON.stringify(pathToFileURL(join(directory, 'owner.mjs')).href) +
-    ').then(gameServer=>({gameServer,engine:gameServer,manager:gameServer}))';
+    ').then(gameServer=>({gameServer,engine:gameServer,manager:gameServer,lightningWorker:gameServer,lightningHost:gameServer}))';
   const moduleExpression =
     "process.getBuiltinModule('node:vm').runInThisContext(" +
     JSON.stringify(inner) +
     ",{importModuleDynamically:process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER})";
-  const guard = function (options, objects, modules, engines, managers) {
-    return this.checkpoint(options, objects, modules, engines, managers);
+  const guard = function (options, objects, modules, engines, managers, workers, hosts) {
+    return this.checkpoint(options, objects, modules, engines, managers, workers, hosts);
   };
   const options = {
     pid: child.pid,
@@ -430,7 +436,7 @@ try {
       expectedCalls = 0;
     }
   }
-  assert.equal(result.ok, ['success', 'engine_census'].includes(scenario));
+  assert.equal(result.ok, ['success', 'engine_census'].includes(scenario), JSON.stringify(result));
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
@@ -442,7 +448,9 @@ try {
     pid: child.pid,
     calls: expectedCalls,
     inspectorOpen: false,
-    ...(scenario === 'engine_census' ? { engineCount: 2, managerCount: 2 } : {}),
+    ...(scenario === 'engine_census'
+      ? { engineCount: 2, managerCount: 2, lightningWorkerCount: 2, lightningHostCount: 2 }
+      : {}),
   });
   const refused = await bounded(
     new Promise((resolve, reject) => {

@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 // Contract of the serialized guard only. The maintained historical-runtime
 // driver separately exercises real compiled EED engine owners and their stops.
 const source = readFileSync(
-  fileURLToPath(new URL('../../scripts/retained-original-checkpoint-guard.mjs', import.meta.url)),
+  process.env.RETAINED_CHECKPOINT_CONTRACT_SOURCE ??
+    fileURLToPath(new URL('../../scripts/retained-original-checkpoint-guard.mjs', import.meta.url)),
   'utf8'
 );
 const pins = new Map<string, string>(
@@ -56,6 +57,33 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     };
   class MaintenanceBreak {}
   class GameServer {}
+  const frozen = () => true;
+  class LightningFormationGate {
+    entries = new Map();
+  }
+  const lightningFormationGate = new LightningFormationGate();
+  class LightningRegistry {
+    hosts = new Map();
+    hostByRoom = new Map();
+  }
+  class LightningHosting {
+    pending = new Set();
+    constructor(public deps: any) {}
+  }
+  class LightningSupervisor {
+    workers = new Map();
+    inFlight = null;
+    stopOperation = null;
+    frozen = frozen;
+    constructor(public deps: any) {}
+  }
+  class LightningClusterWorker {
+    inFlight = null;
+    aaInFlight = null;
+    pendingRequestId = null;
+    frozen = frozen;
+    gate = lightningFormationGate;
+  }
   class HandController {
     serializeRecoveryState() {
       return 'actual-private-controller';
@@ -367,6 +395,13 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     tableEngines: new Map(cash ? [[table, engine]] : []),
     tournamentEngines: new Map(cash ? [] : [[tournament, manager]]),
   });
+  server.lightningRooms = new LightningRegistry();
+  server.lightningHosting = new LightningHosting({ registry: server.lightningRooms });
+  server.lightningSupervisor = new LightningSupervisor({ hosting: server.lightningHosting });
+  const lightningWorker = new LightningClusterWorker();
+  server.lightningSupervisor.workers.set('idle-cluster', lightningWorker);
+  const discoveredLightningWorkers = [lightningWorker];
+  const discoveredLightningHosts: unknown[] = [];
   ServerTableEngineBase.liveEngines.set(table, engine);
   rows.set(table, snapshot(false));
   const encode = (v: any) => {
@@ -394,6 +429,10 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
     },
     tableLease: { INSTANCE_ID: 'actual-process' },
     gameServer: { GameServer },
+    lightningRegistry: { LightningRegistry, LightningHosting },
+    lightningSupervisor: { LightningSupervisor },
+    lightningWorker: { LightningClusterWorker },
+    lightningFormation: { LightningFormationGate, lightningFormationGate },
     base: { ServerTableEngineBase },
     engine: { ServerTableEngine },
     maintenance: { MaintenanceBreak },
@@ -404,7 +443,7 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
       bindTournamentDataAuthority: bind,
       currentTournamentDataAuthority: () => currentActor,
     },
-    freezeState: { isMaintenanceFrozen: () => true },
+    freezeState: { isMaintenanceFrozen: frozen },
     privateContinuation: { encodePrivateHandContinuation: encode },
     client: {
       supabase: {
@@ -510,6 +549,10 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
   };
   return {
     addDetachedManager,
+    lightningFormationGate,
+    lightningWorker,
+    discoveredLightningWorkers,
+    discoveredLightningHosts,
     discoveredManagers,
     engine,
     manager,
@@ -532,7 +575,9 @@ function fixture({ cash = false, banks = true }: { cash?: boolean; banks?: boole
         [server],
         modules,
         [engine],
-        discoveredManagers
+        discoveredManagers,
+        discoveredLightningWorkers,
+        discoveredLightningHosts
       ),
   };
 }
@@ -685,5 +730,49 @@ describe('serialized retained-original guard owner contract', () => {
       reason: 'retained_stop_custody_unproven',
       restartAuthorized: false,
     });
+  });
+});
+
+describe('Lightning ownership is part of the serialized checkpoint fleet', () => {
+  it.each([
+    'pending-host',
+    'registered-host',
+    'unknown-formation',
+    'worker-inflight',
+    'supervisor-inflight',
+    'late-pending-host',
+    'unknown-schema',
+    'detached-worker-inflight',
+    'missing-worker-census',
+    'detached-host-census',
+  ])('refuses %s before the first classic stop', async (scenario) => {
+    const f = fixture();
+    if (scenario === 'pending-host') f.server.lightningHosting.pending.add({});
+    if (scenario === 'registered-host') f.server.lightningRooms.hosts.set('host', {});
+    if (scenario === 'unknown-formation')
+      f.lightningFormationGate.entries.set('cluster', {
+        requestId: 'unknown',
+        inFlight: false,
+        unknownSinceMs: Date.now(),
+      });
+    if (scenario === 'detached-worker-inflight') {
+      f.server.lightningSupervisor.workers.clear();
+      (f.lightningWorker as any).inFlight = new Promise(() => {});
+    }
+    if (scenario === 'detached-host-census')
+      f.discoveredLightningHosts.push({ state: 'settlement_unknown' });
+    if (scenario === 'missing-worker-census') f.discoveredLightningWorkers.length = 0;
+    if (scenario === 'worker-inflight') (f.lightningWorker as any).inFlight = Promise.resolve();
+    if (scenario === 'supervisor-inflight')
+      f.server.lightningSupervisor.inFlight = Promise.resolve();
+    if (scenario === 'late-pending-host')
+      f.controls.onAttest = () => f.server.lightningHosting.pending.add({});
+    if (scenario === 'unknown-schema') f.server.lightningRooms.hostByRoom = undefined;
+    expect(await f.run()).toMatchObject({
+      ok: false,
+      attemptedTables: 0,
+      restartAuthorized: false,
+    });
+    expect(f.events).not.toContain('stop');
   });
 });

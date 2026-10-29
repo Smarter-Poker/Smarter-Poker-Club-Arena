@@ -97,6 +97,13 @@ vi.mock('../services/supabase/client.js', () => {
 });
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
 import * as gameServer from '../GameServer.js';
+import * as lightningRegistry from '../lightning/LightningRegistry.js';
+import * as lightningSupervisor from '../lightning/LightningSupervisor.js';
+import * as lightningWorker from '../lightning/LightningClusterWorker.js';
+import * as lightningFormation from '../lightning/LightningFormationGate.js';
+import * as lightningHost from '../lightning/LightningHandHost.js';
+import { parseLightningConfig } from '../lightning/LightningConfig.js';
+import { LightningPresence } from '../lightning/LightningPresence.js';
 import * as base from './ServerTableEngineBase.js';
 import * as engine from './ServerTableEngine.js';
 import * as controller from './HandController.js';
@@ -124,6 +131,7 @@ afterEach(async () => {
   wire.originals.clear();
   wire.parked.clear();
   wire.onAttest = null;
+  (lightningFormation.lightningFormationGate as any).entries.clear();
 });
 const id = (n: number) => `c0ffee00-0000-4000-8000-${String(n).padStart(12, '0')}`;
 function chairs(n: number) {
@@ -155,6 +163,16 @@ function banks(e: any, seats: any[]) {
 }
 const wholeCases = [
   'positive',
+  'lightning-pending-host',
+  'lightning-registered-host',
+  'lightning-unknown-formation',
+  'lightning-worker-inflight',
+  'lightning-supervisor-inflight',
+  'lightning-late-pending-host',
+  'lightning-unknown-schema',
+  'lightning-detached-native-pre-gate',
+  'lightning-missing-worker-census',
+  'lightning-detached-unknown-host',
   'detached-drained',
   'detached-lifecycle-job',
   'detached-job-during-await',
@@ -178,6 +196,29 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     tournamentOwnedTables: new Set(),
     tournamentRetirementCustody: new TournamentRetirementCustody(),
   });
+  server.lightningRooms = new lightningRegistry.LightningRegistry();
+  server.lightningHosting = new lightningRegistry.LightningHosting({
+    registry: server.lightningRooms,
+    backend: {} as any,
+    hub: { sendToUser: () => {} } as any,
+    leaseFor: () => null,
+  });
+  server.lightningSupervisor = new lightningSupervisor.LightningSupervisor({
+    hosting: server.lightningHosting,
+    presenceSource: () => [],
+    frozen: freezeState.isMaintenanceFrozen,
+  });
+  const worker: any = new lightningWorker.LightningClusterWorker(
+    id(70),
+    parseLightningConfig(null),
+    {
+      rpc: {} as any,
+      presence: new LightningPresence(() => []),
+      frozen: freezeState.isMaintenanceFrozen,
+      formationGate: lightningFormation.lightningFormationGate,
+    }
+  );
+  server.lightningSupervisor.workers.set(id(70), worker);
   const m: any = actor.bindTournamentDataAuthorityMethods(
     { tournamentId: id(1), leaseGeneration: id(2) },
     new TournamentManager(id(1), server, id(2), performance.now() + 600000)
@@ -333,6 +374,10 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
   );
   const modules = {
     gameServer,
+    lightningRegistry,
+    lightningSupervisor,
+    lightningWorker,
+    lightningFormation,
     base,
     engine,
     controller,
@@ -403,6 +448,57 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
       lane.retentionWaiters.push({ sequence: 4, resolve: () => {}, reject: () => {} });
     objects.push(shadow);
   }
+  if (scenario === 'lightning-pending-host') server.lightningHosting.pending.add({});
+  if (scenario === 'lightning-registered-host') server.lightningRooms.hosts.set(id(71), {});
+  if (scenario === 'lightning-unknown-formation') {
+    lightningFormation.lightningFormationGate.open(id(70), 'actual-unknown-request', now);
+    lightningFormation.lightningFormationGate.close(id(70), 'actual-unknown-request', true, now);
+  }
+  if (scenario === 'lightning-worker-inflight') worker.inFlight = Promise.resolve();
+  if (scenario === 'lightning-supervisor-inflight')
+    server.lightningSupervisor.inFlight = Promise.resolve();
+  if (scenario === 'lightning-late-pending-host')
+    wire.onAttest = () => server.lightningHosting.pending.add({});
+  if (scenario === 'lightning-unknown-schema') server.lightningRooms.hostByRoom = undefined;
+  let releaseFrontLease: ((held: boolean) => void) | undefined;
+  if (scenario === 'lightning-detached-native-pre-gate') {
+    freezeState.setMaintenanceFrozen(false);
+    worker.config = parseLightningConfig({ worker_mode: 'form' });
+    worker.deps.startHand = () => {
+      throw Error('Unexpected fixture hand formation');
+    };
+    worker.deps.holdsFrontTableLease = () =>
+      new Promise<boolean>((resolve) => {
+        releaseFrontLease = resolve;
+      });
+    worker.start();
+    await vi.waitFor(() => expect(typeof releaseFrontLease).toBe('function'));
+    expect(worker.inFlight).toBeInstanceOf(Promise);
+    expect((lightningFormation.lightningFormationGate as any).entries.size).toBe(0);
+    expect(server.lightningHosting.pending.size).toBe(0);
+    server.lightningSupervisor.workers.clear();
+    freezeState.setMaintenanceFrozen(true);
+  }
+  const detachedHosts: any[] = [];
+  if (scenario === 'lightning-detached-unknown-host') {
+    const host: any = new lightningHost.LightningHandHost(
+      {
+        clusterId: id(70),
+        instanceId: id(71),
+        handId: id(72),
+        bb: id(73),
+        sb: id(74),
+        btn: id(73),
+        players: [id(73), id(74)],
+        formedAtMs: now,
+      },
+      { backend: {} as any, hub: {} as any, leaseFor: () => null }
+    );
+    host.state = 'settlement_unknown';
+    detachedHosts.push(host);
+    expect(server.lightningHosting.pending.size).toBe(0);
+    expect(server.lightningRooms.hosts.size).toBe(0);
+  }
   const result = await retainedOriginalCheckpointGuard.call(
     server,
     {
@@ -413,8 +509,14 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     [server],
     modules,
     objects,
-    scenario === 'missing-manager-census' ? [] : managers
+    scenario === 'missing-manager-census' ? [] : managers,
+    scenario === 'lightning-missing-worker-census' ? [] : [worker],
+    detachedHosts
   );
+  if (releaseFrontLease) {
+    releaseFrontLease(false);
+    await worker.stop();
+  }
   if (!['positive', 'detached-drained'].includes(scenario)) {
     expect(result, scenario).toMatchObject({
       ok: false,
@@ -423,6 +525,7 @@ it.each(wholeCases)('whole guard uses actual EED owners: %s', async (scenario) =
     });
     for (const f of originals) expect(f.e.terminal).toBe(false);
     expect(cash.terminal).toBe(false);
+    if (scenario.startsWith('lightning-')) return;
     expect(result.reason).toBe(
       scenario === 'shadow-newer-retained-sequence'
         ? 'retained_shadow_disposition_unproven'

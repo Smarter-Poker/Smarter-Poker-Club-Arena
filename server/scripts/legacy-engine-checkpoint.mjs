@@ -585,7 +585,9 @@ export async function runLegacyEngineCheckpoint({
     );
     if (!server?.objectId) throw refused('singleton unavailable');
     let engineObjects = null,
-      managerObjects = null;
+      managerObjects = null,
+      lightningWorkerObjects = null,
+      lightningHostObjects = null;
     if (discoverEngines) {
       operation = 'enginePrototype';
       const enginePrototype = remoteValue(
@@ -639,6 +641,62 @@ export async function runLegacyEngineCheckpoint({
       );
       managerObjects = managerResponse?.objects?.objectId;
       if (!managerObjects) throw refused('manager object census unavailable');
+      operation = 'lightningWorkerPrototype';
+      const lightningWorkerPrototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration:
+              'function() { return this.lightningWorker.LightningClusterWorker.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!lightningWorkerPrototype?.objectId)
+        throw refused('cached lightning worker prototype unavailable');
+      operation = 'lightningWorkerObjects';
+      const lightningWorkerResponse = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: lightningWorkerPrototype.objectId,
+          objectGroup: 'legacy-checkpoint',
+        },
+        deadline,
+        operation
+      );
+      lightningWorkerObjects = lightningWorkerResponse?.objects?.objectId;
+      if (!lightningWorkerObjects) throw refused('lightning worker object census unavailable');
+      operation = 'lightningHostPrototype';
+      const lightningHostPrototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration:
+              'function() { return this.lightningHost.LightningHandHost.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!lightningHostPrototype?.objectId)
+        throw refused('cached lightning host prototype unavailable');
+      operation = 'lightningHostObjects';
+      const lightningHostResponse = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: lightningHostPrototype.objectId,
+          objectGroup: 'legacy-checkpoint',
+        },
+        deadline,
+        operation
+      );
+      lightningHostObjects = lightningHostResponse?.objects?.objectId;
+      if (!lightningHostObjects) throw refused('lightning host object census unavailable');
     }
     checkpointInvoked = true;
     operation = 'guardCall';
@@ -659,7 +717,14 @@ export async function runLegacyEngineCheckpoint({
             },
             { objectId: objects.objects.objectId },
             { objectId: modules.objectId },
-            ...(discoverEngines ? [{ objectId: engineObjects }, { objectId: managerObjects }] : []),
+            ...(discoverEngines
+              ? [
+                  { objectId: engineObjects },
+                  { objectId: managerObjects },
+                  { objectId: lightningWorkerObjects },
+                  { objectId: lightningHostObjects },
+                ]
+              : []),
           ],
           awaitPromise: true,
           returnByValue: true,
@@ -825,10 +890,10 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
       ? ", import('file:///app/dist/tournament/TournamentManager.js'), import('file:///app/dist/tournament/TournamentManagerBase.js'), import('file:///app/dist/services/F06HandPermit.js'), import('file:///app/dist/services/TournamentRetirementCustody.js')"
       : '';
   const retainedImports = retainedEed
-    ? ", import('file:///app/dist/engine/ServerTableEngine.js'), import('file:///app/dist/engine/HandController.js'), import('file:///app/dist/engine/PrivateHandContinuation.js')"
+    ? ", import('file:///app/dist/engine/ServerTableEngine.js'), import('file:///app/dist/engine/HandController.js'), import('file:///app/dist/engine/PrivateHandContinuation.js'), import('file:///app/dist/lightning/LightningRegistry.js'), import('file:///app/dist/lightning/LightningSupervisor.js'), import('file:///app/dist/lightning/LightningClusterWorker.js'), import('file:///app/dist/lightning/LightningFormationGate.js'), import('file:///app/dist/lightning/LightningHandHost.js')"
     : '';
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
-    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}${retainedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation}))",
+    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}${retainedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation,lightningRegistry,lightningSupervisor,lightningWorker,lightningFormation,lightningHost])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation,lightningRegistry,lightningSupervisor,lightningWorker,lightningFormation,lightningHost}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const checkpointResult = await runLegacyEngineCheckpoint({
     pid: 1,

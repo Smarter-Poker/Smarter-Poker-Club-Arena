@@ -98,8 +98,8 @@ need(pinText, 'fixed deployed pin census unavailable');
 // decoded value is still restricted to the fixed ASCII path/hash schema below.
 const pins = JSON.parse(pinText[1].replace(/'/g, '"').replace(/,\s*]/g, ']'));
 need(
-  pins.length === 24 &&
-    new Set(pins.map(([path]) => path)).size === 24 &&
+  pins.length === 29 &&
+    new Set(pins.map(([path]) => path)).size === 29 &&
     pins.every(
       ([path, sha]) => /^\/app\/dist\/[A-Za-z0-9/]+\.js$/.test(path) && /^[a-f0-9]{64}$/.test(sha)
     ),
@@ -131,8 +131,13 @@ need(existsSync(serverDependencies), 'existing locked server dependencies requir
 const folder = mkdtempSync(join(tempRoot, 'eed-checkpoint-'));
 try {
   const archive = join(folder, 'exact-eed.tar');
-  run('git', ['archive', '--format=tar', '--output=' + archive, EED], ROOT);
-  // The archive is created from the fixed local Git object, never caller input.
+  run(
+    'git',
+    ['archive', '--format=tar', '--output=' + archive, EED, 'server', 'package.json'],
+    ROOT
+  );
+  // All historical server source/config/data and root ESM metadata come from the fixed Git object.
+  // Unrelated client assets and migration archives cannot consume the native proof budget.
   run('tar', ['-xf', archive, '-C', folder], ROOT);
   rmSync(archive);
   const server = join(folder, 'server');
@@ -175,10 +180,10 @@ try {
   const result = JSON.parse(output.slice(start));
   need(
     result.success === true &&
-      result.numTotalTests === 19 &&
-      result.numPassedTests === 19 &&
+      result.numTotalTests === 29 &&
+      result.numPassedTests === 29 &&
       result.numFailedTests === 0,
-    'all nineteen exact EED fixture cases must actually pass'
+    'all twenty-nine exact EED fixture cases must actually pass'
   );
   need(
     hash(readFileSync(guardPath)) === hash(guardBytes),

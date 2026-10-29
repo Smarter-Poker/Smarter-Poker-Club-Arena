@@ -8,9 +8,31 @@ export async function retainedOriginalCheckpointGuard(
   discoveredServers,
   modules,
   discoveredEngines,
-  discoveredManagers
+  discoveredManagers,
+  discoveredLightningWorkers,
+  discoveredLightningHosts
 ) {
   const pins = [
+    [
+      '/app/dist/lightning/LightningHandHost.js',
+      '0f61b640d950a21bcafe56fe9e509ce186592a35e589274e1cc326b0016f5e30',
+    ],
+    [
+      '/app/dist/lightning/LightningRegistry.js',
+      '0303008fafdf3de528aa0b6f27fd9e7353d41dd7926d4fcd8af08a4073dd5a04',
+    ],
+    [
+      '/app/dist/lightning/LightningSupervisor.js',
+      'a7bb7e75a39b8be4158e7e1477641e6ae130ca5a504308bd7ecc2ad0d123cbee',
+    ],
+    [
+      '/app/dist/lightning/LightningClusterWorker.js',
+      'd4e1ebce5eb119df140c559052525a94829a735a369c34911d1650d6c1126a61',
+    ],
+    [
+      '/app/dist/lightning/LightningFormationGate.js',
+      '28a2804d1fa5870de9737012efd8a9a0540e7bae945cb666a3731c58a50c5375',
+    ],
     ['/app/dist/GameServer.js', '813adcb6c6344f3307e80db966ba5eb4ffb4a651d9f3260f1df5db6544044845'],
     [
       '/app/dist/engine/ServerTableEngineBase.js',
@@ -188,6 +210,91 @@ export async function retainedOriginalCheckpointGuard(
     const concrete = modules.engine.ServerTableEngine;
     const server = this,
       maintenance = server.maintenanceBreak;
+    const lightningHosting = server.lightningHosting,
+      lightningRooms = server.lightningRooms,
+      lightningSupervisor = server.lightningSupervisor,
+      lightningGate = modules.lightningFormation.lightningFormationGate;
+    need(
+      Object.getPrototypeOf(lightningHosting) ===
+        modules.lightningRegistry.LightningHosting.prototype &&
+        Object.getPrototypeOf(lightningRooms) ===
+          modules.lightningRegistry.LightningRegistry.prototype &&
+        Object.getPrototypeOf(lightningSupervisor) ===
+          modules.lightningSupervisor.LightningSupervisor.prototype &&
+        Object.getPrototypeOf(lightningGate) ===
+          modules.lightningFormation.LightningFormationGate.prototype &&
+        lightningHosting.pending instanceof Set &&
+        lightningRooms.hosts instanceof Map &&
+        lightningRooms.hostByRoom instanceof Map &&
+        lightningSupervisor.workers instanceof Map &&
+        lightningGate.entries instanceof Map,
+      'retained_lightning_owner_unproven'
+    );
+    const lightningPending = lightningHosting.pending,
+      lightningHosts = lightningRooms.hosts,
+      lightningHostByRoom = lightningRooms.hostByRoom,
+      lightningWorkers = lightningSupervisor.workers,
+      lightningWorkerEntries = [...lightningWorkers],
+      lightningFormations = lightningGate.entries;
+    need(
+      Array.isArray(discoveredLightningWorkers) &&
+        discoveredLightningWorkers.length <= 4000 &&
+        new Set(discoveredLightningWorkers).size === discoveredLightningWorkers.length &&
+        lightningWorkerEntries.every(([, worker]) => discoveredLightningWorkers.includes(worker)),
+      'retained_lightning_census_unproven'
+    );
+    // A resolved whenFinished() may mean settlement_unknown. No terminal
+    // label substitutes for absence of the concrete host and its async work.
+    need(
+      Array.isArray(discoveredLightningHosts) && discoveredLightningHosts.length === 0,
+      'retained_lightning_host_census_unproven'
+    );
+    const proveLightningAbsent = () => {
+      // Room hosts and forming calls are separate from classic table engines.
+      // Inspect their native owners without aborting a hand or expiring an
+      // unknown formation request through the gate's mutating check().
+      need(
+        server.lightningHosting === lightningHosting &&
+          server.lightningRooms === lightningRooms &&
+          server.lightningSupervisor === lightningSupervisor &&
+          modules.lightningFormation.lightningFormationGate === lightningGate &&
+          lightningHosting.deps.registry === lightningRooms &&
+          lightningSupervisor.deps.hosting === lightningHosting &&
+          lightningHosting.pending === lightningPending &&
+          lightningRooms.hosts === lightningHosts &&
+          lightningRooms.hostByRoom === lightningHostByRoom &&
+          lightningSupervisor.workers === lightningWorkers &&
+          lightningGate.entries === lightningFormations &&
+          lightningSupervisor.frozen === modules.freezeState.isMaintenanceFrozen &&
+          modules.freezeState.isMaintenanceFrozen() === true,
+        'retained_lightning_owner_changed'
+      );
+      need(
+        lightningPending.size === 0 &&
+          lightningHosts.size === 0 &&
+          lightningHostByRoom.size === 0 &&
+          lightningFormations.size === 0 &&
+          lightningSupervisor.inFlight === null &&
+          lightningSupervisor.stopOperation === null &&
+          lightningWorkers.size === lightningWorkerEntries.length &&
+          lightningWorkerEntries.every(([id, worker]) => lightningWorkers.get(id) === worker),
+        'retained_lightning_work_unproven'
+      );
+      // A removed worker can outlive its bounded stop while still awaiting
+      // a pre-formation read. Its gate may still be empty. The concrete V8
+      // census, rather than the supervisor registry, owns this absence proof.
+      for (const worker of discoveredLightningWorkers)
+        need(
+          Object.getPrototypeOf(worker) ===
+            modules.lightningWorker.LightningClusterWorker.prototype &&
+            worker.frozen === modules.freezeState.isMaintenanceFrozen &&
+            worker.gate === lightningGate &&
+            worker.inFlight === null &&
+            worker.aaInFlight === null &&
+            worker.pendingRequestId === null,
+          'retained_lightning_formation_unproven'
+        );
+    };
     need(
       Object.getPrototypeOf(maintenance) === modules.maintenance.MaintenanceBreak.prototype,
       'retained_maintenance_owner_unproven'
@@ -398,6 +505,7 @@ export async function retainedOriginalCheckpointGuard(
       );
     };
     const checkMaintenance = () => {
+      proveLightningAbsent();
       need(
         modules.dataActorContext.currentTournamentDataAuthority() === null,
         'retained_process_actor_unproven'
@@ -969,6 +1077,7 @@ export async function retainedOriginalCheckpointGuard(
       );
     }
     for (const m of discoveredManagers) proveManagerAuthorities(m);
+    checkMaintenance();
     stage = 'checkpoint';
     attemptedTables = captures.length;
     // Calling the real manager stop fences its scheduler and every exact child

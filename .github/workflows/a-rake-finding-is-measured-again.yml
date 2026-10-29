@@ -1,0 +1,68 @@
+name: A rake finding is measured again
+
+# fn_rake_law_violations and fn_ca_remeasure_entity (migration 20261016103238).
+# Runs scripts/ci/test-a-rake-finding-is-measured-again.py against a throwaway
+# PostgreSQL 17 cluster, never production: production's exact text of both
+# functions (fixtures md5-equal to the live functions on 2026-10-16) must read
+# a four-dealt hand booked as num_players 2 as over_spec and bbj_over_spec and
+# be unable to measure its table again; the migration must reproduce
+# production's derived postimage md5s, price that hand in spec by its dealt
+# list, measure the table ok, and still measure a real over-rake and a no-flop
+# drop critical. No timer (CLAUDE.md 10.85): pull_request only, scoped to the
+# paths it proves. ci.yml has no push trigger, so neither does this.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261016103238_a_rake_finding_is_measured_again_from_the_hands_dealt_list.sql
+      - scripts/ci/fixtures/a-rake-finding-is-measured-again/**
+      - scripts/ci/test-a-rake-finding-is-measured-again.py
+      - .github/workflows/a-rake-finding-is-measured-again.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a-rake-finding-is-measured-again-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a-rake-finding-is-measured-again:
+    name: A rake finding is measured again from the hand's dealt list
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A rake finding is measured again from the hand's dealt list
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-a-rake-finding-is-measured-again.py --output artifacts/a-rake-finding-is-measured-again
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-rake-finding-is-measured-again-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/a-rake-finding-is-measured-again/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

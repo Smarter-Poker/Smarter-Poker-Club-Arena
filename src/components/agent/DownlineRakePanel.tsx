@@ -58,12 +58,13 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
 
   // Debounce the search box so typing does not fire a query per keystroke.
   useEffect(() => {
+    if (search === debounced) return;
     const t = setTimeout(() => {
       setRowLimit(PAGE_SIZE);
       setDebounced(search);
     }, 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, debounced]);
 
   const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : undefined;
 

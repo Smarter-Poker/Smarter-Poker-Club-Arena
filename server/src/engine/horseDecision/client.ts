@@ -2292,6 +2292,9 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    // Only terminal STOPPED/startup cancellation/failure reaches this owner.
+    // Ordinary null ACK recovery keeps this same cache and exact originals.
+    this.ownPublicHistory?.dispose();
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);

@@ -1,3 +1,3 @@
 # tests/weekly-quality-keyed-event-joins.law.test.ts
 
-Weekly tournament quality retains every original verdict and duplicate/NULL bag while recognition and bank joins use bounded event-key probes in natural custom and generic plans.
+Weekly tournament quality preserves original verdicts and duplicate/NULL/wrong-event bags while selected receipt and source-credit memberships read their exact original keys in natural custom and generic plans.

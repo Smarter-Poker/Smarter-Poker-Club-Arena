@@ -244,19 +244,17 @@ def qualify_rr_membership_bags(q,before,after,rec):
   rec('original_rr_all_fields_NULL_duplicate_empty_foreign_semijoin_bag_'+name)
 
 def qualify_keyed_event_bags(q,before,after,rec):
- def ev(source):
-  start=source.index('ev AS (');end=source.index('  ), scoped AS (',start)
-  return(source[start:end]+'  )').replace('public.accounting_tournament_fee_recognitions','recognitions').replace('public.tournament_rake_settlements','banks')
- # Independent raw bags include duplicate keys and nullable projected fields.
- r="recognitions(tournament_id,recognized_at,status,net_rake,union_id,bank_club_id,source_fingerprint)AS(VALUES(fixture.u(100),'2026-10-06'::timestamptz,'recognized',1::numeric,NULL::uuid,NULL::uuid,'a'),(fixture.u(100),NULL::timestamptz,NULL,NULL::numeric,NULL::uuid,NULL::uuid,NULL),(NULL::uuid,NULL::timestamptz,NULL,NULL::numeric,NULL::uuid,NULL::uuid,NULL))"
- b="banks(tournament_id,settled_at,amount,union_id,club_id)AS(VALUES(fixture.u(100),'2026-10-06'::timestamptz,1::numeric,NULL::uuid,NULL::uuid),(fixture.u(100),NULL::timestamptz,NULL::numeric,NULL::uuid,NULL::uuid),(NULL::uuid,NULL::timestamptz,NULL::numeric,NULL::uuid,NULL::uuid))"
- for name,keys,want in [('empty',[],0),('NULL',['NULL::uuid'],1),('duplicate',['fixture.u(100)','fixture.u(100)'],8),('missing',['fixture.u(999)'],1),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(999)'],6)]:
-  c='SELECT NULL::uuid tournament_id WHERE false'if not keys else'SELECT tournament_id FROM(VALUES'+','.join('('+v+')'for v in keys)+')v(tournament_id)'
-  values=[]
-  for source in[before,after]:
-   values.append(json.loads(q('WITH candidates AS('+c+'),'+r+','+b+','+ev(source)+"SELECT coalesce(jsonb_agg(to_jsonb(z)ORDER BY to_jsonb(z)::text),'[]')FROM ev z")))
-  need(values[0]==values[1]and len(values[1])==want,'event original full raw bag/null/multiplicity differs:'+name)
-  rec('event_recognition_bank_full_bag_'+name)
+ # Raw duplicate source rows and member IDs are intentionally unconstrained.
+ sources="credit_sources(rake_record_id,rake_credit)AS(VALUES(fixture.u(100),1.25::numeric),(fixture.u(100),1.25::numeric),(fixture.u(101),NULL::numeric),(NULL::uuid,9::numeric),(fixture.u(999),7::numeric))"
+ for name,ids,expected in [('empty',[],'SELECT NULL::uuid rake_record_id,NULL::numeric credited WHERE false'),('NULL',['NULL::uuid'],'SELECT NULL::uuid rake_record_id,NULL::numeric credited WHERE false'),('duplicate',['fixture.u(100)','fixture.u(100)'],'SELECT fixture.u(100)rake_record_id,2.50::numeric credited'),('missing',['fixture.u(777)'],'SELECT NULL::uuid rake_record_id,NULL::numeric credited WHERE false'),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(101)','fixture.u(100)'],'SELECT * FROM(VALUES(fixture.u(100),2.50::numeric),(fixture.u(101),NULL::numeric))e(rake_record_id,credited)')]:
+  members='SELECT NULL::uuid id WHERE false'if not ids else'SELECT id FROM(VALUES'+','.join('('+v+')'for v in ids)+')m(id)'
+  bags=[]
+  for source in [before,after]:
+   start=source.index('src_sum AS (');end=source.index('  ), rr_agg AS (',start)
+   block=(source[start:end]+'  )').replace('public.accounting_tournament_fee_sources','credit_sources')
+   sql='WITH rr AS('+members+'),'+sources+','+block+',actual AS(SELECT * FROM src_sum),expected AS('+expected+")SELECT jsonb_build_object('bag',COALESCE((SELECT jsonb_agg(to_jsonb(x)ORDER BY to_jsonb(x)::text)FROM actual x),'[]'),'wrong',EXISTS((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected)UNION ALL(SELECT * FROM expected EXCEPT ALL SELECT * FROM actual)))"
+   result=json.loads(q(sql));need(result['wrong']is False,'independent source-credit raw bag differs:'+name);bags.append(result['bag'])
+  need(bags[0]==bags[1],'source credit original semijoin multiplicity differs:'+name);rec('source_credit_membership_full_bag_'+name)
 
 def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
  q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
@@ -288,23 +286,19 @@ def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
  if bank_changed:need(any(n.get('Actual Loops',0)>=5000 for n in oldbank),'old forced bank loop was not reproduced')
  else:need(oldbank and all(n.get('Actual Loops',0)==1 for n in oldbank),'installed direct bank owner changed')
  if keyed_event:
-  # The original direct join can merge a global bank history. Exact event-key
-  # probes must instead stay bounded for both default and prepared plans.
-  for table in ['tournament_rake_settlements','accounting_tournament_fee_recognitions']:
-   accesses=[n for n in nodes(plans['after']['Plan'])if n.get('Relation Name')==table and 'tournament_id ='in n.get('Index Cond','')]
-   need(accesses and all(n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index' in n['Node Type']for n in accesses),'event-key lookup not bounded:'+table+':'+str(accesses))
-  rec('actual_5000_event_recognition_and_bank_key_probes_bounded')
+  need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'original direct recognition/bank joins changed')
+  # Point-probe both actual problematic memberships with a nonempty positive book.
+  q('SELECT fixture.reset();SELECT fixture.event(1000+n) FROM generate_series(1,5000)n;ANALYZE;')
   sql=query(after)
-  # Parameters match the real STABLE function inputs; no planner enable flags.
-  import re
   prepared=sql.replace("'2026-10-05 07:00Z'::timestamptz",'$1').replace("'2026-10-12 07:00Z'::timestamptz",'$2').replace('fixture.u(1)','$3').replace('fixture.u(10)','$4')
   prepare='PREPARE native_keyed_events(timestamptz,timestamptz,uuid,uuid)AS '+prepared+';'
-  for mode in ['force_custom_plan','force_generic_plan']:
+  for mode in ['auto','force_custom_plan','force_generic_plan']:
    plan=json.loads(q('SET plan_cache_mode='+mode+';'+prepare+"EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON,TIMING OFF)EXECUTE native_keyed_events('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10))"))[0];plans[mode]=plan
-   for table in ['tournament_rake_settlements','accounting_tournament_fee_recognitions']:
-    accesses=[n for n in nodes(plan['Plan'])if n.get('Relation Name')==table and 'tournament_id ='in n.get('Index Cond','')]
-    need(accesses and all(n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index'in n['Node Type']for n in accesses),'prepared keyed access not bounded:'+mode+':'+table)
-   rec('actual_full_FOR_event_key_probes_'+mode)
+   for table,condition in [('accounting_tournament_fee_sources','rake_record_id ='),('accounting_tournament_recognized_sources','source_id =')]:
+    accesses=[n for n in nodes(plan['Plan'])if n.get('Relation Name')==table and n.get('Alias')in('original_source','original_receipt')and condition in n.get('Index Cond','')]
+    need(accesses and all(n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index'in n['Node Type']for n in accesses),'source-credit/receipt key lookup not bounded:'+mode+':'+table+':'+str(accesses))
+   rec('actual_full_FOR_receipt_credit_key_probes_'+mode)
+  q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
  else:
   need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'direct bank bulk access was not proven')
   need(any(n['Node Type']in('Hash Join','Merge Join')for n in nodes(plans['after']['Plan'])),'direct bank query has no bulk join')

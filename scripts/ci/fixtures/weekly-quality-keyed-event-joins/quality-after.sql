@@ -29,16 +29,8 @@ BEGIN
   ), ev AS (
    SELECT c.tournament_id,r.recognized_at,r.status,r.net_rake,r.union_id,r.bank_club_id,r.source_fingerprint,
     b.settled_at AS bank_at,b.amount AS bank_amount,b.union_id AS bank_union,b.club_id AS fee_bank_club
-    FROM candidates c LEFT JOIN LATERAL (
-     SELECT r.recognized_at,r.status,r.net_rake,r.union_id,r.bank_club_id,r.source_fingerprint
-     FROM public.accounting_tournament_fee_recognitions r
-     WHERE r.tournament_id=c.tournament_id OFFSET 0
-    ) r ON true
-     LEFT JOIN LATERAL (
-      SELECT b.settled_at,b.amount,b.union_id,b.club_id
-      FROM public.tournament_rake_settlements b
-      WHERE b.tournament_id=c.tournament_id OFFSET 0
-     ) b ON true
+    FROM candidates c LEFT JOIN public.accounting_tournament_fee_recognitions r USING(tournament_id)
+     LEFT JOIN public.tournament_rake_settlements b ON b.tournament_id=c.tournament_id
   ), scoped AS (
    SELECT e.*,COALESCE(f.fee_source_count,0) AS fee_source_count,COALESCE(f.scope_count,0) AS scope_count,
     CASE WHEN f.scope_count=1 THEN f.one_union END AS source_union,
@@ -88,8 +80,11 @@ BEGIN
     WHERE r.is_tournament AND EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=r.tournament_id)
   ), src_sum AS (
    SELECT s.rake_record_id,sum(s.rake_credit) AS credited
-    FROM public.accounting_tournament_fee_sources s
-    WHERE EXISTS(SELECT 1 FROM rr original_member WHERE original_member.id=s.rake_record_id) GROUP BY s.rake_record_id
+    FROM (SELECT DISTINCT original_member.id FROM rr original_member) original_keys
+    CROSS JOIN LATERAL (SELECT original_source.rake_record_id,original_source.rake_credit
+     FROM public.accounting_tournament_fee_sources original_source
+     WHERE original_source.rake_record_id=original_keys.id OFFSET 0) s
+    GROUP BY s.rake_record_id
   ), rr_agg AS (
    SELECT rr.tournament_id,
     count(*) FILTER(WHERE rr.rake_amount IS NULL OR rr.rake_amount<>round(rr.rake_amount,2)
@@ -120,8 +115,9 @@ BEGIN
     WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=rs.tournament_id)
   ), selected_receipt_recognized AS MATERIALIZED (
    -- Receipt join is by source_id, including wrong-event receipts.
-   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs
-    WHERE EXISTS(SELECT 1 FROM selected_event_sources original_member WHERE original_member.id=rs.source_id)
+   SELECT rs.* FROM (SELECT DISTINCT original_member.id FROM selected_event_sources original_member) original_keys
+    CROSS JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt
+     WHERE original_receipt.source_id=original_keys.id OFFSET 0) rs
   ), orphan_source_identities AS MATERIALIZED (
    -- Global source identities preserve wrong-event and missing-source semantics.
    SELECT s.id,s.tournament_id FROM public.accounting_tournament_fee_sources s

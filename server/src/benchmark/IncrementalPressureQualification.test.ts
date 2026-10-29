@@ -280,11 +280,11 @@ test('workflow admission requires the canonical built-in repository identity bef
       );
     }
     vi.stubEnv('GITHUB_REPOSITORY', 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena');
-    // The real Git/empty-registry boundary still refuses a structurally valid
-    // but unregistered plan. An editing checkout may refuse its dirty source first.
+    // Matching provider metadata reaches the real independent source/plan
+    // gates: an unmerged branch, dirty source or empty registry still refuses it.
     await assert.rejects(
       authenticateIncrementalPlan(fixture('pressure_package')),
-      /Incremental (source dirty|plan bytes changed)/
+      /Incremental (source dirty|plan bytes changed)|Command failed: git merge-base --is-ancestor [0-9a-f]{40} origin\/main/
     );
   } finally {
     vi.unstubAllEnvs();

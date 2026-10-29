@@ -228,7 +228,7 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.contains).toBe('ddb62f02f5475538dd07fb6571375d444d1bdd04');
     expect(recovery.notBefore).toBe('2026-10-29T06:35:00Z');
     expect(recovery.notAfter).toBe('2026-10-29T08:50:00Z');
-    expect(recovery).not.toHaveProperty('announceAtChicagoMinutes');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
     expect(recovery.migrations).toEqual([]);
     expect(recovery.ownerOrder).toContain('1a2aee9264a6ee30ede540c2655ee32e860a22bf');
     expect(recovery.ownerOrder).toContain('aca0b52c832447c5f0e4636a19a4fcdbe2f1047a');

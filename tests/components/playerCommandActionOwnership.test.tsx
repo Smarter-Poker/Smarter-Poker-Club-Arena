@@ -352,6 +352,9 @@ it('wallet events update the displayed member without replacing a dirty note or 
   await user.click(name);
   await user.clear(name);
   await user.type(name, 'Keep This Draft');
+  const cardReads = state.rpc.mock.calls.filter(([name]) =>
+    ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+  ).length;
   await act(async () =>
     state.memberChannel?.onPayload({
       eventType: 'UPDATE',
@@ -364,8 +367,14 @@ it('wallet events update the displayed member without replacing a dirty note or 
   );
   expect(screen.getByText('777.00')).toBeInTheDocument();
   expect(name).toHaveValue('Keep This Draft');
+  expect(
+    state.rpc.mock.calls.filter(([name]) =>
+      ['ca_club_member_win_loss', 'ca_club_member_upline_chain'].includes(name)
+    )
+  ).toHaveLength(cardReads);
   expect(state.updateMemberNotes).not.toHaveBeenCalled();
   expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
+  expect(state.getDownline).toHaveBeenCalledTimes(1);
 });
 it('late wallet refresh cannot restore old-viewer financial access', async () => {
   const pending = deferred<typeof memberDetail>();
@@ -508,7 +517,7 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
 });
 
-it('updates every record section on a source event while preserving an unsaved note', async () => {
+it('limits source events to authority without replacing record sections or an unsaved note', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
   const nickname = screen.getByDisplayValue('The Closer');
@@ -523,22 +532,24 @@ it('updates every record section on a source event while preserving an unsaved n
   await act(async () =>
     state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
   );
-  expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
-  expect(screen.getByText('Last Active')).toBeInTheDocument();
-  expect(screen.getByText('321')).toBeInTheDocument();
-  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+  expect(screen.queryByText('Updated Shark')).not.toBeInTheDocument();
+  expect(screen.queryByText('321')).not.toBeInTheDocument();
+  expect(screen.queryByText('-44.00')).not.toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(1);
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 
-it('reconciles on focus and a recovered record subscription', async () => {
+it('ignores focus and checks only authority on a recovered record subscription', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
   const baseline = state.getMemberDetail.mock.calls.length;
   await act(async () => window.dispatchEvent(new Event('focus')));
-  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(baseline));
-  const focused = state.getMemberDetail.mock.calls.length;
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(baseline);
+  const focused = baseline;
   await act(async () => state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
   await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(focused));
+  expect(state.getDownline).toHaveBeenCalledTimes(1);
 });
 
 it('coalesces source bursts and reads again after an event arrives during a read', async () => {
@@ -570,4 +581,71 @@ it('refreshes role options when the viewer authority changes on the mounted reco
   await act(async () => state.recordChannel?.onPayload({}));
   expect(await screen.findByRole('button', { name: /^Sub Agent/ })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+});
+
+it('keeps an edited record and its sections stable across ambient browser events', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const input = screen.getByDisplayValue('The Closer');
+  fireEvent.change(input, { target: { value: 'Unsaved Local Draft' } });
+  const detailReads = state.getMemberDetail.mock.calls.length;
+  const downlineReads = state.getDownline.mock.calls.length;
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(detailReads);
+  expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  expect(screen.getByDisplayValue('Unsaved Local Draft')).toBe(input);
+});
+
+it('withdraws note and role authority on a record event without refreshing the workspace', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  render(<MemberManagementPage />);
+  await screen.findByRole('button', { name: /^Admin/ });
+  const downlineReads = state.getDownline.mock.calls.length;
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: {
+      ...memberDetail.capabilities,
+      can_view_notes: false,
+      can_edit_notes: false,
+      can_manage_role: false,
+    },
+  });
+  state.viewerRole = 'player';
+  await act(async () => state.recordChannel?.onPayload({}));
+  await waitFor(() =>
+    expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument()
+  );
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
+  expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  expect(screen.getByText('River Shark')).toBeInTheDocument();
+});
+
+it('keeps the chosen ledger dates fixed across a day boundary until an explicit choice', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-29T23:59:59Z'));
+  try {
+    await act(async () => {
+      render(<MemberManagementPage />);
+    });
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }))
+    );
+    const reads = state.getMemberDetail.mock.calls.length;
+    const downlineReads = state.getDownline.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(reads);
+    expect(state.getDownline).toHaveBeenCalledTimes(downlineReads);
+  } finally {
+    vi.useRealTimers();
+  }
 });

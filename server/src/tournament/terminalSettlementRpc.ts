@@ -1,6 +1,9 @@
 import { maintenanceSupabase, supabase } from '../services/supabase.js';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
+import {
+  isDeterministicSettlementRefusal,
+  isRolledBackStatementError,
+} from './settlementRefusal.js';
 import {
   parseLegacyFeeCustodyOrigin,
   verifyTournamentCompletionReceipt,
@@ -275,9 +278,11 @@ export function isTerminalReplayDisagreement(error: unknown): boolean {
 
 /**
  * The database itself answered this request with an error: a PostgreSQL
- * SQLSTATE, or a PostgREST code raised before the statement ran. PostgREST
+ * statement-refusal SQLSTATE, or a PostgREST code raised before the statement ran. PostgREST
  * commits a request's transaction only when the statement succeeds, so an
  * answer like this is the database stating that THIS attempt rolled back.
+ * Connection, resource, intervention, system and internal failures retain an
+ * unknown outcome through the shared classifier; a SQLSTATE alone is not proof.
  *
  * A transport failure is not such an answer. The engine client's own deadline
  * ('supabase_timeout'), a reset socket or a gateway page carries no SQLSTATE,
@@ -292,7 +297,9 @@ export function isTerminalReplayDisagreement(error: unknown): boolean {
 export function databaseStatedRollback(error: unknown): boolean {
   if (!error || typeof error !== 'object' || Array.isArray(error)) return false;
   const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(code);
+  return (
+    isRolledBackStatementError(error) || (typeof code === 'string' && /^PGRST\d{3}$/.test(code))
+  );
 }
 
 function record(value: unknown): Record<string, unknown> {

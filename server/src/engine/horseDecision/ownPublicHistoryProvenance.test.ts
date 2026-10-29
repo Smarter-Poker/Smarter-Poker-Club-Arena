@@ -327,3 +327,153 @@ it('optional valid diagnostics preserve the canonical decision key and actual po
     await second.close();
   }
 });
+
+it('binds a transient read refusal to its exact original cutoff and validates actual worker consumption', async () => {
+  let available = 1024 ** 3;
+  const request = decisionRequest();
+  const c = context(),
+    cutoff = request.decisionTimeMs;
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => ({
+    ...ample(),
+    total_available_size: available,
+  }));
+  const load = vi.fn(async () => window(c));
+  const cache = new HorseOwnPublicHistoryCache(load, () => cutoff, 2048, budget);
+  cache.forSnapshot(c, cutoff);
+  await flush();
+  const original = cache.forSnapshot(c, cutoff)!;
+  available = 0;
+  expect(cache.forSnapshot(c, cutoff)).toBeUndefined();
+  const refused = cache.provenance(c, cutoff);
+  expect(refused).toMatchObject({
+    state: 'unavailable',
+    reason: 'retention_heap_headroom',
+    decisionTimeMs: cutoff,
+  });
+  expect(horseHistoryReadProvenanceIsValid(refused, c, 'unavailable', cutoff)).toBe(true);
+  expect(horseHistoryReadProvenanceIsValid(refused, c, 'unavailable', cutoff + 1)).toBe(false);
+  expect(cache.forSnapshot(c, cutoff - 1)).toBeUndefined();
+  expect(cache.provenance(c, cutoff - 1)).toMatchObject({
+    state: 'available',
+    reason: 'packet_after_cutoff',
+  });
+  const accepted = workerHarness(),
+    forged = workerHarness(),
+    restored = workerHarness();
+  try {
+    await accepted.runtime.start();
+    await forged.runtime.start();
+    await restored.runtime.start();
+    await accepted.fast({
+      ...request,
+      ownPublicHistoryState: 'unavailable',
+      ownPublicHistoryProvenance: refused,
+    });
+    expect(accepted.captures.at(-1)?.snapshot).toMatchObject({
+      ownPublicHistoryProvenance: refused,
+    });
+    forged.runtime.receive({
+      ...request,
+      ownPublicHistoryState: 'unavailable',
+      ownPublicHistoryProvenance: { ...refused, decisionTimeMs: cutoff + 1 },
+    });
+    await forged.runtime.drain();
+    expect(forged.captures).toHaveLength(0);
+    expect(forged.messages).toContainEqual(
+      expect.objectContaining({
+        type: 'ERROR',
+        message: expect.stringContaining('history provenance'),
+      })
+    );
+    available = 1024 ** 3;
+    const packet = cache.forSnapshot(c, cutoff + 1)!;
+    expect(packet).toEqual(original);
+    const provenance = cache.provenance(c, cutoff + 1);
+    expect(provenance).toMatchObject({ state: 'available', reason: 'packet_ready' });
+    const future = {
+      ...request,
+      decisionTimeMs: cutoff + 1,
+      ownPublicHistory: packet,
+      ownPublicHistoryState: 'available' as const,
+      ownPublicHistoryProvenance: provenance,
+    };
+    future.decisionKey = buildHorseDecisionKey(future);
+    await restored.fast(future);
+    expect(restored.captures.at(-1)?.snapshot).toMatchObject({
+      ownPublicHistoryProvenance: provenance,
+    });
+    cache.acknowledge(c, packet.digest);
+    expect(cache.provenance(c, cutoff)).toMatchObject({
+      state: 'available',
+      reason: 'worker_acknowledged',
+    });
+    cache.acknowledge(c, null);
+    expect(cache.forSnapshot(c, cutoff)).toEqual(original);
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally {
+    cache.dispose();
+    await accepted.close();
+    await forged.close();
+    await restored.close();
+  }
+});
+
+it.each(['throw', 'nonfinite', 'missing_claim'] as const)(
+  'keeps the actual same-call %s transient refusal reason through worker validation',
+  async (fault) => {
+    let failed = false,
+      heapReads = 0;
+    const request = decisionRequest(),
+      c = context(),
+      cutoff = request.decisionTimeMs;
+    const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => {
+      heapReads++;
+      if (failed && fault === 'throw') throw Error('unreadable');
+      return {
+        ...ample(),
+        total_available_size:
+          failed && fault === 'nonfinite' ? Number.NaN : ample().total_available_size,
+      };
+    });
+    const reserve = vi.spyOn(budget, 'reserve');
+    const load = vi.fn(async () => window(c));
+    const cache = new HorseOwnPublicHistoryCache(load, () => cutoff, 2048, budget);
+    const h = workerHarness();
+    try {
+      cache.forSnapshot(c, cutoff);
+      await flush();
+      const original = cache.forSnapshot(c, cutoff)!;
+      if (fault === 'missing_claim') {
+        cache.acknowledge(c, original.digest);
+        cache.acknowledge(c, null);
+        budget.release(reserve.mock.calls[0]![0]);
+      }
+      const before = budget.status();
+      failed = true;
+      expect(cache.forSnapshot(c, cutoff)).toBeUndefined();
+      const sampled = heapReads;
+      const provenance = cache.provenance(c, cutoff);
+      expect(provenance).toMatchObject({
+        state: 'unavailable',
+        reason:
+          fault === 'missing_claim' ? 'retention_invalid_claim' : 'retention_heap_unavailable',
+      });
+      expect(cache.state(c)).toBe('unavailable');
+      expect(heapReads).toBe(sampled);
+      expect(budget.status()).toEqual(before);
+      expect(cache.status()).toMatchObject({ entries: 1, acknowledgedCount: 0 });
+      expect(load).toHaveBeenCalledTimes(1);
+      await h.runtime.start();
+      await h.fast({
+        ...request,
+        ownPublicHistoryState: 'unavailable',
+        ownPublicHistoryProvenance: provenance,
+      });
+      expect(h.captures.at(-1)?.snapshot).toMatchObject({ ownPublicHistoryProvenance: provenance });
+    } finally {
+      cache.dispose();
+      reserve.mockRestore();
+      await h.close();
+    }
+  }
+);

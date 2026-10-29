@@ -24,10 +24,10 @@ const controls = [
   'scripts/ci/downline-journey-pin.mjs',
   'scripts/ci/production-e2e-provenance.mjs',
 ];
-function fixture() {
+function fixture(inheritedEnv = process.env) {
   const root = mkdtempSync(join(tmpdir(), 'downline-journey-'));
   const env = {
-    ...process.env,
+    ...Object.fromEntries(Object.entries(inheritedEnv).filter(([key]) => !key.startsWith('GIT_'))),
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'Journey Fixture',
@@ -92,6 +92,25 @@ function withFixture(run: (f: ReturnType<typeof fixture>) => void) {
 }
 
 describe('the exact downline journey is pinned at its own start', () => {
+  it('isolates fixture Git from repository and config variables inherited from a hook', () => {
+    const f = fixture({
+      ...process.env,
+      GIT_DIR: '/never-use-parent-repository/.git',
+      GIT_WORK_TREE: '/never-use-parent-repository',
+      GIT_INDEX_FILE: '/never-use-parent-repository/index',
+      GIT_COMMON_DIR: '/never-use-parent-repository/.git',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.bare',
+      GIT_CONFIG_VALUE_0: 'true',
+    });
+    try {
+      expect(f.git('rev-parse', '--show-toplevel').trim()).toBe(f.root);
+      expect(f.qualify().inputs).toHaveLength(14);
+    } finally {
+      f.close();
+    }
+  });
+
   it('qualifies the ACTUAL maintained 14-file spec/global-setup/config closure', () =>
     withFixture((f) => {
       const proof = f.qualify();

@@ -1,3 +1,4 @@
+import {assertClubArenaRepository} from './repository-identity.mjs';
 import fs from 'node:fs';
 import {readMigrationContent} from './read-migration-content.mjs';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
@@ -5,7 +6,7 @@ import {inflateSync} from 'node:zlib';
 import {verifyRecovery,sha256} from './money-trigger-recovery.mjs';
 import {offenders} from './check-money-trigger-declared.mjs';
 const repo=process.env.GITHUB_REPOSITORY, number=process.env.PR_NUMBER;
-if(repo!=='Smarter-Poker/Smarter-Poker-Club-Arena')throw Error('invalid repository');
+assertClubArenaRepository(repo,process.env.GITHUB_REPOSITORY_ID);
 const headers={Authorization:`Bearer ${process.env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json'};
 async function gh(p,accept=headers.Accept){const r=await fetch(`https://api.github.com/repos/${repo}/${p}`,{headers:{...headers,Accept:accept}});if(!r.ok)throw Error(`GitHub read failed ${r.status}`);return r.json()}
 const policy=JSON.parse(fs.readFileSync(new URL('./money-trigger-recovery-policy.json',import.meta.url),'utf8'));

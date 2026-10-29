@@ -7,6 +7,7 @@ import {
   acceptedReceipt,
   TARGET,
   wakeArguments,
+  intakeMessage,
 } from '../tools/production-alerts-native-wakeup/core.mjs';
 const A = '00000000-0000-0000-0000-000000000001';
 const B = '00000000-0000-0000-0000-000000000002';
@@ -69,6 +70,16 @@ function fixture(seed = null) {
   };
 }
 describe('committed operational alert wakes native intake', () => {
+  it('separates source excerpts from response truncation and finishes failed individual reads explicitly', () => {
+    const message = intakeMessage([A, B], B);
+    expect(message).toContain('stored_inbox_characters');
+    expect(message).toContain('stored_inbox_md5');
+    expect(message).toContain('stored summary is shortened');
+    expect(message).toContain('fn_ca_defer_native_alert');
+    expect(message).toContain('Finish every other listed ID');
+    expect(message).toContain('leaves it unread');
+  });
+
   it('queues once across concurrent event bursts until actual database acknowledgement', async () => {
     const f = fixture();
     await Promise.all(Array.from({ length: 25 }, () => f.intake.event()));

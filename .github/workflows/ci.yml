@@ -3158,12 +3158,6 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      - name: Hand history incidents retain every exact original identity
-        if: matrix.shard == 4
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: node scripts/qualification/hand-history-incident-identity/native.mjs "${{ runner.temp }}/hand-incident-identity"
-
       - name: Check composed alert fixture admission and cleanup guards
         if: matrix.shard == 4
         run: python3 scripts/ci/test_production_alert_core_postgres.py

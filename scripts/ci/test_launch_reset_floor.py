@@ -210,3 +210,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-hand-witness-window-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # Original weekly incomplete counts seek immutable source and batch keys per attribution.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-counts-indexed-incomplete-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Original tournament membership keeps raw Union equality in its physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-membership-union-key-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-membership-union-key.json'))], text=True))

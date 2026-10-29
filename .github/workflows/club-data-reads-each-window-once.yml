@@ -11,6 +11,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - supabase/migrations/20261027145338_club_data_shows_member_earned_fees_from_the_player_managemen.sql
       - supabase/migrations/20261022165130_club_data_and_union_data_read_each_window_once.sql
       - supabase/migrations/20261027002505_legacy_rake_data_authorizes_every_club_separately.sql
       - tests/fixtures/club-data-fact-db/**

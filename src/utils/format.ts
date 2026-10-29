@@ -518,16 +518,16 @@ export const compactChips = (n: number | null | undefined): string => {
 };
 
 /**
- * A fee figure for Player Management, which leads with fees generated and
- * never a wallet balance (Dan, 2026-10-14). Under 1,000 the exact amount
- * prints, because compactChips floors to whole chips and a 0.50 fee must not
- * read as 0. Null means the viewer may not see it.
+ * Fees stay exact to cents with separators, including large totals
+ * (owner, 2026-10-27). Null means the viewer may not see it.
  */
 export const feeFigure = (value: number | null | undefined): string => {
   if (value == null) return 'Restricted';
-  return Math.abs(value) < 1000
-    ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : compactChips(value);
+  if (!Number.isFinite(Number(value))) return '-';
+  return Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 /**

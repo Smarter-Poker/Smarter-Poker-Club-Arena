@@ -104,8 +104,8 @@ jobs:
               exit 0
             fi
             if [ "${MOBILE_MULTIRUN_TARGET_JSON-null}" != null ]; then
-              { [ "$MOBILE_MULTIRUN_TARGET_JSON" = 3 ] && [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; } \
-                || { echo '::error::A targeted natural proof requires numeric target 3, literal mobile true and no engine pin.'; exit 1; }
+              { { [ "$MOBILE_MULTIRUN_TARGET_JSON" = 1 ] || [ "$MOBILE_MULTIRUN_TARGET_JSON" = 3 ]; } && [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ] && [ "${HORSE_SOCIAL_JSON-null}" = null ] && [ "${CLIENT_NAVIGATION_JSON-null}" = null ]; } \
+                || { echo '::error::A targeted natural proof requires numeric target 1 or 3, literal mobile true and no engine pin.'; exit 1; }
             fi
             if [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; then
               # An explicit client observation binds the healthy serving engine
@@ -1775,7 +1775,7 @@ jobs:
       # 39034908810 lost its whole natural observation because one MTT subject
       # table closed before its level changed. The failed case still fails
       # the job, so nothing is hidden; a cancelled run still stops here.
-      - name: ${{ toJSON(github.event.client_payload.mobile_multirun_target) == '3' && 'Observe natural three-run only hands on mobile' || 'Observe natural two-run and three-run hands on mobile' }}
+      - name: ${{ toJSON(github.event.client_payload.mobile_multirun_target) == '1' && 'Observe natural once decisions on mobile' || toJSON(github.event.client_payload.mobile_multirun_target) == '3' && 'Observe natural three-run only hands on mobile' || 'Observe natural two-run and three-run hands on mobile' }}
         id: multirun
         if: "!cancelled() && github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
         env:
@@ -1791,6 +1791,8 @@ jobs:
           MOBILE_MULTIRUN_TARGET_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun_target) }}
           MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
+          HORSE_SOCIAL_JSON: ${{ toJSON(github.event.client_payload.horse_social) }}
+          CLIENT_NAVIGATION_JSON: ${{ toJSON(github.event.client_payload.client_navigation) }}
           EXPECTED_ENGINE_SHA: ${{ steps.engine.outputs.sha }}
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/live-table-multirun.json
         run: >-
@@ -1805,6 +1807,7 @@ jobs:
           name: mobile-natural-multirun-proof
           path: |
             test-results/live-table-multirun/**/mobile-live-table-*
+            test-results/live-table-multirun/**/trace.zip
             e2e-report/live-table-multirun.json
           if-no-files-found: error
           retention-days: 3

@@ -190,6 +190,26 @@ describe('daily routine admission uses the existing protected receiver only', ()
       })
     ).toBe(false);
   });
+  it('keeps original-hand recovery admission bound to its unserved feature within the original window', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const recovery = windows.find(
+      (entry: { id: string }) => entry.id === '2026-10-29-original-hand-and-pause-owner-recovery'
+    );
+    const path = 'supabase/migrations/20261028233353_durable_private_hand_continuation.sql';
+    expect(recovery.releaseWitness).toEqual({
+      path,
+      sha256: createHash('sha256')
+        .update(readFileSync(join(root, path)))
+        .digest('hex'),
+    });
+    expect(recovery.contains).toBe('ac6a6207042e7671a22803b6e127dbe36afd8e0e');
+    expect(recovery.notBefore).toBe('2026-10-29T01:40:00Z');
+    expect(recovery.notAfter).toBe('2026-10-29T07:40:00Z');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
+    expect(recovery.migrations).toEqual([]);
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',

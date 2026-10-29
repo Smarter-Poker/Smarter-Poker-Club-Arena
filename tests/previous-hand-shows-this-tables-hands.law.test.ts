@@ -94,8 +94,15 @@ describe('the correct hands', () => {
     expect(page).toContain("if (key?.startsWith('hand_history_')) localStorage.removeItem(key);");
     // An empty answer is applied, not ignored.
     expect(page).toContain(
-      'setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));'
+      'const page = (hands || []).map((h) => adaptServiceHandToPanel(h, userId));'
     );
+    // Nonempty same-scope refreshes retain older pages; an empty canonical
+    // answer still replaces the entire list with that empty page.
+    expect(page).toContain(
+      'const next = sameScope && page.length > 0 ? mergeHandHistoryPages(previous, page) : page;'
+    );
+    expect(page).toContain('handHistoryRowsRef.current = next;');
+    expect(page).toContain('return next;');
     expect(page).not.toContain('if (!cancelled && hands && hands.length > 0) {');
     // and the table id is a dependency of the fetch
     expect(page).toMatch(

@@ -41,6 +41,7 @@ import {
   initialRabbitEntitlement,
   rememberRabbitEntitlement,
   rememberRabbitVipRemaining,
+  rabbitVipUsageVersion,
 } from './rabbitEntitlement';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -231,8 +232,18 @@ export function RabbitHunt({
         return;
       }
       try {
+        const usageVersion = rabbitVipUsageVersion(userId);
         const status = await vipService.checkVIPStatus(userId);
         if (cancelled || activeUserRef.current !== entitlementUser) return;
+        if (rabbitVipUsageVersion(userId) !== usageVersion) {
+          const latest = initialRabbitEntitlement(userId, useUserStore.getState().user);
+          setEntitlementStateUserId(entitlementUser);
+          setAnsweredFor(entitlementUser);
+          setIsVIP(latest.isVIP);
+          setIsLifetime(latest.isLifetime);
+          setVipRemaining(latest.vipRemaining);
+          return;
+        }
         setEntitlementStateUserId(entitlementUser);
         setAnsweredFor(entitlementUser);
         setIsVIP(!!status?.isVIP);

@@ -67,4 +67,5 @@ DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM public.tournament_participant_funding_rec
   before=snapshot('diamond-before');e.sql(case,'BEGIN;'+setup+purchase+diamond+successor+checks+terminal+final+'ROLLBACK;',label='diamond-retained-original-atomic-once')
   if before!=snapshot('diamond-after'):raise RuntimeError('DIAMONDS composition rollback differs')
   e.report['chip_funded_addon']={'passed':True,'actual_chip_purchase_and_immutable_recorder':True,'old_diamond_only_refusal_reproduced':True,'same_original_payload':True,'buyer_original_stack_lost_but_funded_10000_seat_registration_live':True,'atomic_once_with_postcommit_and_rebase':True,'diamonds_success_preserved':True,'negative_cases':[x[0] for x in negatives],'installation_refusals':3,'full_data_catalog_private_rollback':True,'post_body_md5':body,'post_full_md5':full}
+  module(root/'scripts/ci/fixtures/hand-continuation/chair_admission_qualification.py','chair_admission').qualify(e,root,hand,case,setup,purchase,successor,call,terminal,final,negatives,diamond,snapshot)
  finally:e.discard(case)

@@ -172,6 +172,20 @@ STATUS=$("${PSQL[@]}" -Atc "select ca_gto_v31_certification_status(null)->>'cont
 INDEX_COUNT=$("${PSQL[@]}" -Atc "select count(*) from pg_indexes where schemaname='public' and indexname in ('gto_v31_datasets_input_bundle_id_idx','gto_v31_release_evaluations_source_result_id_idx');")
 [[ "$INDEX_COUNT" == '2' ]]
 echo PHASE4_STATUS_OK
+# Qualify the additive numeric representation in a clone of the exact current
+# schema. Keep original rollback/recovery probes on their unchanged database.
+PUBLIC215_DB=horse_phase4_public215_probe
+"$PG_BIN/createdb" -T "$DB" "$PUBLIC215_DB"
+PUBLIC215_PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$PUBLIC215_DB")
+"${PUBLIC215_PSQL[@]}" -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql"
+node "$HERE/public215-declared-proofs.mjs" | "${PUBLIC215_PSQL[@]}"
+for fixture in public215-model.sql public215-physics.sql public215-metadata.sql public215-selection.sql public215-wtl-parity.sql public215-audit-cost.sql public215-admission.sql; do
+ "${PUBLIC215_PSQL[@]}" -c "SET statement_timeout='240s';SET lock_timeout='1s';" -f "$HERE/$fixture"
+done
+V31_FEATURE_PRIVATE_FIXTURE_ROOT="$WORK" PG17_PSQL="$PG_BIN/psql" PGDATABASE="$PUBLIC215_DB" \
+ node "$HERE/run-public215-feature-parity.mjs"
+"$PG_BIN/dropdb" "$PUBLIC215_DB"
+echo V31_PUBLIC215_INDEPENDENT_MODEL_SOURCE_FREEZE_PARITY_OK
 awk '/^-- EXECUTABLE VALIDATOR ROLLBACK:/{copy=1;next} /^-- END EXECUTABLE VALIDATOR ROLLBACK/{copy=0} copy {sub(/^-- ?/, "");print}' \
  "$ROOT/supabase/migrations/20261007034442_the_solver_validators_have_one_versioned_door.sql" > "$WORK/validator-rollback.sql"
 "${PSQL[@]}" -f "$WORK/validator-rollback.sql"

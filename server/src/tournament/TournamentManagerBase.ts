@@ -4765,24 +4765,39 @@ export abstract class TournamentManagerBase {
    * table has always been representable, it was simply never in the list.
    */
   protected async liveTournamentTableIdsWithPlayers(): Promise<string[] | null> {
-    const { data: liveTables, error: tablesErr } = await supabase
-      .from('tables')
-      .select('id')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting']);
-    if (tablesErr || !liveTables) return null;
+    const lifecycle = this.captureLifecycleToken();
+    const options = (label: string) => ({
+      label,
+      shouldContinue: () => this.lifecycleIsCurrent(lifecycle),
+    });
+    const { rows: liveTables, complete: tablesComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('tables')
+        .select('id')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['running', 'waiting'])
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.balance_live_tables'));
+    if (!tablesComplete) return null;
     const ids = liveTables.map((t: { id: string }) => t.id).filter(Boolean);
     if (ids.length === 0) return [];
-    // The seat query runs even for a single table, deliberately. "One table
-    // exists" and "one table holds players" are different statements, and this
-    // function is asked the second one — an empty adopted table must not read
-    // as a final table.
-    const { data: seats, error: seatsErr } = await supabase
-      .from('table_seats')
-      .select('table_id')
-      .in('table_id', ids)
-      .is('left_at', null);
-    if (seatsErr || !seats) return null;
+    // Read every occupied table through its tournament relationship. Passing
+    // the entire table inventory in a URL would itself cap large fields.
+    const { rows: seats, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select('id, table_id, tables!table_seats_table_id_fkey!inner(tournament_id)')
+        .eq('tables.tournament_id', this.tournamentId)
+        .is('left_at', null)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.balance_live_seats'));
+    if (!seatsComplete) return null;
     const holding = new Set(seats.map((s: { table_id: string }) => s.table_id));
     return ids.filter((id) => holding.has(id));
   }
@@ -8766,7 +8781,9 @@ export abstract class TournamentManagerBase {
   ): Promise<void> {
     const generation = this.getTournamentLeaseGeneration();
     if (!generation) return;
-    const watermarks = await readTableWatermarks(this.tournamentId);
+    const watermarks = await readTableWatermarks(this.tournamentId, () =>
+      this.lifecycleIsCurrent(lifecycle)
+    );
     if (!this.lifecycleIsCurrent(lifecycle)) return;
     if (!watermarks) {
       // Unreadable is not "no hands". Re-drive through this manager's own
@@ -9123,7 +9140,9 @@ export abstract class TournamentManagerBase {
     resumeId: string,
     generation: string
   ): Promise<boolean> {
-    const entitlements = await readStageEntitlements(this.tournamentId, stageNo);
+    const entitlements = await readStageEntitlements(this.tournamentId, stageNo, () =>
+      this.lifecycleIsCurrent(lifecycle)
+    );
     this.assertLifecycleCurrent(lifecycle);
     if (!entitlements) {
       reportError(
@@ -9139,27 +9158,44 @@ export abstract class TournamentManagerBase {
     await this.waitForStageThaw(lifecycle);
     this.assertLifecycleCurrent(lifecycle);
 
-    const { data: existingTables, error: tablesError } = await supabase
-      .from('tables')
-      .select('id, max_players')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting'])
-      .order('created_at', { ascending: true });
+    const options = (label: string) => ({
+      label,
+      shouldContinue: () => this.lifecycleIsCurrent(lifecycle),
+    });
+    const { rows: existingTables, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, max_players, created_at')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['running', 'waiting'])
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      options('Tournament.stage_seating_tables')
+    );
     this.assertLifecycleCurrent(lifecycle);
-    if (tablesError || !Array.isArray(existingTables)) {
-      throw new Error(`Stage table inventory read failed: ${tablesError?.message ?? 'no rows'}`);
-    }
-    const { data: liveSeats, error: seatsError } = await supabase
-      .from('table_seats')
-      .select(
-        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
-      )
-      .is('left_at', null)
-      .eq('tables.tournament_id', this.tournamentId);
+    if (!tablesComplete) throw new Error('Stage table inventory read incomplete');
+    existingTables.sort((a, b) =>
+      String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    );
+    const { rows: liveSeats, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select(
+          'id, user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+        )
+        .is('left_at', null)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.stage_seating_seats'));
     this.assertLifecycleCurrent(lifecycle);
-    if (seatsError || !Array.isArray(liveSeats)) {
-      throw new Error(`Stage live-seat read failed: ${seatsError?.message ?? 'no rows'}`);
-    }
+    if (!seatsComplete) throw new Error('Stage live-seat read incomplete');
     const occupied = new Map<string, Set<number>>();
     for (const seat of liveSeats as Array<{ table_id: string; seat_number: number }>) {
       if (!occupied.has(seat.table_id)) occupied.set(seat.table_id, new Set());
@@ -11944,44 +11980,81 @@ export abstract class TournamentManagerBase {
         return;
       }
 
-      const { data: rows, error: rowsErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, add_on')
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing')
-        // A zero stack is a bust the bust stage has not recorded yet; the
-        // offer is served ahead of that stage (2026-10-25), so it never
-        // reaches a player who no longer holds chips.
-        .gt('chips', 0);
+      const playerRead = await fetchAllRows<{
+        id: string;
+        user_id: string;
+        add_on: boolean | null;
+      }>(
+        (cursor, pageSize) => {
+          let query = supabase
+            .from('tournament_players')
+            .select('id, user_id, add_on')
+            .eq('tournament_id', this.tournamentId)
+            .eq('status', 'playing')
+            // A zero stack is an unrecorded bust, not an add-on recipient.
+            .gt('chips', 0)
+            .order('id', { ascending: true })
+            .limit(pageSize);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'Tournament.addOnPlayers', shouldContinue: addOnWorkAllowed }
+      );
       if (!addOnWorkAllowed()) return;
-      if (rowsErr || !rows || rows.length === 0) {
-        if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+      if (!playerRead.complete) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
+      const rows = playerRead.rows;
+      if (rows.length === 0) return;
 
       const withoutAddOn = rows
         .filter((r: { add_on?: boolean | null }) => !r.add_on)
         .map((r: { user_id: string }) => r.user_id);
       if (withoutAddOn.length === 0) return;
 
-      const { data: tableRows, error: tableRowsErr } = await supabase
-        .from('tables')
-        .select('id')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['waiting', 'running', 'RUNNING', 'active']);
+      const tableRead = await fetchAllRows<{ id: string }>(
+        (cursor, pageSize) => {
+          let query = supabase
+            .from('tables')
+            .select('id')
+            .eq('tournament_id', this.tournamentId)
+            .in('status', ['waiting', 'running', 'RUNNING', 'active'])
+            .order('id', { ascending: true })
+            .limit(pageSize);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'Tournament.addOnTables', shouldContinue: addOnWorkAllowed }
+      );
       if (!addOnWorkAllowed()) return;
-      if (tableRowsErr || !tableRows) {
-        reportError(
-          tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
-          'Tournament.addon_tables_unreadable'
-        );
+      if (!tableRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
-      const seatRead = await selectInChunks<{ user_id: string }>(
-        tableRows.map((row: { id: string }) => row.id),
-        (batch) =>
-          supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
+      const seatRead = await selectInChunks<{ id: string; user_id: string }>(
+        tableRead.rows.map((row) => row.id),
+        async (batch) => {
+          // A bounded table-ID URL can still return more than 1,000 seats.
+          const page = await fetchAllRows<{ id: string; user_id: string }>(
+            (cursor, pageSize) => {
+              let query = supabase
+                .from('table_seats')
+                .select('id, user_id')
+                .in('table_id', batch)
+                .is('left_at', null)
+                .order('id', { ascending: true })
+                .limit(pageSize);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            { label: 'Tournament.addOnSeats', shouldContinue: addOnWorkAllowed }
+          );
+          return {
+            data: page.rows,
+            error: page.complete ? null : { message: 'add-on seat snapshot incomplete' },
+          };
+        },
         `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
       );
       if (!addOnWorkAllowed()) return;

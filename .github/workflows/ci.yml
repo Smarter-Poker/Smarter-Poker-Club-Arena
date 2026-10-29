@@ -3460,6 +3460,13 @@ jobs:
       - name: Freeze + watchdog + restart-gate regression suite
         run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
+      - name: V31 public feature and final model-index controller contracts
+        if: matrix.shard == 1
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -B -m unittest discover -s scripts -p 'test_*public215*.py'
+
       - name: Full server test suite
         env:
           SERVER_TEST_SHARD: ${{ matrix.shard }}

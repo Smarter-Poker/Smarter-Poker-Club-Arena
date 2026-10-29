@@ -40,7 +40,7 @@
  *     build production already ran, and an emergency must not wait on this.
  *   - a name in scripts/ci/engine-doors.allowlist.json, each with a reason.
  *
- * A target calling a continuation RPC must additionally prove both exact
+ * A target calling a continuation RPC must additionally prove all exact
  * installed migration histories. Its new changed-function prerequisite cannot
  * be inferred from pg_proc name presence, and unknown history is a refusal.
  * This is a read-only gate in this existing job, before durable host intake.
@@ -150,7 +150,7 @@ export function engineDoors(root = SCAN_ROOT) {
 
 // The original-controller runtime also depends on a changed EXISTING clock
 // function. Name presence cannot prove that installation. Read the exact
-// target files, then require both ordinary applier history rows byte-for-byte
+// target files, then require all ordinary applier history rows byte-for-byte
 // by their single-statement text digest. No body pin forbids a later compatible
 // owner from legitimately extending the installed abort function.
 const CONTINUATION_DOORS = new Set([
@@ -161,6 +161,7 @@ const CONTINUATION_DOORS = new Set([
 const CONTINUATION_MIGRATIONS = [
   '20261028233353_durable_private_hand_continuation.sql',
   '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
+  '20261029170914_original_claim_attests_exact_authorized_chairs.sql',
 ];
 let continuationTarget = false;
 
@@ -236,7 +237,7 @@ async function main() {
   const live = await liveFunctions(names, requirements);
   if (live.unreadable && continuationTarget) {
     console.log(
-      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Both exact continuation migration histories must be proved before this target enters Hetzner.`
+      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. All exact continuation migration histories must be proved before this target enters Hetzner.`
     );
     return 1;
   }
@@ -265,7 +266,7 @@ async function main() {
   }
   if (!prerequisitesProved) return 1;
   if (requirements.length)
-    console.log('OK - both exact continuation migration histories are installed.');
+    console.log('OK - all exact continuation migration histories are installed.');
   if (missing.length === 0) {
     console.log(
       `OK - all ${names.length} database functions this build calls exist in production.`

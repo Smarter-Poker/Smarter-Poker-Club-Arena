@@ -109,6 +109,7 @@ export function useRabbitHuntReveal({
   useEffect(() => {
     setStateUserId(userId);
     setIsRevealing(false);
+    setRecoveryNeeded(false);
     setHasRevealed(false);
     setCards([]);
     setVipRemaining(null);

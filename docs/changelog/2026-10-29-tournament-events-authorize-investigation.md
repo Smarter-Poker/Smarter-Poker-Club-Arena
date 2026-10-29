@@ -1,0 +1,5 @@
+# Tournament events carry the owner investigation mandate
+
+The receiver previously instructed Production Alerts to read and stop, explicitly forbidding source repair. The owner now explicitly requests automatic tournament investigation and repair in this same existing chat. Generated event instructions retain the single-record read/ack evidence boundary and then call for finite, evidence-based tournament repair through maintained source, focused checks, protected delivery and live proof. Unread records, recovered signals and historical snapshots do not prove current defects or authorize financial shortcuts. Original hands/chips and existing operation ownership remain protected. No timed agent or release mechanism is added.
+
+This is a follow-up to the independently owned per-record proof correction PR8626 and must include that correction before installing the pinned receiver. Local prompt contracts and native process tests cover the request boundary; real event/read/ack/investigation proof remains required after installation.

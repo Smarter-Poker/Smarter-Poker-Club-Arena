@@ -1136,7 +1136,7 @@ function CommunityCardsComponent({
   const prevRabbitCueRef = useRef<string | null>(null);
   useEffect(() => {
     if (!rabbitCueIdentity || prevRabbitCueRef.current === rabbitCueIdentity) return;
-    if (!playSounds) {
+    if (!playSounds || document.hidden) {
       prevRabbitCueRef.current = rabbitCueIdentity;
       return;
     }
@@ -1153,7 +1153,16 @@ function CommunityCardsComponent({
       return;
     }
     const timer = setTimeout(cue, 120 * getAnimationSpeed());
-    return () => clearTimeout(timer);
+    const cancelHiddenCue = () => {
+      if (!document.hidden) return;
+      prevRabbitCueRef.current = rabbitCueIdentity;
+      clearTimeout(timer);
+    };
+    document.addEventListener('visibilitychange', cancelHiddenCue);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', cancelHiddenCue);
+    };
   }, [rabbitCueIdentity, playSounds]);
 
   // Create array of 5 slots

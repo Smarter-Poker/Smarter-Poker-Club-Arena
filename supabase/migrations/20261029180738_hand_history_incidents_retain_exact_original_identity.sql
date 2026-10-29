@@ -7,7 +7,7 @@
 -- No historical rows, financial rules, wallet writes or schedules change.
 -- @live-proof: position('NEW.source IN (''postHandTasks.leave_pending_failed'', ''postHandTasks.hand_history_failed'')' IN pg_get_functiondef('public.fn_ca_financial_alert_to_incident()'::regprocedure)) > 0
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_financial_alert_to_incident()'::regprocedure)) = '0ac8ad5a1123baee705afcd80752ec33'
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) = 'befc00077ec80d4be6260f35fc46d40e'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) = '4c01bd509657abd0629f5b297ecf46e2'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='15s';
@@ -74,6 +74,21 @@ BEGIN
                  public.fn_ca_normalize_alert_text(left(COALESCE(a.context->>'error', ''), 200)))
            AND a.resolved IS DISTINCT FROM true)
      ));$new$);
+ IF array_length(string_to_array(v_new,$old$  UPDATE public.ca_drift_incidents i$old$),1)<>2 THEN
+ RAISE EXCEPTION 'HAND_INCIDENT_LEGACY_LOCK_ANCHOR_CHANGED'; END IF;
+ v_new:=replace(v_new,$old$  UPDATE public.ca_drift_incidents i$old$,$new$  -- Serialize only a live legacy hand-history group. The membership query
+  -- below starts after this lock, so concurrent last members see prior commits.
+  IF NEW.source = 'postHandTasks.hand_history_failed' THEN
+    PERFORM 1 FROM public.ca_drift_incidents i
+     WHERE i.status <> 'resolved'
+       AND i.source = 'financial_alerts:postHandTasks.hand_history_failed'
+       AND i.dedupe_key = 'fa:postHandTasks.hand_history_failed:' || md5(
+         public.fn_ca_normalize_alert_text(left(NEW.message,200)) || '|' ||
+         public.fn_ca_normalize_alert_text(left(COALESCE(NEW.context->>'error',''),200)))
+       AND NEW.created_at BETWEEN i.detected_at AND i.last_seen_at
+     ORDER BY i.id FOR UPDATE;
+  END IF;
+  UPDATE public.ca_drift_incidents i$new$);
 
  EXECUTE v_new;
 

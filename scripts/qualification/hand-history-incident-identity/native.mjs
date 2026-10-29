@@ -1,6 +1,6 @@
 // Actual PostgreSQL 17 bridge -> incident -> resolution qualification.
 // Disposable Unix socket database only; no production access or money writes.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -28,6 +28,7 @@ const insert = (id, table, hand, extra = '') => `INSERT INTO financial_alerts(id
 const status = id => sql(`SELECT status FROM ca_drift_incidents WHERE metadata->>'alert_id'='${id}'`);
 const resolve = id => sql(`UPDATE financial_alerts SET resolved=true,resolved_at=now(),resolution='isolated exact original completion receipt' WHERE id='${id}';`);
 let running = false;
+const clients = [];
 try {
  run('initdb', ['-D', path.join(dir, 'db'), '-U', 'postgres', '-A', 'trust', '--no-locale', '--encoding=UTF8']);
  run('pg_ctl', ['-D', path.join(dir, 'db'), '-l', path.join(dir, 'log'), '-o', `-k ${socket} -p 55489 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10`, '-w', 'start']); running = true;
@@ -97,10 +98,31 @@ try {
  jsonb_build_object('table_id','${t1}','hand_number',900014,'error','isolated leave'));`);
  assert.equal(sql(`SELECT dedupe_key LIKE 'fa:postHandTasks.leave_pending_failed:table:${t1}:hand:900014:%'
  AND table_id='${t1}' FROM ca_drift_incidents WHERE metadata->>'alert_id'='${leave}'`),'t','existing leave identity remains exact');
+ // Observe two actual last-member resolutions contending on the legacy row.
+ const fixedBridge=sql("SELECT pg_get_functiondef('fn_ca_financial_alert_to_incident()'::regprocedure)");
+ const legacyStart=source.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_financial_alert_to_incident()');
+ const legacyEnd=source.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_normalize_alert_text',legacyStart);
+ sql(source.slice(legacyStart,legacyEnd));
+ const x='11111111-1111-4111-8111-000000000013',y='11111111-1111-4111-8111-000000000014';
+ sql(insert(x,t1,900020)+insert(y,t2,900021));
+ sql(fixedBridge+';');
+ const client=()=>{const p=spawn(path.join(bin,'psql'),args);let out='',err='';p.stdout.on('data',v=>out+=v);p.stderr.on('data',v=>err+=v);const done=new Promise((resolve,reject)=>p.on('exit',c=>c===0?resolve(out):reject(Error(err))));clients.push(p);return {p,done};};
+ const first=client();first.p.stdin.write(`BEGIN;UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id='${x}';\\echo FIRST_READY\n`);
+ let ready=false;const until=Date.now()+5000;
+ while(Date.now()<until){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND query LIKE '%${x}%'`) === '1'){ready=true;break;}await new Promise(r=>setTimeout(r,20));}
+ assert.ok(ready,'first original resolution holds legacy row before commit');
+ const second=client();second.p.stdin.end(`UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id='${y}';`);
+ let blocked=false;const deadline=Date.now()+3000;
+ while(Date.now()<deadline){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%${y}%'`) === '1'){blocked=true;break;}await new Promise(r=>setTimeout(r,20));}
+ assert.ok(blocked,'second final-member transition actually waits for original group');
+ first.p.stdin.end('COMMIT;\n');await Promise.all([first.done,second.done]);
+ assert.equal(status(y),'resolved','concurrent last member observes predecessor commit and closes the exact group');
+ console.log('PASS observed concurrent last-member lock, commit and exact closure');
  assert.equal(sql('SELECT count(*) FROM ca_incident_file_failures'),'0','no swallowed trigger failure');
  console.log('PASS after: table/hand boundaries, same-original recurrence, unknown identity, exact closure and unchanged history');
  console.log(sql("SELECT proname,md5(pg_get_functiondef(oid)) FROM pg_proc WHERE oid IN('fn_ca_financial_alert_to_incident()'::regprocedure,'fn_ca_alert_resolution_reaches_the_incident()'::regprocedure) ORDER BY proname"));
 } finally {
+ for (const p of clients) if (p.exitCode === null) p.kill('SIGKILL');
  if (running) run('pg_ctl', ['-D', path.join(dir,'db'), '-m','immediate','-w','stop']);
  rmSync(dir, { recursive:true, force:true });
 }

@@ -25,6 +25,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'bounded exact-context public river checkraise observations with canonical chip conservation for originally multiway hands',
     'src/engine/horseDecision/riverNodeSidecar.ts':
       'exact source and action-bound public node sidecar, preserving the original history on unavailable evidence',
+    'src/engine/horseDecision/ownPublicHistoryProvenance.ts':
+      'closed individual-history diagnostic validation bound to the original observer context, state and decision timestamp at the worker request boundary',
     'src/engine/HorseNearNutRiverValue.ts':
       'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':

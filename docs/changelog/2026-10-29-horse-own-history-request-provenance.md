@@ -6,4 +6,6 @@ The main-owned history service and cache now capture a closed reason at that ori
 
 The reason describes cache and load availability, not worker consumption, durable persistence or strategy qualification. No raw provider errors, cards, credentials or responses are added. Read deadlines, concurrency, retry cooldown, quota, eviction, accounting and strategy are unchanged. Existing consumers can continue using the existing state; private proof consumers must explicitly validate the new provenance before attributing a cause.
 
+The reference-source registry includes the provenance validator in the phase source digests. Changes to its request validation cannot silently retain an earlier source qualification.
+
 Regression coverage exercises the actual service/cache/budget and worker/journal path, exact NLH/PLO4/PLO5/PLO6/PLO8 partition binding, load capacity, failed retry admission, cutoff races, invalid packets, provider failures and diagnostic callback failure. Delivery and affected-live proof remain required before claiming these diagnostics are installed.

@@ -104,7 +104,7 @@ export function EquityBadgeLayer({
   const [placements, setPlacements] = useState<Record<string, EquityBadgePlacement>>({});
   const [measureTick, setMeasureTick] = useState(0);
   /* Position depends on WHICH seats carry a badge and where they may go, not
-     on equal-width numbers. A label length change (notably Unknown) must
+     on equal-width numbers. A label length change must
      re-measure so a wider label cannot grow over a displayed card. */
   const signature = badges
     .map(
@@ -256,8 +256,7 @@ export function EquityBadgeLayer({
                   <span
                     className="equity-overlay__bar"
                     style={{
-                      width:
-                        label === 'Unknown' ? '0%' : `${Math.max(0, Math.min(100, badge.equity))}%`,
+                      width: `${Math.max(0, Math.min(100, badge.equity))}%`,
                     }}
                   />
                 </span>

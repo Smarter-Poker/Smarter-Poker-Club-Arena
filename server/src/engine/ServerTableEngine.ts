@@ -310,7 +310,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           ...this.anteSnapshotFields(),
         },
         bettingStructure: this.bettingStructureFields(state),
-        action_context: this.getActionContext(),
+        action_context: this.publishedActionContext(),
         turn_start_time_ms: this.playerTurnStartTime,
         turnDurationSeconds: this.playerTurnDuration,
         // Dan 2026-08-18: the server's own "now", so the client can subtract its skew.
@@ -415,7 +415,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       winnerIds: this.currentHandWinnerIds,
       winners: this.currentHandWinners,
       bettingStructure: this.bettingStructureFields(state),
-      action_context: this.getActionContext(),
+      action_context: this.publishedActionContext(true),
       turn_start_time_ms: this.playerTurnStartTime,
       turnDurationSeconds: this.playerTurnDuration,
       server_time_ms: Date.now(),

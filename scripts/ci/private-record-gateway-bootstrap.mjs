@@ -89,7 +89,7 @@ export function validateBootstrap(input, state) {
   )
     throw new Error('independently retrieved trusted roots required');
   const environment = input.environment;
-  const keys = ['PRIVATE_RECORD_GATEWAY_DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+  const keys = ['PRIVATE_RECORD_GATEWAY_DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'];
   if (!environment || Object.keys(environment).sort().join() !== keys.sort().join())
     throw new Error('exact canonical gateway configuration required');
   if (
@@ -98,6 +98,8 @@ export function validateBootstrap(input, state) {
     )
   )
     throw new Error('invalid canonical gateway configuration');
+  if (environment.SUPABASE_PUBLISHABLE_KEY !== 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx')
+    throw new Error('pinned publishable gateway API key required');
   let database, api;
   try {
     database = new URL(environment.PRIVATE_RECORD_GATEWAY_DATABASE_URL);

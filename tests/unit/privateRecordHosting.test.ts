@@ -14,6 +14,7 @@ import {
 import { join } from 'node:path';
 import {
   sealGatewayArtifact,
+  GATEWAY_PUBLISHER_WORKFLOW,
   verifyGatewayArtifact,
   assessClientCoverage,
 } from '../../scripts/ci/private-record-gateway-artifact.mjs';
@@ -381,4 +382,37 @@ if (run(process.execPath, reader, { input: payload, stdio: ['ignore', 'pipe', 'p
       ])
     ).not.toThrow();
   });
+});
+
+describe('unused pg_net removal stays in required native qualification', () => {
+  it('selects the existing native server check for the runner and invokes it once', async () => {
+    const { classifyChangedPaths } = await import('../../scripts/ci/classify-ci-changes.mjs');
+    for (const input of [
+      'scripts/ci/test-unused-pg-net-removal.py',
+      'scripts/ci/test-private-record-gateway-access-postgres.sh',
+      'scripts/ci/fixtures/private-record-gateway-access-setup.sql',
+      'scripts/ci/fixtures/private-record-gateway-access-proof.sql',
+    ]) {
+      const selected = classifyChangedPaths([input]);
+      expect(selected.server, input).toBe(true);
+      expect(selected.tests, input).toBe(true);
+    }
+    const runner = readFileSync('scripts/ci/test-private-record-hosting.sh', 'utf8');
+    expect(runner.split('test-unused-pg-net-removal.py').length - 1).toBe(1);
+    const source = readFileSync('scripts/ci/test-unused-pg-net-removal.py', 'utf8');
+    expect(source).toContain(
+      '20261029181526_remove_unused_pg_net_before_private_listener_credentials.sql'
+    );
+  });
+});
+
+it('gateway packager and activator share the canonical protected workflow identity', () => {
+  expect(GATEWAY_PUBLISHER_WORKFLOW).toBe(
+    'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main'
+  );
+  const packager = readFileSync('scripts/ci/build-private-record-gateway.sh', 'utf8');
+  const activator = readFileSync('scripts/ci/private-record-gateway-activate.mjs', 'utf8');
+  expect(packager).toContain('const workflow=GATEWAY_PUBLISHER_WORKFLOW;');
+  expect(activator).toContain('const workflow = GATEWAY_PUBLISHER_WORKFLOW;');
+  expect(packager).not.toContain('Smarter-Poker/Smarter-Poker-Club-Arena');
 });

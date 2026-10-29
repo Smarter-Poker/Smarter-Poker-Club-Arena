@@ -17,8 +17,8 @@ node --input-type=module - "$repo" "$output" "$revision" <<'NODE'
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 const [repo,output,revision]=process.argv.slice(2);
-const {sealGatewayArtifact}=await import(pathToFileURL(`${repo}/scripts/ci/private-record-gateway-artifact.mjs`));
-const workflow='Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main';
+const {sealGatewayArtifact,GATEWAY_PUBLISHER_WORKFLOW}=await import(pathToFileURL(`${repo}/scripts/ci/private-record-gateway-artifact.mjs`));
+const workflow=GATEWAY_PUBLISHER_WORKFLOW;
 const hosted=process.env.GITHUB_ACTIONS==='true' && process.env.GITHUB_WORKFLOW_REF===workflow;
 if (hosted && (execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()!==revision || execFileSync('git',['status','--porcelain','--untracked-files=no'],{cwd:repo,encoding:'utf8'}).trim())) throw new Error('hosted artifact requires exact clean protected source');
 sealGatewayArtifact(output,revision,hosted ? {validationOnly:false,builtBy:'github-actions',workflowRef:workflow,workflowSha:process.env.GITHUB_WORKFLOW_SHA,runId:process.env.GITHUB_RUN_ID} : {validationOnly:true,builtBy:'local-qualification'});

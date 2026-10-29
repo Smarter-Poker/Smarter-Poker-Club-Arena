@@ -77,7 +77,8 @@ export class HandContinuationLane {
     ) => Promise<void>,
     private readonly current: () => boolean,
     private readonly reportFailure: (error: unknown) => void,
-    initialReplay?: () => Promise<void>
+    initialReplay?: () => Promise<void>,
+    private readonly retainedInputReady?: () => Promise<void>
   ) {
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('Invalid Hand Sequence');
     this.sequence = sequence;
@@ -154,6 +155,11 @@ export class HandContinuationLane {
             if (this.closed || !this.current()) throw new Error('Hand Continuation Is Fenced');
             await this.dispatch(structuredClone(event), { sequence, index });
           }
+          // A snapshot requested during retention deliberately has no input
+          // capability. When this original lane becomes ready, let its owner
+          // publish that capability without waiting for another poker action.
+          if (!this.closed && !this.isUnretained() && !this.replayingOriginal && this.current())
+            await this.retainedInputReady?.();
         })
         .catch((error) => this.fail(error));
     } catch (error) {

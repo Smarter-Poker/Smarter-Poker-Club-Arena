@@ -37,6 +37,8 @@ const running = {
   current_level: 3,
   level_started_at: '2026-09-29T05:43:00Z',
   on_break: false,
+  // These baseline fixtures isolate add-on, occupancy and schedule behavior.
+  synchronized_breaks: false,
   accelerated_mtt: false,
   addon_period_started_at: null,
   addon_period_ends_at: null,
@@ -44,6 +46,35 @@ const running = {
 };
 
 describe('an MTT table is selected only if its tournament can yield an eligible HUD clock', () => {
+  it('excludes a currently eligible synchronized clock whose recovery look-ahead reaches the break', () => {
+    const synchronized = { ...running, synchronized_breaks: true };
+    expect(eligibleHudClock(synchronized, now)).not.toBeNull();
+    const qualifications = qualifyHudTournamentRows([synchronized], now);
+    expect(qualifications[0].category).toBe('selection_lookahead_ineligible');
+    expect(qualifications[0].clock).toBeNull();
+    expect(
+      selectHudTableCandidatesRoundRobin(qualifications, [
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          tournament_id: id,
+          status: 'running',
+          current_players: 9,
+        },
+      ])
+    ).toEqual([]);
+    const breakFree = qualifyHudTournamentRows([running], now);
+    expect(
+      selectHudTableCandidatesRoundRobin(breakFree, [
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          tournament_id: id,
+          status: 'running',
+          current_players: 9,
+        },
+      ])
+    ).toEqual(['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']);
+  });
+
   it('refuses the field whose add-on period is open, the exact production refusal', () => {
     const addOnOpen = {
       ...running,

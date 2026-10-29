@@ -44,3 +44,12 @@ exact registered decision-source entries, with the existing byte hashes, full
 source census and traversal checks retained. Regression coverage rejects an
 unregistered native path and proves every registered runtime dependency changes
 the corresponding digest. No evidence or prior qualification was restamped.
+
+The existing fixed reload/status CLI is connected through an explicit manual
+workflow using the existing pinned engine SSH identity. It requires the exact
+protected serving source, active R7 dataset/checksum, 107 cells and eight distinct
+worker acknowledgments, with healthy before/after store readbacks and unchanged
+container identity. It cannot build, promote, activate or restart an engine.
+A timed-out load remains unconfirmed; a separate explicit status request retains
+the same UUID and never repeats the POST. Scheduled or automatic execution and
+workflow reruns cannot invoke the control job.

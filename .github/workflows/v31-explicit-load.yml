@@ -1,0 +1,92 @@
+name: Explicit V31 Active Store Load
+run-name: V31 explicit active-store control ${{ github.run_id }}
+on:
+  pull_request:
+    paths:
+      - .github/workflows/v31-explicit-load.yml
+      - scripts/ci/v31-explicit-load.mjs
+      - scripts/ci/v31-explicit-load.test.mjs
+  workflow_dispatch:
+    inputs:
+      request_base64:
+        description: Exact operation reload/status, serving source SHA, request UUID, active dataset UUID/checksum, cellCount 107 and workerCount 8
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: v31-explicit-store-control
+  cancel-in-progress: false
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/ci/v31-explicit-load.test.mjs
+  control:
+    needs: contract
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository_id == '1132369872'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      REQUEST_BASE64: ${{ inputs.request_base64 }}
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Load once or inspect the same request through the existing pinned provider
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          node scripts/ci/v31-explicit-load.mjs --validate "$REQUEST_BASE64"
+          EXPECTED_SHA=$(node --input-type=module -e 'console.log(JSON.parse(Buffer.from(process.env.REQUEST_BASE64,"base64")).sourceSha)')
+          git merge-base --is-ancestor "$EXPECTED_SHA" origin/main
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [ -n "$SSH_KEY" ] && [ -n "$HOST_KEY" ]
+          PRIVATE_DIR="$RUNNER_TEMP/v31-explicit-$GITHUB_RUN_ID"
+          install -d -m 0700 "$PRIVATE_DIR"
+          trap 'rm -rf "$PRIVATE_DIR"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$PRIVATE_DIR/key"
+          printf '%s\n' "$HOST_KEY" > "$PRIVATE_DIR/known_hosts"
+          chmod 0600 "$PRIVATE_DIR/key" "$PRIVATE_DIR/known_hosts"
+          ssh-keygen -y -f "$PRIVATE_DIR/key" >/dev/null
+          ssh-keygen -l -f "$PRIVATE_DIR/known_hosts" >/dev/null
+          curl --fail --silent --show-error --max-time 15 "https://engine.smarter.poker/health?v31-explicit=$GITHUB_RUN_ID-before" > "$RUNNER_TEMP/v31-health-before.json"
+          node scripts/ci/v31-explicit-load.mjs --health-before "$REQUEST_BASE64" "$RUNNER_TEMP/v31-health-before.json"
+          REMOTE_COMMAND=$(node scripts/ci/v31-explicit-load.mjs --remote-command "$REQUEST_BASE64")
+          # One fixed CLI invocation. Unknown POST outcomes require a separate
+          # explicit status request with the same retained identity, never a retry.
+          timeout --signal=TERM --kill-after=5s 180s ssh \
+            -i "$PRIVATE_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$PRIVATE_DIR/known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=15 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "root@$HETZNER_HOST" "$REMOTE_COMMAND" > "$RUNNER_TEMP/v31-control-candidate.json"
+          node scripts/ci/v31-explicit-load.mjs --receipt "$REQUEST_BASE64" "$RUNNER_TEMP/v31-control-candidate.json" > "$RUNNER_TEMP/v31-control-validated.json"
+          curl --fail --silent --show-error --max-time 15 "https://engine.smarter.poker/health?v31-explicit=$GITHUB_RUN_ID-after" > "$RUNNER_TEMP/v31-health-after.json"
+          node scripts/ci/v31-explicit-load.mjs --health-after "$REQUEST_BASE64" "$RUNNER_TEMP/v31-health-after.json"
+          mv "$RUNNER_TEMP/v31-control-validated.json" "$RUNNER_TEMP/v31-control-receipt.json"
+          cat "$RUNNER_TEMP/v31-control-receipt.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v31-explicit-control-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/v31-control-receipt.json
+            ${{ runner.temp }}/v31-health-before.json
+            ${{ runner.temp }}/v31-health-after.json
+          if-no-files-found: warn
+          retention-days: 7

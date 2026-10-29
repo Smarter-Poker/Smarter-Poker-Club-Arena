@@ -52,11 +52,16 @@ describe('the lobby shell keeps the scroll contract', () => {
 });
 
 describe('the entry register stays live while the event does', () => {
-  it('re-runs the one detail query on a cadence for live events only', () => {
-    expect(ENTRIES).toMatch(/tournamentLive/);
-    expect(ENTRIES).toMatch(/20_000/);
-    expect(ENTRIES).toMatch(/visibilityState === 'visible'/);
-    // History does not poll: the schedule stands down for finished events.
-    expect(ENTRIES).toMatch(/if \(cancelled \|\| !tournamentLive\) return;/);
+  it('uses the event-updated owner field without a second polling query', () => {
+    expect(ENTRIES).not.toMatch(/setTimeout|setInterval|supabase\.from/);
+    expect(ENTRIES).toContain('const rebuys = entry.rebuys ?? 0');
+    expect(ENTRIES).toContain('const addOn = (entry.add_ons ?? 0) > 0');
+    const owner = fs.readFileSync(
+      path.join(ROOT, 'src/pages/tournament/TournamentDetails.tsx'),
+      'utf8'
+    );
+    expect(owner).toContain("table: 'tournament_players'");
+    expect(owner).toContain('Number(updatedPlayer.rebuys)');
+    expect(owner).toContain('updatedPlayer.add_on');
   });
 });

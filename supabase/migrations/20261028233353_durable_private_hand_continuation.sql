@@ -436,6 +436,10 @@ BEGIN
 END $function$
 ;
 
+-- Preserve the exact existing service-only entry boundary explicitly.
+REVOKE ALL ON FUNCTION public.fn_ca_retain_hand_submission(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_retain_hand_submission(jsonb) TO service_role;
+
 -- A second restart after this claimed controller retained its final request
 -- must continue that same final request, not reject its original permit.
 DO $pre$ BEGIN

@@ -2627,11 +2627,17 @@ export class ScheduledTournamentService {
           target.nativeEntryValue,
           Number(row.buy_in_amount) + Number(row.buy_in_fee)
         );
-        const priced = buyInFor(entry, 0.1);
+        const currentEntry = Number(row.buy_in_amount) + Number(row.buy_in_fee);
+        const priced =
+          entry === currentEntry
+            ? { total: currentEntry, prize: Number(row.buy_in_amount), fee: Number(row.buy_in_fee) }
+            : buyInFor(entry, 0.1);
         row.buy_in_amount = priced.prize;
         row.buy_in_fee = priced.fee;
-        if (row.is_rebuy || row.is_reentry) row.rebuy_cost = entry;
-        if (row.add_on_available) row.addon_cost = entry;
+        if (entry !== currentEntry) {
+          if (row.is_rebuy || row.is_reentry) row.rebuy_cost = entry;
+          if (row.add_on_available) row.addon_cost = entry;
+        }
         row.min_players = Math.max(
           Number(row.min_players) || 3,
           Math.ceil(target.nativeEntryValue / priced.prize)

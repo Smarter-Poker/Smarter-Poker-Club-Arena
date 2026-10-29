@@ -76,15 +76,22 @@ def main():
     parser.add_argument('--evidence',type=Path,required=True)
     parser.add_argument('--pg-bin',type=Path,required=True)
     parser.add_argument('--socket-root',type=Path,required=True)
+    parser.add_argument('--work-root',type=Path)
+
     args=parser.parse_args(); out=args.evidence.resolve();out.mkdir(parents=True,exist_ok=False)
     hand=module(ROOT/'scripts/ci/test-hand-submission.py','continuation_hand_foundation')
     manifest=hand.prepare(ROOT,out)
     chain=module(ROOT/'scripts/ci/test-accepted-hand-roster.py','continuation_current_chain')
     native=module(ROOT/'scripts/ci/test-mtt-unlimited.py','continuation_native_owner')
     args.socket_root.mkdir(parents=True,exist_ok=True)
-    e=native.Execution(ROOT,out,args.pg_bin.resolve(),out,600,socket_parent=args.socket_root)
-    inputs=[MIGRATION,PROBE,Path(__file__).relative_to(ROOT)]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
+    if sys.platform == 'darwin' and args.work_root is None:
+        parser.error('--work-root on the external work SSD is required on the owner Mac')
+    work=args.work_root.resolve() if args.work_root is not None else out
+    work.mkdir(parents=True,exist_ok=True)
+    e=native.Execution(ROOT,out,args.pg_bin.resolve(),work,600,socket_parent=args.socket_root)
+    inputs=[MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
+    inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
     e.report.update(source_sha256=source,installation_refusals=[],races=[],scope='private original continuation on exact production-captured atomic/stack/retention functions and maintained real financial/F06 closure; not live activation')
     for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
@@ -121,6 +128,7 @@ def main():
         if before!=after:raise RuntimeError('complete public/private data/catalog rollback differs')
         e.report.update(data_rollback=True,catalog_rollback=True,private_catalog_and_data_rollback=True)
         qualify_fences(e,db,native)
+        module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')
         e.report['status']='passed';e.discard(db)
     except BaseException as error:e.report['failure']=repr(error)

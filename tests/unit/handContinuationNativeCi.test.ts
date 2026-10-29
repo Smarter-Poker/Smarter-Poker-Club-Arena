@@ -11,6 +11,10 @@ const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 describe('durable original continuation qualification remains connected', () => {
   it.each([
     'scripts/ci/test-hand-continuation.py',
+    'scripts/ci/played_clock_floor_cases.py',
+    'scripts/ci/build-played-level-recovery-migration.py',
+    'scripts/ci/fixtures/played-clock-floor/opening.sql',
+    'scripts/ci/fixtures/played-clock-floor/abort-preimage.json',
     'scripts/ci/probes/hand-continuation-native.sql',
     'scripts/ci/fixtures/hand-continuation/financial-preimages.json',
     'scripts/ci/fixtures/hand-continuation/disposition.spec',
@@ -30,6 +34,18 @@ describe('durable original continuation qualification remains connected', () => 
     expect(steps[0]['continue-on-error']).toBeUndefined();
     expect(steps[0].run).toContain('--socket-root "$RUNNER_TEMP"');
     expect(steps[0].env.PG_ISOLATION_TESTER).toContain('isolationtester');
+  });
+
+  it('runs and source-binds the played-level floor in the same required native lane', () => {
+    const runner = read('scripts/ci/test-hand-continuation.py');
+    expect(runner).toContain(
+      "module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)"
+    );
+    expect(runner).toContain("ROOT/'scripts/ci/fixtures/played-clock-floor'");
+    expect(runner).toContain("Path('scripts/ci/build-played-level-recovery-migration.py')");
+    expect(runner).toContain(
+      "Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql')"
+    );
   });
 
   it('keeps the captured current financial owner bodies exact', () => {

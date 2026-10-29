@@ -217,8 +217,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42973,
-      "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      "bytes": 43059,
+      "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4269,6 +4269,22 @@
         "current": {
           "bytes": 42973,
           "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+        }
+      }
+    },
+    "execution_performed": false
+  },
+  "playedClockFloorNativeLane20261029": {
+    "review": "Reviewed additive classifier alternatives for the played-clock-floor helper, builder and fixtures. The existing required continuation native lane invokes and source-binds the floor qualification. No workflow, financial fixture/owner, native command, assertion, budget or historical qualification verdict changes. Current source identity only, not financial recertification or production installation.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 42973,
+          "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+        },
+        "current": {
+          "bytes": 43059,
+          "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
         }
       }
     },

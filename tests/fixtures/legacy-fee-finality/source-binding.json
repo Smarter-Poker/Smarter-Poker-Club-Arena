@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
+    "scripts/ci/classify-ci-changes.mjs": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1179,6 +1179,16 @@
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
         "current": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      }
+    },
+    "execution_performed": false
+  },
+  "playedClockFloorNativeLane20261029": {
+    "review": "Reviewed additive classifier alternatives for the played-clock-floor helper, builder and fixtures. The existing required continuation native lane invokes and source-binds the floor qualification. No workflow, financial fixture/owner, native command, assertion, budget or historical qualification verdict changes. Current source identity only, not financial recertification or production installation.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
+        "current": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
       }
     },
     "execution_performed": false

@@ -86,12 +86,15 @@ export function relayTournamentEvent(
     case 'tournament_break_started': {
       const endsAtRaw = data.breakEndsAt;
       const endsAt = typeof endsAtRaw === 'string' ? Date.parse(endsAtRaw) : NaN;
+      // The planned duration is not a deadline while tables finish their last hand.
       const durationMinutes =
-        typeof data.breakDurationMinutes === 'number'
-          ? data.breakDurationMinutes
-          : Number.isFinite(endsAt)
-            ? Math.max(1, Math.round((endsAt - Date.now()) / 60000))
-            : undefined;
+        data.phase === 'last_hand'
+          ? undefined
+          : typeof data.breakDurationMinutes === 'number'
+            ? data.breakDurationMinutes
+            : Number.isFinite(endsAt)
+              ? Math.max(1, Math.round((endsAt - Date.now()) / 60000))
+              : undefined;
 
       const startPayload = {
         tournamentId,

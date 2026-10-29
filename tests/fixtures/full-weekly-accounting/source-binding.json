@@ -488,7 +488,7 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "scripts/ci/classify-ci-changes.mjs": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
     "tests/fixtures/legacy-fee-finality/source-binding.json": "25a972fef5504416c6965bb07f73523a7e52fca179d9adce42de093e9e0a0167",
@@ -5745,5 +5745,11 @@
     },
     "financial_recertification": false,
     "execution_performed": false
+  },
+  "clubPromoJournalSource20261029": {
+    "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0"
   }
 }

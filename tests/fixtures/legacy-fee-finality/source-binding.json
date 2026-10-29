@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "scripts/ci/classify-ci-changes.mjs": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1236,5 +1236,11 @@
     },
     "financial_recertification": false,
     "execution_performed": false
+  },
+  "clubPromoJournalSource20261029": {
+    "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current": "01b586a64e8ec9f2224ad409bf87a37b544b69af10826ee411abbd2e11e594e0"
   }
 }

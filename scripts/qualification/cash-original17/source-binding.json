@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250121,
-      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
+      "sha256": "0b5b84af81e42ea5a0e72dec50b9ceca4f002e5eaf1d706b8235a711e35643c3",
+      "bytes": 250426
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1204,5 +1204,17 @@
       "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
     },
     "execution_performed": false
+  },
+  "clubPromoJournalSource20261029": {
+    "reason": "Adds the isolated club promo journal native regression to required accounting shard3 and admits its runner/SQL/JSON inputs. Existing qualification commands, assertions and historical receipts unchanged; current source identity only, no financial or live certificate restamp.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 250121,
+      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
+    },
+    "current": {
+      "sha256": "0b5b84af81e42ea5a0e72dec50b9ceca4f002e5eaf1d706b8235a711e35643c3",
+      "bytes": 250426
+    }
   }
 }

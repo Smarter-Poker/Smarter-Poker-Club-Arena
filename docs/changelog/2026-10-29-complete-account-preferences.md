@@ -22,6 +22,7 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/components/admin/ClubMemberManagement.tsx`            | `sortBy`             | `'clubMemberManagement.sort'`                   |
 | `src/components/admin/PlayerSearch.tsx`                    | `searchType`         | `'adminPlayerSearch.searchType'`                |
 | `src/components/admin/RakeReports.tsx`                     | `period`             | `'rakeReports.period'`                          |
+| `src/components/admin/SecurityDashboard.tsx`               | `expanded`           | `'securityDashboard.showDetails'`               |
 | `src/components/admin/StatsExport.tsx`                     | `format`             | `'statsExport.format'`                          |
 | `src/components/admin/StatsExport.tsx`                     | `dateRange`          | `'statsExport.dateRange'`                       |
 | `src/components/ads/CampaignQueue.tsx`                     | `showAll`            | `'campaignQueue.showAll'`                       |
@@ -57,6 +58,7 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/components/stats/HoleCardHeatmap.tsx`                 | `mode`               | `'holeCardHeatmap.mode'`                        |
 | `src/components/stats/HoleCardHeatmap.tsx`                 | `position`           | `'holeCardHeatmap.position'`                    |
 | `src/components/stats/HoleCardHeatmap.tsx`                 | `variant`            | `'holeCardHeatmap.variant'`                     |
+| `src/components/stats/NemesisPanel.tsx`                    | `expanded`           | `'nemesis.showFullList'`                        |
 | `src/components/stats/PositionalRadar.tsx`                 | `visible`            | `'positionalRadar.visibleMetrics'`              |
 | `src/components/stats/PositionalRadar.tsx`                 | `showReference`      | `'positionalRadar.showReference'`               |
 | `src/components/support/FAQPanel.tsx`                      | `search`             | `'faq.search'`                                  |
@@ -79,6 +81,7 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/pages/AchievementsPage.tsx`                           | `sortMode`           | `'AchievementsPage:sortMode'`                   |
 | `src/pages/AgentDashboardPage.tsx`                         | `playerSearch`       | `'AgentDashboardPage:playerSearch'`             |
 | `src/pages/AntiCheatPage.tsx`                              | `flagFilter`         | `'AntiCheatPage:flagFilter'`                    |
+| `src/pages/BusDevToolsPage.tsx`                            | `filter`             | `'busDevTools.filter'`                          |
 | `src/pages/CashierPage.tsx`                                | `txFilter`           | `'CashierPage:txFilter'`                        |
 | `src/pages/CashierStatementsPage.tsx`                      | `preset`             | `'CashierStatementsPage:preset'`                |
 | `src/pages/CashierStatementsPage.tsx`                      | `range`              | `'CashierStatementsPage:range'`                 |
@@ -108,6 +111,7 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/pages/DisputeManagementPage.tsx`                      | `searchQuery`        | `'DisputeManagementPage:searchQuery'`           |
 | `src/pages/DriftIncidentsPage.tsx`                         | `filter`             | `'DriftIncidentsPage:filter'`                   |
 | `src/pages/FriendsPage.tsx`                                | `searchQuery`        | `'FriendsPage:searchQuery'`                     |
+| `src/pages/GameManagementPage.tsx`                         | `view`               | `'gameManagement.view'`                         |
 | `src/pages/HandHistoryPage.tsx`                            | `filter`             | `'HandHistoryPage:filter'`                      |
 | `src/pages/HandHistoryPage.tsx`                            | `search`             | `'HandHistoryPage:search'`                      |
 | `src/pages/HandHistoryPage.tsx`                            | `variant`            | `'HandHistoryPage:variant'`                     |
@@ -150,9 +154,11 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/pages/UnionDashboardPage.tsx`                         | `agentSearch`        | `'UnionDashboardPage:agentSearch'`              |
 | `src/pages/UnionDashboardPage.tsx`                         | `adminSearch`        | `'UnionDashboardPage:adminSearch'`              |
 | `src/pages/UnionGamesPage.tsx`                             | `tournFilter`        | `'UnionGamesPage:tournFilter'`                  |
+| `src/pages/UnionStatementsPage.tsx`                        | `savedPeriod`        | `'unionStatements.period'`                      |
 | `src/pages/XMTTPage.tsx`                                   | `filter`             | `'XMTTPage:filter'`                             |
 | `src/pages/admin/AnalyticsDashboard.tsx`                   | `timeRange`          | `'AnalyticsDashboard:timeRange'`                |
 | `src/pages/admin/CommerceDeskPage.tsx`                     | `filter`             | `'admin/CommerceDeskPage:filter'`               |
+| `src/pages/admin/CommerceDeskPage.tsx`                     | `filter`             | `'commerceDesk.catalogFilter'`                  |
 | `src/pages/admin/DiamondStaffDeskPage.tsx`                 | `filter`             | `'DiamondStaffDeskPage:incidentFilter'`         |
 | `src/pages/club/ClubDashboard.tsx`                         | `dateRange`          | `'club/ClubDashboard:dateRange'`                |
 | `src/pages/club/ClubDashboard.tsx`                         | `sortBy`             | `'club/ClubDashboard:sortBy'`                   |
@@ -171,6 +177,7 @@ The following inventory records rendered control bindings; specialized owners ab
 | `src/pages/club/ClubDataSimplePage.tsx`                    | `game`               | `'club/ClubDataSimplePage:game'`                |
 | `src/pages/club/ClubDataSimplePage.tsx`                    | `stakes`             | `'club/ClubDataSimplePage:stakes'`              |
 | `src/pages/club/ClubDataSimplePage.tsx`                    | `searchInput`        | `'club/ClubDataSimplePage:searchInput'`         |
+| `src/pages/club/ClubDiamondCostsPage.tsx`                  | `showAll`            | `'clubDiamondCosts.showAllReceipts'`            |
 | `src/pages/marketplace/ManageTab.tsx`                      | `sortOrder`          | `'marketplace/ManageTab:sortOrder'`             |
 | `src/pages/marketplace/PurchaseLedger.tsx`                 | `query`              | `'PurchaseLedger:query'`                        |
 | `src/pages/marketplace/StoreTab.tsx`                       | `searchFilter`       | `'marketplace/StoreTab:searchFilter'`           |

@@ -60,6 +60,7 @@ vi.mock('../../src/services/AvatarService', () => ({
 
 import { AvatarGallery } from '../../src/components/customization/AvatarGallery';
 import { ALL_COSMETICS } from '../../src/cosmetics/avatarCosmetics';
+import { useUserStore } from '../../src/stores/useUserStore';
 
 function renderGallery() {
   return render(
@@ -75,6 +76,8 @@ function renderGallery() {
 
 describe('Avatar Gallery mobile interaction contract', () => {
   beforeEach(() => {
+    localStorage.clear();
+    useUserStore.setState({ user: { id: 'user-1' } as any });
     mocks.close.mockReset();
     mocks.changed.mockReset();
     mocks.setUserAvatar.mockReset();

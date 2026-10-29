@@ -28,7 +28,10 @@ vi.mock('../../src/stores/useTableStore', () => ({ useTableStore: {} }));
 vi.mock('../../src/stores/useUnionStore', () => ({ useUnionStore: {} }));
 vi.mock('../../src/stores/useWalletStore', () => ({ useWalletStore: {} }));
 vi.mock('../../src/stores/useSettingsStore', () => ({ useSettingsStore: {} }));
-vi.mock('../../src/stores/useUserStore', () => ({ useUserStore: {} }));
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: (select: (state: { user: { id: string } | null }) => unknown) =>
+    select({ user: identity.userId ? { id: identity.userId } : null }),
+}));
 vi.mock('../../src/services/RealtimeChannelService', () => ({ realtimeChannelService: {} }));
 vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({

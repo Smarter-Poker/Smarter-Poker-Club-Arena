@@ -3626,7 +3626,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /** One controller's existing event, publication and completion owner. */
   protected wireOriginalDisconnectAction(): void {
     this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
-      if (!this.handController) return;
+      if (this.pendingOriginalContinuation || !this.handController) return;
       const state = this.handController.getState();
       const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
       if (!dcPlayer) return;
@@ -3684,7 +3684,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       original.batch.controller,
       this.tableId,
       this.handCount,
-      () => getTournamentBrainContextSnapshot(original.original.tournament_id)
+      () => getTournamentBrainContextSnapshot(original.original.tournament_id),
+      () =>
+        this.pendingOriginalContinuation === null &&
+        this.running &&
+        this.handController === controller &&
+        this.lifecycleCanMutate() &&
+        this.isCurrentEngine()
     );
     this.handController = controller;
     this.lastButtonSeat = controller.getState().dealerSeat;
@@ -3810,6 +3816,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     attempt: { started: boolean; cause: string | null }
   ): Promise<void> {
     const recovered = this.pendingOriginalContinuation;
+    const resumesStartedOriginal =
+      recovered !== null && JSON.parse(recovered.batch.controller).handStarted === true;
     const original = recovered?.original ?? this.f06CurrentPermit?.binding;
     const seats =
       recovered?.seats ??
@@ -3878,7 +3886,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         for (;;) {
           if (!(await this.weeklyHandPause.checkpoint())) return;
           if (this.weeklyHandPause.held()) continue;
-          if (this.isHandForHandReleaseBlocked() || this.handForHandPaused) {
+          if (
+            !resumesStartedOriginal &&
+            (this.isHandForHandReleaseBlocked() || this.handForHandPaused)
+          ) {
             // Keep the retained prepared controller at the same existing
             // physical owner gate. Polled floor/admin/Cluster locks are not
             // routed here: this gate does not own their read/wait protocol.
@@ -3895,6 +3906,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         !this.isCurrentEngine() ||
         !this.lifecycleCanMutate()
       ) {
+        return;
+      }
+      // An already-started retained hand is the hand the next-hand owners
+      // are waiting to finish. It must not acknowledge their boundary or
+      // consume the hand-for-hand release before its own settlement. The
+      // actual global freeze remains an independent hard refusal.
+      if (resumesStartedOriginal && isMaintenanceFrozen()) {
+        this.killForRestart('retained_original_start_unproven');
         return;
       }
       if (!original && this.discardPreparedHandForPause()) return;

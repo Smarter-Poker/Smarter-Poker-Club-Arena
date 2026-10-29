@@ -150,13 +150,14 @@ describe('a level is not spent while part of the field has no dealer', () => {
     expect(log.mock.calls.flat().join(' ')).not.toContain('the field no longer waits for it');
   });
 
-  it('never releases an entirely unavailable field after the minority hold bound', async () => {
-    const m = manager(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000);
+  it.each([
+    0,
+    TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS - 1,
+    TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000,
+  ])('never releases an entirely unavailable field after %ims', async (failingFor) => {
+    const m = manager(failingFor);
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    m.tableAdmissionFailingSince.set(
-      'healthy-table',
-      Date.now() - TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS - 5_000
-    );
+    m.tableAdmissionFailingSince.set('healthy-table', Date.now() - failingFor);
     // A hand on a now-closed table can still be the current level's witness.
     // It cannot establish that any of the remaining field can play.
     await m.advanceBlindLevel(STRUCTURE);

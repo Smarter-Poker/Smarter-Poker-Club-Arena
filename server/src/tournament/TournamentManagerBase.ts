@@ -10756,7 +10756,8 @@ export abstract class TournamentManagerBase {
           continue;
         }
         if (
-          failingMs >= TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS &&
+          (!fieldHasAvailableDealer ||
+            failingMs >= TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS) &&
           (!stoppedTable || failingMs > stoppedTable.failingMs)
         )
           stoppedTable = { tableId, failingMs };

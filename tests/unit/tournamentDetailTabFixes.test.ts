@@ -285,7 +285,9 @@ describe('a query that fails does not render as a fact about the tournament', ()
     // and an RLS denial rendered "The Bounty Pool Is Not Funded Yet".
     expect(src).toMatch(/if \(error\) throw error/);
     expect(src).toMatch(/fetchAllRows/);
-    expect(src).toMatch(/\.range\(from, to\)/);
+    expect(src).toMatch(/\.order\('id', \{ ascending: true \}\)/);
+    expect(src).toMatch(/query\.gt\('id', cursor\)/);
+    expect(src).toMatch(/Array\.isArray\(data\)/);
     // And the UI can now tell the two apart.
     expect(src).toMatch(/ledger\.failed/);
     expect(src).toMatch(/The Bounty Pool Could Not Be Read/);

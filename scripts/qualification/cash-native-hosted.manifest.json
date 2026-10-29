@@ -258,16 +258,16 @@
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 13575,
-      "sha256": "64ed92f5a283a755aa581107627efb0fe976e5873cb39a2841bce918415ef739"
+      "sha256": "cc099116d3bf8e2e1366667e42d03c5d42f98a3b7ff706203f7e8452491294b9",
+      "bytes": 14262
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 32026,
-      "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
+      "bytes": 32440,
+      "sha256": "5642f6956a87d4132e09626c2f15ab666df85b2fcbfedb1f2bd4660ffea670ba"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3454,
@@ -4869,6 +4869,46 @@
       "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
     },
     "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "handRefusalExactOutcomeSourceAudit20261029": {
+    "reason": "Register exact-original hand outcome native qualification, its current installed preimage and exact migration in the existing composed alert runner. Source identities only; financial assertions, prior qualification verdicts and all historical audit records retained.",
+    "changes": {
+      "scripts/ci/test-production-alert-core-postgres.py": {
+        "previous": {
+          "bytes": 32026,
+          "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
+        },
+        "current": {
+          "bytes": 32440,
+          "sha256": "5642f6956a87d4132e09626c2f15ab666df85b2fcbfedb1f2bd4660ffea670ba"
+        }
+      },
+      "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+        "previous": {
+          "bytes": 13575,
+          "sha256": "64ed92f5a283a755aa581107627efb0fe976e5873cb39a2841bce918415ef739"
+        },
+        "current": {
+          "bytes": 14262,
+          "sha256": "37365207cb29068e286bf22aeb88e3d3026706a64561d74fc10e950f6a5c6274"
+        }
+      }
+    }
+  },
+  "handRefusalWatchlistDeclarationAudit20261029": {
+    "reason": "Preserve actual installed watchlist/declaration refusal behavior in the exact original outcome native fixture; condition declarations on the same watched function. No detector body, workflow identity, financial assertions or prior verdict changes.",
+    "changes": {
+      "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+        "previous": {
+          "bytes": 14262,
+          "sha256": "37365207cb29068e286bf22aeb88e3d3026706a64561d74fc10e950f6a5c6274"
+        },
+        "current": {
+          "sha256": "cc099116d3bf8e2e1366667e42d03c5d42f98a3b7ff706203f7e8452491294b9",
+          "bytes": 14262
+        }
+      }
+    }
   },
   "ciBrowserCriticalPathSourceAudit20261029": {
     "scope": "Source identity only: five CSS Beat shards and three Diamond playfield shards preserve identical cases and required gates.",

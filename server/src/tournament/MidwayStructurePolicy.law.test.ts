@@ -28,9 +28,11 @@ describe('Midway standard structures through the actual scheduled creator', () =
         union_id: MIDWAY_UNION_ID,
       };
       const service = new ScheduledTournamentService();
-      vi.spyOn(service as any, 'resolveSatelliteTarget').mockResolvedValue(
-        '00000000-0000-4000-8000-000000000001'
-      );
+      vi.spyOn(service as any, 'resolveSatelliteTarget').mockResolvedValue({
+        id: '00000000-0000-4000-8000-000000000001',
+        entryValue: 100,
+        nativeEntryValue: 100,
+      });
       const row = await (service as any).buildInsertRow(schedule, config, start);
       expect(row, name).not.toBeNull();
       const smallBounty = ['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'].includes(name);
@@ -80,8 +82,12 @@ describe('Midway standard structures through the actual scheduled creator', () =
           ).toBeGreaterThanOrEqual(20);
         if (row.add_on_available)
           expect(row.addon_chips).toBeGreaterThanOrEqual(row.starting_chips * 2);
-        if (config.buyIn != null && !smallBounty)
-          expect(Number(row.buy_in_amount) + Number(row.buy_in_fee)).toBe(config.buyIn);
+        if (config.buyIn != null && !smallBounty) {
+          if (row.satellite_target_id) {
+            expect(100 / row.buy_in_amount).toBeGreaterThanOrEqual(5);
+            expect(100 / row.buy_in_amount).toBeLessThanOrEqual(10);
+          } else expect(Number(row.buy_in_amount) + Number(row.buy_in_fee)).toBe(config.buyIn);
+        }
       }
       if (config.guaranteedPrize != null) expect(row.guaranteed_prize).toBe(config.guaranteedPrize);
       expect(row.is_rebuy).toBe(true);

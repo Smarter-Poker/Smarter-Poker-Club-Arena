@@ -55,31 +55,20 @@ describe('the shared migration ledger is never graded from one repository', () =
     ).rejects.toThrow(/UNKNOWN: no estate read token/);
   });
 
-  it('the PR ledger token targets the actual sibling owner independently of the caller', () => {
-    const workflow = readFileSync(
-      resolve(__dirname, '..', '.github/workflows/migration-ledger-reconciled.yml'),
-      'utf8'
-    );
-    const tokenStep = workflow.split('id: estate-token')[1].split('      - name:')[0];
-    expect(tokenStep).toContain('owner: Smarter-Poker');
-    expect(tokenStep).not.toContain('github.repository_owner');
-    expect(tokenStep).toContain('repositories: Smarter-Poker-World-Hub');
-    expect(tokenStep).toContain('permission-contents: read');
-  });
-
-  it('the scheduled workflow mints a short-lived read-only sibling token', () => {
-    const workflow = readFileSync(
-      resolve(__dirname, '..', '.github/workflows/applied-migrations-recorded.yml'),
-      'utf8'
-    );
-    expect(workflow).toContain('actions/create-github-app-token@v3');
-    const tokenStep = workflow.split('id: estate-token')[1].split('      - name:')[0];
-    expect(tokenStep).toContain('owner: Smarter-Poker');
-    expect(tokenStep).not.toContain('github.repository_owner');
-    expect(workflow).toContain('repositories: Smarter-Poker-World-Hub');
-    expect(workflow).toContain('permission-contents: read');
-    expect(workflow).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');
-    expect(workflow).not.toContain('indexing this repo only');
+  it('both ledger workflows mint the original read-only sibling token after Club Arena transfers', () => {
+    for (const name of ['applied-migrations-recorded.yml', 'migration-ledger-reconciled.yml']) {
+      const workflow = readFileSync(resolve(__dirname, '..', '.github/workflows', name), 'utf8');
+      expect(workflow, name).toContain('actions/create-github-app-token@v3');
+      expect(workflow, name).toContain('app-id: ${{ vars.AUTOPILOT_APP_ID }}');
+      expect(workflow, name).toContain('private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}');
+      // World Hub ID 1132365826 did not transfer with Club Arena ID 1132369872.
+      expect(workflow, name).toContain('owner: Smarter-Poker\n');
+      expect(workflow, name).not.toContain('owner: ${{ github.repository_owner }}');
+      expect(workflow, name).toContain('repositories: Smarter-Poker-World-Hub');
+      expect(workflow, name).toContain('permission-contents: read');
+      expect(workflow, name).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');
+      expect(workflow, name).not.toContain('indexing this repo only');
+    }
   });
 });
 

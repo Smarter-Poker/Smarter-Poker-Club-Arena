@@ -12,6 +12,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+// This fixture spawns the complete audit across the mocked estate. In the
+// 302-file hook, the unreadable-detail case completed in 16.442s against its
+// old 15s cap. Bound the actual child at 30s and allow its parent 45s for
+// process startup and cleanup; all production deadlines and assertions stay.
+const AUDIT_CHILD_TIMEOUT_MS = 30_000;
+const AUDIT_CASE_TIMEOUT_MS = 45_000;
+
 const ROOT = resolve(__dirname, '..');
 const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
 const REAL_SHASUM = spawnSync('sh', ['-c', 'command -v shasum'], {
@@ -143,6 +150,8 @@ esac
   const result = spawnSync('bash', [AUDIT], {
     cwd: ROOT,
     encoding: 'utf8',
+    timeout: AUDIT_CHILD_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
     env: {
       ESTATE_INJECT_REPO: 'Smarter-Poker-Diamond-Arena',
       ESTATE_INJECT_RETIRED_PATH1:
@@ -182,16 +191,20 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
       expect(combined).toContain('branch ruleset `102`');
       expect(combined).toContain('required contexts are unverified');
     },
-    15_000
+    AUDIT_CASE_TIMEOUT_MS
   );
 
-  it('alarms and exits nonzero when a valid secondary ruleset contains the forbidden context', () => {
-    const { result, combined } = runAudit('forbidden');
+  it(
+    'alarms and exits nonzero when a valid secondary ruleset contains the forbidden context',
+    () => {
+      const { result, combined } = runAudit('forbidden');
 
-    expect(result.status).toBe(1);
-    expect(combined).toContain('unauthorized required context `Stage B Release Freeze`');
-    expect(combined).toContain('102');
-  }, 15_000);
+      expect(result.status).toBe(1);
+      expect(combined).toContain('unauthorized required context `Stage B Release Freeze`');
+      expect(combined).toContain('102');
+    },
+    AUDIT_CASE_TIMEOUT_MS
+  );
 
   /**
    * MEASURED 2026-09-19. Every branch ruleset in all seven repos had been
@@ -207,46 +220,62 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
    * "the token cannot see it" sends them to the App's permissions, which is
    * where the answer is.
    */
-  it('names the permission when the detail is well formed but rules are withheld', () => {
-    const { result, combined } = runAudit('permission_blind');
+  it(
+    'names the permission when the detail is well formed but rules are withheld',
+    () => {
+      const { result, combined } = runAudit('permission_blind');
 
-    expect(result.status).toBe(1);
-    expect(combined).toContain('cannot see `rules` or `bypass_actors`');
-    expect(combined).toContain('Administration: Read');
-    expect(combined).toContain('102');
-    // It must NOT accuse the API of being malformed, which is the wrong repair.
-    expect(combined).not.toContain('wrong or absent');
-    // And nothing about that repo may be reported as verified.
-    expect(combined).not.toContain('estate-integrity: 0 problem(s).');
-  }, 15_000);
+      expect(result.status).toBe(1);
+      expect(combined).toContain('cannot see `rules` or `bypass_actors`');
+      expect(combined).toContain('Administration: Read');
+      expect(combined).toContain('102');
+      // It must NOT accuse the API of being malformed, which is the wrong repair.
+      expect(combined).not.toContain('wrong or absent');
+      // And nothing about that repo may be reported as verified.
+      expect(combined).not.toContain('estate-integrity: 0 problem(s).');
+    },
+    AUDIT_CASE_TIMEOUT_MS
+  );
 
-  it('does not raise a forbidden-context alarm when every detail is valid and absent', () => {
-    const { result, combined, hashes } = runAudit('absent');
+  it(
+    'does not raise a forbidden-context alarm when every detail is valid and absent',
+    () => {
+      const { result, combined, hashes } = runAudit('absent');
 
-    expect(result.status).toBe(0);
-    expect(combined).not.toContain('unauthorized required context');
-    expect(combined).toContain('estate-integrity: 0 problem(s).');
-    // One hash per shared file, plus three for `.husky/reference-transaction`:
-    // the stored World Hub copy, World Hub's own bytes (which differ from Club
-    // Arena's and are compared against the stored copy, not the estate), and
-    // commander's bytes, which differ from the last payload seen.
-    expect(hashes).toBe(17);
-  }, 15_000);
+      expect(result.status).toBe(0);
+      expect(combined).not.toContain('unauthorized required context');
+      expect(combined).toContain('estate-integrity: 0 problem(s).');
+      // One hash per shared file, plus three for `.husky/reference-transaction`:
+      // the stored World Hub copy, World Hub's own bytes (which differ from Club
+      // Arena's and are compared against the stored copy, not the estate), and
+      // commander's bytes, which differ from the last payload seen.
+      expect(hashes).toBe(17);
+    },
+    AUDIT_CASE_TIMEOUT_MS
+  );
 
-  it('rehashes different same-path bytes without hiding the divergent repository', () => {
-    const { result, combined, hashes } = runAudit('divergent');
-    expect(result.status).toBe(1);
-    expect(combined).toContain('AGENT-PLAYBOOK.md');
-    expect(combined).toContain('2 different versions');
-    expect(combined).toContain('Smarter-Poker-World-Hub');
-    expect(hashes).toBe(19);
-  }, 15_000);
+  it(
+    'rehashes different same-path bytes without hiding the divergent repository',
+    () => {
+      const { result, combined, hashes } = runAudit('divergent');
+      expect(result.status).toBe(1);
+      expect(combined).toContain('AGENT-PLAYBOOK.md');
+      expect(combined).toContain('2 different versions');
+      expect(combined).toContain('Smarter-Poker-World-Hub');
+      expect(hashes).toBe(19);
+    },
+    AUDIT_CASE_TIMEOUT_MS
+  );
 
-  it('refuses failed hashing and never reuses it as a successful digest', () => {
-    const { result, combined, hashes } = runAudit('hash_failure');
-    expect(result.status).toBe(1);
-    expect(combined).toContain('could not decode or hash');
-    expect(combined).not.toContain('estate-integrity: 0 problem(s).');
-    expect(hashes).toBe(96);
-  }, 15_000);
+  it(
+    'refuses failed hashing and never reuses it as a successful digest',
+    () => {
+      const { result, combined, hashes } = runAudit('hash_failure');
+      expect(result.status).toBe(1);
+      expect(combined).toContain('could not decode or hash');
+      expect(combined).not.toContain('estate-integrity: 0 problem(s).');
+      expect(hashes).toBe(96);
+    },
+    AUDIT_CASE_TIMEOUT_MS
+  );
 });

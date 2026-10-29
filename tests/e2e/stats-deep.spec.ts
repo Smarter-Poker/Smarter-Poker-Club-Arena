@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Request } from '@playwright/test';
 import { recordNonVerdict } from './support/nonVerdict';
 
 test.describe('Player Stats production experience', () => {
@@ -90,7 +90,16 @@ test.describe('Player Stats production experience', () => {
     };
     await release('before');
     const reads: Array<{ limit: number; search: string | null }> = [];
+    const warmupReads: Array<{ limit: number; search: string | null }> = [];
     const blockedWrites: string[] = [];
+    const pendingRest = new Set<Request>();
+    const started = (request: Request) => {
+      if (new URL(request.url()).pathname.includes('/rest/v1/')) pendingRest.add(request);
+    };
+    const finished = (request: Request) => pendingRest.delete(request);
+    page.on('request', started);
+    page.on('requestfinished', finished);
+    page.on('requestfailed', finished);
     let armed = false;
     let clockInstalled = false;
     const syntheticClub = 'ee871000-0000-4000-8000-000000000001';
@@ -158,40 +167,69 @@ test.describe('Player Stats production experience', () => {
       }
     });
     try {
-      const start = Date.now();
-      await page.clock.install({ time: start });
-      clockInstalled = true;
       await page.reload();
-      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
-      // Roles must resolve before Rake is available. Pause before its panel
-      // mounts, then allow the real 220ms outgoing animation less than the
-      // initial 300ms debounce budget. Show More therefore precedes that timer
-      // even on the old component, without blocking the role-gated tab.
+      const overview = page.getByRole('tab', { name: 'Overview', exact: true });
       const rake = page.getByRole('tab', { name: 'Rake', exact: true });
+      const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
+      await expect(overview).toBeVisible();
       await expect(rake).toBeVisible();
+      // Resolve the real lazy chunks and auth-backed RPC transport while time
+      // runs normally. A cold import can finish after runFor has returned; its
+      // passive work must not be mistaken for a failed ledger response.
+      await rake.click();
+      await expect(panel.getByRole('row')).toHaveCount(501);
+      warmupReads.push(...reads.splice(0));
+      expect(warmupReads).toEqual([{ limit: 501, search: null }]);
+      await overview.click();
+      await expect(page.locator('#stats-panel-overview')).toBeVisible();
+      await expect(panel).toHaveCount(0);
+      await expect(page.locator('.stats-range-status.is-refreshing')).toHaveCount(0);
+      await expect.poll(() => pendingRest.size).toBe(0);
+      // This is a new component mount, with its own initial debounce. The
+      // outgoing animation consumes 220ms, leaving the initial 300ms timer
+      // unexpired when Show More is clicked, including on the old component.
+      await page.clock.install({ time: Date.now() });
+      clockInstalled = true;
       await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+      const pausedRows = async (count: number) => {
+        await expect
+          .poll(async () => {
+            // Flush only work due now after asynchronous responses. Wall-clock
+            // polling never consumes the remaining debounce budget.
+            await page.clock.runFor(0);
+            return panel.getByRole('row').count();
+          })
+          .toBe(count);
+      };
+      // pauseAt advances time before stopping; drain reads it may have started
+      // while the ledger is still unmounted and no debounce budget exists.
+      await expect
+        .poll(async () => {
+          await page.clock.runFor(0);
+          return pendingRest.size;
+        })
+        .toBe(0);
       armed = true;
       await rake.click();
       await page.clock.runFor(299);
       await expect(page.locator('#stats-panel-rake')).toBeVisible();
-      const panel = page.getByRole('region', { name: 'Downline Rake Ledger' });
-      await expect(panel.getByRole('row')).toHaveCount(501);
+      await pausedRows(501);
       expect(reads).toEqual([{ limit: 501, search: null }]);
       await panel.getByRole('button', { name: 'Show 500 More Members' }).click();
-      await expect(panel.getByRole('row')).toHaveCount(621);
+      await pausedRows(621);
       expect(reads).toEqual([
         { limit: 501, search: null },
         { limit: 1001, search: null },
       ]);
       await page.clock.runFor(300);
-      await expect(panel.getByRole('row')).toHaveCount(621);
+      await pausedRows(621);
       await expect(panel.getByRole('button', { name: 'Show 500 More Members' })).toHaveCount(0);
       expect(reads).toHaveLength(2);
       await panel.getByRole('textbox', { name: 'Search Downline Players' }).fill('river');
       await page.clock.runFor(299);
       expect(reads).toHaveLength(2);
       await page.clock.runFor(1);
-      await expect(panel.getByRole('row')).toHaveCount(501);
+      await pausedRows(501);
       expect(reads).toEqual([
         { limit: 501, search: null },
         { limit: 1001, search: null },
@@ -200,6 +238,9 @@ test.describe('Player Stats production experience', () => {
       expect(blockedWrites).toEqual([]);
     } finally {
       armed = false;
+      page.off('request', started);
+      page.off('requestfinished', finished);
+      page.off('requestfailed', finished);
       try {
         if (clockInstalled) await page.clock.resume();
         await page.unroute('**/rest/v1/**');
@@ -216,6 +257,7 @@ test.describe('Player Stats production experience', () => {
         syntheticReadResponses: true,
         actualPublishedAssets: true,
         reads,
+        warmupReads,
         blockedWrites: 0,
       }),
       contentType: 'application/json',

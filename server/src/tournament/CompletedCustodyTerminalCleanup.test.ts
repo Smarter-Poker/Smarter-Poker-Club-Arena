@@ -297,3 +297,53 @@ it('preserves metadata after physical or channel cleanup refuses', async () => {
     await live.stop();
   }
 });
+
+it.each(['stopped', 'no-start', 'arrival'])(
+  'seals released original engines in a %s registry keyed by break identity',
+  async (kind) => {
+    const game = server();
+    const { packet } = await sealed(game);
+    const owner: any = packet.manager;
+    const original = packet.engines![0][1];
+    const breakId = id(80);
+    if (kind === 'stopped') owner.stoppedOriginalBreaks.set(breakId, original);
+    if (kind === 'no-start')
+      owner.pendingNoStartContinuations.set(breakId, {
+        engine: original,
+        binding: { tableId: TABLE },
+      });
+    if (kind === 'arrival')
+      owner.tournamentBreakArrivalWakes.set(breakId, new Map([[id(81), original]]));
+    expect(completeF06Custody(packet, []).status).toBe('sealed');
+    game.archiveCompletedF06Custody(packet, []);
+    const window = game.completedF06DiagnosticWindows.get(TID);
+    expect(window.sealed).toHaveLength(1);
+    expect(window.unsealed).toHaveLength(0);
+    expect(window.sealed[0]).not.toHaveProperty('original');
+  }
+);
+
+it.each(['stopped', 'no-start', 'arrival', 'wrong-table'])(
+  'retains original custody when the %s child registry has an unproven engine binding',
+  async (kind) => {
+    const { packet } = await sealed(server());
+    const owner: any = packet.manager;
+    const original = packet.engines![0][1];
+    const foreign = engine(id(99));
+    await foreign.stop();
+    if (kind === 'stopped') owner.stoppedOriginalBreaks.set(id(80), foreign);
+    if (kind === 'no-start')
+      owner.pendingNoStartContinuations.set(id(80), {
+        engine: foreign,
+        binding: { tableId: TABLE },
+      });
+    if (kind === 'arrival')
+      owner.tournamentBreakArrivalWakes.set(id(80), new Map([[id(81), foreign]]));
+    if (kind === 'wrong-table')
+      owner.pendingNoStartContinuations.set(id(80), {
+        engine: original,
+        binding: { tableId: id(99) },
+      });
+    expect(completeF06Custody(packet, [])).toMatchObject({ status: 'unsealed', original: packet });
+  }
+);

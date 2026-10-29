@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250705,
-      "sha256": "eebb38c9ac3849ef680707e40af3652a6ff01c0c82568cd97aeb1e7010e289d6"
+      "bytes": 250982,
+      "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1001,5 +1001,18 @@
   },
   "clubPromoProtectedMainIntegration20261029": {
     "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
+  },
+  "v31ControllerContractEnforcement20261029": {
+    "reason": "Adds one directly triggered shard-1 Python controller test step for V31 public feature and final model/index/input-draft contracts. Existing accounting/native/financial test commands, assertions, deadlines, joins and historical evidence are unchanged. This updates current workflow byte identity only and is not a financial or live certificate.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 250705,
+      "sha256": "eebb38c9ac3849ef680707e40af3652a6ff01c0c82568cd97aeb1e7010e289d6"
+    },
+    "current": {
+      "bytes": 250982,
+      "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+    },
+    "execution_performed": false
   }
 }

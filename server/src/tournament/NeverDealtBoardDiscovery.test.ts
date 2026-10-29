@@ -15,6 +15,16 @@ function harness(size = 16, passes = 2) {
   let pass = 0;
   const retire = vi.fn();
   const inspected = vi.fn();
+  const tables = vi.fn((id: string, cursor: string | null, limit: number): any => ({
+    data: [{ id, status: 'playing' }],
+    error: null,
+  }));
+  const seats = vi.fn((_ids: string[]): any => ({ data: [], count: 2, error: null }));
+  const history = vi.fn((ids: string[]): any => ({
+    data: [],
+    count: ids.includes(rows.at(-1)?.id ?? '') ? 0 : 1,
+    error: null,
+  }));
   const board = vi.fn((cursor: string | null, limit: number): any => ({
     data: rows.filter((r) => !cursor || r.id > cursor).slice(0, limit),
     error: null,
@@ -55,13 +65,14 @@ function harness(size = 16, passes = 2) {
         table === 'tournaments' && status === 'RUNNING' && fields === 'id, name, started_at'
           ? board(cursor, limit)
           : table === 'tables'
-            ? (inspected(tournamentId),
-              { data: [{ id: tournamentId, status: 'playing' }], error: null })
+            ? (inspected(tournamentId), tables(tournamentId, cursor, limit))
             : table === 'hand_history'
-              ? { data: [], count: ids.includes(rows.at(-1)?.id ?? '') ? 0 : 1, error: null }
-              : table === 'table_seats' || (table === 'tournament_players' && fields === 'id')
-                ? { data: [], count: 2, error: null }
-                : { data: [], error: null, count: 0 }
+              ? history(ids)
+              : table === 'table_seats'
+                ? seats(ids)
+                : table === 'tournament_players' && fields === 'id'
+                  ? { data: [], count: 2, error: null }
+                  : { data: [], error: null, count: 0 }
       ).then(resolve);
     return b as never;
   });
@@ -97,7 +108,7 @@ function harness(size = 16, passes = 2) {
       seatFirstPartnerHoldUntil: vi.fn(() => -Infinity),
     },
   });
-  return { server, board, rows, retire, inspected };
+  return { server, board, rows, retire, inspected, tables, history, seats };
 }
 describe('never-dealt discovery examines successive bounded candidate pages', () => {
   it('reaches the sixteenth event instead of checking the first fifteen forever', async () => {
@@ -164,6 +175,70 @@ describe('never-dealt discovery examines successive bounded candidate pages', ()
     });
     await server.discoverTournaments();
     expect(inspected).toHaveBeenCalled();
+    expect(retire).not.toHaveBeenCalled();
+  });
+  it('does not classify a field as never-dealt when its completed hand is beyond table 1000', async () => {
+    const { server, tables, history, retire } = harness(1, 1);
+    const field = Array.from({ length: 1001 }, (_, i) => ({
+      id: `table-${String(i).padStart(5, '0')}`,
+      status: 'playing',
+    }));
+    tables.mockImplementation((_id, cursor, limit) => ({
+      data: field.filter((r) => !cursor || r.id > cursor).slice(0, limit),
+      error: null,
+    }));
+    history.mockImplementation((ids) => ({
+      data: [],
+      count: ids.includes(field[1000].id) ? 1 : 0,
+      error: null,
+    }));
+    await server.discoverTournaments();
+    expect(retire).not.toHaveBeenCalled();
+    expect(history.mock.calls.some(([ids]) => ids.includes(field[1000].id))).toBe(true);
+    expect(Math.max(...history.mock.calls.map(([ids]) => ids.length))).toBeLessThanOrEqual(200);
+  });
+  it('does not retire from a table prefix when the next page is unreadable', async () => {
+    const { server, tables, history, retire } = harness(1, 1);
+    const field = Array.from({ length: 1000 }, (_, i) => ({
+      id: `table-${String(i).padStart(5, '0')}`,
+      status: 'playing',
+    }));
+    tables.mockImplementation((_id, cursor) =>
+      cursor ? { data: null, error: new Error('offline') } : { data: field, error: null }
+    );
+    history.mockReturnValue({ data: [], count: 0, error: null });
+    await server.discoverTournaments();
+    expect(retire).not.toHaveBeenCalled();
+    expect(history).not.toHaveBeenCalled();
+  });
+  it.each(['error', 'null'])(
+    'does not retire after an unreadable %s seat-count chunk',
+    async (kind) => {
+      const { server, tables, history, seats, retire } = harness(1, 1);
+      const field = Array.from({ length: 201 }, (_, i) => ({
+        id: `table-${String(i).padStart(5, '0')}`,
+        status: 'playing',
+      }));
+      tables.mockReturnValue({ data: field, error: null });
+      history.mockReturnValue({ data: [], count: 0, error: null });
+      seats.mockImplementation((ids) =>
+        ids.includes(field[200].id)
+          ? { data: [], count: null, error: kind === 'error' ? new Error('offline') : null }
+          : { data: [], count: 2, error: null }
+      );
+      await server.discoverTournaments();
+      expect(seats).toHaveBeenCalledTimes(2);
+      expect(retire).not.toHaveBeenCalled();
+    }
+  );
+  it('does not retire when ownership changes while reading completed hands', async () => {
+    const { server, history, retire } = harness(1, 1);
+    history.mockImplementation(() => {
+      server.lifecycleGeneration++;
+      return { data: [], count: 0, error: null };
+    });
+    await server.discoverTournaments();
+    expect(history).toHaveBeenCalled();
     expect(retire).not.toHaveBeenCalled();
   });
 });

@@ -9649,38 +9649,59 @@ export class GameServer {
           previousCandidate = candidate.id;
         }
         this.neverDealtCandidateCursor = maybeNeverDealt.length < 15 ? null : previousCandidate;
-        for (const t of maybeNeverDealt) {
+        neverDealtCandidate: for (const t of maybeNeverDealt) {
           if (!this.directAdmissionIsCurrent(generation)) break;
-          const { data: tRows, error: tErr } = await supabase
-            .from('tables')
-            .select('id, status')
-            .eq('tournament_id', t.id);
+          const tableRead = await fetchAllRows<{ id: string; status: string }>(
+            (cursor, want) => {
+              let query = supabase
+                .from('tables')
+                .select('id, status')
+                .eq('tournament_id', t.id)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) query = query.gt('id', cursor);
+              return query;
+            },
+            {
+              label: 'GameServer.neverDealtTables',
+              pageAttempts: 1,
+              shouldContinue: () => this.directAdmissionIsCurrent(generation),
+            }
+          );
           if (!this.directAdmissionIsCurrent(generation)) break;
-          if (tErr) continue; // unreadable is UNKNOWN, never "it never dealt"
-          const tableIds = (tRows || []).map((r) => String((r as { id: string }).id));
-          if (tableIds.length === 0) continue; // no table at all - creation path owns it
+          if (!tableRead.complete) continue;
+          const tRows = tableRead.rows;
+          const tableIds = tRows.map((r) => r.id);
+          if (tableIds.length === 0) continue; // creation path owns an event with no tables
 
-          const { count: dealt, error: dealtErr } = await supabase
-            .from('hand_history')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', tableIds);
-          if (!this.directAdmissionIsCurrent(generation)) break;
-          if (dealtErr || dealt === null || dealt === undefined) continue;
-          if (dealt > 0) continue; // it played; the sweeps above own it
+          // Every table must prove zero completed hands. A truncated table
+          // prefix cannot establish that the event never dealt. Bound each IN
+          // request so a large field cannot exceed the gateway URL limit.
+          for (let offset = 0; offset < tableIds.length; offset += 200) {
+            const { count: dealt, error: dealtErr } = await supabase
+              .from('hand_history')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', tableIds.slice(offset, offset + 200));
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (dealtErr || dealt === null || dealt === undefined || dealt !== 0)
+              continue neverDealtCandidate;
+          }
 
-          // Only a game that can actually deal goes back in the queue: 2+
-          // live seats on a non-closed table.
-          const openTableIds = (tRows || [])
-            .filter((r) => String((r as { status?: string }).status) !== 'closed')
-            .map((r) => String((r as { id: string }).id));
+          const openTableIds = tRows.filter((r) => r.status !== 'closed').map((r) => r.id);
           if (openTableIds.length === 0) continue;
-          const { count: liveSeats, error: seatErr } = await supabase
-            .from('table_seats')
-            .select('id', { count: 'exact', head: true })
-            .in('table_id', openTableIds)
-            .is('left_at', null);
-          if (!this.directAdmissionIsCurrent(generation)) break;
-          if (seatErr || !liveSeats || liveSeats < 2) continue;
+          let liveSeats = 0;
+          for (let offset = 0; offset < openTableIds.length; offset += 200) {
+            const { count, error } = await supabase
+              .from('table_seats')
+              .select('id', { count: 'exact', head: true })
+              .in('table_id', openTableIds.slice(offset, offset + 200))
+              .is('left_at', null);
+            if (!this.directAdmissionIsCurrent(generation)) break neverDealtCandidate;
+            if (error || count === null || count === undefined || count < 0)
+              continue neverDealtCandidate;
+            liveSeats += count;
+          }
+          if (liveSeats < 2) continue;
 
           /**
            * SEATING HAS TO BE FINISHED BEFORE "NEVER DEALT" MEANS "DEAD".

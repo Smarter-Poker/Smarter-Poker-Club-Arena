@@ -133,7 +133,7 @@ describe('engine deployment reports what actually happened', () => {
     expect(reason(needs('success', 'skipped'), format)).toContain('did not run');
     expect(
       reason(needs('success', 'failure', { release_result: 'not completed' }), format)
-    ).toContain('did not complete');
+    ).toContain('did not prove a completed durable Hetzner release transaction');
     expect(
       reason(needs('success', 'success', { release_result: 'sealed', verified: 'true' }), format)
     ).toBe('Hetzner transaction sealed and independently verified');
@@ -150,6 +150,9 @@ describe('engine deployment reports what actually happened', () => {
       )
     ).toContain('identity could not be independently proved');
     expect(reason(needs('success', 'failure'), format)).toContain('outcome unknown');
+    expect(
+      reason(needs('success', 'failure', { release_result: 'not completed' }), format)
+    ).not.toContain('production still runs');
     expect(
       reason(
         needs('success', 'success', { release_result: 'superseded', superseded_by: 'newer-sha' }),

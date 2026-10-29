@@ -13,6 +13,7 @@ from satellite_qualifier_fixture import module, sha
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = Path('supabase/migrations/20261028233353_durable_private_hand_continuation.sql')
 PROBE = Path('scripts/ci/probes/hand-continuation-native.sql')
+ADMISSION = Path('supabase/migrations/20261029063137_hand_continuation_waits_for_maintenance_admission.sql')
 DATA = Path('scripts/ci/fixtures/hand-continuation')
 
 
@@ -71,6 +72,47 @@ def qualify_fences(e, db, native):
                     e.report['races'].append({'case':label,'observed_wait':True,'exact_outcome':True,'database_removed':True})
 
 
+
+def qualify_admission(e, db, native, before=False):
+    """Two real backend connections prove gate ordering, not synthetic waits."""
+    binary = native.stock_isolationtester(e.pg)
+    probe = (ROOT/PROBE).read_text()
+    prefix = probe[:probe.index('DO $boundaries$')]
+    seed = ('BEGIN; CREATE SCHEMA continuation_native;\n'+(e.output/'opening.sql').read_text()+prefix+'COMMIT;').replace('pg_temp.', 'continuation_native.')
+    template = (ROOT/DATA/'admission.spec').read_text()
+    retain = 'PERFORM continuation_native.retain_continuation(0);'
+    claim = "PERFORM public.fn_f06_claim_hand_continuation('86000000-0000-0000-0000-000000000001','86500000-0000-0000-0000-000000000001','86100000-0000-0000-0000-000000000001');"
+    # Invalid input still must reach its existing validation AFTER admission.
+    legacy = "PERFORM public.fn_f06_claim_legacy_river_continuation('86000000-0000-0000-0000-000000000001','86500000-0000-0000-0000-000000000001','86100000-0000-0000-0000-000000000001',8600001,clock_timestamp(),NULL,NULL);"
+    cases = [('retain',retain,None,1),('claim',claim,None,0),('legacy-validation',legacy,'22023',0)]
+    if not before:
+        cases += [('short-timeout',retain,'55P03',0),('capped-timeout',retain,'55P03',0),
+          ('freeze',retain,'P0001',0),('authority',retain,'42501',0)]
+    for label,operation,failure,count in cases:
+        case=e.database(db); e.sql(case,seed,label='admission-'+label+'-opening')
+        timed = 'timeout' in label
+        timeout = '200ms' if label=='short-timeout' else '0' if label=='capped-timeout' else '7s'
+        change = "SELECT 1;"
+        if label=='freeze':
+            change = "INSERT INTO public.engine_maintenance_break(id,phase,announced_at,break_started_at,break_ends_at,enforce_freeze,ownership_token) VALUES(true,'counting_down',clock_timestamp()-interval '3 minutes',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '4 minutes',true,'86800000-0000-0000-0000-000000000001');"
+        if label=='authority':
+            change = "UPDATE public.engine_tournament_leases SET lease_generation='86500000-0000-0000-0000-000000000002' WHERE tournament_id='86000000-0000-0000-0000-000000000001';"
+        if before: failure='55P03';count=0
+        permutation = '"hold" "change" "retain" "wait" '+ ('"outwait" ' if timed else '')+'"release" "final"'
+        replacements = {'HOLDER_CHANGE':change,'CALLER_TIMEOUT':timeout,'ORIGINAL_OPERATION':operation,
+          'EXPECTED_FAILURE':"'"+failure+"'" if failure else 'NULL','EXPECT_WAIT':'false' if before else 'true',
+          'FINAL_COUNT':str(count),'HOLD_SECONDS':'5.2' if label=='capped-timeout' else '0.3','PERMUTATION':permutation}
+        rendered=template if timed else re.sub(r'step "outwait" \{[^}]*\}\n', '', template)
+        for key,value in replacements.items(): rendered=rendered.replace(key,value)
+        name=('before-' if before else 'after-')+'admission-'+label
+        code,out,err=e.run(name,[binary,f'host={e.socket} port={e.port} dbname={case} user=postgres'],text=rendered,seconds=15,check=False)
+        notices=re.findall(r'NOTICE:\s*(ADMISSION_[A-Z_]+)',out+'\n'+err)
+        if code or err.strip() or re.search(r'^(?:[a-z_]+: )?(ERROR|FATAL|PANIC|WARNING):',out,re.M) or sorted(notices)!=sorted(['ADMISSION_OUTCOME_PROVEN','ADMISSION_WAIT_PROVEN','ADMISSION_FINAL_PROVEN']) or out.count('<waiting ...>') != (0 if before else 1):
+            raise RuntimeError('exact continuation admission race failed: '+name)
+        e.discard(case)
+        e.report.setdefault('admission',[]).append({'case':name,'observed_wait':not before,'no_early_write':True,'exact_outcome':True,'database_removed':True})
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence',type=Path,required=True)
@@ -89,7 +131,7 @@ def main():
     work=args.work_root.resolve() if args.work_root is not None else out
     work.mkdir(parents=True,exist_ok=True)
     e=native.Execution(ROOT,out,args.pg_bin.resolve(),work,600,socket_parent=args.socket_root)
-    inputs=[MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
+    inputs=[MIGRATION,ADMISSION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
@@ -118,9 +160,14 @@ def main():
         e.sql(db,retention,label='production-retention-preimage')
         qualify_installation(e,hand,db)
         e.sql(db,file=ROOT/MIGRATION,label='continuation-candidate')
+        qualify_admission(e,db,native,before=True)
+        e.sql(db,file=ROOT/ADMISSION,label='continuation-admission-candidate')
+        qualify_admission(e,db,native)
         before=(e.snapshot(db,'before-data'),e.catalog_snapshot(db,'before-catalog'),hand.private_snapshot(e,db,'before-private'))
         probe='BEGIN;\n'+(out/'opening.sql').read_text()+'\n'+(ROOT/PROBE).read_text()+'\nROLLBACK;'
-        code,stdout,stderr=e.sql(db,probe,label='actual-private-continuation-cases',check=False)
+        probe_file=out/'composed-private-continuation.sql'
+        probe_file.write_text(probe)
+        code,stdout,stderr=e.sql(db,file=probe_file,label='actual-private-continuation-cases',check=False)
         e.report.update(assertions=stderr.count('CONTINUATION PASS:'),case_errors=stderr)
         if code or re.search(r'(ERROR|FATAL|PANIC|WARNING):',stderr) or stdout.splitlines().count('HAND_CONTINUATION_NATIVE_PASS')!=1 or e.report['assertions']!=37:
             raise RuntimeError('private continuation native cases failed')

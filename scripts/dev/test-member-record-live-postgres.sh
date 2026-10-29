@@ -90,3 +90,6 @@ if "${psql[@]}" -f "$repo/supabase/migrations/20261027190154_bus_event_logs_obey
   echo 'Bus retention migration replay unexpectedly accepted'; exit 1
 fi
 if ! grep -q 'already exists' "$work/bus-replay.log"; then cat "$work/bus-replay.log"; exit 1; fi
+
+# Independent fallback: native committed signal, LISTEN, authorized WebSocket.
+"$repo/server/node_modules/.bin/tsx" "$repo/server/scripts/privateRecordGatewayPostgres.mts" "$work/socket" 57642

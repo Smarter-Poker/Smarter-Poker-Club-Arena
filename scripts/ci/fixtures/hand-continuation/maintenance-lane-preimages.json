@@ -5,9 +5,7 @@
     "body_md5": "e561f72118832e3d513903983acd42a1",
     "full_md5": "a633c51983e18c18de73be2caf75bc9c",
     "acl": "{postgres=X/postgres,service_role=X/postgres}",
-    "proconfig": [
-      "search_path=pg_catalog, public, smarter_private"
-    ],
+    "proconfig": ["search_path=pg_catalog, public, smarter_private"],
     "prosecdef": true,
     "owner": "postgres"
   },
@@ -17,9 +15,7 @@
     "body_md5": "86b19a549c49eddc14722a841a5a3183",
     "full_md5": "49b9c2f115e09bc16059b24ad7f2bdd4",
     "acl": "{postgres=X/postgres,service_role=X/postgres}",
-    "proconfig": [
-      "search_path=pg_catalog, public, smarter_private"
-    ],
+    "proconfig": ["search_path=pg_catalog, public, smarter_private"],
     "prosecdef": true,
     "owner": "postgres"
   },
@@ -29,9 +25,7 @@
     "body_md5": "47f09d17c6466d5c47855778e403244e",
     "full_md5": "a3c4bb0187c9433e4e93712d0a6f3ae6",
     "acl": "{postgres=X/postgres,service_role=X/postgres}",
-    "proconfig": [
-      "search_path=pg_catalog, public, smarter_private"
-    ],
+    "proconfig": ["search_path=pg_catalog, public, smarter_private"],
     "prosecdef": true,
     "owner": "postgres"
   }

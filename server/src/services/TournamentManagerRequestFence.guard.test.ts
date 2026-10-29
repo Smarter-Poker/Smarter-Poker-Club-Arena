@@ -170,7 +170,7 @@ describe('Stage-A tournament-manager Data API request fence', () => {
      arguments. The lease session may run exactly those two functions. The separate
      original-fold exception below reinstates the same actor fence in its fixed
      private wrapper and preserves synchronous commit before acknowledgement. */
-  it('admits only the exact heartbeat, outbox, fenced original-fold and two offline qualification raw sessions', () => {
+  it('admits only the exact heartbeat, shared LISTEN opener, fenced original-fold and two offline qualification raw sessions', () => {
     const src = join(process.cwd(), 'src');
     const rawSessions = runtimeTypescriptFiles(src)
       .filter((path) => /\bnew pg\.(?:Client|Pool)\s*\(/.test(readFileSync(path, 'utf8')))
@@ -181,7 +181,8 @@ describe('Stage-A tournament-manager Data API request fence', () => {
       'services/horseCorrectiveReview/riverAcceptedWindow.ts',
       'services/leaseHeartbeatSession.ts',
       'services/lightningFoldSession.ts',
-      'services/supabase/handOutboxListener.ts',
+      // Same verified-TLS opener, extracted so record fallback imports no game worker.
+      'services/supabase/pgListenSession.ts',
     ]);
 
     const leaseSession = readFileSync(join(src, 'services', 'leaseHeartbeatSession.ts'), 'utf8');

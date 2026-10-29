@@ -10,7 +10,7 @@
  * - Uses CardImage component for custom deck rendering
  */
 
-import React, { useMemo, useEffect, useRef, useState, useId, memo } from 'react';
+import React, { useMemo, useEffect, useLayoutEffect, useRef, useState, useId, memo } from 'react';
 import { CardImage, CardBack, cardBackImageUrl, getCardImagePath, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
@@ -59,6 +59,10 @@ export interface CommunityCardsProps {
    * prop ever animates the reference's rabbit flip.
    */
   rabbitCards?: Card[];
+  /** Keep a retained private reveal in its original slots across the next deal. */
+  rabbitStartIndex?: number;
+  /** Purchased-hand identity stays stable when the live hand advances. */
+  rabbitHandId?: string | number | null;
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   /**
@@ -591,6 +595,8 @@ function CommunityCardsComponent({
   cards,
   stage,
   rabbitCards = NO_RABBIT_CARDS,
+  rabbitStartIndex,
+  rabbitHandId,
   highlightedIndices: requestedHighlights = NO_HIGHLIGHTS as number[],
   winningHandName: requestedWinningHandName,
   winningHandDescription,
@@ -611,7 +617,8 @@ function CommunityCardsComponent({
   isFocused = true,
   isVisible = true,
 }: CommunityCardsProps) {
-  const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
+  const visibleCount = Math.min(getVisibleCardCount(stage), cards.length);
+  const rabbitStart = Math.max(visibleCount, Math.min(4, rabbitStartIndex ?? visibleCount));
   // RIVER SQUEEZE 2026-09-04: a board without a real table id (sim page,
   // tests) still needs a lane of its own so two boards never share keys.
   const instanceId = useId();
@@ -714,7 +721,48 @@ function CommunityCardsComponent({
    * the visible count derives from the STAGE, a preflop fold (count 0) hid the
    * entire paid reveal: the player paid and saw nothing.
    */
-  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
+  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - rabbitStart));
+  const rabbitRowRef = useRef<HTMLDivElement>(null);
+  const previousRabbitLayoutRef = useRef<{
+    left: number | null;
+    viewport: number;
+    handId: typeof handId;
+    rabbitCount: number;
+  } | null>(null);
+  // Measure the actual layout. The felt can reserve all five slots, while
+  // standalone/replay boards can shrink around the dealt cards. A guessed
+  // card-width offset moves one of those layouts in the wrong direction.
+  useLayoutEffect(() => {
+    const row = rabbitRowRef.current;
+    if (!row) return;
+    const dealtCard = row.querySelector<HTMLElement>(
+      '.community-cards__card:not(.community-cards__card--rabbit)'
+    );
+    const left = dealtCard?.getBoundingClientRect().left ?? null;
+    const viewport = window.innerWidth;
+    const previous = previousRabbitLayoutRef.current;
+    previousRabbitLayoutRef.current = { left, viewport, handId, rabbitCount };
+    if (
+      !previous ||
+      previous.rabbitCount !== 0 ||
+      rabbitCount === 0 ||
+      previous.handId !== handId ||
+      previous.viewport !== viewport ||
+      previous.left === null ||
+      left === null ||
+      prefersReducedMotion() ||
+      !row.animate
+    )
+      return;
+    const distance = previous.left - left;
+    if (Math.abs(distance) < 0.5) return;
+    const motion = row.animate(
+      [{ transform: `translateX(${distance}px)` }, { transform: 'translateX(0)' }],
+      { duration: 240 * getAnimationSpeed(), easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)' }
+    );
+    return () => motion.cancel();
+  }, [cards, visibleCount, rabbitCount, rabbitHandId, handId]);
+
   const prevStageRef = useRef(stage);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
@@ -1099,16 +1147,27 @@ function CommunityCardsComponent({
         };
       }
       // RABBIT HUNT 2026-08-26: the paid reveal fills the undealt slots.
-      if (i < visibleCount + rabbitCount && rabbitCards[i - visibleCount]) {
+      if (i >= rabbitStart && i < rabbitStart + rabbitCount && rabbitCards[i - rabbitStart]) {
         return {
           type: 'rabbit' as const,
-          card: rabbitCards[i - visibleCount],
+          card: rabbitCards[i - rabbitStart],
           isNewlyDealt: false,
         };
       }
       return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, rabbitCards, rabbitCount, highlightedIndices, newlyDealtIndices]);
+  }, [
+    cards,
+    visibleCount,
+    rabbitStart,
+    rabbitCards,
+    rabbitCount,
+    highlightedIndices,
+    newlyDealtIndices,
+  ]);
+
+  const rabbitCaption =
+    rabbitStartIndex === undefined ? 'Rabbit Hunt · Only You' : 'Previous Hand · Only You';
 
   return (
     <div
@@ -1154,7 +1213,7 @@ function CommunityCardsComponent({
           makes descendants presentational, so the reader says "Squeeze To
           Reveal, button" and not the card's name after it.)
           Pinned in tests/components/RiverSqueeze.test.tsx. */}
-      <div className="community-cards__container">
+      <div className="community-cards__container" ref={rabbitRowRef}>
         {slots.map((slot, i) =>
           slot.type === 'rabbit' ? (
             // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the
@@ -1162,7 +1221,7 @@ function CommunityCardsComponent({
             // cards were dealt, so the preflop placeholder suppression below
             // must not apply to it.
             <RabbitCard
-              key={`rabbit-${i}`}
+              key={`rabbit-${rabbitHandId ?? 'local'}-${slot.card.rank}-${slot.card.suit}`}
               card={slot.card}
               index={i}
               deckStyle={deckStyle}
@@ -1217,10 +1276,17 @@ function CommunityCardsComponent({
               key={`reserve-${i}`}
               className="community-cards__slot-reserve"
               aria-hidden="true"
+              style={rabbitCount > 0 && i < rabbitStart ? { width: 'var(--cc-card-w)' } : undefined}
             />
           )
         )}
       </div>
+
+      {rabbitCount > 0 && !winningHandName && (
+        <div className="community-cards__rabbit-caption" role="status">
+          {rabbitCaption}
+        </div>
+      )}
 
       {/* RIVER SQUEEZE 2026-09-04 (spec 111): dev-only overlay, ?rsDebug. */}
       {import.meta.env.DEV && isCardPresentationDebugRequested() && (
@@ -1246,6 +1312,9 @@ function CommunityCardsComponent({
             <div className="community-cards__winner-line">
               {formatPopupText(winningPlayerLabel)}
             </div>
+          )}
+          {rabbitCount > 0 && (
+            <div className="community-cards__rabbit-caption">{rabbitCaption}</div>
           )}
           {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
               band background (parent) and the gold gradient fill
@@ -1281,6 +1350,8 @@ function CommunityCardsComponent({
 export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
+  if (prev.rabbitStartIndex !== next.rabbitStartIndex) return false;
+  if (prev.rabbitHandId !== next.rabbitHandId) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.onRiverPresented !== next.onRiverPresented) return false;
   // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.

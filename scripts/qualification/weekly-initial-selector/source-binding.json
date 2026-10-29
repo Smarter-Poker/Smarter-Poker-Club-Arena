@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250705,
-      "sha256": "eebb38c9ac3849ef680707e40af3652a6ff01c0c82568cd97aeb1e7010e289d6"
+      "bytes": 251615,
+      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -981,5 +981,17 @@
   },
   "clubPromoProtectedMainIntegration20261029": {
     "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
+  },
+  "browserDeliveryParallelSourceAudit20261029": {
+    "scope": "Source identity refresh only for disjoint CSS Beat browser shards and capacity-proven SDK cleanup.",
+    "previousCiPin": {
+      "bytes": 250400,
+      "sha256": "100693b02ecb0d8e63695946426597d1e68c6c7e7a2705d0d6aa5b0fac252599"
+    },
+    "currentCiPin": {
+      "bytes": 251615,
+      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+    },
+    "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
   }
 }

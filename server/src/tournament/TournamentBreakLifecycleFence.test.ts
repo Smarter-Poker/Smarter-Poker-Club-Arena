@@ -263,6 +263,30 @@ describe('tournament break lifecycle fence', () => {
     expect(engine.pauseAfterHand).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    'does not announce a released countdown (new break=%s)',
+    async (newBreak) => {
+      const persistence = deferred<unknown>();
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.forceBreakState();
+      const persist = stubBreakPersistence();
+      persist.eq.mockImplementationOnce(() => persistence.promise);
+      const countingDown = manager.beginBreakCountdown(300_000);
+      await manager.resumeFromBreak();
+      expect(manager.breakIsActive()).toBe(false);
+      if (newBreak) await manager.pauseForBreak(300_000);
+      const announced = manager.broadcastCall.mock.calls.length;
+      persistence.resolve({ error: null });
+      await countingDown;
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(announced);
+      expect(
+        manager.broadcastCall.mock.calls.some(([event]) => event === 'tournament_break_started')
+      ).toBe(false);
+      manager.fence();
+    }
+  );
+
   it('does not announce a countdown when its persistence returns after the fence', async () => {
     const persistence = deferred<unknown>();
     const manager = new BreakHarness();

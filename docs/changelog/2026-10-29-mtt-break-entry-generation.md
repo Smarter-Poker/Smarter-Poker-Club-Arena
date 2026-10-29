@@ -25,3 +25,5 @@ This is an independently reproduced race, not a claim that it caused the
 October 29 `physical_identity_unreadable` quarantines. Those incidents retain
 their existing recovery owner. Source/test completion is not engine activation
 or live verification.
+
+A second deferred-response regression reproduces a countdown-start event arriving after break release. Countdown continuations now require the same still-active break generation after persistence and broadcast, so a delayed acknowledgement cannot reannounce a completed break or trigger its add-on continuation.

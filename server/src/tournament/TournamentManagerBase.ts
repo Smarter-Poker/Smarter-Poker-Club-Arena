@@ -4163,6 +4163,7 @@ export abstract class TournamentManagerBase {
      * already been shown.
      */
     if (this.breakCountdownStarted) return;
+    const breakGeneration = this.synchronizedBreakStartGeneration;
     this.breakCountdownStarted = true;
     this.synchronizedBreakEndsAtMs = deadlineMs;
     const endsAt = new Date(deadlineMs).toISOString();
@@ -4177,7 +4178,12 @@ export abstract class TournamentManagerBase {
     // The database write began while this manager owned the generation. If its
     // response crosses the stop fence, do not announce a countdown from a
     // manager that no longer owns the tournament.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     await this.broadcast('tournament_break_started', {
       level: this.currentLevel,
       phase: 'counting_down',
@@ -4187,7 +4193,12 @@ export abstract class TournamentManagerBase {
       breakEndsAt: endsAt,
       synchronized: true,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     // An add-on that came due during the last hand of this break opens now,
     // inside the break, and runs to its end (see synchronizedBreakEndsAtMs).
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {

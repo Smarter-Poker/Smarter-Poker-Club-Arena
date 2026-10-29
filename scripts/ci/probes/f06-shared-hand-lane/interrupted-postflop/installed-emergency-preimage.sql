@@ -1,18 +1,3 @@
--- An uncommitted interrupted postflop hand is void, never a fabricated result.
--- Only unchanged original principals at the last accepted/postcommitted boundary
--- qualify. Later chairs are preserved, never credited as original participants.
--- The existing preflop proof, misdeal shapes, actor, locks and fences remain exact.
--- @live-proof: SELECT md5(prosrc) = '7e8b0c0308d20726fa7daa39e9158248' AS installed FROM pg_proc WHERE oid='public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure;
-BEGIN;
-SET LOCAL lock_timeout='3s';
-SET LOCAL statement_timeout='15s';
-DO $pre$ BEGIN
- IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure
- AND md5(prosrc)='0753a506f9ef7ac48588c7e8ec3f4721' AND proowner='postgres'::regrole
- AND proacl::text='{postgres=X/postgres,service_role=X/postgres}'
- AND proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'] AND prosecdef) THEN
- RAISE EXCEPTION 'INTERRUPTED_POSTFLOP_PREIMAGE_DRIFT'; END IF;
-END $pre$;
 CREATE OR REPLACE FUNCTION public.fn_f06_abort_abandoned_generation(p_tournament_id uuid, p_generation uuid, p_receipt_id uuid, p_reason text, p_release_current_lease boolean DEFAULT false)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -63,8 +48,6 @@ DECLARE
   v_misdeal boolean;
   v_last record;
   v_misdeal_n integer := 0;
-  v_original_roster jsonb;
-  v_prior record;
 BEGIN
   IF auth.role() IS DISTINCT FROM 'service_role'
      OR v_actor IS NULL OR v_actor NOT IN ('service', 'tournament-manager') THEN
@@ -390,108 +373,21 @@ BEGIN
         'roster', roster, 'busts_pending_elimination', v_busts, 'break_id', NULL));
       v_abort_ids := v_abort_ids || h.permit_id;
       v_misdeal_n := v_misdeal_n + 1;
-    ELSIF n = 1 AND EXISTS (
-      SELECT 1 FROM public.hand_state_snapshots s
-       WHERE s.table_id=h.table_id AND s.hand_number=h.hand_number
-         AND s.stage IN ('flop','turn','river') AND s.state_json->>'stage'=s.stage
-    ) THEN
-      -- An interrupted dealt hand is VOID, never accepted or never_started.
-      -- Its incomplete snapshot is evidence, not an executable continuation.
-      -- Original principals must still be the last fully accepted boundary.
-      SELECT * INTO snap FROM public.hand_state_snapshots s
-       WHERE s.table_id=h.table_id AND s.hand_number=h.hand_number FOR UPDATE;
-      IF snap.is_complete IS DISTINCT FROM false OR v_dispatched OR v_break IS NOT NULL
-         OR NOT COALESCE(snap.config_json->>'gameVariant' IN ('nlh','plo4','plo5','plo6'),false)
-         OR snap.created_at IS NULL OR NOT isfinite(snap.created_at)
-         OR jsonb_typeof(snap.state_json->'players') IS DISTINCT FROM 'array'
-         OR jsonb_array_length(snap.state_json->'players') NOT BETWEEN 2 AND 10
-         OR (SELECT count(DISTINCT x->>'user_id') FROM jsonb_array_elements(snap.state_json->'players') x)
-              <>jsonb_array_length(snap.state_json->'players')
-         OR EXISTS (SELECT 1 FROM public.hand_discards d WHERE d.table_id=h.table_id AND d.hand_number=h.hand_number)
-         OR EXISTS (SELECT 1 FROM public.table_hole_cards c WHERE c.table_id=h.table_id AND c.hand_number=h.hand_number
-                     AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(snap.state_json->'players') x WHERE x->>'user_id'=c.user_id::text))
-         OR v_cards<>jsonb_array_length(snap.state_json->'players') THEN
-        RAISE EXCEPTION 'F06_INTERRUPTED_PRINCIPAL_UNPROVEN' USING ERRCODE='55000';
-      END IF;
-      -- No timestamp sorting or action reconstruction: retain the original row
-      -- hash and preserve the recorded action array as historical evidence.
-      SELECT jsonb_agg(r || jsonb_build_object('joined_at',s.joined_at) ORDER BY r->>'user_id')
-        INTO v_original_roster FROM jsonb_array_elements(roster) r
-        JOIN public.table_seats s ON s.id=(r->>'seat_id')::uuid
-       WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(snap.state_json->'players') x WHERE x->>'user_id'=r->>'user_id');
-      IF jsonb_array_length(v_original_roster) IS DISTINCT FROM jsonb_array_length(snap.state_json->'players')
-         OR EXISTS (SELECT 1 FROM jsonb_array_elements(roster) r
-                     WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_original_roster) x WHERE x->>'user_id'=r->>'user_id')
-                       AND NOT EXISTS (SELECT 1 FROM public.table_seats s WHERE s.id=(r->>'seat_id')::uuid AND s.joined_at>snap.created_at))
-         OR EXISTS (SELECT 1 FROM jsonb_array_elements(snap.state_json->'players') x
-                     WHERE NOT COALESCE((CASE WHEN pg_input_is_valid(x->>'stack','numeric')
-                       AND pg_input_is_valid(x->>'totalInvested','numeric')
-                       AND pg_input_is_valid(x->>'seat','integer')
-                       THEN (x->>'stack')::numeric>=0 AND (x->>'totalInvested')::numeric>=0
-                         AND (x->>'stack')::numeric::text NOT IN ('NaN','Infinity','-Infinity')
-                         AND (x->>'totalInvested')::numeric::text NOT IN ('NaN','Infinity','-Infinity')
-                         AND COALESCE(x->>'returnedUncalled','0')='0'
-                         AND COALESCE(x->>'deadInvested','0')='0'
-                         AND EXISTS (SELECT 1 FROM jsonb_array_elements(v_original_roster) r
-                                      WHERE r->>'user_id'=x->>'user_id'
-                                        AND (r->>'seat_number')::integer=(x->>'seat')::integer
-                                        AND (r->>'joined_at')::timestamptz<=snap.created_at
-                                        AND (r->>'stack')::numeric=(x->>'stack')::numeric+(x->>'totalInvested')::numeric)
-                       ELSE false END),false))
-         OR NOT COALESCE(pg_input_is_valid(snap.state_json->>'pot','numeric'),false)
-         OR (snap.state_json->>'pot')::numeric IS DISTINCT FROM
-              (SELECT sum((x->>'totalInvested')::numeric) FROM jsonb_array_elements(snap.state_json->'players') x) THEN
-        RAISE EXCEPTION 'F06_INTERRUPTED_PRINCIPAL_UNPROVEN' USING ERRCODE='55000';
-      END IF;
-      SELECT a.*,hh.players AS history_players INTO v_prior FROM public.hand_atomic_commits a
-        JOIN public.hand_history hh ON hh.id=a.hand_id AND hh.table_id=a.table_id AND hh.hand_number=a.hand_number
-       WHERE a.table_id=h.table_id AND a.hand_number<h.hand_number ORDER BY a.hand_number DESC LIMIT 1 FOR SHARE OF a,hh;
-      IF NOT FOUND OR v_prior.committed_at IS NULL OR NOT isfinite(v_prior.committed_at)
-         OR v_prior.post_commit_completed_at IS NULL
-         OR v_prior.post_commit_completed_at<v_prior.committed_at
-         OR NOT isfinite(v_prior.post_commit_completed_at)
-         OR v_prior.post_commit_result->'ok' IS DISTINCT FROM 'true'::jsonb
-         OR v_prior.post_commit_result->>'hand_id' IS DISTINCT FROM v_prior.hand_id::text
-         OR v_prior.post_commit_result->>'hand_number' IS DISTINCT FROM v_prior.hand_number::text
-         OR v_prior.stack_result->'success' IS DISTINCT FROM 'true'::jsonb
-         OR v_prior.stack_result->>'mode' IS DISTINCT FROM 'delta'
-         OR v_prior.stack_result->'conservation_checked' IS DISTINCT FROM 'true'::jsonb
-         OR v_prior.stack_result->'tournament_players_synced' IS DISTINCT FROM 'true'::jsonb
-         OR v_prior.stack_result->>'table_id' IS DISTINCT FROM h.table_id::text
-         OR v_prior.stack_result->>'tournament_id' IS DISTINCT FROM t::text
-         OR v_prior.stack_result->>'hand_number' IS DISTINCT FROM v_prior.hand_number::text
-         OR jsonb_typeof(v_prior.history_players) IS DISTINCT FROM 'array'
-         OR jsonb_typeof(v_prior.stack_result#>'{request,stacks}') IS DISTINCT FROM 'array'
-         OR EXISTS (SELECT 1 FROM public.hand_atomic_commits a WHERE a.table_id=h.table_id
-                     AND (a.hand_number>v_prior.hand_number OR a.committed_at>v_prior.committed_at))
-         OR EXISTS (SELECT 1 FROM public.hand_history hh WHERE hh.table_id=h.table_id AND hh.hand_number>v_prior.hand_number)
-         OR EXISTS (SELECT 1 FROM public.hand_private_state hp WHERE hp.table_id=h.table_id AND hp.hand_number>v_prior.hand_number)
-         OR EXISTS (SELECT 1 FROM jsonb_array_elements(v_original_roster) r
-                     WHERE (v_prior.stack_result->'written'->>(r->>'user_id'))::numeric IS DISTINCT FROM (r->>'stack')::numeric
-                       OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_prior.history_players) x
-                                       WHERE x->>'userId'=r->>'user_id' AND (x->>'stack')::numeric=(r->>'stack')::numeric)
-                       OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_prior.stack_result#>'{request,stacks}') x
-                                       WHERE x->>'user_id'=r->>'user_id' AND x->>'seat_id'=r->>'seat_id'
-                                         AND (x->>'seat_joined_at')::timestamptz=(r->>'joined_at')::timestamptz
-                                         AND (x->>'stack')::numeric=(r->>'stack')::numeric)) THEN
-        RAISE EXCEPTION 'F06_INTERRUPTED_PRIOR_BOUNDARY_UNPROVEN' USING ERRCODE='55000';
-      END IF;
-      hands:=hands || jsonb_build_array(jsonb_build_object(
-        'permit',to_jsonb(h),'ruling','misdeal_voided','shape','interrupted_postflop_principal_preserved',
-        'snapshot_id',snap.id,'snapshot_hash',md5(to_jsonb(snap)::text),
-        'snapshot_created_at',snap.created_at,'interrupted_stage',snap.stage,
-        'prior_hand_id',v_prior.hand_id,'prior_hand_number',v_prior.hand_number,
-        'prior_atomic_hash',md5((to_jsonb(v_prior)-'history_players')::text),
-        'roster',roster,'original_roster',v_original_roster,'busts_pending_elimination',v_busts,'break_id',NULL));
-      v_abort_ids:=v_abort_ids || h.permit_id;
-      v_snap_ids:=v_snap_ids || snap.id;
-      v_misdeal_n:=v_misdeal_n+1;
     ELSIF n = 1 THEN
       SELECT * INTO snap FROM public.hand_state_snapshots s
        WHERE s.table_id = h.table_id AND s.hand_number = h.hand_number FOR UPDATE;
       IF snap.is_complete IS DISTINCT FROM false
-         OR snap.stage IS DISTINCT FROM 'preflop'
-         OR snap.state_json->>'stage' IS DISTINCT FROM 'preflop'
+         OR NOT (((snap.stage = 'preflop' AND snap.state_json->>'stage' = 'preflop') OR
+           (t = '853b3df9-9e15-4d05-97b1-7a38dd0345c1'::uuid
+            AND g = 'c6b911a0-0847-4bbf-82a5-f40fb5b915fd'::uuid
+            AND h.table_id = 'f855c60a-8223-4e83-88ae-8e32191f5c46'::uuid
+            AND h.hand_number = 51229078
+            AND snap.id = '550fc305-4151-4a8e-bd9a-2cca289b9921'::uuid
+            AND md5(to_jsonb(snap)::text) = '87a6f743916b576ce0e1fae414a9b3f0'
+            AND snap.stage = 'river' AND snap.state_json->>'stage' = 'river'
+            AND cardinality(reserved_ids) = 3
+            AND (SELECT count(*) = 18 AND sum(s.stack) = 1025000
+                   FROM public.table_seats s WHERE s.table_id = ANY(tab_ids) AND s.left_at IS NULL))) IS TRUE)
          OR jsonb_typeof(snap.state_json->'players') IS DISTINCT FROM 'array'
          OR jsonb_array_length(snap.state_json->'players') NOT BETWEEN 2 AND 10
          OR (SELECT count(DISTINCT x->>'user_id') FROM jsonb_array_elements(snap.state_json->'players') x)
@@ -708,15 +604,3 @@ BEGIN
     'credit', 0);
 END
 $function$
-
-;
-REVOKE ALL ON FUNCTION public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean) TO service_role;
-DO $post$ BEGIN
- IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure
- AND md5(prosrc)='7e8b0c0308d20726fa7daa39e9158248' AND proowner='postgres'::regrole
- AND proacl::text='{postgres=X/postgres,service_role=X/postgres}'
- AND proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'] AND prosecdef) THEN
- RAISE EXCEPTION 'INTERRUPTED_POSTFLOP_POSTIMAGE_DRIFT'; END IF;
-END $post$;
-COMMIT;

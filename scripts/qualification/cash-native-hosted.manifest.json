@@ -313,8 +313,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 115127,
-      "sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
+      "bytes": 115409,
+      "sha256": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92"
     }
   },
   "nativePgCron": {
@@ -4259,5 +4259,20 @@
       "sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
     },
     "execution_performed": false
+  },
+  "legacyPostflopCapsuleFloorRouting20261029": {
+    "reason": "Reviewed legacy postflop prerequisite-version, captured exact current disposition guards, continuation assertion and played-clock-floor classification assertions in the existing required F06 runner. Active source identity only; preserve every prior audit, financial input, assertion and qualification status. No financial recertification or production claim.",
+    "before": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 115127,
+        "sha256": "98297a4a60db73d5a52266d876011e7a5c0d3363d985026ded5c55b65803f747"
+      }
+    },
+    "after": {
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 115409,
+        "sha256": "7f2bcba6eb92845444f5db9139fa870b059d0d142740c3cfe5b10540358c3a92"
+      }
+    }
   }
 }

@@ -2,6 +2,8 @@ import { readdirSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+export const GATEWAY_PUBLISHER_WORKFLOW =
+  'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main';
 const sha = (value) => /^[0-9a-f]{40}$/.test(value ?? '');
 const seal = 'gateway-release.json';
 function inventory(root, directory = root) {

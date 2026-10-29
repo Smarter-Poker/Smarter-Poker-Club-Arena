@@ -4,15 +4,15 @@ import {
   gatewayListenTarget,
   PRIVATE_RECORD_GATEWAY_ORIGINS,
 } from './transport/privateRecordGatewayRuntime.js';
-import { privateRecordTransportReady } from './services/supabase/privateRecordTransportReady.js';
 /** Separate process entry point. Never imported by index.ts or the game engine. */
 import { createServer } from 'node:http';
 import { PrivateRecordGateway } from './transport/PrivateRecordGateway.js';
 import { PrivateRecordListener } from './services/supabase/privateRecordListener.js';
 import { defaultOpenSession } from './services/supabase/pgListenSession.js';
-import { supabase, privateRecordTopicAllowed } from './services/supabase/client.js';
-import { playerSessionVerdict } from './services/PlayerSessionAccess.js';
-import { verifySupabaseToken, type TokenVerdict } from './transport/wsHelpers.js';
+import {
+  createPrivateRecordGatewayAccess,
+  privateRecordGatewaySourceReady,
+} from './services/supabase/privateRecordGatewayAccess.js';
 
 // Supplied to this service by the canonical secret store, never copied from an engine file.
 const connection = process.env.PRIVATE_RECORD_GATEWAY_DATABASE_URL;
@@ -29,33 +29,18 @@ if (
     release.revision !== process.env.PRIVATE_RECORD_GATEWAY_REVISION)
 )
   throw new Error('record gateway immutable release identity mismatch');
-async function authenticate(token: string): Promise<TokenVerdict> {
-  const verdict = await verifySupabaseToken(supabase.auth, token);
-  if (!verdict.userId) return verdict;
-  const session = await playerSessionVerdict(verdict.userId, token);
-  return session === 'alive'
-    ? verdict
-    : {
-        denied: session === 'revoked' ? 'invalid' : 'unavailable',
-        code: session === 'revoked' ? 'session_not_found' : 'session_check_unavailable',
-      };
-}
+const access = createPrivateRecordGatewayAccess(process.env);
 const gateway = new PrivateRecordGateway({
   origins: PRIVATE_RECORD_GATEWAY_ORIGINS,
-  authenticate,
-  authorize: async (token, userId, topic) => {
-    const verdict = await authenticate(token);
-    if (!verdict.userId && verdict.denied === 'unavailable')
-      throw new Error('record authorization unavailable');
-    return verdict.userId === userId && (await privateRecordTopicAllowed(token, topic));
-  },
+  authenticate: access.authenticate,
+  authorize: access.authorize,
   source: (changed, readiness) =>
     new PrivateRecordListener(
       changed,
       readiness,
       async () => connection,
       (url) => defaultOpenSession(url, `club-arena-private-record-gateway:${process.pid}`),
-      privateRecordTransportReady
+      privateRecordGatewaySourceReady
     ),
 });
 const server = createServer((req, res) => {

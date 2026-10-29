@@ -59,6 +59,42 @@ try {
   assert.equal(creator.rolcreaterole, true);
   const initial = (await admin.query(roleAdmissionSql)).rows[0].admission;
   assertRoleAdmission(initial);
+  // Provider extensions can expose relation grants without exposing their
+  // namespace. Prove effective denial, rather than exempting a schema by name.
+  await admin.query(`
+    CREATE SCHEMA inaccessible_fixture;
+    REVOKE ALL ON SCHEMA inaccessible_fixture FROM PUBLIC;
+    CREATE TABLE inaccessible_fixture.table_grants(id integer);
+    INSERT INTO inaccessible_fixture.table_grants VALUES (1);
+    GRANT ALL ON inaccessible_fixture.table_grants TO PUBLIC;
+    CREATE TABLE inaccessible_fixture.column_grants(id integer);
+    GRANT SELECT, INSERT(id), UPDATE(id), REFERENCES(id)
+      ON inaccessible_fixture.column_grants TO PUBLIC;
+    CREATE FUNCTION inaccessible_fixture.unsafe_definer() RETURNS void
+      LANGUAGE sql SECURITY DEFINER
+      AS $$ INSERT INTO inaccessible_fixture.table_grants VALUES (2) $$;
+  `);
+  const inaccessible = (await admin.query(roleAdmissionSql)).rows[0].admission;
+  assertRoleAdmission(inaccessible);
+  assert.deepEqual(inaccessible.inaccessibleRelationGrants.sort(), [
+    'inaccessible_fixture.column_grants',
+    'inaccessible_fixture.table_grants',
+  ]);
+  assert.deepEqual(inaccessible.writableRelations, []);
+  assert.deepEqual(inaccessible.executableDefiners, []);
+  await admin.query('GRANT USAGE ON SCHEMA inaccessible_fixture TO PUBLIC');
+  const reachable = (await admin.query(roleAdmissionSql)).rows[0].admission;
+  assert.deepEqual(reachable.writableRelations.sort(), [
+    'inaccessible_fixture.column_grants',
+    'inaccessible_fixture.table_grants',
+  ]);
+  assert.ok(
+    reachable.executableDefiners.some(
+      (routine) => routine.name === 'inaccessible_fixture.unsafe_definer'
+    )
+  );
+  await assert.rejects(install(), /PUBLIC privileges/);
+  await admin.query('REVOKE USAGE ON SCHEMA inaccessible_fixture FROM PUBLIC');
   assert.deepEqual(initial.memberships, [
     {
       role: 'ca_record_gateway',
@@ -135,6 +171,35 @@ try {
     await assert.rejects(
       own.query('INSERT INTO public.financial_fixture VALUES(1)'),
       (error) => error.code === '42501'
+    );
+    for (const query of [
+      'INSERT INTO inaccessible_fixture.table_grants VALUES (3)',
+      'UPDATE inaccessible_fixture.table_grants SET id=3',
+      'DELETE FROM inaccessible_fixture.table_grants',
+      'TRUNCATE inaccessible_fixture.table_grants',
+      'INSERT INTO inaccessible_fixture.column_grants(id) VALUES (3)',
+      'UPDATE inaccessible_fixture.column_grants SET id=3',
+      'SELECT inaccessible_fixture.unsafe_definer()',
+      'CREATE TEMP TABLE reference_fixture(id integer REFERENCES inaccessible_fixture.table_grants(id))',
+    ])
+      await assert.rejects(own.query(query), (error) => error.code === '42501');
+    // A later USAGE grant changes effective access and must refuse an existing
+    // credential too, before the installer can report already-ready or rotate it.
+    const marker = (await admin.query(roleAdmissionSql)).rows[0].admission.role.marker;
+    await admin.query('GRANT USAGE ON SCHEMA inaccessible_fixture TO PUBLIC');
+    await assert.rejects(install(), /PUBLIC privileges/);
+    assert.equal((await admin.query(roleAdmissionSql)).rows[0].admission.role.marker, marker);
+    await admin.query('REVOKE USAGE ON SCHEMA inaccessible_fixture FROM PUBLIC');
+    assertRoleAdmission((await own.query(roleAdmissionSql)).rows[0].admission);
+    assert.equal(
+      (await admin.query('SELECT count(*)::integer AS n FROM inaccessible_fixture.table_grants'))
+        .rows[0].n,
+      1
+    );
+    assert.equal(
+      (await admin.query('SELECT count(*)::integer AS n FROM inaccessible_fixture.column_grants'))
+        .rows[0].n,
+      0
     );
     await own.query('LISTEN ca_private_record_changes');
     const notification = new Promise((resolve, reject) => {

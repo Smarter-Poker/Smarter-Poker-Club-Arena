@@ -23,10 +23,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { get } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { verifyGatewayArtifact } from './private-record-gateway-artifact.mjs';
+import {
+  verifyGatewayArtifact,
+  GATEWAY_PUBLISHER_WORKFLOW,
+} from './private-record-gateway-artifact.mjs';
 import { gatewayMachineIdSha256 } from './private-record-gateway-host-identity.mjs';
-const workflow =
-  'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main';
+const workflow = GATEWAY_PUBLISHER_WORKFLOW;
 const fullSha = (value) => /^[0-9a-f]{40}$/.test(value ?? '');
 function durableJson(path, value) {
   const temporary = `${path}.${randomUUID()}`;

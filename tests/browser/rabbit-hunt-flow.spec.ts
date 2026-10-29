@@ -185,3 +185,42 @@ test('a lost response recovers the same hand and keeps the server receipt charge
     { tableId: 'fixture-table', handNumber: 42 },
   ]);
 });
+
+test('a stalled recovery chunk times out before billing and cannot charge when it arrives late', async ({
+  page,
+  context,
+}) => {
+  let purchases = 0;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await context.route('**/*rabbitHuntReceipts*.js', async (route) => {
+    await hold;
+    await route.continue();
+  });
+  await page.route('**/rabbit-hunt', async (route) => {
+    purchases++;
+    await route.fulfill({
+      headers: { 'access-control-allow-origin': '*' },
+      json: {
+        success: true,
+        cards: [
+          { rank: '2', suit: 'h' },
+          { rank: '9', suit: 's' },
+        ],
+        diamonds_spent: 5,
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' }).click();
+  await expect(page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' })).toBeEnabled({
+    timeout: 10000,
+  });
+  expect(purchases).toBe(0);
+  release();
+  await expect(page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' }).click();
+  await expect(page.locator('.community-cards__card--rabbit')).toHaveCount(2);
+  expect(purchases).toBe(1);
+});

@@ -1636,12 +1636,28 @@ export interface RabbitHuntResult {
   uses_remaining?: number | null;
 }
 
+// Lazy feature code is also network I/O. Bound it before any paid request
+// starts; a chunk that arrives after the deadline must not dispatch a charge.
+async function rabbitReceiptModule(): Promise<typeof import('./rabbitHuntReceipts')> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      import('./rabbitHuntReceipts'),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Rabbit Hunt Recovery Module Timed Out')), 5000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Read a purchased result without contacting a billing endpoint. */
 export async function readRabbitHuntReceipt(
   tableId: string,
   handNumber: number
 ): Promise<RabbitHuntResult | null> {
-  const { readRabbitReceipt } = await import('./rabbitHuntReceipts');
+  const { readRabbitReceipt } = await rabbitReceiptModule();
   const owner = storedLoginIdentity();
   const result = await readRabbitReceipt(owner, tableId, handNumber);
   return storedLoginIdentity() === owner ? result : null;
@@ -1652,8 +1668,20 @@ export async function requestRabbitHunt(
   handNumber?: number
 ): Promise<RabbitHuntResult> {
   const owner = storedLoginIdentity();
-  const { withRabbitReceipt } = await import('./rabbitHuntReceipts');
-  return withRabbitReceipt(owner, tableId, handNumber, async () => {
+  let receipts: typeof import('./rabbitHuntReceipts');
+  try {
+    receipts = await rabbitReceiptModule();
+  } catch (error) {
+    reportError(error, 'GameServerAPI.rabbit_recovery_module');
+    return {
+      success: false,
+      error: 'Connection Interrupted. Try This Hand Again',
+      retryable: true,
+    };
+  }
+  if (storedLoginIdentity() !== owner)
+    return { success: false, error: 'Rabbit Hunt Login Changed' };
+  return receipts.withRabbitReceipt(owner, tableId, handNumber, async () => {
     let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
       const headers = await getAuthHeaders();

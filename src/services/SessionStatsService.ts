@@ -66,6 +66,18 @@ class SessionStatsServiceClass {
   /** Enhancement #8: localStorage key for offline session queue */
   private readonly OFFLINE_QUEUE_KEY = 'club-arena-offline-sessions';
 
+  constructor() {
+    // Keep cleanup synchronous on the existing account event without loading
+    // this table-only service into the application's initial bundle.
+    masterBus.subscribe('AUTH_STATE_CHANGED', ({ payload }) => {
+      if (
+        !payload.isAuthenticated ||
+        [...this.sessions.values()].some((session) => session.userId !== payload.userId)
+      )
+        this.resetAll();
+    });
+  }
+
   /**
    * Start tracking a new session at a table
    */

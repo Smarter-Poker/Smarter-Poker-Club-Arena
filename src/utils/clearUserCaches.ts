@@ -39,7 +39,6 @@
  */
 
 import { STORAGE_KEYS } from '../lib/storage';
-import { sessionStatsService } from '../services/SessionStatsService';
 import { clearMembershipsWarmCache } from '../lib/membershipWarmState';
 import { SWR_CACHE_PREFIXES } from './staleCacheReaper';
 import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache';
@@ -205,7 +204,6 @@ export function clearUserCaches(): void {
     // above: purging only the persisted copy left the previous account's data
     // resident in the tab.
     clearStatsRangeMemo();
-    sessionStatsService.resetAll();
   } catch {
     /* never let a cache purge break sign-out */
   }

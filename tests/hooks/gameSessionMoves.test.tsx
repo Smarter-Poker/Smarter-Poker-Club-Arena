@@ -24,7 +24,6 @@ import { sessionStatsService as stats } from '../../src/services/SessionStatsSer
 import { useTableSession } from '../../src/hooks/useTableSession';
 import { useGameSessionLifecycle } from '../../src/hooks/useGameSessionLifecycle';
 import { useSeatMoveNavigation } from '../../src/hooks/useSeatMoveNavigation';
-import { clearUserCaches } from '../../src/utils/clearUserCaches';
 import { mergeSessionFacts, sessionBuyInTotal } from '../../src/utils/sessionBuyInTotal';
 
 beforeEach(() => {
@@ -201,7 +200,7 @@ describe('one game session follows the confirmed chair move', () => {
     const current = renderHook(() => useTableSession('a', 'hero'));
     stats.startSession('a', 'hero', 100, 2);
     current.result.current.handsPlayedRef.current = 8;
-    clearUserCaches();
+    masterBus.emit('AUTH_STATE_CHANGED', { userId: null, isAuthenticated: false });
     expect(stats.getStats('a')).toBeNull();
     expect(db.insert).not.toHaveBeenCalled();
     const next = renderHook(() => useTableSession('a', 'another-user'));

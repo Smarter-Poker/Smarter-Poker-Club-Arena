@@ -42,6 +42,7 @@ BEGIN
     WHERE source.schedule_id=s.id ORDER BY source.start_time DESC LIMIT 1;
   END IF;
   old_value:=NULLIF(s.config->>'buyIn','')::numeric;
+  IF old_value IS NULL OR old_value<=0 THEN CONTINUE; END IF;
   new_value:=pg_temp.satellite_entry_value(target_value,old_value);
   IF new_value IS NULL OR new_value IS NOT DISTINCT FROM old_value THEN CONTINUE; END IF;
   new_name:=regexp_replace(s.name,'(Satellite) [0-9]+([.][0-9]+)?$','\1 '||new_value::text,'i');

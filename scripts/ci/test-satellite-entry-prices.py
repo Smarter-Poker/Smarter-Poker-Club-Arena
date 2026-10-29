@@ -43,12 +43,14 @@ try:
  ('90000000-0000-4000-8000-000000000006'::uuid,'REGISTERING'),
  ('90000000-0000-4000-8000-000000000007'::uuid,'RUNNING'),
  ('90000000-0000-4000-8000-000000000008'::uuid,'REGISTERING'))v(id,status);
+ INSERT INTO tournament_schedules VALUES('90000000-0000-4000-8000-000000000009','90000000-0000-4000-8000-000000000001',NULL,'Free Satellite',true,'{"type":"satellite","buyIn":0,"satelliteTargetName":"Nightly"}');
  INSERT INTO tournament_players VALUES('90000000-0000-4000-8000-000000000006');
  INSERT INTO tournament_satellite_economic_snapshots VALUES('90000000-0000-4000-8000-000000000008');
  """)
  migration=next((root/'supabase/migrations').glob('*_satellite_schedules_fund_economical_target_tickets.sql'))
  sql(migration.read_text())
- check("SELECT config->>'buyIn'='5' AND name='Nightly Satellite 5' AND config->>'rebuyCost'='5' FROM tournament_schedules WHERE config->>'type'='satellite';")
+ check("SELECT config->>'buyIn'='5' AND name='Nightly Satellite 5' AND config->>'rebuyCost'='5' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000003';")
+ check("SELECT config->>'buyIn'='0' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000009';")
  check("SELECT buy_in_amount=4.5 AND buy_in_fee=.5 AND min_players=8 AND rebuy_cost=5 AND name='Nightly Satellite 5' FROM tournaments WHERE id='90000000-0000-4000-8000-000000000005';")
  check("SELECT count(*)=3 FROM tournaments WHERE id IN ('90000000-0000-4000-8000-000000000006','90000000-0000-4000-8000-000000000007','90000000-0000-4000-8000-000000000008') AND buy_in_amount=13.5 AND buy_in_fee=1.5;")
  sql('DROP FUNCTION IF EXISTS pg_temp.satellite_entry_value(numeric,numeric);'+migration.read_text())

@@ -43,4 +43,26 @@ describe('explicit bounded original runtime error observation', () => {
     expect(source).toContain('shutil.rmtree(directory)');
     expect(source).not.toMatch(/docker.*(?:restart|exec|stop)|systemctl|\.env(?:\b|\.)|shell=True/);
   });
+
+  it('keeps a finite incident read out of the single pending ordinary-audit slot', () => {
+    const workflow = readFileSync('.github/workflows/production-integrity-audit.yml', 'utf8');
+    expect(workflow).toContain("format('production-runtime-observation-{0}', github.run_id)");
+    expect(workflow).toContain("|| 'production-integrity-audit'");
+    expect(workflow).toContain('cancel-in-progress: false');
+    for (const name of [
+      'client_release',
+      'engine',
+      'live_drift',
+      'engine_deploy_starvation',
+      'chip_conservation',
+      'main_is_green',
+      'ddl_reload_storms',
+      'open_prs_are_green',
+      'migrations_are_live',
+    ]) {
+      expect(workflow).toContain(
+        `  ${name}:\n    if: github.event.client_payload.tournament_log_observation == null`
+      );
+    }
+  });
 });

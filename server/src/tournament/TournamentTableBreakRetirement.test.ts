@@ -1045,11 +1045,14 @@ describe('closed-source ambiguity reaches the actual manager diagnostic', () => 
       { table_id: 'closed-b', user_id: 'twice', seat_number: 2, stack: '250.00' },
       { table_id: 'closed-a', user_id: 'twice', seat_number: 1, stack: 100 },
     ];
-    const tableFilter = vi.fn().mockResolvedValue({ data: tables, error: null });
-    const liveFilter = vi.fn().mockResolvedValue({ data: seats, error: null });
+    const page = (rows: unknown[]) => ({
+      order: vi.fn(() => ({ limit: vi.fn().mockResolvedValue({ data: rows, error: null }) })),
+    });
+    const tableFilter = vi.fn(() => page(tables));
+    const liveFilter = vi.fn(() => page(seats));
     const seatFilter = vi.fn(() => ({ is: liveFilter }));
     const tableSelect = vi.fn(() => ({ eq: tableFilter }));
-    const seatSelect = vi.fn(() => ({ in: seatFilter }));
+    const seatSelect = vi.fn(() => ({ eq: seatFilter }));
     const reads = vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
       if (relation === 'tables') return { select: tableSelect };
       if (relation === 'table_seats') return { select: seatSelect };
@@ -1066,11 +1069,10 @@ describe('closed-source ambiguity reaches the actual manager diagnostic', () => 
     expect(reads.mock.calls.map(([relation]) => relation)).toEqual(['tables', 'table_seats']);
     expect(tableSelect).toHaveBeenCalledWith('id, status, is_deleted, max_players');
     expect(tableFilter).toHaveBeenCalledWith('tournament_id', TOURNAMENT_ID);
-    expect(seatSelect).toHaveBeenCalledWith('table_id, user_id, seat_number, stack');
-    expect(seatFilter).toHaveBeenCalledWith(
-      'table_id',
-      tables.map(({ id }) => id)
+    expect(seatSelect).toHaveBeenCalledWith(
+      'id, table_id, user_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(tournament_id)'
     );
+    expect(seatFilter).toHaveBeenCalledWith('tables.tournament_id', TOURNAMENT_ID);
     expect(liveFilter).toHaveBeenCalledWith('left_at', null);
     expect(report).toHaveBeenCalledTimes(1);
     expect(report).toHaveBeenCalledWith(

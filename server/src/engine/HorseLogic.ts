@@ -1,3 +1,4 @@
+import type { HorseRangeConsumptionCapture } from './HorseRangeConsumptionReceipt.js';
 import { smallPotNearNutRiverValue } from './HorseNearNutRiverValue.js';
 import {
   multiwayRiverLine,
@@ -3819,7 +3820,8 @@ export class HorseLogic {
     gameState: HorseGameStateV2,
     style: HorseStyle = 'balanced',
     mods: HorseProfileMods = {},
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture
   ): HorseDecision {
     try {
       if (
@@ -3842,7 +3844,7 @@ export class HorseLogic {
           return shortAllInCallFloorOutsideGraph(
             holdemPremiumAggressionOutsideGraph(
               pairedBoardFoldOutsideGraph(
-                this.decideInternal(player, gameState, style, mods, opts),
+                this.decideInternal(player, gameState, style, mods, opts, rangeCapture),
                 player,
                 gameState,
                 opts
@@ -3861,7 +3863,7 @@ export class HorseLogic {
       return shortAllInCallFloorOutsideGraph(
         holdemPremiumAggressionOutsideGraph(
           pairedBoardFoldOutsideGraph(
-            this.decideInternal(player, gameState, style, mods, opts),
+            this.decideInternal(player, gameState, style, mods, opts, rangeCapture),
             player,
             gameState,
             opts
@@ -3911,7 +3913,8 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     styleName: HorseStyle,
     mods: HorseProfileMods,
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture
   ): HorseDecision {
     phase7EquityEvidence = null;
     phase10EquityEvidence = null;
@@ -4087,7 +4090,8 @@ export class HorseLogic {
           opts.streetIQ !== false,
           opts.handReading !== false,
           v7,
-          opts
+          opts,
+          rangeCapture
         );
       }
       // MANIAC CALL-DOWN, inside the reference like the floor call-down, so
@@ -6375,7 +6379,8 @@ export class HorseLogic {
     useIQ: boolean = true,
     useHR: boolean = true,
     useV7: boolean = true,
-    opts: HorseDecideOpts = {}
+    opts: HorseDecideOpts = {},
+    rangeCapture?: HorseRangeConsumptionCapture
   ): HorseDecision {
     const planHandKey = horsePlanHandKey(gs.actionHistory, opts.mindPlanContext);
     const useSizeReads = opts.v7SizeReads ?? useV7;
@@ -6692,7 +6697,8 @@ export class HorseLogic {
         hiLoSplit,
         oppReads,
         outcomes7,
-        player.knownDeadCards
+        player.knownDeadCards,
+        rangeCapture?.begin(0, gs.players, opponents, mcOpps, bands, oppReads)
       );
       if (outcomes7) outcomeBoards7.push(outcomes7);
       boardEq36.push(equity);
@@ -6718,7 +6724,7 @@ export class HorseLogic {
       for (const card of [...(player.knownDeadCards ?? []), ...boards.flat()]) {
         visibleCards.set(physicalKey(card), card);
       }
-      for (const b of boards) {
+      for (const [boardIndex, b] of boards.entries()) {
         const boardKeys = new Set(b.map(physicalKey));
         const otherVisibleCards = [...visibleCards.values()].filter(
           (card) => !boardKeys.has(physicalKey(card))
@@ -6741,7 +6747,8 @@ export class HorseLogic {
           perBoardSplit,
           oppReadsPerBoard,
           undefined,
-          otherVisibleCards
+          otherVisibleCards,
+          rangeCapture?.begin(boardIndex, gs.players, opponents, mcOpps, bands, oppReadsPerBoard)
         );
         boardEq36.push(eb);
         sum += eb;

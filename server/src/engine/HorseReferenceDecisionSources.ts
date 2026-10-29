@@ -101,6 +101,10 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'validates original host coordinates and accepted action provenance used by hand-scoped learning',
     'src/engine/HorseObservationWindow.ts':
       'the original public observation time windows that qualify individual read history and cutoff coverage',
+    'src/services/horseDecisionJournal/record.ts':
+      'the bounded canonical original-request encoding and digest bound into producer-time range consumption evidence',
+    'src/engine/HorseRangeConsumptionReceipt.ts':
+      'bounded producer-time public range inputs and actual sampler consumption masks bound to the original decision and read frame',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
     'src/engine/HorseRiverPositionRead.ts':

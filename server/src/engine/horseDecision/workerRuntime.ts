@@ -1,3 +1,4 @@
+import { HorseRangeConsumptionCapture } from '../HorseRangeConsumptionReceipt.js';
 import { horseHistoryReadProvenanceIsValid } from './ownPublicHistoryProvenance.js';
 import {
   isolateMemoryIsValid,
@@ -2552,6 +2553,13 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
+    let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    try {
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true))
+        rangeCapture = new HorseRangeConsumptionCapture(request);
+    } catch {
+      /* diagnostic capture cannot change admission or selection */
+    }
     if (
       request.durableOpponentDonorProfiles !== undefined ||
       request.durableOpponentProfiles !== undefined
@@ -2638,23 +2646,30 @@ export class HorseDecisionWorkerRuntime {
       this.deps.noteFeature('phase5_canonical_state');
       const run = this.atGovernorScale(() =>
         this.deps.captureDecisionEffects(() =>
-          this.deps.decide(player, gameState, request.style, request.mods, {
-            ...request.opts,
-            ...features.flags,
-            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
-            phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
-            phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
-            phase10Plo4: phase10.mode,
-            phase11Omaha: phase11.mode,
-            phase12Remaining: phase12.mode,
-            phase13Joint: phase13.mode,
-            phase14Corrective: phase14.evaluator ?? undefined,
-            decisionTimeMs: request.decisionTimeMs,
-            telemetry: true,
-            observeMind: !phase14ObservationPrepared,
-            mindObservationHand: horseMindHandFromDecision(request),
-            mindPlanContext: planContext,
-          })
+          this.deps.decide(
+            player,
+            gameState,
+            request.style,
+            request.mods,
+            {
+              ...request.opts,
+              ...features.flags,
+              multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
+              phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+              phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
+              phase10Plo4: phase10.mode,
+              phase11Omaha: phase11.mode,
+              phase12Remaining: phase12.mode,
+              phase13Joint: phase13.mode,
+              phase14Corrective: phase14.evaluator ?? undefined,
+              decisionTimeMs: request.decisionTimeMs,
+              telemetry: true,
+              observeMind: !phase14ObservationPrepared,
+              mindObservationHand: horseMindHandFromDecision(request),
+              mindPlanContext: planContext,
+            },
+            rangeCapture
+          )
         )
       );
       captured = run.value;
@@ -2762,6 +2777,7 @@ export class HorseDecisionWorkerRuntime {
           snapshot: request,
           observerReads: this.observerReads.receipt(request),
           readFrame,
+          rangeConsumption: rangeCapture?.finish(readFrame?.sha256 ?? null),
           planContext,
           planBinding,
           decision: captured.value,
@@ -2834,6 +2850,13 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeDeep(request: DeepHorseDecisionRequest): HorseLifecycleOutcome {
+    let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    try {
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true))
+        rangeCapture = new HorseRangeConsumptionCapture(request);
+    } catch {
+      /* diagnostic capture cannot change admission or selection */
+    }
     const planContext = horsePlanContextFromDecision(request);
     if (!Number.isFinite(request.deepEquity) || request.deepEquity <= 1) {
       throw new Error('deepEquity must be finite and greater than one');
@@ -2920,25 +2943,32 @@ export class HorseDecisionWorkerRuntime {
           readView,
           () =>
             this.deps.captureDecisionEffects(() =>
-              this.deps.decide(player, gameState, request.style, request.mods, {
-                ...request.opts,
-                ...features.flags,
-                multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
-                phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
-                phase8PolicyFamily: phase8Guard.selected
-                  ? 'catastrophe_guard_v1'
-                  : 'continuation_v2',
-                phase10Plo4: phase10.mode,
-                phase11Omaha: phase11.mode,
-                phase12Remaining: phase12.mode,
-                phase13Joint: phase13.mode,
-                phase14Corrective: phase14.evaluator ?? undefined,
-                decisionTimeMs: request.decisionTimeMs,
-                telemetry: false,
-                deepEquity: request.deepEquity,
-                observeMind: false,
-                mindPlanContext: planContext,
-              })
+              this.deps.decide(
+                player,
+                gameState,
+                request.style,
+                request.mods,
+                {
+                  ...request.opts,
+                  ...features.flags,
+                  multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
+                  phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
+                  phase8PolicyFamily: phase8Guard.selected
+                    ? 'catastrophe_guard_v1'
+                    : 'continuation_v2',
+                  phase10Plo4: phase10.mode,
+                  phase11Omaha: phase11.mode,
+                  phase12Remaining: phase12.mode,
+                  phase13Joint: phase13.mode,
+                  phase14Corrective: phase14.evaluator ?? undefined,
+                  decisionTimeMs: request.decisionTimeMs,
+                  telemetry: false,
+                  deepEquity: request.deepEquity,
+                  observeMind: false,
+                  mindPlanContext: planContext,
+                },
+                rangeCapture
+              )
             ).value
         )
       );
@@ -2979,6 +3009,7 @@ export class HorseDecisionWorkerRuntime {
         this.deps.journalDecision?.(request, {
           snapshot: request,
           readFrame: retained.frame,
+          rangeConsumption: rangeCapture?.finish(retained.frame.sha256),
           observerReads: retained.observerReads ?? null,
           planContext,
           decision,

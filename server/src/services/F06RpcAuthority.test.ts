@@ -54,6 +54,39 @@ function assertManager(b: ReturnType<typeof binding>) {
   expect(h.get('x-smarter-tournament-lease-generation')).toBe(b.lease_generation);
 }
 beforeEach(() => rpc.mockReset());
+it('finishes a claimed original under its successor without rebinding its immutable identity', async () => {
+  const b = binding();
+  const successor = id(77);
+  const transport = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    expect(name).toBe('fn_f06_finish_hand');
+    expect(args.p_lease_generation).toBe(successor);
+    expect(args.p_permit_id).toBe(b.permit_id);
+    assertManager({ ...b, lease_generation: successor });
+    return { data: receipt(b, 'accepted', id(10)), error: null };
+  });
+  const p = runWithTournamentDataAuthority(
+    { tournamentId: b.tournament_id, leaseGeneration: successor },
+    () =>
+      new F06HandPermit(
+        b,
+        transport,
+        () => true,
+        () => false,
+        successor
+      )
+  );
+  expect(p.binding).toEqual(b);
+  expect(() =>
+    p.start(() => {
+      throw new Error('must not deal');
+    })
+  ).toThrow('start_unproven');
+  await expect(p.reserve()).rejects.toThrow('permit_consumed');
+  await expect(p.finish('never_started', id(10))).rejects.toThrow('termination_evidence_missing');
+  await p.finish('accepted', id(10));
+  expect(transport).toHaveBeenCalledOnce();
+  expect(currentTournamentDataAuthority()).toBeNull();
+});
 it('finishes the exact accepted permit from a process callback under its original Manager', async () => {
   const b = binding();
   const transport = vi.fn(async (name: string) => {
@@ -172,4 +205,40 @@ it('preserves the database refusal and sends no replacement break request', asyn
   const transport = new TournamentTableBreakRpc(b.tournament_id, b.lease_generation);
   await expect(transport.discover('0', 1)).rejects.toThrow('TOURNAMENT_MANAGER_FENCED');
   expect(rpc).toHaveBeenCalledTimes(1);
+});
+it('a private retention attempt cannot become a no-start receipt even if start has not run', async () => {
+  const b = binding();
+  const transport = vi.fn(async () => ({ data: receipt(b), error: null }));
+  const p = new F06HandPermit(b, transport, () => true);
+  await p.reserve();
+  p.attemptOriginalRetention();
+  expect(p.recoveryState()).toBe('attempted');
+  await expect(
+    p.drainNeverStarted(
+      async () => {},
+      () => true
+    )
+  ).rejects.toThrow('hand_may_have_started');
+  await expect(p.finish('never_started', id(9))).rejects.toThrow('termination_evidence_missing');
+  const start = vi.fn();
+  p.start(start);
+  expect(start).toHaveBeenCalledOnce();
+  expect(() => p.start(start)).toThrow('start_unproven');
+  expect(transport).toHaveBeenCalledOnce();
+});
+it('a fenced retention attempt cannot actuate its controller', async () => {
+  let current = true;
+  const b = binding();
+  const p = new F06HandPermit(
+    b,
+    async () => ({ data: receipt(b), error: null }),
+    () => current
+  );
+  await p.reserve();
+  p.attemptOriginalRetention();
+  current = false;
+  const start = vi.fn();
+  expect(() => p.start(start)).toThrow('start_unproven');
+  expect(start).not.toHaveBeenCalled();
+  expect(p.recoveryState()).toBe('attempted');
 });

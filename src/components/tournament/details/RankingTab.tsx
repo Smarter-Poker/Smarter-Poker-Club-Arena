@@ -494,7 +494,11 @@ export default function RankingTab({
    */
   const eventRunning = Boolean(onWatchPlayer);
 
-  const { downlineIds, carriesDownline } = useDownlineIds(currentUserId, tournament?.club_id);
+  const { downlineIds, carriesDownline } = useDownlineIds(
+    currentUserId,
+    tournament?.club_id,
+    tournament?.union_id
+  );
 
   // ── the pulse ───────────────────────────────────────────────────────────────
   /** Schedule the moment this row's flash goes out. Restarts a running one. */

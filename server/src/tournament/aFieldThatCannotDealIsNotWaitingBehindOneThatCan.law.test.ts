@@ -322,6 +322,7 @@ describe('the balance stage declares the lane', () => {
 
   function balanceManager(checkTableBalance: (this: any) => Promise<unknown>) {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId,
       running: true,
@@ -428,6 +429,7 @@ describe('a held level on a spread field asks for its balance pass', () => {
 
   function heldManager(seats: number[]) {
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId,
       consolidationDeclared: false,
@@ -491,6 +493,7 @@ describe('the hand that leaves a field unable to deal asks for consolidation', (
       onRestartRequired: vi.fn(),
     }));
     const manager = Object.create(TournamentManagerEliminations.prototype) as any;
+    manager.recoveredOriginalAdmissions = new Map();
     Object.assign(manager, {
       tournamentId: id,
       tableEngines: new Map(engines.map((engine, i) => [`table-${i}`, engine])),

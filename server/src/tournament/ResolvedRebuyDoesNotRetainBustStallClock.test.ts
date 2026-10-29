@@ -64,6 +64,7 @@ function setup(mode: 'rebought' | 'concurrent-rebuy' | 'unreadable', users = [US
         { data: [], error: null }
   );
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
+    recoveredOriginalAdmissions: new Map(),
     tournamentId: EVENT,
     running: true,
     pendingManagerWakes: new Map(),

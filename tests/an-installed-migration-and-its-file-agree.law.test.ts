@@ -16,7 +16,8 @@
  *   - the pull-request workflow runs both questions, from trusted code only,
  *     on events and never on a timer.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import YAML from 'yaml';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -27,6 +28,7 @@ import {
   recordedBy,
   splitByGrace,
   appliedAt,
+  siblingMigrationFiles,
 } from '../scripts/ci/check-applied-migrations-are-recorded.mjs';
 import { supersededBy, stampedAt } from '../scripts/ci/check-migrations-are-live.mjs';
 
@@ -235,6 +237,81 @@ describe('the pull-request workflow', () => {
     expect(code).toMatch(/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
     expect(code).not.toMatch(/pull_request\.head\.(sha|ref)/);
     expect(code).toMatch(/persist-credentials: false/);
+  });
+
+  it.each([
+    'migration-ledger-reconciled.yml',
+    'applied-migrations-recorded.yml',
+    'schema-manifest-refresh.yml',
+  ])(
+    '%s mints only the personal World Hub read token before and after Club Arena transfers',
+    async (workflow) => {
+      const jobs = YAML.parse(
+        fs.readFileSync(path.join(REPO, '.github/workflows', workflow), 'utf8')
+      ).jobs;
+      const steps = Object.values(jobs).flatMap((job: { steps?: unknown[] }) => job.steps || []);
+      const mint = steps.find(
+        (step: { with?: { repositories?: string } }) =>
+          step.with?.repositories === 'Smarter-Poker-World-Hub'
+      );
+      expect(mint.uses).toBe('actions/create-github-app-token@v3');
+      expect(mint.with).toEqual({
+        'app-id': '${{ vars.AUTOPILOT_APP_ID }}',
+        'private-key': '${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}',
+        owner: 'Smarter-Poker',
+        repositories: 'Smarter-Poker-World-Hub',
+        ...(workflow === 'schema-manifest-refresh.yml' ? {} : { 'permission-contents': 'read' }),
+      }); // Preserve existing permissions; default action cleanup revokes this narrowly scoped token.
+      for (const arenaOwner of ['Smarter-Poker', 'Smarter-Software-PIQ']) {
+        const tokenOwner = mint.with.owner.replace('${{ github.repository_owner }}', arenaOwner);
+        const target = `${tokenOwner}/${mint.with.repositories}`;
+        const requested: string[] = [];
+        vi.stubGlobal('fetch', async (url: string) => {
+          requested.push(url);
+          if (!url.startsWith(`https://api.github.com/repos/${target}/`))
+            return { ok: false, status: 404 };
+          return {
+            ok: true,
+            json: async () =>
+              url.includes('/contents/')
+                ? [{ type: 'dir', name: 'migrations', sha: 'retained-tree' }]
+                : {
+                    truncated: false,
+                    tree: [{ type: 'blob', path: '20260101000000_sibling.sql' }],
+                  },
+          };
+        });
+        try {
+          expect(await siblingMigrationFiles(undefined, 'fixture-read-token')).toEqual([
+            '20260101000000_sibling.sql',
+          ]);
+          expect(requested).toEqual([
+            'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/contents/supabase?ref=main',
+            'https://api.github.com/repos/Smarter-Poker/Smarter-Poker-World-Hub/git/trees/retained-tree',
+          ]);
+        } finally {
+          vi.unstubAllGlobals();
+        }
+      }
+    }
+  );
+
+  it.each([
+    'Smarter-Software-PIQ/Smarter-Poker-World-Hub',
+    'Smarter-Poker/Smarter-Poker-Club-Arena',
+  ])('refuses a sibling index token scoped to the wrong target %s', async (target) => {
+    vi.stubGlobal('fetch', async (url: string) => ({
+      ok: url.startsWith(`https://api.github.com/repos/${target}/`),
+      status: 404,
+    }));
+    try {
+      await expect(siblingMigrationFiles(undefined, 'wrong-target-fixture')).rejects.toThrow(
+        'sibling migration index is UNKNOWN'
+      );
+      await expect(siblingMigrationFiles(undefined, '')).rejects.toThrow('no estate read token');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('asks both questions, with a grace, and fails past it', () => {

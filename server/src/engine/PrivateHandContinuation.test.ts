@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
+  continuationEventId,
   decodePrivateHandContinuation,
   encodePrivateHandContinuation,
   type PrivateHandContinuation,
@@ -70,4 +71,15 @@ describe('private continuation byte identity', () => {
     v.batch.controller = 'x'.repeat(1048576);
     expect(() => encodePrivateHandContinuation(v)).toThrow('Too Large');
   });
+});
+
+it('preserves existing receipt IDs while separating terminal bank children by player', () => {
+  const identity = original().original;
+  expect(continuationEventId(identity, 3, 2)).toBe('815edd6d-fbc8-5b1b-a5fb-6ee3460f7bd5');
+  expect(continuationEventId(identity, 3, 2, 'hand_complete:time_bank_stop:a')).toBe(
+    '3f027966-b972-558b-a945-36fec2e853ce'
+  );
+  expect(continuationEventId(identity, 3, 2, 'hand_complete:time_bank_stop:b')).not.toBe(
+    '3f027966-b972-558b-a945-36fec2e853ce'
+  );
 });

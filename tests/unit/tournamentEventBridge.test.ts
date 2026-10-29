@@ -59,6 +59,23 @@ describe('tournamentEventBridge', () => {
     expect(emitted.calls[0][1].durationMinutes).toBe(4);
   });
 
+  it('does not turn the last-hand announcement into a countdown', () => {
+    const id = tid();
+    relayTournamentEvent(id, {
+      type: 'tournament_break',
+      payload: { level: 4, phase: 'last_hand', breakEndsAt: null, breakDurationMinutes: 5 },
+    });
+    expect(emitted.calls[0][1].durationMinutes).toBeUndefined();
+    expect(emitted.calls[0][1].breakEndsAt).toBeUndefined();
+
+    const deadline = new Date(Date.now() + 300_000).toISOString();
+    relayTournamentEvent(id, {
+      type: 'tournament_break_started',
+      payload: { level: 4, phase: 'counting_down', breakEndsAt: deadline, breakDurationMinutes: 5 },
+    });
+    expect(emitted.calls[2][1]).toMatchObject({ breakEndsAt: deadline, durationMinutes: 5 });
+  });
+
   it('turns break_ended into both end spellings', () => {
     relayTournamentEvent(tid(), { type: 'break_ended', payload: { level: 4 } });
     expect(names()).toEqual(['TOURNAMENT_BREAK_END', 'BREAK_END']);

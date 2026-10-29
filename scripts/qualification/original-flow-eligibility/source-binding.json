@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 251892,
-      "sha256": "357032b42e80424b3c5431f5b70a2b3ea6940f7bcceaec4e223ced7e4b67bf63"
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1076,5 +1076,27 @@
       "sha256": "357032b42e80424b3c5431f5b70a2b3ea6940f7bcceaec4e223ced7e4b67bf63"
     },
     "execution_performed": false
+  },
+  "retentionPageAdmissionSourceAudit20261029": {
+    "reason": "Reviewed additive required native one-page retention step and exact fixture classification. Current source identities and reviewed nested binding audit only; preserve financial assertions, historical qualification states, receipts and ledger installation. No financial or live certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 252075,
+          "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+        }
+      }
+    }
+  },
+  "v31Public215RetentionPageComposition20261029": {
+    "reason": "Compose the existing R7 controller qualification step with protected-main retention one-page native fixture. Preserve both parent audit records and all non-CI file pins. Current workflow fingerprint only; not financial or production qualification.",
+    "currentWorkflow": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    }
   }
 }

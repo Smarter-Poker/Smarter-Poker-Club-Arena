@@ -44,9 +44,119 @@ on:
     workflows: ['Publish Club Arena']
     types: [completed]
   repository_dispatch:
-    types: [run-post-deploy-e2e, run-stats-pagination-proof]
+    types: [run-post-deploy-e2e, run-stats-pagination-proof, run-private-record-client-proof]
 
 jobs:
+  # Explicit one-client transport proof. This never publishes or changes source flags.
+  private-record-client-proof:
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
+    name: Exact published private record client failover proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: private-record-client-proof-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Admit exact protected gateway functional receipt
+        id: admit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECORD_CLIENT_PROOF_ACTION: ${{ github.event.action }}
+          RECORD_CLIENT_PROOF_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: node scripts/ci/private-record-client-proof.mjs admit
+      - name: Require protected source ancestry
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --filter=blob:none origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git merge-base --is-ancestor "$LIVE_SHA" origin/main
+          git merge-base --is-ancestor "$EXPECTED_GATEWAY_REVISION" origin/main
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Pin published client, gateway and retained paid source
+        id: before
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/private-record-client-proof.mjs pin before.json
+      - name: Install Chromium only
+        timeout-minutes: 5
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+      - name: Create the owned isolated account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Prepare its existing zero-balance member workspace
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+      - name: Verify the actual published SDK and visible own record
+        id: browser
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/private-record-client/report.json
+        run: >-
+          npx playwright test tests/e2e/production-private-record-failover.spec.ts
+          --project=chromium --workers=1 --retries=0 --trace=off --reporter=line,json
+          --output=test-results/private-record-client
+      - name: Read identities and paid source after the case
+        id: after
+        if: always() && steps.before.outcome == 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/private-record-client-proof.mjs pin after.json
+      - name: Retire only the owned account and verify cleanup
+        id: cleanup
+        if: always() && steps.account.outcome != '' && steps.account.outcome != 'skipped'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          import { cleanupProductionE2EAccount } from './scripts/ci/production-e2e-account.mjs';
+          if (await cleanupProductionE2EAccount() !== true) throw new Error('Owned account cleanup did not verify retirement');
+          writeFileSync('e2e-report/private-record-client/cleanup.json', JSON.stringify({verified:true}));
+          NODE
+      - name: Certify only the completed modern client case
+        if: always() && steps.admit.outcome == 'success'
+        env:
+          ACCOUNT_OUTCOME: ${{ steps.account.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          AFTER_PIN_OUTCOME: ${{ steps.after.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: node scripts/ci/private-record-client-proof.mjs verify
+      - name: Retain token-free scoped proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-record-client-proof-${{ github.run_id }}
+          path: |
+            e2e-report/private-record-client/
+            test-results/private-record-client/
+          if-no-files-found: warn
+          retention-days: 14
+
   # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
   stats-pagination-proof:
     if: github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
@@ -165,7 +275,7 @@ jobs:
           retention-days: 14
 
   publication-gate:
-    if: github.event_name != 'repository_dispatch' || github.event.action != 'run-stats-pagination-proof'
+    if: github.event_name != 'repository_dispatch' || (github.event.action != 'run-stats-pagination-proof' && github.event.action != 'run-private-record-client-proof')
     name: Confirm The Hetzner Web Publish Reached Production
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -2491,6 +2601,7 @@ jobs:
   stood-down-is-not-green:
     name: A stood-down run is marked superseded, not passed
     needs:
+      - private-record-client-proof
       - stats-pagination-proof
       - publication-gate
       - post-deploy-verdict

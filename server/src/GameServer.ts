@@ -9482,96 +9482,120 @@ export class GameServer {
         // rescues stuck-COMPLETING tournaments (ranks survivors, pays via
         // computePlacePrize, closes every player row).
         const decidedCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-        const { data: maybeDecided } = await supabase
-          .from('tournaments')
-          .select('id, name')
-          .eq('status', 'RUNNING')
-          .lt('started_at', decidedCutoff);
-        /* EVERY COUNT IN ONE READ (2026-09-11). This loop used to await an
+        const decidedPage = await fetchAllRows<{ id: string; name: string | null }>(
+          (cursor, want) => {
+            let query = supabase
+              .from('tournaments')
+              .select('id, name')
+              .eq('status', 'RUNNING')
+              .lt('started_at', decidedCutoff)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          {
+            label: 'GameServer.decidedBoard',
+            pageAttempts: 1,
+            shouldContinue: () => this.directAdmissionIsCurrent(generation),
+          }
+        );
+        if (!this.directAdmissionIsCurrent(generation)) break;
+        // A prefix is neither the whole recovery board nor evidence that a
+        // previously held event disappeared. Preserve its held-state evidence.
+        if (!decidedPage.complete) {
+          reportError(
+            new Error('Decided-event board incomplete; no finish owners woken'),
+            'GameServer.decided_board_read_failed'
+          );
+        } else {
+          /* EVERY COUNT IN ONE READ (2026-09-11). This loop used to await an
            exact count per tournament: 368 of them at ~110 ms, ~40 s of every
            pass. The counts now come from one keyset-paged read of the playing
            rows, a chunk of tournaments at a time, and the rule the old count
            carried is kept per chunk: a chunk that did not read to the end
            leaves every tournament in it UNKNOWN. See decidedRunningBoard.ts. */
-        const decidedBoard = maybeDecided || [];
-        const decidedVerdicts = decidedRunningVerdicts(
-          await readPlayingCounts(
-            decidedBoard.map((t) => String(t.id)),
-            (chunk, cursor, want) => {
-              let q = supabase
-                .from('tournament_players')
-                .select('id, tournament_id')
-                .eq('status', 'playing')
-                .in('tournament_id', chunk)
-                .order('id', { ascending: true })
-                .limit(want);
-              if (cursor) q = q.gt('id', cursor);
-              return q;
+          const decidedBoard = decidedPage.rows;
+          const decidedVerdicts = decidedRunningVerdicts(
+            await readPlayingCounts(
+              decidedBoard.map((t) => String(t.id)),
+              (chunk, cursor, want) => {
+                let q = supabase
+                  .from('tournament_players')
+                  .select('id, tournament_id')
+                  .eq('status', 'playing')
+                  .in('tournament_id', chunk)
+                  .order('id', { ascending: true })
+                  .limit(want);
+                if (cursor) q = q.gt('id', cursor);
+                return q;
+              }
+            )
+          );
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          let decidedUnread = 0;
+          let decidedRecoveries = 0;
+          const decidedHeld = new Set<string>();
+          for (const t of decidedBoard) {
+            const verdict = verdictFor(decidedVerdicts, String(t.id));
+            // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
+            if (verdict.kind === 'unknown') {
+              decidedUnread++;
+              continue;
             }
-          )
-        );
-        let decidedUnread = 0;
-        let decidedRecoveries = 0;
-        const decidedHeld = new Set<string>();
-        for (const t of decidedBoard) {
-          const verdict = verdictFor(decidedVerdicts, String(t.id));
-          // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
-          if (verdict.kind === 'unknown') {
-            decidedUnread++;
-            continue;
-          }
-          if (verdict.kind === 'live') continue; // still a live contest
-          const playingCount = verdict.playingCount;
-          const decidedAction = this.decidedOwnerActionFor(String(t.id));
-          if (decidedAction.kind === 'held') {
-            decidedHeld.add(String(t.id));
-            this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
-            continue;
-          }
-          /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
+            if (verdict.kind === 'live') continue; // still a live contest
+            const playingCount = verdict.playingCount;
+            const decidedAction = this.decidedOwnerActionFor(String(t.id));
+            if (decidedAction.kind === 'held') {
+              decidedHeld.add(String(t.id));
+              this.noteDecidedEventHeld(String(t.id), String(t.name), playingCount, decidedAction);
+              continue;
+            }
+            /* A REFUSED FINISH IS NOT A STALLED ONE (2026-10-07). This recovery
              is for a finish that never ran. A manager whose finish the
              database refused already holds its own retry at the refusal's
              delay; waking it here (delay zero, earliest wake wins) re-asked
              four Spins every ~10.6 s for a day. Skip it before the stagger,
              so it costs this pass nothing. See awaitsItsOwnFinishRetry. */
-          if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
-          /* The per-tournament reads were this sweep's only brake: no two
+            if (this.tournamentEngines.get(String(t.id))?.awaitsItsOwnFinishRetry?.()) continue;
+            /* The per-tournament reads were this sweep's only brake: no two
              recoveries could land closer than one round trip apart. Keep that
              spacing, or a board of decided tournaments becomes one burst of
              resumes after a restart and one burst of urgent wakes on every
              pass (decidedRunningBoard.ts). The first recovery never waits. */
-          if (decidedRecoveries++ > 0) {
-            await this.sleep(DECIDED_RECOVERY_STAGGER_MS);
-            if (!this.directAdmissionIsCurrent(generation)) break;
+            if (decidedRecoveries++ > 0) {
+              await this.sleep(DECIDED_RECOVERY_STAGGER_MS);
+              if (!this.directAdmissionIsCurrent(generation)) break;
+            }
+            console.warn(
+              `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
+            );
+            const idleTm = this.tournamentEngines.get(String(t.id));
+            if (idleTm) {
+              idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
+            } else {
+              this.launchDiscoveryJob(
+                this.ensureTournamentManagerAdmission(
+                  String(t.id),
+                  'resume',
+                  `Resuming decided tournament through its finish owner: ${t.name}`,
+                  generation
+                ),
+                'GameServer.stalled_decided_resume_failed',
+                { tournamentId: String(t.id) }
+              );
+            }
           }
-          console.warn(
-            `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
-          );
-          const idleTm = this.tournamentEngines.get(String(t.id));
-          if (idleTm) {
-            idleTm.requestDecidedEliminationSweep('stalled_decided_survivor');
-          } else {
-            this.launchDiscoveryJob(
-              this.ensureTournamentManagerAdmission(
-                String(t.id),
-                'resume',
-                `Resuming decided tournament through its finish owner: ${t.name}`,
-                generation
-              ),
-              'GameServer.stalled_decided_resume_failed',
-              { tournamentId: String(t.id) }
+          this.decidedEventsHeldByQuarantine = decidedHeld.size;
+          const heldReported = (this.decidedEventsHeldReported ??= new Map());
+          for (const id of [...heldReported.keys()]) {
+            if (!decidedHeld.has(id)) heldReported.delete(id);
+          }
+          if (decidedUnread > 0) {
+            console.warn(
+              `[GameServer] Decided-but-RUNNING sweep could not read the playing count of ${decidedUnread} of ${decidedBoard.length} tournament(s) - skipped this pass, not treated as decided`
             );
           }
-        }
-        this.decidedEventsHeldByQuarantine = decidedHeld.size;
-        const heldReported = (this.decidedEventsHeldReported ??= new Map());
-        for (const id of [...heldReported.keys()]) {
-          if (!decidedHeld.has(id)) heldReported.delete(id);
-        }
-        if (decidedUnread > 0) {
-          console.warn(
-            `[GameServer] Decided-but-RUNNING sweep could not read the playing count of ${decidedUnread} of ${decidedBoard.length} tournament(s) - skipped this pass, not treated as decided`
-          );
         }
 
         // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──

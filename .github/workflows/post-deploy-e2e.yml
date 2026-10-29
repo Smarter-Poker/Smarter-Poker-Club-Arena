@@ -58,8 +58,6 @@ jobs:
     concurrency:
       group: stats-pagination-proof-production
       cancel-in-progress: false
-    env:
-      E2E_TEST_ACCOUNT_FILE: ${{ runner.temp }}/stats-pagination-account.json
     steps:
       - uses: actions/checkout@v4
         with:

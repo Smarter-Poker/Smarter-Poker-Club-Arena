@@ -28,7 +28,7 @@ class CensusTests(unittest.TestCase):
         old['schema']='horse-turn-census-ledger-v1'
         for o in old['observations']:
             for h in o['handDomains']:h.pop('context')
-        for r in old['turns']:r.pop('contextBinding')
+        for r in old['turns']:r.pop('contextBinding');r.pop('historyReason')
         before=copy.deepcopy(old)
         self.assertEqual(c.ledger_summary(c.validate_ledger(old))['contextEvidence']['unknown:unknown']['matchedContextTurns'],0)
         self.assertEqual(old,before)
@@ -112,7 +112,7 @@ class CensusTests(unittest.TestCase):
         self.assertEqual(run.stdout,c.transport_digest(p))
     def test_observed_row_omission_rejected(self):
         p,a=make();part=c.partition_packets(p)[0];row=c.missing_row(c.expected_rows(part)[0]);row['actionOrdinal']=4
-        row['contextBinding']='unknown'
+        row['contextBinding']='unknown';row['historyReason']='unknown'
         observation={'version':3,'scope':'supplied_committed_turn_census','status':'unknown','rawRecordsExported':False,'replayVerified':False,'completePopulation':False,'strategyCorrectnessVerified':False,'activationAllowed':False,'sourceSha':SHA,'packetDigest':c.transport_digest(part),'expectedTurns':1,'validatedBytes':0,'boundReached':False,'missingTurns':1,'contradictoryTurns':0,'extraneousCaptures':0,'unboundCaptures':0,'inspectedHands':1,'remainingHands':0,'turns':[row]}
         result={'qualifiedExecution':True,'sourceSha':SHA,'packetDigest':observation['packetDigest'],'execution':{'observation':observation,'release':SHA,'exitCode':0,'containerExitCode':0,'sameServingIdentityAfter':True,'observerRemoved':True,'cleanupExitCode':0,'oomKilled':False,'readOnly':True,'network':'none','horseJournalMountVerified':True,'servingContainer':'a'*64,'imageId':'sha256:'+'b'*64,'servingStartedAt':START}}
         with self.assertRaisesRegex(ValueError,'census_expected_omission'):c.summarize(p,a,[result])

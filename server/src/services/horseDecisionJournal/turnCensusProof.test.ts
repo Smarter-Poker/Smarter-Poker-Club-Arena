@@ -43,6 +43,7 @@ const {
   readInstalledTurnCensusBatch,
 } = censusApi;
 import * as readFrameApi from '../../engine/HorseDecisionReadFrame.js';
+import * as historyContextApi from '../../engine/HorseObserverReadContext.js';
 import * as observerApi from '../../engine/HorseObserverReadEvidence.js';
 const api = {
   ...recordsApi,
@@ -53,6 +54,7 @@ const api = {
   ...planApi,
   ...readFrameApi,
   ...observerApi,
+  ...historyContextApi,
   buildHorseDecisionKey,
   HorseFleetPhaseInterpreter,
 };
@@ -826,4 +828,49 @@ it('v3 binds original DB variant and cash context to actual reconciled decision 
     });
     expect(sanitizeHorseTurnCensusResult(refused)).toEqual(refused);
   }
+});
+
+it('v3 history reason binds original observer partition, state and decision cutoff without private export', () => {
+  const x = census();
+  const packet: any = x.packet;
+  packet.version = 3;
+  packet.hands[0].context = {
+    variant: 'nlh',
+    format: 'cash',
+    provenance: 'retained_submission_and_committed_history',
+  };
+  const s: any = x.f.capture.snapshot;
+  s.gameState.dealtSeatIds = s.gameState.players.map((p: any) => p.seat);
+  s.gameState.format = 'cash';
+  const context = historyContextApi.horseObserverReadContextFromRequest(s);
+  expect(context).not.toBeNull();
+  s.ownPublicHistoryState = 'unavailable';
+  s.ownPublicHistoryProvenance = {
+    version: 1,
+    context,
+    decisionTimeMs: s.decisionTimeMs,
+    state: 'unavailable',
+    reason: 'provider_deadline',
+  };
+  const r = inspectHorseTurnCensus(packet, x.batch(), api);
+  expect(r.turns[2]).toMatchObject({
+    inputBinding: 'canonical_digest_and_read_frame',
+    historyReason: 'provider_deadline',
+  });
+  expect(sanitizeHorseTurnCensusResult(r)).toEqual(r);
+  const good = structuredClone(s.ownPublicHistoryProvenance);
+  for (const invalid of [
+    { ...good, decisionTimeMs: good.decisionTimeMs + 1 },
+    { ...good, state: 'pending' },
+    { ...good, reason: 'private provider text' },
+    { ...good, extra: true },
+    { ...good, context: { ...good.context, observerId: '90000000-0000-4000-8000-000000000999' } },
+    { ...good, context: { ...good.context, variant: 'plo8' } },
+    { ...good, context: { ...good.context, format: 'mtt' } },
+  ]) {
+    s.ownPublicHistoryProvenance = invalid;
+    expect(inspectHorseTurnCensus(packet, x.batch(), api).turns[2].historyReason).toBe('unknown');
+  }
+  delete s.ownPublicHistoryProvenance;
+  expect(inspectHorseTurnCensus(packet, x.batch(), api).turns[2].historyReason).toBe('unknown');
 });

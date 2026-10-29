@@ -262,6 +262,7 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   const turn = {
     ...result.turns[0],
     contextBinding: 'contradictory',
+    historyReason: 'unknown',
     actorIndex: 999,
     actionOrdinal: 4095,
     stage: 'pineapple_discard',
@@ -302,6 +303,8 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
     observerRemoved: true,
   };
   const size = Buffer.byteLength(JSON.stringify(envelope));
+  const reasonHeadroom = limit * ('retention_heap_unavailable'.length - 'unknown'.length);
+  assert.ok(size + reasonHeadroom < 1572864, 'longest closed history reason must also fit');
   assert.ok(size < 1572864, `closed envelope ${size} must fit remote stdout1572864`);
   const old = {
     ...envelope,
@@ -319,7 +322,7 @@ test('version3 carries original closed context through maintained installed obse
   p.hands[0].context = { variant: 'plo8', format: 'cash', provenance: 'committed_hand_history' };
   assert.equal(validateHorseTurnCensusPacket(p), p);
   const program = turnCensusProgram(p);
-  assert.ok(program.includes('horseTurnContextBinding(expected.context,s)'));
+  assert.match(program, /horseTurnContextBinding\(expected.context,\s*s\)/);
   assert.equal(
     horseTurnContextBinding(p.hands[0].context, {
       gameState: { gameVariant: 'plo8', gameMode: 'cash' },

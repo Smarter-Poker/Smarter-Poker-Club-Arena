@@ -19,6 +19,7 @@ UUID=re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 STAGES={'preflop','flop','pineapple_discard','turn','river','showdown'}
 ACTIONS={'fold','check','call','bet','raise','all_in','discard'}
 VARIANTS={'nlh','plo4','plo5','plo6','plo8','pineapple','short_deck','flh','flo8'}
+HISTORY_REASONS={'unknown','loading','load_capacity','packet_ready','worker_acknowledged','packet_after_cutoff','provider_error','provider_empty_response','provider_source_mismatch','provider_invalid_window','provider_deadline','provider_thrown','cache_disposed','retry_load_capacity','retention_invalid_claim','retention_heap_unavailable','retention_heap_headroom','retention_capacity','invalid_window','context_mismatch','packet_size_refused','load_rejected','load_thrown'}
 CONTEXT_KEYS={'variant','format','provenance'}
 def validate_context(c):
     if not isinstance(c,dict) or set(c)!=CONTEXT_KEYS or c['variant'] not in VARIANTS or c['format'] not in ('cash','tournament') or c['provenance'] not in ('committed_hand_history','retained_submission_and_committed_history'):raise ValueError('original_context')
@@ -157,12 +158,13 @@ def expected_rows(packet):
     return [{**{k:a[k] for k in ('actorIndex','actionOrdinal','stage','action','origin')},'handKey':h['handKey']} for h in packet['hands'] for a in h['actions']]
 
 def validate_turn(row, contextual=False):
-    if not isinstance(row,dict) or set(row)!=(TURN_FIELDS|({'contextBinding'} if contextual else set())):raise ValueError('turn_shape')
+    if not isinstance(row,dict) or set(row)!=(TURN_FIELDS|({'contextBinding','historyReason'} if contextual else set())):raise ValueError('turn_shape')
     if type(row['actorIndex']) is not int or not 0<=row['actorIndex']<1000 or type(row['actionOrdinal']) is not int or not 0<=row['actionOrdinal']<MAX_ACTIONS or not isinstance(row['handKey'],str) or not re.fullmatch('[0-9a-f]{64}',row['handKey']) or row['stage'] not in STAGES or row['action'] not in ACTIONS or row['origin'] not in ORIGINS:raise ValueError('turn_domain')
     for k,values in TURN_ENUMS.items():
         if row[k] not in values:raise ValueError('turn_status')
     if contextual and row['contextBinding'] not in ('unknown','matched','contradictory'):raise ValueError('turn_context_binding')
     if contextual and ((row['contextBinding']=='matched' and (row['inputBinding']!='canonical_digest_and_read_frame' or row['capture']!='present' or row['expectedBinding']!='matched' or row['handReconciliation']!='reconciled')) or (row['inputBinding']=='canonical_digest_and_read_frame' and row['contextBinding']!='matched')):raise ValueError('turn_context_consumption')
+    if contextual and (row['historyReason'] not in HISTORY_REASONS or (row['historyReason']!='unknown' and row['inputBinding']!='canonical_digest_and_read_frame')):raise ValueError('turn_history_reason')
     discard=row['action']=='discard' and row['stage'] in ('flop','pineapple_discard')
     if row['inputBinding']=='original_discard_request_and_controller' and not discard:raise ValueError('turn_discard_context')
     if (row['publicRead']=='not_applicable' or row['historicalRead']=='not_applicable') and not (discard or row['origin']=='forced'):raise ValueError('turn_read_context')
@@ -178,7 +180,7 @@ def validate_turn(row, contextual=False):
     return row
 
 def missing_row(expected,contextual=False):
-    return {'contextBinding':'unknown',**missing_row(expected)} if contextual else {**expected,**{k:('missing' if k in ('capture','execution') else 'unknown') for k in TURN_ENUMS},'phases':{f'phase{i}':{'status':'unknown','eligibility':'unknown','application':'unknown','capability':'unobserved','qualification':'unknown','reasonSha256':None} for i in range(1,16)}}
+    return {'contextBinding':'unknown','historyReason':'unknown',**missing_row(expected)} if contextual else {**expected,**{k:('missing' if k in ('capture','execution') else 'unknown') for k in TURN_ENUMS},'phases':{f'phase{i}':{'status':'unknown','eligibility':'unknown','application':'unknown','capability':'unobserved','qualification':'unknown','reasonSha256':None} for i in range(1,16)}}
 
 def summarize(packet,attestation,results):
     parts=partition_packets(packet)

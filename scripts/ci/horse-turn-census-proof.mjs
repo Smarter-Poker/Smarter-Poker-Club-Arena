@@ -41,6 +41,57 @@ export function horseTurnContextBinding(context, snapshot) {
     ? 'matched'
     : 'contradictory';
 }
+const historyReasons = {
+  pending: ['loading', 'load_capacity'],
+  available: ['packet_ready', 'worker_acknowledged', 'packet_after_cutoff'],
+  unavailable: [
+    'provider_error',
+    'provider_empty_response',
+    'provider_source_mismatch',
+    'provider_invalid_window',
+    'provider_deadline',
+    'provider_thrown',
+    'cache_disposed',
+    'retry_load_capacity',
+    'retention_invalid_claim',
+    'retention_heap_unavailable',
+    'retention_heap_headroom',
+    'retention_capacity',
+    'invalid_window',
+    'context_mismatch',
+    'packet_size_refused',
+    'load_rejected',
+    'load_thrown',
+  ],
+};
+export function horseTurnHistoryReason(snapshot, api) {
+  try {
+    const p = snapshot?.ownPublicHistoryProvenance;
+    if (
+      !exact(p, ['version', 'context', 'decisionTimeMs', 'state', 'reason']) ||
+      p.version !== 1 ||
+      !Number.isSafeInteger(p.decisionTimeMs) ||
+      p.decisionTimeMs < 0 ||
+      p.decisionTimeMs !== snapshot.decisionTimeMs ||
+      p.state !== snapshot.ownPublicHistoryState ||
+      !historyReasons[p.state]?.includes(p.reason)
+    )
+      return 'unknown';
+    const context = api.horseObserverReadContextFromRequest(snapshot);
+    const key = api.horseObserverReadContextKey(context);
+    if (
+      !key ||
+      api.horseObserverReadContextKey(p.context) !== key ||
+      (p.reason === 'packet_ready'
+        ? snapshot.ownPublicHistory === undefined
+        : snapshot.ownPublicHistory !== undefined)
+    )
+      return 'unknown';
+    return p.reason;
+  } catch {
+    return 'unknown';
+  }
+}
 const stages = ['preflop', 'flop', 'pineapple_discard', 'turn', 'river', 'showdown'];
 const actions = ['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard'];
 const origins = ['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced', 'unknown'];
@@ -188,7 +239,7 @@ function closedPhases(value) {
   return out;
 }
 const emptyTurn = (h, a) => ({
-  ...(h.context ? { contextBinding: 'unknown' } : {}),
+  ...(h.context ? { contextBinding: 'unknown', historyReason: 'unknown' } : {}),
   actorIndex: a.actorIndex,
   handKey: h.handKey,
   actionOrdinal: a.actionOrdinal,
@@ -531,6 +582,7 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
           if (out.contextBinding !== 'matched') continue;
         }
         out.inputBinding = 'canonical_digest_and_read_frame';
+        if (packet.version === 3) out.historyReason = horseTurnHistoryReason(s, api);
         out.publicRead = api.horseObserverReadsUsedPublicPool(c.observerReads, s)
           ? 'pooled_public'
           : api.horseObserverReadsWereIndependent(c.observerReads, s)
@@ -616,7 +668,18 @@ export async function loadInstalledTurnCensusApis() {
     '/app/dist/engine/HorseObserverReadEvidence.js',
     '/app/dist/engine/horseDecision/protocol.js',
   ];
-  return Object.assign({}, ...(await Promise.all(paths.map((p) => import(/* @vite-ignore */ p)))));
+  const api = Object.assign(
+    {},
+    ...(await Promise.all(paths.map((p) => import(/* @vite-ignore */ p))))
+  );
+  // Optional on older installed images: missing context helpers leave reason unknown.
+  try {
+    Object.assign(
+      api,
+      await import(/* @vite-ignore */ '/app/dist/engine/HorseObserverReadContext.js')
+    );
+  } catch {}
+  return api;
 }
 /** Fixed read-only mount; never opens a writer or exports its private records. */
 export function readInstalledTurnCensusBatch(
@@ -781,9 +844,13 @@ export function sanitizeHorseTurnCensusResult(v) {
         'origin',
         ...Object.keys(states),
         'phases',
-        ...(v.version === 3 ? ['contextBinding'] : []),
+        ...(v.version === 3 ? ['contextBinding', 'historyReason'] : []),
       ]) ||
-      (v.version === 3 && !['unknown', 'matched', 'contradictory'].includes(t.contextBinding)) ||
+      (v.version === 3 &&
+        (!['unknown', 'matched', 'contradictory'].includes(t.contextBinding) ||
+          !['unknown', ...Object.values(historyReasons).flat()].includes(t.historyReason) ||
+          (t.historyReason !== 'unknown' &&
+            t.inputBinding !== 'canonical_digest_and_read_frame'))) ||
       !Number.isSafeInteger(t.actorIndex) ||
       t.actorIndex < 0 ||
       t.actorIndex >= 1000 ||

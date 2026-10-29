@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 249502,
-      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+      "bytes": 249679,
+      "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -793,6 +793,18 @@
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
   },
+  "playerManagementPeriodFees20261029": {
+    "reason": "Add one required server shard 4 native qualification step for the compatible Chicago-period fee reader. Existing commands, assertions, financial rules and historical qualification remain unchanged. Current workflow source identity only; not installation or production certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "current": {
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2",
+      "bytes": 248781
+    }
+  },
   "durableOriginalContinuationCiIdentity20261029": {
     "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
     "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
@@ -855,5 +867,13 @@
     },
     "financial_recertification": false,
     "execution_performed": false
+  },
+  "playerManagementPeriodMainIntegration20261029": {
+    "reason": "Preserve newer protected-main workflow and every source audit while adding only the period-fee native qualification step. No financial rules, assertions or historical certificates changed. Current combined workflow source identity only.",
+    "path": ".github/workflows/ci.yml",
+    "current": {
+      "bytes": 249679,
+      "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
+    }
   }
 }

@@ -1,0 +1,4 @@
+{
+  "_comment": "Qualified source declarations; not installation evidence.",
+  "functions": ["ca_club_member_period_fee_totals", "ca_club_members_period_summary"]
+}

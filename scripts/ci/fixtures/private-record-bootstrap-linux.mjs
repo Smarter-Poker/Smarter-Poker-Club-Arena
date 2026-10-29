@@ -5,7 +5,7 @@ import { gatewayMachineIdSha256 } from './source/scripts/ci/private-record-gatew
 const scenario = process.argv[2];
 assert.ok(['success', 'caddy-drift', 'same-host', 'rollback'].includes(scenario));
 const run = (file, args, options = {}) =>
-  execFileSync(file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options });
+  execFileSync(file, args, { encoding: 'utf8', stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options });
 const root = '/qualification/source';
 const sha = 'a'.repeat(40);
 const global = '{\n auto_https off\n admin 127.0.0.1:2019\n}\n';

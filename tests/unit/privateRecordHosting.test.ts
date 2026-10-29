@@ -271,6 +271,18 @@ const observed = run(process.execPath, ['-e', "process.stdout.write(require('nod
 if (observed !== configuration) throw new Error('Caddy preflight stdin was discarded');`;
     expect(() => execFileSync(process.execPath, ['-e', script], { stdio: 'pipe' })).not.toThrow();
   });
+  it('pipes bootstrap JSON by default and preserves ignored stdin for commands without input', () => {
+    const source = readFileSync('scripts/ci/fixtures/private-record-bootstrap-linux.mjs', 'utf8');
+    const helper = source.slice(source.indexOf('const run ='), source.indexOf('const root ='));
+    const script = `const { execFileSync } = require('node:child_process');
+${helper}
+const payload = JSON.stringify({ revision: 'a'.repeat(40), runId: '9001' });
+const reader = [ '-e', "process.stdout.write(require('node:fs').readFileSync(0, 'utf8'))" ];
+if (run(process.execPath, reader, { input: payload }) !== payload) throw new Error('Bootstrap JSON stdin was discarded');
+if (run(process.execPath, reader) !== '') throw new Error('Noninput command must retain ignored stdin');
+if (run(process.execPath, reader, { input: payload, stdio: ['ignore', 'pipe', 'pipe'] }) !== '') throw new Error('Explicit stdio override was lost');`;
+    expect(() => execFileSync(process.execPath, ['-e', script], { stdio: 'pipe' })).not.toThrow();
+  });
   it('does not accept a different repository identity in a verified signing result', async () => {
     const { verifyAttestationIdentity } =
       await import('../../scripts/ci/private-record-gateway-activate.mjs');

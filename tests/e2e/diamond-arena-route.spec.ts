@@ -226,6 +226,11 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       expect(authority.error, 'the actual arena switch read could not be verified').toBeNull();
       expect(seats.error, 'own seat state could not be verified').toBeNull();
       expect(registrations.error, 'own registration state could not be verified').toBeNull();
+      // Fresh browser contexts still restore the account's durable game filter.
+      // This case checks the cash floor, so select its complete catalog first.
+      const all = page.getByRole('tab', { name: 'ALL', exact: true });
+      await all.click();
+      await expect(all).toHaveAttribute('aria-selected', 'true');
       const context = authority.context!;
       const cards = page.getByTestId('lobby-game-row');
       await cards.first().waitFor({ state: 'visible', timeout: 20_000 });
@@ -241,7 +246,7 @@ for (const [orientation, viewport] of ORIENTATIONS) {
           description: 'the lobby read returned no open cash table; no stake ladder is owed',
         });
       } else {
-        expect(await cashCards.count(), 'the arena stake ladder did not render').toBeGreaterThan(0);
+        await expect(cashCards.first(), 'the arena stake ladder did not render').toBeVisible();
       }
       for (const card of await cashCards.all()) {
         const id = await card.getAttribute('data-id');

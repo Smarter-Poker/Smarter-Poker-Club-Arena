@@ -1,3 +1,4 @@
+import { handleGtoV31Reload } from './handlers/gtoV31Reload.js';
 import { handlePlatformControl } from './handlers/platformControl.js';
 import { handleAdminKickOccupancy } from './handlers/admin.js';
 /**
@@ -587,6 +588,13 @@ export function createRouter(
     if (method === 'POST' && url === '/insurance') return handleInsurance(req, res, { gameServer });
     if (method === 'POST' && url === '/showhand') return handleShowhand(req, res, { gameServer });
     if (method === 'POST' && url === '/discard') return handleDiscard(req, res, { gameServer });
+    if ((method === 'POST' || method === 'GET') && url === '/internal/gto-v31/reload') {
+      const local =
+        ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') &&
+        req.headers['x-forwarded-for'] === undefined &&
+        req.headers.forwarded === undefined;
+      return handleGtoV31Reload(req, res, local && verifyInternalKey(req));
+    }
     if (url.split('?')[0] === '/admin/platform-control')
       return handlePlatformControl(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/pause')

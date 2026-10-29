@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import {
   horseSocialFrames,
   horseSocialTableEligible,
@@ -1251,6 +1252,84 @@ async function observeTournamentBoard(
   const hudScope = { tableId: candidate.id, tournamentId: selected.boardFacts?.tournamentId ?? '' };
   if (gameFormat === 'mtt' && !hudScope.tournamentId)
     throw new Error('MTT wire witness requires the qualified tournament identity');
+  // Observe the member-visible persisted row used by the actual table page.
+  // Missing authority fails; unsupported authority must omit Paid, never guess it.
+  const paidAuthority =
+    gameFormat === 'mtt'
+      ? page
+          .waitForResponse(
+            (response) => {
+              const url = new URL(response.url());
+              return (
+                url.pathname.endsWith('/rest/v1/tournaments') &&
+                url.searchParams.get('id') === `eq.${hudScope.tournamentId}` &&
+                (url.searchParams.get('select') || '').includes('payout_structure')
+              );
+            },
+            { timeout: CONNECT_DEADLINE_MS }
+          )
+          .then(async (response) => {
+            if (!response.ok()) throw new Error(`Paid authority HTTP ${response.status()}`);
+            const body = await response.json();
+            const row = Array.isArray(body) ? body[0] : body;
+            if (row?.id !== hudScope.tournamentId)
+              throw new Error('Paid witness requires the exact tournament row');
+            const omitted = (classification: string) => ({
+              expected: null,
+              ladder: row.payout_structure,
+              classification,
+              error: null,
+            });
+            if (row.prize_pool_finalized !== true) return omitted('unfinalized-omission');
+            if (
+              String(row.tournament_type).toUpperCase() === 'SATELLITE' ||
+              row.satellite_target_id
+            )
+              return omitted('satellite-omission');
+            let ladder = row.payout_structure;
+            if (typeof ladder === 'string') {
+              try {
+                ladder = JSON.parse(ladder);
+              } catch {
+                return omitted('invalid-ladder-omission');
+              }
+            }
+            if (!Array.isArray(ladder) || ladder.length === 0)
+              return omitted('invalid-ladder-omission');
+            const positions = new Set<number>();
+            for (const entry of ladder) {
+              if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+                return omitted('invalid-ladder-omission');
+              const scalar = (value: unknown) =>
+                typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')
+                  ? Number(value)
+                  : NaN;
+              const place = scalar(entry?.place);
+              const percent = scalar(entry?.percentage);
+              if (
+                !Number.isInteger(place) ||
+                place < 1 ||
+                place > 2_147_483_647 ||
+                !Number.isFinite(percent) ||
+                percent <= 0 ||
+                !Number.isSafeInteger(Math.round(percent * 100)) ||
+                Math.round(percent * 100) <= 0
+              )
+                return omitted('invalid-ladder-omission');
+              positions.add(place);
+            }
+            const places = [...positions].sort((a, b) => a - b);
+            if (places.some((place, index) => place !== index + 1))
+              return omitted('gapped-ladder-omission');
+            return {
+              expected: places.length,
+              ladder,
+              classification: 'positive-count-witness',
+              error: null,
+            };
+          })
+          .catch((error: unknown) => ({ expected: null, ladder: null, error: String(error) }))
+      : null;
   const hudLevels =
     gameFormat === 'mtt' ? observeEngineHudLevels(page, hudScope, ENGINE_HEALTH_URL) : [];
   const legacyHudLevels = gameFormat === 'mtt' ? observeHudLevels(page) : [];
@@ -1400,6 +1479,45 @@ async function observeTournamentBoard(
           }
         )
         .toBeGreaterThan(0);
+      const paid = await paidAuthority!;
+      expect(paid.error, 'the actual finalized Paid authority could not be verified').toBeNull();
+      const rendered = [];
+      for (const [index, target] of [page, peerPage].entries()) {
+        const dock = target.locator('.tournament-hud-bar');
+        const label = dock.getByText('Paid', { exact: true });
+        if (paid.expected === null) {
+          await expect(label).toHaveCount(0);
+          rendered.push({ context: index, value: null });
+          const imagePath = testInfo.outputPath(`mobile-live-table-paid-context-${index}.png`);
+          await dock.screenshot({ path: imagePath });
+          await testInfo.attach(`mtt-paid-omission-context-${index}`, {
+            path: imagePath,
+            contentType: 'image/png',
+          });
+          continue;
+        }
+        await expect(label).toBeVisible();
+        const segment = label.locator('..');
+        const value = segment.locator('.tournament-dock__value');
+        await expect(value).toHaveText(paid.expected!.toLocaleString('en-US'));
+        // Paid immediately follows Left in the same live information strip.
+        await expect(
+          segment.locator('xpath=preceding-sibling::*[1]').getByText('Left', { exact: true })
+        ).toBeVisible();
+        rendered.push({ context: index, value: await value.innerText() });
+        const imagePath = testInfo.outputPath(`mobile-live-table-paid-context-${index}.png`);
+        await dock.screenshot({ path: imagePath });
+        await testInfo.attach(`mtt-paid-hud-context-${index}`, {
+          path: imagePath,
+          contentType: 'image/png',
+        });
+      }
+      const authorityPath = testInfo.outputPath('mobile-live-table-paid-authority.json');
+      writeFileSync(authorityPath, JSON.stringify({ ...hudScope, ...paid, rendered }, null, 2));
+      await testInfo.attach('mtt-paid-hud-persisted-authority', {
+        path: authorityPath,
+        contentType: 'application/json',
+      });
     }
     await expect
       .poll(() => page.locator('.seat[role="region"]').count(), {

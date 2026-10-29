@@ -446,6 +446,42 @@ export const ClubRosterService = {
     );
   },
 
+  /** Data opens individual records; upline and club matches must not crowd them out. */
+  async getDataPlayerMatches(
+    clubId: string,
+    query: Pick<RosterQuery, 'search' | 'signal'> = {}
+  ): Promise<{ items: RosterMember[] }> {
+    const data = await readMemberRpc(
+      'ca_club_data_player_search',
+      {
+        p_club_id: clubId,
+        p_search: normalizeRosterSearch(query.search),
+        p_limit: 20,
+      },
+      query.signal
+    );
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !('items' in data) ||
+      !Array.isArray(data.items) ||
+      data.items.length > 20 ||
+      !data.items.every(
+        (row: unknown) =>
+          !!row &&
+          typeof row === 'object' &&
+          'user_id' in row &&
+          typeof row.user_id === 'string' &&
+          row.user_id.length > 0 &&
+          'can_view_financials' in row &&
+          row.can_view_financials === true
+      )
+    ) {
+      throw new Error('The Player Search Response Was Incomplete');
+    }
+    return { items: data.items.map((row: Record<string, unknown>) => mapRosterRow(row)) };
+  },
+
   async getRosterPage(clubId: string, query: RosterQuery = {}): Promise<RosterPage> {
     const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     return runRosterReadWithRetry(

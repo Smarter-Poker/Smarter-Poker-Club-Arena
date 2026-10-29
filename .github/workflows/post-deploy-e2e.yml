@@ -1384,8 +1384,9 @@ jobs:
     # The opt-in adds a separate 20m observation plus 2m setup/retention.
     # Two proven natural MTT closures may each require another complete subject:
     # 2 x (390s startup + 15m maximum HUD clock + 60s reserve) = 45m.
-    # Preserve the existing 76/98-minute overhead and optional multirun budget.
-    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && (toJSON(github.event.client_payload.mobile_multirun) == 'true' || toJSON(github.event.client_payload.horse_social) == 'true') && 143 || 121 }}
+    # Preserve the existing 76/98-minute overhead and optional multirun budget,
+    # plus five minutes for the bounded isolated notice proof (cleanup unchanged).
+    timeout-minutes: ${{ github.event_name == 'repository_dispatch' && (toJSON(github.event.client_payload.mobile_multirun) == 'true' || toJSON(github.event.client_payload.horse_social) == 'true') && 148 || 126 }}
     permissions:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary
@@ -1734,6 +1735,30 @@ jobs:
           --project=webkit-live-table-realtime --reporter=line,json --workers=1 --retries=0
           --output=test-results/live-table-realtime
 
+      # The move notice is presentation-only. Exercise the actual served
+      # consumer in this lane's reserved spectator browser, without moving
+      # a production seat or waiting for the unrelated staff-page sweep.
+      - name: Verify seat-move notices in the served spectator browser
+        id: seat_move_notice
+        if: "!cancelled() && steps.live.outputs.ready == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
+        # 150s case plus authentication/membership setup and report headroom.
+        timeout-minutes: 5
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          E2E_CLUB_ID: 002c2d27-9584-4e52-835a-bb2be148fc81
+          E2E_UNION_CLUB_ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/seat-move-announcement.json
+        run: |
+          set -euo pipefail
+          npx playwright test tests/e2e/production-seat-move-announcement.spec.ts \
+            --project=chromium --reporter=line,json --workers=1 --retries=0 \
+            --output=test-results/seat-move-announcement
+          node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/seat-move-announcement.json
+
       - name: Observe natural horse chat, reactions and throwables
         id: horse_social
         if: "!cancelled() && github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
@@ -1869,6 +1894,7 @@ jobs:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
           RUNTIME_RESUMED: ${{ steps.gameplay.outputs.resumed }}
           LIVE_COVERAGE_COMPLETE: ${{ steps.live_coverage.outputs.complete }}
+          SEAT_MOVE_NOTICE_OUTCOME: ${{ steps.seat_move_notice.outcome }}
           HORSE_SOCIAL_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' }}
           HORSE_SOCIAL_OUTCOME: ${{ steps.horse_social.outcome }}
           MULTIRUN_REQUESTED: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' }}
@@ -1876,6 +1902,10 @@ jobs:
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
+          if [ "${SEAT_MOVE_NOTICE_OUTCOME:-}" != 'success' ]; then
+            echo "NON-VERDICT: the served seat-move notice did not pass its isolated browser proof." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "${HORSE_SOCIAL_REQUESTED:-false}" = 'true' ] && [ "${HORSE_SOCIAL_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural horse social observation did not pass." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -1932,7 +1962,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mobile-live-table-proof
-          path: test-results/live-table-realtime/**/mobile-live-table-*
+          path: |
+            test-results/live-table-realtime/**/mobile-live-table-*
+            test-results/seat-move-announcement/**/mobile-live-table-*
           if-no-files-found: ignore
           retention-days: 3
 

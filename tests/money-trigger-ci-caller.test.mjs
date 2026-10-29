@@ -254,7 +254,23 @@ for(const repo of ['Smarter-Poker/Smarter-Poker-Club-Arena','Smarter-Software-PI
 for(const repo of ['evil/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/evil','smarter-software-piq/Smarter-Poker-Club-Arena'])test('same ID cannot authorize an unapproved full name '+repo,()=>assert.equal(isClubArenaRepository(repo,'1132369872'),false));
 
 const approvedPaidRoute = /^\$\{\{ github\.repository_owner == 'Smarter-Software-PIQ' && github\.repository_id == '1132369872' && 'ca-linux-(?:[48]core|delivery)' \|\| 'ubuntu-(?:latest|24\.04)' \}\}$/;
-test('paid runners are limited to the transferred immutable repository and preserve hosted fallback',()=>{for(const file of ['ci.yml','publish-club-arena.yml','component-fixture-native-smoke.yml']){const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');const routes=[...text.matchAll(/^    runs-on: (.+)$/gm)].map(x=>x[1]);assert.ok(routes.length);for(const route of routes)assert.match(route,approvedPaidRoute)}});
+test('warm client routes are exact while paid financial runners keep the immutable repository guard',()=>{
+  const warm={
+    'ci.yml':new Set(['changes','source_windows','stub_gate','typecheck','typecheck_compile','unit_shards','unit','server','verdict','build','css-beats-e2e','diamond-playfield-e2e','css-beats-gate']),
+    'publish-club-arena.yml':new Set(['publish-needed','client-tests','build-and-store']),
+    'component-fixture-native-smoke.yml':new Set(),
+  };
+  for(const [file,expected] of Object.entries(warm)){
+    const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');let job;const seen=new Set();let count=0;
+    for(const line of text.split('\n')){
+      const key=/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/.exec(line);if(key)job=key[1];
+      const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
+      if(expected.has(job)){assert.equal(route[1],'ubuntu-latest',job);seen.add(job)}
+      else assert.match(route[1],approvedPaidRoute,job);
+    }
+    assert.ok(count);assert.deepEqual([...seen].sort(),[...expected].sort());
+  }
+});
 test('delivery pool admission rejects foreign owners, IDs and arbitrary runner labels',()=>{
   const route="${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
   assert.match(route,approvedPaidRoute);

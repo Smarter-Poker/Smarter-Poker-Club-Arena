@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252956,
-      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+      "bytes": 251240,
+      "sha256": "bb2a86fdd5bbe09e8ed994e8178cafcfd4c68623dfc18c4ddfd2a8b5bb84cd00"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1108,5 +1108,17 @@
       "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
+  },
+  "warmClientRunnerAdmissionSourceAudit20261029": {
+    "scope": "Source identity only: client CI and publication preparation use standard warm GitHub-hosted runner admission; bounded Vitest workers preserve existing test and financial requirements.",
+    "previousCiPin": {
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+    },
+    "currentCiPin": {
+      "bytes": 251240,
+      "sha256": "bb2a86fdd5bbe09e8ed994e8178cafcfd4c68623dfc18c4ddfd2a8b5bb84cd00"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
   }
 }

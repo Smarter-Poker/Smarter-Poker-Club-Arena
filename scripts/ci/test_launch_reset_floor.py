@@ -203,6 +203,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The original standalone weekly bank is funding once, with its native mint lineage.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-standalone-weekly-statement-funding-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 
+# The fee fingerprint serializes its unchanged economic object once; native
+# semantic, admission ABI and atomic installer faults remain in this required floor.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-fee-fingerprint-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-fee-fingerprint.json"))], text=True))
+
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 

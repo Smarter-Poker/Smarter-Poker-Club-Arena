@@ -1,0 +1,26 @@
+{
+  "migration": "supabase/migrations/20261029074755_weekly_tournament_fee_fingerprint_serializes_its_economic_fi.sql",
+  "before_full_md5": "dd55cceba87b1578472171e1c80ba1fb",
+  "after_full_md5": "89523554d8b64da3e73f8d82f9f9acbd",
+  "migration_sha256": "25f5a304610d270f597bf9be771ffcba9d183c191d79c42e777cf75b8651b52f",
+  "economic_keys": [
+    "id",
+    "hand_id",
+    "table_id",
+    "club_id",
+    "rake_amount",
+    "bbj_contribution",
+    "pot_size",
+    "num_players",
+    "created_at",
+    "player_contributions",
+    "global_hand_id",
+    "is_tournament",
+    "tournament_id",
+    "source",
+    "metadata",
+    "rake_method",
+    "returned_uncalled"
+  ],
+  "source65_generation": "original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20"
+}

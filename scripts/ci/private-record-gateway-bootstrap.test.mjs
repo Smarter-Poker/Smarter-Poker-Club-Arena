@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { gatewayMachineIdSha256 } from './private-record-gateway-host-identity.mjs';
 import { validateBootstrap, installBootstrap } from './private-record-gateway-bootstrap.mjs';
 const input = () => ({
@@ -173,4 +174,10 @@ test('bootstrap and activation use one normalized actual machine-id identity', (
       /gatewayMachineIdSha256\((?:regular|readFileSync)\('\/etc\/machine-id'\)\)/
     );
   }
+});
+
+test('reviewed preimage binds exact independently observed origin bytes', () => {
+  const bytes = readFileSync(new URL('../../infra/ca-origin/private-record-gateway.caddy-preimage', import.meta.url));
+  assert.equal(bytes.length, 4880);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), 'cbf77db44f27c7d3640362be6e8271218a85ec3ba808973b89930515f2931d79');
 });

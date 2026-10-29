@@ -372,6 +372,50 @@ afterEach(() => {
 });
 
 describe('authoritative horse action effect commit', () => {
+  it.each(['dispatch', 'accepted-effects'] as const)(
+    'finalizes a returned witness when the authoritative timer executor throws at %s',
+    async (failureAt) => {
+      const { createHorseExecutionWitness, onHorseExecutionFinalized } =
+        await import('./HorseExecutionWitness.js');
+      const { engine, player, enginePlayer, state, performAction } = harness(true);
+      const finalized = vi.fn();
+      let witness!: import('./HorseExecutionWitness.js').HorseExecutionWitness;
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot) => {
+        const result = await decisionWorker.defaultDecideFast(snapshot);
+        witness = createHorseExecutionWitness(snapshot, result.decision, {
+          requestId: result.requestId,
+          lane: 'fast',
+          computeMs: 1,
+          governorScale: 1,
+        });
+        result.decision.executionWitness = witness;
+        onHorseExecutionFinalized(witness, finalized);
+        return result;
+      });
+      const failure = Error('injected synchronous dispatch admission failure');
+      if (failureAt === 'dispatch')
+        decisionWorker.worker.runWithDispatchBarrier.mockImplementationOnce(() => {
+          throw failure;
+        });
+      else
+        decisionWorker.commitDecisionEffects.mockImplementationOnce(() => {
+          throw failure;
+        });
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await expect(vi.advanceTimersByTimeAsync(2000)).rejects.toBe(failure);
+      if (failureAt === 'dispatch') {
+        expect(performAction).not.toHaveBeenCalled();
+        expect(witness.executionStatus).toBe('not_executed');
+      } else {
+        expect(performAction).toHaveBeenCalledTimes(1);
+        expect(witness.executionStatus).toBe('intended');
+        expect(witness.acceptedActions).toHaveLength(1);
+        expect(witness.executedAction).toBe('bet');
+      }
+      expect(finalized).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('defers a client-to-horse handoff until the retained clock resumes', async () => {
     vi.setSystemTime(100000);
     const { engine, player, performAction } = harness(true);

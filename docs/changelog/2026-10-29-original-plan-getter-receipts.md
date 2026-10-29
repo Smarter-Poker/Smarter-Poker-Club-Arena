@@ -1,0 +1,9 @@
+# Original plan getter consultation receipts
+
+The private decision journal now retains which of the three existing barrel, outlook and raise-response getters was actually consulted and the exact closed return code. Undefined, false and not-consulted are distinct. One optional collector belongs to each FAST or DEEP chooser; it never performs an additional getter, writes plan state, consumes RNG or changes policy/effects/IPC. Getter failures retain the existing brain-exception path and refuse diagnostic credit.
+
+The five-field receipt is bounded to1024bytes and binds the original request and read-frame hashes. Its validator checks original canonical request, observer and allocated hand, then compares returned codes with the validated original frame projection. It exports no raw plan keys/maps/cards. Supported evidence is single-board postflop NLH/PLO4/PLO5/PLO6/PLO8; other domains, absent old receipts and refused diagnostics do not prove consultation. A getter hit is not final-action causality or EV proof.
+
+Focused regression uses the actual chooser and original frames, the actual worker/journal path, and an isolated actual HandController acceptance followed by worker effect commit and a later original getter read. The old protected chooser/worker fails the new consultation and journal regressions. Five-variant equivalence pins actions, captured effects and RNG while ignoring only elapsed-time diagnostic fields. This source change activates no strategy and does not certify live fleet coverage; the separately owned census consumer and natural post-adoption evidence remain required.
+
+The canonical request codec is now hashed through the reference source closure. Its obsolete Phase13 exclusion was removed while retaining the import-traversal boundary and all exclusive-coverage assertions. The normal pre-push regression exposed that registry overlap; the focused digest contracts qualify the correction.

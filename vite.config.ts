@@ -255,6 +255,16 @@ export default defineConfig({
       // The application build keeps Vite's single default input, index.html.
       // The standalone test entry is its own pass; see TEST_ENTRY above.
       ...(TEST_ENTRY ? { input: path.resolve(__dirname, 'diamond-test.html') } : {}),
+      // This isolated Rabbit Hunt entry is only in the existing throwaway
+      // financial harness build. The production publisher never sets its flag.
+      ...(!TEST_ENTRY && process.env.VITE_FINANCIAL_DECISION_TEST_HARNESS === 'true'
+        ? {
+            input: [
+              path.resolve(__dirname, 'index.html'),
+              path.resolve(__dirname, 'tests/browser/fixtures/rabbit-flow/index.html'),
+            ],
+          }
+        : {}),
       // Rollup defaults to 1000 concurrent file operations. Our intended
       // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
       // This is a Rollup input option, so it belongs inside rollupOptions.

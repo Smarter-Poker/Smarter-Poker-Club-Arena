@@ -656,6 +656,7 @@ export abstract class TournamentManagerBase {
     const selected = tableIds.map((tableId) => {
       const engine = originals.get(tableId);
       let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      let physicalIdentityRefusal: string | null = 'unavailable';
       let claimedBoundary: boolean | null = null;
       let retainedPermit: Readonly<{
         status: 'retained' | 'none' | 'unavailable';
@@ -666,6 +667,14 @@ export abstract class TournamentManagerBase {
           snapshot = engine.getLifecycleDiagnosticSnapshot();
         } catch {
           /* unknown */
+        }
+        try {
+          const generation = this.tournamentLeaseGeneration;
+          physicalIdentityRefusal = generation
+            ? engine.drainedF06IdentityRefusal(tableId, this.tournamentId, generation)
+            : 'lease_generation_unknown';
+        } catch {
+          /* unknown remains unavailable; no physical proof is synthesized */
         }
         // These existing getters inspect only this exact local original.
         // Never invoke an authority check, RPC, recovery or release here.
@@ -697,6 +706,7 @@ export abstract class TournamentManagerBase {
         tableId,
         availability: snapshot ? ('observed' as const) : ('unavailable' as const),
         engine: snapshot,
+        physicalIdentityRefusal,
         movement: Object.freeze({ claimedBoundary, retainedPermit }),
         session: null,
         sessionCoverage: 'unavailable_on_selected_base' as const,

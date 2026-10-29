@@ -310,6 +310,7 @@ export abstract class ServerTableEngineBase {
   }
 
   protected handContinuation: HandContinuationLane | null = null;
+  private retainedCompletionBankConsumer: ((event: TimeBankEvent) => void) | null = null;
   protected pendingOriginalContinuation: PrivateHandContinuation | null = null;
   protected retainedPreparedOriginalController: HandController | null = null;
   private preparedOriginalRetentionUnconfirmed = false;
@@ -1400,39 +1401,48 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /** The exact positive-proof predicate, shared with read-only refusal diagnostics. */
+  drainedF06IdentityRefusal(tableId: string, tournamentId: string, generation: string) {
+    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
+    if (!lifecycle) return 'lifecycle_missing' as const;
+    if (!/^[1-9][0-9]{0,18}$/.test(lifecycle)) return 'lifecycle_invalid' as const;
+    if (!this.terminalTeardownComplete) return 'teardown_incomplete' as const;
+    if (!this.terminal) return 'not_terminal' as const;
+    if (this.running) return 'running' as const;
+    if (this.tableId !== tableId) return 'table_id_mismatch' as const;
+    if (ServerTableEngineBase.liveEngines.has(tableId)) return 'live_engine_registered' as const;
+    if (this.dealingLoopPromise !== null) return 'dealing_loop_pending' as const;
+    if (this.settlementInFlight.size !== 0) return 'settlement_pending' as const;
+    if (this.postHandTasksPromise !== null) return 'post_hand_tasks_pending' as const;
+    if (this.tournamentMoveOperations.size !== 0) return 'tournament_move_pending' as const;
+    if (this.tournamentMoveOperationByOwner.size !== 0)
+      return 'tournament_move_owner_pending' as const;
+    if (this.readContinuationTasks.size !== 0) return 'read_continuation_pending' as const;
+    if (this.snapshotFlushPromise !== null) return 'snapshot_flush_pending' as const;
+    if (this.handController !== null) return 'hand_controller_retained' as const;
+    if (this.terminalBoundaryPendingGenerations.size !== 0)
+      return 'terminal_boundary_pending' as const;
+    if (this.f06RecoveryInFlight) return 'recovery_pending' as const;
+    if (this.presenceSavePending !== 0) return 'presence_save_pending' as const;
+    if (this.timeBankAccountingPending.size !== 0) return 'time_bank_accounting_pending' as const;
+    if (this.entryHoldWriteChains.size !== 0) return 'entry_hold_write_pending' as const;
+    if (this.timeBankAccountingUnconfirmed) return 'time_bank_accounting_unconfirmed' as const;
+    if (this.timeBankEngine.hasPlayerBanksForTable(tableId))
+      return 'live_time_banks_retained' as const;
+    if (Object.keys(this.disconnectEngine.getFsmStatesForTable(tableId)).length !== 0)
+      return 'disconnect_states_retained' as const;
+    if (this.engineLeaseScope !== 'tournament') return 'lease_scope_mismatch' as const;
+    if (!this.engineLeaseVerified) return 'lease_unverified' as const;
+    if (this.engineLeaseTournamentId !== tournamentId) return 'tournament_id_mismatch' as const;
+    if (this.engineLeaseGeneration !== generation) return 'generation_mismatch' as const;
+    if (!this.f06PreparationDrained()) return 'hand_preparation_pending' as const;
+    return null;
+  }
+
   /** Positive physical custody proof. It grants no lease or hand outcome. */
   captureDrainedF06Identity(tableId: string, tournamentId: string, generation: string) {
-    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
-    if (!lifecycle || !/^[1-9][0-9]{0,18}$/.test(lifecycle)) return null;
-    if (
-      !this.terminalTeardownComplete ||
-      !this.terminal ||
-      this.running ||
-      this.tableId !== tableId ||
-      ServerTableEngineBase.liveEngines.has(tableId) ||
-      this.dealingLoopPromise !== null ||
-      this.settlementInFlight.size !== 0 ||
-      this.postHandTasksPromise !== null ||
-      this.tournamentMoveOperations.size !== 0 ||
-      this.tournamentMoveOperationByOwner.size !== 0 ||
-      this.readContinuationTasks.size !== 0 ||
-      this.snapshotFlushPromise !== null ||
-      this.handController !== null ||
-      this.terminalBoundaryPendingGenerations.size !== 0 ||
-      this.f06RecoveryInFlight ||
-      this.presenceSavePending !== 0 ||
-      this.timeBankAccountingPending.size !== 0 ||
-      this.entryHoldWriteChains.size !== 0 ||
-      this.timeBankAccountingUnconfirmed ||
-      this.timeBankEngine.hasPlayerBanksForTable(tableId) ||
-      Object.keys(this.disconnectEngine.getFsmStatesForTable(tableId)).length !== 0 ||
-      this.engineLeaseScope !== 'tournament' ||
-      !this.engineLeaseVerified ||
-      this.engineLeaseTournamentId !== tournamentId ||
-      this.engineLeaseGeneration !== generation ||
-      !this.f06PreparationDrained()
-    )
-      return null;
+    if (this.drainedF06IdentityRefusal(tableId, tournamentId, generation) !== null) return null;
+    const lifecycle = (this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle)!;
     return Object.freeze({
       table_id: tableId,
       engine_id: this.lifecycleDiagnostics.instanceId,
@@ -3249,6 +3259,10 @@ export abstract class ServerTableEngineBase {
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
+      if (this.retainedCompletionBankConsumer) {
+        this.retainedCompletionBankConsumer(event);
+        return;
+      }
       if (this.handContinuation)
         this.handContinuation.enqueue({
           type: 'CONTINUATION_TIME_BANK',
@@ -9410,6 +9424,43 @@ export abstract class ServerTableEngineBase {
     } catch {
       /* broadcast failure is non-fatal */
     }
+  }
+
+  /** A terminal bank stop is a deterministic consumer of the retained completion. */
+  protected async consumeRetainedCompletionTimeBanks(
+    receiptId: (userId: string) => string
+  ): Promise<void> {
+    if (this.retainedCompletionBankConsumer) throw new Error('Original Completion Is Reentrant');
+    const childReceipts = new Set<string>();
+    let failure: unknown;
+    this.retainedCompletionBankConsumer = (event) => {
+      try {
+        if (event.type !== 'TIME_BANK_STOPPED' || event.tableId !== this.tableId)
+          throw new Error('Original Completion Bank Event Is Unproven');
+        const id = receiptId(event.playerId);
+        childReceipts.add(id);
+        this.dispatchContinuationTimeBank(event, id);
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+    };
+    try {
+      // No await in this scope: all other bank mutations retain their existing
+      // lane. The saved terminal event and bank allocation already own this stop.
+      this.timeBankEngine.cancelActiveForTable(this.tableId);
+      if (failure) throw failure;
+    } finally {
+      this.retainedCompletionBankConsumer = null;
+    }
+    // Acceptance deletes the private original. Its deterministic child debit
+    // must have an answer first, so a crash can never lose its only replay source.
+    await Promise.all(this.timeBankAccountingPending);
+    if (
+      this.timeBankAccountingUnconfirmed ||
+      [...childReceipts].some((id) => this.unresolvedTimeBankDebits.has(id))
+    )
+      throw new Error('Completion Bank Debit Is Unproven');
   }
 
   protected dispatchContinuationTimeBank(event: TimeBankEvent, debitId?: string): void {

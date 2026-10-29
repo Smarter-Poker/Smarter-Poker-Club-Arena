@@ -1,0 +1,9 @@
+# Terminal time-bank stops belong to the retained hand completion
+
+A continuation could fail after its hand had already committed: `HAND_COMPLETE` settlement cancels an active bank, whose `TIME_BANK_STOPPED` callback queued another original-hand batch. That later retain correctly refused the accepted permit with `HAND_CONTINUATION_ORIGINAL_UNPROVEN`, and the table failure could hand the whole tournament to a successor manager.
+
+Consume this deterministic stop inside its already-retained completion event, before its financial consumer. Its receipt identity includes the original parent event and player-specific child namespace, so fresh and recovered terminal batches use the same idempotent debit. Existing ordinary event identities stay unchanged. End the synchronous callback scope before waiting for the debit's existing receipt; an unknown outcome retains the original and cannot precede hand acceptance. Recheck exact controller/lifecycle authority after that wait. The settlement's existing cancellation remains idempotent defense.
+
+The real controller, bank and continuation lane reproduced the late retain on both fresh and recovered originals before this change. Focused coverage also checks delayed/unknown debit answers, owner loss while waiting, and reconstruction from the actual saved bank/accounting capture after an applied debit loses its answer: one charge, one settlement and no reopened original. No database guard is weakened and no new retry, payer or repair worker is added.
+
+Live incident evidence for table `48a32eb0` and hand `51827177` shows atomic acceptance at 15:19:37.853342 UTC followed by a SQL original-unproven refusal and exact-table retain failure. The accepted capsule was already removed, so the historical bank state cannot be recovered; that limit is distinct from the deterministic source reproduction. Protected merge, actual engine adoption and affected live MTT proof remain required.

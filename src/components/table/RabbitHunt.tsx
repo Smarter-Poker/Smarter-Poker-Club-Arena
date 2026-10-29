@@ -56,6 +56,7 @@ export interface RabbitHuntRevealResult {
   success: boolean;
   cards?: Card[];
   error?: string;
+  retryable?: boolean;
   source?: string;
   diamondsSpent?: number;
   /** VIP monthly hunts left AFTER this one. Server-counted; null for non-VIP. */
@@ -145,6 +146,7 @@ export function RabbitHunt({
   const {
     reveal,
     isRevealing,
+    isSlow,
     hasRevealed,
     vipRemaining,
     packRemaining,
@@ -321,7 +323,9 @@ export function RabbitHunt({
           aria-busy={isRevealing}
           aria-label={
             isRevealing
-              ? 'Revealing Rabbit Hunt'
+              ? isSlow
+                ? 'Still Connecting To Rabbit Hunt'
+                : 'Revealing Rabbit Hunt'
               : visibleIsLifetime
                 ? 'Rabbit Hunt, Unlimited With Lifetime VIP'
                 : visibleIsVIP && typeof visibleVipRemaining === 'number' && visibleVipRemaining > 0
@@ -375,6 +379,11 @@ export function RabbitHunt({
         </button>
       )}
 
+      {isSlow && (
+        <span className="rabbit-hunt__status" role="status">
+          Still Connecting...
+        </span>
+      )}
       {/* Cards are now rendered natively on the CommunityCards board */}
     </div>
   );

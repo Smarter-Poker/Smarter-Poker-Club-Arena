@@ -256,7 +256,11 @@ describe('LAW 5 - the client answers 4426 with new bytes', () => {
 
   it('there is exactly one hardReload in the app', () => {
     const util = readFileSync(join(ROOT, 'src', 'utils', 'lazyWithRetry.ts'), 'utf8');
-    expect(util).toContain('export async function hardReload()');
+    // Count the shared export, allowing its optional recovery-decline callback.
+    // Parameter spelling does not change the one-reloader protocol contract.
+    expect(
+      blankNonCode(util).match(/export\s+async\s+function\s+hardReload\s*\(/g) ?? []
+    ).toHaveLength(1);
     // It purges what a plain reload would re-serve.
     expect(util).toContain('serviceWorker');
     expect(util).toContain('caches.delete');

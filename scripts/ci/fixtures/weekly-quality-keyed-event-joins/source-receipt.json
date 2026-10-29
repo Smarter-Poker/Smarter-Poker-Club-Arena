@@ -1,0 +1,51 @@
+{
+  "before_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
+  "expected_after_full_md5": "7d0db29d08fa7a97fd2bd326ad137eed",
+  "expected_after_body_md5": "444c3e7b0b06d87e52421255b4c2ac07",
+  "replacement": {
+    "old": "    FROM candidates c LEFT JOIN public.accounting_tournament_fee_recognitions r USING(tournament_id)\n     LEFT JOIN public.tournament_rake_settlements b ON b.tournament_id=c.tournament_id",
+    "new": "    FROM candidates c LEFT JOIN LATERAL (\n     SELECT r.recognized_at,r.status,r.net_rake,r.union_id,r.bank_club_id,r.source_fingerprint\n     FROM public.accounting_tournament_fee_recognitions r\n     WHERE r.tournament_id=c.tournament_id OFFSET 0\n    ) r ON true\n     LEFT JOIN LATERAL (\n      SELECT b.settled_at,b.amount,b.union_id,b.club_id\n      FROM public.tournament_rake_settlements b\n      WHERE b.tournament_id=c.tournament_id OFFSET 0\n     ) b ON true"
+  },
+  "migration_file": "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql",
+  "native_installer": {
+    "version": "20261028235752",
+    "before_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
+    "post_full_md5": "7d0db29d08fa7a97fd2bd326ad137eed",
+    "post_body_md5": "444c3e7b0b06d87e52421255b4c2ac07"
+  },
+  "actual_source": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/DSS185823-a4a-ACTUAL-INSTALLED-readonly15-root.log",
+  "actual_source_sha256": "b6ca80ec015b79e9704c6fd663223ca1d979043f974c96c669f078a6971e5f1b",
+  "actual_metadata": {
+    "oid": "34785647",
+    "proacl": ["postgres=X/postgres"],
+    "probin": null,
+    "procost": 100,
+    "prokind": "f",
+    "prolang": "13573",
+    "proname": "fn_accounting_tournament_week_quality",
+    "prorows": 0,
+    "pronargs": 3,
+    "proowner": "16384",
+    "proconfig": ["search_path=public"],
+    "proretset": false,
+    "prosecdef": true,
+    "prorettype": "3802",
+    "prosqlbody": null,
+    "prosupport": "-",
+    "proargmodes": null,
+    "proargnames": ["p_club_id", "p_from", "p_to"],
+    "proargtypes": ["2950", "1184", "1184"],
+    "proisstrict": false,
+    "proparallel": "u",
+    "protrftypes": null,
+    "provariadic": "0",
+    "provolatile": "s",
+    "proleakproof": false,
+    "pronamespace": "2200",
+    "proallargtypes": null,
+    "proargdefaults": null,
+    "pronargdefaults": 0
+  },
+  "source_only": true,
+  "installed": false
+}

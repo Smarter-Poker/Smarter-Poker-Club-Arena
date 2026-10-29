@@ -14,12 +14,13 @@ def need(v,message):
  if not v:raise AssertionError(message)
 def lit(s):return "'"+s.replace("'","''")+"'"
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--candidate',type=Path,default=REPO/'supabase/migrations/20261028000434_weekly_statement_quality_reads_original_receipt_bags_once.sql');ap.add_argument('--followup-candidate',type=Path);ap.add_argument('--rr-membership-candidate',type=Path);ap.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin')));ap.add_argument('--scratch',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);a=ap.parse_args()
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--keyed-event-candidate',type=Path);ap.add_argument('--candidate',type=Path,default=REPO/'supabase/migrations/20261028000434_weekly_statement_quality_reads_original_receipt_bags_once.sql');ap.add_argument('--followup-candidate',type=Path);ap.add_argument('--rr-membership-candidate',type=Path);ap.add_argument('--pg-bin',type=Path,default=Path(os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin')));ap.add_argument('--scratch',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);a=ap.parse_args()
  need(__debug__,'optimized assertions refused');need(a.scratch.is_dir(),'existing owned scratch required');need(not a.output.exists(),'new output required')
  source_fx=HERE/'fixtures/weekly-quality-typed-source-maps'
- before=(source_fx/'quality-before.sql').read_text().rstrip().rstrip(';')+'\n';after=(source_fx/'quality-after.sql').read_text().rstrip().rstrip(';')+'\n';receipt=json.loads((source_fx/'source-receipt.json').read_text())
+ body_fx=(HERE/'fixtures/weekly-quality-keyed-event-joins')if a.keyed_event_candidate else source_fx
+ before=(body_fx/'quality-before.sql').read_text().rstrip().rstrip(';')+'\n';after=(body_fx/'quality-after.sql').read_text().rstrip().rstrip(';')+'\n';receipt=json.loads((body_fx/'source-receipt.json').read_text())
  old_hash=receipt['before_full_md5']
- candidate=a.rr_membership_candidate or a.followup_candidate or a.candidate
+ candidate=a.keyed_event_candidate or a.rr_membership_candidate or a.followup_candidate or a.candidate
  need(hashlib.md5(before.rstrip().rstrip(';').encode()+b'\n').hexdigest()==old_hash,'actual full preimage changed');need(before.replace(receipt['replacement']['old'],receipt['replacement']['new'],1)==after,'only the reviewed complete quality function may change')
  root=Path(tempfile.mkdtemp(prefix='qbj-',dir=a.scratch.resolve()));need(len(str(root).encode())<90,'owned UNIX socket path too long');data=root/'d';started=False;cases=[];plans={};env={k:v for k,v in os.environ.items()if not k.startswith('PG')};env.update(TMPDIR=str(root),TMP=str(root),TEMP=str(root),LC_ALL='C')
  cmd=[a.pg_bin/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose','-h',root,'-U','postgres','-d','postgres']
@@ -111,7 +112,8 @@ def main():
    if holder.poll()is None:holder.kill();holder.communicate(timeout=3)
    if reader is not None and reader.poll()is None:reader.kill();reader.communicate(timeout=3)
   if a.rr_membership_candidate:qualify_rr_membership_bags(q,before,after,rec)
-  plans=qualify_plan(q,before,after,rec,bank_changed=False)
+  if a.keyed_event_candidate:qualify_keyed_event_bags(q,before,after,rec)
+  plans=qualify_plan(q,before,after,rec,bank_changed=False,keyed_event=bool(a.keyed_event_candidate))
   if a.followup_candidate:
    q('SELECT fixture.reset();SELECT fixture.event(1000+n) FROM generate_series(1,5000)n;ANALYZE;')
    for i in range(7):
@@ -241,7 +243,22 @@ def qualify_rr_membership_bags(q,before,after,rec):
   if name in('duplicate','mixed_NULL_duplicate'):need(len(json.loads(new))>=2,'nonempty duplicate membership proof vacuous')
   rec('original_rr_all_fields_NULL_duplicate_empty_foreign_semijoin_bag_'+name)
 
-def qualify_plan(q,before,after,rec,bank_changed=True):
+def qualify_keyed_event_bags(q,before,after,rec):
+ def ev(source):
+  start=source.index('ev AS (');end=source.index('  ), scoped AS (',start)
+  return(source[start:end]+'  )').replace('public.accounting_tournament_fee_recognitions','recognitions').replace('public.tournament_rake_settlements','banks')
+ # Independent raw bags include duplicate keys and nullable projected fields.
+ r="recognitions(tournament_id,recognized_at,status,net_rake,union_id,bank_club_id,source_fingerprint)AS(VALUES(fixture.u(100),'2026-10-06'::timestamptz,'recognized',1::numeric,NULL::uuid,NULL::uuid,'a'),(fixture.u(100),NULL::timestamptz,NULL,NULL::numeric,NULL::uuid,NULL::uuid,NULL),(NULL::uuid,NULL::timestamptz,NULL,NULL::numeric,NULL::uuid,NULL::uuid,NULL))"
+ b="banks(tournament_id,settled_at,amount,union_id,club_id)AS(VALUES(fixture.u(100),'2026-10-06'::timestamptz,1::numeric,NULL::uuid,NULL::uuid),(fixture.u(100),NULL::timestamptz,NULL::numeric,NULL::uuid,NULL::uuid),(NULL::uuid,NULL::timestamptz,NULL::numeric,NULL::uuid,NULL::uuid))"
+ for name,keys,want in [('empty',[],0),('NULL',['NULL::uuid'],1),('duplicate',['fixture.u(100)','fixture.u(100)'],8),('missing',['fixture.u(999)'],1),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(999)'],6)]:
+  c='SELECT NULL::uuid tournament_id WHERE false'if not keys else'SELECT tournament_id FROM(VALUES'+','.join('('+v+')'for v in keys)+')v(tournament_id)'
+  values=[]
+  for source in[before,after]:
+   values.append(json.loads(q('WITH candidates AS('+c+'),'+r+','+b+','+ev(source)+"SELECT coalesce(jsonb_agg(to_jsonb(z)ORDER BY to_jsonb(z)::text),'[]')FROM ev z")))
+  need(values[0]==values[1]and len(values[1])==want,'event original full raw bag/null/multiplicity differs:'+name)
+  rec('event_recognition_bank_full_bag_'+name)
+
+def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
  q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
  def query(source):
   start=source.index('  WITH candidates_all AS (');end=source.index('\n LOOP',start);sql=source[start:end]
@@ -270,9 +287,28 @@ def qualify_plan(q,before,after,rec,bank_changed=True):
  oldbank=[n for n in nodes(plans['before']['Plan'])if n.get('Relation Name')=='tournament_rake_settlements'];newbank=[n for n in nodes(plans['after']['Plan'])if n.get('Relation Name')=='tournament_rake_settlements']
  if bank_changed:need(any(n.get('Actual Loops',0)>=5000 for n in oldbank),'old forced bank loop was not reproduced')
  else:need(oldbank and all(n.get('Actual Loops',0)==1 for n in oldbank),'installed direct bank owner changed')
- need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'direct bank bulk access was not proven')
- need(any(n['Node Type']in('Hash Join','Merge Join')for n in nodes(plans['after']['Plan'])),'direct bank query has no bulk join')
- rec('authentic_for_query_5000_full_rows_equal_bank_loops_5000_to_1' if bank_changed else 'authentic_for_query_5000_full_rows_equal_direct_bank_retained')
+ if keyed_event:
+  # The original direct join can merge a global bank history. Exact event-key
+  # probes must instead stay bounded for both default and prepared plans.
+  for table in ['tournament_rake_settlements','accounting_tournament_fee_recognitions']:
+   accesses=[n for n in nodes(plans['after']['Plan'])if n.get('Relation Name')==table and 'tournament_id ='in n.get('Index Cond','')]
+   need(accesses and all(n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index' in n['Node Type']for n in accesses),'event-key lookup not bounded:'+table+':'+str(accesses))
+  rec('actual_5000_event_recognition_and_bank_key_probes_bounded')
+  sql=query(after)
+  # Parameters match the real STABLE function inputs; no planner enable flags.
+  import re
+  prepared=sql.replace("'2026-10-05 07:00Z'::timestamptz",'$1').replace("'2026-10-12 07:00Z'::timestamptz",'$2').replace('fixture.u(1)','$3').replace('fixture.u(10)','$4')
+  prepare='PREPARE native_keyed_events(timestamptz,timestamptz,uuid,uuid)AS '+prepared+';'
+  for mode in ['force_custom_plan','force_generic_plan']:
+   plan=json.loads(q('SET plan_cache_mode='+mode+';'+prepare+"EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON,TIMING OFF)EXECUTE native_keyed_events('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10))"))[0];plans[mode]=plan
+   for table in ['tournament_rake_settlements','accounting_tournament_fee_recognitions']:
+    accesses=[n for n in nodes(plan['Plan'])if n.get('Relation Name')==table and 'tournament_id ='in n.get('Index Cond','')]
+    need(accesses and all(n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index'in n['Node Type']for n in accesses),'prepared keyed access not bounded:'+mode+':'+table)
+   rec('actual_full_FOR_event_key_probes_'+mode)
+ else:
+  need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'direct bank bulk access was not proven')
+  need(any(n['Node Type']in('Hash Join','Merge Join')for n in nodes(plans['after']['Plan'])),'direct bank query has no bulk join')
+  rec('authentic_for_query_5000_full_rows_equal_bank_loops_5000_to_1' if bank_changed else 'authentic_for_query_5000_full_rows_equal_direct_bank_retained')
  # Real full bodies answer the same independently known large cancelled book.
  old=json.loads(q("SELECT fixture.quality_before(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z')"));new=json.loads(q("SELECT public.fn_accounting_tournament_week_quality(fixture.u(1),'2026-10-05 07:00Z','2026-10-12 07:00Z')"));need(old==new=={'status':'ready','checked':5000},'large full-body output differs');rec('large_real_quality_full_result_equal')
  return plans

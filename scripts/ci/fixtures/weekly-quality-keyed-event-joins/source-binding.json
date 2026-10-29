@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "sourceFiles": {
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "eb3adaf4e4d1763b8cd634e49207549191471d55a5a61f82003d375986a55856",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "b57a87ee0d980218b7105adf286fe2a95672ad6e4b848549363b073a7adf359e",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "86495edd9e6efce3e42f8caef259f6f9a23440de05bc0382b692c4214bf75330",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "7db0739a45b0ade0e5f2cea328d2086b841914900b335569571b02ad1089a6aa",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-before.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
+    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "61b761e188579c2f711b687bca96972ee30c9013991b774dffb764b09bdd40d9",
+    ".github/workflows/weekly-close-hour-guard.yml": "67a6173aac27cbd42484b2270f41678249e3d424c1228ddbe878e890b0e9af8a",
+    "tests/weekly-quality-keyed-event-joins.law.test.ts": "852559b7112618d5d0c73ed68d40dbd79d4afdeb98090902febac53027115841",
+    "docs/laws.d/weekly-quality-keyed-event-joins.md": "30a4724593c3f10359fafd140d8e04758d22abde88ca372acaee67cfbf8bca40",
+    "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "e6948bd24e725e4ff65ffb3ff6ccc9eacfbb0a5e3b503802cf2c79c15667906b",
+    "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "962cf926c983895d1c9adb5b0f300d218c78b72e4a1b9b71706c616db81db301"
+  }
+}

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
+  configOnly,
   presentationOnly,
   runSelection,
   selectionInputs,
@@ -28,6 +29,94 @@ const write = (root, p, s) => {
   mkdirSync(join(root, p, '..'), { recursive: true });
   writeFileSync(join(root, p), s);
 };
+
+test('configuration proof focuses erased types and navigation copy, never runtime rules', () => {
+  const path = 'src/config/cashGames.ts';
+  const before = 'export type BombInterval = 9 | 15;\nexport const enabled = true;\n';
+  assert.equal(configOnly(path, before, before.replace('9 | 15', '12 | 15')), true);
+  for (const after of [
+    before.replace('true', 'false'),
+    before + 'pay();',
+    before.replace('type BombInterval = 9 | 15', 'const enum BombInterval { Nine = 9 }'),
+  ])
+    assert.equal(configOnly(path, before, after), false);
+  for (const p of [
+    'src/services/cashGames.ts',
+    'src/config/cashRakePolicy.ts',
+    'src/config/bbjMini.ts',
+    'tsconfig.json',
+  ])
+    assert.equal(configOnly(p, before, before.replace('9 | 15', '12 | 15')), false);
+  const navigation =
+    "export const items = [{label: 'Overview', path: '/home', description: 'Your activity'}];\n";
+  const navPath = 'src/config/clubArenaNavigation.ts';
+  assert.equal(configOnly(navPath, navigation, navigation.replace('Overview', 'Home')), true);
+  assert.equal(
+    configOnly(navPath, navigation, navigation.replace('Your activity', 'Recent activity')),
+    true
+  );
+  for (const after of [
+    navigation.replace('/home', '/wallet'),
+    navigation.replace('Overview', 'Pay 50'),
+    navigation + 'export const role = "owner";',
+    navigation.replace('label:', '[label]:'),
+  ])
+    assert.equal(configOnly(navPath, navigation, after), false);
+  assert.equal(
+    configOnly('src/config/unknown.ts', navigation, navigation.replace('Overview', 'Home')),
+    false
+  );
+  const enumBefore = 'export const enum Amount { Value = 9 }';
+  assert.equal(configOnly(path, enumBefore, enumBefore.replace('9', '12')), false);
+  assert.equal(classifyChangedPaths(['scripts/ci/ui-test-selection.mjs']).server, true);
+});
+
+test('immutable configuration selection reaches client consumers without relaxing financial admission', () =>
+  owned((root) => {
+    const git = (...args) =>
+      execFileSync('git', args, {
+        cwd: root,
+        env: gitEnvironmentForCwd(),
+        encoding: 'utf8',
+      }).trim();
+    git('init', '-q');
+    git('config', 'user.name', 'Selection Test');
+    git('config', 'user.email', 'selection@example.invalid');
+    const p = 'src/config/cashGames.ts';
+    write(root, p, 'export type Interval = 9 | 15;\nexport const enabled = true;\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    const base = git('rev-parse', 'HEAD');
+    write(root, p, 'export type Interval = 12 | 15;\nexport const enabled = true;\n');
+    git('add', '.');
+    git('commit', '-qm', 'type configuration');
+    const head = git('rev-parse', 'HEAD');
+    const proof = selectionInputs(root, base, head);
+    assert.equal(proof.focused, true);
+    assert.deepEqual(proof.changed, [p]);
+    assert.equal(proof.presentation, false);
+    const output = join(root, 'compiler-scope');
+    runSelection(root, ['scope'], {
+      ...process.env,
+      CI_BASE_SHA: base,
+      CI_HEAD_SHA: head,
+      GITHUB_OUTPUT: output,
+    });
+    assert.match(readFileSync(output, 'utf8'), /presentation_only=false/);
+    const note = 'docs/changelog/2026-10-29-config-example.md';
+    write(root, note, '# Type configuration\n');
+    git('add', note);
+    git('commit', '-qm', 'required changelog companion');
+    const documented = git('rev-parse', 'HEAD');
+    assert.equal(selectionInputs(root, base, documented).focused, true);
+    assert.deepEqual(selectionInputs(root, base, documented).changed, [note, p]);
+    assert.equal(selectionInputs(root, head, documented).focused, false);
+    write(root, p, 'export type Interval = 12 | 15;\nexport const enabled = false;\n');
+    assert.equal(selectionInputs(root, base, documented).focused, false);
+    git('add', p);
+    git('commit', '-qm', 'runtime configuration');
+    assert.equal(selectionInputs(root, base, git('rev-parse', 'HEAD')).focused, false);
+  }));
 
 test('presentation proof rejects executable, global and malformed changes', () => {
   const p = 'src/components/example/Control.tsx';
@@ -173,6 +262,43 @@ test('source readers retain computed inputs and imported network helpers; omit o
     );
   }));
 
+test('data indexing is not an unknown read, while filesystem aliases and shadowed inputs remain unknown', () =>
+  owned((root) => {
+    write(
+      root,
+      'tests/data.test.ts',
+      "import {readFileSync} from 'node:fs'; const source=readFileSync('src/Other.ts','utf8'); const [first]=source.split(''); const {length}=source; first[0];"
+    );
+    assert.equal(consumedInputs(root, 'tests/data.test.ts').unknown, false);
+    assert.ok(consumedInputs(root, 'tests/data.test.ts').paths.includes('src/Other.ts'));
+    write(
+      root,
+      'tests/wrapper.test.ts',
+      "import {readFileSync} from 'node:fs';import {dirname,resolve} from 'node:path';import {fileURLToPath} from 'node:url';const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');const read=(p:string)=>readFileSync(resolve(ROOT,p),'utf8');read('src/Other.ts');"
+    );
+    assert.equal(consumedInputs(root, 'tests/wrapper.test.ts').unknown, false);
+    assert.ok(consumedInputs(root, 'tests/wrapper.test.ts').paths.includes('src/Other.ts'));
+    for (const [name, source] of Object.entries({
+      namespace: "import * as fs from 'node:fs';const {readFileSync}=fs;readFileSync('src/A');",
+      alias: "import {readFileSync} from 'node:fs';const reader=readFileSync;reader('src/A');",
+      computed: "import * as fs from 'node:fs';fs['readFileSync']('src/A');",
+      shadow:
+        "import {readFileSync} from 'node:fs';const file='src/A';function probe({file}){readFileSync(file)}",
+      wrapperNestedRead:
+        "import {readFileSync} from 'node:fs';const read=(p:string)=>readFileSync(p,(readFileSync(input),'utf8'));read('src/Other.ts');",
+      wrapperComputed:
+        "import {readFileSync} from 'node:fs';const read=(p:string)=>readFileSync(p,'utf8');read(input);",
+      wrapperEscape:
+        "import {readFileSync} from 'node:fs';const read=(p:string)=>readFileSync(p,'utf8');consume(read);",
+      wrapperShadow:
+        "import {readFileSync} from 'node:fs';const read=(p:string)=>readFileSync(p,'utf8');function probe(read){read('src/Other.ts')}",
+    })) {
+      const path = `tests/${name}.test.ts`;
+      write(root, path, source);
+      assert.equal(consumedInputs(root, path).unknown, true, name);
+    }
+  }));
+
 test('real locked Vitest runs related tests and source contracts, excludes unrelated tests and propagates failure', () =>
   owned((root) => {
     const git = (...a) =>
@@ -207,7 +333,7 @@ test('real locked Vitest runs related tests and source contracts, excludes unrel
     write(
       root,
       'tests/unrelated.test.ts',
-      "import {test} from 'vitest';test('unrelated must not execute',()=>{throw Error('unrelated executed')});"
+      "import {test} from 'vitest';const [first]=['data'];const {length}=first;first[0];test('unrelated must not execute',()=>{throw Error('unrelated executed')});"
     );
     // Dependencies belong to this task; this does not touch a shared installation.
     execFileSync('ln', ['-s', join(process.cwd(), 'node_modules'), join(root, 'node_modules')]);

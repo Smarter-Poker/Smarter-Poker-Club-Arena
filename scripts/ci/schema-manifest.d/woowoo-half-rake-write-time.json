@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/woowoo-half-rake-write-time",
+  "_comment": "smarter_private.fn_woowoo_half_rake_day_cents and smarter_private.tr_woowoo_half_rake_split are declared by 20261025030142_woowoo_half_rake_split_functions_before_the_window.sql (ordinary install, no relation lock, installed after merge through Apply Merged Migration). The queued daily-window 20261025030249_woowoo_half_rake_is_split_when_the_hand_fact_is_written.sql creates the public.ca_hand_facts triggers that call them, unschedules 'woowoo-half-rake-to-kingfish' and drops smarter_private.fn_woowoo_half_rake_to_kingfish_sync (never in the base snapshot, so no tombstone). Not an installed/live receipt.",
+  "functions": [
+    "smarter_private.fn_woowoo_half_rake_day_cents",
+    "smarter_private.tr_woowoo_half_rake_split"
+  ]
+}

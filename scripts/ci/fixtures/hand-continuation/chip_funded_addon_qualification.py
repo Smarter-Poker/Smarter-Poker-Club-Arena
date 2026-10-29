@@ -1,5 +1,5 @@
 """Real canonical CHIPS purchase receipt and original delta settlement, isolated PG17."""
-import re
+import re,json
 from satellite_qualifier_fixture import module
 MIGRATION='supabase/migrations/20261029092119_original_continuations_accept_proven_chip_funded_addons.sql'
 
@@ -17,7 +17,10 @@ def qualify(e,root,hand,db):
   e.sql(case,file=root/'supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql',label='chip-addon-bounded-owner')
   source=(root/'supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql').read_text()
   shape=source[source.index('CREATE TABLE public.tournament_participant_funding_receipts'):source.index('CREATE TABLE public.tournament_accounting_credit_receipts')]
-  e.sql(case,shape+extract(source,'fn_ca_tournament_accounting_evidence_immutable')+extract(source,'fn_ca_record_tournament_participant_funding')+extract(source,'fn_ca_capture_tournament_charge_entitlement')+extract(source,'fn_ca_process_tournament_chip_purchase_money_v1')+"REVOKE ALL ON FUNCTION public.fn_ca_tournament_accounting_evidence_immutable(),public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;CREATE TRIGGER original_evidence_immutable BEFORE UPDATE OR DELETE ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable();CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_participant_funding_receipts FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable();",label='chip-addon-actual-funding-owners')
+  e.sql(case,shape+extract(source,'fn_ca_tournament_accounting_evidence_immutable')+extract(source,'fn_ca_record_tournament_participant_funding')+extract(source,'fn_ca_capture_tournament_charge_entitlement')+"REVOKE ALL ON FUNCTION public.fn_ca_tournament_accounting_evidence_immutable(),public.fn_ca_record_tournament_participant_funding(uuid,text,text,numeric,text,uuid,uuid,jsonb) FROM PUBLIC,anon,authenticated,service_role;CREATE TRIGGER original_evidence_immutable BEFORE UPDATE OR DELETE ON public.tournament_participant_funding_receipts FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable();CREATE TRIGGER original_evidence_no_truncate BEFORE TRUNCATE ON public.tournament_participant_funding_receipts FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_tournament_accounting_evidence_immutable();",label='chip-addon-actual-funding-owners')
+  fee=json.loads((root/'scripts/ci/fixtures/hand-continuation/current-chip-purchase-fee-dependency.json').read_text())
+  purchase_owner=json.loads((root/'scripts/ci/fixtures/hand-continuation/current-chip-purchase-preimage.json').read_text())
+  e.sql(case,hand.captured_function(fee)+hand.captured_function(purchase_owner),label='chip-exact-installed-purchase-and-fee-owner')
   rebase=(root/'supabase/migrations/20260904104847_felt_erasure_delta_settlement.sql').read_text();rebase=rebase[rebase.index('CREATE TABLE IF NOT EXISTS public.ca_seat_stack_rebases'):rebase.index('-- 3. fn_ca_settle_hand_stacks_absolute')];e.sql(case,rebase,label='chip-addon-actual-rebase-shape')
   e.sql(case,file=root/'supabase/migrations/20261029081924_original_continuation_preserves_funded_addons.sql',label='chip-addon-installed-diamond-owner')
   native=(root/'scripts/ci/probes/hand-continuation-native.sql').read_text();prefix=native[:native.index('DO $boundaries$')]

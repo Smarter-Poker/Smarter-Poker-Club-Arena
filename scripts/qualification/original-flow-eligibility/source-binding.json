@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+      "bytes": 248781,
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -843,5 +843,17 @@
     "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
+  },
+  "playerManagementPeriodFees20261029": {
+    "reason": "Add one required server shard 4 native qualification step for the compatible Chicago-period fee reader. Existing commands, assertions, financial rules and historical qualification remain unchanged. Current workflow source identity only; not installation or production certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "current": {
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2",
+      "bytes": 248781
+    }
   }
 }

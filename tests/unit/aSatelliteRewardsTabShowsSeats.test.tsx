@@ -12,14 +12,23 @@
  * a finished satellite prints what was recorded, an unfinished one says it
  * awards seats, and every other event keeps its ladder.
  */
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   TournamentEntry,
   TournamentTabProps,
 } from '../../src/components/tournament/details/types';
 
-vi.mock('../../src/lib/supabase', () => ({ supabase: { from: vi.fn() } }));
+const h = vi.hoisted(() => ({
+  rows: [] as Array<Record<string, unknown>>,
+  error: null as { message: string } | null,
+  pending: null as Promise<{
+    data: Array<Record<string, unknown>> | null;
+    error: { message: string } | null;
+  }> | null,
+  from: vi.fn(),
+}));
+vi.mock('../../src/lib/supabase', () => ({ supabase: { from: h.from } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/components/tournament/MysteryBountyPanel', () => ({ default: () => null }));
 
@@ -114,6 +123,32 @@ function props(
   };
 }
 
+const receipts = (tournamentId = 'fe93d011-d3f3-4e41-82e4-f7b5ca98547b', amount = 100) =>
+  ENTRIES.filter((e) => Number(e.prize) > 0).map((e, i) => ({
+    id: `receipt${i}`,
+    tournament_id: tournamentId,
+    user_id: e.user_id,
+    source: i < 7 ? 'satellite_seat' : i === 7 ? 'satellite_ticket' : 'satellite_remainder',
+    amount: i < 7 ? amount : e.prize,
+    recorded_by: i < 7 ? 'fn_settle_satellite_tournament' : 'credit_and_log',
+    metadata: i < 7 ? { satellite_target_id: TARGET } : {},
+  }));
+beforeEach(() => {
+  h.rows = receipts();
+  h.error = null;
+  h.pending = null;
+  h.from.mockReset();
+  h.from.mockImplementation(() => {
+    const result = h.pending ?? Promise.resolve({ data: h.rows.slice(), error: h.error });
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'in', 'order', 'limit', 'gt'])
+      builder[method] = () => builder;
+    builder.then = (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
+      result.then(resolve, reject);
+    return builder;
+  });
+});
+
 const tiles = (container: HTMLElement) =>
   Object.fromEntries(
     [...container.querySelectorAll('.tl-stat')].map((tile) => [
@@ -130,8 +165,9 @@ const rows = (container: HTMLElement) =>
   ]);
 
 describe('Rewards on a finished satellite', () => {
-  it('does not print the percentage ladder the settlement never paid', () => {
+  it('does not print the percentage ladder the settlement never paid', async () => {
     const { container } = render(<RewardsTab {...props()} />);
+    await waitFor(() => expect(container.textContent).toContain('1 Ticket (100)'));
     const text = container.textContent ?? '';
     expect(text).not.toContain('63.52%');
     expect(text).not.toContain('36.48%');
@@ -142,11 +178,12 @@ describe('Rewards on a finished satellite', () => {
     expect(text).not.toContain('Of The Field Paid');
   });
 
-  it('prints the recorded seat winners and the recorded paid finishers', () => {
+  it('prints the recorded ticket winners and recorded cash substitutions', async () => {
     const { container } = render(<RewardsTab {...props()} />);
-    expect(tiles(container)).toMatchObject({ 'Total Prize Pool': '810', 'Seat Winners': '7' });
+    await waitFor(() => expect(container.textContent).toContain('1 Ticket (100)'));
+    expect(tiles(container)).toMatchObject({ 'Total Prize Pool': '810', 'Qualified Players': '7' });
     expect(container.textContent).toContain('9 Players Awarded');
-    expect(container.textContent).toContain('Ticket Awards');
+    expect(container.textContent).toContain('Satellite Awards');
     expect(container.querySelectorAll('.rw-tag')).toHaveLength(7);
     expect(container.textContent).toContain('Ticket Winner');
 
@@ -161,8 +198,8 @@ describe('Rewards on a finished satellite', () => {
         .map(([, name]) => name)
         .sort()
     ).toEqual(SEAT_WINNERS.map(([name]) => name).sort());
-    expect(list[7]).toEqual(['8th', 'areyes', '100']);
-    expect(list[8]).toEqual(['9th', 'tali', '10']);
+    expect(list[7]).toEqual(['8th', 'areyes', 'Cash 100']);
+    expect(list[8]).toEqual(['9th', 'tali', 'Cash 10']);
   });
 
   it('says it awards seats, and no more, when no award was recorded per player', () => {
@@ -179,6 +216,67 @@ describe('Rewards on a finished satellite', () => {
     expect(text).not.toContain('63.52%');
     expect(text).not.toContain('515');
     expect(rows(container)).toHaveLength(0);
+  });
+});
+
+describe('satellite award delivery is proven, not guessed from qualification', () => {
+  it('shows cash for an unranked qualifier paid by the cash writer', async () => {
+    h.rows[0] = {
+      ...h.rows[0],
+      source: 'satellite_ticket',
+      recorded_by: 'credit_and_log',
+      metadata: {},
+    };
+    const { container } = render(<RewardsTab {...props()} />);
+    await waitFor(() => expect(container.textContent).toContain('Cash 100'));
+    const turn = [...container.querySelectorAll('.rw-row')].find((row) =>
+      row.textContent?.includes('TURN')
+    );
+    expect(turn?.textContent).toContain('Cash Award');
+    expect(turn?.textContent).toContain('Cash 100');
+    expect(turn?.textContent).not.toContain('1 Ticket');
+  });
+  it('does not claim tickets when RLS supplies no receipt rows', async () => {
+    h.rows = [];
+    const { container } = render(<RewardsTab {...props()} />);
+    await waitFor(() =>
+      expect(container.textContent).toContain('Ticket Or Cash Details Are Unavailable')
+    );
+    expect(container.textContent).toContain('Value 100');
+    expect(container.textContent).not.toContain('1 Ticket');
+  });
+  it('reports a failed read and keeps recorded values without a ticket claim', async () => {
+    h.error = { message: 'receipt read unavailable' };
+    const { container } = render(<RewardsTab {...props()} />);
+    await waitFor(() =>
+      expect(container.textContent).toContain('Ticket Or Cash Details Are Unavailable')
+    );
+    expect(container.textContent).not.toContain('1 Ticket');
+  });
+  it('does not let an old event response erase the new event receipt', async () => {
+    let finishOld!: (value: { data: Array<Record<string, unknown>>; error: null }) => void;
+    h.pending = new Promise((resolve) => {
+      finishOld = resolve;
+    });
+    const { container, rerender } = render(<RewardsTab {...props()} />);
+    await waitFor(() => expect(h.from).toHaveBeenCalledTimes(1));
+    const next = 'aaaaaaaa-1111-4111-8111-111111111111';
+    h.pending = null;
+    h.rows = receipts(next, 45);
+    rerender(
+      <RewardsTab
+        {...props(
+          { id: next },
+          ENTRIES.map((e) => ({ ...e, prize: e.status === 'winner' ? 45 : e.prize }))
+        )}
+      />
+    );
+    await waitFor(() => expect(container.textContent).toContain('1 Ticket (45)'));
+    await act(async () => {
+      finishOld({ data: receipts(), error: null });
+    });
+    expect(container.textContent).toContain('1 Ticket (45)');
+    expect(container.textContent).not.toContain('1 Ticket (100)');
   });
 });
 
@@ -200,7 +298,7 @@ describe('Rewards on a satellite that has not finished', () => {
     expect(text).not.toContain('63.52%');
     expect(text).not.toContain('515');
     expect(text).not.toContain('Money Bubble');
-    expect(text).not.toContain('Seat Winners');
+    expect(text).not.toContain('Qualified Players');
     expect(rows(container)).toHaveLength(0);
   });
 });
@@ -224,7 +322,7 @@ describe('Rewards on an ordinary finished event', () => {
     expect(text).toContain('515');
     expect(text).toContain('295');
     expect(tiles(container)).toMatchObject({ 'Money Bubble': '3rd' });
-    expect(text).not.toContain('Seat Winners');
-    expect(text).not.toContain('Ticket Awards');
+    expect(text).not.toContain('Qualified Players');
+    expect(text).not.toContain('Satellite Awards');
   });
 });

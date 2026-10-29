@@ -315,7 +315,7 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         // Computed inside the executor, exactly as before, so a budget that is
         // already spent still arrives as a rejection and never as a throw.
         const startedAt = Date.now();
-        const allowanceMs = remaining(requestDeadline, 20000, operation, startedAt);
+        const allowanceMs = remaining(requestDeadline, 35000, operation, startedAt);
         const requestExpiresAt = startedAt + allowanceMs;
         let timer;
         const expireRequest = () => {
@@ -451,8 +451,10 @@ export async function runLegacyEngineCheckpoint({
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
+  checkpointDeadlineMs = null,
   createWebSocket = (endpoint) => new WebSocket(endpoint),
 }) {
+  const startedAt = Date.now();
   if (
     !Number.isSafeInteger(pid) ||
     pid < 1 ||
@@ -471,10 +473,21 @@ export async function runLegacyEngineCheckpoint({
     workBudgetMs > 20000 ||
     !Number.isSafeInteger(cleanupBudgetMs) ||
     cleanupBudgetMs < 100 ||
-    cleanupBudgetMs > 5000
+    cleanupBudgetMs > 5000 ||
+    (checkpointDeadlineMs !== null &&
+      (!Number.isSafeInteger(checkpointDeadlineMs) ||
+        checkpointDeadlineMs <= startedAt + cleanupBudgetMs ||
+        checkpointDeadlineMs > startedAt + 40000))
   )
     throw refused('legacy checkpoint invocation identity refused');
-  const deadline = Date.now() + workBudgetMs;
+  // The production caller starts this one absolute budget before its entry
+  // proof. Unused entry time belongs to the census, not to another window.
+  // Cleanup keeps its own reserved slice inside the same forty seconds.
+  const deadline =
+    checkpointDeadlineMs === null
+      ? startedAt + workBudgetMs
+      : checkpointDeadlineMs - cleanupBudgetMs;
+  const effectiveWorkBudgetMs = deadline - startedAt;
   let signalled = false,
     endpoint,
     connection,
@@ -488,14 +501,13 @@ export async function runLegacyEngineCheckpoint({
   // Which operation the transport is on. It is the name an unknown outcome
   // reports; it takes part in no decision and no branch reads it.
   let operation = 'inspectorEntry';
-  const startedAt = deadline - workBudgetMs;
   const describeLoss = (error) =>
     [
       detailOf(error) ??
         `op=${operation},cause=${
           error instanceof CheckpointTransportError ? 'transport_refused' : 'unexpected_error'
         }`,
-      `budgetMs=${workBudgetMs}`,
+      `budgetMs=${effectiveWorkBudgetMs}`,
       `spentMs=${Date.now() - startedAt}`,
       `invoked=${checkpointInvoked ? 'yes' : 'no'}`,
     ]
@@ -745,7 +757,10 @@ export async function runLegacyEngineCheckpoint({
     if (/outcome unknown/.test(failure)) transportDetail = describeLoss(error);
   } finally {
     if (signalled) {
-      const cleanupDeadline = Date.now() + cleanupBudgetMs;
+      const cleanupDeadline = Math.min(
+        Date.now() + cleanupBudgetMs,
+        checkpointDeadlineMs ?? Infinity
+      );
       let shutdownRequested = false;
       try {
         // One cleanup-only reconnection at most: no imports or guard calls.
@@ -904,6 +919,7 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     guard: retainedEed ? retainedOriginalCheckpointGuard : legacyEngineCheckpointGuard,
     discoverEngines: retainedEed,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
+    checkpointDeadlineMs: Number(process.argv[5]),
   }).catch(() => ({
     ok: false,
     reason: 'legacy checkpoint invocation refused',

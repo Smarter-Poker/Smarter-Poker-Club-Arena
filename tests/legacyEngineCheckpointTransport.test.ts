@@ -31,6 +31,10 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['refusal', 'validated native refusal and counts survive successful inspector cleanup'],
     ['refusal_cleanup_timeout', 'cleanup refusal retains the original native refusal evidence'],
     ['malformed_refusal', 'unrecognized or wrongly typed summary values cannot become diagnostics'],
+    [
+      'memory_refusal',
+      'insufficient native heap refuses before any census or guard and closes its inspector',
+    ],
     ['deadline_expired', 'an expired absolute entry deadline opens no inspector'],
     ['deadline_future', 'a caller cannot supply more than the absolute forty seconds'],
     [
@@ -73,7 +77,7 @@ describe('actual isolated legacy checkpoint transport', () => {
     15000
   );
 
-  it('shares unused entry time with all five native censuses inside one absolute deadline', () => {
+  it('shares unused entry time with one native census of all five concrete owners', () => {
     const result = spawnSync(
       process.execPath,
       [

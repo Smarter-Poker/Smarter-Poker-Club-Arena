@@ -113,7 +113,7 @@ try {
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
-      "send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
     ].join('\n')
   );
   const allocation = createServer();
@@ -127,7 +127,9 @@ try {
     process.execPath,
     [
       '--inspect-port=127.0.0.1:' + port,
-      '--max-old-space-size=64',
+      '--expose-gc',
+      scenario === 'memory_refusal' ? '--max-old-space-size=32' : '--max-old-space-size=64',
+      ...(scenario === 'memory_refusal' ? ['--max-semi-space-size=1'] : []),
       join(directory, 'target.mjs'),
       mode,
       scenario,
@@ -233,9 +235,12 @@ try {
     instanceId: '1-12345678',
     moduleExpression,
     guard,
-    discoverEngines: ['engine_census', 'shared_deadline', 'shared_deadline_exhausted'].includes(
-      scenario
-    ),
+    discoverEngines: [
+      'engine_census',
+      'shared_deadline',
+      'shared_deadline_exhausted',
+      'memory_refusal',
+    ].includes(scenario),
     workBudgetMs: 3000,
     cleanupBudgetMs: 2000,
   };
@@ -243,18 +248,34 @@ try {
     clientCloseWhileOpen = 0,
     withheldCloseNotifications = 0,
     nativeCensusRequests = 0;
+  const nativeOrder = [];
   const sharedDeadline = Date.now() + 30000;
   const observedWebSocket = (endpoint) => {
     const socket = new WebSocket(endpoint);
-    if (['shared_deadline', 'shared_deadline_exhausted'].includes(scenario)) {
+    if (
+      ['engine_census', 'shared_deadline', 'shared_deadline_exhausted', 'memory_refusal'].includes(
+        scenario
+      )
+    ) {
       let firstCensusId = null;
       const send = socket.send.bind(socket);
       socket.send = (raw) => {
         const message = JSON.parse(raw);
         if (message.method === 'Runtime.queryObjects') {
           nativeCensusRequests++;
+          nativeOrder.push('census');
           if (firstCensusId === null) firstCensusId = message.id;
         }
+        if (
+          message.method === 'Runtime.releaseObjectGroup' &&
+          message.params.objectGroup === 'legacy-broad-census'
+        )
+          nativeOrder.push('broadReleased');
+        if (
+          message.method === 'Runtime.callFunctionOn' &&
+          message.params.functionDeclaration === guard.toString()
+        )
+          nativeOrder.push('guard');
         return send(raw);
       };
       const add = socket.addEventListener.bind(socket);
@@ -263,7 +284,10 @@ try {
           type,
           type === 'message'
             ? (event) => {
-                if (JSON.parse(event.data).id === firstCensusId)
+                if (
+                  ['shared_deadline', 'shared_deadline_exhausted'].includes(scenario) &&
+                  JSON.parse(event.data).id === firstCensusId
+                )
                   setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 700);
                 else listener(event);
               }
@@ -384,8 +408,10 @@ try {
         : {}),
       ...([
         'success',
+        'engine_census',
         'shared_deadline',
         'shared_deadline_exhausted',
+        'memory_refusal',
         'cleanup_close_timeout',
         'refusal_cleanup_timeout',
       ].includes(scenario)
@@ -404,6 +430,14 @@ try {
         cleanupConnections: 0,
         retryAllowed: false,
       });
+    if (scenario === 'memory_refusal') {
+      assert.equal(result.reason, 'native census memory headroom refused');
+      assert.equal(result.checkpointInvoked, false);
+      assert.equal(nativeCensusRequests, 0);
+      assert.equal(result.censusMemory.ok, false);
+      assert.ok(result.censusMemory.availableHeapBytes < result.censusMemory.requiredHeapBytes);
+      expectedCalls = 0;
+    }
     if (scenario === 'shared_deadline_exhausted') {
       assert.equal(result.reason, 'inspector operation outcome unknown');
       assert.equal(result.checkpointInvoked, false);
@@ -506,8 +540,12 @@ try {
     ['success', 'engine_census', 'shared_deadline'].includes(scenario),
     JSON.stringify(result)
   );
+  if (scenario === 'engine_census') {
+    assert.equal(nativeCensusRequests, 1, 'all five exact classes share one full-heap native scan');
+    assert.deepEqual(nativeOrder.slice(0, 3), ['census', 'broadReleased', 'guard']);
+  }
   if (scenario === 'shared_deadline') {
-    assert.equal(nativeCensusRequests, 5);
+    assert.equal(nativeCensusRequests, 1);
     assert.ok(
       Date.now() <= sharedDeadline,
       'native work and cleanup stayed inside the original absolute deadline'

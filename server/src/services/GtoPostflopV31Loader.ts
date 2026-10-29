@@ -26,11 +26,11 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import {
-  replaceGtoPostflopV31,
+  replaceGtoPostflopV31Async,
   replaceGtoPostflopV31Evaluation,
   gtoPostflopV31Count,
   gtoPostflopV31EvaluationCount,
-  type GtoPostflopV31Row,
+  type GtoV31RuntimeRow,
   type GtoV31SourceSeal,
   gtoV31FeatureContractVersion,
   gtoV31PolicyContractValid,
@@ -42,11 +42,12 @@ const RETRY_MS = 30_000;
 const MAX_RETRY_MS = 5 * 60_000;
 const PAGE = 500;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+let activeLoadGeneration = 0;
 
 // A missing/malformed RPC body is not an authoritative empty dataset. Keep
 // full policy validation in the real store; these checks bind transport shape
 // and the requested offline identity before any candidate store can change.
-function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflopV31Row[] {
+function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoV31RuntimeRow[] {
   if (!Array.isArray(data)) throw new Error('v31_cell_page_not_array');
   if (data.length > PAGE) throw new Error('v31_cell_page_overflow');
   for (const row of data) {
@@ -67,13 +68,14 @@ function readV31CellPage(data: unknown, expectedDatasetId?: string): GtoPostflop
     if (row.feature_contract_version === null) delete legacy.feature_contract_version;
     if (row.policy_export_schema === null) delete legacy.policy_export_schema;
     return legacy;
-  }) as GtoPostflopV31Row[];
+  }) as GtoV31RuntimeRow[];
 }
 
 async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number }> {
+  const generation = ++activeLoadGeneration;
   try {
-    const rows: GtoPostflopV31Row[] = [];
-    for (let offset = 0; ; offset += PAGE) {
+    const rows: GtoV31RuntimeRow[] = [];
+    for (let offset = 0; ; ) {
       const { data, error } = await supabase.rpc('fn_gto_v31_active_cells', {
         p_offset: offset,
         p_limit: PAGE,
@@ -82,10 +84,26 @@ async function loadGtoPostflopV31Attempt(): Promise<{ ok: boolean; count: number
       const page = readV31CellPage(data);
       if (page.length === 0) break;
       rows.push(...page);
+      offset += page.length;
+      // Parametric responses deliberately page one full model at a time.
+      // A short page is therefore not EOF. The sealed dataset census bounds
+      // collection; the detached store validates every row and exact count.
+      if (rows[0].policy_representation === 'public_hist215_v1') {
+        if (!Number.isSafeInteger(rows[0].dataset_cells) || rows[0].dataset_cells < 1)
+          throw new Error('v31_dataset_cell_count_invalid');
+        if (rows.length >= rows[0].dataset_cells) break;
+        continue;
+      }
       if (page.length < PAGE) break;
     }
     // Full success only. The validator performs the atomic swap.
-    const applied = replaceGtoPostflopV31(rows);
+    // An older periodic read must not overwrite a newer explicit refresh,
+    // including when its old authoritative-empty response arrives last.
+    if (generation !== activeLoadGeneration) throw new Error('v31_active_load_superseded');
+    const applied = await replaceGtoPostflopV31Async(
+      rows,
+      () => generation === activeLoadGeneration
+    );
     console.log(
       `[GtoPostflopV31Loader] ${applied} certified solver cells loaded (${gtoPostflopV31Count()} in the store)`
     );
@@ -110,6 +128,11 @@ export async function loadGtoPostflopV31(): Promise<number> {
   return (await refreshLoop.runNow()).count;
 }
 
+/** One explicit administrative attempt. Does not arm backoff or a retry. */
+export function loadGtoPostflopV31Once(): Promise<{ ok: boolean; count: number }> {
+  return loadGtoPostflopV31Attempt();
+}
+
 /**
  * Hydrate one sealed, not-yet-active dataset for an offline evaluation run.
  * This never mutates the live store and therefore cannot activate a candidate.
@@ -123,8 +146,8 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
   if (typeof datasetId !== 'string' || !UUID.test(datasetId)) {
     throw new Error('invalid V31 evaluation dataset id');
   }
-  const rows: GtoPostflopV31Row[] = [];
-  for (let offset = 0; ; offset += PAGE) {
+  const rows: GtoV31RuntimeRow[] = [];
+  for (let offset = 0; ; ) {
     const { data, error } = await supabase.rpc('fn_gto_v31_evaluation_cells', {
       p_dataset_id: datasetId,
       p_offset: offset,
@@ -134,6 +157,13 @@ export async function loadGtoPostflopV31Evaluation(datasetId: string): Promise<{
     const page = readV31CellPage(data, datasetId);
     if (page.length === 0) break;
     rows.push(...page);
+    offset += page.length;
+    if (rows[0].policy_representation === 'public_hist215_v1') {
+      if (!Number.isSafeInteger(rows[0].dataset_cells) || rows[0].dataset_cells < 1)
+        throw new Error('v31_dataset_cell_count_invalid');
+      if (rows.length >= rows[0].dataset_cells) break;
+      continue;
+    }
     if (page.length < PAGE) break;
   }
   if (rows.length === 0) throw new Error('V31 evaluation dataset returned no cells');

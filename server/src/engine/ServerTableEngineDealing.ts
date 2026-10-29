@@ -119,6 +119,44 @@ type PreparedHandNumberOutcome =
   | null;
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
+  /** Measure before the original continuation queues this street behind retention. */
+  protected captureStreetIntegrityEvent(event: HandEvent, controller: HandController): HandEvent {
+    if (event.type !== 'COMMUNITY_CARDS') return event;
+    try {
+      const live = controller.getState();
+      const result = this.stateVerifier.measure({
+        tableId: this.tableId,
+        handNumber: this.handCount,
+        players: live.players,
+        communityCards: live.communityCards,
+        pot: live.pot,
+        stage: live.stage,
+        phase: 'in_hand',
+        rakeTaken: 0,
+      });
+      return {
+        ...event,
+        integrityVerification: {
+          handNumber: this.handCount,
+          stage: live.stage,
+          pot: live.pot,
+          result: {
+            ...result,
+            // Retain the verdict, never private cards or mutable player references.
+            violations: result.violations.map(({ type, message, severity }) => ({
+              type,
+              message: type === 'DUPLICATE_CARD' ? 'Duplicate card detected' : message,
+              severity,
+            })),
+          },
+        },
+      };
+    } catch (error) {
+      reportError(error, `ServerTableEngine.${this.tableId}.street_integrity_threw`);
+      return event;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -2064,6 +2102,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       return null;
     }
     return prepared.n;
+  }
+
+  /** A retained sequence-zero controller has no live hand to finish. The
+   * successor drain may stop it only at its explicit owner park, after the
+   * exact private write and every accepted mutation have returned. Its saved
+   * original remains authoritative for the existing custody handoff. */
+  isPreparedOriginalParkedForSuccessor(): boolean {
+    const controller = this.handController;
+    if (
+      !this.running ||
+      !this.lifecycleCanMutate() ||
+      !this.isCurrentEngine() ||
+      !this.requiresExplicitPauseResume() ||
+      !this.isParkedBetweenHands() ||
+      !controller ||
+      this.retainedPreparedOriginalController !== controller ||
+      this.f06CurrentPermit?.recoveryState() !== 'attempted' ||
+      this.f06CurrentPermit.binding.hand_number !== String(this.handCount) ||
+      // A claimed sequence-zero original carries the same positive marker;
+      // pendingOriginalContinuation is intentionally retained until actuation.
+      this.handContinuation !== null ||
+      this.hasWeeklyPayoutMutationInFlight()
+    )
+      return false;
+    return JSON.parse(controller.serializeRecoveryState()).handStarted === false;
   }
 
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
@@ -4174,6 +4237,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {
+          event = this.captureStreetIntegrityEvent(event, controllerForHand);
           if (this.handContinuation) this.handContinuation.enqueue(event);
           else
             void dispatchOriginalEvent(event).catch((error) =>

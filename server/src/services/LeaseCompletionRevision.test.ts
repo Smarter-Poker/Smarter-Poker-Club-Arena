@@ -68,9 +68,10 @@ function actualListener(e: any, releaseHandWait: () => void) {
     'handStartMs',
     'releaseHandWait',
     'original',
+    'controllerForHand',
     js + '\nreturn listener;'
   )
-    .call(e, [], 1, vi.fn(), Date.now(), releaseHandWait, undefined)
+    .call(e, [], 1, vi.fn(), Date.now(), releaseHandWait, undefined, e.handController)
     .bind(e);
 }
 it.each(['idle', 'blocked_ingress'])(

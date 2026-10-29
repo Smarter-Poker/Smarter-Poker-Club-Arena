@@ -1,0 +1,20 @@
+{
+  "authority_source_sha256": "a74bc7dc086a82edf1a747b6228c6db067076948915c0e2bf5af5db65cbb17f4",
+  "helper": "smarter_private.rake_record_jsonb_raw_size",
+  "helper_body_md5": "77310c794e06e32cdfebb3b71688a2e1",
+  "migrations": [
+    "supabase/migrations/20261029180415_rake_record_json_size_is_decompressed.sql",
+    "supabase/migrations/20261029180420_tournament_rake_small_rows_are_covered.sql",
+    "supabase/migrations/20261029180421_tournament_rake_large_rows_keep_their_path.sql"
+  ],
+  "original_owners": 34,
+  "old_indexes": 19,
+  "raw_triggers": 39,
+  "all_attributes": 20,
+  "constraints": 8,
+  "TQ_changed": false,
+  "GEN_changed": false,
+  "source65_changed": false,
+  "status": "private PG17 maintained native17cases passed; production install/adoption/fullScope unqualified",
+  "helper_sql_md5": "9b2ee50cfd941e691592c09189eb1331"
+}

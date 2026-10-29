@@ -1,3 +1,4 @@
+import type { V31ControlRequest, V31ControlAck } from './v31ReloadControl.js';
 import { mainHorseHistoryRetentionBudget } from './ownPublicHistoryBudget.js';
 import { readHorseOwnPublicHistory } from '../../services/HorseOwnPublicHistory.js';
 import { HorseObserverParticipantRegistry } from './observerParticipants.js';
@@ -267,6 +268,9 @@ export interface LiveHorseDecisionLaneStatus extends LiveHorseDecisionWorkerStat
 
 /** The public surface every caller uses; the sole client and the lane both offer it. */
 export interface LiveHorseDecisionLane {
+  requestV31Control?(
+    request: V31ControlRequest
+  ): Promise<Array<V31ControlAck & { worker: number }>>;
   ready(): Promise<HorseDecisionWorkerReadiness>;
   status(): LiveHorseDecisionLaneStatus;
   decideFast(
@@ -366,6 +370,27 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     return this.clients.length;
   }
 
+  async requestV31Control(
+    request: V31ControlRequest
+  ): Promise<Array<V31ControlAck & { worker: number }>> {
+    const outcomes = await Promise.allSettled(
+      this.clients.map((client) => client.requestV31Control(request))
+    );
+    return outcomes.map((outcome, worker) =>
+      outcome.status === 'fulfilled'
+        ? { ...outcome.value, worker }
+        : {
+            type: 'V31_STORE_CONTROL_ACK',
+            operation: request.operation,
+            requestId: request.requestId,
+            ok: false,
+            count: 0,
+            dataset: null,
+            error: 'worker_control_outcome_unknown',
+            worker,
+          }
+    );
+  }
   private shard(fence: string): LiveHorseDecisionWorkerClient {
     return this.clients[horseDecisionShard(fence, this.clients.length)]!;
   }

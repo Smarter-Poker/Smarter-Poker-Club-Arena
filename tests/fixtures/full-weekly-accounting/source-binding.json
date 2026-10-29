@@ -1,4 +1,10 @@
 {
+  "mttApprovalCompleteReadAudit20261029": {
+    "reason": "Reviewed one-line tightening of MembershipService discarded-error baseline from 2 to 1 after complete member reads now reject errors. All other assertions, source pins, historical audits and qualification statuses remain unchanged. Current test identity only, not financial or live recertification.",
+    "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+    "previousSHA256": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
+    "currentSHA256": "79deae1f4f7751b8544ba0fa28e0e72e851a6759f90d423a367620fc3beae912"
+  },
   "accountPreferenceFixtureAudit20261029": {
     "reason": "Reviewed exact fixture-only diff: replace the empty useUserStore mock with its selector bound to the existing synthetic auth identity. Preserve every cashout receipt, ABA, financial invariant and assertion. Connected 34-case fixture run passed; no production financial mutation or certificate restamp.",
     "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
@@ -256,7 +262,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "cbd357251d4c3ce5fddff8ec1b5716866b2f3323c7e17e8b6bffd345a68401c8",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "75c66b74dee7cf90e92e48796aa46ee21253cc8ac949d77346c8d2089bee4723",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "79deae1f4f7751b8544ba0fa28e0e72e851a6759f90d423a367620fc3beae912",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",

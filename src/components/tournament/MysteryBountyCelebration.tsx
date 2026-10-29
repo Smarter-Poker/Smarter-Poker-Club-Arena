@@ -194,6 +194,10 @@ export function rankFromLadder(amount: number, ladder: readonly number[]): numbe
 }
 
 export default function MysteryBountyCelebration({ tournamentId }: { tournamentId: string }) {
+  return <EventMysteryBountyCelebration key={tournamentId} tournamentId={tournamentId} />;
+}
+
+function EventMysteryBountyCelebration({ tournamentId }: { tournamentId: string }) {
   const [current, setCurrent] = useState<Celebration | null>(null);
   const [exiting, setExiting] = useState(false);
 
@@ -231,6 +235,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
   useEffect(() => {
     if (!tournamentId) return;
     liveRef.current = true;
+    let active = true;
 
     (async () => {
       try {
@@ -239,7 +244,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
           .select(`is_mystery_bounty, ${TOURNAMENT_ARENA_EMBED}`)
           .eq('id', tournamentId)
           .maybeSingle();
-        if (!liveRef.current) return;
+        if (!active) return;
 
         isMysteryEventRef.current = !!row?.is_mystery_bounty;
         unitCentsRef.current = tournamentRowUnitCents(row as TournamentArenaEmbed | null);
@@ -258,7 +263,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
             .select('bounty_amount')
             .eq('tournament_id', tournamentId),
         ]);
-        if (!liveRef.current) return;
+        if (!active) return;
 
         const values = new Set<number>();
         for (const r of live.data || []) {
@@ -271,6 +276,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
         }
         ladderRef.current = [...values].sort((a, b) => b - a);
       } catch (e) {
+        if (!active) return;
         // No ladder means no celebration. Silence is the correct failure here:
         // a guessed threshold would interrupt play for a routine knockout.
         ladderRef.current = [];
@@ -279,6 +285,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
     })();
 
     return () => {
+      active = false;
       liveRef.current = false;
     };
   }, [tournamentId]);
@@ -343,11 +350,12 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
   useEffect(() => {
     if (!tournamentId) return;
 
+    let active = true;
     const channelKey = `t-break-${tournamentId}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
 
     channel.on('broadcast', { event: 'tournament_event' }, (message: unknown) => {
-      if (!liveRef.current || !isMysteryEventRef.current) return;
+      if (!active || !liveRef.current || !isMysteryEventRef.current) return;
 
       const envelope = (message as { payload?: TournamentEventEnvelope })?.payload;
       const type = envelope?.type;
@@ -391,6 +399,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
     }
 
     return () => {
+      active = false;
       liveRef.current = false;
       clearTimers();
       busyRef.current = false;
@@ -401,7 +410,7 @@ export default function MysteryBountyCelebration({ tournamentId }: { tournamentI
          only tears down on the last release, so the correct move is to give
          back the reference this effect took at getOrCreateChannel — holding
          it forever would pin the socket open for the life of the session. */
-      masterBus.removeRegisteredChannel(`t-break-${tournamentId}`);
+      masterBus.removeRegisteredChannel(channelKey, channel);
     };
   }, [tournamentId, rankOf, raise]);
 

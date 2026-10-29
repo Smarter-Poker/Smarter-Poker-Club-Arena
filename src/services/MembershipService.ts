@@ -120,33 +120,50 @@ export const MembershipService = {
    */
   async getClubMembers(clubId: string): Promise<ClubMembership[]> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase
-      .from('club_members')
-      .select(
-        'club_id, user_id, role, status, joined_at, invited_by, agent_id, notes, membership_lifecycle_status, departed_at'
-      )
-      .eq('club_id', resolvedId)
-      .eq('membership_lifecycle_status', 'active')
-      .order('joined_at', { ascending: false })
-      .limit(QUERY_LIMITS.BULK);
-
-    if (error) throw error;
-    if (!data || data.length === 0) return [];
-
-    // Batch-fetch profiles separately (no FK hint needed)
-    const userIds = data.map((m) => m.user_id);
+    const readPage = (cursor: string | null) => {
+      let query = supabase
+        .from('club_members')
+        .select(
+          'club_id, user_id, role, status, joined_at, invited_by, agent_id, notes, membership_lifecycle_status, departed_at'
+        )
+        .eq('club_id', resolvedId)
+        .eq('membership_lifecycle_status', 'active')
+        .order('user_id', { ascending: true })
+        .limit(1000);
+      if (cursor !== null) query = query.gt('user_id', cursor);
+      return query;
+    };
+    const data: NonNullable<Awaited<ReturnType<typeof readPage>>['data']> = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const result = await readPage(cursor);
+      if (result.error) throw new Error(result.error.message);
+      if (!Array.isArray(result.data)) throw new Error('Club membership list unavailable');
+      data.push(...result.data);
+      if (result.data.length < 1000) break;
+      const next = result.data[result.data.length - 1]?.user_id;
+      if (typeof next !== 'string' || !next || (cursor !== null && next <= cursor))
+        throw new Error('Club membership cursor unavailable');
+      cursor = next;
+    }
+    // Keep the existing presentation order after the complete stable-key read.
+    data.sort(
+      (a, b) =>
+        String(b.joined_at ?? '').localeCompare(String(a.joined_at ?? '')) ||
+        a.user_id.localeCompare(b.user_id)
+    );
     const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
-    try {
-      const { data: profiles } = await supabase
+    for (let offset = 0; offset < data.length; offset += 200) {
+      const { data: profiles, error } = await supabase
         .from('profiles')
         .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
-        .in('id', userIds);
-      if (profiles) {
-        for (const p of profiles) profileMap[p.id] = p;
-      }
-    } catch (e) {
-      reportError(e, 'MembershipService.map');
-      /* non-critical */
+        .in(
+          'id',
+          data.slice(offset, offset + 200).map((m) => m.user_id)
+        );
+      if (error) throw new Error(error.message);
+      if (!Array.isArray(profiles)) throw new Error('Club member names unavailable');
+      for (const profile of profiles) profileMap[profile.id] = profile;
     }
 
     return data.map((m) => ({

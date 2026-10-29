@@ -128,7 +128,6 @@ def assemble(config, output, config_sha):
     manifest=copy.deepcopy(original);manifest.update({'dataset_key':config['dataset_key'],'manifest_version':config['manifest_version'],'pipeline_commit':PRODUCER,'feature_contract_version':'holdem-public-hist215-v1','policy_export_schema':'smarter-poker.pio-policy.v4','pipeline_contract_version':contract.PUBLIC215_PIPELINE_CONTRACT,'policy_representation':'public_hist215_v1','public215_contexts':contexts,'public215_protocols':protocols,'scenarios':m1+m2+tests,'input_bundle_id':prepare.PLACEHOLDER_BUNDLE_ID,'input_bundle_checksum':prepare.ZERO_CHECKSUM})
     manifest['pipeline_files']=[{'path':p,'checksum':sha((pipeline/p).read_bytes())} for p in sorted(contract.PUBLIC215_PIPELINE_FILES)]
     manifest['pipeline_bundle_checksum']=contract.pipeline_bundle_checksum(pipeline,manifest['pipeline_files'],expected_files=contract.PUBLIC215_PIPELINE_FILES)
-    prepare.verify_published_pipeline(manifest,pipeline)
     out=Path(output);need(out.is_absolute() and out.parent.resolve(strict=True)==out.parent and not out.exists(),'NEW_CANONICAL_OUTPUT');out.mkdir()
     files={original[k+'_path']:original[k+'_checksum'] for k in ('range_bundle','source_combo_order','icm_model')};files.update(range_files)
     bundle=contract._json_bytes(contract._verify_file(root,original['icm_model_path'],original['icm_model_checksum']).read_bytes(),'ICM bundle')
@@ -139,6 +138,7 @@ def assemble(config, output, config_sha):
     for cid,c in sorted(declared.items()):
         b=checked({'path':str(templates/(cid+'.json')),'sha256':c['template_checksum']});manifest['public215_template_files'].append(new_file(out,'public215/templates/'+cid+'.json',b))
     manifest['public215_protocol_files']={k:new_file(out,'public215/protocols/'+k+'.json',checked(config['protocol_files'][k])) for k in sorted(PROTOCOLS)}
+    prepare.verify_published_pipeline(manifest,pipeline)
     payload=prepare.canonical_json(manifest);receipt=new_file(out,'drafts/public215-r7.DRAFT.json',payload)
     # Pure metadata size forecast only; never writes an approval or calls prepare.
     approval=prepare.base_approval_bundle(manifest,bundle_key=config['bundle_key'],bundle_version=config['bundle_version'],approval_note=config['approval_note'],manifest_path='manifests/public215-r7.json',manifest_checksum='1'*64)

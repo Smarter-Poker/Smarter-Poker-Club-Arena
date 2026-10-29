@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
+import React from 'react';
 import './EmojiPicker.css';
 
 interface EmojiPickerProps {
@@ -13,7 +14,11 @@ const EMOJI_CATEGORIES = {
 };
 
 export const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, recentEmojis = [] }) => {
-  const [category, setCategory] = useState<keyof typeof EMOJI_CATEGORIES>('faces');
+  const [category, setCategory] = usePlayerPreference<keyof typeof EMOJI_CATEGORIES>(
+    'emojiPicker.category',
+    'faces',
+    'global'
+  );
 
   return (
     <div className="emoji-picker">

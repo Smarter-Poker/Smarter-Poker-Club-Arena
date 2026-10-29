@@ -44,7 +44,12 @@ def main():
             raise AssertionError(label)
     def simple(db, command, label, check=True):
         return e.run(label, [e.pg/'psql','-X','-qAt','-h',e.socket,'-p',e.port,'-U','postgres','-d',db,'-v','ON_ERROR_STOP=1','-c',command], check=check)
-    original = "\nselect case\n         when pg_try_advisory_lock(hashtext('sp-prune-hand-history'))\n           then (select set_config('statement_timeout','30s',true) is not null\n                    and public.sp_prune_hand_history(5000) >=0)::text\n         else 'skipped: previous run still in progress'\n       end;\n"
+    captured_job = json.loads(actions.PREIMAGE.read_text())['retention_cron_preimage']
+    original = captured_job['command']
+    assert len(original.encode()) == 301
+    assert hashlib.md5(original.encode()).hexdigest() == captured_job['command_md5'] == '96244362bf46b39e75ef1100b1372203'
+    assert {k: captured_job[k] for k in ['jobid', 'jobname', 'schedule', 'active', 'username']} == {'jobid': 117, 'jobname': 'sp_prune_hand_history_10m', 'schedule': '30 seconds', 'active': True, 'username': 'postgres'}
+
     try:
         e.start()
         e.env['PGOPTIONS']='-c cron.use_background_workers=off'
@@ -71,6 +76,16 @@ def main():
         before_global=sql(base,'SELECT smarter_private.original_hand_correction_sources_match();','before-global-matcher')
         old_private=sql(base,"SELECT pg_get_functiondef('smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'::regprocedure);",'old-executing-producer-body')
         empty=e.database(base)
+        for label, changed_command in [('old-spacing', original.replace('>= 0', '>=0')), ('changed-batch', original.replace('(5000)', '(5001)'))]:
+            refused = e.database(empty)
+            sql(refused, 'UPDATE cron.job SET command=' + lit(changed_command) + ' WHERE jobid=117;', label+'-fixture-command')
+            code, _, err = e.sql(refused, 'BEGIN;' + migration.read_text() + 'COMMIT;', label=label+'-candidate-refusal', check=False)
+            expect(label+' exact cron preimage refuses', code != 0 and 'SUPERSEDED_RETENTION_CRON_PREIMAGE_CHANGED' in err)
+            expect(label+' transaction leaves no partial schema', sql(refused, "SELECT to_regclass('smarter_private.superseded_action_retention_due') IS NULL AND to_regclass('smarter_private.superseded_action_retention_cursor') IS NULL AND to_regprocedure('smarter_private.progress_superseded_action_retention()') IS NULL;", label+'-no-partial-schema') == 't')
+            expect(label+' original command remains unchanged', sql(refused, 'SELECT command FROM cron.job WHERE jobid=117;', label+'-original-command') == changed_command.strip())
+            expect(label+' original owner remains unchanged', sql(refused, "SELECT pg_get_functiondef('smarter_private.hand_submission_dispose_dealt_past(uuid,bigint)'::regprocedure);", label+'-original-owner') == old_private)
+            expect(label+' original source pins remain unchanged', json.loads(sql(refused, "SELECT split_part(pg_get_functiondef('smarter_private.original_hand_correction_sources_match()'::regprocedure),'$sourcepins$',2)::jsonb;", label+'-original-pins')) == before_pins)
+            e.discard(refused)
         sql(base,actions.SEED,'aged-authoritative-receipt')
         expect('BEFORE no future age owner exists',sql(base,"SELECT to_regprocedure('smarter_private.progress_superseded_action_retention()') IS NULL;",'before-missing-owner')=='t')
         e.sql(base,file=migration,label='exact-progress-candidate')

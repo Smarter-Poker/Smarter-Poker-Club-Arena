@@ -623,6 +623,7 @@ export function normalizeFull(data: any): FullStats {
       biggest_hand_loss: num(o.biggest_hand_loss),
       bb_per_100: num(o.bb_per_100),
       hours_played: num(o.hours_played),
+      cash_hours_played: num(o.cash_hours_played),
       hand_cap: num(o.hand_cap),
       hands_capped: o.hands_capped === true,
       first_hand_at: o.first_hand_at ?? undefined,

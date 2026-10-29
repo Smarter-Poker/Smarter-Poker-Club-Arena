@@ -262,3 +262,106 @@ describe('closed exact published Stats pagination proof', () => {
     );
   });
 });
+
+describe('published Stats pagination clock boundary', () => {
+  const source = readFileSync(resolve(__dirname, '../e2e/stats-deep.spec.ts'), 'utf8');
+  const proof = source.slice(
+    source.indexOf("test('published downline pagination"),
+    source.indexOf("test('traverses every owner")
+  );
+  it('warms real assets, records warmup reads, unmounts and settles before freezing a fresh mount', () => {
+    const points = [
+      'await page.clock.install(',
+      'await page.reload();',
+      'await rake.click();',
+      "await expect(panel.getByRole('row')).toHaveCount(501);",
+      'warmupReads.push(...reads.splice(0));',
+      'await overview.click();',
+      'await expect(panel).toHaveCount(0);',
+      "await expect(page.locator('.stats-range-status.is-refreshing')).toHaveCount(0);",
+      'await expect.poll(() => pendingRest.size).toBe(0);',
+      'await page.clock.pauseAt(',
+      'armed = true;',
+    ];
+    let last = -1;
+    for (const point of points) {
+      const next = proof.indexOf(point, last + 1);
+      expect(next, point).toBeGreaterThan(last);
+      last = next;
+    }
+    expect(proof.slice(last)).toContain('await rake.click();');
+    expect(proof).toContain('warmupReads,');
+    expect(
+      proof.indexOf('return pendingRest.size;', proof.indexOf('await page.clock.pauseAt('))
+    ).toBeLessThan(proof.indexOf('armed = true;'));
+  });
+  it('flushes due asynchronous work without spending the initial or changed-search debounce budget', () => {
+    const predicate = proof.slice(
+      proof.indexOf('const pausedRows'),
+      proof.indexOf('// pauseAt advances time')
+    );
+    expect(predicate).toContain('await page.clock.runFor(0);');
+    expect(predicate).not.toMatch(/runFor\([1-9]|resume\(|waitForTimeout/);
+    expect(proof.match(/await pausedRows\(501\)/g)).toHaveLength(2);
+    expect(proof.match(/await pausedRows\(621\)/g)).toHaveLength(2);
+    expect(proof.match(/runFor\(299\)/g)).toHaveLength(1);
+    expect(proof).toContain('await mountStatsPaneBeforeDebounce(page,');
+    const clock = readFileSync(resolve(__dirname, '../e2e/support/statsClock.ts'), 'utf8');
+    expect(clock).toContain('Math.min(16, 299 - advanced)');
+    expect(clock).toContain('if (await pane.count()) return true;');
+    expect(clock).toContain('advanced += frame');
+    expect(clock).toContain('await page.clock.runFor(0);');
+    expect(proof).toContain('await page.clock.runFor(300);');
+    expect(proof).toContain('await page.clock.runFor(1);');
+    expect(proof).toContain("await route.abort('blockedbyclient');");
+    for (const event of ['request', 'requestfinished', 'requestfailed'])
+      expect(proof).toContain(`page.off('${event}',`);
+  });
+});
+
+vi.mock('@playwright/test', () => ({
+  expect: {
+    poll: (read: () => Promise<boolean>) => ({
+      toBe: async (expected: boolean) => {
+        for (let attempt = 0; attempt < 30; attempt++) {
+          if ((await read()) === expected) return;
+        }
+        throw new Error('Pane did not mount inside the bounded clock budget');
+      },
+    }),
+  },
+}));
+
+describe('Stats pane frame budget', () => {
+  async function exercise(mountAt: number) {
+    const { mountStatsPaneBeforeDebounce } = await import('../e2e/support/statsClock');
+    let elapsed = 0;
+    const runFor = vi.fn(async (ms: number) => {
+      elapsed += ms;
+    });
+    const page = { clock: { runFor } } as unknown as Parameters<
+      typeof mountStatsPaneBeforeDebounce
+    >[0];
+    const pane = { count: async () => Number(elapsed >= mountAt) } as unknown as Parameters<
+      typeof mountStatsPaneBeforeDebounce
+    >[1];
+    return { runFor, result: mountStatsPaneBeforeDebounce(page, pane), elapsed: () => elapsed };
+  }
+  it('stops advancing immediately when the actual pane mounts', async () => {
+    const probe = await exercise(224);
+    expect(await probe.result).toBe(224);
+    expect(probe.elapsed()).toBe(224);
+    expect(probe.runFor.mock.calls.every(([ms]) => ms === 0 || ms === 16)).toBe(true);
+  });
+  it('spends no elapsed time when the pane is already mounted', async () => {
+    const probe = await exercise(0);
+    expect(await probe.result).toBe(0);
+    expect(probe.runFor.mock.calls).toEqual([[0]]);
+  });
+  it('fails without exceeding 299ms when no pane appears', async () => {
+    const probe = await exercise(Infinity);
+    await expect(probe.result).rejects.toThrow('bounded clock budget');
+    expect(probe.elapsed()).toBe(299);
+    expect(probe.runFor.mock.calls.filter(([ms]) => ms > 0).at(-1)).toEqual([11]);
+  });
+});

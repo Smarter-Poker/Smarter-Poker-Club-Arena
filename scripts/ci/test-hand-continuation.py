@@ -89,7 +89,7 @@ def main():
     work=args.work_root.resolve() if args.work_root is not None else out
     work.mkdir(parents=True,exist_ok=True)
     e=native.Execution(ROOT,out,args.pg_bin.resolve(),work,600,socket_parent=args.socket_root)
-    inputs=[MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
+    inputs=[Path('supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql'),MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
@@ -127,6 +127,7 @@ def main():
         after=(e.snapshot(db,'after-data'),e.catalog_snapshot(db,'after-catalog'),hand.private_snapshot(e,db,'after-private'))
         if before!=after:raise RuntimeError('complete public/private data/catalog rollback differs')
         e.report.update(data_rollback=True,catalog_rollback=True,private_catalog_and_data_rollback=True)
+        module(ROOT/DATA/'maintenance_lane_qualification.py','maintenance_lane_wait').qualify(e,ROOT,hand,db)
         qualify_fences(e,db,native)
         module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')

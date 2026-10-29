@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
+import React, { useMemo } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
 import './VIPActivityHistory.css';
 
@@ -29,7 +30,11 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({
   state = 'ready',
   onRetry,
 }) => {
-  const [activeFilter, setActiveFilter] = useState<ActivityFilter>('all');
+  const [activeFilter, setActiveFilter] = usePlayerPreference<ActivityFilter>(
+    'vipActivity.filter',
+    'all',
+    'global'
+  );
 
   const filteredActivities = useMemo(() => {
     if (activeFilter === 'all') return activities;

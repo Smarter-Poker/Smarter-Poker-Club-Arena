@@ -570,6 +570,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * still works when the normal turn-change path has thrown partway through.
    */
   protected forceArmTurnTimer(seat: number, seconds: number): void {
+    if (this.pendingOriginalContinuation) return;
     const p = this.seatedPlayers.find((sp) => sp.seat_number === seat);
     if (!p) return;
     this.startTurnTimer(p.user_id, seat, seconds);
@@ -865,6 +866,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * be reintroduced one call site at a time.
    */
   protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
+    if (this.pendingOriginalContinuation) return false;
     if (!this.lifecycleCanMutate() || !this.handController) return false;
     // Expiry/disconnect recovery is authoritative and supersedes any pending
     // horse computation or delayed horse action for this turn. This must be
@@ -1273,6 +1275,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   public async activateTimeBank(
     userId: string
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+      };
     if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     this.noteOwnClientClaim(userId); // POST /timebank is the client's door
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
@@ -1806,6 +1813,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     maxCallAmount?: number
   ): { success: boolean; error?: string; code?: string; armedToCall?: number } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
     this.noteOwnClientClaim(userId); // POST /preaction is the client's door
     /* A CLEAR IS FINISHED WHEN NOTHING IS ARMED (2026-10-04).
      *
@@ -1946,6 +1959,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     actionContext?: string | null,
     trustedOrigin?: 'pre_action'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
     if (this.weeklyHandPause.held())
       return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     // HTTP always supplies a context; trusted in-process callers omit it.
@@ -2006,6 +2025,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     amount?: number,
     origin: AcceptedActionOrigin = 'unknown'
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (this.isOriginalInputPending())
+      return {
+        success: false,
+        error: 'Original Hand Recovery Is Pending',
+        code: 'ACTION_STATE_PENDING',
+      };
     if (this.weeklyHandPause.held())
       return { success: false, error: 'Weekly Accounting Pause', code: 'WEEKLY_ACCOUNTING_PAUSED' };
     if (!this.handController) {
@@ -2467,7 +2492,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       pot: 0,
     };
     if (!this.handController) return defaultResult;
-    if (this.handContinuation?.isUnretained()) return defaultResult;
+    if (this.isOriginalInputPending() || this.handContinuation?.isUnretained())
+      return defaultResult;
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);

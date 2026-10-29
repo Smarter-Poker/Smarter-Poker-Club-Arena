@@ -351,7 +351,9 @@ for (const owner of ['weekly', 'physical'] as const) {
       const block = omitGuard ? originalWait.replace(finalGuard.getText(tree), '') : originalWait;
       const js = ts.transpileModule(
         `(async function() {
-        const original = true, recovered = undefined;
+        // This extracted ownership test exercises the retained PREPARED path.
+        // Already-started recovery is covered with real controllers/managers.
+        const original = true, recovered = undefined, resumesStartedOriginal = false;
         ${block}
         publish(); return true;
         } finally { publicationStart?.release(); }

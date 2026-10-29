@@ -2503,6 +2503,24 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           }
           return {
             handIds: [...hands.keys()],
+            // Retain only public counters for independent hand-history comparison.
+            // Never attach a transport payload wholesale: it may grow private fields.
+            summaries: [...hands.values()].map((summary) => ({
+              hand_id: summary.hand_id,
+              public_stats_version: summary.public_stats_version,
+              players: summary.players.map((player) => ({
+                user_id: player.user_id,
+                vpip: player.vpip,
+                pfr: player.pfr,
+                won: player.won,
+                ...(player.aggressive_actions !== undefined && player.call_actions !== undefined
+                  ? {
+                      aggressive_actions: player.aggressive_actions,
+                      call_actions: player.call_actions,
+                    }
+                  : {}),
+              })),
+            })),
             observer: current.observer,
             playersChecked: expected.size,
             receipts: hands.size,

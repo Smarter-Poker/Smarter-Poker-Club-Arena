@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import {
   pendingAppearancePatch,
   pendingAppearanceIntents,
@@ -19,7 +20,7 @@ import { resumePendingAppearance } from '../../lib/applyTableAppearance';
  *           cards_id, face_deck_id
  */
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   TABLE_SKINS,
   TABLE_BACKGROUNDS,
@@ -44,7 +45,6 @@ import {
   isCardBackUnlocked,
 } from './CardImage';
 import { supabase } from '../../lib/supabase';
-import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ControlThemeTokens.css';
@@ -712,39 +712,35 @@ export function ThemeSettingsModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const vipPromptRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
-  const [backgroundGroup, setBackgroundGroup] = useState<BackgroundGroup>('places-rooms');
-  const scopeKey = `ca_table_studio_scope:${userId || 'guest'}`;
-  const readScope = () => {
-    const saved = getLocalStorage<string>(scopeKey, 'ALL');
-    return (GAME_TYPES as readonly string[]).includes(saved) ? saved : 'ALL';
-  };
-  const [gameType, setGameType] = useState<string>(readScope);
-  useLayoutEffect(() => {
-    /* Read on account handoff AND each time the Studio opens. Settings, the
-       hamburger menu and the table panel each keep a closed instance mounted,
-       so reading only at mount let one instance save to the scope another had
-       already moved off (2026-10-16). A choice made while open is written to
-       storage before setGameType, so reopening returns that same choice. */
-    if (isOpen) setGameType(readScope());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, isOpen]);
-  useEffect(() => {
-    // Another browser tab moved the scope: follow it while this one is open.
-    if (!isOpen) return;
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === scopeKey) setGameType(readScope());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeKey, isOpen]);
+  const [activeTab, setActiveTab] = usePlayerPreference<ThemeTab>(
+    'tableStudio.tab',
+    'themes',
+    'global'
+  );
+  const [backgroundGroup, setBackgroundGroup] = usePlayerPreference<BackgroundGroup>(
+    'tableStudio.backgroundGroup',
+    'places-rooms',
+    'global'
+  );
+  const [gameType, setGameType] = usePlayerPreference<string>(
+    'tableStudio.gameType',
+    'ALL',
+    'global'
+  );
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
   const [previewFinalTable, setPreviewFinalTable] = useState(false);
   const [previewAvatars, setPreviewAvatars] = useState<string[]>([]);
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>('all');
-  const [assetSearch, setAssetSearch] = useState('');
+  const [assetFilter, setAssetFilter] = usePlayerPreference<AssetFilter>(
+    'tableStudio.assetFilter',
+    'all',
+    'global'
+  );
+  const [assetSearch, setAssetSearch] = usePlayerPreference(
+    'tableStudio.assetSearch',
+    '',
+    'global'
+  );
   const collections = useTableStudioCollections(isOpen, userId);
   const appearanceRealtime = useUserThemeRealtime(userId, isOpen);
   /** Card backs bought with diamonds in the store. See canAccessAsset. */
@@ -1282,7 +1278,6 @@ export function ThemeSettingsModal({
     }
 
     setActiveTab(intent.tab);
-    setAssetSearch('');
     if (intent.tab === 'background') {
       setBackgroundGroup(BACKGROUND_SKIN_IDS.has(intent.assetId) ? 'skins' : 'places-rooms');
     }
@@ -2078,7 +2073,6 @@ export function ThemeSettingsModal({
 
   const activateTab = (tab: ThemeTab) => {
     setActiveTab(tab);
-    setAssetSearch('');
   };
 
   const gameTypeLabel = GAME_TYPE_LABELS[gameType] ?? gameType;
@@ -2203,7 +2197,6 @@ export function ThemeSettingsModal({
                   value={gameType}
                   onChange={(e) => {
                     gameTypeRef.current = e.target.value;
-                    setLocalStorage(scopeKey, e.target.value);
                     setGameType(e.target.value);
                   }}
                 >

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import CommunitySurfaceHeader from '../components/community/CommunitySurfaceHeader';
@@ -150,7 +151,7 @@ export default function FriendsPage() {
      "Build Your Poker Circle". This is what tells them apart. */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference('FriendsPage:searchQuery', '');
   const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
   const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnostics>({
     unavailableProfiles: 0,

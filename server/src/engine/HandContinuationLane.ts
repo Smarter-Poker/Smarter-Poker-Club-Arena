@@ -35,6 +35,11 @@ export class HandContinuationLane {
   private unretainedBatches = 0;
   private controlDirty = false;
   private retainedSequence: number;
+  private replayingOriginal = false;
+
+  isReplayingOriginal(): boolean {
+    return this.replayingOriginal;
+  }
   private retentionWaiters: Array<{
     sequence: number;
     resolve: () => void;
@@ -71,11 +76,25 @@ export class HandContinuationLane {
       identity: ContinuationEventIdentity
     ) => Promise<void>,
     private readonly current: () => boolean,
-    private readonly reportFailure: (error: unknown) => void
+    private readonly reportFailure: (error: unknown) => void,
+    initialReplay?: () => Promise<void>
   ) {
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('Invalid Hand Sequence');
     this.sequence = sequence;
     this.retainedSequence = sequence;
+    if (initialReplay) {
+      this.replayingOriginal = true;
+      // The saved batch already owns its sequence and bytes. Only replay its
+      // consumers; later captured batches queue behind this original tail.
+      this.tail = Promise.resolve()
+        .then(async () => {
+          if (this.closed || !this.current()) throw new Error('Hand Continuation Is Fenced');
+          await initialReplay();
+          if (this.closed || !this.current()) throw new Error('Hand Continuation Is Fenced');
+          this.replayingOriginal = false;
+        })
+        .catch((error) => this.fail(error));
+    }
   }
 
   enqueue(event: ContinuationEvent): void {

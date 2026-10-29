@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useSharedSecondTick } from './useSharedSecondTick';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -56,30 +57,6 @@ type SortDir = 'asc' | 'desc';
 
 export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 
-/* Remembered column sort, per club and per category. A player who sorts by
-   Stakes lost it the moment they looked at another tab and came back, which
-   on a lobby this dense is the sort of small forgetting that makes a screen
-   feel like it is not listening. Storage failures are silent: the sort still
-   works for the session, only the memory of it is lost. */
-const SORT_KEY = (clubId: string | undefined, category: string) =>
-  `ca_lobby_sort_${clubId || 'any'}_${category}`;
-
-function readSort(
-  clubId: string | undefined,
-  category: string
-): { key: string; dir: SortDir } | null {
-  try {
-    const raw = localStorage.getItem(SORT_KEY(clubId, category));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown };
-    if (typeof parsed?.key !== 'string') return null;
-    if (parsed.dir !== 'asc' && parsed.dir !== 'desc') return null;
-    return { key: parsed.key, dir: parsed.dir };
-  } catch {
-    return null;
-  }
-}
-
 /**
  * The order a tab opens in when the player has never sorted it themselves.
  *
@@ -101,19 +78,6 @@ function defaultSortFor(category: string): { key: string; dir: SortDir } | null 
 /** The tabs whose lists are kept in variant groups (see `sorted`). */
 function groupsByVariant(category: string): boolean {
   return category === 'HOLDEM' || category === 'OMAHA' || category === 'LIMIT';
-}
-
-function writeSort(
-  clubId: string | undefined,
-  category: string,
-  sort: { key: string; dir: SortDir } | null
-) {
-  try {
-    if (sort) localStorage.setItem(SORT_KEY(clubId, category), JSON.stringify(sort));
-    else localStorage.removeItem(SORT_KEY(clubId, category));
-  } catch {
-    /* quota or private mode - the sort still applies for this session */
-  }
 }
 
 interface ColumnDef {
@@ -1855,17 +1819,25 @@ export default function LobbyTable({
     [ctx, spinTiers]
   );
 
-  const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(
-    () => readSort(clubId, category) ?? defaultSortFor(category)
+  const [headingSort, setHeadingSort] = usePlayerPreference(
+    `lobby:headingSort:${category}`,
+    { key: '', dir: 'asc' as SortDir, chosen: false },
+    clubId || 'any'
   );
-  /* A HEADING THE PLAYER CHOSE IS OBEYED (Dan 2026-10-23: "PLAYERS AND STATUS
-     DON'T CHANGE WHEN THEY ARE CLICKED"). The featured pin used to float the
-     club's featured games above every ordering, so on a board whose first
-     rows were featured a Players or Status tap reordered only the rows under
-     them and the top of the list never moved. The pin now decorates the
-     default order only; once the player picks a heading, that heading decides
-     the whole list. Dead seat-first games and empty cash tables still sink. */
-  const [sortChosen, setSortChosen] = useState<boolean>(() => readSort(clubId, category) != null);
+  const sort = useMemo(
+    () =>
+      headingSort.chosen
+        ? { key: headingSort.key, dir: headingSort.dir }
+        : defaultSortFor(category),
+    [headingSort, category]
+  );
+  const sortChosen = headingSort.chosen;
+  const setSort = useCallback(
+    (next: { key: string; dir: SortDir }) => {
+      setHeadingSort({ ...next, chosen: true });
+    },
+    [setHeadingSort]
+  );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const mobileCardsRef = useRef<HTMLDivElement>(null);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
@@ -1877,15 +1849,7 @@ export default function LobbyTable({
      it is restored from what this player last chose on THIS tab instead. A
      remembered key that the new column set does not define is dropped by the
      sort itself (columns.find returns undefined -> original order). */
-  /**
-   * Restore the remembered sort when the TAB changes.
-   *
-   * `clubId` was in this dependency list and should not have been: on a slug
-   * route it starts as the slug and becomes the UUID a moment later, so the
-   * effect fired twice with two different storage keys and threw away any
-   * header the player had clicked in between. The tab is the only thing that
-   * changes the column set, and the column set is the only reason to re-read.
-   */
+  // ClubHome supplies the canonical club UUID before this board mounts.
   /* A sheet chip applies once per press (the seq), never on mount and never
      when the tab changes - the tab's own remembered heading wins there. */
   const lastOrderSeqRef = useRef(requestedOrder?.seq ?? 0);
@@ -1896,23 +1860,11 @@ export default function LobbyTable({
     const col =
       target === 'reset' ? undefined : columns.find((c) => c.key === target.key && c.sortable);
     if (target === 'reset' || !col) {
-      setSort(defaultSortFor(category));
-      setSortChosen(false);
-      writeSort(clubId, category, null);
+      setHeadingSort({ key: '', dir: 'asc', chosen: false });
       return;
     }
     setSort(target);
-    setSortChosen(true);
-    writeSort(clubId, category, target);
   }, [requestedOrder, category, clubId, columns]);
-
-  const lastCategoryRef = useRef(category);
-  useEffect(() => {
-    if (lastCategoryRef.current === category) return;
-    lastCategoryRef.current = category;
-    setSort(readSort(clubId, category) ?? defaultSortFor(category));
-    setSortChosen(readSort(clubId, category) != null);
-  }, [category, clubId]);
 
   /* Dan 2026-08-25: a Spin or Heads-Up with every seat gone "NEEDS TO BE
      DROPPED TO THE BOTTOM OF THE RESULTS". This is applied AFTER whatever sort
@@ -2082,8 +2034,6 @@ export default function LobbyTable({
     if (!col.sortable) return;
     const next = { key: col.key, dir };
     setSort(next);
-    setSortChosen(true);
-    writeSort(clubId, category, next);
     onHeadingSort?.(next.key, next.dir);
   };
 
@@ -2119,8 +2069,6 @@ export default function LobbyTable({
           ? { key: col.key, dir: 'asc' }
           : { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
       setSort(next);
-      setSortChosen(true);
-      writeSort(clubId, category, next);
       onHeadingSort?.(next.key, next.dir);
     }
   };

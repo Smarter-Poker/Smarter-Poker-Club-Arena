@@ -240,12 +240,21 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
   const [isOnline, setIsOnline] = useState(readCashierOnlineState);
   const isAccountCurrent = useCashoutScope(userId, JSON.stringify([clubParam, clubUuid]));
 
-  const [preset, setPreset] = useState<StatementPreset | 'custom'>('last7');
-  const [range, setRange] = useState<StatementRange>(() =>
+  const [preset, setPreset] = usePlayerPreference<StatementPreset | 'custom'>(
+    'CashierStatementsPage:preset',
+    'last7'
+  );
+  const [range, setRange] = usePlayerPreference<StatementRange>('CashierStatementsPage:range', () =>
     statementPresetRange('last7', Date.now())
   );
-  const [customFrom, setCustomFrom] = useState(range.fromDay);
-  const [customTo, setCustomTo] = useState(range.toDay);
+  const [customFrom, setCustomFrom] = usePlayerPreference(
+    'CashierStatementsPage:customFrom',
+    range.fromDay
+  );
+  const [customTo, setCustomTo] = usePlayerPreference(
+    'CashierStatementsPage:customTo',
+    range.toDay
+  );
   const [rangeProblem, setRangeProblem] = useState<keyof typeof RANGE_PROBLEM_WORD | null>(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -313,12 +322,15 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
   const refused = list.status === 'unauthorized';
   const activeFilters = activeStatementFilterCount(filters);
 
-  const choosePreset = useCallback((next: StatementPreset | 'custom') => {
-    setPreset(next);
-    setRangeProblem(null);
-    setOpenId(null);
-    if (next !== 'custom') setRange(statementPresetRange(next, Date.now()));
-  }, []);
+  const choosePreset = useCallback(
+    (next: StatementPreset | 'custom') => {
+      setPreset(next);
+      setRangeProblem(null);
+      setOpenId(null);
+      if (next !== 'custom') setRange(statementPresetRange(next, Date.now()));
+    },
+    [setPreset, setRange]
+  );
 
   const applyCustom = useCallback(() => {
     const result = customStatementRange(customFrom, customTo);
@@ -329,7 +341,7 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
     setRangeProblem(null);
     setOpenId(null);
     setRange(result.range);
-  }, [customFrom, customTo]);
+  }, [customFrom, customTo, setRange]);
 
   const copy = useCallback(async (id: string, text: string) => {
     const ok = await copyCashierText(text);

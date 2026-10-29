@@ -116,6 +116,7 @@ function boardRow(username: string, value: number) {
 describe('Leaderboard Page Recovery States', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     h.user.id = 'leaderboard-player';
     h.getMemberships.mockReset().mockResolvedValue(memberships);
     h.getClubLeaderboard.mockReset().mockResolvedValue([boardRow('Live Player', 100)]);

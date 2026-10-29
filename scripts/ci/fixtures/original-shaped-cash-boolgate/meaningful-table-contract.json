@@ -1,0 +1,206 @@
+{
+  "name": "union_pnl_cash_outcomes",
+  "owner": "postgres",
+  "acl": ["postgres=arwdDxtm/postgres"],
+  "rls": true,
+  "force_rls": false,
+  "kind": "r",
+  "persistence": "p",
+  "columns": [
+    {
+      "name": "table_id",
+      "type": "uuid",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "hand_number",
+      "type": "bigint",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "hand_id",
+      "type": "uuid",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "transaction_id",
+      "type": "xid8",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "recognized_at",
+      "type": "timestamp with time zone",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "payload_hash",
+      "type": "text",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "game_scope",
+      "type": "jsonb",
+      "notnull": true,
+      "default": null
+    },
+    {
+      "name": "evidence",
+      "type": "jsonb",
+      "notnull": true,
+      "default": null
+    }
+  ],
+  "constraints": [
+    {
+      "name": "union_pnl_cash_outcomes_hand_id_key",
+      "definition": "UNIQUE (hand_id)",
+      "validated": true
+    },
+    {
+      "name": "union_pnl_cash_outcomes_pkey",
+      "definition": "PRIMARY KEY (table_id, hand_number)",
+      "validated": true
+    },
+    {
+      "name": "union_pnl_cash_outcomes_transaction_id_fkey",
+      "definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",
+      "validated": true
+    }
+  ],
+  "indexes": [
+    {
+      "definition": "CREATE INDEX union_pnl_cash_outcomes_expr_recognized_at_idx ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE INDEX union_pnl_cash_outcomes_recognition_join_cover ON public.union_pnl_cash_outcomes USING btree (recognized_at) INCLUDE (table_id, hand_number)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE INDEX union_pnl_cash_outcomes_recognition_window ON public.union_pnl_cash_outcomes USING btree (recognized_at)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE INDEX union_pnl_cash_outcomes_scope_missing ON public.union_pnl_cash_outcomes USING btree (recognized_at) WHERE (NOT (game_scope ?& ARRAY['game_union_id'::text, 'host_club_id'::text, 'tournament_id'::text, 'is_private'::text, 'asset'::text, 'unit_scale'::text]))",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE INDEX union_pnl_cash_outcomes_unaccepted ON public.union_pnl_cash_outcomes USING btree (((game_scope ->> 'game_union_id'::text)), recognized_at) WHERE (((evidence ->> 'status'::text) IS DISTINCT FROM 'ready'::text) OR ((evidence -> 'basis_certified'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'all_players_included'::text) IS DISTINCT FROM 'true'::jsonb) OR ((evidence -> 'game_scope'::text) IS DISTINCT FROM game_scope))",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_hand_id_key ON public.union_pnl_cash_outcomes USING btree (hand_id)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX union_pnl_cash_outcomes_pkey ON public.union_pnl_cash_outcomes USING btree (table_id, hand_number)",
+      "valid": true,
+      "ready": true,
+      "live": true,
+      "owner": "postgres"
+    }
+  ],
+  "policies": null,
+  "triggers": [
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 5,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_check_ins\"()",
+      "constraint_definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER INSERT ON public.union_pnl_cash_outcomes FROM union_pnl_transaction_frames NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()"
+    },
+    {
+      "name": "RI_ConstraintTrigger_OBJECT",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 17,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": true,
+        "tginitdeferred": false
+      },
+      "function": "\"RI_FKey_check_upd\"()",
+      "constraint_definition": "FOREIGN KEY (transaction_id) REFERENCES union_pnl_transaction_frames(transaction_id)",
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_OBJECT\" AFTER UPDATE ON public.union_pnl_cash_outcomes FROM union_pnl_transaction_frames NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()"
+    },
+    {
+      "name": "original_pnl_immutable",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 58,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_union_pnl_inventory_immutable()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER original_pnl_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.union_pnl_cash_outcomes FOR EACH STATEMENT EXECUTE FUNCTION fn_union_pnl_inventory_immutable()"
+    },
+    {
+      "name": "union_pnl_cash_outcome_touch",
+      "catalog": {
+        "tgargs": "\\x",
+        "tgattr": [],
+        "tgqual": null,
+        "tgtype": 5,
+        "tgnargs": 0,
+        "tgenabled": "O",
+        "tgnewtable": null,
+        "tgoldtable": null,
+        "tgdeferrable": false,
+        "tgisinternal": false,
+        "tginitdeferred": false
+      },
+      "function": "fn_union_pnl_cash_outcome_touch()",
+      "constraint_definition": null,
+      "definition": "CREATE TRIGGER union_pnl_cash_outcome_touch AFTER INSERT ON public.union_pnl_cash_outcomes FOR EACH ROW EXECUTE FUNCTION fn_union_pnl_cash_outcome_touch()"
+    }
+  ]
+}

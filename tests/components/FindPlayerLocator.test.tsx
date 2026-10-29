@@ -127,6 +127,7 @@ function affiliations() {
 
 describe('Find A Player locator', () => {
   beforeEach(() => {
+    localStorage.clear(); // Each locator scenario starts without a saved search.
     vi.spyOn(PlayerSearchService, 'search').mockResolvedValue(page([locatedPlayer]));
   });
 

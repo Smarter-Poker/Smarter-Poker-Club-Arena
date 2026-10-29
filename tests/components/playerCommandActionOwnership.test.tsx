@@ -563,7 +563,13 @@ it('ignores focus and checks only authority on a recovered record subscription',
 });
 
 it('coalesces source bursts and reads again after an event arrives during a read', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   render(<MemberManagementPage />);
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+  // The hook mock exposes callbacks during render. Finish bootstrap and its
+  // authority effect before delivering events to the subscribed record.
+  await act(async () => initial.resolve(memberDetail));
   await screen.findByText('River Shark');
   const pending = deferred<typeof memberDetail>();
   state.getMemberDetail.mockReturnValueOnce(pending.promise);

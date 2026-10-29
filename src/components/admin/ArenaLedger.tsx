@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ARENA LEDGER — Admin Audit-Log Stream
@@ -63,8 +64,8 @@ const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string
 export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerProps) {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = usePlayerPreference('arenaLedger.filter', 'all', clubId);
+  const [searchQuery, setSearchQuery] = usePlayerPreference('arenaLedger.search', '', clubId);
   const [isLive, setIsLive] = useState(true);
   const isMounted = useIsMounted();
 

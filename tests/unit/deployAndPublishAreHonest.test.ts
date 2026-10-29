@@ -111,6 +111,53 @@ describe('the required server check joins independent accounting and engine work
 });
 
 describe('engine deployment reports what actually happened', () => {
+  it('reports a missing production prerequisite before claiming a sealed release', () => {
+    const receipt = job(deploy, 'record-receipt');
+    expect(receipt).toContain('needs: [preflight, engine-doors, deploy]');
+    const expression = /^ {10}REASON: \$\{\{ (.+) \}\}$/m.exec(receipt)?.[1];
+    expect(expression).toBeTruthy();
+    const reason = new Function('needs', 'format', `return (${expression})`);
+    const format = (template: string, value: string) => template.replace('{0}', value);
+    const needs = (doors: string, result: string, outputs = {}) => ({
+      'engine-doors': { result: doors },
+      deploy: { result, outputs },
+    });
+    for (const doors of ['failure', 'cancelled', 'skipped']) {
+      const actual = reason(needs(doors, 'skipped'), format);
+      expect(actual).toContain('production database prerequisite');
+      expect(actual).not.toMatch(/sealed|production still runs|identity could/);
+    }
+    expect(reason(needs('success', 'cancelled'), format)).toContain(
+      'cancelled before a sealed release'
+    );
+    expect(reason(needs('success', 'skipped'), format)).toContain('did not run');
+    expect(
+      reason(needs('success', 'failure', { release_result: 'not completed' }), format)
+    ).toContain('did not complete');
+    expect(
+      reason(needs('success', 'success', { release_result: 'sealed', verified: 'true' }), format)
+    ).toBe('Hetzner transaction sealed and independently verified');
+    expect(
+      reason(
+        needs('success', 'success', { release_result: 'already-released', verified: 'true' }),
+        format
+      )
+    ).toBe('production already proved this exact release');
+    expect(
+      reason(
+        needs('success', 'failure', { release_result: 'already-released', verified: 'false' }),
+        format
+      )
+    ).toContain('identity could not be independently proved');
+    expect(reason(needs('success', 'failure'), format)).toContain('outcome unknown');
+    expect(
+      reason(
+        needs('success', 'success', { release_result: 'superseded', superseded_by: 'newer-sha' }),
+        format
+      )
+    ).toContain('newer-sha');
+  });
+
   it('calls a release shipped only after the durable transaction and independent proof agree', () => {
     expect(deploy).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
     expect(deploy).toContain('case "$RESULT" in sealed|already-released)');
@@ -169,7 +216,7 @@ describe('engine deployment reports what actually happened', () => {
     expect(release).not.toContain('actions/setup-node@');
 
     expect(receipt).toMatch(/^ {2}record-receipt:/);
-    expect(receipt).toMatch(/^ {4}needs: \[preflight, deploy\]$/m);
+    expect(receipt).toMatch(/^ {4}needs: \[preflight, engine-doors, deploy\]$/m);
     expect(receipt).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(receipt).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(receipt).toContain('node scripts/ci/record-engine-deploy-attempt.mjs');

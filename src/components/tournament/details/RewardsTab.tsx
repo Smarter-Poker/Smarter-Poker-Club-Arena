@@ -90,6 +90,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
+import { subscribeTournamentStandings } from '../../../services/tournamentStandingsUpdates';
 import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
 import {
@@ -316,25 +317,25 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
   const [ownedLedger, setLedger] = useState<BountyLedger>(EMPTY_LEDGER);
   const ledger = ownedLedger.tournamentId === tournamentId ? ownedLedger : EMPTY_LEDGER;
 
-  /* A KNOCKOUT MOVES THE POOL (2026-10-04 review pass). The two bounty reads
-     ran once, when the tab opened, so "Claimed", the knockout count and - on
-     an event whose pool is the heads themselves - "Still Available" sat at
-     their opening values for as long as the tab stayed on screen while the
-     field busted around them. Every bounty is paid on an elimination, and the
-     page already streams those into `entries`, so the count of players out is
-     the signal: the same two reads run again when it changes, and never on a
-     timer. The figures on screen are kept until the new ones land. */
-  const playersOut = useMemo(() => entries.filter(isPlayerOut).length, [entries]);
-
-  /* Two queries, bounty events only, cancelled on unmount. */
+  /* Committed standings/lifecycle events invalidate the ledger even when the
+     number of eliminated players stays unchanged (rebuy, bounty settlement,
+     or reconnect). One in-flight read plus one trailing invalidation prevents
+     concurrent responses from overwriting newer data. */
   useEffect(() => {
     if (!tournamentId || !isBountyEvent) {
       setLedger(EMPTY_LEDGER);
       return;
     }
     let cancelled = false;
-
-    (async () => {
+    let inFlight = false;
+    let requested = false;
+    const load = async () => {
+      if (cancelled) return;
+      if (inFlight) {
+        requested = true;
+        return;
+      }
+      inFlight = true;
       try {
         const [live, claimed] = await Promise.all([
           fetchAllRows<{ id: string; current_bounty: unknown; status: string | null }>(
@@ -400,13 +401,21 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
           );
           reportError(e, 'RewardsTab.bounty_ledger_load_failed');
         }
+      } finally {
+        inFlight = false;
+        if (!cancelled && requested) {
+          requested = false;
+          void load();
+        }
       }
-    })();
-
+    };
+    const unsubscribe = subscribeTournamentStandings(tournamentId, () => void load());
+    void load();
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [tournamentId, isBountyEvent, playersOut]);
+  }, [tournamentId, isBountyEvent]);
 
   /* ── FIELD STATE ──────────────────────────────────────────────────────── */
 

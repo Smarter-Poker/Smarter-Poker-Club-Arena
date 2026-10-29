@@ -2,6 +2,15 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TournamentTabProps } from '../../src/components/tournament/details/types';
 const db = vi.hoisted(() => ({ read: vi.fn() }));
+const feed = vi.hoisted(() => ({ listeners: new Map<string, () => void>() }));
+vi.mock('../../src/services/tournamentStandingsUpdates', () => ({
+  subscribeTournamentStandings: (id: string, notify: () => void) => {
+    feed.listeners.set(id, notify);
+    return () => {
+      if (feed.listeners.get(id) === notify) feed.listeners.delete(id);
+    };
+  },
+}));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -58,9 +67,21 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  feed.listeners.clear();
 });
 const pool = (container: HTMLElement) => container.querySelector('.rw-bounty')!;
 describe('Rewards reads only the complete ledger for the selected event', () => {
+  it('refreshes committed bounty changes without needing an elimination-count change', async () => {
+    const view = render(<RewardsTab {...props('first')} />);
+    await waitFor(() => expect(pool(view.container).textContent).toContain('125'));
+    db.read.mockImplementation(({ table }) => ({
+      data: table === 'tournament_players' ? [{ ...heads[0], current_bounty: 250 }] : [],
+      error: null,
+    }));
+    await act(async () => feed.listeners.get('first')?.());
+    await waitFor(() => expect(pool(view.container).textContent).toContain('250'));
+  });
+
   it('clears the previous event while the new event is pending and reports its failed read', async () => {
     const view = render(<RewardsTab {...props('first')} />);
     await waitFor(() => expect(pool(view.container).textContent).toContain('125'));
@@ -114,12 +135,8 @@ describe('Rewards reads only the complete ledger for the selected event', () => 
     const view = render(<RewardsTab {...props('first')} />);
     await waitFor(() => expect(pool(view.container).textContent).toContain('125'));
     db.read.mockResolvedValue({ data: null, error: { message: 'offline' } });
-    const next = props('first');
-    next.entries = [
-      { id: 'out', user_id: 'out', status: 'eliminated' },
-    ] as TournamentTabProps['entries'];
-    view.rerender(<RewardsTab {...next} />);
-    await act(async () => {});
+    await act(async () => feed.listeners.get('first')?.());
+    expect(db.read.mock.calls.length).toBe(4);
     expect(pool(view.container).textContent).toContain('125');
     expect(pool(view.container).textContent).not.toContain('Could Not Be Read');
   });
@@ -141,6 +158,45 @@ describe('Rewards reads only the complete ledger for the selected event', () => 
       expect(pool(view.container).textContent).toContain('The Bounty Pool Could Not Be Read')
     );
     expect(db.read.mock.calls.filter(([a]) => a.table === 'tournament_players')).toHaveLength(100);
+  });
+  it('coalesces events during a read into one trailing committed refresh', async () => {
+    let finish!: (v: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    db.read.mockReturnValue(pending);
+    const view = render(<RewardsTab {...props('first')} />);
+    await waitFor(() => expect(db.read).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      for (let i = 0; i < 20; i++) feed.listeners.get('first')?.();
+    });
+    expect(db.read).toHaveBeenCalledTimes(2);
+    db.read.mockImplementation(({ table }) => ({
+      data: table === 'tournament_players' ? heads : [],
+      error: null,
+    }));
+    await act(async () => finish({ data: [], error: null }));
+    await waitFor(() => expect(pool(view.container).textContent).toContain('125'));
+    expect(db.read).toHaveBeenCalledTimes(4);
+  });
+  it('retires the subscription and queued read on unmount', async () => {
+    let finish!: (v: unknown) => void;
+    db.read.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const view = render(<RewardsTab {...props('first')} />);
+    await waitFor(() => expect(db.read).toHaveBeenCalledTimes(2));
+    const stale = feed.listeners.get('first')!;
+    await act(async () => stale());
+    view.unmount();
+    expect(feed.listeners.has('first')).toBe(false);
+    await act(async () => {
+      stale();
+      finish({ data: [], error: null });
+    });
+    expect(db.read).toHaveBeenCalledTimes(2);
   });
   it('accepts a verified empty ledger', async () => {
     db.read.mockResolvedValue({ data: [], error: null });

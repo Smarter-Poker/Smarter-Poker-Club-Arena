@@ -981,7 +981,12 @@ import {
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
-import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib/handHistoryLive';
+import {
+  HAND_HISTORY_PAGE,
+  mergeHandHistoryPages,
+  prependHand,
+  shouldRefetchHandHistory,
+} from '../lib/handHistoryLive';
 import { startHandHistoryHydration } from '../lib/handHistoryHydration';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
@@ -9945,6 +9950,12 @@ function LiveTablePage({
    * empty-failed the surfaces are looking at.
    */
   const [handHistory, setHandHistory] = useState<HandRecord[]>([]);
+  const handHistoryRowsRef = useRef(handHistory);
+  handHistoryRowsRef.current = handHistory;
+  const loadedHandHistoryScopeRef = useRef<string | null>(null);
+  const olderHandRequestRef = useRef<symbol | null>(null);
+  const [hasOlderHands, setHasOlderHands] = useState(false);
+  const [olderHandsLoading, setOlderHandsLoading] = useState(false);
   const [handHistoryState, setHandHistoryState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
     'idle'
   );
@@ -10011,6 +10022,20 @@ function LiveTablePage({
       pendingSavedIdsRef.current = [];
       setHandHistory([]);
     }
+    // Reset before the freshness check: a different pool can reuse this table route.
+    const readScope = handHistoryScopeRef.current;
+    if (loadedHandHistoryScopeRef.current !== readScope) {
+      loadedHandHistoryScopeRef.current = readScope;
+      handHistoryFetchedAtRef.current = null;
+      handHistoryTableRef.current = null;
+      handHistoryStateRef.current = 'idle';
+      pendingSavedIdsRef.current = [];
+      setHandHistory([]);
+      handHistoryRowsRef.current = [];
+      setHasOlderHands(false);
+      olderHandRequestRef.current = null;
+      setOlderHandsLoading(false);
+    }
     /* INSTANT REOPEN (Phase 1). Fetch on the first open for this table, after
        a failure, or when the list is stale enough that an event may have been
        missed; otherwise the list on screen is the record plus every hand the
@@ -10027,8 +10052,6 @@ function LiveTablePage({
     ) {
       return;
     }
-    // Another table's list must not linger under this table's name while it loads.
-    if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);
     return startHandHistoryHydration({
       load: () =>
         // THIS table's hands, in play order (Dan 2026-09-04). See
@@ -10042,7 +10065,17 @@ function LiveTablePage({
         /* An empty answer is an answer. `hands.length > 0` used to gate this,
            which left whatever was on screen (a cache, another table's list) in
            place when the truth was "no hands here yet". */
-        setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
+        const page = (hands || []).map((h) => adaptServiceHandToPanel(h, userId));
+        const sameScope = loadedHandHistoryScopeRef.current === readScope;
+        const alreadyPaged = sameScope && handHistoryRowsRef.current.length > HAND_HISTORY_PAGE;
+        setHandHistory((previous) => {
+          const next = sameScope && page.length > 0 ? mergeHandHistoryPages(previous, page) : page;
+          handHistoryRowsRef.current = next;
+          return next;
+        });
+        if (!alreadyPaged || page.length === 0)
+          setHasOlderHands(!lightningRoom?.poolSessionId && page.length === HAND_HISTORY_PAGE);
+        loadedHandHistoryScopeRef.current = readScope;
         handHistoryFetchedAtRef.current = Date.now();
         handHistoryTableRef.current = tableId ?? null;
       },
@@ -10063,6 +10096,54 @@ function LiveTablePage({
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
   }, [showHandHistory, showHandDetail, userId, tableId, lightningRoom?.poolSessionId, lastHandId]);
+
+  const loadOlderReviewHands = useCallback(async (): Promise<string | null> => {
+    if (
+      !userId ||
+      userId === 'guest' ||
+      !tableId ||
+      lightningRoom?.poolSessionId ||
+      !hasOlderHands ||
+      olderHandRequestRef.current ||
+      handHistoryStateRef.current !== 'ready'
+    )
+      return null;
+    const readScope = handHistoryScopeRef.current;
+    if (loadedHandHistoryScopeRef.current !== readScope) return null;
+    const oldest = handHistoryRowsRef.current.at(-1);
+    if (!oldest?.handNumber) return null;
+    const request = Symbol('older-hand-page');
+    olderHandRequestRef.current = request;
+    setOlderHandsLoading(true);
+    try {
+      const rows = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
+        tableId,
+        beforeHandNumber: oldest.handNumber,
+        throwOnError: true,
+      });
+      if (handHistoryScopeRef.current !== readScope || olderHandRequestRef.current !== request)
+        return null;
+      const page = rows.map((row) => adaptServiceHandToPanel(row, userId));
+      setHandHistory((previous) => {
+        const next = mergeHandHistoryPages(previous, page);
+        handHistoryRowsRef.current = next;
+        return next;
+      });
+      setHasOlderHands(rows.length === HAND_HISTORY_PAGE);
+      return page[0]?.id ?? null;
+    } catch (error) {
+      if (handHistoryScopeRef.current === readScope && olderHandRequestRef.current === request) {
+        reportError(error, 'TablePage.loadOlderReviewHands');
+        toast?.error?.('Could Not Load Older Hands. Try Again');
+      }
+      return null;
+    } finally {
+      if (olderHandRequestRef.current === request) {
+        olderHandRequestRef.current = null;
+        setOlderHandsLoading(false);
+      }
+    }
+  }, [userId, tableId, lightningRoom?.poolSessionId, hasOlderHands, toast]);
 
   /**
    * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
@@ -10104,7 +10185,11 @@ function LiveTablePage({
         // this page's tableId is the player's pool session, not a tables row.
         if (!row || (!lightningRoom?.poolSessionId && row.table_id !== tableId)) return;
         const record = adaptServiceHandToPanel(row, userId);
-        setHandHistory((prev) => prependHand(prev, record));
+        setHandHistory((prev) => {
+          const next = prependHand(prev, record, Number.POSITIVE_INFINITY);
+          handHistoryRowsRef.current = next;
+          return next;
+        });
         handHistoryFetchedAtRef.current = Date.now();
       } catch (e) {
         reportError(e, 'TablePage.takeSavedHand');
@@ -29878,10 +29963,18 @@ function LiveTablePage({
           setShowHandDetail(false);
           setHandDetailFocusId(null);
         }}
-        hands={handHistoryViewerRef.current === userId ? handHistory : []}
+        hands={
+          handHistoryViewerRef.current === userId &&
+          loadedHandHistoryScopeRef.current === handHistoryScopeRef.current
+            ? handHistory
+            : []
+        }
         heroId={userId || ''}
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
+        onLoadOlder={loadOlderReviewHands}
+        hasOlderHands={hasOlderHands}
+        olderHandsLoading={olderHandsLoading}
         viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         /* P5 2026-09-05: the rest of the server's ninety seconds. The felt
            shows the offer for ~2.5s; a player who missed it can buy the same

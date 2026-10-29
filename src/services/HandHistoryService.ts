@@ -421,6 +421,8 @@ class HandHistoryServiceClass {
        * nothing; a live table always passes its own id.
        */
       tableId?: string | null;
+      /** Older physical-table hands, anchored independently of newly completed hands. */
+      beforeHandNumber?: number | null;
       /** Lightning rooms are pool sessions, not hand_history.table_id values. */
       lightningPoolSessionId?: string | null;
       /**
@@ -532,6 +534,14 @@ class HandHistoryServiceClass {
       .contains('players', containmentJson);
     if (floor !== null) query = query.or(`hand_number.gte.${floor},hand_number.is.null`);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
+    if (
+      opts.tableId &&
+      typeof opts.beforeHandNumber === 'number' &&
+      Number.isFinite(opts.beforeHandNumber) &&
+      opts.beforeHandNumber > 0
+    ) {
+      query = query.lt('hand_number', opts.beforeHandNumber);
+    }
     /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
        sorted by created_at, which is when the ROW landed: the writer's retry
        queue drains failed inserts minutes later, so during any database

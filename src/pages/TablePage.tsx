@@ -641,6 +641,7 @@ import {
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
+import { submitTableDecision } from '../lib/tableActionDecision';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
@@ -2450,6 +2451,8 @@ function LiveTablePage({
   } | null>(null);
   /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
      (the pre-action arm names the hand it belongs to). */
+  const actionUserRef = useRef(userId);
+  actionUserRef.current = userId;
   const engineSnapshotRef = useRef(engineSnapshot);
   engineSnapshotRef.current = engineSnapshot;
   const engineLastEvent = rawEngineLastEvent;
@@ -23666,11 +23669,17 @@ function LiveTablePage({
     ): Promise<boolean> => {
       try {
         if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
-        const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
+        // Read at the tap: a retained callback must not send a token from an
+        // earlier render. A missing decision is refreshed, never sent unbound.
+        const res = await submitTableDecision({
+          actionContext: tableStateRef.current.actionContext,
+          allowContextless: Boolean(lightningRoomRef.current),
+          send: async (context) => await submitAction(tid, uid, action, amount, context),
+          refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot),
+        });
+        // A response from the old table/account cannot put a popup on a new one.
+        if (tableStateRef.current.tableId !== tid || actionUserRef.current !== uid) return false;
         if (!res.success) {
-          if (res.code === 'ACTION_NOT_DELIVERED') {
-            await awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot);
-          }
           showActionError({
             error: safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
@@ -23686,7 +23695,7 @@ function LiveTablePage({
         return false;
       }
     },
-    [tableState.actionContext, showActionError, requestEngineSnapshot]
+    [showActionError, requestEngineSnapshot]
   );
 
   /**

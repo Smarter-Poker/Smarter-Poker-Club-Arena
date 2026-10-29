@@ -10110,7 +10110,8 @@ function LiveTablePage({
       return null;
     const readScope = handHistoryScopeRef.current;
     if (loadedHandHistoryScopeRef.current !== readScope) return null;
-    const oldest = handHistoryRowsRef.current.at(-1);
+    const loadedHands = handHistoryRowsRef.current;
+    const oldest = loadedHands[loadedHands.length - 1];
     if (!oldest?.handNumber) return null;
     const request = Symbol('older-hand-page');
     olderHandRequestRef.current = request;

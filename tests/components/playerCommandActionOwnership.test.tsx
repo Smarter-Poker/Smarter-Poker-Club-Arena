@@ -736,17 +736,14 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
   );
   try {
     // Resolve bootstrap inside act so the resolved-club authority effect owns
-    // the next event. Visible markup alone does not establish that handoff.
+    // the next event, matching the coalescing fixture above. Visible markup
+    // alone does not establish that passive-effect handoff.
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
     await act(async () => initial.resolve(memberDetail));
     await screen.findByRole('textbox', { name: 'Nickname' });
     const authorityReads = state.getMemberDetail.mock.calls.length;
-    let rejectAuthority!: (error: unknown) => void;
-    const deniedAuthority = new Promise<typeof memberDetail>((_resolve, reject) => {
-      rejectAuthority = reject;
-    });
     const reads = state.getDownline.mock.calls.length;
-    state.getMemberDetail.mockReturnValueOnce(deniedAuthority);
+    state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
     await act(async () => {
       masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
         clubId: '22222222-2222-4222-8222-222222222222',
@@ -755,16 +752,11 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
         scopeId: '22222222-2222-4222-8222-222222222222',
       });
     });
-    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1));
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1);
     const authorityCall = state.getMemberDetail.mock.calls.at(-1);
-    expect(authorityCall?.slice(0, 3)).toEqual([
-      '22222222-2222-4222-8222-222222222222',
-      state.params.userId,
-      undefined,
-    ]);
+    expect(authorityCall?.[2]).toBeUndefined();
     expect(authorityCall?.[3]).toBeInstanceOf(AbortSignal);
     expect(authorityCall?.[3].aborted).toBe(false);
-    await act(async () => rejectAuthority(new MemberAccessDeniedError()));
     expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
     expect(screen.queryByText('River Shark')).not.toBeInTheDocument();

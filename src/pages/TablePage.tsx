@@ -153,6 +153,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { customCashGameName } from '../utils/customCashGameName';
 import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
@@ -27052,6 +27053,13 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
+                          {customCashGameName(tableState.tableName) && (
+                            <span className="table-brand__line table-brand__line--level">
+                              <MastheadGameLine className="table-brand__game">
+                                {customCashGameName(tableState.tableName)}
+                              </MastheadGameLine>
+                            </span>
+                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."

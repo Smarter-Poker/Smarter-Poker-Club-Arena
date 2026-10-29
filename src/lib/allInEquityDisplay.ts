@@ -1,10 +1,8 @@
 /** Preserve strict endpoints: only mathematically zero/one print 0%/100%. */
 export function formatAllInEquity(percent: number, exact = true): string | null {
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
-  if (!exact) {
-    if (percent === 0 || percent === 100) return 'Unknown';
-    return `~${formatAllInEquity(percent, true)}`;
-  }
+  // Legacy samples cannot prove an endpoint; omit unavailable labels entirely.
+  if (!exact && (percent === 0 || percent === 100)) return null;
   if (percent === 0 || percent === 100) return `${percent}%`;
   if (percent < 0.1) return '<0.1%';
   if (percent > 99.9) return '>99.9%';

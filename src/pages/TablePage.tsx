@@ -9228,12 +9228,10 @@ function LiveTablePage({
   if (rabbitViewerRef.current?.tableId !== tableId || rabbitViewerRef.current?.userId !== userId) {
     rabbitViewerRef.current = { tableId, userId };
   }
-  useEffect(() => {
-    rabbitViewerRef.current = { tableId, userId };
-    return () => {
-      rabbitViewerRef.current = null;
-    };
-  }, [tableId, userId]);
+  const rabbitStateViewerRef = useRef({ tableId, userId });
+  const rabbitViewIsCurrent =
+    rabbitStateViewerRef.current.tableId === tableId &&
+    rabbitStateViewerRef.current.userId === userId;
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
@@ -9269,17 +9267,23 @@ function LiveTablePage({
     },
     []
   );
-  const showRetainedRabbitBoard = retainedBoardShows(retainedRabbitBoard, {
-    handNumber: tableState.handNumber ?? 0,
-    cardCount: tableState.communityCards.length,
-  });
+  const showRetainedRabbitBoard = retainedBoardShows(
+    rabbitViewIsCurrent ? retainedRabbitBoard : null,
+    {
+      handNumber: tableState.handNumber ?? 0,
+      cardCount: tableState.communityCards.length,
+    }
+  );
   /* DISPLAY AND MOVE ON (Dan 2026-09-07): a newer hand owns the board from
      its first frame; only the reveal's ghost cards ride its empty preflop
      slots, and only until its flop. See retainedGhostsShow. */
-  const showRetainedRabbitGhosts = retainedGhostsShow(retainedRabbitBoard, {
-    handNumber: tableState.handNumber ?? 0,
-    cardCount: tableState.communityCards.length,
-  });
+  const showRetainedRabbitGhosts = retainedGhostsShow(
+    rabbitViewIsCurrent ? retainedRabbitBoard : null,
+    {
+      handNumber: tableState.handNumber ?? 0,
+      cardCount: tableState.communityCards.length,
+    }
+  );
   /* Stable array identities for the memoised board: a fresh spread per
      render would defeat CommunityCards' own JSON compare for nothing. */
   const retainedCards = useMemo(
@@ -9296,10 +9300,11 @@ function LiveTablePage({
      cards and the retained path would not have taken over yet - one flicker
      per reveal. While the retained copy is for the hand still on the felt,
      the live path borrows its ghost cards. */
-  const liveRabbitCards =
-    rabbitRevealedCards.length === 0 &&
-    retainedRabbitBoard !== null &&
-    retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
+  const liveRabbitCards = !rabbitViewIsCurrent
+    ? []
+    : rabbitRevealedCards.length === 0 &&
+        retainedRabbitBoard !== null &&
+        retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
       ? retainedRabbitCards
       : rabbitRevealedHandNumber === (tableState.handNumber ?? 0)
         ? rabbitRevealedCards
@@ -9363,6 +9368,21 @@ function LiveTablePage({
     }
     rabbitFloorTimerRef.current = setTimeout(drop, RABBIT_MIN_VISIBLE_MS - shownFor);
   }, []);
+
+  // Private cards and an offer must never survive a table/account change.
+  useEffect(() => {
+    rabbitViewerRef.current = { tableId, userId };
+    rabbitStateViewerRef.current = { tableId, userId };
+    setRabbitRevealedCards([]);
+    setRabbitRevealedHandNumber(null);
+    setRetainedRabbitBoard(null);
+    clearRabbitOffer(true);
+    if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+    if (rabbitExpiryTimerRef.current) clearTimeout(rabbitExpiryTimerRef.current);
+    return () => {
+      rabbitViewerRef.current = null;
+    };
+  }, [tableId, userId, clearRabbitOffer]);
 
   /**
    * P5 2026-09-05: takes an explicit hand number so the HAND REPLAYER can buy
@@ -23592,7 +23612,7 @@ function LiveTablePage({
     heroPromptedToAct,
     handSettling,
     handInProgress: tableState.isHandInProgress,
-    rabbitAvailable: isRabbitAvailable,
+    rabbitAvailable: isRabbitAvailable && rabbitViewIsCurrent,
     rabbitEnabled: v8Settings.rabbit_hunt_button,
   });
 

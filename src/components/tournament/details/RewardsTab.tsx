@@ -81,8 +81,9 @@
  * ── ONE QUERY, AND ONLY WHEN IT IS NEEDED ──────────────────────────────────
  *
  * types.ts asks tabs to prefer props. The props carry the tournament row, so
- * the entire payout side of this tab is computed with no query at all. The two
- * bounty queries fire ONLY for a bounty event, are cancelled on unmount, and
+ * ordinary payout side is computed with no query. Completed satellites read
+ * existing RLS-protected payout receipts to distinguish tickets from cash.
+ * Missing evidence never becomes a ticket claim. The two bounty queries fire ONLY for a bounty event, are cancelled on unmount, and
  * tolerate an empty result: a bounty panel that never resolves is worse than
  * one that says the pool has not been funded yet.
  */
@@ -93,6 +94,7 @@ import { reportError } from '../../../utils/errorReporter';
 import { subscribeTournamentStandings } from '../../../services/tournamentStandingsUpdates';
 import type { TournamentTabProps, PayoutPlace, TournamentEntry } from './types';
 import { isRecordedSatelliteQualifier } from '../../../utils/satelliteQualification';
+import { useSatelliteAwards, satelliteAwardLabel } from './useSatelliteAwards';
 import {
   chips,
   effectivePlaceLadderPool,
@@ -286,7 +288,12 @@ interface RewardColumns {
    (2026-08-26 audit). */
 const isStillIn = isPlayerLive;
 
-export default function RewardsTab({ tournament, entries, currentUserId }: TournamentTabProps) {
+export default function RewardsTab({
+  tournament,
+  entries,
+  currentUserId,
+  satelliteAwards: providedAwards,
+}: TournamentTabProps) {
   const t = (tournament || {}) as unknown as RewardColumns;
   const tournamentId = tournament?.id;
 
@@ -525,6 +532,9 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     String(t.variant ?? '').toLowerCase() === 'satellite' ||
     String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
     Boolean(t.satellite_target_id || t.satellite_target);
+
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
+  const awardTypesReady = awardEvidence.ready;
 
   /**
    * A SATELLITE PAYS SEATS, NOT THE PERCENTAGE LADDER (2026-10-04).
@@ -804,7 +814,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
 
           {satelliteAwards && satelliteAwards.seatWinners.length > 0 && (
             <div className="tl-stat">
-              <span className="tl-stat__label">Seat Winners</span>
+              <span className="tl-stat__label">Qualified Players</span>
               <span className="tl-stat__value">{chips(satelliteAwards.seatWinners.length)}</span>
               <span className="tl-stat__sub">Qualified For The Target Event</span>
             </div>
@@ -937,7 +947,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
       {/* Place prizes and every recorded bounty award. */}
       <section className="tl-panel rw-payouts">
         <div className="tl-section-head">
-          <h3>{isSatellite ? 'Seat Awards' : 'Payouts'}</h3>
+          <h3>{isSatellite ? 'Satellite Awards' : 'Payouts'}</h3>
           {/* ONLY ONCE THE FIELD IS AT LEAST AS BIG AS THE LADDER (2026-10-04
               review pass). The share is paid places over entries, and while an
               event is still filling the ladder is longer than the field: nine
@@ -962,12 +972,25 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
             )}
         </div>
 
+        {isSatellite && isComplete && satelliteAwards && (
+          <p className="tl-empty__hint" role="status">
+            {!awardTypesReady
+              ? 'Reading Recorded Award Types'
+              : awardEvidence.failed ||
+                  [...satelliteAwards.seatWinners, ...satelliteAwards.finishers].some(
+                    (e) => awardEvidence.kindFor(e.user_id, e.prize) === 'unknown'
+                  )
+                ? 'Ticket Or Cash Details Are Unavailable In This View. Recorded Values Are Shown.'
+                : null}
+          </p>
+        )}
         {isSatellite ? (
           satelliteAwards ? (
             <ul className="tl-list rw-list">
               {[...satelliteAwards.seatWinners, ...satelliteAwards.finishers].map((e, i) => {
                 const wonSeat = i < satelliteAwards.seatWinners.length;
                 const isHeroRow = !!currentUserId && e.user_id === currentUserId;
+                const awardKind = awardEvidence.kindFor(e.user_id, e.prize);
                 return (
                   <li
                     key={e.id}
@@ -976,23 +999,33 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                       .join(' ')}
                   >
                     <span className="tl-rank rw-rank">
-                      {wonSeat ? 'Seat' : ordinal(e.position)}
+                      {wonSeat ? (awardKind === 'ticket' ? 'Seat' : 'Win') : ordinal(e.position)}
                     </span>
                     <span className="rw-row__mid">
                       <span className="tl-name">{e.username}</span>
-                      {wonSeat && <span className="tl-badge rw-tag">Seat Winner</span>}
+                      {(wonSeat || awardKind === 'ticket') && (
+                        <span className="tl-badge rw-tag">
+                          {awardKind === 'ticket'
+                            ? 'Ticket Winner'
+                            : awardKind === 'cash'
+                              ? 'Cash Award'
+                              : 'Qualified'}
+                        </span>
+                      )}
                       {isHeroRow && (
                         <span className="tl-badge tl-badge--action rw-tag">Your Finish</span>
                       )}
                     </span>
-                    <span className="tl-num tl-num--accent rw-prize">{unitMoney(e.prize)}</span>
+                    <span className="tl-num tl-num--accent rw-prize">
+                      {satelliteAwardLabel(awardKind, unitMoney(e.prize))}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : (
             <div className="tl-empty">
-              This Satellite Awards Seats Into The Target Event
+              This Satellite Awards Tickets Into The Target Event
               <span className="tl-empty__hint">
                 {isComplete
                   ? 'No Award Was Recorded Per Player For This Event.'

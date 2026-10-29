@@ -1,3 +1,8 @@
+import {
+  useSatelliteAwards,
+  satelliteAwardLabel,
+  satelliteAwardNotice,
+} from './useSatelliteAwards';
 import { lateRegEndMs } from '../../lobby/lateRegWindow';
 import type { LobbyTournamentRow } from '../../lobby/lobbyEntries';
 import { tournamentEntryWindowOpen } from '../../../utils/tournamentEntryWindow';
@@ -185,6 +190,7 @@ export default function DetailOverviewTab({
   isRegistered,
   mysteryBounty,
   onOpenTab,
+  satelliteAwards: providedAwards,
 }: TournamentTabProps) {
   /* Shared with SatellitesTab. This used to be a private copy of the fetch and
      a byte-identical copy of the mapper, so both surfaces carried the same
@@ -255,6 +261,8 @@ export default function DetailOverviewTab({
     String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
     String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
     Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
 
   /**
    * A finished event has nothing left that moves, and an event three days out
@@ -452,7 +460,7 @@ export default function DetailOverviewTab({
           key: 'qualified',
           label: 'Qualified',
           value: chips(finished.qualified),
-          sub: finished.qualified === 1 ? 'Seat Won' : 'Seats Won',
+          sub: 'Qualified For Target',
         });
       } else {
         const paid = finished.paid > 0 ? finished.paid : payoutStructure.length;
@@ -756,14 +764,18 @@ export default function DetailOverviewTab({
         const recorded = Number(player.prize);
         return {
           player,
-          prizeValue: Number.isFinite(recorded)
-            ? recorded
-            : row && pool !== null
-              ? placePrize(pool, payoutStructure, row.place, overviewUnitCents)
-              : 0,
+          prizeValue: isSatellite
+            ? Number.isFinite(recorded)
+              ? recorded
+              : 0
+            : Number.isFinite(recorded)
+              ? recorded
+              : row && pool !== null
+                ? placePrize(pool, payoutStructure, row.place, overviewUnitCents)
+                : 0,
         };
       });
-  }, [isCompleted, entries, payoutStructure, prize.ladder, overviewUnitCents]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder, overviewUnitCents, isSatellite]);
 
   /**
    * The runners-up list under the podium.
@@ -942,16 +954,33 @@ export default function DetailOverviewTab({
             <h3>Final Results</h3>
             <span className="tl-section-note">{chips(field.entries)} Entries</span>
           </div>
+          {isSatellite && satelliteAwardNotice(awardEvidence, entries) && (
+            <p className="tl-empty__hint" role="status">
+              {satelliteAwardNotice(awardEvidence, entries)}
+            </p>
+          )}
           {podium.length === 0 && qualifiers.length > 0 ? (
             <>
-              <span className="dov-finishers__label">
-                {qualifiers.length === 1 ? 'Won The Seat' : 'Won A Seat'}
-              </span>
-              <ul className="dov-finishers dov-finishers--all" aria-label="Players Who Won A Seat">
+              <span className="dov-finishers__label">Qualified Players</span>
+              <ul className="dov-finishers dov-finishers--all" aria-label="Qualified Players">
                 {qualifiers.map((player) => (
                   <li key={player.user_id} className="dov-finisher dov-finisher--qualified">
-                    <span className="dov-finisher__pos">Seat</span>
-                    <span className="dov-finisher__name">{player.username}</span>
+                    <span className="dov-finisher__pos">
+                      {awardEvidence.kindFor(player.user_id, player.prize) === 'ticket'
+                        ? 'Seat'
+                        : 'Win'}
+                    </span>
+                    <div>
+                      <div className="dov-finisher__name">{player.username}</div>
+                      <div className="dov-podium__prize">
+                        {Number(player.prize) > 0
+                          ? satelliteAwardLabel(
+                              awardEvidence.kindFor(player.user_id, player.prize),
+                              formatPrizeAtUnit(Number(player.prize), overviewUnitCents)
+                            )
+                          : 'Award Details Unavailable'}
+                      </div>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -971,7 +1000,14 @@ export default function DetailOverviewTab({
                   <span className="dov-podium__place">{ordinal(player.position)}</span>
                   <span className="dov-podium__name">{player.username}</span>
                   <span className="dov-podium__prize">
-                    {prizeValue > 0 ? podiumPrize(prizeValue) : '-'}
+                    {prizeValue > 0
+                      ? isSatellite
+                        ? satelliteAwardLabel(
+                            awardEvidence.kindFor(player.user_id, player.prize),
+                            formatPrizeAtUnit(prizeValue, overviewUnitCents)
+                          )
+                        : podiumPrize(prizeValue)
+                      : '-'}
                   </span>
                 </div>
               ))}

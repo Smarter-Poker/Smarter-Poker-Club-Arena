@@ -1,3 +1,9 @@
+import { formatPrizeAtUnit } from '../../../utils/format';
+import {
+  useSatelliteAwards,
+  satelliteAwardLabel,
+  satelliteAwardNotice,
+} from './useSatelliteAwards';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RANKING — the tab that used to be "Chips", rebuilt
@@ -76,6 +82,7 @@ import { useDownlineIds } from './useDownlineIds';
 import {
   chips,
   chipsCompact,
+  tournamentRowUnitCents,
   effectivePrizePool,
   finishedFieldSummary,
   initials,
@@ -162,6 +169,7 @@ interface RankRowProps {
    * opens one is worse than a row that does nothing.
    */
   eventRunning: boolean;
+  awardLabel?: string;
   onPick: (entry: TournamentEntry) => void;
 }
 
@@ -179,6 +187,7 @@ const RankRow = React.memo(function RankRow({
   pulseDir,
   pulseAmount,
   eventRunning,
+  awardLabel,
   onPick,
 }: RankRowProps) {
   const stack = Number(entry.chips) || 0;
@@ -215,7 +224,7 @@ const RankRow = React.memo(function RankRow({
      event used to print the winner as "Not Seated Yet" beside a stack nobody
      holds any more. */
   const champion = !qualified && entry.status === 'winner';
-  const finished = (out && !qualified) || champion;
+  const finished = Boolean(awardLabel) || (out && !qualified) || champion;
   const won = Number(entry.prize) || 0;
 
   const subText = qualified
@@ -287,7 +296,7 @@ const RankRow = React.memo(function RankRow({
         <span className="rk-nums">
           {won > 0 && (
             <>
-              <span className="tl-num tl-num--accent">{chips(won)}</span>
+              <span className="tl-num tl-num--accent">{awardLabel ?? chips(won)}</span>
               <span className="tl-sub rk-won">Won</span>
             </>
           )}
@@ -460,7 +469,13 @@ export default function RankingTab({
   blindLevels,
   currentUserId,
   onWatchPlayer,
+  satelliteAwards: providedAwards,
 }: TournamentTabProps) {
+  const awardEvidence = useSatelliteAwards(tournament, entries, providedAwards, currentUserId);
+  const isSatellite =
+    Boolean(tournament.satellite_target_id || tournament.satellite_target) ||
+    String(tournament.variant).toLowerCase() === 'satellite' ||
+    String(tournament.tournament_type).toUpperCase() === 'SATELLITE';
   const toast = useToast();
   const isMounted = useIsMounted();
   /** Distinguishes this mount's realtime channel; see the subscription effect. */
@@ -953,9 +968,7 @@ export default function RankingTab({
             <div className="tl-stat">
               <span className="tl-stat__label">Qualified</span>
               <span className="tl-stat__value">{chips(finished.qualified)}</span>
-              <span className="tl-stat__sub">
-                {finished.qualified === 1 ? 'Seat Won' : 'Seats Won'}
-              </span>
+              <span className="tl-stat__sub">Qualified For Target</span>
             </div>
           ) : (
             <div className="tl-stat">
@@ -1106,6 +1119,12 @@ export default function RankingTab({
         </span>
       </div>
 
+      {isSatellite && isFinished && satelliteAwardNotice(awardEvidence, entries) && (
+        <p className="tl-empty__hint" role="status">
+          {satelliteAwardNotice(awardEvidence, entries)}
+        </p>
+      )}
+
       {/* The list scrolls inside itself, so the page keeps one scrollbar and
           the locked footer below it never moves. */}
       <ul
@@ -1128,6 +1147,14 @@ export default function RankingTab({
               tableName={entry.table_id ? tableNameById.get(entry.table_id) : undefined}
               pulseDir={pulse?.dir ?? 0}
               pulseAmount={pulse?.amount ?? 0}
+              awardLabel={
+                isSatellite && isFinished && Number(entry.prize) > 0
+                  ? satelliteAwardLabel(
+                      awardEvidence.kindFor(entry.user_id, entry.prize),
+                      formatPrizeAtUnit(Number(entry.prize), tournamentRowUnitCents(tournament))
+                    )
+                  : undefined
+              }
               eventRunning={eventRunning}
               onPick={handlePick}
             />

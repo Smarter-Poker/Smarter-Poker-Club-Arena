@@ -1,3 +1,9 @@
+import {
+  useSatelliteAwards,
+  satelliteAwardLabel,
+  satelliteAwardNotice,
+  satelliteAwardTotalLabel,
+} from '../../components/tournament/details/useSatelliteAwards';
 import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ♠ CLUB ARENA — Tournament Results History Page
@@ -674,6 +680,11 @@ export default function TournamentResultsPage() {
    * would print a fraction the payment cannot contain. `unitWord` is the noun
    * that goes beside it.
    */
+  const satelliteAwards = useSatelliteAwards(selectedTournament, results, undefined, user?.id);
+  const selectedIsSatellite =
+    Boolean(selectedTournament?.satellite_target_id || selectedTournament?.satellite_target) ||
+    String(selectedTournament?.variant).toLowerCase() === 'satellite' ||
+    String(selectedTournament?.tournament_type).toUpperCase() === 'SATELLITE';
   const selectedUnitCents = tournamentRowUnitCents(selectedTournament);
   const selectedUnitSuffix = moneySuffixAtUnit(selectedUnitCents);
 
@@ -1242,9 +1253,19 @@ export default function TournamentResultsPage() {
                     >
                       Biggest Total Payout: {topEarner.username} (
                       {getOrdinalPosition(topEarner.position)}) With{' '}
-                      {unitAmount(totalPayout(topEarner))}
-                      {selectedUnitSuffix}, More Than The Champion
+                      {selectedIsSatellite
+                        ? satelliteAwardTotalLabel(
+                            satelliteAwards.kindFor(topEarner.user_id, topEarner.prize),
+                            topEarner.prize,
+                            topEarner.bounty_winnings,
+                            unitAmount
+                          )
+                        : `${unitAmount(totalPayout(topEarner))}${selectedUnitSuffix}`}
+                      , More Than The Champion
                     </div>
+                  )}
+                  {selectedIsSatellite && satelliteAwardNotice(satelliteAwards, results) && (
+                    <p role="status">{satelliteAwardNotice(satelliteAwards, results)}</p>
                   )}
                   {/* Column key. Kept above the rows because every row is a
                         four-number line and a phone has no room for headers on
@@ -1263,7 +1284,9 @@ export default function TournamentResultsPage() {
                       }}
                     >
                       <span>Finish And Player</span>
-                      <span style={{ textAlign: 'right' }}>Prize</span>
+                      <span style={{ textAlign: 'right' }}>
+                        {selectedIsSatellite ? 'Award' : 'Prize'}
+                      </span>
                       <span style={{ textAlign: 'right' }}>KOs</span>
                       <span style={{ textAlign: 'right' }}>Bounty</span>
                       <span style={{ textAlign: 'right' }}>Total</span>
@@ -1386,7 +1409,14 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {r.prize > 0 ? unitAmount(r.prize) : '-'}
+                              {r.prize > 0
+                                ? selectedIsSatellite
+                                  ? satelliteAwardLabel(
+                                      satelliteAwards.kindFor(r.user_id, r.prize),
+                                      unitAmount(r.prize)
+                                    )
+                                  : unitAmount(r.prize)
+                                : '-'}
                             </span>
                             <span
                               style={{
@@ -1417,7 +1447,16 @@ export default function TournamentResultsPage() {
                                 textAlign: 'right',
                               }}
                             >
-                              {total > 0 ? unitAmount(total) : '-'}
+                              {total > 0
+                                ? selectedIsSatellite
+                                  ? satelliteAwardTotalLabel(
+                                      satelliteAwards.kindFor(r.user_id, r.prize),
+                                      r.prize,
+                                      r.bounty_winnings,
+                                      unitAmount
+                                    )
+                                  : unitAmount(total)
+                                : '-'}
                             </span>
                           </div>
                         );

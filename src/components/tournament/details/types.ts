@@ -1,3 +1,4 @@
+import type { SatelliteAwardView } from './useSatelliteAwards';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT LOBBY TABS — the shared contract
@@ -186,6 +187,8 @@ export interface TournamentTabProps {
    */
   tournament: Tournament & TournamentArenaEmbed;
   entries: TournamentEntry[];
+  /** Page-owned immutable award evidence shared by result consumers. */
+  satelliteAwards?: SatelliteAwardView;
   tables: TournamentTable[];
   blindLevels: NormalisedBlindLevel[];
   /** Signed-in player, for "your position" and hero highlighting. */

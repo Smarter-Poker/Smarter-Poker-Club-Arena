@@ -11980,44 +11980,81 @@ export abstract class TournamentManagerBase {
         return;
       }
 
-      const { data: rows, error: rowsErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, add_on')
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing')
-        // A zero stack is a bust the bust stage has not recorded yet; the
-        // offer is served ahead of that stage (2026-10-25), so it never
-        // reaches a player who no longer holds chips.
-        .gt('chips', 0);
+      const playerRead = await fetchAllRows<{
+        id: string;
+        user_id: string;
+        add_on: boolean | null;
+      }>(
+        (cursor, pageSize) => {
+          let query = supabase
+            .from('tournament_players')
+            .select('id, user_id, add_on')
+            .eq('tournament_id', this.tournamentId)
+            .eq('status', 'playing')
+            // A zero stack is an unrecorded bust, not an add-on recipient.
+            .gt('chips', 0)
+            .order('id', { ascending: true })
+            .limit(pageSize);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'Tournament.addOnPlayers', shouldContinue: addOnWorkAllowed }
+      );
       if (!addOnWorkAllowed()) return;
-      if (rowsErr || !rows || rows.length === 0) {
-        if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+      if (!playerRead.complete) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
+      const rows = playerRead.rows;
+      if (rows.length === 0) return;
 
       const withoutAddOn = rows
         .filter((r: { add_on?: boolean | null }) => !r.add_on)
         .map((r: { user_id: string }) => r.user_id);
       if (withoutAddOn.length === 0) return;
 
-      const { data: tableRows, error: tableRowsErr } = await supabase
-        .from('tables')
-        .select('id')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['waiting', 'running', 'RUNNING', 'active']);
+      const tableRead = await fetchAllRows<{ id: string }>(
+        (cursor, pageSize) => {
+          let query = supabase
+            .from('tables')
+            .select('id')
+            .eq('tournament_id', this.tournamentId)
+            .in('status', ['waiting', 'running', 'RUNNING', 'active'])
+            .order('id', { ascending: true })
+            .limit(pageSize);
+          if (cursor !== null) query = query.gt('id', cursor);
+          return query;
+        },
+        { label: 'Tournament.addOnTables', shouldContinue: addOnWorkAllowed }
+      );
       if (!addOnWorkAllowed()) return;
-      if (tableRowsErr || !tableRows) {
-        reportError(
-          tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
-          'Tournament.addon_tables_unreadable'
-        );
+      if (!tableRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
       }
-      const seatRead = await selectInChunks<{ user_id: string }>(
-        tableRows.map((row: { id: string }) => row.id),
-        (batch) =>
-          supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
+      const seatRead = await selectInChunks<{ id: string; user_id: string }>(
+        tableRead.rows.map((row) => row.id),
+        async (batch) => {
+          // A bounded table-ID URL can still return more than 1,000 seats.
+          const page = await fetchAllRows<{ id: string; user_id: string }>(
+            (cursor, pageSize) => {
+              let query = supabase
+                .from('table_seats')
+                .select('id, user_id')
+                .in('table_id', batch)
+                .is('left_at', null)
+                .order('id', { ascending: true })
+                .limit(pageSize);
+              if (cursor !== null) query = query.gt('id', cursor);
+              return query;
+            },
+            { label: 'Tournament.addOnSeats', shouldContinue: addOnWorkAllowed }
+          );
+          return {
+            data: page.rows,
+            error: page.complete ? null : { message: 'add-on seat snapshot incomplete' },
+          };
+        },
         `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
       );
       if (!addOnWorkAllowed()) return;

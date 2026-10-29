@@ -487,7 +487,7 @@ describe('late-registration capacity authority', () => {
       BASE.indexOf('protected async triggerAddOnPeriod')
     );
     expect(offer).toMatch(
-      /\.select\('user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
+      /\.select\('id, user_id, add_on'\)[\s\S]{0,200}\.eq\('status', 'playing'\)[\s\S]{0,300}\.gt\('chips', 0\)/
     );
   });
 });

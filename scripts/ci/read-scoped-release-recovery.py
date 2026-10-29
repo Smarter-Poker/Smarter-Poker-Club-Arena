@@ -2,6 +2,7 @@
 """Explicit read of one completed release's existing recovery reservation."""
 import base64
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -40,7 +41,7 @@ REFUSALS = {
     'Recovery witness sign refused': ('journal', 'sign_refused'),
     'Duplicate recovery witness sign': ('journal', 'sign_refused'),
 }
-REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused')}
+REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
 
 
 class ScopedRefusal(ValueError):
@@ -52,7 +53,7 @@ class ScopedRefusal(ValueError):
 
 
 def refusal(request, error):
-    phase, code = REFUSALS.get(str(error), ('remote', 'evidence_refused'))
+    phase, code = (error.phase, error.code) if isinstance(error, ScopedRefusal) else REFUSALS.get(str(error), ('remote', 'evidence_refused'))
     return {'schema': FAILURE_SCHEMA, 'readOnly': True, **selection(request),
             'phase': phase, 'code': code}
 
@@ -71,7 +72,7 @@ def validate_refusal(value, request):
 
 def selection(value):
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] != 'pending_transaction')):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -95,12 +96,13 @@ def unique_object(pairs):
     return result
 
 
-def read_json(directory_fd, name):
+def read_json(directory_fd, name, private=False):
     """Fixed relative file, no links, bounded bytes, unchanged inode/time/size."""
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     try:
         before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES:
+        if (not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES
+                or (private and (before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600))):
             raise ValueError('Persisted evidence file refused')
         raw = b''
         while len(raw) <= MAX_BYTES:
@@ -109,7 +111,7 @@ def read_json(directory_fd, name):
                 break
             raw += part
         after = os.fstat(fd)
-        identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns)
+        identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns, row.st_uid, row.st_mode)
         if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > MAX_BYTES:
             raise ValueError('Persisted evidence changed')
         value = json.loads(raw, object_pairs_hook=unique_object)
@@ -474,11 +476,305 @@ def pending_remote(request, root_fd):
         os.close(directory)
 
 
+# This mode observes the original one-shot checkpoint only. It never opens or
+# closes an inspector, signals PID 1, or enumerates application objects.
+INSPECTOR_SCHEMA = 'existing-legacy-checkpoint-inspector-observation/v1'
+EED = 'eed06fe51dea622069c661a6213d5b031ff3a9e3'
+DIGEST = re.compile(r'^[0-9a-f]{64}$')
+ENDPOINT = re.compile(r'^ws://127\.0\.0\.1:9229/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+# One native helper; fixed loopback HTTP first, no proxy environment, redirects,
+# application imports, environment/cmdline reads or inspector lifecycle calls.
+INSPECTOR_NODE = r"""
+import fs from 'node:fs';
+import http from 'node:http';
+import crypto from 'node:crypto';
+const phase=process.argv[2], expected=process.argv[3];
+const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
+const endpoint=/^ws:\/\/127\.0\.0\.1:9229\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const target=()=>new Promise((resolve,reject)=>{
+ const req=http.get({hostname:'127.0.0.1',port:9229,path:'/json/list',agent:false,timeout:1000},res=>{
+  if(res.statusCode!==200){res.resume();reject(Error('http'));return;}
+  let n=0;const chunks=[];res.on('data',b=>{n+=b.length;if(n>16384){req.destroy();reject(Error('size'));}else chunks.push(b)});
+  res.on('end',()=>{try{const rows=JSON.parse(Buffer.concat(chunks));if(!Array.isArray(rows)||rows.length!==1||!endpoint.test(rows[0]?.webSocketDebuggerUrl))throw Error('shape');resolve(rows[0].webSocketDebuggerUrl)}catch{reject(Error('shape'))}});
+ });req.on('timeout',()=>req.destroy(Error('deadline')));req.on('error',e=>e.code==='ECONNREFUSED'?resolve(null):reject(Error('http')));
+});
+const connections=()=>{
+ let count=0;
+ for(const path of ['/proc/net/tcp','/proc/net/tcp6']){
+  const raw=fs.readFileSync(path,'utf8');if(raw.length>1048576)throw Error('socket_bound');
+  for(const line of raw.trim().split('\n').slice(1)){const x=line.trim().split(/\s+/);if(x.length<10)throw Error('socket_shape');if(x[1].split(':')[1]==='240D'&&x[3]==='01')count++;}
+ }return count;
+};
+const evaluate="(() => { const v=process.getBuiltinModule('node:v8').getHeapStatistics(); return {pid:process.pid,usedHeapBytes:v.used_heap_size,availableHeapBytes:v.total_available_size,heapLimitBytes:v.heap_size_limit,availableProcessBytes:typeof process.availableMemory==='function'?process.availableMemory():null}; })()";
+let socket;
+try{
+ const url=await target();
+ if(url===null){console.log(JSON.stringify({state:'closed',endpointSha256:null}));}
+ else if(phase==='probe'){console.log(JSON.stringify({state:'open',endpointSha256:hash(url)}));}
+ else{
+  if(phase!=='read'||!expected||hash(url)!==expected)throw Error('identity');
+  if(connections()!==0){console.log(JSON.stringify({state:'foreign',endpointSha256:hash(url)}));}
+  else{
+   const value=await new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error('deadline')),1500);
+    const done=(fn,v)=>{clearTimeout(timer);fn(v)};
+    socket=new WebSocket(url);
+    socket.addEventListener('error',()=>done(reject,Error('socket')),{once:true});
+    socket.addEventListener('open',()=>{try{if(connections()!==1)throw Error('foreign');socket.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression:evaluate,returnByValue:true,timeout:500}}))}catch{done(reject,Error('foreign'))}},{once:true});
+    socket.addEventListener('message',event=>{try{if(typeof event.data!=='string'||Buffer.byteLength(event.data)>4096)throw Error('frame');const row=JSON.parse(event.data);if(row.id!==1||row.error||row.result?.exceptionDetails)throw Error('response');const v=row.result?.result?.value;if(v?.pid!==1||Object.keys(v).length!==5)throw Error('pid');done(resolve,v)}catch{done(reject,Error('response'))}},{once:true});
+   });
+   if(await target()!==url||connections()!==1)throw Error('identity');
+   console.log(JSON.stringify({state:'owned',endpointSha256:hash(url),native:value}));
+  }
+ }
+}catch{console.log(JSON.stringify({state:'unproved',endpointSha256:null}));}
+finally{
+ // Disconnect THIS client only. Never call node:inspector.close or signal.
+ if(socket){socket.close();const timer=setTimeout(()=>process.exit(0),250);socket.addEventListener('close',()=>clearTimeout(timer),{once:true});}
+}
+"""
+
+
+def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
+    """Fixed native child reads, one overall budget, bounded pipes and stderr."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ValueError('Inspector read deadline')
+    child = subprocess.Popen(args, stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if input_bytes is not None:
+        child.stdin.write(input_bytes)
+        child.stdin.close()
+    chunks = {False: bytearray(), True: bytearray()}
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ, False)
+            selector.register(child.stderr, selectors.EVENT_READ, True)
+            while selector.get_map():
+                left = deadline - time.monotonic()
+                if left <= 0 or not selector.select(min(left, 3)):
+                    raise ValueError('Inspector read deadline')
+                for key, _ in selector.select(0):
+                    part = os.read(key.fileobj.fileno(), 4096)
+                    if not part:
+                        selector.unregister(key.fileobj)
+                    else:
+                        chunks[key.data].extend(part)
+                        if len(chunks[key.data]) > limit:
+                            raise ValueError('Inspector read size')
+        if child.wait(timeout=max(.001, deadline-time.monotonic())):
+            raise ValueError('Inspector native unavailable')
+        return bytes(chunks[stderr])
+    finally:
+        if child.poll() is None:
+            child.kill()  # Only the owned reader, never the engine/container.
+        child.wait(timeout=1)
+        child.stdout.close()
+        child.stderr.close()
+
+
+def inspector_identity(deadline):
+    fmt = '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}} {{.RestartCount}}'
+    raw = inspector_command(['docker', 'inspect', '--format', fmt, 'club-arena-engine'], deadline, limit=2048).decode().strip().split()
+    if (len(raw) != 6 or not re.fullmatch('[0-9a-f]{64}', raw[0])
+            or not re.fullmatch('sha256:[0-9a-f]{64}', raw[1]) or raw[2] != 'true'
+            or not re.fullmatch(r'\d{4}-\d\d-\d\dT[\d:.]+Z', raw[3])
+            or not re.fullmatch('[1-9][0-9]{0,9}', raw[4]) or not raw[5].isdigit()):
+        raise ValueError('Inspector container unknown')
+    return dict(zip(['container', 'image', 'running', 'startedAt', 'hostPid', 'restarts'], raw))
+
+
+def inspector_health(deadline):
+    raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+    value = json.loads(raw, object_pairs_hook=unique_object)
+    if (not isinstance(value, dict) or value.get('running') is not True
+            or value.get('releaseSha') != EED or value.get('version') != EED[:8]
+            or not isinstance(value.get('instanceId'), str)
+            or not re.fullmatch('1-[0-9a-f]{8}', value['instanceId'])):
+        raise ValueError('Inspector healthy predecessor unknown')
+    return {'source': EED, 'instance': value['instanceId']}
+
+
+def inspector_intent(request, directory):
+    value = read_json(directory, request['runKey'] + '.legacy-checkpoint-intent', private=True)
+    fields = {'instance', 'container', 'startedAt', 'hostPid', 'source', 'runId', 'controlSha', 'at', 'retryAllowed'}
+    if (set(value) != fields or value['runId'] != request['runKey'] or value['source'] != EED
+            or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
+            or not isinstance(value['instance'], str) or not re.fullmatch('1-[0-9a-f]{8}', value['instance'])
+            or not isinstance(value['container'], str) or not re.fullmatch('[0-9a-f]{64}', value['container'])
+            or not isinstance(value['startedAt'], str) or not re.fullmatch(r'\d{4}-\d\d-\d\dT[\d:.]+Z', value['startedAt'])
+            or type(value['hostPid']) is not int or not 1 <= value['hostPid'] <= 2147483647
+            or type(value['at']) not in (int, float) or not 946684800 <= value['at'] < 4102444800
+            or value['retryAllowed'] is not False):
+        raise ValueError('Inspector intent unknown')
+    # Both existing six-line durable release records must bind this control and
+    # candidate. A checkpoint intent does not itself store the candidate SHA.
+    rows = read_lines(directory, request['runKey'] + '.request')
+    original = read_lines(directory, request['runKey'] + '.intent')
+    control, _, _ = pending_metadata(request, rows, original, None, None)
+    if control != value['controlSha']:
+        raise ValueError('Inspector control differs')
+    return value
+
+
+def inspector_endpoint(raw, at):
+    # Docker's native timestamp followed by the exact Node debugger literal.
+    if len(raw) > 65536:
+        raise ValueError('Inspector log bound')
+    found = []
+    for row in raw.decode('utf8').splitlines():
+        match = re.fullmatch(r'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z) Debugger listening on (.+)', row)
+        if not match:
+            continue
+        if not ENDPOINT.fullmatch(match[2]):
+            raise ValueError('Inspector historical endpoint unknown')
+        stamp = datetime.datetime.fromisoformat(match[1].replace('Z', '+00:00')).timestamp()
+        if not at <= stamp <= at + 10:
+            raise ValueError('Inspector historical time differs')
+        found.append(hashlib.sha256(match[2].encode()).hexdigest())
+    if len(found) != 1:
+        raise ValueError('Inspector historical endpoint ambiguous')
+    return found[0]
+
+
+def inspector_probe(container, deadline, expected=None):
+    raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
+        'read' if expected else 'probe', expected or ''], deadline,
+        input_bytes=INSPECTOR_NODE.encode(), limit=16384)
+    value = json.loads(raw, object_pairs_hook=unique_object)
+    state = value.get('state') if isinstance(value, dict) else None
+    if state not in {'closed', 'open', 'owned', 'foreign', 'unproved'}:
+        raise ValueError('Inspector probe unknown')
+    fields = {'state', 'endpointSha256'} | ({'native'} if state == 'owned' else set())
+    if set(value) != fields or (value['endpointSha256'] is not None
+            and (not isinstance(value['endpointSha256'], str) or not DIGEST.fullmatch(value['endpointSha256']))):
+        raise ValueError('Inspector probe fields')
+    if ((state in {'closed', 'unproved'}) != (value['endpointSha256'] is None)):
+        raise ValueError('Inspector probe identity')
+    return value
+
+
+def inspector_memory(value):
+    fields = {'pid', 'usedHeapBytes', 'availableHeapBytes', 'heapLimitBytes', 'availableProcessBytes'}
+    if not isinstance(value, dict) or set(value) != fields or value['pid'] != 1 or type(value['pid']) is not int:
+        raise ValueError('Inspector scalar identity')
+    if any(type(value[k]) is not int or not 0 < value[k] <= 9007199254740991 for k in fields - {'pid'}):
+        raise ValueError('Inspector scalar unavailable')
+    reserve = 32 * 1024 * 1024
+    heap = value['usedHeapBytes'] + reserve
+    process = value['usedHeapBytes'] * 8 + reserve
+    if process > 9007199254740991:
+        raise ValueError('Inspector scalar overflow')
+    return {**value, 'requiredHeapBytes': heap, 'requiredProcessBytes': process,
+            'predicate': '4fef_32MiB_8x', 'predicateSatisfied': value['availableHeapBytes'] >= heap and value['availableProcessBytes'] >= process}
+
+
+def inspector_remote(request, root_fd):
+    deadline = time.monotonic() + 18
+    answer = {'schema': INSPECTOR_SCHEMA, 'readOnly': True, **request,
+              'status': 'unproved', 'reason': 'evidence_unavailable', 'controlSha': None,
+              'originalSourceSha': None, 'instanceId': None, 'endpointSha256': None,
+              'nativeMemory': None, 'readiness': 'unknown_not_certified_by_metadata'}
+    directory = os.open('engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    try:
+        try:
+            intent = inspector_intent(request, directory)
+        except (OSError, ValueError):
+            raise ScopedRefusal('inspector', 'intent_unavailable') from None
+        before = inspector_identity(deadline)
+        health = inspector_health(deadline)
+        if (intent['container'] != before['container'] or intent['startedAt'] != before['startedAt']
+                or str(intent['hostPid']) != before['hostPid'] or intent['instance'] != health['instance']):
+            return answer
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256).decode().strip()
+        if label != intent['source']:
+            return answer
+        answer.update(controlSha=intent['controlSha'], originalSourceSha=EED, instanceId=intent['instance'])
+        probe = inspector_probe(before['container'], deadline)
+        if probe['state'] == 'closed':
+            answer.update(status='closed', reason='fixed_loopback_connection_refused')
+        elif probe['state'] == 'open':
+            # Docker logs emits the container stderr stream on stderr. Never
+            # export raw logs, URL, socket rows, host PID, container ID or paths.
+            raw = inspector_command(['docker', 'logs', '--timestamps', '--since', str(intent['at']),
+                '--until', str(intent['at'] + 10), before['container']], deadline, stderr=True)
+            try:
+                historical = inspector_endpoint(raw, intent['at'])
+            except ValueError:
+                answer['reason'] = 'historical_endpoint_unavailable'
+            else:
+                if historical != probe['endpointSha256']:
+                    answer.update(status='foreign', reason='historical_endpoint_differs')
+                else:
+                    native = inspector_probe(before['container'], deadline, historical)
+                    if native['state'] == 'owned' and native['endpointSha256'] == historical:
+                        try:
+                            memory = inspector_memory(native['native'])
+                        except ValueError:
+                            raise ScopedRefusal('inspector', 'native_scalar_unavailable') from None
+                        answer.update(status='owned', reason='original_endpoint_native_scalar_read',
+                                      endpointSha256=historical, nativeMemory=memory)
+                    elif native['state'] == 'foreign':
+                        answer.update(status='foreign', reason='established_inspector_client')
+                    else:
+                        answer['reason'] = 'native_read_unproved'
+        if (before != inspector_identity(deadline) or health != inspector_health(deadline)
+                or intent != inspector_intent(request, directory)):
+            raise ScopedRefusal('inspector', 'identity_changed')
+        return answer
+    finally:
+        os.close(directory)
+
+
+def validate_inspector(value, request):
+    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'status', 'reason', 'controlSha',
+              'originalSourceSha', 'instanceId', 'endpointSha256', 'nativeMemory', 'readiness'}
+    reasons = {'evidence_unavailable', 'fixed_loopback_connection_refused', 'historical_endpoint_unavailable',
+               'historical_endpoint_differs', 'original_endpoint_native_scalar_read',
+               'established_inspector_client', 'native_read_unproved'}
+    if (not isinstance(value, dict) or set(value) != fields or value['schema'] != INSPECTOR_SCHEMA
+            or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
+            or value['status'] not in {'closed', 'owned', 'foreign', 'unproved'} or value['reason'] not in reasons
+            or value['readiness'] != 'unknown_not_certified_by_metadata'):
+        raise ValueError('Inspector export refused')
+    for key in ['controlSha', 'originalSourceSha']:
+        if value[key] is not None and (not isinstance(value[key], str) or not SHA.fullmatch(value[key])):
+            raise ValueError('Inspector exported source')
+    if value['instanceId'] is not None and (not isinstance(value['instanceId'], str) or not re.fullmatch('1-[0-9a-f]{8}', value['instanceId'])):
+        raise ValueError('Inspector exported instance')
+    if value['endpointSha256'] is not None and (not isinstance(value['endpointSha256'], str) or not DIGEST.fullmatch(value['endpointSha256'])):
+        raise ValueError('Inspector exported endpoint')
+    if value['status'] == 'owned':
+        native = value['nativeMemory']
+        raw = {k: native[k] for k in ['pid', 'usedHeapBytes', 'availableHeapBytes', 'heapLimitBytes', 'availableProcessBytes']} if isinstance(native, dict) else None
+        if (value['reason'] != 'original_endpoint_native_scalar_read' or native != inspector_memory(raw)
+                or value['originalSourceSha'] != EED or not value['controlSha'] or not value['instanceId'] or not value['endpointSha256']):
+            raise ValueError('Inspector owned export refused')
+    elif value['nativeMemory'] is not None or value['endpointSha256'] is not None:
+        raise ValueError('Inspector unknown scalar export')
+    pairs = {
+        'closed': {'fixed_loopback_connection_refused'},
+        'owned': {'original_endpoint_native_scalar_read'},
+        'foreign': {'historical_endpoint_differs', 'established_inspector_client'},
+        'unproved': {'evidence_unavailable', 'historical_endpoint_unavailable', 'native_read_unproved'},
+    }
+    if value['reason'] not in pairs[value['status']]:
+        raise ValueError('Inspector outcome export')
+    if value['status'] != 'unproved' and (value['originalSourceSha'] != EED
+            or not value['controlSha'] or not value['instanceId']):
+        raise ValueError('Inspector absence identity export')
+    return value
+
+
 def remote(request):
     request = selection(request)
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'legacy_checkpoint_inspector':
+            return validate_inspector(inspector_remote(request, root_fd), request)
         if request.get('mode') == 'pending_transaction':
             return pending_remote(request, root_fd)
         result_fd = os.open('engine-release-results', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -501,6 +797,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'legacy_checkpoint_inspector':
+        return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
         fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA

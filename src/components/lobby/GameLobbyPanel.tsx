@@ -1228,8 +1228,8 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                         Awarded As The Prize Pool Funds Them.
                       </p>
                       <p className="glp__note">
-                        Final Awards Follow The Funded Ticket Plan. Any Remaining Prize Pool Is
-                        Settled Separately.
+                        Final Awards Follow The Funded Ticket Plan. The Bubble Receives Any
+                        Remaining Cash.
                       </p>
                     </div>
                   ) : tournament && panelPayouts.length > 0 ? (

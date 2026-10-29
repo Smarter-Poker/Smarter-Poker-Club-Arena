@@ -6,6 +6,7 @@ ROOT=Path(__file__).resolve().parents[2]
 DATA=Path('scripts/ci/fixtures/played-clock-floor')
 MIGRATION=Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql')
 capture=json.loads((ROOT/DATA/'abort-preimage.json').read_text())
+LIVE_PROOF="EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)') AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private'] AND position('ORDER BY s.level_index DESC,s.played_at DESC LIMIT 1;' IN p.prosrc)>0 AND position('min(l.level_index)' IN p.prosrc)>0 AND position('WHERE s.level_index>v_found' IN p.prosrc)>0)"
 old="""    IF v_found IS NOT NULL AND v_found < event.current_level THEN
       v_r := public.fn_resolve_tournament_blinds(event.blind_structure, v_found,"""
 new="""    -- A RECOVERED OLDER HAND DOES NOT REWIND A PLAYED LATER LEVEL.
@@ -64,6 +65,7 @@ def render():
 -- lease, snapshot, permit, authority and receipt checks remain byte-identical.
 -- Native proof invokes the captured real F06 abort door before/after, retains
 -- its legitimate backwards correction, and proves complete financial rollback.
+-- @live-proof: {LIVE_PROOF}
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';

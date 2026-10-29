@@ -33,6 +33,9 @@ END $$;ROLLBACK;"""
  from satellite_qualifier_fixture import module
  builder=module(root/'scripts/ci/build-played-level-recovery-migration.py','played_clock_builder')
  if builder.render()!=(root/builder.MIGRATION).read_text():raise RuntimeError('clock migration source differs')
+ def live_proof(expected,label):
+  e.sql(db,"DO $clock_live$ BEGIN IF ("+builder.LIVE_PROOF+") IS DISTINCT FROM "+('true' if expected else 'false')+" THEN RAISE EXCEPTION 'CLOCK_LIVENESS_WITNESS_WRONG'; END IF; END $clock_live$;",label=label)
+ live_proof(False,'clock-liveness-predecessor-false')
  e.report['abort_installation_refusals']=[]
  for label,mutation in [
   ('body',"ALTER FUNCTION public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean) SET search_path=public;"),
@@ -45,6 +48,8 @@ END $$;ROLLBACK;"""
   if baseline!=(e.snapshot(case,label+'-install-after'),e.catalog_snapshot(case,label+'-install-catalog-after'),hand.private_snapshot(e,case,label+'-install-private-after')):raise RuntimeError('installation refusal changed catalog/data:'+label)
   e.report['abort_installation_refusals'].append(label);e.discard(case)
  e.sql(db,file=root/builder.MIGRATION,label='candidate-generation-abort')
+ live_proof(True,'clock-liveness-installed-true')
+ e.report['abort_liveness_witness']={'predecessor':False,'installed':True}
  e.report['abort_cases']=[]
  for label,level,mutation,expected in [
   ('restore-last-played',16,'',15),

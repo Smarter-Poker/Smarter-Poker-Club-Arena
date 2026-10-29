@@ -57,7 +57,13 @@ describe('natural horse social evidence', () => {
       .split('const showdowns = await db')[1]
       .split('expect(showdowns.error)')[0];
     expect(activity).toContain(".select('table_id,ended_at')");
+    // The production table index starts with (table_id, created_at). A limit
+    // after filtering/sorting only ended_at still scans the table's retained
+    // history and timed out before any natural observation in run40762123113.
+    expect(activity).toContain(".gte('created_at', activitySince)");
     expect(activity).toContain(".gte('ended_at', activitySince)");
+    expect(activity).toContain(".order('created_at', { ascending: false })");
+    expect(activity).not.toContain(".order('ended_at'");
     expect(activity).toContain(".not('showdown', 'is', null)");
     expect(activity).toContain(".neq('showdown', '[]')");
     expect(activity).toContain('.limit(180)');

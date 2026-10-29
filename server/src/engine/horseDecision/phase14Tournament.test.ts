@@ -1,7 +1,7 @@
 import { qualifiedReplayAdmissions } from './replay/qualifiedAuthority.js';
 import { HorseFleetPhaseInterpreter } from '../../services/horseDecisionJournal/phaseProof.js';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   makeHorseJournalRecord,
@@ -812,9 +812,15 @@ describe('real worker tournament v2 and selected Phase8 dependency, local fixtur
       retiredDecisions: 1,
       requestLifecycleVerified: true,
     });
-    const directory = mkdtempSync(
-      join(process.platform === 'darwin' ? process.cwd() : tmpdir(), 'phase14-native-fleet-')
-    );
+    // os.tmpdir honors the task's TMPDIR instead of assuming worktree depth.
+    const temporaryRoot = resolve(tmpdir());
+    if (
+      process.platform === 'darwin' &&
+      !temporaryRoot.startsWith('/Volumes/SmarterWork/agent-work/')
+    )
+      throw new Error('Phase14 fleet test requires a task-owned external SSD TMPDIR on macOS');
+    mkdirSync(temporaryRoot, { recursive: true });
+    const directory = mkdtempSync(join(temporaryRoot, 'phase14-native-fleet-'));
     try {
       const store = new HorseDecisionJournalStore(directory, {
         archive: runtimeHorseJournalArchiveOptions(directory, {}, { index: 0 }),

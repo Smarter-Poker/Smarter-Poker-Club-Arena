@@ -11,14 +11,16 @@ afterEach(() => {
   HorseMind.reset();
   equityGovernor.__setScaleForTest(null);
 });
-describe('retained profitable heads-up maniac boundary calls', () => {
+describe('fixed-budget NLH recovery retains noisy refusals without selected retries', () => {
   for (const fixture of fixtures)
     it(`${fixture.player.cards.map((c) => c.rank + c.suit[0]).join(' ')} on ${fixture.board.map((c) => c.rank + c.suit[0]).join(' ')}`, () => {
       const player = fixture.player as unknown as SeatPlayer;
       const gs = fixture.gameState as unknown as HorseGameStateV2;
       expect(gs.players.every((p) => p.cards.length === 0)).toBe(true);
-      // Three independent 20k-draw seeds on this same public range put the
-      // selection-adjusted mean above the unchanged required price.
+      // Preserve the independent 20k-draw evidence: these are known noisy
+      // false negatives, not proof that the hands are unprofitable. Retrying
+      // only these selected low prefixes until a fresh mean calls is biased.
+      // A future unbiased refinement needs separate total-budget qualification.
       expect(
         fixture.measurements.every((m) => m.conditionedAfterSelection > fixture.required)
       ).toBe(true);
@@ -41,8 +43,8 @@ describe('retained profitable heads-up maniac boundary calls', () => {
             variantInfo('nlh'),
             {}
           );
-          expect(decision.action).toBe('call');
-          expect(equityWorkCounters().samples - before.samples).toBe(4300);
+          expect(decision.action).toBe('fold');
+          expect(equityWorkCounters().samples - before.samples).toBe(360);
         });
       } finally {
         restoreFastRandom(saved);
@@ -50,7 +52,7 @@ describe('retained profitable heads-up maniac boundary calls', () => {
     });
 });
 
-it('keeps the fresh confirmation subject to the live load governor', () => {
+it('keeps the original fixed recovery subject to the live load governor', () => {
   const f = fixtures[0],
     gs = f.gameState as unknown as HorseGameStateV2;
   const view = decodeHorseDecisionReads(
@@ -74,7 +76,7 @@ it('keeps the fresh confirmation subject to the live load governor', () => {
       );
       const samples = equityWorkCounters().samples - before.samples;
       expect(samples).toBeGreaterThan(0);
-      expect(samples).toBeLessThanOrEqual(860);
+      expect(samples).toBe(72);
     });
   } finally {
     restoreFastRandom(saved);

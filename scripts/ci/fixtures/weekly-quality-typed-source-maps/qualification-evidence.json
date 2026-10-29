@@ -1,6 +1,6 @@
 {
   "qualification": "passed",
-  "case_count": 83,
+  "case_count": 89,
   "cases": [
     "four_selected_sets_typed_bag_empty_selected_event_sources",
     "four_selected_sets_typed_bag_empty_selected_event_recognized",
@@ -36,7 +36,13 @@
     "installer_search_path_drift_refused",
     "installer_original_source_guard_refused",
     "installer_competing_original_scheduler_refused",
+    "installer_slow_read_witness_outlives_DDL_budget_without_extending_DDL",
+    "installer_DDL_timeout_remains_short_and_atomic",
+    "installer_post_source65_refusal_rolls_back_exact_DDL",
+    "installer_post_generation_refusal_rolls_back_exact_DDL",
+    "installer_LOCAL_qualification_cleared_after_abort",
     "installer_bad_postcondition_atomic_rollback",
+    "installer_LOCAL_qualification_cleared_after_commit_same_connection",
     "exact_installer_metadata_source_guard_and_GEN_preserved",
     "installed_replay_preserved",
     "actual_PG_only_ACL_preserved",
@@ -90,7 +96,7 @@
   "actual_after_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
   "actual_whole_quality_body": true,
   "bank_primary_key": "PRIMARY KEY (tournament_id)",
-  "migration_sha256": "8b7e24227b5fb86e4b3327b11bdfaf0b39fd7675ff6f8860418adb3d8a07ae51",
+  "migration_sha256": "a4a8bd2bd6a073e5c5bd14433aa63598615e862fa8bf8ba09823a78e9094d069",
   "plans": {
     "before": {
       "Plan": {
@@ -2668,9 +2674,9 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 2.264,
+      "Planning Time": 2.374,
       "Triggers": [],
-      "Execution Time": 9.789
+      "Execution Time": 9.507
     },
     "after": {
       "Plan": {
@@ -5804,9 +5810,9 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 2.307,
+      "Planning Time": 2.154,
       "Triggers": [],
-      "Execution Time": 20.808
+      "Execution Time": 20.817
     }
   },
   "limits": "Controlled accessed-column schemas and external net-plan/terms/mixed-cutover boundaries; no full producer qualification or production latency claim."

@@ -230,6 +230,24 @@ describe('2. the badges are re-measured when the felt says something moved', () 
     expect(FakeMutationObserver.made[0].disconnected).toBe(true);
   });
 
+  it('moves a percentage off a winning card as it rises without a row reveal', () => {
+    world.card = { left: 180, top: 284, width: 30, height: 40 };
+    const { container } = render(<Felt revealed badges={BADGES} />);
+    const card = container.querySelector('.seat__card') as HTMLElement;
+    const mo = FakeMutationObserver.made[0];
+    expect(slotOf(container).getAttribute('data-equity-spot')).toBe('above');
+    // Only the card gains the winning class. Its raised top now reaches the
+    // badge at y222..278; the already-revealed row has not changed class.
+    world.card = { ...world.card, top: 276 };
+    card.classList.add('seat__card--winner');
+    act(() => mo.cb([{ target: card }]));
+    expect(slotOf(container).getAttribute('data-equity-spot')).not.toBe('above');
+    world.card = { ...world.card, top: 284 };
+    card.classList.remove('seat__card--winner');
+    act(() => mo.cb([{ target: card }]));
+    expect(slotOf(container).getAttribute('data-equity-spot')).toBe('above');
+  });
+
   it('a hand being tabled moves the badge off it; the settled size is the one avoided', () => {
     const { container } = render(<Felt badges={BADGES} />);
     const row = container.querySelector('.seat__cards') as HTMLElement;
@@ -540,14 +558,14 @@ describe('exact equity reaches the rendered badge without inventing endpoints', 
   it('refuses to call a legacy sampled zero a dead hand', () => {
     installLayout();
     const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
-    expect(container.querySelector('.equity-overlay')?.textContent).toBe('Unknown');
-    expect((container.querySelector('.equity-overlay__bar') as HTMLElement).style.width).toBe('0%');
+    expect(container.querySelector('.equity-overlay')).toBeNull();
+    expect(container.textContent).not.toContain('Unknown');
   });
-  it('remeasures when an Unknown label changes the badge width class', () => {
+  it('remeasures when a percentage changes the badge width class', () => {
     installLayout();
-    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
     const before = world.layerReads;
-    rerender(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
+    rerender(<Felt badges={[{ ...BADGES[0], equity: 100, exact: true }]} />);
     expect(world.layerReads).toBeGreaterThan(before);
   });
   it('does not render a malformed percentage', () => {

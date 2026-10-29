@@ -17,7 +17,7 @@ import {
   horseCanonicalMaterialSha256,
   horseTournamentUtilityEvidenceSha256,
 } from '../../engine/HorseTournamentUtilityEvidence.js';
-import { HorseMind } from '../../engine/HorseMind.js';
+import { horsePlanHandKey } from '../../engine/HorseDecisionEffects.js';
 import { horseTournamentProvenanceMatchesSnapshot } from '../../engine/HorseTournamentContextProvenance.js';
 import { horseRetainedPlanContext } from './effects.js';
 import { PHASE11_PROTECTED_RELEASE_SELECTIONS } from '../../engine/HorsePhase11Authority.js';
@@ -350,7 +350,7 @@ export class HorseFleetPhaseInterpreter {
           decodeHorseDecisionReads(
             c.readFrame,
             gs.players,
-            HorseMind.handKeyOf(gs.actionHistory),
+            horsePlanHandKey(gs.actionHistory, plan.kind === 'current' ? plan.context : undefined),
             plan.kind === 'current' ? plan.context : undefined
           );
           if (

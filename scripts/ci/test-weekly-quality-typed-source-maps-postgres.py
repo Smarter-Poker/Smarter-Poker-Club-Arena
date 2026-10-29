@@ -163,8 +163,23 @@ def qualify_installer(path,q,definition_hash,state,rec,cmd,env,root,before,after
  finally:
   try:holder.stdin.write("SELECT pg_advisory_unlock(hashtextextended('union-accounting-scheduler',0));\n\\q\n");holder.stdin.flush();holder.communicate(timeout=5)
   except(subprocess.TimeoutExpired,BrokenPipeError):holder.kill();holder.communicate(timeout=3)
+ # Installer read witnesses have their own bounded statement; DDL stays five
+ # seconds. Accelerated isolation clocks reproduce a witness slower than DDL.
+ if '$quality_sources_before$'in migration:
+  need(migration.count("SET LOCAL statement_timeout='15s'")==2,'two bounded read phases required')
+  ddl=migration.split('DO $original_quality_bags$',1)[1].split('END$original_quality_bags$;',1)[0]
+  need('original_inventory_basis_generation()'not in ddl and 'original_inventory_proof_sources_match()'not in ddl,'heavy source reads remain inside DDL')
+  narrowed=migration.replace("SET LOCAL statement_timeout='5s'","SET LOCAL statement_timeout='10ms'")
+  delayed="BEGIN;CREATE OR REPLACE FUNCTION smarter_private.original_inventory_basis_generation()RETURNS text LANGUAGE plpgsql STABLE AS $delay$BEGIN PERFORM pg_sleep(0.05);RETURN 'original-inventory-245-v1:3e8afc28be0839e9a91519ba1efc0a12';END$delay$;"
+  previous=state();q(delayed+narrowed.rsplit('COMMIT;',1)[0]+'ROLLBACK;');need(state()==previous and definition_hash()==pre,'delayed witness rollback changed function');rec('installer_slow_read_witness_outlives_DDL_budget_without_extending_DDL')
+  fault=narrowed.replace(' EXECUTE patched;',' PERFORM pg_sleep(0.05);EXECUTE patched;')
+  q(fault,'statement timeout');need(state()==previous and definition_hash()==pre,'DDL timeout failed atomic rollback');rec('installer_DDL_timeout_remains_short_and_atomic')
+  for inject,label in [("SET LOCAL native.sources_match='off';",'source65'),("SELECT set_config('ca.weekly_quality_source_qualification',jsonb_set(current_setting('ca.weekly_quality_source_qualification')::jsonb,'{generation}','\"wrong-generation\"')::text,true);",'generation')]:
+   fault=migration.replace('DO $quality_sources_after$',inject+'DO $quality_sources_after$',1);q(fault,'weekly_quality_bags_postimage_required');need(state()==previous and definition_hash()==pre,'post witness failure failed rollback');rec('installer_post_'+label+'_refusal_rolls_back_exact_DDL')
+  need(q("SELECT COALESCE(NULLIF(current_setting('ca.weekly_quality_source_qualification',true),''),'cleared')")=='cleared','LOCAL qualification escaped aborted transaction')
+  rec('installer_LOCAL_qualification_cleared_after_abort')
  i=migration.rfind(post);need(i>=0,'post guard missing');fault=migration[:i]+'0'*32+migration[i+32:];previous=state();q(fault,'weekly_quality_bags_postimage_required');need(state()==previous and definition_hash()==pre,'bad postcondition did not roll back actual full function');rec('installer_bad_postcondition_atomic_rollback')
- q(migration);need(definition_hash()==post,'actual postimage differs');need(q("SELECT md5(prosrc)FROM pg_proc WHERE oid="+lit(SIG)+"::regprocedure")==config['post_body_md5'],'actual body hash differs');need(q('SELECT pg_get_functiondef('+lit(SIG)+'::regprocedure)')==after.rstrip().rstrip(';'),'installed body is not exact candidate')
+ committed=q(migration+"SELECT COALESCE(NULLIF(current_setting('ca.weekly_quality_source_qualification',true),''),'cleared');");need(committed=='cleared','LOCAL qualification escaped COMMIT on same connection');rec('installer_LOCAL_qualification_cleared_after_commit_same_connection');need(definition_hash()==post,'actual postimage differs');need(q("SELECT md5(prosrc)FROM pg_proc WHERE oid="+lit(SIG)+"::regprocedure")==config['post_body_md5'],'actual body hash differs');need(q('SELECT pg_get_functiondef('+lit(SIG)+'::regprocedure)')==after.rstrip().rstrip(';'),'installed body is not exact candidate')
  need(q("SELECT jsonb_build_array(pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure),smarter_private.original_inventory_basis_generation())")==seal_before,'original source guard or GEN changed');rec('exact_installer_metadata_source_guard_and_GEN_preserved')
  q("INSERT INTO supabase_migrations.schema_migrations VALUES('"+version+"','installed',ARRAY["+lit(migration)+"])");snap=state();q(migration,'weekly_quality_bags_history_replay');need(state()==snap,'installed replay changed function');rec('installed_replay_preserved')
  q('SET ROLE authenticated;SELECT public.fn_accounting_tournament_week_quality(NULL,NULL,NULL);','permission denied');rec('actual_PG_only_ACL_preserved')

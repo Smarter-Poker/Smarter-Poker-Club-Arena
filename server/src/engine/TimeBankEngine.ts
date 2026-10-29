@@ -1,3 +1,4 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TIME BANK ENGINE — Extended Think Time for Critical Decisions
@@ -101,6 +102,30 @@ export interface TimeBankEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class TimeBankEngine {
+  private weeklyClock = new WeeklyPauseClock();
+
+  pauseForWeeklyPayout(tableId: string, owner: string): void {
+    this.weeklyClock.hold(tableId, owner);
+    this.preciseTimer.pauseForWeeklyPayout(tableId, `${owner}:timebank`);
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    const elapsed = this.weeklyClock.release(tableId, owner);
+    if (elapsed !== null) {
+      for (const bank of this.playerBanks.values()) {
+        if (bank.tableId === tableId && bank.activatedAt !== undefined) bank.activatedAt += elapsed;
+      }
+    }
+    this.preciseTimer.resumeFromWeeklyPayout(tableId, `${owner}:timebank`);
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string): boolean {
+    return (
+      this.weeklyClock.has(tableId, owner) &&
+      this.preciseTimer.isParkedForWeeklyPayout(tableId, `${owner}:timebank`)
+    );
+  }
+
   private tableConfigs: Map<string, TimeBankConfig> = new Map();
   private playerBanks: Map<string, PlayerTimeBank> = new Map();
   private autoActivatePreferences = new Map<string, boolean>();
@@ -291,6 +316,7 @@ export class TimeBankEngine {
     onExpire: () => void,
     extraCountdownSeconds = 0
   ): TimeBankActivationResult {
+    if (this.weeklyClock.has(tableId)) return 'clock_not_exhausted';
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
@@ -324,7 +350,7 @@ export class TimeBankEngine {
     const useSeconds = Math.min(config.secondsPerUse, bank.remainingSeconds);
 
     bank.isActive = true;
-    bank.activatedAt = Date.now();
+    bank.activatedAt = this.weeklyClock.now(tableId);
     bank.currentUseSeconds = useSeconds;
     bank.usesRemaining--;
     bank.streetActivations++;
@@ -357,6 +383,7 @@ export class TimeBankEngine {
    * of how quickly the player acted. No partial refunds, no rollover.
    */
   playerActed(tableId: string, playerId: string): void {
+    if (this.weeklyClock.has(tableId)) return;
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
     // An intent that was never redeemed dies with the decision it was made
@@ -466,6 +493,7 @@ export class TimeBankEngine {
    * revalidation cannot prove that an unlimited membership is still active.
    */
   setUnlimitedActivations(tableId: string, playerId: string, unlimited: boolean): boolean {
+    if (this.weeklyClock.has(tableId)) return false;
     const bank = this.getPlayerBank(tableId, playerId);
     if (!bank || bank.isActive) return false;
     bank.unlimitedActivations = unlimited;
@@ -491,6 +519,7 @@ export class TimeBankEngine {
     remainingSeconds: number,
     unlimitedActivations?: boolean
   ): boolean {
+    if (this.weeklyClock.has(tableId)) return false;
     const bank = this.playerBanks.get(`${tableId}:${playerId}`);
     if (!bank || bank.isActive) return false;
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;

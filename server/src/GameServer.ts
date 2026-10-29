@@ -265,7 +265,12 @@ import {
   type TournamentManagerWakeDatabaseState,
   type TournamentManagerWakeReceipt,
 } from './tournament/TournamentManagerWakeProtocol.js';
-import { isMaintenanceFrozen } from './maintenance/freezeState.js';
+import { isMaintenanceFrozen, setWeeklyPayoutFrozen } from './maintenance/freezeState.js';
+import { WeeklyPayoutPause } from './maintenance/WeeklyPayoutPause.js';
+import {
+  createWeeklyPayoutPauseStore,
+  type WeeklyPayoutLeaseClaim,
+} from './maintenance/weeklyPayoutPauseStore.js';
 import {
   raiseEngineAlert,
   resolveEngineAlert,
@@ -3834,7 +3839,165 @@ export class GameServer {
     return this.maintenanceBreak.requestRecoveryWindow(announcedAt, cause);
   }
 
-  private readonly maintenanceBreak = new MaintenanceBreak({
+  private weeklyPayoutChannel: ReturnType<typeof supabase.channel> | null = null;
+  private weeklyPayoutHeldToken: string | null = null;
+  private weeklyPayoutRead: Promise<void> | null = null;
+  private weeklyPayoutReadPending = false;
+  private weeklyPayoutGeneration = 0;
+  private readonly weeklyPayoutTableListeners = new Map<ServerTableEngine, () => void>();
+  private readonly weeklyPayoutStore = createWeeklyPayoutPauseStore(INSTANCE_ID, () => {
+    const claims: WeeklyPayoutLeaseClaim[] = [];
+    for (const [tableId, engine] of this.enginesIncludingMixedF06Custody()) {
+      if (!engine.isRunning()) continue;
+      const authority = engine.getEngineLeaseAuthority();
+      if (!authority?.verified || !authority.generation)
+        throw new Error('weekly_payout_table_lease_unread');
+      if (authority.scope === 'cash')
+        claims.push({
+          table_id: tableId,
+          scope: 'cash',
+          lease_generation: authority.generation,
+          tournament_id: null,
+        });
+    }
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const generation = manager.getTournamentLeaseGeneration();
+      if (!generation) throw new Error('weekly_payout_tournament_lease_unread');
+      claims.push({
+        table_id: null,
+        scope: 'tournament',
+        lease_generation: generation,
+        tournament_id: tournamentId,
+      });
+    }
+    return claims.sort((a, b) =>
+      (a.scope + String(a.table_id ?? a.tournament_id)).localeCompare(
+        b.scope + String(b.table_id ?? b.tournament_id)
+      )
+    );
+  });
+  private readonly weeklyPayoutPause: WeeklyPayoutPause = new WeeklyPayoutPause({
+    engines: () => [...this.enginesIncludingMixedF06Custody()].map(([, engine]) => engine),
+    drainReady: () => this.maintenanceBreak.financialDrainReady(),
+    now: () => this.weeklyPayoutStore.clock.now(),
+    onError: (error) => reportError(error, 'GameServer.weekly_payout_edge_admission_unknown'),
+    admit: (expected) => this.weeklyPayoutStore.admit(expected),
+    read: (expected) => this.weeklyPayoutStore.read(expected),
+    onChanged: (boundary) => {
+      if (boundary) {
+        this.weeklyPayoutHeldToken = boundary.ownershipToken;
+        setWeeklyPayoutFrozen(
+          boundary.ownershipToken,
+          boundary.phase === 'released' ? null : boundary.phase
+        );
+      } else if (this.weeklyPayoutHeldToken) {
+        setWeeklyPayoutFrozen(this.weeklyPayoutHeldToken, null);
+        this.weeklyPayoutHeldToken = null;
+      }
+    },
+  });
+
+  private adoptWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may attach tables before this owner exists.
+    // No financial phase can be admitted without the initialized controller.
+    if (!this.weeklyPayoutPause) return;
+    if (!this.weeklyPayoutTableListeners.has(engine)) {
+      this.weeklyPayoutTableListeners.set(
+        engine,
+        engine.onWeeklyPayoutBoundary(() => {
+          void this.weeklyPayoutPause
+            .handBoundary()
+            .catch((error) => reportError(error, 'GameServer.weekly_payout_admission_unknown'));
+        })
+      );
+    }
+    this.weeklyPayoutPause.adopt(engine);
+  }
+
+  private refreshWeeklyPayout(): Promise<void> {
+    this.weeklyPayoutReadPending = true;
+    if (this.weeklyPayoutRead) return this.weeklyPayoutRead;
+    const generation = this.weeklyPayoutGeneration;
+    const operation = bindToProcessRoot(async () => {
+      do {
+        this.weeklyPayoutReadPending = false;
+        const existing = this.weeklyPayoutPause.snapshot();
+        const boundary = await this.weeklyPayoutStore.readCurrent(existing ?? undefined);
+        if (!this.running || generation !== this.weeklyPayoutGeneration) return;
+        if (boundary) this.weeklyPayoutPause.accept(boundary);
+        for (const [, engine] of this.enginesIncludingMixedF06Custody())
+          this.adoptWeeklyPayout(engine);
+        await this.weeklyPayoutPause.handBoundary();
+      } while (
+        this.weeklyPayoutReadPending &&
+        this.running &&
+        generation === this.weeklyPayoutGeneration
+      );
+    })();
+    this.weeklyPayoutRead = operation.finally(() => {
+      this.weeklyPayoutRead = null;
+    });
+    return this.weeklyPayoutRead;
+  }
+
+  private async startWeeklyPayout(): Promise<void> {
+    if (this.weeklyPayoutChannel) return;
+    const generation = this.weeklyPayoutGeneration;
+    const wake = bindToProcessRoot(() => {
+      if (!this.running || generation !== this.weeklyPayoutGeneration) return;
+      void this.refreshWeeklyPayout().catch((error) =>
+        reportError(error, 'GameServer.weekly_payout_state_unknown')
+      );
+    });
+    const channel = supabase
+      .channel(`weekly-payout-owned:${INSTANCE_ID}:${generation}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'weekly_accounting_payout_pauses' },
+        wake
+      );
+    this.weeklyPayoutChannel = channel;
+    channel.subscribe(
+      bindToProcessRoot((status: string) => {
+        if (this.weeklyPayoutChannel !== channel) return;
+        if (status === 'SUBSCRIBED') wake();
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
+          reportError(
+            new Error('weekly_payout_notification_unread'),
+            'GameServer.weekly_payout_channel'
+          );
+      })
+    );
+    await this.refreshWeeklyPayout();
+  }
+
+  private async stopWeeklyPayout(): Promise<void> {
+    this.weeklyPayoutGeneration++;
+    this.weeklyPayoutPause.stop();
+    const channel = this.weeklyPayoutChannel;
+    this.weeklyPayoutChannel = null;
+    if (channel) await supabase.removeChannel(channel);
+    for (const unsubscribe of this.weeklyPayoutTableListeners.values()) unsubscribe();
+    this.weeklyPayoutTableListeners.clear();
+    await this.weeklyPayoutRead?.catch((error) =>
+      reportError(error, 'GameServer.weekly_payout_stop_unknown')
+    );
+  }
+
+  private readonly maintenanceBreak: MaintenanceBreak = new MaintenanceBreak({
+    onFinancialDrainChanged: () => {
+      void this.weeklyPayoutPause
+        .handBoundary()
+        .catch((error) =>
+          reportError(error, 'GameServer.weekly_payout_durable_drain_admission_unknown')
+        );
+    },
+    onAnnounced: () => {
+      void this.refreshWeeklyPayout().catch((error) =>
+        reportError(error, 'GameServer.weekly_payout_announcement_unknown')
+      );
+    },
+    financialPayoutActive: () => this.weeklyPayoutPause.snapshot() !== null,
     claimOperatorAnnouncement: async (announcedAt) => {
       const { data, error } = await supabase.rpc('fn_ca_engine_operator_claim_hourly', {
         p_announced_at: new Date(announcedAt).toISOString(),
@@ -3930,6 +4093,7 @@ export class GameServer {
     // can recover its committed receipt. Completion schedules a future release;
     // MaintenanceBreak keeps the pause until that certified boundary.
     onReleased: (freezeStartedAt) => {
+      this.weeklyPayoutPause.expire();
       for (const manager of this.tournamentEngines.values()) {
         try {
           manager.startBookedLevelAfterMaintenance(freezeStartedAt);
@@ -4366,6 +4530,7 @@ export class GameServer {
        * adopted later are parked by maintenanceBreak.adopt().
        */
       const endBreakAdoptionPhase = this.bootTimeline.begin('maintenance_break_adoption');
+      await this.startWeeklyPayout();
       await this.maintenanceBreak.start();
       endBreakAdoptionPhase();
       if (!this.directAdmissionIsCurrent(generation)) return;
@@ -4776,6 +4941,7 @@ export class GameServer {
     const firstSupportingStops = [
       beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
       beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+      beginOwnedStop('WeeklyPayoutPause', () => this.stopWeeklyPayout()),
     ];
     // If shutdown lands while the worker is still hydrating, begin its
     // cancellation before joining performStart(). No dealer can have been
@@ -4837,6 +5003,7 @@ export class GameServer {
     const supportingStopResults = await Promise.all([
       ...firstSupportingStops,
       beginOwnedStop('MaintenanceBreak', () => this.maintenanceBreak.stop()),
+      beginOwnedStop('WeeklyPayoutPause', () => this.stopWeeklyPayout()),
       beginOwnedStop('RakeSpecGuard', stopRakeSpecGuard),
     ]);
     for (const result of supportingStopResults) {
@@ -5590,6 +5757,12 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      weeklyPayout: (() => {
+        const state = this.weeklyPayoutPause.snapshot();
+        if (!state) return null;
+        const { ownershipToken: _privateOwner, ...publicState } = state;
+        return publicState;
+      })(),
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
@@ -12323,6 +12496,7 @@ export class GameServer {
     // Tournament tables get the same treatment as cash ones. The tournament
     // break suspends the blind clock; this keeps cards off the felt.
     this.maintenanceBreak.adopt(tableId, engine);
+    this.adoptWeeklyPayout(engine);
     return true;
   }
 
@@ -12390,6 +12564,7 @@ export class GameServer {
     }
     tableStateHub.dropTable(tableId);
     this.maintenanceBreak.adopt(tableId, replacement);
+    this.adoptWeeklyPayout(replacement);
     return true;
   }
 
@@ -12799,6 +12974,7 @@ export class GameServer {
     // On-demand wake during a break: the player gets the break screen, not a
     // table that deals to them alone.
     this.maintenanceBreak.adopt(tableId, engine);
+    this.adoptWeeklyPayout(engine);
     const readyPromise = this.trackDirectTableEngineReadiness(tableId, engine);
     void engine
       .start()

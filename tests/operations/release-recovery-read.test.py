@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Actual fixed file reader on isolated native files; no host or provider calls."""
 import importlib.util
+import inspect
 import base64
 import contextlib
 import io
@@ -195,7 +196,9 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('8193 - len(raw)', source)
         self.assertNotIn('shell=True', source)
         self.assertNotIn('docker', source)
-        self.assertNotIn('systemctl', source)
+        # The sealed reader still has no unit-control or unit-state branch.
+        # The separately admitted active mode qualifies its fixed show argv.
+        self.assertNotIn('systemctl', inspect.getsource(R.remote))
 
     def witness_fixture(self):
         invocation = 'd' * 32

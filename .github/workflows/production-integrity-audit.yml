@@ -33,7 +33,7 @@ concurrency:
   # A later observation displaced the finite incident read 40786982678 before
   # any job started. Give an explicit runtime read its own observation lane;
   # the ordinary audit and its single issue writer retain their original lane.
-  group: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.tournament_log_observation != null && format('production-runtime-observation-{0}', github.run_id) || 'production-integrity-audit' }}
+  group: ${{ github.event_name == 'repository_dispatch' && (github.event.client_payload.tournament_log_observation != null || github.event.client_payload.active_release_observation != null) && format('production-runtime-observation-{0}', github.run_id) || 'production-integrity-audit' }}
   cancel-in-progress: false
 
 jobs:
@@ -63,6 +63,35 @@ jobs:
         with:
           name: billing-endpoint-observation-${{ github.run_id }}
           path: artifacts/billing-endpoint-observation/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
+  scoped_active_release:
+    name: Explicit exact active release observation
+    # One observation only. No release, recovery or scheduled invocation authority.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.active_release_observation != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Qualify exact active owner admission and sanitized native reads
+        run: python3 -B tests/operations/active-release-read.test.py
+      - name: Read only the selected immutable requests and exact unit invocation
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 -B scripts/ci/read-scoped-release-recovery.py --active
+      - name: Retain only fixed states and allowlisted phase codes
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-release-observation-${{ github.run_id }}
+          path: artifacts/active-release-observation/observation.json
           retention-days: 3
           if-no-files-found: error
 
@@ -208,7 +237,7 @@ jobs:
           if-no-files-found: error
 
   client_release:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: Production is serving main
     # STAYS ON GITHUB'S POOL, deliberately (2026-09-03). The publisher runs on
     # the estate's own box. If that box dies, this is the job that has to say
@@ -260,7 +289,7 @@ jobs:
   # mask each other in the log or in the summary.
   # ───────────────────────────────────────────────────────────────────────────
   engine:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: The engine is running main
     # Runs independently of the deployment owner and has no release authority.
     runs-on: ubuntu-latest
@@ -351,7 +380,7 @@ jobs:
   # carries every failure or unknown into the native Actions conclusion; this
   # audit has no issue-writing or repair side channel.
   live_drift:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: Live drift and BBJ rebuild coverage remain clean
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -472,7 +501,7 @@ jobs:
   # DATABASE_URL job in this workflow already lives.
   # ─────────────────────────────────────────────────────────────────────────────
   engine_deploy_starvation:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: The engine pipeline is not starving
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -500,7 +529,7 @@ jobs:
   # and fails closed when the database, credential, or pg runtime is missing;
   # an unavailable live answer must never become a green SKIP.
   chip_conservation:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: Live chip and diamond supply still conserves
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -526,7 +555,7 @@ jobs:
         run: node scripts/ci/check-chip-conservation.mjs
 
   main_is_green:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: Nothing is silently red on main
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -700,7 +729,7 @@ jobs:
   # ubuntu-latest for the same reason as the jobs above - the alarm must not
   # share a failure domain with the boxes it watches.
   ddl_reload_storms:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: No schema-reload storm is stalling the fleet
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -753,7 +782,7 @@ jobs:
   # ubuntu-latest for the same reason as the jobs above - the alarm must not
   # share a failure domain with the boxes it watches.
   open_prs_are_green:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: No single check is blocking every branch
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -821,7 +850,7 @@ jobs:
   # "COULD NOT TELL" and is never folded into "everything is live" (10.86).
   # ───────────────────────────────────────────────────────────────────────────
   migrations_are_live:
-    if: github.event.client_payload.tournament_log_observation == null
+    if: github.event.client_payload.tournament_log_observation == null && github.event.client_payload.active_release_observation == null
     name: Every merged migration is live
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -363,21 +363,246 @@ def validate_reply(value, request):
     return value
 
 
+# Explicit active-owner diagnostics share the existing pinned, read-only transport.
+ACTIVE_SCHEMA = 'exact-active-release-observation/v1'
+UNIT_PROPERTIES = {'LoadState', 'ActiveState', 'Result', 'ExecMainStatus', 'InvocationID'}
+ACTIVE_CODES = {
+ 'control_transient', 'control_permanent', 'control_superseded', 'release_handoff_retry',
+ 'control_installed', 'release_handed_off', 'image_reused', 'image_built',
+ 'image_build_resources_bound', 'image_build_lock_refused', 'certificate_deadline',
+ 'certificate_reserve_refused', 'cards_in_air_refused', 'inflight_unknown',
+ 'recovery_deferred', 'release_sealed', 'release_already_sealed',
+ 'certificate_not_ready', 'cards_in_air_certificate_refused',
+}
+
+
+def read_request_lines(directory_fd, name):
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 4096:
+            raise ValueError('Active request refused')
+        raw = b''
+        while len(raw) <= 4096:
+            part = os.read(fd, min(1024, 4097-len(raw)))
+            if not part:
+                break
+            raw += part
+        after = os.fstat(fd)
+        identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns)
+        if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > 4096:
+            raise ValueError('Active request changed')
+        return raw.decode('utf-8').splitlines()
+    finally:
+        os.close(fd)
+
+
+def active_request(root_fd, kind, request):
+    directory = 'engine-intake-requests' if kind == 'intake' else 'engine-release-requests'
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    except FileNotFoundError:
+        return {'status': 'unknown_absent'}
+    try:
+        try:
+            lines = read_request_lines(directory_fd, request['runKey'] + '.request')
+        except FileNotFoundError:
+            return {'status': 'unknown_absent'}
+    finally:
+        os.close(directory_fd)
+    if len(lines) != (5 if kind == 'intake' else 6) or lines[0] != request['releaseSha']:
+        raise ValueError('Active request identity differs')
+    control, url, deadline = (lines[1], lines[2], lines[4]) if kind == 'intake' else (lines[4], lines[1], lines[5])
+    expected_url = 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/' + request['runKey'].split('-')[0]
+    if not SHA.fullmatch(control) or url != expected_url or not re.fullmatch(r'[1-9][0-9]{0,9}', deadline):
+        raise ValueError('Active request metadata differs')
+    return {'status': 'matched', 'controlSha': control, 'notAfterEpoch': int(deadline)}
+
+
+def active_unit(raw):
+    if len(raw) > 1024:
+        raise ValueError('Active unit output refused')
+    lines = raw.decode('utf-8').splitlines()
+    data = {}
+    for line in lines:
+        key, separator, value = line.partition('=')
+        if not separator or key in data or key not in UNIT_PROPERTIES:
+            raise ValueError('Active unit fields refused')
+        data[key] = value
+    if set(data) != UNIT_PROPERTIES:
+        raise ValueError('Active unit properties missing')
+    if (data['LoadState'] not in {'loaded', 'not-found', 'error', 'masked', 'bad-setting'}
+            or data['ActiveState'] not in {'active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading', 'maintenance', 'refreshing'}
+            or data['Result'] not in {'', 'success', 'exit-code', 'signal', 'core-dump', 'timeout', 'watchdog', 'start-limit-hit', 'resources', 'protocol', 'oom-kill', 'exec-condition', 'assert', 'dependency', 'skipped'}
+            or not re.fullmatch(r'[0-9]{1,3}', data['ExecMainStatus'])
+            or int(data['ExecMainStatus']) > 255
+            or data['InvocationID'] != '' and not INVOCATION.fullmatch(data['InvocationID'])):
+        raise ValueError('Active unit state refused')
+    return {'loadState': data['LoadState'], 'activeState': data['ActiveState'],
+            'result': data['Result'] or None, 'execMainStatus': int(data['ExecMainStatus']),
+            'invocationId': data['InvocationID'] or None}
+
+
+def active_code(message):
+    # Exact maintained certificate producer, with a bounded scalar repr shape.
+    # Never evaluate or export repr text, arbitrary reason names, or its values.
+    shut = re.fullmatch(
+      r"\[engine-release-transaction\] the restart certificate is shut with [0-9]{1,7}ms of the break left: unparkedTables=(?:None|[0-9]{1,10}) unparkedReasons=(None|\{(?:'[a-z0-9_]{1,64}': [0-9]{1,10}(?:, )?){0,32}\}) handsInFlightTotal=(?:None|[0-9]{1,10})", message)
+    if shut:
+        airborne = re.search(r"(?:\{|, )'cards_in_air': ([0-9]{1,10})(?:, |\})", shut[1])
+        return 'cards_in_air_certificate_refused' if airborne and int(airborne[1]) > 0 else 'certificate_not_ready'
+    literals = {
+      '[engine-release-intake] RETRY: control-generation installation encountered a transient host dependency': 'control_transient',
+      '[engine-release-intake] FATAL: intake control SHA was superseded; this immutable request cannot adopt newer control bytes': 'control_superseded',
+      'ENGINE_RELEASE_HANDOFF=durable': 'release_handed_off',
+      'ENGINE_RELEASE_HANDOFF=completed': 'release_already_sealed',
+      'ENGINE_IMAGE_REUSED=true': 'image_reused',
+      'ENGINE_IMAGE_REUSED=false': 'image_built',
+      'FATAL: could not acquire the engine image build lock': 'image_build_lock_refused',
+      '[engine-release-transaction] FATAL: the engine did not present a restart certificate with enough proof time remaining': 'certificate_deadline',
+      '[engine-release-transaction] the database says a hand IS in the air; the cutover stays refused': 'cards_in_air_refused',
+      '[engine-release-transaction] the database could not tell whether the felt is quiet; the cutover stays refused': 'inflight_unknown',
+      '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held': 'recovery_deferred',
+      'ENGINE_RELEASE_RESULT=sealed': 'release_sealed',
+    }
+    if message in literals:
+        return literals[message]
+    patterns = [
+      (r'\[engine-release-intake\] FATAL: control-generation installation failed permanently \(status [0-9]{1,3}\)', 'control_permanent'),
+      (r'\[engine-release-intake\] RETRY: durable release-unit handoff did not complete \(status [0-9]{1,3}\)', 'release_handoff_retry'),
+      (r'ENGINE_CONTROL_INSTALL_SHA=[0-9a-f]{40}', 'control_installed'),
+      (r'ENGINE_BUILD_RESOURCE_BOUNDARY=memory:[0-9]+,swap:[0-9]+,cpu:[0-9]+ [0-9]+', 'image_build_resources_bound'),
+      (r'\[engine-release-transaction\] the (durable|locked) table break has [0-9]+ms remaining, below the [0-9]+ms candidate-and-recovery budget; (refusing before mutation and )?waiting for a later certificate', 'certificate_reserve_refused'),
+    ]
+    return next((code for pattern, code in patterns if re.fullmatch(pattern, message)), None)
+
+
+def active_journal(raw, unit, invocation):
+    if len(raw) > 8192 or len(raw.splitlines()) > 8:
+        raise ValueError('Active journal output refused')
+    events, unknown = [], 0
+    for line in raw.splitlines():
+        row = json.loads(line, object_pairs_hook=unique_object)
+        if (not isinstance(row, dict) or not {'MESSAGE', '_SYSTEMD_UNIT', '_SYSTEMD_INVOCATION_ID', '__REALTIME_TIMESTAMP'} <= set(row)
+                or row['_SYSTEMD_UNIT'] != unit or row['_SYSTEMD_INVOCATION_ID'] != invocation
+                or not isinstance(row['__REALTIME_TIMESTAMP'], str)
+                or not re.fullmatch(r'[0-9]{16}', row['__REALTIME_TIMESTAMP'])
+                or not isinstance(row['MESSAGE'], str) or len(row['MESSAGE']) > 2048):
+            raise ValueError('Active journal identity refused')
+        # Native journal metadata is discarded; only fixed codes cross transport.
+        code = active_code(row['MESSAGE'])
+        if code:
+            events.append({'code': code, 'observedAtMs': timestamp(int(row['__REALTIME_TIMESTAMP']) // 1000)})
+        else:
+            unknown += 1
+    return {'status': 'read', 'events': events, 'unrecognizedRows': unknown}
+
+
+def remote_active(request):
+    request = selection(request)
+    root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        requests = {kind: active_request(root_fd, kind, request) for kind in ('intake', 'release')}
+        units = {}
+        for kind in ('intake', 'release'):
+            unit = 'club-arena-engine-' + kind + '-v1@' + request['runKey'] + '.service'
+            args = ['systemctl', 'show', '--no-pager', '--property=' + ','.join(sorted(UNIT_PROPERTIES)), unit]
+            try:
+                reply = bounded_journal(args)
+            except (OSError, subprocess.TimeoutExpired):
+                reply = None
+            if reply is None or reply.returncode:
+                units[kind] = {'status': 'unknown_unavailable'}
+                continue
+            state = active_unit(reply.stdout)
+            journal = {'status': 'unknown_no_invocation', 'events': [], 'unrecognizedRows': 0}
+            if state['invocationId']:
+                args = ['journalctl', '--no-pager', '--output=json', '--lines=8',
+                  '--output-fields=MESSAGE,_SYSTEMD_UNIT,_SYSTEMD_INVOCATION_ID,__REALTIME_TIMESTAMP',
+                  '--grep=^(\\[engine-release-(transaction|intake)\\]|ENGINE_(CONTROL_INSTALL_SHA|RELEASE_HANDOFF|RELEASE_RESULT|IMAGE_REUSED|BUILD_RESOURCE_BOUNDARY)=|FATAL: could not acquire the engine image build lock)',
+                  '_SYSTEMD_UNIT=' + unit, '_SYSTEMD_INVOCATION_ID=' + state['invocationId']]
+                try:
+                    rows = bounded_journal(args)
+                except (OSError, subprocess.TimeoutExpired):
+                    rows = None
+                if rows is None or rows.returncode:
+                    journal['status'] = 'unknown_unavailable'
+                else:
+                    journal = active_journal(rows.stdout, unit, state['invocationId'])
+            # Refuse a unit restart during collection, rather than combining invocations.
+            after = bounded_journal(['systemctl', 'show', '--no-pager', '--property=' + ','.join(sorted(UNIT_PROPERTIES)), unit])
+            if after.returncode or active_unit(after.stdout) != state:
+                raise ValueError('Active unit changed across read')
+            units[kind] = {**state, 'journal': journal}
+        if requests != {kind: active_request(root_fd, kind, request) for kind in ('intake', 'release')}:
+            raise ValueError('Active request changed across read')
+        return {'schema': ACTIVE_SCHEMA, 'readOnly': True, **request, 'requests': requests,
+                'units': units, 'verdict': 'observation_only_not_activation_or_recovery_authority'}
+    finally:
+        os.close(root_fd)
+
+
+def validate_active_reply(value, request):
+    if (not isinstance(value, dict) or set(value) != {'schema','readOnly','runKey','releaseSha','requests','units','verdict'}
+            or value['schema'] != ACTIVE_SCHEMA or value['readOnly'] is not True
+            or value['runKey'] != request['runKey'] or value['releaseSha'] != request['releaseSha']
+            or value['verdict'] != 'observation_only_not_activation_or_recovery_authority'):
+        raise ValueError('Active export refused')
+    for group in ('requests', 'units'):
+        if not isinstance(value[group], dict) or set(value[group]) != {'intake','release'}:
+            raise ValueError('Active export fields refused')
+    for row in value['requests'].values():
+        if row == {'status':'unknown_absent'}:
+            continue
+        if (set(row) != {'status','controlSha','notAfterEpoch'} or row['status'] != 'matched'
+                or not isinstance(row['controlSha'], str) or not SHA.fullmatch(row['controlSha'])
+                or type(row['notAfterEpoch']) is not int or not 1 <= row['notAfterEpoch'] < 10000000000):
+            raise ValueError('Active request export refused')
+    for row in value['units'].values():
+        if row == {'status':'unknown_unavailable'}:
+            continue
+        if not isinstance(row, dict) or set(row) != {'loadState','activeState','result','execMainStatus','invocationId','journal'}:
+            raise ValueError('Active unit export refused')
+        native = '\n'.join([f'LoadState={row["loadState"]}', f'ActiveState={row["activeState"]}',
+                           f'Result={row["result"] or ""}', f'ExecMainStatus={row["execMainStatus"]}',
+                           f'InvocationID={row["invocationId"] or ""}']).encode()
+        if {**active_unit(native),'journal':row['journal']} != row:
+            raise ValueError('Active unit export differs')
+        journal = row['journal']
+        if (not isinstance(journal, dict) or set(journal) != {'status','events','unrecognizedRows'}
+                or journal['status'] not in {'read','unknown_no_invocation','unknown_unavailable'}
+                or type(journal['unrecognizedRows']) is not int or not 0 <= journal['unrecognizedRows'] <= 8
+                or not isinstance(journal['events'], list) or len(journal['events']) + journal['unrecognizedRows'] > 8):
+            raise ValueError('Active journal export refused')
+        for event in journal['events']:
+            if not isinstance(event, dict) or set(event) != {'code','observedAtMs'} or event['code'] not in ACTIVE_CODES:
+                raise ValueError('Active event export refused')
+            timestamp(event['observedAtMs'])
+        if journal['status'] != 'read' and (journal['events'] or journal['unrecognizedRows']):
+            raise ValueError('Active unknown export refused')
+    return value
+
+
 def main():
-    if len(sys.argv) == 3 and sys.argv[1] == '--remote':
+    if len(sys.argv) == 3 and sys.argv[1] in {'--remote', '--remote-active'}:
         request = selection(json.loads(base64.b64decode(sys.argv[2], validate=True)))
         try:
-            print(json.dumps(remote(request)))
+            print(json.dumps(remote_active(request) if sys.argv[1] == '--remote-active' else remote(request)))
         except Exception as error:
             print(json.dumps(refusal(request, error)))
             raise SystemExit(1)
         return
-    if len(sys.argv) != 1 or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
+    active = sys.argv[1:] == ['--active']
+    if (len(sys.argv) != 1 and not active) or os.environ.get('GITHUB_EVENT_NAME') != 'repository_dispatch':
         raise ValueError('Explicit observation dispatch required')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     if event.get('action') != 'audit-production-integrity':
         raise ValueError('Wrong observation event')
-    request = selection(event.get('client_payload', {}).get('release_recovery_observation'))
+    payload = event.get('client_payload', {})
+    field = 'active_release_observation' if active else 'release_recovery_observation'
+    if active and set(payload) != {field}:
+        raise ValueError('Active observation must be the only requested mode')
+    request = selection(payload.get(field))
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -396,9 +621,9 @@ def main():
         args = ['ssh', '-i', str(directory / 'key'), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
                 '-o', 'UserKnownHostsFile=' + str(directory / 'known_hosts'), '-o', 'ConnectTimeout=10',
-                'root@' + host, "python3 - --remote '" + encoded + "'"]
+                'root@' + host, "python3 - " + ('--remote-active' if active else '--remote') + " '" + encoded + "'"]
         reply = subprocess.run(args, input=Path(__file__).read_bytes(), capture_output=True, timeout=30)
-        if len(reply.stdout) > 4096:
+        if len(reply.stdout) > (8192 if active else 4096):
             raise ValueError('Scoped evidence transport unavailable')
         if reply.returncode:
             try:
@@ -406,12 +631,13 @@ def main():
             except (ValueError, UnicodeError):
                 raise ValueError('Scoped evidence transport unavailable') from None
             raise validate_refusal(failure, request)
-        answer = validate_reply(json.loads(reply.stdout, object_pairs_hook=unique_object), request)
+        validator = validate_active_reply if active else validate_reply
+        answer = validator(json.loads(reply.stdout, object_pairs_hook=unique_object), request)
         answer['observedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         serialized = json.dumps(answer, indent=2) + '\n'
         if key in serialized or pin in serialized:
             raise ValueError('Observation export refused')
-        destination = Path('artifacts/release-recovery-observation')
+        destination = Path('artifacts/active-release-observation' if active else 'artifacts/release-recovery-observation')
         destination.mkdir(parents=True, exist_ok=True)
         target = destination / 'observation.json'
         target.write_text(serialized)

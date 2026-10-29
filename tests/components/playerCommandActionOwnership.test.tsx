@@ -735,9 +735,9 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
     </ClubPrivateDataBoundary>
   );
   try {
+    // Resolve bootstrap inside act so the resolved-club authority effect owns
+    // the next event. Visible markup alone does not establish that handoff.
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
-    // The hook fixture exposes callbacks during render. Finish bootstrap before
-    // signalling the mounted authority lane, then own its exact response.
     await act(async () => initial.resolve(memberDetail));
     await screen.findByRole('textbox', { name: 'Nickname' });
     const authorityReads = state.getMemberDetail.mock.calls.length;
@@ -756,11 +756,14 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
       });
     });
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1));
-    expect(state.getMemberDetail.mock.calls[authorityReads]?.slice(0, 3)).toEqual([
+    const authorityCall = state.getMemberDetail.mock.calls.at(-1);
+    expect(authorityCall?.slice(0, 3)).toEqual([
       '22222222-2222-4222-8222-222222222222',
       state.params.userId,
       undefined,
     ]);
+    expect(authorityCall?.[3]).toBeInstanceOf(AbortSignal);
+    expect(authorityCall?.[3].aborted).toBe(false);
     await act(async () => rejectAuthority(new MemberAccessDeniedError()));
     expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();

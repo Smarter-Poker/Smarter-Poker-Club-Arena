@@ -234,10 +234,18 @@ it('actual Manager shared admission starts only after resolved projection and pr
         order.push('recovery');
       },
     });
-    const spy = vi.spyOn(supabase, 'rpc').mockImplementation((async (name: string) => {
+    const spy = vi.spyOn(supabase, 'rpc').mockImplementation(((name: string) => {
       if (name === 'fn_ca_resume_hand_submission') {
         return { data: { found: false }, error: null } as never;
       }
+      if (name === 'fn_f06_claim_hand_continuation')
+        return {
+          abortSignal: () =>
+            Promise.resolve({
+              data: { ok: true, table_id: id(2), writer_generation: id(5), continuation: null },
+              error: null,
+            }),
+        } as never;
       expect(name).toBe('fn_f06_hand_number_state');
       return {
         data: {
@@ -258,6 +266,7 @@ it('actual Manager shared admission starts only after resolved projection and pr
     expect(spy.mock.calls.map(([name]) => name)).toEqual([
       'fn_ca_resume_hand_submission',
       'fn_f06_hand_number_state',
+      ...(unresolved ? ['fn_f06_claim_hand_continuation', 'fn_f06_hand_number_state'] : []),
     ]);
     spy.mockRestore();
     expect(order).toEqual(

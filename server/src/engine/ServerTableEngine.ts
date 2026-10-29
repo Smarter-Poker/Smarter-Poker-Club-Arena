@@ -54,7 +54,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
    */
   public getObserverState(): Record<string, any> | null {
     if (!this.handController || !this.tableInfo) return null;
-    const state = this.handController.getState();
+    const state = this.publishedHandState();
+    if (!state) return null;
     const showCards = this.tableInfo.observer_show_cards ?? false;
     return {
       table_id: this.tableId,
@@ -284,7 +285,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
   public getTableState(requestingUserId: string): Record<string, any> | null {
     if (!this.handController || !this.tableInfo) return null;
 
-    const state = this.handController.getState();
+    const state = this.publishedHandState();
+    if (!state) return null;
     /* THE PROJECTION IS SHARED (Lightning Phase 6, 2026-09-27). The payload is
        built by projectResyncHandState, the same pure function a Lightning hand
        host publishes through, so the two dealers cannot drift apart. Every
@@ -391,7 +393,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       this.lastActionAcceptedAtMs = 0;
     }
 
-    const state = this.handController.getState();
+    const state = this.publishedHandState();
+    if (!state) return Promise.resolve();
 
     // Phase 1.1 PR-2: Build the payload once and publish it to the
     // authoritative WebSocket hub. Lightning Phase 6 (2026-09-27): built by

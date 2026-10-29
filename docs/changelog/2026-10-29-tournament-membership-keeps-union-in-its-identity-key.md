@@ -12,3 +12,7 @@ existing accounting PostgreSQL gate. Native and bounded live observations are no
 production capacity certification. Install through the protected-main CCI applier
 and verify the exact catalog/history and actual original report before claiming
 the book closed. No payment is executed by this migration.
+
+The hosted law-registry gate found the new test missing its registry entry.
+Added the required dedicated `docs/laws.d/` entry; the unchanged registry check
+failed before and passed after registration. Migration and native inputs are unchanged.

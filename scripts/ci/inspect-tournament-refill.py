@@ -31,14 +31,6 @@ def reference_cases(raw, expected):
             value[key] = item
         return value
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
-    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 4:
-        if (set(value) != {'version', 'sourceRelease', 'probe', 'cases'}
-                or value['probe'] not in ('matched_risk', 'phase7_allocated')):
-            raise ValueError('reference_cases_refused')
-        # Reuse the original coordinate, uniqueness and full-list ordinal contract.
-        tournament_cases(json.dumps({'version': 2, 'sourceRelease': value['sourceRelease'],
-                                     'cases': value['cases']}).encode('utf-8'), expected)
-        return value
     uuid = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     if (not isinstance(value, dict) or set(value) != {'version', 'sourceRelease', 'cases'}
             or type(value['version']) is not int or value['version'] not in (1, 2, 3)
@@ -403,6 +395,29 @@ def sanitize_positive_calloff_result(result, value):
     return result
 
 
+def reference_case_metadata(raw, expected):
+    """Exact original metadata only; never an operator command or journal path."""
+    if len(raw) > REFERENCE_CASE_BYTES:
+        raise ValueError('reference_cases_refused')
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError('reference_cases_refused')
+            value[key] = item
+        return value
+    value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 4:
+        if (set(value) != {'version', 'sourceRelease', 'probe', 'cases'}
+                or value['probe'] not in ('matched_risk', 'phase7_allocated')):
+            raise ValueError('reference_cases_refused')
+        # Reuse the original coordinate, uniqueness and full-list ordinal contract.
+        tournament_cases(json.dumps({'version': 2, 'sourceRelease': value['sourceRelease'],
+                                     'cases': value['cases']}).encode('utf-8'), expected)
+        return value
+    return reference_cases(raw, expected)
+
+
 def sanitize_decision_8464_result(result, value):
     reasons = {'input_refused', 'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                'record_binding_or_duplicate', 'accepted_hand_missing_or_ambiguous',
@@ -493,8 +508,6 @@ process.exit(0);
 
 
 def sanitize_reference_result(result, value):
-    if value['version'] == 4:
-        return sanitize_decision_8464_result(result, value)
     if value['version'] in (2, 3):
         return sanitize_positive_calloff_result(result, value)
     unknown_reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
@@ -559,6 +572,35 @@ def diagnostic_failure(stage, code):
 
 def reference_diagnostic(value):
     try:
+        raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
+                               '-e', REFERENCE_DIAGNOSTIC_JS, '--', '--reference-shape-diagnostic'],
+                              input_bytes=json.dumps(value).encode('utf-8'), separate_stderr=True)
+    except Exception as error:
+        # Never expose exception text. Only our own closed transport codes escape.
+        code = (error.code if isinstance(error, DiagnosticCommandFailure)
+                and error.code in {'timeout', 'output_bound', 'nonzero_exit'} else 'unavailable')
+        return diagnostic_failure('child_transport', code)
+    try:
+        result = json.loads(raw)
+    except Exception:
+        return diagnostic_failure('stdout_parse', 'invalid_json')
+    try:
+        if isinstance(result, dict) and 'diagnostic' in result:
+            diagnostic = result['diagnostic']
+            if (set(result) != {'status', 'reason', 'diagnostic'}
+                    or result['status'] != 'unknown' or result['reason'] != 'journal_or_runtime_unavailable'
+                    or not isinstance(diagnostic, dict) or set(diagnostic) != {'stage', 'code'}
+                    or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
+                raise ValueError()
+            return result
+        return sanitize_reference_result(result, value)
+    except Exception:
+        return diagnostic_failure('sanitizer', 'result_refused')
+
+def decision_case_diagnostic(value):
+    if value.get('version') != 4:
+        return reference_diagnostic(value)
+    try:
         diagnostic_js = REFERENCE_DIAGNOSTIC_JS
         if value.get('version') == 4:
             helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
@@ -586,7 +628,7 @@ def reference_diagnostic(value):
                     or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
                 raise ValueError()
             return result
-        return sanitize_reference_result(result, value)
+        return sanitize_decision_8464_result(result, value)
     except Exception:
         return diagnostic_failure('sanitizer', 'result_refused')
 
@@ -1536,7 +1578,7 @@ def main(expected, selected_cases=None, selected_tournament_cases=None):
         selected_tournament_cases = tournament_cases(json.dumps(selected_tournament_cases).encode('utf-8'), expected)
     before = identity(expected)
     tournament_observations = tournament_diagnostic(selected_tournament_cases) if selected_tournament_cases is not None else None
-    original_cases = reference_diagnostic(selected_cases) if selected_cases is not None else None
+    original_cases = decision_case_diagnostic(selected_cases) if selected_cases is not None else None
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
     restarts = restart_evidence()
@@ -1575,7 +1617,7 @@ def cli(argv):
             print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
             return 0
         if len(argv) == 3 and argv[1] == '--encode-reference-cases':
-            value = reference_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
+            value = reference_case_metadata(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
             print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
             return 0
         if len(argv) not in (2, 3, 4):
@@ -1584,7 +1626,7 @@ def cli(argv):
         if len(argv) >= 3 and argv[2]:
             if len(argv[2]) > 11000:
                 raise ValueError('reference_cases_refused')
-            selected = reference_cases(base64.b64decode(argv[2], validate=True), argv[1])
+            selected = reference_case_metadata(base64.b64decode(argv[2], validate=True), argv[1])
         tournament_selected = None
         if len(argv) == 4 and argv[3]:
             if len(argv[3]) > 11000 or selected is not None:

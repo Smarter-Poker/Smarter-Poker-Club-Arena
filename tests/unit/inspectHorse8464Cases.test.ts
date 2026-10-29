@@ -326,6 +326,28 @@ it('uses real helper and real original hand reconciliation for a bounded coverin
     ],
   });
   expect(python('sanitize_decision_8464_result', [result, f.input]).status).toBe(0);
+  const dispatch = (value: unknown) =>
+    spawnSync(
+      'python3',
+      [
+        '-B',
+        '-c',
+        "import json,runpy,sys; m=runpy.run_path(sys.argv[1]); d=json.load(sys.stdin); g=m['decision_case_diagnostic'].__globals__; g['TOURNAMENT_PREDICATE_JS']='fixed-control'; g['bounded_command']=lambda *a,**k:json.dumps(d['result']); print(json.dumps(m['decision_case_diagnostic'](d['input'])))",
+        script,
+      ],
+      { input: JSON.stringify({ input: f.input, result: value }), encoding: 'utf8', timeout: 5000 }
+    );
+  const validDispatch = dispatch(result);
+  expect(validDispatch.status, validDispatch.stderr).toBe(0);
+  expect(JSON.parse(validDispatch.stdout)).toEqual(result);
+  const refusedDispatch = dispatch({ ...result, raw: 'private-sentinel' });
+  expect(refusedDispatch.status, refusedDispatch.stderr).toBe(0);
+  expect(JSON.parse(refusedDispatch.stdout)).toMatchObject({
+    status: 'unknown',
+    diagnostic: { stage: 'sanitizer', code: 'result_refused' },
+  });
+  expect(refusedDispatch.stdout).not.toContain('private-sentinel');
+
   for (const mutate of [
     (v: any) => (v.rawRecordsExported = true),
     (v: any) => (v.cases[0].cards = ['As']),

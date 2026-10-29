@@ -1,4 +1,37 @@
 {
+  "retainedCheckpointMain35e20Composition20261029": {
+    "review": "Ordinary protected-main35e20c94f1 composition preserves its additive shard4 one-page retention fixture and server/tests classifier routing, together with this branch full-history server checkout. Both parents financial inputs, historical audit records, assertions, limits and qualification states are retained. Only the active current CI identity is composed here; existing financial commands are unchanged and no financial/native/live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 251812,
+      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "combinedWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "historicalRuntimeCheckoutAvailability20261029": {
+    "review": "Exact historical runtime qualification needs the fixed deployed EED Git object and its old source blobs before its existing bounded native run. Only server_shards Checkout gains fetch-depth 0; the immutable auto-deploy preflight retains depth 0 and removes blob:none plus its obsolete no-historical-reads comment. Parsed workflow comparison proves all other jobs, test selection, financial owner commands, budgets, matrices, assertions and joins unchanged. Refresh only this current CI input identity; preserve every historical audit and qualification state. This is not native financial requalification, installation or live certification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 251812,
+          "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+        }
+      }
+    },
+    "all_other_parsed_workflow_fields_identical": true,
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
   "uiPresentationSelection20261028": {
     "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
     "changes": {
@@ -75,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252352,
-      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+      "bytes": 252549,
+      "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1067,5 +1100,21 @@
       "bytes": 252352,
       "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
     }
+  },
+  "retainedCheckpointV31MainComposition20261029": {
+    "review": "Ordinary protected-main f8fbd791a1 composition preserves its additive V31 public feature/model-index controller contract step alongside the recovery full-history server checkout. Both parents financial source inputs, historical audits, assertions, deadlines and qualification states remain exact. Only active current CI identity is composed; no financial, native or live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    },
+    "combinedWorkflow": {
+      "bytes": 252549,
+      "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
   }
 }

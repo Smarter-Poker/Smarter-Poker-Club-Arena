@@ -71,7 +71,7 @@ test('configuration proof focuses erased types and navigation copy, never runtim
   assert.equal(classifyChangedPaths(['scripts/ci/ui-test-selection.mjs']).server, true);
 });
 
-test('immutable configuration selection reaches client consumers without relaxing financial admission', () =>
+test('immutable safe configuration focuses consumers but financial and unknown inputs remain full', () =>
   owned((root) => {
     const git = (...args) =>
       execFileSync('git', args, {
@@ -94,7 +94,6 @@ test('immutable configuration selection reaches client consumers without relaxin
     const proof = selectionInputs(root, base, head);
     assert.equal(proof.focused, true);
     assert.deepEqual(proof.changed, [p]);
-    assert.equal(proof.presentation, false);
     const output = join(root, 'compiler-scope');
     runSelection(root, ['scope'], {
       ...process.env,
@@ -102,7 +101,7 @@ test('immutable configuration selection reaches client consumers without relaxin
       CI_HEAD_SHA: head,
       GITHUB_OUTPUT: output,
     });
-    assert.match(readFileSync(output, 'utf8'), /presentation_only=false/);
+    assert.match(readFileSync(output, 'utf8'), /presentation_only=true/);
     const note = 'docs/changelog/2026-10-29-config-example.md';
     write(root, note, '# Type configuration\n');
     git('add', note);
@@ -115,6 +114,11 @@ test('immutable configuration selection reaches client consumers without relaxin
     assert.equal(selectionInputs(root, base, documented).focused, false);
     git('add', p);
     git('commit', '-qm', 'runtime configuration');
+    assert.equal(selectionInputs(root, base, git('rev-parse', 'HEAD')).focused, false);
+    write(root, p, 'export type Interval = 12 | 15;\nexport const enabled = true;\n');
+    write(root, 'supabase/migrations/financial.sql', 'BEGIN; COMMIT;');
+    git('add', '.');
+    git('commit', '-qm', 'mixed database input');
     assert.equal(selectionInputs(root, base, git('rev-parse', 'HEAD')).focused, false);
   }));
 

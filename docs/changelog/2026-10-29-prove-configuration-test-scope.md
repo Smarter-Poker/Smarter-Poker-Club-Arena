@@ -1,6 +1,6 @@
 # Prove configuration test scope
 
-The immutable UI selector also recognizes existing erased top-level type aliases/interfaces in client configuration and literal labels/descriptions in the four navigation configurations. These edits run affected Vitest import consumers and source contracts through the existing selector. Normal compilation, financial replay admission and required check aggregation remain unchanged.
+The immutable UI selector also recognizes existing erased top-level type aliases/interfaces in client configuration and literal labels/descriptions in the four navigation configurations. These edits run affected Vitest import consumers and source contracts through the existing selector. Normal compilation and required check aggregation remain unchanged; positively proved safe configuration shares presentation selection for unchanged SQL replay.
 
 Configuration amounts, routes, roles, game rules, const enums, dependencies, compiler configuration, database inputs, financial configuration and uncertain/mixed diffs retain the full route. A dated changelog may accompany a positively proved edit without forcing unrelated client tests; documentation readers remain in the selected contracts. Dirty or non-immutable candidate bytes cannot qualify.
 

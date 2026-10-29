@@ -192,7 +192,6 @@ export function selectionInputs(root, base, head) {
     const names = git('diff', '--name-status', '--no-renames', '-z', ancestor, head).split('\0');
     if (names.pop() !== '') throw Error('Incomplete diff');
     const changed = [];
-    let presentation = true;
     let provedSource = false;
     for (let i = 0; i < names.length; i += 2) {
       const [status, path] = names.slice(i, i + 2);
@@ -209,7 +208,6 @@ export function selectionInputs(root, base, head) {
       if (after !== git('show', `${head}:${path}`)) throw Error('Changed candidate input');
       if (!changelog) {
         if (!presentationOnly(path, before, after)) {
-          presentation = false;
           if (!configOnly(path, before, after))
             throw Error('Not proved presentation or configuration-only');
         }
@@ -220,7 +218,6 @@ export function selectionInputs(root, base, head) {
     if (!provedSource) throw Error('No proved source edit');
     return {
       focused: true,
-      presentation,
       changed,
       reason: 'Scoped presentation or proved configuration edit; affected consumers retained',
     };
@@ -545,9 +542,9 @@ export function runSelection(root, args, env = process.env) {
   };
   if (mode === 'scope') {
     if (!env.GITHUB_OUTPUT) throw Error('Compiler scope output is missing');
-    // Configuration proofs focus client tests only. Preserve the existing
-    // financial/compiler fixture admission independently of that selection.
-    appendFileSync(env.GITHUB_OUTPUT, `presentation_only=${proof.focused && proof.presentation}\n`);
+    // Only positive presentation/configuration proofs may omit the unchanged
+    // SQL replay. Financial, executable, mixed and unknown inputs keep it.
+    appendFileSync(env.GITHUB_OUTPUT, `presentation_only=${proof.focused}\n`);
   } else if (mode === 'unit') {
     if (!proof.focused) return invoke('vitest', ['run', 'tests/', ...args]);
     // Run the conservative source-contract set, then the actual import graph.

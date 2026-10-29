@@ -217,3 +217,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original tournament membership keeps raw Union equality in its physical key.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-membership-union-key-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-membership-union-key.json'))], text=True))
+
+# Original shaped cash keeps its exact Boolean evidence gate in a fixed-width physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-boolgate-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-boolgate.json'))], text=True))

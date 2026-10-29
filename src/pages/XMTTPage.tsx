@@ -1,3 +1,4 @@
+import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -138,7 +139,7 @@ export default function XMTTPage() {
           supabase
             .from('tournaments')
             .select(
-              'format_contract, id, name, status, type:tournament_type, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
+              'format_contract, id, name, status, type:tournament_type, tournament_type, variant, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, buy_in:buy_in_amount, buy_in_fee, max_players, registered_count:current_players, start_time, created_at, prize_pool, is_bounty, bounty_amount, is_pko, is_mystery_bounty'
             )
             .eq('id', tournamentId)
             .maybeSingle(),
@@ -246,6 +247,7 @@ export default function XMTTPage() {
         buy_in_amount: Number((t as any).buy_in ?? (t as any).buy_in_amount ?? 0),
         buy_in_fee: Number(t.buy_in_fee ?? 0),
         start_time: (t as any).start_time ?? null,
+        startsWhenFull: satelliteStartsWhenFull(t),
         /* The player's OWN club, never the row's `club_id`: a union tournament
            carries the union container in that column, and handing a union id to the balance RPC reads
            a wallet that does not exist. */

@@ -725,6 +725,8 @@ it('keeps the real boundary and record mounted on recipient access invalidation 
 });
 
 it('the mounted boundary delivers authoritative access withdrawal without rereading downline', async () => {
+  const initial = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(initial.promise);
   const priorUser = useUserStore.getState().user;
   useUserStore.setState({ user: { id: state.viewerId } as never });
   const view = render(
@@ -733,7 +735,13 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
     </ClubPrivateDataBoundary>
   );
   try {
+    // Resolve bootstrap inside act so the resolved-club authority effect owns
+    // the next event, matching the coalescing fixture above. Visible markup
+    // alone does not establish that passive-effect handoff.
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(1));
+    await act(async () => initial.resolve(memberDetail));
     await screen.findByRole('textbox', { name: 'Nickname' });
+    const authorityReads = state.getMemberDetail.mock.calls.length;
     const reads = state.getDownline.mock.calls.length;
     state.getMemberDetail.mockRejectedValueOnce(new MemberAccessDeniedError());
     await act(async () => {
@@ -744,6 +752,11 @@ it('the mounted boundary delivers authoritative access withdrawal without reread
         scopeId: '22222222-2222-4222-8222-222222222222',
       });
     });
+    expect(state.getMemberDetail).toHaveBeenCalledTimes(authorityReads + 1);
+    const authorityCall = state.getMemberDetail.mock.calls.at(-1);
+    expect(authorityCall?.[2]).toBeUndefined();
+    expect(authorityCall?.[3]).toBeInstanceOf(AbortSignal);
+    expect(authorityCall?.[3].aborted).toBe(false);
     expect(await screen.findByText('Member Not Found')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
     expect(screen.queryByText('River Shark')).not.toBeInTheDocument();

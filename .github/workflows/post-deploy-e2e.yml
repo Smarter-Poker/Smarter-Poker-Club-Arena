@@ -1630,6 +1630,7 @@ jobs:
               tests/e2e/global-setup.ts \
               tests/e2e/production-live-table-realtime.spec.ts \
               tests/e2e/production-live-table-multirun.spec.ts \
+              tests/e2e/production-seat-move-announcement.spec.ts \
               tests/e2e/support
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
@@ -1902,16 +1903,16 @@ jobs:
         run: |
           set -uo pipefail
           echo 'certified=false' >> "$GITHUB_OUTPUT"
-          if [ "${SEAT_MOVE_NOTICE_OUTCOME:-}" != 'success' ]; then
-            echo "NON-VERDICT: the served seat-move notice did not pass its isolated browser proof." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           if [ "${HORSE_SOCIAL_REQUESTED:-false}" = 'true' ] && [ "${HORSE_SOCIAL_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural horse social observation did not pass." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ "${MULTIRUN_REQUESTED:-false}" = 'true' ] && [ "${MULTIRUN_OUTCOME:-}" != 'success' ]; then
             echo "NON-VERDICT: the requested natural mobile multirun certificate did not pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "${SEAT_MOVE_NOTICE_OUTCOME:-}" != 'success' ]; then
+            echo "NON-VERDICT: the served seat-move notice did not pass its isolated browser proof." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if ! [[ "$EXPECTED_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]; then

@@ -671,6 +671,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     );
     expect(tableAlign).toContain('tests/e2e/global-setup.ts');
     expect(tableAlign).toContain('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(tableAlign).toContain('tests/e2e/production-seat-move-announcement.spec.ts');
     expect(tableAlign).toContain('tests/e2e/support');
   });
 

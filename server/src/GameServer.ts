@@ -7472,9 +7472,18 @@ export class GameServer {
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
     const generation = this.lifecycleGeneration;
+    const breakGeneration = this.synchronizedBreakGeneration;
     const startedAt = Date.now();
     let nextReportAt = startedAt + GameServer.PARK_WAIT_REPORT_MS;
-    while (this.running && this.directAdmissionIsCurrent(generation)) {
+    while (
+      this.running &&
+      this.directAdmissionIsCurrent(generation) &&
+      this.synchronizedBreakGeneration === breakGeneration
+    ) {
+      // A stopped manager cannot certify this break. Release its waiter
+      // without claiming its original hand finished. A newer hourly break
+      // likewise owns a different waiter, never an accumulated loop.
+      if (managers.some((tm) => !tm.isRunning())) return false;
       const waitingOn = managers.filter((tm) => !tm.areAllTablesParked());
       if (waitingOn.length === 0) return true;
       const waitedMs = Date.now() - startedAt;
@@ -7484,24 +7493,9 @@ export class GameServer {
           String((tm as unknown as { tournamentId?: string }).tournamentId ?? '?').slice(0, 8)
         )
         .join(', ');
-      /* A LIVENESS CEILING, NOT A GRACE ESTIMATE (2026-09-10).
-         A guessed two minutes is no authority to start a break over a hand
-         that is still being played. But with no ceiling at all, one wedged
-         table holds its tournament on the break screen for as long as it
-         stays wedged - until a restart - and nothing says which table it was.
-         A hand still in the air a whole break after :55 is not a slow hand;
-         start the countdown, and say loudly which event never parked. */
-      if (waitedMs >= GameServer.PARK_WAIT_CEILING_MS) {
-        reportError(
-          new Error(
-            `[GameServer] synchronized break: ${waitingOn.length} tournament(s) still had a table ` +
-              `in play ${Math.round(waitedMs / 1000)}s after the last hand was called (${names}); ` +
-              'starting the countdown so the tournament is not held on a wedged table'
-          ),
-          'GameServer.synchronized_break_park_ceiling'
-        );
-        return true;
-      }
+      // Elapsed time cannot prove that an accepted hand completed. Keep the
+      // existing diagnostic cadence while the hand's own authority resolves
+      // it; shutdown returns false below and never begins a false countdown.
       if (Date.now() >= nextReportAt) {
         console.warn(
           `[GameServer] synchronized break still waiting on ${waitingOn.length} tournament(s) ` +
@@ -7516,12 +7510,6 @@ export class GameServer {
 
   /** How long the drain may run before it names who it is waiting on, and how often after. */
   private static readonly PARK_WAIT_REPORT_MS = 15_000;
-  /**
-   * The drain's liveness ceiling: a whole break after the last hand was
-   * called. Far beyond any real hand (the maintenance break has had every
-   * table finishing since :53), so it only ever fires on a wedged table.
-   */
-  private static readonly PARK_WAIT_CEILING_MS = 5 * 60 * 1000;
 
   // ═════════════════════════════════════════════════════════════════════════════
   // STALE DATA CLEANUP — Run on startup

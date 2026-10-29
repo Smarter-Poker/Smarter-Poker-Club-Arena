@@ -307,3 +307,36 @@ describe('0064 actual Manager and transport proposal resolution', () => {
     expect(next.members[0].destination_seat_number).toBe(4);
   });
 });
+
+describe('break destination roster reservations', () => {
+  it('amends an original destination held by a roster row before dispatch', async () => {
+    const m = manager();
+    m.eligibleBreakDestinations = vi.fn(async () => [
+      {
+        tableId: id(8),
+        playerCount: 1,
+        maxSeats: 9,
+        reservedSeats: [2],
+        players: [{ userId: id(90), seat: 1, stack: 100 }],
+      },
+    ]);
+    const rpc = vi.spyOn(supabase, 'rpc').mockImplementation((async (_name: string, p: any) =>
+      ok({
+        ...state(),
+        members: [
+          {
+            ...member(),
+            destination_seat_number: p.p_destination_seat_number,
+            active_request_id: p.p_new_request_id,
+            attempt_revision: 2,
+          },
+        ],
+      })) as any);
+    const result = await m.repairTournamentBreakDestinations(state());
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][0]).toBe('fn_f06_amend_attempt');
+    expect(result.members[0].destination_seat_number).toBeGreaterThan(2);
+    expect(result.members[0].active_request_id).not.toBe(id(7));
+    expect(result.members[0].occupancy_id).toBe(id(6));
+  });
+});

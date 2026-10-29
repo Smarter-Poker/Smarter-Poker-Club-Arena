@@ -251,6 +251,7 @@ export function selectableHudClock(
     }
   }
   if (!Array.isArray(levels)) return null;
+  let projectedStart = now + clock.remainingMs;
   for (let ahead = 1; ahead <= MTT_SELECTION_LOOKAHEAD_LEVELS; ahead++) {
     const index = clock.levelIndex + ahead;
     // The engine holds the last level once the schedule is exhausted.
@@ -260,6 +261,12 @@ export function selectableHudClock(
     const minutes = Number(entry.durationMinutes ?? entry.duration_minutes);
     const durationMs = (minutes > 0 ? minutes * 60 : Number(entry.duration)) * 1000;
     if (!Number.isFinite(durationMs) || durationMs <= 0 || durationMs > levelCapMs) return null;
+    // Recovery may consume the current boundary. Each existing look-ahead
+    // baseline must still have its complete natural transition/render reserve
+    // before the synchronized break, just like the post-recovery predicate.
+    const projectedEnd = projectedStart + durationMs;
+    if (synchronizedBreakOverlaps(row, now, projectedEnd + HUD_RESERVE_MS)) return null;
+    projectedStart = projectedEnd;
   }
   return clock;
 }

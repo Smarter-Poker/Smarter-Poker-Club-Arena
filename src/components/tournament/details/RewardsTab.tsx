@@ -937,7 +937,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
       {/* Place prizes and every recorded bounty award. */}
       <section className="tl-panel rw-payouts">
         <div className="tl-section-head">
-          <h3>{isSatellite ? 'Seat Awards' : 'Payouts'}</h3>
+          <h3>{isSatellite ? 'Ticket Awards' : 'Payouts'}</h3>
           {/* ONLY ONCE THE FIELD IS AT LEAST AS BIG AS THE LADDER (2026-10-04
               review pass). The share is paid places over entries, and while an
               event is still filling the ladder is longer than the field: nine
@@ -980,19 +980,21 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                     </span>
                     <span className="rw-row__mid">
                       <span className="tl-name">{e.username}</span>
-                      {wonSeat && <span className="tl-badge rw-tag">Seat Winner</span>}
+                      {wonSeat && <span className="tl-badge rw-tag">Ticket Winner</span>}
                       {isHeroRow && (
                         <span className="tl-badge tl-badge--action rw-tag">Your Finish</span>
                       )}
                     </span>
-                    <span className="tl-num tl-num--accent rw-prize">{unitMoney(e.prize)}</span>
+                    <span className="tl-num tl-num--accent rw-prize">
+                      {wonSeat ? `1 Ticket (${unitMoney(e.prize)})` : unitMoney(e.prize)}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           ) : (
             <div className="tl-empty">
-              This Satellite Awards Seats Into The Target Event
+              This Satellite Awards Tickets Into The Target Event
               <span className="tl-empty__hint">
                 {isComplete
                   ? 'No Award Was Recorded Per Player For This Event.'

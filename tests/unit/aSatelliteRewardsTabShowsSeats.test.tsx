@@ -146,12 +146,15 @@ describe('Rewards on a finished satellite', () => {
     const { container } = render(<RewardsTab {...props()} />);
     expect(tiles(container)).toMatchObject({ 'Total Prize Pool': '810', 'Seat Winners': '7' });
     expect(container.textContent).toContain('9 Players Awarded');
+    expect(container.textContent).toContain('Ticket Awards');
+    expect(container.querySelectorAll('.rw-tag')).toHaveLength(7);
+    expect(container.textContent).toContain('Ticket Winner');
 
     const list = rows(container);
     expect(list).toHaveLength(9);
-    expect(list.slice(0, 7).every(([rank, , prize]) => rank === 'Seat' && prize === '100')).toBe(
-      true
-    );
+    expect(
+      list.slice(0, 7).every(([rank, , prize]) => rank === 'Seat' && prize === '1 Ticket (100)')
+    ).toBe(true);
     expect(
       list
         .slice(0, 7)
@@ -172,7 +175,7 @@ describe('Rewards on a finished satellite', () => {
       />
     );
     const text = container.textContent ?? '';
-    expect(text).toContain('This Satellite Awards Seats Into The Target Event');
+    expect(text).toContain('This Satellite Awards Tickets Into The Target Event');
     expect(text).not.toContain('63.52%');
     expect(text).not.toContain('515');
     expect(rows(container)).toHaveLength(0);
@@ -192,7 +195,7 @@ describe('Rewards on a satellite that has not finished', () => {
       <RewardsTab {...props({ status: 'RUNNING', prize_pool_finalized: false }, running)} />
     );
     const text = container.textContent ?? '';
-    expect(text).toContain('This Satellite Awards Seats Into The Target Event');
+    expect(text).toContain('This Satellite Awards Tickets Into The Target Event');
     expect(tiles(container)).toMatchObject({ 'Seats Advertised': '1' });
     expect(text).not.toContain('63.52%');
     expect(text).not.toContain('515');
@@ -222,6 +225,6 @@ describe('Rewards on an ordinary finished event', () => {
     expect(text).toContain('295');
     expect(tiles(container)).toMatchObject({ 'Money Bubble': '3rd' });
     expect(text).not.toContain('Seat Winners');
-    expect(text).not.toContain('Seat Awards');
+    expect(text).not.toContain('Ticket Awards');
   });
 });

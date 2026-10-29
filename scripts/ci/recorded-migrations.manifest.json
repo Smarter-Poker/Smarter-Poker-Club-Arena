@@ -1776,6 +1776,17 @@
       "recoveredFrom": "Exact body independently read from public.fn_ca_migration_text(20261029062111), 2365 bytes, byte-identical to qualified outage-install source.",
       "refusedBy": [],
       "liveVerdict": "Active production outage: 204 stalled tables included retained original hands whose positive private claim could not pass the serving manager because the canonical unresolved-permit projection omitted evidence_id. The one qualified outage installation adds actual h.evidence_id from the same permit row, preserving the shared table lane and every other function byte (reverse substitution proved). Native PostgreSQL 17 passed 24 cases including old missing-key failure, actual null/non-null identities, wrong-generation/ACL/body-drift refusals, unchanged row data, DDL/catalog rollback and actual catalog proof false before/true after. Read back exact function body MD5 c71e331cc40d676c931f2d711f2d02a0/full 570441684fd001cd76d4591e04194b98; owner postgres, SECURITY DEFINER, search_path and service-only ACL unchanged; anon/authenticated execute false. This immediately records the already installed compatible projection without replay, hand disposal, payout or engine restart. Originating continuation failures remain a separate investigation; natural recovery is verified separately."
+    },
+    {
+      "version": "20261029064404",
+      "name": "continuation_waits_for_a_bounded_maintenance_lane",
+      "file": "supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql",
+      "md5": "714167e64cb20caab154eea1b88f8692",
+      "appliedToProductionAt": "2026-10-29T06:49:04Z",
+      "recoveredOn": "2026-10-29",
+      "recoveredFrom": "Exact body independently read from public.fn_ca_migration_text(20261029064404), 7276 bytes, byte-identical to qualified outage-install source.",
+      "refusedBy": [],
+      "liveVerdict": "Active outage: provider PostgreSQL frames proved repeated 55P03 at fn_f06_retain_hand_continuation line 5, its instant HAND_CONTINUATION_MAINTENANCE_BUSY rejection on the first shared maintenance lane. One qualified outage transaction replaced only that NOWAIT acquisition in retain/claim/legacy-claim with the same shared advisory lane under a one-second function-local lock timeout, preserving original freeze, financial, lease and roster guards. Native real-holder proof reproduced old55P03, observed new waiting and same original seq1 progress, proved a 1.019s bounded timeout and restored caller GUC, six ACL/config installation refusals and reverse byte identity. All37 original/financial/freeze/legacy cases passed again after the candidate, with16 original RC/RR races, clock floor and complete rollback/cluster cleanup. Readback at06:49:16.762706Z confirmed exact three postbody/full hashes, postgres SECURITY DEFINER/service-only ACL/search_path unchanged; private helper postgres SECURITY INVOKER, postgres-only ACL, pg_catalog/lock_timeout1s, body5af6b5404cdf1a2306e4a0dfd3eb418a/full60116a44e2044188759e8002b3c80470, all browser/service direct execute denied. Installed before the :50 DDL boundary with no override. This is the immediate byte-exact recording, never a replay or engine replacement. Runtime pre-actuation/pause fixes and sustained natural recovery remain separately qualified."
     }
   ]
 }

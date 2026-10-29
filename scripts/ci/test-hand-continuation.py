@@ -157,6 +157,7 @@ def main():
         module(ROOT/DATA/'maintenance_lane_qualification.py','maintenance_lane_wait').qualify(e,ROOT,hand,db)
         module(ROOT/DATA/'funded_addon_claim_qualification.py','funded_addon_claim').qualify(e,ROOT,hand,db)
         module(ROOT/DATA/'frozen_attestation_qualification.py','frozen_original_attestation').qualify(e,ROOT,hand,db)
+        module(ROOT/DATA/'existing_park_attestation_qualification.py','existing_park_attestation_composition').qualify(e,ROOT,hand,db)
         qualify_fences(e,db,native)
         module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')

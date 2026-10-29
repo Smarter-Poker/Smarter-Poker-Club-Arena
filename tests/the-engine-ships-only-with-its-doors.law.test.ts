@@ -18,7 +18,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -55,10 +55,17 @@ function runScript(env: Record<string, string>, cwd = root) {
   const dir = mkdtempSync(join(tmpdir(), 'door-history-'));
   try {
     const histories = join(dir, 'histories.json');
-    writeFileSync(histories, JSON.stringify(continuationHistory()));
+    writeFileSync(histories, JSON.stringify(targetHistory()));
+    const catalog = join(dir, 'checkpoint-catalog.json');
+    writeFileSync(catalog, JSON.stringify(checkpointCatalog()));
     return spawnSync(process.execPath, [SCRIPT], {
       cwd,
-      env: { ...clean, ENGINE_DOORS_MIGRATIONS_FIXTURE: histories, ...env },
+      env: {
+        ...clean,
+        ENGINE_DOORS_MIGRATIONS_FIXTURE: histories,
+        ENGINE_DOORS_CHECKPOINT_FIXTURE: catalog,
+        ...env,
+      },
       encoding: 'utf8',
     });
   } finally {
@@ -103,7 +110,7 @@ describe('the extractor finds every door the engine calls, and only those', () =
 describe('the real script, end to end', () => {
   it('fails, and names the door, when production lacks one the build calls', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
     writeFileSync(
@@ -119,7 +126,7 @@ describe('the real script, end to end', () => {
 
   it('can prepare before the optional downline observation migration installs at the daily break', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     expect(all).toContain('fn_agent_can_watch_table');
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
@@ -132,7 +139,7 @@ describe('the real script, end to end', () => {
 
   it('passes when every door exists', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const dir = mkdtempSync(join(tmpdir(), 'engine-doors-'));
     const fixture = join(dir, 'live.json');
     writeFileSync(fixture, JSON.stringify(all));
@@ -207,13 +214,43 @@ function continuationHistory() {
       .digest('hex'),
   }));
 }
+function targetHistory() {
+  const file = '20261029093051_attest_frozen_original_hand_continuation_custody.sql';
+  return [
+    ...continuationHistory(),
+    ...(existsSync(resolve(root, 'server/scripts/retained-original-checkpoint-guard.mjs'))
+      ? [
+          {
+            version: file.slice(0, 14),
+            name: file.slice(15, -4),
+            statement_count: 1,
+            sql_md5: createHash('md5')
+              .update(readFileSync(join(root, 'supabase/migrations', file)))
+              .digest('hex'),
+          },
+        ]
+      : []),
+  ];
+}
+function targetFunctionNames(doors: Doors) {
+  const names = new Set(doors.engineDoors(resolve(root, 'server/src')).keys());
+  const guard = resolve(root, 'server/scripts/retained-original-checkpoint-guard.mjs');
+  if (existsSync(guard))
+    for (const name of doors.doorsIn(readFileSync(guard, 'utf8'))) names.add(name);
+  return [...names];
+}
 function runContinuationFixture(functions: string[], histories: unknown, extra = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'continuation-doors-'));
   try {
     const names = join(dir, 'functions.json');
     const rows = join(dir, 'migrations.json');
     writeFileSync(names, JSON.stringify(functions));
-    writeFileSync(rows, JSON.stringify(histories));
+    writeFileSync(
+      rows,
+      JSON.stringify(
+        Array.isArray(histories) ? [...histories, ...targetHistory().slice(2)] : histories
+      )
+    );
     return runScript({
       ENGINE_DOORS_LIVE_FIXTURE: names,
       ENGINE_DOORS_MIGRATIONS_FIXTURE: rows,
@@ -227,7 +264,7 @@ function runContinuationFixture(functions: string[], histories: unknown, extra =
 describe('continuation migration prerequisites in the existing door job', () => {
   it('a continuation target refuses an absent played-level migration', async () => {
     const { engineDoors } = await load();
-    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     expect(all).toContain('fn_f06_claim_legacy_river_continuation');
     const res = runContinuationFixture(all, continuationHistory().slice(0, 1));
     expect(res.status).toBe(1);
@@ -235,7 +272,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('refuses an absent private continuation migration even if every RPC name is present', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, continuationHistory().slice(1));
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('20261028233353');
@@ -244,7 +281,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   it.each(['sql_md5', 'name', 'statement_count'] as const)(
     'refuses changed installed migration %s rather than trusting its version alone',
     async (field) => {
-      const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+      const all = targetFunctionNames(await load());
       const history = continuationHistory();
       const row = history[1] as Record<string, unknown>;
       row[field] = field === 'statement_count' ? 2 : 'changed';
@@ -256,7 +293,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   );
 
   it('requires exactly one history witness for each immutable target file', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const history = continuationHistory();
     const res = runContinuationFixture(all, [...history, history[1]]);
     expect(res.status).toBe(1);
@@ -264,7 +301,7 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('passes both exact SQL histories without pinning a later compatible function body', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, continuationHistory());
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('both exact continuation migration histories are installed');
@@ -278,14 +315,14 @@ describe('continuation migration prerequisites in the existing door job', () => 
   });
 
   it('a rollback flag cannot waive the new target migration prerequisite', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, [], { ROLLBACK_REQUESTED: 'true' });
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
   });
 
   it('an unreadable history fixture is a failure, including the outer script error path', async () => {
-    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const all = targetFunctionNames(await load());
     const res = runContinuationFixture(all, null);
     expect(res.status).toBe(1);
     expect(res.stdout).toContain('CONTINUATION PREREQUISITES UNCHECKED');

@@ -20,6 +20,8 @@ const transaction = read('server/scripts/engine-release-transaction.sh');
 const installer = read('server/scripts/install-engine-supervisor.sh');
 const checkpointShell = read('server/scripts/legacy-engine-checkpoint.sh');
 const checkpointTransport = read('server/scripts/legacy-engine-checkpoint.mjs');
+const predecessorEed = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
+const imageEed = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b';
 const predecessor758 = '758610f3f844406bbbaee2f5100ced36d84fb943';
 const predecessorA0 = 'a0ab287d902879280f0c915e44f5222c5db4d7df';
 const predecessor8825 = '8825af51817f379c4261658ca29ecc9d8d81932d';
@@ -162,6 +164,8 @@ printf '%s' inspector-boundary-reached
   );
 
   it.each([
+    [predecessorEed, imageEed, 0],
+    [predecessorEed, image8825, 1],
     [predecessor8825, image8825, 0],
     [predecessor8825, image758, 1],
     [predecessor758, image758, 0],
@@ -204,6 +208,7 @@ printf '%s' "$LEGACY_IMAGE"
   });
 
   it.each([
+    predecessorEed,
     predecessor8825,
     predecessor758,
     predecessorA0,
@@ -223,6 +228,7 @@ CHECKPOINT_PREDECESSOR_SHA="$PROFILE_SHA"
 CHECKPOINT_758_SHA=${predecessor758}
 CHECKPOINT_A0_SHA=${predecessorA0}
 CHECKPOINT_8825_SHA=${predecessor8825}
+CHECKPOINT_EED_SHA=${predecessorEed}
 CERTIFICATE_RC=2
 RECOVERY_ADMISSION_MISSED=0
 legacy_checkpoint_countdown() { return 1; }
@@ -235,7 +241,9 @@ fi
     );
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toBe(
-      [predecessor8825, predecessor758, predecessorA0].includes(sha) ? 'existing-event:1' : ''
+      [predecessorEed, predecessor8825, predecessor758, predecessorA0].includes(sha)
+        ? 'existing-event:1'
+        : ''
     );
   });
 
@@ -246,6 +254,10 @@ fi
     );
     expect(production).toContain('const checkpointRelease = process.argv[3]');
     expect(production).toContain('].includes(checkpointRelease)');
+    expect(production).toContain(predecessorEed);
+    expect(production).toContain('discoverEngines: retainedEed');
+    expect(production).toContain('retainedOriginalCheckpointGuard');
+    expect(installer).toContain('retained-original-checkpoint-guard.mjs');
     expect(production).toContain(predecessor758);
     expect(production).toContain(predecessorA0);
     expect(production).toContain('releaseSha: checkpointRelease');

@@ -55,6 +55,8 @@ case "$LEGACY_SHA" in
     LEGACY_IMAGE=sha256:a58e0d3983b73b59bfc26e0ad55f67759730a7313d0280f80311fe20109658f6 ;;
   8825af51817f379c4261658ca29ecc9d8d81932d)
     LEGACY_IMAGE=sha256:7973b0cd170e7ea00a948f6376b17a201485c3e03ae47c06f0248b17a4bfae1c ;;
+  eed06fe51dea622069c661a6213d5b031ff3a9e3)
+    LEGACY_IMAGE=sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b ;;
   *) die 'sealed predecessor has no qualified checkpoint profile' ;;
 esac
 [ "$(timeout 3s "$CONTROL_DIR/engine-release-seal.py" get desired-image-id)" = "$LEGACY_IMAGE" ] \
@@ -171,7 +173,7 @@ fi
   || die 'the durable one-shot checkpoint intent could not be written; nothing was attempted'
 
 set +e
-{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
+{ cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/retained-original-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
   | docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT"
 CHECKPOINT_RC=$?
 set -e

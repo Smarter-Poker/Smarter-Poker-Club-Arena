@@ -14,6 +14,10 @@ import { pathToFileURL } from 'node:url';
 
 describe('actual isolated legacy checkpoint transport', () => {
   it.each([
+    [
+      'engine_census',
+      'all registered and detached concrete engines travel by native object identity',
+    ],
     ['success', 'SIGUSR1, cached ESM singleton, one guarded call and same-process closure'],
     ['connection', 'one cleanup-only connection after a real failed initial handshake'],
     ['exception', 'static error reporting without target exception or private result fields'],
@@ -43,7 +47,11 @@ describe('actual isolated legacy checkpoint transport', () => {
           encoding: 'utf8',
           timeout: 12000,
           maxBuffer: 32768,
-          env: { PATH: dirname(process.execPath), TZ: 'UTC' },
+          env: {
+            PATH: dirname(process.execPath),
+            TZ: 'UTC',
+            TMPDIR: process.env.TMPDIR ?? process.env.RUNNER_TEMP,
+          },
         }
       );
       expect(result.error?.message ?? null, result.stderr).toBeNull();

@@ -106,7 +106,11 @@ function remoteValue(response) {
  *  object when the call's outcome is unknown (see the guard's `progress`).
  *  Observability only: a fixed set of keys, each held to its shape, or absent. */
 function progressSummary(value) {
-  if (!value || typeof value !== 'object' || value.schema !== 'legacy-engine-checkpoint-progress/v1')
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    value.schema !== 'legacy-engine-checkpoint-progress/v1'
+  )
     return null;
   const out = {};
   for (const key of ['elapsedMs', 'attemptedTables', 'completedCalls', 'verifiedTables']) {
@@ -412,8 +416,7 @@ export const CHECKPOINT_DEFERRABLE_REFUSALS = Object.freeze([
  * (CLAUDE.md 10.86 rules 1 and 2 - an unreadable answer is not an empty one).
  */
 export function deferrableCheckpointRefusal(outcome) {
-  const isRecord = (value) =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+  const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
   if (!isRecord(outcome) || outcome.ok !== false || outcome.retryAllowed !== false) return false;
   // A retained debugger session is an unknown process state, never a deferral.
   if (outcome.inspectorClosed !== true || outcome.cleanupConnections !== 0) return false;
@@ -444,6 +447,7 @@ export async function runLegacyEngineCheckpoint({
   moduleExpression,
   guard,
   custodyIntent = null,
+  discoverEngines = false,
   port = 9229,
   workBudgetMs = 20000,
   cleanupBudgetMs = 5000,
@@ -580,6 +584,62 @@ export async function runLegacyEngineCheckpoint({
       )
     );
     if (!server?.objectId) throw refused('singleton unavailable');
+    let engineObjects = null,
+      managerObjects = null;
+    if (discoverEngines) {
+      operation = 'enginePrototype';
+      const enginePrototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: 'function() { return this.engine.ServerTableEngine.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!enginePrototype?.objectId) throw refused('cached engine prototype unavailable');
+      operation = 'engineObjects';
+      const response = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: enginePrototype.objectId,
+          objectGroup: 'legacy-checkpoint',
+        },
+        deadline,
+        operation
+      );
+      engineObjects = response?.objects?.objectId;
+      if (!engineObjects) throw refused('engine object census unavailable');
+      operation = 'managerPrototype';
+      const managerPrototype = remoteValue(
+        await connection.request(
+          'Runtime.callFunctionOn',
+          {
+            objectId: modules.objectId,
+            functionDeclaration: 'function() { return this.manager.TournamentManager.prototype; }',
+            objectGroup: 'legacy-checkpoint',
+          },
+          deadline,
+          operation
+        )
+      );
+      if (!managerPrototype?.objectId) throw refused('cached manager prototype unavailable');
+      operation = 'managerObjects';
+      const managerResponse = await connection.request(
+        'Runtime.queryObjects',
+        {
+          prototypeObjectId: managerPrototype.objectId,
+          objectGroup: 'legacy-checkpoint',
+        },
+        deadline,
+        operation
+      );
+      managerObjects = managerResponse?.objects?.objectId;
+      if (!managerObjects) throw refused('manager object census unavailable');
+    }
     checkpointInvoked = true;
     operation = 'guardCall';
     const response = remoteValue(
@@ -599,6 +659,7 @@ export async function runLegacyEngineCheckpoint({
             },
             { objectId: objects.objects.objectId },
             { objectId: modules.objectId },
+            ...(discoverEngines ? [{ objectId: engineObjects }, { objectId: managerObjects }] : []),
           ],
           awaitPromise: true,
           returnByValue: true,
@@ -754,15 +815,20 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
       '758610f3f844406bbbaee2f5100ced36d84fb943',
       'a0ab287d902879280f0c915e44f5222c5db4d7df',
       '8825af51817f379c4261658ca29ecc9d8d81932d',
+      'eed06fe51dea622069c661a6213d5b031ff3a9e3',
     ].includes(checkpointRelease)
   )
     throw refused('checkpoint predecessor profile refused');
+  const retainedEed = checkpointRelease === 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
   const mixedImports =
-    checkpointRelease === '8825af51817f379c4261658ca29ecc9d8d81932d'
+    retainedEed || checkpointRelease === '8825af51817f379c4261658ca29ecc9d8d81932d'
       ? ", import('file:///app/dist/tournament/TournamentManager.js'), import('file:///app/dist/tournament/TournamentManagerBase.js'), import('file:///app/dist/services/F06HandPermit.js'), import('file:///app/dist/services/TournamentRetirementCustody.js')"
       : '';
+  const retainedImports = retainedEed
+    ? ", import('file:///app/dist/engine/ServerTableEngine.js'), import('file:///app/dist/engine/HandController.js'), import('file:///app/dist/engine/PrivateHandContinuation.js')"
+    : '';
   const checkpointModuleExpression = `process.getBuiltinModule('node:vm').runInThisContext(
-    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement}))",
+    "Promise.all([import('file:///app/dist/GameServer.js'), import('file:///app/dist/engine/ServerTableEngineBase.js'), import('file:///app/dist/releaseIdentity.js'), import('file:///app/dist/services/tableLease.js'), import('file:///app/dist/services/supabase/client.js'), import('node:fs'), import('node:crypto'), import('file:///app/dist/maintenance/MaintenanceBreak.js'), import('file:///app/dist/maintenance/freezeState.js'), import('file:///app/dist/services/supabase/dataActorContext.js')${mixedImports}${retainedImports}]).then(([gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation])=>({gameServer,base,releaseIdentity,tableLease,client,fs,crypto,maintenance,freezeState,dataActorContext,manager,managerBase,permit,retirement,engine,controller,privateContinuation}))",
     { importModuleDynamically: process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })`;
   const checkpointResult = await runLegacyEngineCheckpoint({
     pid: 1,
@@ -770,7 +836,8 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     instanceId: process.argv[2],
     releaseSha: checkpointRelease,
     moduleExpression: checkpointModuleExpression,
-    guard: legacyEngineCheckpointGuard,
+    guard: retainedEed ? retainedOriginalCheckpointGuard : legacyEngineCheckpointGuard,
+    discoverEngines: retainedEed,
     custodyIntent: JSON.parse(process.argv[4] ?? 'null'),
   }).catch(() => ({
     ok: false,
@@ -783,6 +850,5 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
   // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here
   // ONLY on a receipt that proves this attempt touched nothing. Anything else,
   // including an unreadable or partial receipt, is 1 and ends the release.
-  if (!checkpointResult.ok)
-    process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
+  if (!checkpointResult.ok) process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);
 }

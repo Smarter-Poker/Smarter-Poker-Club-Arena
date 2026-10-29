@@ -1,0 +1,3 @@
+# Install root-owned with mode0440 and validate using visudo -cf before admission.
+# No general shell, systemctl, Caddy, database or engine authority is granted.
+ca-record-publisher ALL=(root) NOPASSWD: /usr/local/libexec/ca-private-record-gateway-activate *

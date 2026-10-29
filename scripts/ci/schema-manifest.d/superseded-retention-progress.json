@@ -1,0 +1,12 @@
+{
+  "_owner": "Existing eight-day Supabase retention owner; protected installation verified separately.",
+  "tables": [
+    "smarter_private.superseded_action_retention_due",
+    "smarter_private.superseded_action_retention_cursor"
+  ],
+  "functions": [
+    "smarter_private.superseded_action_retention_due_at",
+    "smarter_private.progress_superseded_action_retention",
+    "smarter_private.discover_superseded_action_retention"
+  ]
+}

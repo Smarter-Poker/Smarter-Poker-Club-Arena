@@ -69,6 +69,8 @@ function runOriginVerification(liveSha: string) {
         GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       },
       encoding: 'utf8',
+      // The real shell performs 120 JSON interpreter checks on mismatch.
+      // Allow the measured concurrent-run cost without changing its loop or assertions.
       timeout: 15_000,
     });
     return { status: result.status, output: readFileSync(output, 'utf8'), error: result.error };

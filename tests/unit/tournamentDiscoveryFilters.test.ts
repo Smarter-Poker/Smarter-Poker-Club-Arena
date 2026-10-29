@@ -103,6 +103,8 @@ const ladder = (openingMinutes: number) =>
 
 /** A plain registering freezeout MTT with no trait at all, as the database holds it. */
 const PLAIN: Record<string, unknown> = {
+  min_players: 3,
+  satellite_seats: 0,
   format_contract: 'mtt-v2',
   id: 't-1',
   name: 'Sunday Special',

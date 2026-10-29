@@ -20,9 +20,11 @@ function harness(ids = ['ticket']) {
   const target = {
     variant: 'freezeout',
     format_contract: 'mtt-v1',
+    status: 'REGISTERING',
+    current_players: 24,
     max_players: 200,
     club_id: null,
-    start_time: new Date(Date.now() + 600000).toISOString(),
+    start_time: new Date(Date.now() + 300000).toISOString(),
     prize_pool_finalized: false,
     buy_in_amount: 20,
     buy_in_fee: 2,
@@ -64,6 +66,13 @@ describe('prestart ticket entry survives a satisfied ordinary funding quota', ()
     expect(entries()).toEqual([
       { p_tournament_id: T, p_user_id: 'ticket', p_allow_wallet_charge: false },
     ]);
+  });
+  it.each(['REGISTERING', 'ANNOUNCED'])('does not redeem a ticket early in %s', async (status) => {
+    const { svc, target, entries } = harness();
+    target.status = status;
+    target.start_time = new Date(Date.now() + 11 * 60000).toISOString();
+    expect(await svc.topUpWithHorses(T, 0, { redeemTickets: true })).toBe(0);
+    expect(entries()).toEqual([]);
   });
   it('leaves ordinary zero-shortfall calls unchanged', async () => {
     const { svc, rpc } = harness();
@@ -133,7 +142,8 @@ describe('prestart ticket entry survives a satisfied ordinary funding quota', ()
     expect(entries()).toEqual([]);
   });
   it('keeps the ordinary ticket priority when the existing quota exceeds the recovery allowance', async () => {
-    const { svc, entries } = harness(Array.from({ length: 40 }, (_, i) => `ticket-${i}`));
+    const { svc, target, entries } = harness(Array.from({ length: 40 }, (_, i) => `ticket-${i}`));
+    target.status = 'RUNNING';
     expect(await svc.topUpWithHorses(T, 54, { redeemTickets: true })).toBe(30);
     expect(entries()).toHaveLength(30);
     expect(entries().every((a: any) => a.p_allow_wallet_charge === false)).toBe(true);

@@ -16,7 +16,10 @@ vi.mock('../../src/components/tournament/TournamentLobbyCard', () => ({
   },
 }));
 import SatelliteCard from '../../src/components/tournament/details/SatelliteCard';
-import { isRecordedSatelliteQualifier } from '../../src/utils/satelliteQualification';
+import {
+  satelliteStartsWhenFull,
+  isRecordedSatelliteQualifier,
+} from '../../src/utils/satelliteQualification';
 import { tabsFor } from '../../src/components/tournament/details/types';
 import { mapSatelliteRowToCard } from '../../src/components/tournament/details/useSatellites';
 afterEach(() => {
@@ -48,6 +51,22 @@ describe('satellites are discoverable and purchasable', () => {
     expect(isRecordedSatelliteQualifier(event, winner)).toBe(true);
     expect(isRecordedSatelliteQualifier({ ...event, satellite_seats: 1 }, winner)).toBe(false);
     expect(isRecordedSatelliteQualifier(event, { ...winner, position: 1 })).toBe(false);
+  });
+  it.each([6, 9])('only treats the exact recorded %s-seat contract as when full', (seats) => {
+    const event = {
+      format_contract: 'sng-v1',
+      tournament_type: 'SNG',
+      variant: 'sng',
+      max_players: seats,
+      min_players: seats,
+      table_size: seats,
+      satellite_seats: 2,
+      satellite_target_id: 'target',
+    };
+    expect(satelliteStartsWhenFull(event)).toBe(true);
+    expect(satelliteStartsWhenFull({ ...event, format_contract: 'mtt-v2' })).toBe(false);
+    expect(satelliteStartsWhenFull({ ...event, satellite_seats: 1 })).toBe(false);
+    expect(satelliteStartsWhenFull({ ...event, min_players: 3 })).toBe(false);
   });
   it('uses exact stored SNG prices and wallet ownership through the confirmed registration flow', async () => {
     const refresh = vi.fn();

@@ -19,6 +19,7 @@ export function useSatelliteRegistration(cards: SatellitesState['cards'], refres
           union_id: satellite.union_id,
           status: satellite.storedStatus,
           start_time: satellite.startsAt,
+          startsWhenFull: satellite.startsWhenFull,
         },
         refresh
       );

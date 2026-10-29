@@ -4,7 +4,7 @@ import ClubRosterService, {
   type WinLossFigure,
 } from '../../services/ClubRosterService';
 import { reportError } from '../../utils/errorReporter';
-import { winLossChips } from '../../utils/format';
+import { playerRecordMoney } from '../../utils/playerRecordMoney';
 import { useChicagoStatsDay } from '../../hooks/useChicagoStatsDay';
 // The record's own sheet: the card is drawn from its stat rows and inks.
 import '../../pages/MemberManagementPage.css';
@@ -44,9 +44,10 @@ function WinLossRow({ label, figure }: { label: string; figure: WinLossFigure })
   return (
     <div className={`mm-stat mm-winloss__row${tone(figure.net)}`}>
       <span className="mm-stat__label">{label}</span>
-      <span className="mm-stat__value">{winLossChips(figure.net)}</span>
+      <span className="mm-stat__value">{playerRecordMoney(figure.net, true)}</span>
       <span className="mm-winloss__split">
-        Cash {winLossChips(figure.cash)} / Tournaments {winLossChips(figure.mtt)}
+        Cash {playerRecordMoney(figure.cash, true)} / Tournaments{' '}
+        {playerRecordMoney(figure.mtt, true)}
       </span>
     </div>
   );

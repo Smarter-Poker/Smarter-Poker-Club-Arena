@@ -1,3 +1,5 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
+import { CooperativeHandTimers } from './CooperativeHandTimers.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * HAND CONTROLLER — Server-Side
@@ -101,6 +103,23 @@ export interface HorseDiscardControllerReceipt {
 }
 
 export class HandController {
+  private weeklyClock = new WeeklyPauseClock();
+  private pineappleTimerCustody = new CooperativeHandTimers();
+
+  public pauseForWeeklyPayout(owner: string): void {
+    this.weeklyClock.hold('hand', owner);
+    this.pineappleTimerCustody.hold(owner);
+  }
+
+  public resumeFromWeeklyPayout(owner: string): void {
+    this.weeklyClock.release('hand', owner);
+    this.pineappleTimerCustody.release(owner);
+  }
+
+  public isParkedForWeeklyPayout(owner: string): boolean {
+    return this.weeklyClock.has('hand', owner);
+  }
+
   private config: HandConfig;
   private state: GameState;
   /**
@@ -402,6 +421,7 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    if (this.weeklyClock.has('hand')) return;
     /* ═══ A HAND THAT IS STARTING MUST BE A BLANK HAND (2026-08-31) ════════
        The rake-law alarm's no_flop_no_drop criticals were hands played inside
        a controller that a STALE runout continuation from the PREVIOUS hand
@@ -1132,6 +1152,7 @@ export class HandController {
     origin: AcceptedActionOrigin = 'unknown',
     onAccepted?: (record: Readonly<ActionRecord>) => void
   ): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     return this.performBettingAction(seat, action, amount, origin, onAccepted);
   }
 
@@ -1404,6 +1425,7 @@ export class HandController {
    * @returns true if discard was accepted
    */
   performDiscard(seat: number, cardIndex: number): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     if (this.state.stage !== 'pineapple_discard') {
       return false; // Not in discard phase
     }
@@ -1513,6 +1535,7 @@ export class HandController {
    * the live expiry path calls foldForMissedDiscard().
    */
   autoDiscard(seat: number): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     return this.performDiscard(seat, 2); // Discard last card
   }
 
@@ -1530,6 +1553,7 @@ export class HandController {
    * Returns true when this call folded the seat.
    */
   foldForMissedDiscard(seat: number): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     if (this.state.stage !== 'pineapple_discard') return false;
     if (!this.pineappleDiscardsRemaining.has(seat)) return false;
     const player = this.state.players.find((p) => p.seat === seat);
@@ -1632,7 +1656,7 @@ export class HandController {
    */
   public cancelPineappleSettle(): void {
     if (this.pineappleSettleTimer) {
-      clearTimeout(this.pineappleSettleTimer);
+      this.pineappleTimerCustody.clear(this.pineappleSettleTimer);
       this.pineappleSettleTimer = null;
     }
   }
@@ -1651,6 +1675,7 @@ export class HandController {
    * Returns true when there was a beat to collapse.
    */
   public flushPineappleSettle(): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     if (!this.pineappleSettleTimer) return false;
     this.cancelPineappleSettle();
     if (this.state.stage !== 'pineapple_discard') return false;
@@ -1684,7 +1709,7 @@ export class HandController {
       return;
     }
 
-    this.pineappleSettleTimer = setTimeout(() => {
+    this.pineappleSettleTimer = this.pineappleTimerCustody.set(() => {
       this.pineappleSettleTimer = null;
       // Anything else that moved the hand on (a fold that ended it, a runout)
       // has already done this job.
@@ -2153,6 +2178,7 @@ export class HandController {
    * dealt. The engine calls this before computing rake for a RIT hand.
    */
   public markFlopSeen(): void {
+    if (this.weeklyClock.has('hand')) return;
     if (this.refuseUnlessRunout('markFlopSeen')) return;
     this.state.sawFlop = true;
     this.boardDealtOutsideState = true;
@@ -2184,6 +2210,7 @@ export class HandController {
    * call must be refused.
    */
   private refuseUnlessRunout(op: string): boolean {
+    if (this.weeklyClock.has('hand')) return true;
     if (this.handCompleted) return true;
     const live = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
     const canStillBet = live.filter((p) => !p.is_all_in);
@@ -2238,6 +2265,7 @@ export class HandController {
   }
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
+    if (this.weeklyClock.has('hand')) return;
     this.applyStackDeltas(distribution);
   }
 
@@ -2260,6 +2288,7 @@ export class HandController {
    * the database move by the same number and cannot drift apart.
    */
   public applyStackDeltas(deltas: Map<string, number>): void {
+    if (this.weeklyClock.has('hand')) return;
     if (this.config.asset === 'diamonds') {
       for (const [userId, amount] of deltas) {
         const player = this.state.players.find((p) => p.user_id === userId);
@@ -2425,6 +2454,7 @@ export class HandController {
    * must not deal another street or settle until the live worker answers.
    */
   public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {
+    if (this.weeklyClock.has('hand')) return false;
     if (this.config.gameVariant !== 'pineapple') return true;
     const pending = this.state.players.filter(
       (player) => !player.is_folded && player.cards.length === 3

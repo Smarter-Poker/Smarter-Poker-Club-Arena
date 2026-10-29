@@ -4,9 +4,29 @@
 -- No source65/generation owner, grant, raw financial record or money changes.
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))='28a130f35342357a4dfa61043f1ce2a2')
 BEGIN;
-SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='5s';
+SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='15s';
+-- Original financial-source witnesses are read-only qualification. They do not
+-- execute under the five-second CREATE FUNCTION statement or widen its budget.
+DO $quality_sources_before$
+DECLARE generation text;
+BEGIN
+ IF current_user<>'postgres'OR session_user<>'postgres'OR auth.uid()IS NOT NULL
+  OR NULLIF(current_setting('request.jwt.claims',true),'')IS NOT NULL
+  OR NULLIF(current_setting('request.jwt.claim.role',true),'')IS NOT NULL
+  OR NULLIF(current_setting('ca.break_window_migration_override',true),'')IS NOT NULL
+ THEN RAISE EXCEPTION 'weekly_quality_bags_operator_refused';END IF;
+ IF EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261028185823')THEN RAISE EXCEPTION 'weekly_quality_bags_history_replay';END IF;
+ IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'weekly_quality_bags_source65_required';END IF;
+ generation:=smarter_private.original_inventory_basis_generation();
+ IF generation IS NULL THEN RAISE EXCEPTION 'weekly_quality_bags_generation_required';END IF;
+ PERFORM set_config('ca.weekly_quality_source_qualification',jsonb_build_object(
+  'generation',generation,
+  'seal_definition',pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure),
+  'generation_definition',pg_get_functiondef('smarter_private.original_inventory_basis_generation()'::regprocedure))::text,true);
+END $quality_sources_before$;
+SET LOCAL statement_timeout='5s';
 DO $original_quality_bags$
-DECLARE d text;patched text;metadata jsonb;generation text;seal_definition text;refusal text;
+DECLARE d text;patched text;metadata jsonb;refusal text;
  expected_metadata jsonb:=$actual_metadata${"oid":"34785647","proacl":["postgres=X/postgres"],"probin":null,"procost":100,"prokind":"f","prolang":"13573","proname":"fn_accounting_tournament_week_quality","prorows":0,"pronargs":3,"proowner":"16384","proconfig":["search_path=public"],"proretset":false,"prosecdef":true,"prorettype":"3802","prosqlbody":null,"prosupport":"-","proargmodes":null,"proargnames":["p_club_id","p_from","p_to"],"proargtypes":["2950","1184","1184"],"proisstrict":false,"proparallel":"u","protrftypes":null,"provariadic":"0","provolatile":"s","proleakproof":false,"pronamespace":"2200","proallargtypes":null,"proargdefaults":null,"pronargdefaults":0}$actual_metadata$::jsonb;
  old_query constant text:=$old_query$CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_week_quality(p_club_id uuid, p_from timestamp with time zone, p_to timestamp with time zone)
  RETURNS jsonb
@@ -539,18 +559,28 @@ BEGIN
   OR(SELECT proacl::text FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)IS DISTINCT FROM'{postgres=X/postgres}'
   OR(length(d)-length(replace(d,old_query,'')))/length(old_query)<>1
  THEN RAISE EXCEPTION 'weekly_quality_bags_exact_preimage_required';END IF;
- IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true THEN RAISE EXCEPTION 'weekly_quality_bags_source65_required';END IF;
- generation:=smarter_private.original_inventory_basis_generation();seal_definition:=pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure);
- IF generation IS NULL THEN RAISE EXCEPTION 'weekly_quality_bags_generation_required';END IF;
+ IF NULLIF(current_setting('ca.weekly_quality_source_qualification',true),'')IS NULL THEN RAISE EXCEPTION 'weekly_quality_bags_source_qualification_required';END IF;
  patched:=replace(d,old_query,new_query);
  IF md5(patched)<>'28a130f35342357a4dfa61043f1ce2a2'THEN RAISE EXCEPTION 'weekly_quality_bags_exact_patch_required';END IF;
  EXECUTE patched;
  IF md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))<>'28a130f35342357a4dfa61043f1ce2a2'
   OR(SELECT md5(prosrc)FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)<>'a9271e7d468df1e2453aafbd3674a1ee'
   OR(SELECT to_jsonb(p)-'prosrc'FROM pg_proc p WHERE p.oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)IS DISTINCT FROM metadata
-  OR pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure)IS DISTINCT FROM seal_definition
-  OR smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR smarter_private.original_inventory_basis_generation()IS DISTINCT FROM generation
  THEN RAISE EXCEPTION 'weekly_quality_bags_postimage_required';END IF;
 END$original_quality_bags$;
 REVOKE ALL ON FUNCTION public.fn_accounting_tournament_week_quality(uuid, timestamptz, timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+SET LOCAL statement_timeout='15s';
+-- A failed or timed-out post-witness aborts the same transaction, including DDL.
+DO $quality_sources_after$
+DECLARE qualified jsonb;
+BEGIN
+ qualified:=NULLIF(current_setting('ca.weekly_quality_source_qualification',true),'')::jsonb;
+ IF qualified IS NULL
+  OR pg_get_functiondef('smarter_private.original_inventory_proof_sources_match()'::regprocedure)IS DISTINCT FROM qualified->>'seal_definition'
+  OR pg_get_functiondef('smarter_private.original_inventory_basis_generation()'::regprocedure)IS DISTINCT FROM qualified->>'generation_definition'
+  OR smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true
+  OR smarter_private.original_inventory_basis_generation()IS DISTINCT FROM qualified->>'generation'
+ THEN RAISE EXCEPTION 'weekly_quality_bags_postimage_required';END IF;
+END $quality_sources_after$;
+SET LOCAL statement_timeout='5s';
 COMMIT;

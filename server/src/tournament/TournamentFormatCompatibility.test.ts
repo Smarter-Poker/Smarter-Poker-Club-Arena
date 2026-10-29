@@ -42,7 +42,11 @@ describe('scheduled creation preserves the authored write contract until DB acti
     'a target-linked %s draft retains the MTT writer contract with capacity %s',
     async (type, maxPlayers, variant) => {
       const service = new ScheduledTournamentService() as any;
-      vi.spyOn(service, 'resolveSatelliteTarget').mockResolvedValue('target-1');
+      vi.spyOn(service, 'resolveSatelliteTarget').mockResolvedValue({
+        id: 'target-1',
+        entryValue: 100,
+        nativeEntryValue: 100,
+      });
       const row = await service.buildInsertRow(
         schedule,
         {
@@ -57,7 +61,7 @@ describe('scheduled creation preserves the authored write contract until DB acti
         tournament_type: 'MTT',
         variant,
         max_players: maxPlayers,
-        min_players: 3,
+        min_players: 6,
         table_size: 9,
         satellite_target_id: 'target-1',
         satellite_seats: 1,
@@ -137,7 +141,9 @@ describe('restart identity is bound to the immediate source', () => {
       then: (resolve: any) => Promise.resolve({ count: 0, error: null }).then(resolve),
     };
     vi.spyOn(supabase, 'from').mockReturnValue(query);
-    const target = vi.spyOn(service, 'resolveSatelliteTarget').mockResolvedValue('target-1');
+    const target = vi
+      .spyOn(service, 'resolveSatelliteTarget')
+      .mockResolvedValue({ id: 'target-1', entryValue: 100, nativeEntryValue: 100 });
     await service.maybeRestartTournament(source);
     expect(query.eq).toHaveBeenCalledWith('restart_source_id', source.id);
     expect(query.insert).toHaveBeenCalledOnce();
@@ -146,7 +152,7 @@ describe('restart identity is bound to the immediate source', () => {
         restart_source_id: source.id,
         satellite_target_id: 'target-1',
         max_players: 100,
-        min_players: 3,
+        min_players: 6,
         buy_in_amount: 19,
         buy_in_fee: 1,
       })

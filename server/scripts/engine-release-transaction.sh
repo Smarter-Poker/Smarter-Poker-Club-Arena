@@ -80,6 +80,10 @@ BREAK_DEADLINE_SLACK_SECONDS=0
 # to fit inside the 15s the break has above 285000, which is the same
 # impossibility one gate later.
 LEGACY_CHECKPOINT_BUDGET_SECONDS=40
+# The figures above describe the measured split, not independent allowances.
+# ENTRY_STARTED_MS now fixes one absolute deadline before the locked countdown.
+# Native work may consume unused entry headroom, always reserving its final
+# five seconds for cleanup; neither the forty seconds nor the certificate grows.
 # The publisher's bounded work inside that budget, from the .mjs figures
 # above; what is left of the budget is the allowance for the entry.
 LEGACY_CHECKPOINT_WORK_MS=25000
@@ -1214,6 +1218,17 @@ newer_release_awaiting_certificate() {
   return 1
 }
 
+legacy_inspector_is_closed() {
+  # An earlier unknown cleanup is not cleared by healthy gameplay HTTP.
+  # Read only the fixed loopback listener; never attach, signal or close it.
+  timeout --signal=TERM --kill-after=1s 3s docker exec "$CONTAINER" node -e '
+const socket=require("node:net").createConnection({host:"127.0.0.1",port:9229});
+socket.once("connect",()=>{socket.destroy();process.exit(1);});
+socket.once("error",error=>{socket.destroy();process.exit(error.code==="ECONNREFUSED"?0:2);});
+socket.setTimeout(1000,()=>{socket.destroy();process.exit(2);});
+'
+}
+
 request_recovery_window() {
   local health minute now stamp outcome reason cause_key newer stuck cause_required
   local reserve_args
@@ -1298,6 +1313,12 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       return 0
       ;;
   esac
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && ! legacy_inspector_is_closed; then
+    release_engine_lock
+    RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
+    echo '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched'
+    return 0
+  fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
   reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
@@ -2136,6 +2157,7 @@ while :; do
     fi
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    ENTRY_STARTED_MS="$(date +%s%3N)"
     if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
       release_engine_lock
       bounded_sleep 5
@@ -2148,7 +2170,6 @@ while :; do
     # consume up to LEGACY_CHECKPOINT_BUDGET_SECONDS of the candidate-proof
     # budget; the certificate read after them demands LEGACY_MIN_BREAK_REMAINING_MS.
     BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
-    ENTRY_STARTED_MS="$(date +%s%3N)"
     prove_rollback_readiness
     # Measure the real cost of this host's rollback proof, the dominant entry
     # term, and log it against the entry allowance inside the legacy budget.
@@ -2165,7 +2186,7 @@ while :; do
       || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
     LEGACY_CHECKPOINT_ATTEMPTED=1
     set +e
-    "$LEGACY_CHECKPOINT" "$RUN_ID"
+    "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"
     LEGACY_CHECKPOINT_RC=$?
     set -e
     if [ "$LEGACY_CHECKPOINT_RC" = 75 ]; then

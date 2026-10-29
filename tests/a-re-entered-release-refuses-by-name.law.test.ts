@@ -154,6 +154,9 @@ describe('a re-entered release refuses by name', () => {
             '-c',
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
+defer() { echo "$*" >&2; exit 75; }
+date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
+CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 REQUEST_ROOT="$PROBE_ROOT"
 RUN_ID=35626149078-1
 INSTANCE=1-3846b8bb
@@ -166,7 +169,11 @@ ${block}
 printf '%s' inspector-boundary-reached
 `,
           ],
-          { encoding: 'utf8', timeout: 10_000, env: { ...process.env, PROBE_ROOT: root } }
+          {
+            encoding: 'utf8',
+            timeout: 10_000,
+            env: { ...process.env, CHECKPOINT_TEST_NODE: process.execPath, PROBE_ROOT: root },
+          }
         );
 
       const first = run();

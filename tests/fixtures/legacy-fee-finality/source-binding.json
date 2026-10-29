@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66",
+    "scripts/ci/classify-ci-changes.mjs": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1260,5 +1260,16 @@
         "current": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
       }
     }
+  },
+  "privateGatewaySafetySourceAudit20261029": {
+    "review": "Reviewed additive exact gateway native runners/SQL fixture classification and Accounting shard2 private PostgreSQL/pg_net build prerequisites. Existing financial source, fixture amounts, assertions, qualification commands, matrix and deadlines remain unchanged. Current input identity only; not a financial, installed or live recertification.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66",
+        "current": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+      }
+    ],
+    "financial_recertification": false
   }
 }

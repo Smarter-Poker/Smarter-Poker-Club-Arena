@@ -227,7 +227,7 @@ export function classifyChangedPaths(paths) {
   const privateRecordHosting =
     paths.includes('server/tsconfig.private-record-gateway.json') ||
     matches(
-      /^(?:infra\/ca-origin\/(?!.*\.md$)[^/]+$|scripts\/ci\/(?:private-record-gateway-[^/]+\.(?:mjs|sql)|private-record-compatibility\.test\.mjs|(?:test-private-record-hosting|test-private-record-bootstrap-linux|test-private-record-credentials-postgres|build-private-record-gateway)\.sh)$|scripts\/ci\/fixtures\/private-record-(?:bootstrap-linux|credentials-postgres)\.mjs$|server\/scripts\/privateRecordGateway[^/]+\.mts$|scripts\/dev\/test-member-record-live-postgres\.sh$|tests\/fixtures\/stats-club-scope\/member-record-live\/|tests\/unit\/privateRecordHosting\.test\.ts$)/
+      /^(?:infra\/ca-origin\/(?!.*\.md$)[^/]+$|scripts\/ci\/(?:private-record-gateway-[^/]+\.(?:mjs|sql)|private-record-compatibility\.test\.mjs|test-unused-pg-net-removal\.py|(?:test-private-record-hosting|test-private-record-bootstrap-linux|test-private-record-credentials-postgres|test-private-record-gateway-access-postgres|build-private-record-gateway)\.sh)$|scripts\/ci\/fixtures\/private-record-(?:bootstrap-linux|credentials-postgres)\.mjs$|scripts\/ci\/fixtures\/private-record-gateway-access-[^/]+\.sql$|server\/scripts\/privateRecordGateway[^/]+\.mts$|scripts\/dev\/test-member-record-live-postgres\.sh$|tests\/fixtures\/stats-club-scope\/member-record-live\/|tests\/unit\/privateRecordHosting\.test\.ts$)/
     );
   const cashHalfNative = matches(/^scripts\/qualification\/test-cash-half-top-horses\.py$/);
   const onTimeMaintenance = matches(

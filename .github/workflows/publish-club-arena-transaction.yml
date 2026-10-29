@@ -864,7 +864,7 @@ jobs:
           CANONICAL_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PRIVATE_RECORD_GATEWAY_DB_PASSWORD: ${{ secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD }}
           API_URL: ${{ secrets.SUPABASE_URL }}
-          API_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          API_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
         run: |
           set -euo pipefail
           [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$ENGINE_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::Canonical gateway origin or engine host is absent or invalid"; exit 1; }
@@ -886,7 +886,7 @@ jobs:
           import { deriveGatewayConnection } from './scripts/ci/private-record-gateway-credentials.mjs';
           import { gatewayMachineIdSha256 } from './scripts/ci/private-record-gateway-host-identity.mjs';
           const root = process.env.RUNNER_TEMP + '/gateway-bootstrap/';
-          const config = { revision: process.env.REVISION, runId: process.env.GITHUB_RUN_ID, engineMachineIdSha256: gatewayMachineIdSha256(readFileSync(root+'engine-machine-id')), publisherPublicKey: readFileSync(root+'publisher.pub','utf8').trim(), trustedRoot: readFileSync(root+'trusted-root.jsonl','utf8'), environment: { PRIVATE_RECORD_GATEWAY_DATABASE_URL: deriveGatewayConnection(process.env.CANONICAL_DATABASE_URL,process.env.PRIVATE_RECORD_GATEWAY_DB_PASSWORD), SUPABASE_URL: process.env.API_URL, SUPABASE_SERVICE_ROLE_KEY: process.env.API_KEY } };
+          const config = { revision: process.env.REVISION, runId: process.env.GITHUB_RUN_ID, engineMachineIdSha256: gatewayMachineIdSha256(readFileSync(root+'engine-machine-id')), publisherPublicKey: readFileSync(root+'publisher.pub','utf8').trim(), trustedRoot: readFileSync(root+'trusted-root.jsonl','utf8'), environment: { PRIVATE_RECORD_GATEWAY_DATABASE_URL: deriveGatewayConnection(process.env.CANONICAL_DATABASE_URL,process.env.PRIVATE_RECORD_GATEWAY_DB_PASSWORD), SUPABASE_URL: process.env.API_URL, SUPABASE_PUBLISHABLE_KEY: process.env.API_KEY } };
           writeFileSync(root+'input.json', JSON.stringify(config), {mode:0o600});
           NODE
       - name: Install inert prerequisites through the existing protected provider

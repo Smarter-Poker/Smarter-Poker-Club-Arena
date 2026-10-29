@@ -24,7 +24,8 @@ NEWER = 'c' * 40
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False,
            health_extra=None, maintenance_extra=None, missed=False, urgent=False, recovers_on_lock=False,
            certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0,
-           owner_windows='', owner_contains_ok='', owner_served=False, witness_mode='unserved'):
+           owner_windows='', owner_contains_ok='', owner_served=False, witness_mode='unserved',
+           legacy_checkpoint=False, inspector_status=0):
     """Run the real request_recovery_window `calls` times, `advance` seconds apart.
 
     `requests` are other durable requests on this host: (run, sha, unit state,
@@ -67,6 +68,7 @@ BREAK_ADMISSION_MIN_BREAK_MS=260000
 CERTIFICATE_DEADLINE={certificate_deadline}
 SUPERSEDED_BY={superseded}
 RECOVERY_URGENT={int(urgent)}
+LEGACY_CHECKPOINT_REQUIRED={int(legacy_checkpoint)}
 OWNER_WINDOWS={shlex.quote(owner_windows)}
 OWNER_CONTAINS_OK={shlex.quote(owner_contains_ok)}
 OWNER_SERVED={int(owner_served)}
@@ -136,6 +138,9 @@ timeout() {{
       {answer_branches}
       *) echo unavailable ;;
     esac
+  elif [ "$1" = docker ] && [ "$2 $3 $4 $5" = "exec $CONTAINER node -e" ]; then
+    [ "$LOCK_HELD" = 1 ]; record INSPECTOR_READINESS
+    return {int(inspector_status)}
   elif [ "$1" = docker ]; then
     [ "$LOCK_HELD" = 1 ]; record REQUEST
     cat > /dev/null
@@ -184,6 +189,22 @@ maintenance_certificate {'' if minimum is None else int(minimum)}
 
 
 class RecoveryWindowTests(unittest.TestCase):
+    def test_legacy_inspector_must_be_absent_before_reserving_another_pause(self):
+        for status in (1, 2, 124):
+            with self.subTest(status=status):
+                result, events = invoke(health_extra={'liveness': 'dead'},
+                    legacy_checkpoint=True, inspector_status=status)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events.count('INSPECTOR_READINESS'), 1)
+                self.assertFalse(any(e.startswith('RESERVE') for e in events), events)
+                self.assertNotIn('REQUEST', events)
+        result, events = invoke(health_extra={'liveness': 'dead'},
+            legacy_checkpoint=True, inspector_status=0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events.count('INSPECTOR_READINESS'), 1)
+        self.assertEqual(events.count('REQUEST'), 1)
+        self.assertLess(events.index('INSPECTOR_READINESS'), next(i for i,e in enumerate(events) if e.startswith('RESERVE')))
+
     def test_durable_window_can_be_missed_without_ever_certifying_restart(self):
         window = {'reason': 'Deployment Recovery', 'active': True, 'phase': 'counting_down', 'durableConfirmed': True,
                   'remainingMs': 300000, 'readyForRestart': False, 'unparkedTables': 2}

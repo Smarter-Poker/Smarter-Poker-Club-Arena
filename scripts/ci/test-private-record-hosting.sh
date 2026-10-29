@@ -33,6 +33,8 @@ if [ "$(uname -s)" = Linux ]; then
   systemd-analyze verify "$repo/infra/ca-origin/ca-private-record-gateway@.service" "$repo/infra/ca-origin/ca-private-record-gateway-boot.service"
 fi
 bash "$repo/scripts/ci/test-private-record-credentials-postgres.sh"
+bash "$repo/scripts/ci/test-private-record-gateway-access-postgres.sh"
+python3 -B "$repo/scripts/ci/test-unused-pg-net-removal.py" --scratch "$parent"
 bash "$repo/scripts/ci/test-private-record-bootstrap-linux.sh"
 node --test "$repo/scripts/ci/private-record-compatibility.test.mjs" "$repo/scripts/ci/private-record-gateway-bootstrap.test.mjs" "$repo/scripts/ci/private-record-gateway-credentials.test.mjs" "$repo/scripts/ci/private-record-gateway-inspect.test.mjs" "$repo/scripts/ci/private-record-gateway-live.test.mjs"
 "$CADDY_BIN" adapt --config "$repo/infra/ca-origin/Caddyfile" --adapter caddyfile > "$work/caddy.json"

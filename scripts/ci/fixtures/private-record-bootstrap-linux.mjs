@@ -5,7 +5,11 @@ import { gatewayMachineIdSha256 } from './source/scripts/ci/private-record-gatew
 const scenario = process.argv[2];
 assert.ok(['success', 'caddy-drift', 'same-host', 'rollback'].includes(scenario));
 const run = (file, args, options = {}) =>
-  execFileSync(file, args, { encoding: 'utf8', stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], ...options });
+  execFileSync(file, args, {
+    encoding: 'utf8',
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    ...options,
+  });
 const root = '/qualification/source';
 const sha = 'a'.repeat(40);
 const global = '{\n auto_https off\n admin 127.0.0.1:2019\n}\n';
@@ -78,7 +82,7 @@ try {
       PRIVATE_RECORD_GATEWAY_DATABASE_URL:
         'postgresql://ca_record_gateway:synthetic@db.invalid:5432/postgres',
       SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
-      SUPABASE_SERVICE_ROLE_KEY: 'isolated-fixture-only',
+      SUPABASE_PUBLISHABLE_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx',
     },
   };
   let succeeded = true;

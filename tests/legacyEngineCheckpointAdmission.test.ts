@@ -71,6 +71,58 @@ legacy_checkpoint_countdown
 }
 
 describe('the exact legacy checkpoint enters the existing release transaction', () => {
+  it.each([
+    [4000, 75],
+    [-1, 75],
+    [41000, 1],
+    [15000, 0],
+  ])('bounds the absolute entry deadline offset %s before intent', (offset, status) => {
+    const block = checkpointShell.slice(
+      checkpointShell.indexOf('RUN_ID="$1"'),
+      checkpointShell.indexOf('# /var/lock')
+    );
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+ die() { exit 1; }
+ defer() { exit 75; }
+ date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
+ ${block}
+ printf bounded
+ `,
+        'fixture',
+        '40948063249-1',
+        String(Date.now() + offset),
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 3000,
+        env: { ...process.env, CHECKPOINT_TEST_NODE: process.execPath },
+      }
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(status);
+    expect(result.stdout).toBe(status === 0 ? 'bounded' : '');
+  });
+
+  it('propagates one forty-second deadline from before countdown through native cleanup', () => {
+    const entry = transaction.indexOf('ENTRY_STARTED_MS="$(date +%s%3N)"');
+    const countdown = transaction.indexOf('if ! LEGACY_COUNTDOWN_END=', entry);
+    const invoke = transaction.indexOf(
+      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"',
+      entry
+    );
+    expect(entry).toBeGreaterThan(0);
+    expect(countdown).toBeGreaterThan(entry);
+    expect(invoke).toBeGreaterThan(countdown);
+    expect(checkpointShell).toContain('"$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"');
+    expect(checkpointTransport).toContain('checkpointDeadlineMs: Number(process.argv[5])');
+    expect(checkpointTransport).toContain('checkpointDeadlineMs - cleanupBudgetMs');
+    expect(checkpointTransport).toContain('checkpointDeadlineMs ?? Infinity');
+  });
+
   it('checks the installed custody contract before saving intent or opening inspector access', () => {
     const prerequisite = checkpointShell.indexOf('--mixed-custody-contract');
     const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3');
@@ -113,6 +165,8 @@ CONTROL_DIR=/immutable-reviewed-control
 LEGACY_SHA=${predecessor8825}
 REQUEST_ROOT="$PREREQUISITE_ROOT"
 RUN_ID=35405450271-1
+date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
+CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
@@ -126,6 +180,7 @@ printf '%s' inspector-boundary-reached
             timeout: 3000,
             env: {
               ...process.env,
+              CHECKPOINT_TEST_NODE: process.execPath,
               PREREQUISITE_STATUS: String(status),
               PREREQUISITE_ROOT: requestRoot,
               PREREQUISITE_HEALTH: JSON.stringify({

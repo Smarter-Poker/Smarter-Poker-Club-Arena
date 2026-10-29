@@ -19,7 +19,7 @@ export class PrivateRecordListener {
     private readiness: (ready: boolean, phase: 'connecting' | 'unavailable') => void,
     private resolve: () => Promise<string>,
     private open: (connection: string) => OutboxListenerClient,
-    private sourceReady: () => Promise<boolean>
+    private sourceReady: (client: OutboxListenerClient) => Promise<boolean>
   ) {}
   start(): void {
     if (this.stopped) {
@@ -54,7 +54,7 @@ export class PrivateRecordListener {
       });
       await client.connect();
       await client.query(`LISTEN ${PRIVATE_RECORD_CHANNEL}`);
-      if (!(await this.sourceReady())) throw new Error('private record source is not ready');
+      if (!(await this.sourceReady(client))) throw new Error('private record source is not ready');
       if (this.stopped || this.client !== client) {
         await client.end().catch(() => undefined);
         return;

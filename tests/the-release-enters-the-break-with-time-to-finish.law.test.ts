@@ -358,6 +358,8 @@ CONTROL_DIR=/immutable-reviewed-control
 LEGACY_SHA=${PREDECESSOR}
 REQUEST_ROOT="$PROBE_ROOT"
 RUN_ID=35615604946-1
+date() { if [ "$1" = +%s%3N ]; then "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; else command date "$@"; fi; }
+CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 REQUEST=(unused unused unused unused aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
 CONTAINER_ID=c63b254ee71b76aa26f4d1394d96189963774310244b046bc91186e219ca3f66
 STARTED_AT=2026-09-18T21:55:50.88305198Z
@@ -369,7 +371,12 @@ printf '%s' inspector-boundary-reached
           {
             encoding: 'utf8',
             timeout: 10_000,
-            env: { ...process.env, PROBE_HEALTH: health(remainingMs), PROBE_ROOT: root },
+            env: {
+              ...process.env,
+              CHECKPOINT_TEST_NODE: process.execPath,
+              PROBE_HEALTH: health(remainingMs),
+              PROBE_ROOT: root,
+            },
           }
         );
 
@@ -418,7 +425,9 @@ printf '%s' inspector-boundary-reached
     // the one-shot flag is raised BEFORE the helper runs, so a crash mid-call
     // can never be mistaken for a deferral
     const raise = transaction.indexOf('LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e');
-    const invoke = transaction.indexOf('"$LEGACY_CHECKPOINT" "$RUN_ID"\n    LEGACY_CHECKPOINT_RC');
+    const invoke = transaction.indexOf(
+      '"$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"\n    LEGACY_CHECKPOINT_RC'
+    );
     expect(raise).toBeGreaterThan(0);
     expect(raise).toBeLessThan(invoke);
   });

@@ -32,8 +32,13 @@
     "condition": "needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success'"
   },
   "bootstrap-record-gateway": {
-    "bodySHA256": "d50ac0d2c0e8935f3cd0e76f868b141a36c6b4514d7225fb5abaa57f8c9f9d3b",
-    "condition": "needs.publish-needed.outputs.component == 'private-record-bootstrap'"
+    "bodySHA256": "65c6c2010bca61449631e484fc7f6924d27dd1368833fbd24b85a34c4ca239e2",
+    "condition": "needs.publish-needed.outputs.component == 'private-record-bootstrap'",
+    "gatewayPublishableKeyReview20261029": {
+      "previous": "d50ac0d2c0e8935f3cd0e76f868b141a36c6b4514d7225fb5abaa57f8c9f9d3b",
+      "current": "65c6c2010bca61449631e484fc7f6924d27dd1368833fbd24b85a34c4ca239e2",
+      "reason": "Only the bootstrap API_KEY and installed environment name change from the broad service-role key to the pinned publishable key. All predecessor steps, host identity/credential checks, commands, permissions, concurrency, rollback and other publisher job identities are preserved."
+    }
   },
   "install-record-gateway-credentials": {
     "bodySHA256": "fbc129ca8c3feb9294029e5453cb6846304afcfd99e94f8119fa92a793466547",

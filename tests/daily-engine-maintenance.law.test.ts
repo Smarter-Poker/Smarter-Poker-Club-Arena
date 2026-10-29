@@ -254,6 +254,27 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery.announceAtChicagoMinutes).toEqual([53]);
     expect(recovery.migrations).toEqual([]);
   });
+  it('bounds the actual shared-deadline correction without changing the earlier expired entry', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const recovery = windows.find(
+      (entry: { id: string }) => entry.id === '2026-10-29-shared-checkpoint-deadline-recovery'
+    );
+    expect(recovery.contains).toBe('c76abbb7f497bf6e0539d0d54abf638e5cfa52f3');
+    expect(recovery.notBefore).toBe('2026-10-29T21:10:00Z');
+    expect(recovery.notAfter).toBe('2026-10-30T03:10:00Z');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
+    expect(recovery.migrations).toEqual([]);
+    expect(recovery.releaseWitness).toEqual({
+      path: 'server/scripts/retained-original-checkpoint-guard.mjs',
+      sha256: createHash('sha256')
+        .update(readFileSync(join(root, 'server/scripts/retained-original-checkpoint-guard.mjs')))
+        .digest('hex'),
+    });
+    expect(recovery.ownerOrder).toContain('five seconds reserved for cleanup');
+    expect(recovery.ownerOrder).toContain('Do not attach to or close a foreign inspector');
+  });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
     const witness = {
       path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',

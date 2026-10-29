@@ -1466,7 +1466,15 @@ jobs:
               if [[ ! -x /usr/lib/postgresql/17/bin/pg_config ||
                     ! -f /usr/include/postgresql/17/server/postgres.h ]]; then pg_ci_build_tools_ready=false; fi
               ;;
-            2) ;;
+            2)
+              # The private-record admission proof builds the real pg_net in an
+              # isolated private PostgreSQL prefix; never install into the host.
+              pg_ci_build_packages=(build-essential bison flex perl bzip2 pkg-config libcurl4-openssl-dev)
+              for pg_ci_tool in cc make bison flex perl bzip2 pkg-config curl-config; do
+                if ! command -v "$pg_ci_tool" >/dev/null; then pg_ci_build_tools_ready=false; fi
+              done
+              if ! pkg-config --exists libcurl; then pg_ci_build_tools_ready=false; fi
+              ;;
             3|4)
               pg_ci_build_packages=(postgresql-server-dev-17 build-essential bison flex perl bzip2 patch)
               for pg_ci_tool in cc make bison flex perl tar bzip2 patch; do

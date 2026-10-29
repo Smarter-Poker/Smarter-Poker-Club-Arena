@@ -23,10 +23,10 @@ if A.bootstrap_postimages:
  # document qualification certificate; the whole native suite runs separately.
  post=[{'signature':x['signature'],'md5':x['md5']}for x in json.loads(A.bootstrap_postimages.read_text())['postimages']]
  assert len(post)==24
- binding={'version':1,'original_catalog_observed_at':'2026-10-28T18:52:58.54895Z','source_only':True,'phase_dependency':'20261028162126','preimages':pre,'postimages':post,'source_sha256':{n+'.sql':hashlib.sha256((H/(n+'.sql')).read_bytes()).hexdigest()for n in files}}
+ binding={'version':1,'original_catalog_observed_at':'2026-10-28T18:52:58.54895Z','source_only':True,'phase_dependency':'20261028162126','preimages':pre,'postimages':post,'source_sha256':{(H/(n+'.sql')).relative_to(R).as_posix():hashlib.sha256((H/(n+'.sql')).read_bytes()).hexdigest()for n in files}}
  (D/'source-binding.json').write_text(json.dumps(binding,indent=2)+'\n')
 b=json.loads((D/'source-binding.json').read_text());assert b['preimages']==pre
-assert b['source_sha256']=={n+'.sql':hashlib.sha256((H/(n+'.sql')).read_bytes()).hexdigest()for n in files},'changed maintained source requires fresh native compiler identities'
+assert b['source_sha256']=={(H/(n+'.sql')).relative_to(R).as_posix():hashlib.sha256((H/(n+'.sql')).read_bytes()).hexdigest()for n in files},'changed maintained source requires fresh native compiler identities'
 compact=lambda x:json.dumps(x,separators=(',',':'))
 views=json.loads((D/'original-views.json').read_text());view_pins=[{'name':x['name'],'md5':hashlib.md5(x['definition'].encode()).hexdigest()}for x in views]
 GEN='original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20'

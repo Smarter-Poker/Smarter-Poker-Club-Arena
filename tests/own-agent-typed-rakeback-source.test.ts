@@ -13,10 +13,13 @@ const migration = read(
 describe('own playing earnings source qualification stays connected', () => {
   it('binds every maintained owner file and exact original/postimage in the whole installer', () => {
     for (const [file, hash] of Object.entries(binding.source_sha256)) {
-      const source = read(`supabase/accounting/own-agent-v1/${file}`);
+      expect(file).toMatch(/^supabase\/accounting\/own-agent-v1\/[^/]+\.sql$/);
+      const source = read(file);
       expect(createHash('sha256').update(source).digest('hex')).toBe(hash);
       if (
-        !['fn_prepare_accounting_week.sql', 'fn_calculate_cash_rakeback_periods.sql'].includes(file)
+        !['fn_prepare_accounting_week.sql', 'fn_calculate_cash_rakeback_periods.sql'].includes(
+          file.split('/').at(-1)!
+        )
       )
         expect(migration).toContain(source.trim().replace(/;$/, '') + ';');
     }

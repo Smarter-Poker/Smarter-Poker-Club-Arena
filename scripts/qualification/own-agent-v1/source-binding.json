@@ -194,24 +194,27 @@
     }
   ],
   "source_sha256": {
-    "earning-contract.sql": "a7f05a2060768205b592c2ddf3b63fdda090b9cf38aa00d6a1cfbed9e3b601f5",
-    "destination-contract.sql": "5620785718867a3fd2e87375687fc5be4f924037f50f81e4020b9e59bd5cc262",
-    "unpaid-interpretation.sql": "a1a55638846d5b653434c3ffecc88a31d33ab6b2aaf6bf59b31f20a06d6162e3",
-    "effective-views.sql": "aed88f71ff0e364e3bfcea48eaace496e4ddde84dff911af77142b4ee140951a",
-    "typed-receipts.sql": "2fe7a5394011160fc5fa9363d295c04f82cb236a68cb1261eaf85726c17ee343",
-    "fn_accounting_tournament_commission_source_guard.sql": "8a679b2e6d0cec3771946e726b7b544f7f8f99a30badc419faf3cd3f3c425407",
-    "fn_accounting_union_earned_plan_sets.sql": "31b098ecf8bdd7d7c0ed5e1d2a6e81abc8eebe0d3ea9f8de5d71a9521a7cf5a3",
-    "fn_accounting_union_earned_plan_window.sql": "507d7c83cf72abb4d9d53793ad50d1a7290468e8bb946e765275f6fce6ca62bb",
-    "fn_calculate_cash_rakeback_periods.sql": "786df8c40f731d40c71cc819351c1ff9edcd982fc6fdf41a5a3fe104fc06b698",
-    "fn_rakeback_split_check.sql": "2f9c8d8081cc0f1e0571cfc7ea490ac32add83f2998e4db22e565fc9a7356e78",
-    "fn_rakeback_split_write.sql": "84f927004c1ffae857b986b5cc30505560ed5c87765961a95817eff606812cb3",
-    "fn_prepare_accounting_week.sql": "20092eec7558309d0f92797451e53ad400885e31d8a1730ba8e76a670c270bf2",
-    "fn_settle_accounting_commission_stage.sql": "9e787aced4b3b6cb64cd8abe79538bd9d190f054b60f7ee36c51cf217852e18b",
-    "fn_settle_accounting_commission_stage_v3.sql": "5f9bde55f68d5445c524a99749d3de35e6e56f0ae27f92a5b62564c75115acdb",
-    "fn_settle_accounting_rakeback_stage.sql": "b59bbcf6a0fdea6bb5402d99647c9fdd1c06e7d5d0021e610f482a4971859638",
-    "deferred-proof.sql": "19e370867cb6c63b5ff2123fe1ff15efbe7462e53db621f7c908743d065fba5f",
-    "ca_player_stats_financial_report.sql": "c8146ed6a5654d69022c3a8c5ed232e36a68d44726859a8780b10abfb29ec53e",
-    "fn_ca_settlement_correctness_check.sql": "0c2a0a52e1a53dcb0404b1d4e328ba485a6841308a6ba1b92c37fc43c6542943",
-    "weekly_payout_prepare_due.sql": "30b51547ce1a19a28c538a1aaf800d768fef64fb7a8ac54b6f3ba6cc42ca77c3"
+    "supabase/accounting/own-agent-v1/earning-contract.sql": "a7f05a2060768205b592c2ddf3b63fdda090b9cf38aa00d6a1cfbed9e3b601f5",
+    "supabase/accounting/own-agent-v1/destination-contract.sql": "5620785718867a3fd2e87375687fc5be4f924037f50f81e4020b9e59bd5cc262",
+    "supabase/accounting/own-agent-v1/unpaid-interpretation.sql": "a1a55638846d5b653434c3ffecc88a31d33ab6b2aaf6bf59b31f20a06d6162e3",
+    "supabase/accounting/own-agent-v1/effective-views.sql": "aed88f71ff0e364e3bfcea48eaace496e4ddde84dff911af77142b4ee140951a",
+    "supabase/accounting/own-agent-v1/typed-receipts.sql": "2fe7a5394011160fc5fa9363d295c04f82cb236a68cb1261eaf85726c17ee343",
+    "supabase/accounting/own-agent-v1/fn_accounting_tournament_commission_source_guard.sql": "8a679b2e6d0cec3771946e726b7b544f7f8f99a30badc419faf3cd3f3c425407",
+    "supabase/accounting/own-agent-v1/fn_accounting_union_earned_plan_sets.sql": "31b098ecf8bdd7d7c0ed5e1d2a6e81abc8eebe0d3ea9f8de5d71a9521a7cf5a3",
+    "supabase/accounting/own-agent-v1/fn_accounting_union_earned_plan_window.sql": "507d7c83cf72abb4d9d53793ad50d1a7290468e8bb946e765275f6fce6ca62bb",
+    "supabase/accounting/own-agent-v1/fn_calculate_cash_rakeback_periods.sql": "786df8c40f731d40c71cc819351c1ff9edcd982fc6fdf41a5a3fe104fc06b698",
+    "supabase/accounting/own-agent-v1/fn_rakeback_split_check.sql": "2f9c8d8081cc0f1e0571cfc7ea490ac32add83f2998e4db22e565fc9a7356e78",
+    "supabase/accounting/own-agent-v1/fn_rakeback_split_write.sql": "84f927004c1ffae857b986b5cc30505560ed5c87765961a95817eff606812cb3",
+    "supabase/accounting/own-agent-v1/fn_prepare_accounting_week.sql": "20092eec7558309d0f92797451e53ad400885e31d8a1730ba8e76a670c270bf2",
+    "supabase/accounting/own-agent-v1/fn_settle_accounting_commission_stage.sql": "9e787aced4b3b6cb64cd8abe79538bd9d190f054b60f7ee36c51cf217852e18b",
+    "supabase/accounting/own-agent-v1/fn_settle_accounting_commission_stage_v3.sql": "5f9bde55f68d5445c524a99749d3de35e6e56f0ae27f92a5b62564c75115acdb",
+    "supabase/accounting/own-agent-v1/fn_settle_accounting_rakeback_stage.sql": "b59bbcf6a0fdea6bb5402d99647c9fdd1c06e7d5d0021e610f482a4971859638",
+    "supabase/accounting/own-agent-v1/deferred-proof.sql": "19e370867cb6c63b5ff2123fe1ff15efbe7462e53db621f7c908743d065fba5f",
+    "supabase/accounting/own-agent-v1/ca_player_stats_financial_report.sql": "c8146ed6a5654d69022c3a8c5ed232e36a68d44726859a8780b10abfb29ec53e",
+    "supabase/accounting/own-agent-v1/fn_ca_settlement_correctness_check.sql": "0c2a0a52e1a53dcb0404b1d4e328ba485a6841308a6ba1b92c37fc43c6542943",
+    "supabase/accounting/own-agent-v1/weekly_payout_prepare_due.sql": "30b51547ce1a19a28c538a1aaf800d768fef64fb7a8ac54b6f3ba6cc42ca77c3"
+  },
+  "pathResolution20261029": {
+    "reason": "All19 owner SQL hashes are unchanged. Pin keys now use unambiguous repository-relative paths, as required by the existing universal source verifier. Generated migration7ada and all preimages/postimages remain unchanged."
   }
 }

@@ -302,6 +302,66 @@ test.describe('Production Kings Club Players', () => {
     observedMembersPaths.delete(page);
   });
 
+  test('ranks player names above upline matches and restores manual order after clearing search', async ({
+    page,
+  }, testInfo) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+    const sort = page.getByRole('combobox', { name: 'Sort Players' });
+    await completeNextPageRead(probe, () => sort.selectOption('oldest'), 'manual oldest sort');
+    const search = page.getByRole('searchbox', { name: 'Search Club Members' });
+    const responsePromise = page.waitForResponse((response) => {
+      if (!response.url().includes('/rpc/ca_club_members_page')) return false;
+      return response.request().postDataJSON()?.p_search?.trim().toLowerCase() === 'mikey';
+    });
+    await completeNextPageRead(probe, () => search.fill('mikey'), 'player name relevance search');
+    const response = await responsePromise;
+    expect(response.ok()).toBe(true);
+    const result = await response.json();
+    const rows = result.items as Array<{ user_id: string; alias: string; username: string }>;
+    const rank = (row: (typeof rows)[number]) => {
+      const names = [row.alias, row.username].map((value) => (value ?? '').toLowerCase());
+      return names.some((name) => name === 'mikey')
+        ? 0
+        : names.some((name) => name.startsWith('mikey'))
+          ? 1
+          : names.some((name) => name.includes('mikey'))
+            ? 2
+            : 3;
+    };
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rank(rows[0]), 'a direct player name must precede contextual matches').toBeLessThan(3);
+    const ranks = rows.map(rank);
+    expect(ranks).toEqual([...ranks].sort((left, right) => left - right));
+    expect(result.query.sort).toBe('search');
+    await expect(sort).toHaveValue('search');
+    await expect(sort).toBeDisabled();
+    await expect(
+      page
+        .getByRole('list', { name: 'Club Member Directory' })
+        .getByRole('listitem')
+        .first()
+        .locator('.member-alias')
+    ).toHaveText(rows[0].alias);
+    await testInfo.attach('player-name-search-proof', {
+      body: JSON.stringify({
+        search: 'mikey',
+        filteredTotal: result.filtered_total,
+        nextCursor: result.next_cursor,
+        rows: rows.map((row) => ({
+          user_id: row.user_id,
+          alias: row.alias,
+          username: row.username,
+          rank: rank(row),
+        })),
+      }),
+      contentType: 'application/json',
+    });
+    await completeNextPageRead(probe, () => search.fill(''), 'clear relevance search');
+    await expect(sort).toHaveValue('oldest');
+    await expect(sort).toBeEnabled();
+  });
+
   test('loads the real roster once and completes search, filter, sort, and player navigation', async ({
     page,
   }, testInfo) => {

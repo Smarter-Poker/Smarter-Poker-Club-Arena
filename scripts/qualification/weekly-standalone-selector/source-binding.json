@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 252075,
-      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+      "bytes": 252649,
+      "sha256": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1056,5 +1056,16 @@
         }
       }
     }
+  },
+  "privateGatewaySafetySourceAudit20261029": {
+    "review": "Reviewed additive exact gateway native runners/SQL fixture classification and Accounting shard2 private PostgreSQL/pg_net build prerequisites. Existing financial source, fixture amounts, assertions, qualification commands, matrix and deadlines remain unchanged. Current input identity only; not a financial, installed or live recertification.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "previous": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac",
+        "current": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
+      }
+    ],
+    "financial_recertification": false
   }
 }

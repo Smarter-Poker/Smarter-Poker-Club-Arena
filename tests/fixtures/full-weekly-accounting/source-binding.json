@@ -494,10 +494,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66",
+    "scripts/ci/classify-ci-changes.mjs": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "caebb3405c2f7bfcf476987757239ec67304da71280f00e422eb37867c35791b",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "eda54e88e50a3f01f057ef35d579f35e21eb788747409c8eedc76b120329d1c7",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -516,7 +516,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "135baa94a435ceb0100a6a19b95c1165ce1407abef887ae630e6259c3cd8f7cd",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5806,5 +5806,26 @@
         "current": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b"
       }
     }
+  },
+  "privateGatewaySafetySourceAudit20261029": {
+    "review": "Reviewed additive exact gateway native runners/SQL fixture classification and Accounting shard2 private PostgreSQL/pg_net build prerequisites. Existing financial source, fixture amounts, assertions, qualification commands, matrix and deadlines remain unchanged. Current input identity only; not a financial, installed or live recertification.",
+    "changes": [
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "previous": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66",
+        "current": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+      },
+      {
+        "file": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous": "caebb3405c2f7bfcf476987757239ec67304da71280f00e422eb37867c35791b",
+        "current": "eda54e88e50a3f01f057ef35d579f35e21eb788747409c8eedc76b120329d1c7"
+      },
+      {
+        "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b",
+        "current": "135baa94a435ceb0100a6a19b95c1165ce1407abef887ae630e6259c3cd8f7cd"
+      }
+    ],
+    "financial_recertification": false
   }
 }

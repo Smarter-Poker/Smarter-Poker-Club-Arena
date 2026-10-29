@@ -63,3 +63,12 @@ checked build emitted it. The resource proof continues comparing every runtime
 file hash; neither resolution limits nor descriptor parity are relaxed. A
 regression check derives relative JSON imports from runtime source and requires
 them in the emitter's explicit roots.
+
+The ESM require gate now recognizes a lexical Node loader only when its actual
+TypeScript symbols prove an immediately preceding `const require =
+createRequire(import.meta.url)` in the same block, using the imported
+`node:module` factory. Unbound CommonJS calls, shadowed factories, later or
+cross-scope bindings and reassignment remain refused. The ordinary guard runs
+its focused regression suite, including an actual ESM worker binding, before
+scanning runtime source. The frozen encoder and native loading source are
+unchanged.

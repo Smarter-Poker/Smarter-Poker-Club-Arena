@@ -73,6 +73,46 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('/opt/', json.dumps(answer))
         self.assertEqual(R.validate_reply(answer, request), answer)
 
+    def test_pending_remote_failure_reports_fixed_stage_without_private_detail(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        with self.assertRaises(R.ScopedRefusal) as caught:
+            R.remote(request)
+        self.assertEqual((caught.exception.phase, caught.exception.code),
+                         ('pending_directory', 'records_absent'))
+        directory = self.root / 'engine-release-requests'
+        directory.mkdir()
+        with self.assertRaises(R.ScopedRefusal) as caught:
+            R.remote(request)
+        self.assertEqual((caught.exception.phase, caught.exception.code),
+                         ('pending_request_read', 'records_absent'))
+        raw = '\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+            'b' * 40, '1791829999']) + '\n'
+        for suffix in ('.request', '.intent'):
+            path = directory / (REQUEST['runKey'] + suffix)
+            path.write_text(raw); path.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        cases = [('read_lines', 'request_read'), ('pending_metadata', 'request_binding'),
+                 ('pending_unit', 'unit'), ('pending_journal', 'journal')]
+        for function, stage in cases:
+            with self.subTest(stage=stage), \
+                    patch.object(R, 'pending_unit', return_value=unit), \
+                    patch.object(R, 'pending_journal', return_value=[]), \
+                    patch.object(R, function, side_effect=ValueError('private fixture detail')):
+                with self.assertRaises(R.ScopedRefusal) as caught:
+                    R.remote(request)
+                exported = R.refusal(request, caught.exception)
+                validated = R.validate_refusal(exported, request)
+                self.assertEqual((validated.phase, validated.code),
+                                 ('pending_' + stage, 'evidence_unavailable'))
+                self.assertNotIn('private fixture detail', json.dumps(exported))
+        with patch.object(R, 'pending_unit', side_effect=[unit, {**unit, 'invocationId': '2' * 32}]), \
+                patch.object(R, 'pending_journal', return_value=[]):
+            with self.assertRaises(R.ScopedRefusal) as caught:
+                R.remote(request)
+            self.assertEqual(caught.exception.phase, 'pending_recheck_unit')
+
     def test_pending_mode_refuses_unknown_modes_and_export_forgery(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
         for mode in ['pending', 'status', None, True, '$(id)']:

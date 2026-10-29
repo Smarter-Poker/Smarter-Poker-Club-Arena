@@ -79,6 +79,12 @@ INSPECTOR_COMMAND_ERRORS = {'Inspector read deadline': 'command_deadline',
 REFUSAL_CODES |= {('inspector_' + stage, code)
                   for stage in INSPECTOR_COMMAND_STAGES
                   for code in INSPECTOR_COMMAND_ERRORS.values()}
+PENDING_READ_STAGES = {'directory', 'request_read', 'request_binding', 'unit',
+                       'journal', 'recheck_requests', 'recheck_unit'}
+REFUSAL_CODES |= {('pending_' + stage, 'evidence_unavailable')
+                  for stage in PENDING_READ_STAGES}
+REFUSAL_CODES |= {('pending_' + stage, 'records_absent')
+                  for stage in ('directory', 'request_read', 'recheck_requests')}
 
 
 class ScopedRefusal(ValueError):
@@ -496,18 +502,33 @@ def validate_pending_signs(signs):
         timestamp(sign['observedAtMs'])
 
 
+def pending_stage(stage, read):
+    if stage not in PENDING_READ_STAGES:
+        raise ValueError('Unqualified pending read stage')
+    try:
+        return read()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        absent = isinstance(error, FileNotFoundError) and stage in {
+            'directory', 'request_read', 'recheck_requests'}
+        raise ScopedRefusal('pending_' + stage,
+                            'records_absent' if absent else 'evidence_unavailable') from None
+
+
 def pending_remote(request, root_fd):
-    directory = os.open('engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    directory = pending_stage('directory', lambda: os.open(
+        'engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd))
     try:
         names = [request['runKey'] + suffix for suffix in
                  ('.request', '.intent', '.awaiting-certificate', '.break-deadline')]
         read = lambda: [read_lines(directory, name, optional=index > 1) for index, name in enumerate(names)]
-        before = read()
-        pending_metadata(request, *before)
-        unit = pending_unit(request)
-        signs = pending_journal(request, unit)
-        if before != read() or unit != pending_unit(request):
-            raise ValueError('Pending evidence changed across read')
+        before = pending_stage('request_read', read)
+        pending_stage('request_binding', lambda: pending_metadata(request, *before))
+        unit = pending_stage('unit', lambda: pending_unit(request))
+        signs = pending_stage('journal', lambda: pending_journal(request, unit))
+        if before != pending_stage('recheck_requests', read):
+            raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
+        if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
+            raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
         return pending_observation(request, *before, unit, signs)
     finally:
         os.close(directory)

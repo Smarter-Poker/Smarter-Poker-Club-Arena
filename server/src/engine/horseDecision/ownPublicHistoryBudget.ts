@@ -40,20 +40,31 @@ export class HorseHistoryRetentionBudget {
   }
   /** Same-isolate admission for a synchronous representation of an exact retained packet.
    * This does not grow a claim, evict an original or guarantee V8 allocation. */
-  canAllocateRepresentation(owner: object): boolean {
+  canAllocateRepresentation(
+    owner: object,
+    report?: (reason: HorseHistoryRetentionRefusal) => void
+  ): boolean {
+    const refuse = (reason: HorseHistoryRetentionRefusal): false => {
+      try {
+        report?.(reason);
+      } catch {
+        /* diagnostics cannot alter admission */
+      }
+      return false;
+    };
     const claim = this.claims.get(owner);
-    if (!claim || claim.bytes <= 0) return false;
+    if (!claim || claim.bytes <= 0) return refuse('invalid_claim');
+    let available: number;
     try {
       const h = this.heap();
-      const available = Math.min(h.total_available_size, h.heap_size_limit - h.used_heap_size);
-      return (
-        Number.isFinite(available) &&
-        available >= 0 &&
-        claim.bytes * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE <= available
-      );
+      available = Math.min(h.total_available_size, h.heap_size_limit - h.used_heap_size);
+      if (!Number.isFinite(available) || available < 0) return refuse('heap_unavailable');
     } catch {
-      return false;
+      return refuse('heap_unavailable');
     }
+    if (claim.bytes * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE > available)
+      return refuse('heap_headroom');
+    return true;
   }
   reserve(
     owner: object,

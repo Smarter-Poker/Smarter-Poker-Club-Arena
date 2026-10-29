@@ -417,3 +417,63 @@ it('binds a transient read refusal to its exact original cutoff and validates ac
     await restored.close();
   }
 });
+
+it.each(['throw', 'nonfinite', 'missing_claim'] as const)(
+  'keeps the actual same-call %s transient refusal reason through worker validation',
+  async (fault) => {
+    let failed = false,
+      heapReads = 0;
+    const request = decisionRequest(),
+      c = context(),
+      cutoff = request.decisionTimeMs;
+    const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => {
+      heapReads++;
+      if (failed && fault === 'throw') throw Error('unreadable');
+      return {
+        ...ample(),
+        total_available_size:
+          failed && fault === 'nonfinite' ? Number.NaN : ample().total_available_size,
+      };
+    });
+    const reserve = vi.spyOn(budget, 'reserve');
+    const load = vi.fn(async () => window(c));
+    const cache = new HorseOwnPublicHistoryCache(load, () => cutoff, 2048, budget);
+    const h = workerHarness();
+    try {
+      cache.forSnapshot(c, cutoff);
+      await flush();
+      const original = cache.forSnapshot(c, cutoff)!;
+      if (fault === 'missing_claim') {
+        cache.acknowledge(c, original.digest);
+        cache.acknowledge(c, null);
+        budget.release(reserve.mock.calls[0]![0]);
+      }
+      const before = budget.status();
+      failed = true;
+      expect(cache.forSnapshot(c, cutoff)).toBeUndefined();
+      const sampled = heapReads;
+      const provenance = cache.provenance(c, cutoff);
+      expect(provenance).toMatchObject({
+        state: 'unavailable',
+        reason:
+          fault === 'missing_claim' ? 'retention_invalid_claim' : 'retention_heap_unavailable',
+      });
+      expect(cache.state(c)).toBe('unavailable');
+      expect(heapReads).toBe(sampled);
+      expect(budget.status()).toEqual(before);
+      expect(cache.status()).toMatchObject({ entries: 1, acknowledgedCount: 0 });
+      expect(load).toHaveBeenCalledTimes(1);
+      await h.runtime.start();
+      await h.fast({
+        ...request,
+        ownPublicHistoryState: 'unavailable',
+        ownPublicHistoryProvenance: provenance,
+      });
+      expect(h.captures.at(-1)?.snapshot).toMatchObject({ ownPublicHistoryProvenance: provenance });
+    } finally {
+      cache.dispose();
+      reserve.mockRestore();
+      await h.close();
+    }
+  }
+);

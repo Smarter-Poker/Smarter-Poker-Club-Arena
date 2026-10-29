@@ -324,7 +324,7 @@ export class HorseOwnPublicHistoryCache {
     {
       packet?: HorseOwnPublicHistoryPacket;
       serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
-      readRefusedAtMs?: number;
+      readRefusal?: { cutoffMs: number; reason: HorseHistoryReadReason };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -353,20 +353,32 @@ export class HorseOwnPublicHistoryCache {
       known &&
       (!known.settled || known.packet || known.serialized || cutoffMs < known.retryAfterMs)
     ) {
-      delete known.readRefusedAtMs;
+      delete known.readRefusal;
       if (known.acknowledged) return undefined;
       if (known.packet && known.packet.availableAtMs <= cutoffMs) {
-        if (!this.retentionBudget.canAllocateRepresentation(known)) {
-          known.readRefusedAtMs = cutoffMs;
+        if (
+          !this.retentionBudget.canAllocateRepresentation(known, (reason) => {
+            known.readRefusal = {
+              cutoffMs,
+              reason:
+                reason === 'retention_capacity' ? 'retention_capacity' : `retention_${reason}`,
+            };
+          })
+        )
           return undefined;
-        }
         return structuredClone(known.packet);
       }
       if (known.serialized && known.serialized.availableAtMs <= cutoffMs) {
-        if (!this.retentionBudget.canAllocateRepresentation(known)) {
-          known.readRefusedAtMs = cutoffMs;
+        if (
+          !this.retentionBudget.canAllocateRepresentation(known, (reason) => {
+            known.readRefusal = {
+              cutoffMs,
+              reason:
+                reason === 'retention_capacity' ? 'retention_capacity' : `retention_${reason}`,
+            };
+          })
+        )
           return undefined;
-        }
         return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
       }
       return undefined;
@@ -384,7 +396,7 @@ export class HorseOwnPublicHistoryCache {
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
       serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
-      readRefusedAtMs?: number;
+      readRefusal?: { cutoffMs: number; reason: HorseHistoryReadReason };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -499,7 +511,7 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
     return entry?.packet || entry?.serialized
-      ? !entry.acknowledged && entry.readRefusedAtMs !== undefined
+      ? !entry.acknowledged && entry.readRefusal !== undefined
         ? 'unavailable'
         : 'available'
       : entry?.settled
@@ -514,9 +526,9 @@ export class HorseOwnPublicHistoryCache {
     const entry = this.entries.get(key);
     // A refusal belongs only to the actual synchronous read attempt, not a
     // later provenance query with a different original decision cutoff.
-    const refused = !entry?.acknowledged && entry?.readRefusedAtMs === cutoffMs;
+    const refused = !entry?.acknowledged && entry?.readRefusal?.cutoffMs === cutoffMs;
     const state =
-      entry && entry.readRefusedAtMs !== undefined && !refused && (entry.packet || entry.serialized)
+      entry && entry.readRefusal !== undefined && !refused && (entry.packet || entry.serialized)
         ? 'available'
         : this.state(context);
     const availableAt = entry?.packet?.availableAtMs ?? entry?.serialized?.availableAtMs;
@@ -526,7 +538,7 @@ export class HorseOwnPublicHistoryCache {
         ? entry?.acknowledged
           ? 'worker_acknowledged'
           : refused
-            ? 'retention_heap_headroom'
+            ? entry!.readRefusal!.reason
             : availableAt > cutoffMs
               ? 'packet_after_cutoff'
               : 'packet_ready'

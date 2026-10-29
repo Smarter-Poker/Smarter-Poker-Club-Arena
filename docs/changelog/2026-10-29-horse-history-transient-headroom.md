@@ -9,7 +9,8 @@ Check the actual retained claim's encoded bytes with the existing representation
 allowance and transient reserve immediately before each allocation. Refusal
 preserves the exact original, digest, cutoff and client-specific ACK. A valid ACK
 can retain its decoded original when serialization is refused. A refused read
-returns unavailable with the existing closed retention_heap_headroom provenance,
+returns unavailable with the existing closed invalid-claim, heap-unavailable or
+heap-headroom reason from that same admission call,
 bound to the actual observer and exact attempted decision cutoff. State and
 provenance do not take a second heap sample; a later admitted read restores the
 original window without another load. No cap, heap limit, timer or retry changes.

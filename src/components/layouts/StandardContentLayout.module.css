@@ -12,7 +12,7 @@
      between the fixed bottom nav and the viewport on all of them at once. */
   overflow-x: hidden;
   overflow-x: clip;
-  /* Crucial: clears the fixed bottom nav bar on mobile */
+  /* Reserve clearance for the fixed mobile bottom navigation. */
   padding-bottom: var(--bottom-nav-clearance, 74px);
   /* Safe area inset for notched devices */
   /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is

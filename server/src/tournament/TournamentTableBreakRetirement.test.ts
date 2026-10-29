@@ -22,6 +22,7 @@ const LEASE_GENERATION = 'cccccccc-0000-4000-8000-000000000001';
 class TableBreakHarness extends TournamentManager {
   constructor(gameServer: GameServer) {
     super(TOURNAMENT_ID, gameServer, LEASE_GENERATION, performance.now() + 20_000);
+    (this as unknown as { lifecycleEpoch: { begin(): unknown } }).lifecycleEpoch.begin();
     this.running = true;
     this.isFinalTable = true;
   }
@@ -206,8 +207,18 @@ describe('tournament table-break retirement is one durable ownership chain', () 
         const query = {
           select: () => query,
           or: () => query,
+          order: () => query,
+          limit: (count: number) => {
+            rows = rows.slice(0, count);
+            return query;
+          },
+          gt: (key: string, value: string) => {
+            rows = rows.filter((row) => String(row[key]) > value);
+            return query;
+          },
           eq: (key: string, value: unknown) => {
-            if (key !== 'tournament_id') rows = rows.filter((row) => row[key] === value);
+            if (key !== 'tournament_id' && key !== 'tables.tournament_id')
+              rows = rows.filter((row) => row[key] === value);
             return query;
           },
           in: (key: string, values: unknown[]) => {
@@ -553,31 +564,24 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       // Use the real occupied-table reader. The retired source either remains
       // open but empty, or its close committed before the response was lost.
       vi.spyOn(supabase, 'from').mockImplementation(((relation: string) => {
-        if (relation === 'tables')
-          return {
-            select: () => ({
-              eq: () => ({
-                in: () =>
-                  Promise.resolve({
-                    data: [...occupied, ...(sourceStatus === 'running' ? [{ id: TABLE_ID }] : [])],
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        if (relation === 'table_seats')
-          return {
-            select: () => ({
-              in: () => ({
-                is: () =>
-                  Promise.resolve({
-                    data: occupied.map(({ id }) => ({ table_id: id })),
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        throw new Error(`Unexpected relation: ${relation}`);
+        const rows =
+          relation === 'tables'
+            ? [...occupied, ...(sourceStatus === 'running' ? [{ id: TABLE_ID }] : [])]
+            : relation === 'table_seats'
+              ? occupied.map(({ id }) => ({ id: `seat-${id}`, table_id: id }))
+              : null;
+        if (!rows) throw new Error(`Unexpected relation: ${relation}`);
+        const query = {
+          select: () => query,
+          eq: () => query,
+          in: () => query,
+          is: () => query,
+          order: () => query,
+          limit: () => query,
+          then: (resolve: (value: unknown) => unknown) =>
+            Promise.resolve({ data: rows, error: null }).then(resolve),
+        };
+        return query;
       }) as never);
       const rpc = vi
         .spyOn(supabase, 'rpc')
@@ -755,8 +759,18 @@ describe('tournament table-break retirement is one durable ownership chain', () 
       const query = {
         select: () => query,
         or: () => query,
+        order: () => query,
+        limit: (count: number) => {
+          rows = rows.slice(0, count);
+          return query;
+        },
+        gt: (key: string, value: string) => {
+          rows = rows.filter((row) => String(row[key]) > value);
+          return query;
+        },
         eq: (key: string, value: unknown) => {
-          if (key !== 'tournament_id') rows = rows.filter((row) => row[key] === value);
+          if (key !== 'tournament_id' && key !== 'tables.tournament_id')
+            rows = rows.filter((row) => row[key] === value);
           return query;
         },
         in: (key: string, values: unknown[]) => {

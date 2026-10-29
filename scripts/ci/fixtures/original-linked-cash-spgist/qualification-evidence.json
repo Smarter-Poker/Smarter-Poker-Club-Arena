@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "cases": [
+    "actual14columns10constraints3indexes_immutable_trigger_RLS_ACL",
+    "invalid_proof_original_CHECK_refuses",
+    "original_nonowner_function_permission_refuses",
+    "original_function_boundary_payload_evidence_NULLunion_bag",
+    "exact_CCI_whole_qualification_preserves_all_bodies_metadata_original_bag_raw_trigger",
+    "admitted6144byte_key_survives_SPGiST_without_new_rejection",
+    "auto_natural_partial_SPGiST_no_proof_rehash_filter",
+    "force_custom_plan_natural_partial_SPGiST_no_proof_rehash_filter",
+    "force_generic_plan_natural_partial_SPGiST_no_proof_rehash_filter",
+    "valid_prefix_history_tail_failure_resumes_no_rebuild",
+    "genuine_interrupted_CCI_durable_invalid_prefix_refuses_without_rebuild_or_history",
+    "interrupted_invalid_prefix_refuses_then_explicit_fixture_cleanup_rebuild",
+    "source65_refuses",
+    "gen_refuses",
+    "window_refuses",
+    "frozen_refuses",
+    "boundary_refuses",
+    "JWT_operator_refuses",
+    "history_replay_refuses",
+    "ACL_drift_refuses",
+    "old_proof_index_drift_refuses",
+    "trigger_drift_refuses",
+    "linked_ACL_drift_refuses"
+  ],
+  "migration_sha256": "ffb6048bbe418e9558fe8c78aa051d09bb6771ccd9e74ddaed32c668905494dd",
+  "old_indexes_retained": 3,
+  "production_capacity_claimed": false,
+  "source65_GEN_gate_fixtures_explicit": true,
+  "header_only_count_correction_verified_against_executed_migration": true
+}

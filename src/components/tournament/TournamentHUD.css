@@ -367,3 +367,13 @@
     opacity: 0.55;
   }
 }
+
+/* Long blinds/ante labels shrink only as needed when Paid adds a column. */
+.tournament-dock__fit-zone {
+  width: 100%;
+  text-align: center;
+}
+.tournament-dock__fit-text {
+  display: block;
+  font-size: calc(1em * var(--fit, 1));
+}

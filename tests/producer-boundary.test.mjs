@@ -5,7 +5,7 @@ import {deflateSync} from 'node:zlib';
 import fs from 'node:fs';
 import path from 'node:path';
 const script=new URL('../scripts/ci/produce-money-trigger-recovery.mjs',import.meta.url);
-const env={PATH:process.env.PATH,GITHUB_REPOSITORY:'Smarter-Poker/Smarter-Poker-Club-Arena',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main'};
+const env={PATH:process.env.PATH,GITHUB_REPOSITORY:'Smarter-Poker/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:'1132369872',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main'};
 const run=(e)=>spawnSync(process.execPath,[script.pathname],{env:{...env,...e},encoding:'utf8'});
 const bundle=x=>deflateSync(JSON.stringify(x)).toString('base64');
 test('untrusted dispatch ref refuses before credential use',()=>{const r=run({GITHUB_REF:'refs/heads/evil'});assert.notEqual(r.status,0);assert.match(r.stderr,/approved main/)});

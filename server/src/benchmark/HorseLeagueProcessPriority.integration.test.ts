@@ -294,10 +294,15 @@ it('CI still runs this suite on a host where the gated qualification can run', (
   const job = sliceYamlBlock(workflow, 'server_shards:');
   expect(job, 'server_shards no longer runs the server test suite').toContain('npm test --');
   expect(
-    job,
+    job
+      .split('\n')
+      .find((line) => line.trim().startsWith('runs-on:'))
+      ?.trim(),
     `the qualification above only runs on ${QUALIFICATION_HOST.platform}; if this job ` +
       'moves to another runner it will skip silently on every host, forever'
-  ).toMatch(/runs-on:\s*ubuntu-/);
+  ).toBe(
+    "runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+  );
   expect(
     job,
     `the qualification above pins Node ${QUALIFICATION_HOST.nodeMajor}; a runner on any ` +

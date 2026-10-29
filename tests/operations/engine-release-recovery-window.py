@@ -153,8 +153,10 @@ echo "$RECOVERY_ADMISSION_MISSED"
 
 
 def certificate(maintenance, *, running=True, transport=True, http=200, minimum=None):
-    response = json.dumps({'running': running, 'maintenance': maintenance}) + f'\n{http}'
+    response = json.dumps({'running': running, 'weeklyPayout': None, 'maintenance': maintenance}) + f'\n{http}'
     script = f'''set -euo pipefail
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() {{ [ {int(transport)} = 1 ] || return 1; printf '%s' {shlex.quote(response)}; }}
 {CERTIFICATE}

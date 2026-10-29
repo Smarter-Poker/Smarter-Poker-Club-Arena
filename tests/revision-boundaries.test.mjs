@@ -7,7 +7,7 @@ const proof=()=>({headSha:head,runId:'1234',results:[{recovered:true,path:'supab
 const repository='Smarter-Poker/Smarter-Poker-Club-Arena',runId='1234',appId='4962039';
 const protectedRule=()=>({target:'branch',enforcement:'active',bypass_actors:[],conditions:{ref_name:{include:['refs/heads/main'],exclude:[]}},rules:[{type:'required_status_checks',parameters:{required_status_checks:[{context:'Money trigger declaration authority',integration_id:4962039}]}}]});
 async function freshProtection(options={}){
- return readProtectionAndRevoke({token:'modeled-reader-token',repository,appId,head,runId,now:()=>time,fetchImpl:async(url,init)=>init.method==='DELETE'?{status:204}:{ok:true,json:async()=>protectedRule()},...options});
+ return readProtectionAndRevoke({token:'modeled-reader-token',repository,repositoryId:'1132369872',appId,head,runId,now:()=>time,fetchImpl:async(url,init)=>init.method==='DELETE'?{status:204}:{ok:true,json:async()=>protectedRule()},...options});
 }
 const complete=(protection,extra={})=>completion({capturedHead:head,currentHead:head,outcome:'success',proof:proof(),now:time,runId,appId,protection,...extra});
 for(const outcome of ['failure','cancelled','skipped',''])test('report '+outcome+' cannot grant success',async()=>assert.equal(complete(await freshProtection(),{outcome}),'failure'));

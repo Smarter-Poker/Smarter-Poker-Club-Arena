@@ -11,6 +11,19 @@ describe('Mongo missing decision recovery', () => {
     expect(page).toContain('await submitTableDecision({');
     expect(page).not.toContain('submitAction(tid, uid, action, amount, tableState.actionContext)');
   });
+  it('checks missing-token input before optimistic paint can hide its refreshed turn', () => {
+    const panel = page.slice(page.indexOf('const handleActionPanelAction = useCallback('));
+    const guard = panel.indexOf('!lightningRoomRef.current && !live.actionContext');
+    expect(guard).toBeGreaterThan(0);
+    expect(panel.indexOf('finally {', guard)).toBeLessThan(panel.indexOf('setTimeout('));
+    expect(panel.indexOf('actionLockRef.current = false;', guard)).toBeLessThan(
+      panel.indexOf('setTimeout(')
+    );
+    expect(panel.indexOf("'panel-missing-decision'")).toBeGreaterThan(guard);
+    expect(panel.indexOf("'panel-missing-decision'")).toBeLessThan(
+      panel.indexOf("applyOptimisticHeroAction('fold')")
+    );
+  });
   it('does not send a context-free Classic fold and requests state exactly once', async () => {
     const send = vi.fn();
     const refresh = vi.fn(async () => {});

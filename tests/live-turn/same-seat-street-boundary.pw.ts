@@ -324,6 +324,9 @@ test('a missing decision refreshes the table without sending the fold or reloadi
   const bar = felt(page);
   try {
     await expect(bar.call).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(() => engine.sent.some((frame) => frame.detail.startsWith('turn_change seat 2')))
+      .toBe(true);
     engine.publishDecisionUnavailable();
     // Wait for the missing-context snapshot to reach the page before tapping.
     await page.waitForTimeout(300);

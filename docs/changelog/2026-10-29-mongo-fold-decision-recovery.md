@@ -27,3 +27,8 @@ failure mode, not a claim of a recorded wire trace from Mongo's device.
 
 This is a client-only change using the existing RESYNC protocol. No migration,
 engine replacement, financial mutation or restart is required.
+
+The missing-token readiness check runs before optimistic action paint. The
+combined mobile run exposed why: painting a fold first armed a fence with no
+decision, which could keep the refreshed controls hidden. The guard-order
+regression and mobile test cover that connected failure too.

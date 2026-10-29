@@ -25,6 +25,22 @@
 
 let frozen = false;
 const weeklyPayoutOwners = new Map<string, 'draining' | 'ready' | 'paying'>();
+let freezeStartedAtMs: number | null = null;
+let frozenElapsedMs = 0;
+
+/** Player decision clocks exclude every aggregate freeze, including parked loops. */
+export function maintenanceActiveNow(): number {
+  return (freezeStartedAtMs ?? Date.now()) - frozenElapsedMs;
+}
+
+function recordFreezeClockEdge(wasFrozen: boolean): void {
+  const nowFrozen = isMaintenanceFrozen();
+  if (!wasFrozen && nowFrozen) freezeStartedAtMs = Date.now();
+  if (wasFrozen && !nowFrozen && freezeStartedAtMs !== null) {
+    frozenElapsedMs += Math.max(0, Date.now() - freezeStartedAtMs);
+    freezeStartedAtMs = null;
+  }
+}
 
 /**
  * THE LAST-HAND SETTLEMENT WINDOW (2026-10-03).
@@ -73,6 +89,7 @@ const thawListeners = new Set<MaintenanceThawListener>();
 export function setMaintenanceFrozen(value: boolean): void {
   const wasFrozen = isMaintenanceFrozen();
   frozen = value;
+  recordFreezeClockEdge(wasFrozen);
   // Every freeze edge closes the last-hand settlement window; only the
   // announcement reopens it, after this call (setLastHandSettlementWindow).
   terminalSettlementOpenUntilMs = 0;
@@ -89,6 +106,7 @@ export function setWeeklyPayoutFrozen(
   const wasFrozen = isMaintenanceFrozen();
   if (phase === null) weeklyPayoutOwners.delete(owner);
   else weeklyPayoutOwners.set(owner, phase);
+  recordFreezeClockEdge(wasFrozen);
   if (phase === 'ready' || phase === 'paying') terminalSettlementOpenUntilMs = 0;
   if (wasFrozen && !isMaintenanceFrozen()) notifyMaintenanceThaw();
 }

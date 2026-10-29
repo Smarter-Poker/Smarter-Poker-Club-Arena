@@ -440,7 +440,7 @@ exit 91
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it('the workflow delegates mutation and independently proves routing-ready health', () => {
     expect(workflow).toContain('server/scripts/install-engine-intake.sh');

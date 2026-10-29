@@ -239,6 +239,8 @@ export interface CashoutOptions {
   /** 'vpip_evicted' (Dan 2026-09-05): a nit-game eviction - a system exit
       that also bars the player from this game for the rejoin window. */
   leaveMode?: 'voluntary' | 'forced' | 'vpip_evicted';
+  /** Lightning bust expiry: recheck zero stack and pending chips inside the seat lock. */
+  requireUnfunded?: boolean;
   onLocked?: (stayRemainingMs: number) => void;
   onFailed?: (message: string) => void;
   /**
@@ -278,13 +280,16 @@ export async function atomicCashout(
     ) {
       throw new Error('Cash-out requires the original seat occupancy');
     }
-    const { data, error } = await supabase.rpc('fn_cashout_seat_occupancy', {
+    const cashoutArgs = {
       p_user_id: userId,
       p_table_id: tableId,
       p_seat_number: seatNumber,
       p_occupancy_id: occupancyId,
       p_leave_mode: opts?.leaveMode ?? null,
-    });
+    };
+    const { data, error } = opts.requireUnfunded
+      ? await supabase.rpc('fn_cashout_unfunded_seat_occupancy', cashoutArgs)
+      : await supabase.rpc('fn_cashout_seat_occupancy', cashoutArgs);
 
     if (error) {
       const locked = LEAVE_LOCKED_RE.exec(String(error.message || ''));

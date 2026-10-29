@@ -791,3 +791,39 @@ it('accepts the maintained forced-runout flop discard contract and rejects a bet
     expect(() => sanitizeHorseTurnCensusResult(altered)).toThrow();
   }
 });
+
+it('v3 binds original DB variant and cash context to actual reconciled decision snapshot', () => {
+  const x = census();
+  const packet: any = x.packet;
+  packet.version = 3;
+  packet.hands[0].context = {
+    variant: 'nlh',
+    format: 'cash',
+    provenance: 'retained_submission_and_committed_history',
+  };
+  const r = inspectHorseTurnCensus(packet, x.batch(), api);
+  expect(r.turns[2]).toMatchObject({
+    contextBinding: 'matched',
+    inputBinding: 'canonical_digest_and_read_frame',
+  });
+  expect(r.turns[0]).toMatchObject({ capture: 'missing', contextBinding: 'unknown' });
+  expect(sanitizeHorseTurnCensusResult(r)).toEqual(r);
+  for (const change of [{ variant: 'plo8' }, { format: 'tournament' }]) {
+    packet.hands[0].context = {
+      variant: 'nlh',
+      format: 'cash',
+      provenance: 'retained_submission_and_committed_history',
+      ...change,
+    };
+    const refused = inspectHorseTurnCensus(packet, x.batch(), api);
+    expect(refused.expectedTurns).toBe(3);
+    expect(refused.turns[2]).toMatchObject({
+      capture: 'present',
+      expectedBinding: 'matched',
+      contextBinding: 'contradictory',
+      inputBinding: 'unknown',
+      publicRead: 'unknown',
+    });
+    expect(sanitizeHorseTurnCensusResult(refused)).toEqual(refused);
+  }
+});

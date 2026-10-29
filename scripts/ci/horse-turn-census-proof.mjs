@@ -22,6 +22,25 @@ const exact = (x, keys) =>
   !Array.isArray(x) &&
   Object.keys(x).length === keys.length &&
   keys.every((k) => Object.hasOwn(x, k));
+const variants = ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'pineapple', 'short_deck', 'flh', 'flo8'];
+const validContext = (c) =>
+  exact(c, ['variant', 'format', 'provenance']) &&
+  variants.includes(c.variant) &&
+  ['cash', 'tournament'].includes(c.format) &&
+  ['committed_hand_history', 'retained_submission_and_committed_history'].includes(c.provenance);
+export function horseTurnContextBinding(context, snapshot) {
+  if (
+    !validContext(context) ||
+    !snapshot?.gameState ||
+    !variants.includes(snapshot.gameState.gameVariant) ||
+    !['cash', 'tournament'].includes(snapshot.gameState.gameMode)
+  )
+    return 'unknown';
+  return context.variant === snapshot.gameState.gameVariant &&
+    context.format === snapshot.gameState.gameMode
+    ? 'matched'
+    : 'contradictory';
+}
 const stages = ['preflop', 'flop', 'pineapple_discard', 'turn', 'river', 'showdown'];
 const actions = ['fold', 'check', 'call', 'bet', 'raise', 'all_in', 'discard'];
 const origins = ['player', 'pre_action', 'horse_policy', 'horse_fallback', 'forced', 'unknown'];
@@ -41,7 +60,7 @@ const utc = (x) =>
 export function validateHorseTurnCensusPacket(p, expectedSource = p?.sourceSha) {
   if (
     !exact(p, ['version', 'sourceSha', 'window', 'horseIds', 'hands']) ||
-    p.version !== 2 ||
+    ![2, 3].includes(p.version) ||
     !hex(expectedSource, 40) ||
     p.sourceSha !== expectedSource ||
     !exact(p.window, ['startUtc', 'endUtc']) ||
@@ -71,7 +90,8 @@ export function validateHorseTurnCensusPacket(p, expectedSource = p?.sourceSha) 
   const seen = new Set();
   for (const h of p.hands) {
     if (
-      !exact(h, ['handKey', 'committedAtMs', 'actions']) ||
+      !exact(h, ['handKey', 'committedAtMs', 'actions', ...(p.version === 3 ? ['context'] : [])]) ||
+      (p.version === 3 && !validContext(h.context)) ||
       !hex(h.handKey, 64) ||
       seen.has(h.handKey) ||
       !Number.isSafeInteger(h.committedAtMs) ||
@@ -168,6 +188,7 @@ function closedPhases(value) {
   return out;
 }
 const emptyTurn = (h, a) => ({
+  ...(h.context ? { contextBinding: 'unknown' } : {}),
   actorIndex: a.actorIndex,
   handKey: h.handKey,
   actionOrdinal: a.actionOrdinal,
@@ -196,7 +217,7 @@ const equalAction = (a, expected, ids) =>
 /** Batch is a private installed-store result. Only closed fields are returned. Missing domains survive every refusal. */
 export function inspectHorseTurnCensus(packet, batch, api, clock = () => performance.now()) {
   const base = {
-    version: 2,
+    version: packet?.version === 3 ? 3 : 2,
     scope: 'supplied_committed_turn_census',
     status: 'unknown',
     rawRecordsExported: false,
@@ -505,6 +526,10 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
           api.horsePlanHandKey(s.gameState.actionHistory, context),
           context
         );
+        if (packet.version === 3) {
+          out.contextBinding = horseTurnContextBinding(expected.context, s);
+          if (out.contextBinding !== 'matched') continue;
+        }
         out.inputBinding = 'canonical_digest_and_read_frame';
         out.publicRead = api.horseObserverReadsUsedPublicPool(c.observerReads, s)
           ? 'pooled_public'
@@ -694,7 +719,7 @@ export function sanitizeHorseTurnCensusResult(v) {
   ];
   if (
     !exact(v, root) ||
-    v.version !== 2 ||
+    ![2, 3].includes(v.version) ||
     v.scope !== 'supplied_committed_turn_census' ||
     !['observed', 'unknown'].includes(v.status) ||
     !hex(v.sourceSha, 40) ||
@@ -756,7 +781,9 @@ export function sanitizeHorseTurnCensusResult(v) {
         'origin',
         ...Object.keys(states),
         'phases',
+        ...(v.version === 3 ? ['contextBinding'] : []),
       ]) ||
+      (v.version === 3 && !['unknown', 'matched', 'contradictory'].includes(t.contextBinding)) ||
       !Number.isSafeInteger(t.actorIndex) ||
       t.actorIndex < 0 ||
       t.actorIndex >= 1000 ||
@@ -787,6 +814,16 @@ export function sanitizeHorseTurnCensusResult(v) {
         t.origin !== 'forced')
     )
       throw Error('result_refused');
+    if (
+      v.version === 3 &&
+      ((t.contextBinding === 'matched' &&
+        (t.inputBinding !== 'canonical_digest_and_read_frame' ||
+          t.capture !== 'present' ||
+          t.expectedBinding !== 'matched' ||
+          t.handReconciliation !== 'reconciled')) ||
+        (t.inputBinding === 'canonical_digest_and_read_frame' && t.contextBinding !== 'matched'))
+    )
+      throw Error('context_consumption_refused');
     const key = `${t.handKey}:${t.actionOrdinal}`;
     if (seen.has(key)) throw Error('result_refused');
     seen.add(key);

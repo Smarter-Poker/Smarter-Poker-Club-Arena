@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { REMOTE_OBSERVER } from '../../server/scripts/phase6d-population.mjs';
 import {
   horseTurnCensusPacketDigest,
+  horseTurnContextBinding,
+  validateHorseTurnCensusPacket,
   sanitizeHorseTurnCensusResult,
 } from '../../scripts/ci/horse-turn-census-proof.mjs';
 import {
@@ -246,6 +248,7 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   assert.equal(limit, 256);
   const packet = fixture(),
     result = observation(packet);
+  result.version = 3;
   const phase = {
     status: 'applicable-active',
     capability: 'unobserved',
@@ -258,6 +261,7 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   // actual interpreter combinations as well as every possible hashed reason.
   const turn = {
     ...result.turns[0],
+    contextBinding: 'contradictory',
     actorIndex: 999,
     actionOrdinal: 4095,
     stage: 'pineapple_discard',
@@ -307,4 +311,37 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
     Buffer.byteLength(JSON.stringify(old)) > 1572864,
     'the former512turn bound overflows this same closed shape'
   );
+});
+
+test('version3 carries original closed context through maintained installed observer program', () => {
+  const p = fixture();
+  p.version = 3;
+  p.hands[0].context = { variant: 'plo8', format: 'cash', provenance: 'committed_hand_history' };
+  assert.equal(validateHorseTurnCensusPacket(p), p);
+  const program = turnCensusProgram(p);
+  assert.ok(program.includes('horseTurnContextBinding(expected.context,s)'));
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo8', gameMode: 'cash' },
+    }),
+    'matched'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo6', gameMode: 'cash' },
+    }),
+    'contradictory'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, {
+      gameState: { gameVariant: 'plo8', gameMode: 'tournament' },
+    }),
+    'contradictory'
+  );
+  assert.equal(
+    horseTurnContextBinding(p.hands[0].context, { gameState: { gameVariant: 'plo8' } }),
+    'unknown'
+  );
+  p.hands[0].context.variant = 'eight_cards';
+  assert.throws(() => validateHorseTurnCensusPacket(p));
 });

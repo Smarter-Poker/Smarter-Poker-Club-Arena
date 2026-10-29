@@ -65,7 +65,7 @@
     }
   ],
   "original_rejected_width_cases": [8, 9],
-  "actual_contract_sha256": "034e58abdd7b0005d870d619abb4cd162520be990d5a57c6eed7d4a4d3a0016f",
+  "actual_contract_sha256": "4ad129ba6ddd68d319888ebaa0a58f483653da56db72c851311e8dfdbbf84760",
   "source65_generation_and_maintenance_are_controlled_fixture_boundaries": true,
   "original_helpers_and_trigger_are_real_captured_bodies": true,
   "production_capacity_claimed": false,
@@ -75,12 +75,12 @@
     "scripts/ci/migration-concurrent-preamble.mjs": "c50bc71b5c1234a6d505e9125de5744d04a3f97113025550f9eeb53f8b9bd8d6",
     "supabase/migrations/20261029032041_tournament_membership_keeps_its_union_in_the_identity_key.sql": "17e7d6e6dde9ed7aff5c3c61761bd67e9fdfe63a551ed2f54a947b73dab56120",
     "scripts/ci/fixtures/tournament-membership-union-key/membership-predicate.sql": "d13d67cddcfe7518fbfef3fd24c6010114706a91e47ab9c28cda23804aeb5eb3",
-    "scripts/ci/fixtures/tournament-membership-union-key/meaningful-table-contract.json": "034e58abdd7b0005d870d619abb4cd162520be990d5a57c6eed7d4a4d3a0016f",
+    "scripts/ci/fixtures/tournament-membership-union-key/meaningful-table-contract.json": "4ad129ba6ddd68d319888ebaa0a58f483653da56db72c851311e8dfdbbf84760",
     "scripts/ci/fixtures/tournament-membership-union-key/original-immutable.sql": "b7e3e5c09a979c20740d2a8199060c7441c0cb1590b7c656f31de918eeea408a",
-    "scripts/ci/fixtures/tournament-membership-union-key/actual-table-authority.json": "bb160a5c0a48c4d8c07278c9ffa3e6dd8bcd1bee5fdd642054437ff7234de84a",
-    "scripts/ci/fixtures/tournament-membership-union-key/actual-connected-owners.json": "3ee78f2d0e7846cea3e1d8a18448dfb226e01ae1006085b0c1f0c13c76aa1a07",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-table-authority.json": "97ca939e36d353f211a6808ce9dacc4b52538bc98717a682d5bb74647025228e",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-connected-owners.json": "ae802da5157e014276ab3b5e8161689f6acee6f83af96f0cec7ec7e1143ca33f",
     "scripts/ci/fixtures/tournament-membership-union-key/table-contract-projection.sql": "8ed694f0d28b18fb840f73c64830a306eb863bde12da9905b5f10de7ac5c606d",
     "scripts/ci/fixtures/tournament-membership-union-key/original-touched-query.sql": "f934e4c491c29794c9ad51f5cfdcc76b5c1855b9fe7404336190a20aa5435287"
   },
-  "runtime_input_note": "Captured after native-fifth: these unchanged runtime inputs were consumed by the completed native27 run; documentation and additional law-only fixtures are maintained-source bindings, not runtime evidence."
+  "runtime_input_note": "Exact formatted runtime inputs consumed by native-formatted-final27. Documentation and law-only fixture bindings are separate maintained-source pins."
 }

@@ -2,18 +2,18 @@
   "version": 1,
   "source_sha256": {
     "scripts/ci/fixtures/tournament-membership-union-key/membership-predicate.sql": "d13d67cddcfe7518fbfef3fd24c6010114706a91e47ab9c28cda23804aeb5eb3",
-    "scripts/ci/fixtures/tournament-membership-union-key/meaningful-table-contract.json": "034e58abdd7b0005d870d619abb4cd162520be990d5a57c6eed7d4a4d3a0016f",
+    "scripts/ci/fixtures/tournament-membership-union-key/meaningful-table-contract.json": "4ad129ba6ddd68d319888ebaa0a58f483653da56db72c851311e8dfdbbf84760",
     "scripts/ci/fixtures/tournament-membership-union-key/original-immutable.sql": "b7e3e5c09a979c20740d2a8199060c7441c0cb1590b7c656f31de918eeea408a",
-    "scripts/ci/fixtures/tournament-membership-union-key/actual-table-authority.json": "bb160a5c0a48c4d8c07278c9ffa3e6dd8bcd1bee5fdd642054437ff7234de84a",
-    "scripts/ci/fixtures/tournament-membership-union-key/actual-connected-owners.json": "3ee78f2d0e7846cea3e1d8a18448dfb226e01ae1006085b0c1f0c13c76aa1a07",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-table-authority.json": "97ca939e36d353f211a6808ce9dacc4b52538bc98717a682d5bb74647025228e",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-connected-owners.json": "ae802da5157e014276ab3b5e8161689f6acee6f83af96f0cec7ec7e1143ca33f",
     "scripts/ci/fixtures/tournament-membership-union-key/table-contract-projection.sql": "8ed694f0d28b18fb840f73c64830a306eb863bde12da9905b5f10de7ac5c606d",
     "scripts/ci/fixtures/tournament-membership-union-key/original-report.sql": "7c6999828a1e9d43710ead2ebc2442b14bfbcc388f3117fde415a8b4761639be",
     "scripts/ci/fixtures/tournament-membership-union-key/original-touched-query.sql": "f934e4c491c29794c9ad51f5cfdcc76b5c1855b9fe7404336190a20aa5435287",
-    "scripts/ci/fixtures/tournament-membership-union-key/critical-owner-contract.json": "a4488893eefa228f2053f0deac0996b6c141485639b4d9fe88fc58cc2112d533",
+    "scripts/ci/fixtures/tournament-membership-union-key/critical-owner-contract.json": "67bae73bd7c6c85b3005b421c610c202fdd8fa000ba90d0648b592028b11bd56",
     "scripts/ci/fixtures/tournament-membership-union-key/README.md": "d5e922ef7ff4b81d1a155a574acbabefdd8637ef7dc80e5bd3b298577132810e",
     "scripts/ci/test-tournament-membership-union-key-postgres.py": "10e104066a6d7e175f93d1926eb8c057022f21440801e1c61d66ecdb55a08291",
     "supabase/migrations/20261029032041_tournament_membership_keeps_its_union_in_the_identity_key.sql": "17e7d6e6dde9ed7aff5c3c61761bd67e9fdfe63a551ed2f54a947b73dab56120",
-    "scripts/ci/fixtures/tournament-membership-union-key/qualification-evidence.json": "f5a55da81d0dd26e7fa8c4fc45b2590c2a1924ecf1278db4d902b54451fa35ab"
+    "scripts/ci/fixtures/tournament-membership-union-key/qualification-evidence.json": "3a7c7b8df721856e32761197f7d3562f762778fb75ccf646b1f874dbf4215194"
   },
   "qualification": "private-PG17-physical-only; production capacity remains unqualified"
 }

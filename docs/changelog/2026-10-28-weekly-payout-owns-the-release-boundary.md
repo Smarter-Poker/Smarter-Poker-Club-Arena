@@ -1,0 +1,9 @@
+# Weekly payout ownership reaches every release certificate
+
+The existing F06-only admission could admit an engine cutover while a weekly payout owned the gameplay pause: it interpreted `readyForRestart=false` as only the listed preparation blocker. The host transaction now checks weekly ownership before normal, F06 and legacy-checkpoint admission. A non-null owner refuses all three paths. Existing countdown, durability, physical-hand and cutover-reserve checks remain required.
+
+An older engine does not publish `weeklyPayout`. That absence now invokes the existing pinned database adapter in a read-only mode. It calls `fn_weekly_accounting_payout_pause_state(NULL,NULL)`, whose original database query excludes expired and released owners. Only an explicit null boundary in the maintained response allows admission. Missing RPC, failed reads, malformed responses and non-null owners refuse. The response body and private ownership token are never printed. This mode does not acknowledge, advance, retry or pay a weekly round.
+
+Compatibility prerequisite: install the qualified `20261028162126_weekly_payout_runs_under_its_owned_game_pause.sql` through protected main before activating controls that need the old-health fallback. An unavailable RPC is UNKNOWN, never evidence of inactivity. This change adds no installer, publisher, scheduler, engine restart or financial exception.
+
+The maintained root law executes the actual shell functions and Python adapter with synthetic HTTP inputs. It covers normal/F06/legacy, announced/draining, ready, paying, old health, explicit inactivity, malformed data and read failure. The original host source failed 27 affected cases; the repaired source passes all 33 certificate cases plus the POST/no-redirect transport check. Existing certificate laws remain in force, with their inactive fixtures now explicit about weekly ownership. Production activation and affected live proof are separate from this source qualification.

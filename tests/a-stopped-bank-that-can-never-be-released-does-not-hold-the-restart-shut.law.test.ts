@@ -108,6 +108,7 @@ function certificate({
   );
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     ...(hands === 'absent' ? {} : { handsInFlightTotal: hands }),
     maintenance: {
@@ -279,7 +280,7 @@ describe('5. stdout is the verdict and nothing else', () => {
 
 describe('4. the shape of the gate is unchanged', () => {
   it('keeps the allow-list an allow-list and admits only through the database branch', () => {
-    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
+    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2\n');
     const admission = TRANSACTION.slice(from, TRANSACTION.indexOf('\n}', from));
     expect(admission.match(/return 0/g)).toHaveLength(1);
     expect(admission).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE/);

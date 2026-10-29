@@ -90,6 +90,7 @@ function run(certificateSource: string, reasons: Record<string, number>, release
   const unparked = Object.values(reasons).reduce((a, b) => a + b, 0);
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     handsInFlightTotal: 0,
     maintenance: {

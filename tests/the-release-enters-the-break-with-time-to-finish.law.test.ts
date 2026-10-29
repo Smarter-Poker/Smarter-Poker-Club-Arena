@@ -112,6 +112,7 @@ const countdown = transaction.slice(
 function admit(remainingMs: number, headroomMs: number) {
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     maintenance: {
       active: true,
       phase: 'counting_down',
@@ -331,6 +332,7 @@ printf '%s %s %s %s' "$BREAK_ENTRY_BUDGET_MS" "$BREAK_ENTRY_BUDGET_CEILING_MS" "
       const health = (remainingMs: number) =>
         JSON.stringify({
           running: true,
+          weeklyPayout: null,
           version: PREDECESSOR.slice(0, 8),
           releaseSha: PREDECESSOR,
           instanceId: '1-3846b8bb',
@@ -485,6 +487,7 @@ const ladderAssertions = transaction.slice(
 function certificate(remainingMs: number, minimum?: number) {
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     handsInFlightTotal: 0,
     maintenance: {
       active: true,

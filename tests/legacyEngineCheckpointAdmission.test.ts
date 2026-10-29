@@ -58,7 +58,7 @@ legacy_checkpoint_countdown
       timeout: 3_000,
       env: {
         ...process.env,
-        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, maintenance }),
+        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, weeklyPayout: null, maintenance }),
         CHECKPOINT_TEST_HTTP: String(httpStatus),
       },
     }
@@ -125,6 +125,7 @@ printf '%s' inspector-boundary-reached
               PREREQUISITE_ROOT: requestRoot,
               PREREQUISITE_HEALTH: JSON.stringify({
                 running: true,
+                weeklyPayout: null,
                 version: predecessor8825.slice(0, 8),
                 releaseSha: predecessor8825,
                 instanceId: '1-3846b8bb',

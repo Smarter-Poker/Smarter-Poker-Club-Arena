@@ -173,6 +173,40 @@ describe('break release requires persistence and current ownership', () => {
 });
 
 describe('tournament break lifecycle fence', () => {
+  it.each([false, true])(
+    'does not restart a break after a delayed duplicate eligibility read (released=%s)',
+    async (released) => {
+      const delayedEligibility = deferred<boolean>();
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.breakDecision = delayedEligibility.promise;
+      const persist = stubBreakPersistence();
+      const engine = { pauseAfterHand: vi.fn(), resumeDealing: vi.fn() };
+      manager.addTableEngine(engine);
+      const delayedPause = manager.pauseForBreak(300_000);
+
+      manager.breakDecision = Promise.resolve(true);
+      await manager.pauseForBreak(300_000);
+      await manager.beginBreakCountdown(300_000);
+      if (released) await manager.resumeFromBreak();
+      const writes = persist.update.mock.calls.length;
+      const broadcasts = manager.broadcastCall.mock.calls.length;
+
+      delayedEligibility.resolve(true);
+      await delayedPause;
+      expect(persist.update).toHaveBeenCalledTimes(writes);
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(broadcasts);
+      expect(engine.pauseAfterHand).toHaveBeenCalledOnce();
+      expect(manager.breakIsActive()).toBe(!released);
+      if (released) {
+        await manager.pauseForBreak(300_000);
+        expect(engine.pauseAfterHand).toHaveBeenCalledTimes(2);
+        expect(manager.breakIsActive()).toBe(true);
+      }
+      manager.fence();
+    }
+  );
+
   it('cannot begin a break after eligibility returns to a fenced manager', async () => {
     const eligibility = deferred<boolean>();
     const manager = new BreakHarness();

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/continuation-bounded-maintenance-lane-20261029",
+  "_comment": "Private one-second shared maintenance lane acquisition for the existing three canonical continuation doors. Function-local lock_timeout restores the caller setting. No money writer, timer, or public execute grant.",
+  "functions": ["smarter_private.lock_hand_continuation_maintenance_lane"]
+}

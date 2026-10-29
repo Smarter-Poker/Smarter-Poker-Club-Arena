@@ -58,32 +58,62 @@ test.describe('Player Stats production experience', () => {
   }, testInfo) => {
     // Use the lane's existing isolated session. Only these three read responses
     // are synthetic; authentication and every published JS/CSS asset stay real.
-    const expected = process.env.LIVE_SHA;
-    expect(expected, 'The trusted publication lane must supply its exact client SHA').toMatch(
+    const expected = process.env.DOWNLINE_JOURNEY_SHA;
+    if (!expected || expected === 'UNKNOWN') {
+      const description = await recordNonVerdict(testInfo, {
+        title: 'The Stats journey source pin is unavailable',
+        detail:
+          'The closed source resolver did not qualify this journey; the original job pin cannot substitute for it.',
+        evidence: { originalJobSha: process.env.LIVE_SHA, journeySha: expected ?? null },
+      });
+      console.log(
+        `[downline-journey-release] ${JSON.stringify({ originalJobSha: process.env.LIVE_SHA, journeySha: expected ?? null, status: 'unknown' })}`
+      );
+      test.skip(true, description);
+    }
+    expect(expected, 'The closed Stats resolver must supply its exact client SHA').toMatch(
       /^[a-f0-9]{40}$/
     );
-    const bracket: Array<{ point: string; sha: string | null; reason: string | null }> = [];
+    const bracket: Array<{
+      point: string;
+      origin: string;
+      sha: string | null;
+      reason: string | null;
+    }> = [];
     const release = async (point: 'before' | 'after') => {
-      let sha: string | null = null;
-      let reason: string | null = null;
-      try {
-        const response = await page.request.get('build-info.json');
-        if (!response.ok()) reason = 'build_info_unreadable';
-        else {
-          const value = (await response.json()).ca_sha;
-          if (typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) sha = value;
-          else reason = 'build_info_identity_unreadable';
-        }
-      } catch {
-        reason = 'build_info_unreadable';
-      }
-      bracket.push({ point, sha, reason });
-      if (reason || sha !== expected) {
+      const reads = await Promise.all(
+        ['https://ca-static.smarter.poker', 'https://smarter.poker/hub/club-arena'].map(
+          async (origin) => {
+            let sha: string | null = null;
+            let reason: string | null = null;
+            try {
+              const response = await page.request.get(
+                `${origin}/build-info.json?downline-journey=${Date.now()}`,
+                {
+                  headers: { 'Cache-Control': 'no-cache' },
+                }
+              );
+              if (!response.ok()) reason = 'build_info_unreadable';
+              else {
+                const value = (await response.json()).ca_sha;
+                if (typeof value === 'string' && /^[a-f0-9]{40}$/.test(value)) sha = value;
+                else reason = 'build_info_identity_unreadable';
+              }
+            } catch {
+              reason = 'build_info_unreadable';
+            }
+            return { point, origin, sha, reason };
+          }
+        )
+      );
+      bracket.push(...reads);
+      console.log(`[downline-journey-release] ${JSON.stringify({ expected, point, reads })}`);
+      if (reads.some((read) => read.reason || read.sha !== expected)) {
         const description = await recordNonVerdict(testInfo, {
           title: 'Published downline pagination release was not established',
           detail:
-            'The exact expected client was not readable before and after this proof; the maintained outer release-window classifier decides forward publication or rollback.',
-          evidence: { expected, bracket },
+            'Both origins must serve the exact qualified Stats client before and after this journey.',
+          evidence: { originalJobSha: process.env.LIVE_SHA, expected, bracket },
         });
         test.skip(true, description);
       }
@@ -212,6 +242,7 @@ test.describe('Player Stats production experience', () => {
     await testInfo.attach('published-downline-pagination', {
       body: JSON.stringify({
         clientSha: expected,
+        originalJobSha: process.env.LIVE_SHA,
         bracket,
         syntheticReadResponses: true,
         actualPublishedAssets: true,

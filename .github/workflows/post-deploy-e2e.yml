@@ -1114,8 +1114,16 @@ jobs:
 
           # Certify Stats first among the broader route checks. Cashier has its
           # own preceding release gate so this suite cannot hide its verdict.
-          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
-          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+          # This journey starts well after the job-level LIVE_SHA read. Qualify
+          # its current published test/harness source without repinning the job
+          # or any other suite/certificate. UNKNOWN never uses the stale pin.
+          stats_pin_rc=0
+          stats_pin="$(node scripts/ci/downline-journey-pin.mjs)" || stats_pin_rc=$?
+          [ "$stats_pin_rc" -eq 0 ] || stats_pin=UNKNOWN
+          DOWNLINE_JOURNEY_SHA="$stats_pin" run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          stats_rc=$?
+          if [ "$stats_pin_rc" -ne 0 ] && [ "$stats_pin_rc" -ne 3 ]; then stats_rc=$stats_pin_rc; fi
+          [ $stats_rc -ne 0 ] && rc=$stats_rc
 
           # Financial Admin is the staff-scoped sibling of the Stats and Club
           # Data deep certificates. It runs against this job's disposable,

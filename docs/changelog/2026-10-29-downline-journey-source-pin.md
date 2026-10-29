@@ -1,0 +1,7 @@
+# Pin the downline journey when it starts
+
+Two production observations found the pagination case before it could exercise the component: the client had legitimately advanced after the job sampled LIVE_SHA, roughly fifteen minutes before Stats ran. The exact second observation read 6d8988e while the job still expected ddb62f0. Neither skip certified the 620-row interaction.
+
+The existing Stats invocation now qualifies a separate journey pin immediately before its browser process. It reuses the maintained build-info and lineage rules, reads both public origins, proves protected-main ancestry and exact Stats spec, transitive local harness, package, lock and compiler-config bytes against both the qualified control source and the currently served canonical source. Import resolution is checked too, so a new higher-priority module cannot shadow an unchanged named input. Unknown imports, changed harness, off-main source and rollback cannot qualify. This is test-source compatibility, not full client-runtime equivalence.
+
+Only the pagination case uses DOWNLINE_JOURNEY_SHA. Both origins must match that exact pin before and after the interaction; public identity reads are retained in the log even on a clean run. Unknown qualification skips that case explicitly; hard refusal remains a component failure after other Stats cases run. The original job LIVE_SHA, six sibling Stats cases, other suites, accounts, cleanup and whole-job certification stay unchanged. No new workflow selector or engine operation is introduced.

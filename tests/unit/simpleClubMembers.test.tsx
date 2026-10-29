@@ -597,3 +597,40 @@ it.each([
   expect(amount).toHaveAttribute('aria-label', `Week W/L ${label}`);
   expect(container.querySelector('.member-subline')?.textContent).not.toMatch(/^Player\s/);
 });
+
+it('shows automatic name relevance during search and restores the selected manual order on clear', async () => {
+  f.page.mockResolvedValue({ items: [], has_more: false, next_cursor: null, filtered_total: 0 });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  const sort = screen.getByRole('combobox', { name: 'Sort Players' });
+  await act(async () => {
+    fireEvent.change(sort, { target: { value: 'oldest' } });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  const search = screen.getByRole('searchbox', { name: 'Search Club Members' });
+  fireEvent.change(search, { target: { value: 'Burls' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(sort).toHaveValue('search');
+  expect(sort).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Player Name Matches' })).toBeInTheDocument();
+  expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ search: 'Burls', sort: 'oldest' });
+  fireEvent.change(search, { target: { value: '' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(sort).toHaveValue('oldest');
+  expect(sort).not.toBeDisabled();
+  expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ search: '', sort: 'oldest' });
+});

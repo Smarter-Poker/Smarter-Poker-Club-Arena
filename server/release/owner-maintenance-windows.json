@@ -11,7 +11,7 @@
       "migrations": [],
       "releaseWitness": {
         "path": "supabase/migrations/20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql",
-        "sha256": "355fc62d8124afd08741e01f6efe90e4c0f6379f82256719c73c808c119c4d40"
+        "sha256": "461e56dc7efa043cc0b1b0cb9e0fa1273f260e9f7d4dc21e12c7f8eeecf2a948"
       }
     },
     {

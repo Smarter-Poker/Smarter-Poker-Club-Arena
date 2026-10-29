@@ -8,7 +8,7 @@ DO $install$
 DECLARE r record; before_meta jsonb; after_meta jsonb;
 BEGIN
   FOR r IN SELECT * FROM (VALUES
-('public.fn_ca_mtt_payout_depth_guard()', 'df4e5b504f5c8a2e30a01ac870899774', '83b17642b8aba085666fa8261bf165bd', 'postgres|{postgres=X/postgres,service_role=X/postgres}', $post$CREATE OR REPLACE FUNCTION public.fn_ca_mtt_payout_depth_guard()
+('public.fn_ca_mtt_payout_depth_guard()', 'df4e5b504f5c8a2e30a01ac870899774', 'c77386d2d43fe35433d4b0581ea77421', 'postgres|{postgres=X/postgres,service_role=X/postgres}', $post$CREATE OR REPLACE FUNCTION public.fn_ca_mtt_payout_depth_guard()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -24,6 +24,7 @@ BEGIN
   -- Payout terms that are already committed never move.
   IF TG_OP = 'UPDATE' AND COALESCE(OLD.prize_pool_finalized, false) THEN
     NEW.payout_depth_percent := OLD.payout_depth_percent;
+    NEW.payout_percent := OLD.payout_percent;
     RETURN NEW;
   END IF;
 
@@ -39,6 +40,7 @@ BEGIN
 
   -- Owner October 29: every new MTT pays the top fifteen percent.
   v_depth := 15;
+  NEW.payout_percent := 15;
 
   -- Never produce a diff an UPDATE did not need (Diamond and lifecycle guards
   -- compare whole rows).
@@ -74,7 +76,7 @@ END $install$;
 DO $declaration$
 BEGIN
   UPDATE public.ca_declared_money_triggers
-     SET note='Owner October 29: every new MTT pays the top 15%. Sets only NEW.payout_depth_percent; non-MTT formats and finalized ladders retain their own terms. No chip movement.'
+     SET note='Owner October 29: every new MTT pays the top 15%. Sets only NEW.payout_depth_percent and NEW.payout_percent; non-MTT formats and finalized ladders retain their own terms. No chip movement.'
    WHERE table_name='tournaments' AND trigger_name='ca_mtt_payout_depth_guard';
   IF NOT FOUND THEN RAISE EXCEPTION 'MTT_FIFTEEN_TRIGGER_DECLARATION_MISSING'; END IF;
 END $declaration$;

@@ -12,7 +12,7 @@ BEGIN
 ('public.fn_ca_refresh_provisional_payout_structure(uuid)', '04ee48606eddece40a6b953f0e14605f'),
 ('public.fn_safe_jsonb_array(text)', 'bf969d8c46cd2ff96f92643b7712bdaf'),
 ('public.fn_tournament_payout_terms_committed_v1(uuid)', '918c62cbcc182d43a6a27edeb2c1c107'),
-('public.fn_ca_mtt_payout_depth_guard()', '83b17642b8aba085666fa8261bf165bd')
+('public.fn_ca_mtt_payout_depth_guard()', 'c77386d2d43fe35433d4b0581ea77421')
   ) AS x(signature, definition_md5)
   LOOP
     IF md5(pg_get_functiondef(r.signature::regprocedure)) <> r.definition_md5 THEN

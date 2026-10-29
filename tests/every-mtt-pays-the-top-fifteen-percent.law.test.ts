@@ -19,6 +19,8 @@ describe('every new MTT pays the top fifteen percent', () => {
     ).postimage;
     expect(migration).toContain(guard);
     expect(guard).toContain('v_depth := 15;');
+    expect(guard).toContain('NEW.payout_percent := 15;');
+    expect(guard).toContain('NEW.payout_percent := OLD.payout_percent;');
     expect(guard).not.toContain('IF v_enforced THEN');
     expect(guard).toContain("NOT IN ('spin','sng','satellite')");
     expect(guard).toMatch(

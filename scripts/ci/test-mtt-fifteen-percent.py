@@ -68,7 +68,7 @@ try:
             role = right.split('=')[0]
             if role != 'postgres':
                 sql('GRANT EXECUTE ON FUNCTION public.'+item['signature']+' TO '+role+';')
-    sql('CREATE TRIGGER ca_mtt_payout_depth_guard BEFORE INSERT OR UPDATE OF payout_depth_percent,payout_percent ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_mtt_payout_depth_guard(); INSERT INTO tournaments(id,tournament_type,variant,prize_pool_finalized,payout_depth_percent) VALUES(1,\'MTT\',\'nlh\',true,12.5);')
+    sql('CREATE TRIGGER ca_mtt_payout_depth_guard BEFORE INSERT OR UPDATE OF payout_depth_percent,payout_percent ON tournaments FOR EACH ROW EXECUTE FUNCTION fn_ca_mtt_payout_depth_guard(); INSERT INTO tournaments(id,tournament_type,variant,prize_pool_finalized,payout_depth_percent,payout_percent) VALUES(1,\'MTT\',\'nlh\',true,12.5,10);')
     require(sql('SELECT payout_depth_percent FROM tournaments WHERE id=1') == '12.5', 'original source reproduces 12.5 depth')
     sql('SET ROLE authenticated; ' + candidate, refusal='permission denied for schema public')
     sql(candidate.replace('\nCOMMIT;', '\nROLLBACK;'))
@@ -82,11 +82,11 @@ try:
     for item in capture:
         require(sql("SELECT md5(pg_get_functiondef('public."+item['signature']+"'::regprocedure))") == item['postimage_md5'], 'installed exact postimage ' + item['signature'])
         require(set(sql("SELECT proacl::text FROM pg_proc WHERE oid='public."+item['signature']+"'::regprocedure").strip('{}').split(',')) == set(item['acl'].strip('{}').split(',')), 'preserved rights ' + item['signature'])
-    sql("UPDATE tournaments SET payout_depth_percent=15 WHERE id=1;")
-    require(sql('SELECT payout_depth_percent FROM tournaments WHERE id=1') == '12.5', 'already finalized prize ladder stays booked')
+    sql("UPDATE tournaments SET payout_depth_percent=15,payout_percent=20 WHERE id=1;")
+    require(sql('SELECT payout_depth_percent=12.5 AND payout_percent=10 FROM tournaments WHERE id=1') == 't', 'already finalized prize ladder stays booked')
     for index, depth in enumerate(('NULL', '10', '12.5', '15', '20', '100', '-1'), 2):
         sql(f"INSERT INTO tournaments(id,tournament_type,variant,payout_depth_percent,payout_percent) VALUES({index},'MTT','nlh',{depth},10);")
-        require(sql(f'SELECT payout_depth_percent FROM tournaments WHERE id={index}') == '15', 'all MTT creation requests become fifteen: ' + depth)
+        require(sql(f'SELECT payout_depth_percent=15 AND payout_percent=15 FROM tournaments WHERE id={index}') == 't', 'all MTT creation requests become fifteen: ' + depth)
     for index, variant in enumerate(('spin', 'sng', 'satellite'), 20):
         sql(f"INSERT INTO tournaments(id,tournament_type,variant,payout_depth_percent,payout_percent) VALUES({index},'MTT','{variant}',20,20);")
         require(sql(f'SELECT payout_depth_percent IS NULL AND payout_percent=20 FROM tournaments WHERE id={index}') == 't', 'separate contract preserved: ' + variant)

@@ -3,11 +3,11 @@
   "scope": "Owner October29 MTT fifteen-percent authority and bounded native proof; excludes finalized and committed contracts.",
   "files": {
     "scripts/ci/test-mtt-unlimited.py": "09a224758539d72c8348d09682ac72a4dce4108800d59a506270fb64fe76e82e",
-    "scripts/ci/test-mtt-fifteen-percent.py": "baa87d9c5cf20b254ec023a1bb3cce70444383e0e2949f5ac82ba398c87c4155",
-    "scripts/ci/fixtures/mtt-fifteen-percent-preimages.json": "4388322956c6371005807ffd25074f4c499c6a091fe9bb384bb9e1a985e1a15a",
+    "scripts/ci/test-mtt-fifteen-percent.py": "ab9ae1b1b496c29fe6aed9ea7bb242c61be55cfb0dcbcf4ec6dd8cc2fc2e2525",
+    "scripts/ci/fixtures/mtt-fifteen-percent-preimages.json": "de0153211ed30265deafa8211c7a67e0a925317dd9fe1e8acb0bf4d13eae8359",
     "scripts/ci/fixtures/mtt-fifteen-provisional-authorities.json": "d0d9e01fec08d468cc9edb99b73a9093a9cae9df9a9149cfc9a1f16511455a68",
     "scripts/ci/fixtures/mtt-fifteen-place-key-authority.sql": "a0e2cfce690346ad33134758afbb03f11a3e3a05d4c527402ba11dc9203936c9",
-    "supabase/migrations/20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql": "355fc62d8124afd08741e01f6efe90e4c0f6379f82256719c73c808c119c4d40",
-    "supabase/migrations/20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql": "87b6e252cae55ec6bdba1aeb5f62774f17b329d6678e8718e86590be97ccd3e8"
+    "supabase/migrations/20261029202310_all_new_mtt_tournaments_pay_the_top_fifteen_percent.sql": "461e56dc7efa043cc0b1b0cb9e0fa1273f260e9f7d4dc21e12c7f8eeecf2a948",
+    "supabase/migrations/20261029202847_unfinalized_mtt_fields_adopt_fifteen_percent_payout_depth.sql": "28ccff0f693c1def87ecdd9febc74701a6f5d4fe7d454b6f974ca730d6d38c4c"
   }
 }

@@ -2,6 +2,8 @@
 -- Paired daily activation: 20261029034842_activate_fixed_sng_satellite_horse_paid_guard.sql.
 -- Owner October29: a union-wide handful of horse-assisted fixed satellite starts,
 -- spread randomly through each Chicago day, then a paid max-1 human-entry wait.
+-- Persist 120-150 seconds; the existing 30-second engine tick completes the
+-- nominal 120-180-second opportunity without adding a new timer.
 -- Previous producer filled every board. Admission now belongs to the same roster
 -- transaction that already pays the ordinary entry; a failed purchase rolls its
 -- claim back. No wallet writer, settlement, prize, rake or human entry is changed.
@@ -21,8 +23,8 @@ CREATE TABLE smarter_private.sng_horse_claims (
  tournament_id uuid PRIMARY KEY, union_id uuid NOT NULL, local_day date NOT NULL,
  slot integer, first_paid_at timestamptz NOT NULL, wait_seconds integer NOT NULL,
  legacy boolean NOT NULL DEFAULT false,
- CHECK(wait_seconds BETWEEN 0 AND 180),
- CHECK(legacy OR wait_seconds BETWEEN 120 AND 180),
+ CHECK(wait_seconds BETWEEN 0 AND 150),
+ CHECK(legacy OR wait_seconds BETWEEN 120 AND 150),
  UNIQUE(union_id,local_day,slot)
 );
 ALTER TABLE smarter_private.sng_horse_days ENABLE ROW LEVEL SECURITY;
@@ -158,7 +160,7 @@ BEGIN
      RETURN jsonb_build_object('ok',false,'target_players',0,'reason','different_random_board','wait_until',NULL); END IF;
    IF p_claim THEN
      INSERT INTO smarter_private.sng_horse_claims(tournament_id,union_id,local_day,slot,first_paid_at,wait_seconds)
-       VALUES(t.id,t.union_id,d,chosen,now_at,120+floor(random()*61)::integer) RETURNING * INTO c;
+       VALUES(t.id,t.union_id,d,chosen,now_at,120+floor(random()*31)::integer) RETURNING * INTO c;
    ELSE
      RETURN jsonb_build_object('ok',true,'target_players',t.max_players-1,'reason','preseed','wait_until',NULL);
    END IF;

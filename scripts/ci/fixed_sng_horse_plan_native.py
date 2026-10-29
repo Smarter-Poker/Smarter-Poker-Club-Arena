@@ -106,8 +106,8 @@ def qualify(e,root,db,output):
   EXECUTE 'RESET ROLE';
   PERFORM pg_temp.qualifier_assert((r->>'ok')::boolean AND (r->>'cost')::numeric=19,'real service horse paid entry '||i||' result '||r::text);
  END LOOP;
- PERFORM pg_temp.qualifier_assert((SELECT count(*)=1 AND min(wait_seconds)>=120 AND max(wait_seconds)<=180
-   FROM smarter_private.sng_horse_claims WHERE tournament_id=source_id),'first actual paid horse claims one random 120-180 second wait');
+ PERFORM pg_temp.qualifier_assert((SELECT count(*)=1 AND min(wait_seconds)>=120 AND max(wait_seconds)<=150
+   FROM smarter_private.sng_horse_claims WHERE tournament_id=source_id),'first actual paid horse claims one random 120-150 second wait plus existing <=30-second tick');
  PERFORM pg_temp.qualifier_assert((SELECT prize_balance=85.5 AND fee_balance=9.5 AND gross_in=95 FROM public.tournament_escrow WHERE tournament_id=source_id),'five ordinary funded horses preserve fee and prize custody');
  -- At max-1, another horse cannot use the final human chair or charge chips.
  u:=md5('l04:'||case_name||':user:6')::uuid;

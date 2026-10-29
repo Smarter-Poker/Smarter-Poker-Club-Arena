@@ -77,6 +77,7 @@ describe('fixed satellite paid admission plans', () => {
 describe('existing SNG tick fixed satellite producer', () => {
   const board = (id: string, seats = 9) => ({
     id,
+    current_players: 0,
     union_id: 'union',
     format_contract: 'sng-v1',
     tournament_type: 'SNG',
@@ -149,6 +150,27 @@ describe('existing SNG tick fixed satellite producer', () => {
       expect(topUp).not.toHaveBeenCalled();
     } finally {
       controls.frozen = false;
+      topUp.mockRestore();
+    }
+  });
+  it('serves durable paid and unknown continuations before twelve new boards after every restart', async () => {
+    const rows = [
+      ...Array.from({ length: 29 }, (_, i) => board(`empty-${i}`)),
+      { ...board('paid-outside-twelve'), current_players: 8 },
+      { ...board('unknown'), current_players: null },
+      { ...board('full-cache'), current_players: 9 },
+    ];
+    for (let restart = 0; restart < 2; restart++) {
+      const service = new TournamentRecurringService() as any;
+      const topUp = vi.spyOn(service, 'topUpWithHorses').mockResolvedValue(0);
+      vi.mocked(fetchAllRows).mockResolvedValueOnce({ complete: true, rows });
+      await service.fillFixedSngSatellites();
+      expect(topUp.mock.calls.slice(0, 3).map((call) => call[0])).toEqual([
+        'paid-outside-twelve',
+        'unknown',
+        'full-cache',
+      ]);
+      expect(topUp).toHaveBeenCalledTimes(15);
       topUp.mockRestore();
     }
   });

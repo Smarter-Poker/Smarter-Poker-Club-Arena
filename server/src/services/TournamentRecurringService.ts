@@ -3885,7 +3885,7 @@ export class TournamentRecurringService {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, union_id, format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target'
+            'id, union_id, current_players, format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target'
           )
           .eq('status', 'REGISTERING')
           .eq('format_contract', 'sng-v1')
@@ -3908,11 +3908,16 @@ export class TournamentRecurringService {
     const boards = result.rows.filter(
       (row) => row.union_id && row.format_contract === 'sng-v1' && isFixedSngSatellite(row)
     );
-    for (let i = boards.length - 1; i > 0; i--) {
+    // Paid fields must never compete with random new opportunities. The canonical
+    // registration transaction maintains this count. Unknown counts are treated
+    // as continuations; topUpWithHorses re-reads the actual roster before paying.
+    const empty = boards.filter((row) => row.current_players === 0);
+    const continuing = boards.filter((row) => row.current_players !== 0);
+    for (let i = empty.length - 1; i > 0; i--) {
       const j = secureRandomInt(i + 1);
-      [boards[i], boards[j]] = [boards[j], boards[i]];
+      [empty[i], empty[j]] = [empty[j], empty[i]];
     }
-    for (const board of boards.slice(0, 12)) {
+    for (const board of [...continuing, ...empty.slice(0, 12)]) {
       if (isMaintenanceFrozen() || this.stopOperation) return;
       await this.topUpWithHorses(String(board.id), Number(board.max_players));
     }

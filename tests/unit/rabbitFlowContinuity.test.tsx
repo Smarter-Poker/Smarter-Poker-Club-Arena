@@ -53,6 +53,49 @@ describe('Rabbit Hunt display continuity', () => {
     expect(container.querySelectorAll('.community-cards__card--rabbit')).toHaveLength(2);
     expect(getByRole('status').textContent).toBe('Rabbit Hunt · Only You');
   });
+  it('flips a newly purchased hand even if it happens to reveal identical cards', () => {
+    const { container, rerender } = render(
+      <CommunityCards
+        cards={[]}
+        stage="preflop"
+        rabbitCards={rabbit}
+        rabbitHandId={41}
+        playSounds={false}
+      />
+    );
+    const original = container.querySelector('.community-cards__card--rabbit');
+    rerender(
+      <CommunityCards
+        cards={[]}
+        stage="preflop"
+        rabbitCards={rabbit}
+        rabbitHandId={42}
+        playSounds={false}
+      />
+    );
+    expect(container.querySelector('.community-cards__card--rabbit')).not.toBe(original);
+  });
+
+  it('keeps a fold-win announcement and private caption in one non-overlapping band', () => {
+    const { container } = render(
+      <CommunityCards
+        cards={flop}
+        stage="flop"
+        rabbitCards={rabbit}
+        winningHandName="Wins The Pot"
+        playSounds={false}
+      />
+    );
+    expect(container.querySelectorAll('.community-cards__rabbit-caption')).toHaveLength(1);
+    expect(
+      container.querySelector('.community-cards__hand-name .community-cards__rabbit-caption')
+        ?.textContent
+    ).toBe('Rabbit Hunt · Only You');
+    expect(container.querySelector('.community-cards__hand-name-text')?.textContent).toBe(
+      'Wins The Pot'
+    );
+  });
+
   it('keeps preflop full runouts and turn runouts complete without drawing undealt placeholders', () => {
     const { container, rerender } = render(
       <CommunityCards

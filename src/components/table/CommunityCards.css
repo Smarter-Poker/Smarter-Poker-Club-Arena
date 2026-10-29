@@ -1005,3 +1005,10 @@
     animation: none;
   }
 }
+
+/* Fold wins already occupy the band under the board. Stack the private
+   caption in that same band instead of painting two labels on one line. */
+.community-cards__hand-name .community-cards__rabbit-caption {
+  position: static;
+  margin-bottom: 3px;
+}

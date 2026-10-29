@@ -61,6 +61,8 @@ export interface CommunityCardsProps {
   rabbitCards?: Card[];
   /** Keep a retained private reveal in its original slots across the next deal. */
   rabbitStartIndex?: number;
+  /** Purchased-hand identity stays stable when the live hand advances. */
+  rabbitHandId?: string | number | null;
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   /**
@@ -594,6 +596,7 @@ function CommunityCardsComponent({
   stage,
   rabbitCards = NO_RABBIT_CARDS,
   rabbitStartIndex,
+  rabbitHandId,
   highlightedIndices: requestedHighlights = NO_HIGHLIGHTS as number[],
   winningHandName: requestedWinningHandName,
   winningHandDescription,
@@ -1122,6 +1125,9 @@ function CommunityCardsComponent({
     newlyDealtIndices,
   ]);
 
+  const rabbitCaption =
+    rabbitStartIndex === undefined ? 'Rabbit Hunt · Only You' : 'Previous Hand · Only You';
+
   return (
     <div
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
@@ -1177,7 +1183,7 @@ function CommunityCardsComponent({
             // cards were dealt, so the preflop placeholder suppression below
             // must not apply to it.
             <RabbitCard
-              key={`rabbit-${slot.card.rank}-${slot.card.suit}`}
+              key={`rabbit-${rabbitHandId ?? 'local'}-${slot.card.rank}-${slot.card.suit}`}
               card={slot.card}
               index={i}
               deckStyle={deckStyle}
@@ -1238,9 +1244,9 @@ function CommunityCardsComponent({
         )}
       </div>
 
-      {rabbitCount > 0 && (
+      {rabbitCount > 0 && !winningHandName && (
         <div className="community-cards__rabbit-caption" role="status">
-          {rabbitStartIndex === undefined ? 'Rabbit Hunt · Only You' : 'Previous Hand · Only You'}
+          {rabbitCaption}
         </div>
       )}
 
@@ -1264,6 +1270,9 @@ function CommunityCardsComponent({
         /* Dan 2026-10-24: the band is announced, not only painted. A polite
            live region reads the winner and the hand once, as it lands. */
         <div className="community-cards__hand-name" role="status" aria-live="polite">
+          {rabbitCount > 0 && (
+            <div className="community-cards__rabbit-caption">{rabbitCaption}</div>
+          )}
           {winningPlayerLabel && (
             <div className="community-cards__winner-line">
               {formatPopupText(winningPlayerLabel)}
@@ -1304,6 +1313,7 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
   if (prev.rabbitStartIndex !== next.rabbitStartIndex) return false;
+  if (prev.rabbitHandId !== next.rabbitHandId) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.onRiverPresented !== next.onRiverPresented) return false;
   // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.

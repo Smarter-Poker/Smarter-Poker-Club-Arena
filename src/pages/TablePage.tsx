@@ -27378,6 +27378,7 @@ function LiveTablePage({
                         rabbitStartIndex={
                           showRetainedRabbitGhosts ? retainedRabbitBoard!.cards.length : undefined
                         }
+                        rabbitHandId={retainedRabbitBoard?.handNumber ?? rabbitRevealedHandNumber}
                         cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
                         rabbitCards={
                           showRetainedRabbitBoard || showRetainedRabbitGhosts

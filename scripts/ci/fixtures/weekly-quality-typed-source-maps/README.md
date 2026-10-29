@@ -1,0 +1,7 @@
+# Exact weekly tournament quality source maps
+
+The complete current quality function is qualified against its original response, raw-record and receipt bags. Native83 includes all selected fields with duplicate and NULL keys, mixed private/union event scopes, malformed-source refusals, positive and cancelled 5,000-event FOR rows, complete full-function verdicts, actual concurrent caller-snapshot behavior and installer faults.
+
+The fixture uses accessed-column schemas and explicit controlled net-plan, historical-terms, owner-proof and mixed-cutover boundaries. Four PostgreSQL object identity references (function OID, owner OID, language OID and namespace OID) are mapped only inside the isolated runner. The production migration retains the exact captured metadata. It preserves source65 and the generation it observed, but the fixture callbacks are not a production certificate. Production requires protected-main installation, exact definition/metadata readback and the original scope closure and saved documents.
+
+The uninstalled installer now separates its original source65 and generation witnesses into bounded 15-second read statements before and after the five-second DDL statement, in the same transaction. Both full guard definitions and generation are compared after the patch. LOCAL qualification state clears on transaction end. Native accelerated timing proves a slow read can complete without extending the DDL budget, and post-read disagreement rolls the function change back.

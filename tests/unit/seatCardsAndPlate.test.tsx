@@ -358,6 +358,54 @@ const DEALT: Card[] = [
   { rank: 'A', suit: 'd' },
 ];
 
+describe('winning hole cards rise above the rest of the hand', () => {
+  it('uses an independent lift that reveal/deal transform keyframes cannot flatten', () => {
+    const winner = rulesFor('.seat__card--winner')
+      .map((r) => r.body)
+      .join('\n');
+    expect(winner).toMatch(/translate:\s*0\s+-20%;/);
+  });
+
+  it.each([false, true])('raises only K/J in a PLO5 hand (hero=%s), then clears', (hero) => {
+    const holeCards: Card[] = [
+      { rank: 'A', suit: 's' },
+      { rank: 'K', suit: 'h' },
+      { rank: 'J', suit: 'd' },
+      { rank: '5', suit: 'c' },
+      { rank: '6', suit: 's' },
+    ];
+    const seat = (winning: boolean, indexes: number[] = [1, 2], shown = true) => (
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ holeCards, isHero: hero, showCards: shown })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        isWinner={winning}
+        winnerDisplayActive={winning}
+        winningHoleCardIndexes={indexes}
+      />
+    );
+    const h = render(seat(true));
+    const selector = hero ? '.seat__cards--hero' : '.seat__cards--opponent';
+    const winning = () => [...h.container.querySelectorAll(`${selector} .seat__card--winner`)];
+    expect(winning().map((c) => c.querySelector('img')?.getAttribute('alt'))).toEqual([
+      'King Of Hearts',
+      'Jack Of Diamonds',
+    ]);
+    expect(h.container.querySelectorAll(`${selector} .seat__card--dimmed`)).toHaveLength(3);
+    h.rerender(seat(true, []));
+    expect(winning()).toHaveLength(0);
+    h.rerender(seat(false));
+    expect(winning()).toHaveLength(0);
+    if (!hero) {
+      h.rerender(seat(true, [1, 2], false));
+      expect(winning()).toHaveLength(0);
+    }
+    h.unmount();
+  });
+});
+
 describe('the showdown highlight follows the card, not the slot', () => {
   it('the display order is high to low and every card keeps its dealt index', () => {
     const shown = displayOrderWithDealtIndex(DEALT);

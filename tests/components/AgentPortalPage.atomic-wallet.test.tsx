@@ -361,3 +361,40 @@ describe('agent page response ordering', () => {
     expect(screen.getByText('Total: 37 Chips')).toBeInTheDocument();
   });
 });
+
+describe('exact own-wallet transfer amounts', () => {
+  it.each(['1e3', '5chips', '1,2', '1.001', '-1', '0'])(
+    'refuses malformed or invalid amount %s before calling the transfer service',
+    async (amount) => {
+      m.send.mockResolvedValue(true);
+      mount();
+      await screen.findByText('456.00');
+      fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
+      fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: amount } });
+      fireEvent.click(screen.getByRole('button', { name: 'Transfer', exact: true }));
+      expect(m.send).not.toHaveBeenCalled();
+      expect(m.success).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['0.01', 0.01, '0.01'],
+    ['1,250.50', 1250.5, '1,250.50'],
+  ])(
+    'transfers %s exactly and names the exact chip figure in the receipt',
+    async (input, amount, printed) => {
+      m.send.mockResolvedValue(true);
+      mount();
+      await screen.findByText('456.00');
+      fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
+      const field = screen.getByPlaceholderText('Amount');
+      expect(field).toHaveAttribute('inputmode', 'decimal');
+      fireEvent.change(field, { target: { value: input } });
+      fireEvent.click(screen.getByRole('button', { name: 'Transfer', exact: true }));
+      await waitFor(() => expect(m.send).toHaveBeenCalledWith(clubA, amount));
+      await waitFor(() =>
+        expect(m.success).toHaveBeenCalledWith(`Transferred ${printed} Chips To Play Wallet`)
+      );
+    }
+  );
+});

@@ -13,7 +13,7 @@
     "tests/tournament-credit-sum-index-keeps-original-records.law.test.ts": "3d4bf43756ade0bccc92d4b4c9feaae9912efa2d79cfe460a31f72efb843934c",
     "docs/laws.d/tournament-credit-sum-index-keeps-original-records.md": "98f344ce134c5977b73d421b193749bc551de508853cd7b3a75ed0aaa4e5f758",
     "docs/changelog/2026-10-28-tournament-credit-sum-record-cover.md": "05fc97f80559a6166710c8768e7037dce34582fadb0289d7f1f1bb171373d302",
-    ".github/workflows/unpaid-lightning-funding-contracts.yml": "0de541a698f651046746163d528cf9555dbddb110646c59cffe4ce2a6366f979"
+    ".github/workflows/unpaid-lightning-funding-contracts.yml": "d93f856f751ad7792e3760471154121e462d6ced9ec875f0cf43029da7d7e639"
   },
   "groupedPrivateSourceWorkflowAudit20261028": {
     "review": "Only adds grouped-source native97 path and lane; every prior command/qualification/input retained. No prior source evidence rerun implied.",
@@ -36,6 +36,10 @@
   },
   "rakebackQualifiedFollowupComposition20261028": {
     "review": "Preserves every qualified source, native command, financial assertion, historical audit and installed recording from the reviewed additive followups. Active combined workflow binding only; not execution or production proof.",
+    "execution_performed": false
+  },
+  "cashLinkUnionHashWorkflowComposition20261028": {
+    "review": "Exact prior workflow bytes retained after inverse removal of three new paths and one additional original-query hash-index native step. Existing candidate/evidence inputs unchanged; no financial retag.",
     "execution_performed": false
   }
 }

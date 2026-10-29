@@ -1,0 +1,1998 @@
+{
+  "owners": [
+    {
+      "md5": "8ec25e2d39e02451020b5ce8e9ec5a1b",
+      "metadata": {
+        "oid": "31371455",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_accounting_document_immutable",
+        "prorows": 0,
+        "pronargs": 0,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "2279",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_accounting_document_immutable()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_document_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE issued boolean;\nBEGIN\n IF TG_TABLE_NAME='settlement_invoices' THEN\n   IF TG_OP='UPDATE' AND public.fn_ca_launch_accounting_invoice_transition(to_jsonb(OLD),to_jsonb(NEW)) THEN RETURN NEW; END IF;\n   IF (OLD.source_union_presettlement_id IS NOT NULL OR\n       (TG_OP='UPDATE' AND NEW.source_union_presettlement_id IS NOT NULL)) AND (TG_OP='DELETE' OR\n      (to_jsonb(NEW)-ARRAY['message_sent','message_sent_at']) IS DISTINCT FROM\n      (to_jsonb(OLD)-ARRAY['message_sent','message_sent_at']))\n   THEN RAISE EXCEPTION 'presettlement_receipt_is_immutable' USING ERRCODE='23514';END IF;\n   IF OLD.invoice_type='credit_limit_change' AND (TG_OP='DELETE' OR\n      (to_jsonb(NEW)-ARRAY['message_sent','message_sent_at']) IS DISTINCT FROM\n      (to_jsonb(OLD)-ARRAY['message_sent','message_sent_at']))\n   THEN RAISE EXCEPTION 'credit_change_document_is_immutable' USING ERRCODE='23514';END IF;\n   IF OLD.invoice_type='accounting_correction' AND (TG_OP='DELETE' OR\n      ROW(NEW.status,NEW.chips_transferred,NEW.transferred_at,NEW.due_at,NEW.chip_transfer_id,NEW.adjusts_invoice_id,\n          NEW.source_credit_invoice_id,NEW.source_credit_payment_id,NEW.overdue_at,NEW.reminders_sent,NEW.last_reminder_at)\n      IS DISTINCT FROM ROW(OLD.status,OLD.chips_transferred,OLD.transferred_at,OLD.due_at,OLD.chip_transfer_id,OLD.adjusts_invoice_id,\n          OLD.source_credit_invoice_id,OLD.source_credit_payment_id,OLD.overdue_at,OLD.reminders_sent,OLD.last_reminder_at))\n   THEN RAISE EXCEPTION 'correction_document_payment_claim_is_immutable' USING ERRCODE='23514';END IF;\n   IF OLD.invoice_type='cashier_cashout' AND (TG_OP='DELETE' OR\n      ROW(NEW.status,NEW.chips_transferred,NEW.transferred_at) IS DISTINCT FROM\n      ROW(OLD.status,OLD.chips_transferred,OLD.transferred_at))\n   THEN RAISE EXCEPTION 'cashier_document_phase_is_immutable' USING ERRCODE='23514';END IF;\n   issued:=COALESCE(OLD.message_sent,false) OR EXISTS(SELECT 1 FROM public.accounting_invoice_deliveries WHERE invoice_id=OLD.id);\n   IF issued AND (TG_OP='DELETE' OR\n     ROW(NEW.club_id,NEW.period_id,NEW.invoice_type,NEW.invoice_number,NEW.from_entity_type,NEW.from_entity_id,\n         NEW.to_entity_type,NEW.to_entity_id,NEW.gross_amount,NEW.net_amount,NEW.deductions,NEW.breakdown,\n         NEW.due_at,NEW.notes,NEW.source_ledger_id,NEW.source_credit_invoice_id,NEW.source_credit_payment_id,NEW.created_at)\n     IS DISTINCT FROM\n     ROW(OLD.club_id,OLD.period_id,OLD.invoice_type,OLD.invoice_number,OLD.from_entity_type,OLD.from_entity_id,\n         OLD.to_entity_type,OLD.to_entity_id,OLD.gross_amount,OLD.net_amount,OLD.deductions,OLD.breakdown,\n         OLD.due_at,OLD.notes,OLD.source_ledger_id,OLD.source_credit_invoice_id,OLD.source_credit_payment_id,OLD.created_at)\n     OR NEW.message_sent IS DISTINCT FROM true)\n   THEN RAISE EXCEPTION 'issued_accounting_invoice_is_immutable' USING ERRCODE='23514'; END IF;\n ELSIF TG_TABLE_NAME='social_messages' THEN\n   issued:=EXISTS(SELECT 1 FROM public.accounting_invoice_deliveries WHERE message_id=OLD.id);\n   IF issued AND (TG_OP='DELETE' OR\n      (to_jsonb(NEW)-ARRAY['read_at','updated_at']) IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['read_at','updated_at']))\n   THEN RAISE EXCEPTION 'issued_accounting_message_is_immutable' USING ERRCODE='23514'; END IF;\n END IF;\n IF TG_OP='DELETE' THEN RETURN OLD; END IF;\n RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "md5": "4fb74e8fcf5caa0294c55deeefbbc6b3",
+      "metadata": {
+        "oid": "31371467",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_accounting_invoice_deliver_on_insert",
+        "prorows": 0,
+        "pronargs": 0,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "2279",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": null,
+        "proargtypes": [],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_accounting_invoice_deliver_on_insert()",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_invoice_deliver_on_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n PERFORM public.fn_deliver_accounting_invoice(NEW.id);\n RETURN NEW;\nEND $function$\n"
+    },
+    {
+      "md5": "d4e00efdb5795e1bd98e7ca20dcb48aa",
+      "metadata": {
+        "oid": "159428016",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_ca_launch_accounting_invoice_transition",
+        "prorows": 0,
+        "pronargs": 2,
+        "proowner": "16384",
+        "proconfig": ["search_path=pg_catalog, public"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "16",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_old", "p_new"],
+        "proargtypes": ["3802", "3802"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "s",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "fn_ca_launch_accounting_invoice_transition(jsonb,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_launch_accounting_invoice_transition(p_old jsonb, p_new jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE v_operation uuid;v_state text;v_before jsonb;\nBEGIN\n IF NOT public.fn_ca_launch_accounting_actor((p_old->>'club_id')::uuid) THEN RETURN false; END IF;\n v_operation:=NULLIF(current_setting('app.launch_reset_operation',true),'')::uuid;\n SELECT o.state INTO v_state FROM public.ca_launch_reset_operations o WHERE o.operation_id=v_operation;\n SELECT a.before_image INTO v_before FROM public.ca_launch_accounting_archives a\n  WHERE a.operation_id=v_operation AND a.relation_name='settlement_invoices' AND a.before_image->>'id'=p_old->>'id';\n IF v_before IS NULL OR (p_old-ARRAY['status','updated_at']) IS DISTINCT FROM (p_new-ARRAY['status','updated_at']) THEN RETURN false; END IF;\n RETURN (v_state='captured' AND v_before=p_old AND p_old->>'status' IN('pending','generated','overdue','disputed') AND p_new->>'status'='cancelled')\n  OR (v_state='executed' AND p_old->>'status'='cancelled' AND p_new=v_before);\nEND $function$\n"
+    }
+  ],
+  "read_only": "on",
+  "relations": [
+    {
+      "name": "accounting_cashier_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "contract_version",
+          "type": "smallint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "cashout_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "escrow_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_transaction_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "event_slot",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "event_kind",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hold_event_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "hold_invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "assigned_agent_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "actor_role",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_actor_user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_representative_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "player_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "audience_user_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "op_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "operation_fingerprint",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "accepted_note",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transaction_note",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_from_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_from_entity_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_to_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "ledger_to_entity_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_owner_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_before",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "wallet_after",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "cashier_event_append_only",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER cashier_event_append_only BEFORE DELETE OR UPDATE ON public.accounting_cashier_events FOR EACH ROW EXECUTE FUNCTION fn_cashier_event_append_only()"
+        },
+        {
+          "name": "cashier_event_messenger_thread",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER cashier_event_messenger_thread AFTER INSERT ON public.accounting_cashier_events FOR EACH ROW EXECUTE FUNCTION fn_cashier_event_messenger_thread()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_cashier_events_actor_role_check",
+          "definition": "CHECK (actor_role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'super_agent'::text, 'agent'::text, 'sub_agent'::text, 'player'::text, 'member'::text, 'system'::text]))"
+        },
+        {
+          "name": "accounting_cashier_events_actor_user_id_op_id_key",
+          "definition": "UNIQUE NULLS NOT DISTINCT (actor_user_id, op_id)"
+        },
+        {
+          "name": "accounting_cashier_events_amount_check",
+          "definition": "CHECK (amount > 0::numeric AND (amount::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])))"
+        },
+        {
+          "name": "accounting_cashier_events_cashout_id_event_slot_key",
+          "definition": "UNIQUE (cashout_id, event_slot)"
+        },
+        {
+          "name": "accounting_cashier_events_cashout_id_fkey",
+          "definition": "FOREIGN KEY (cashout_id) REFERENCES cashout_requests(id)"
+        },
+        {
+          "name": "accounting_cashier_events_check",
+          "definition": "CHECK (event_kind = 'hold'::text AND event_slot = 'hold'::text AND hold_event_id IS NULL AND hold_invoice_id IS NULL OR event_kind <> 'hold'::text AND event_slot = 'terminal'::text AND hold_event_id IS NOT NULL AND hold_invoice_id IS NOT NULL)"
+        },
+        {
+          "name": "accounting_cashier_events_check1",
+          "definition": "CHECK (event_kind = 'expiry_refund'::text AND actor_user_id IS NULL AND actor_role = 'system'::text OR event_kind <> 'expiry_refund'::text AND actor_user_id IS NOT NULL AND actor_role <> 'system'::text)"
+        },
+        {
+          "name": "accounting_cashier_events_check2",
+          "definition": "CHECK (issued_at >= occurred_at AND cardinality(audience_user_ids) >= 2)"
+        },
+        {
+          "name": "accounting_cashier_events_contract_version_check",
+          "definition": "CHECK (contract_version = 1)"
+        },
+        {
+          "name": "accounting_cashier_events_escrow_id_fkey",
+          "definition": "FOREIGN KEY (escrow_id) REFERENCES chip_escrow(id)"
+        },
+        {
+          "name": "accounting_cashier_events_event_kind_check",
+          "definition": "CHECK (event_kind = ANY (ARRAY['hold'::text, 'approval'::text, 'cancellation'::text, 'decline'::text, 'expiry_refund'::text]))"
+        },
+        {
+          "name": "accounting_cashier_events_event_slot_check",
+          "definition": "CHECK (event_slot = ANY (ARRAY['hold'::text, 'terminal'::text]))"
+        },
+        {
+          "name": "accounting_cashier_events_hold_event_id_fkey",
+          "definition": "FOREIGN KEY (hold_event_id) REFERENCES accounting_cashier_events(id)"
+        },
+        {
+          "name": "accounting_cashier_events_hold_invoice_id_fkey",
+          "definition": "FOREIGN KEY (hold_invoice_id) REFERENCES settlement_invoices(id)"
+        },
+        {
+          "name": "accounting_cashier_events_invoice_id_fkey",
+          "definition": "FOREIGN KEY (invoice_id) REFERENCES settlement_invoices(id) DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "accounting_cashier_events_invoice_id_key",
+          "definition": "UNIQUE (invoice_id)"
+        },
+        {
+          "name": "accounting_cashier_events_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "accounting_cashier_events_source_ledger_id_fkey",
+          "definition": "FOREIGN KEY (source_ledger_id) REFERENCES chip_ledger(id)"
+        },
+        {
+          "name": "accounting_cashier_events_source_ledger_id_key",
+          "definition": "UNIQUE (source_ledger_id)"
+        },
+        {
+          "name": "accounting_cashier_events_source_transaction_id_fkey",
+          "definition": "FOREIGN KEY (source_transaction_id) REFERENCES chip_transactions(id)"
+        },
+        {
+          "name": "accounting_cashier_events_source_transaction_id_key",
+          "definition": "UNIQUE (source_transaction_id)"
+        }
+      ]
+    },
+    {
+      "name": "accounting_correction_documents",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "contract_version",
+          "type": "smallint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_row",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "amount",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payee_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payee_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_representative_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "payee_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "audience_user_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "incident_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "write_failure_id",
+          "type": "bigint",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "correction_document_append_only",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER correction_document_append_only BEFORE DELETE OR UPDATE ON public.accounting_correction_documents FOR EACH ROW EXECUTE FUNCTION fn_accounting_correction_append_only()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_correction_documents_amount_check",
+          "definition": "CHECK (amount > 0::numeric AND amount <= 9999999999.99 AND (amount::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND amount = round(amount, 2))"
+        },
+        {
+          "name": "accounting_correction_documents_check",
+          "definition": "CHECK (incident_id IS NOT NULL OR write_failure_id IS NOT NULL)"
+        },
+        {
+          "name": "accounting_correction_documents_check1",
+          "definition": "CHECK (isfinite(recorded_at) AND isfinite(issued_at) AND issued_at >= recorded_at AND cardinality(audience_user_ids) >= 1)"
+        },
+        {
+          "name": "accounting_correction_documents_club_id_fkey",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+        },
+        {
+          "name": "accounting_correction_documents_contract_version_check",
+          "definition": "CHECK (contract_version = 1)"
+        },
+        {
+          "name": "accounting_correction_documents_invoice_id_fkey",
+          "definition": "FOREIGN KEY (invoice_id) REFERENCES settlement_invoices(id) DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "accounting_correction_documents_invoice_id_key",
+          "definition": "UNIQUE (invoice_id)"
+        },
+        {
+          "name": "accounting_correction_documents_issuer_type_check",
+          "definition": "CHECK (issuer_type = ANY (ARRAY['club'::text, 'union'::text, 'agent'::text, 'player'::text]))"
+        },
+        {
+          "name": "accounting_correction_documents_payee_type_check",
+          "definition": "CHECK (payee_type = ANY (ARRAY['club'::text, 'union'::text, 'agent'::text, 'player'::text]))"
+        },
+        {
+          "name": "accounting_correction_documents_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "accounting_correction_documents_source_ledger_id_fkey",
+          "definition": "FOREIGN KEY (source_ledger_id) REFERENCES chip_ledger(id)"
+        },
+        {
+          "name": "accounting_correction_documents_source_ledger_id_key",
+          "definition": "UNIQUE (source_ledger_id)"
+        },
+        {
+          "name": "accounting_correction_documents_union_id_fkey",
+          "definition": "FOREIGN KEY (union_id) REFERENCES unions(id)"
+        }
+      ]
+    },
+    {
+      "name": "accounting_credit_change_documents_v1",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "operation_receipt_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issuer_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recipient_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "audience_user_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "credit_change_document_immutable_v1",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER credit_change_document_immutable_v1 BEFORE DELETE OR UPDATE OR TRUNCATE ON public.accounting_credit_change_documents_v1 FOR EACH STATEMENT EXECUTE FUNCTION fn_accounting_credit_change_immutable_v1()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_credit_change_documents_v1_invoice_id_key",
+          "definition": "UNIQUE (invoice_id)"
+        },
+        {
+          "name": "accounting_credit_change_documents_v1_operation_receipt_id_key",
+          "definition": "UNIQUE (operation_receipt_id)"
+        },
+        {
+          "name": "accounting_credit_change_documents_v1_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "credit_change_document_audience_nonempty",
+          "definition": "CHECK (cardinality(audience_user_ids) > 0)"
+        },
+        {
+          "name": "credit_change_document_invoice_fk",
+          "definition": "FOREIGN KEY (invoice_id) REFERENCES settlement_invoices(id) DEFERRABLE INITIALLY DEFERRED"
+        }
+      ]
+    },
+    {
+      "name": "accounting_credit_reduction_operations_v1",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "contract_version",
+          "type": "smallint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "agent_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "target_user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "requested_reduction",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "assignment_reason",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "before_limit",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "after_limit",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "credit_used",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "before_prepaid",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "after_prepaid",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "before_revision",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "after_revision",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "applied_reduction",
+          "type": "numeric(15,2)",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "assignment_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "document_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "accounting_credit_change_on_operation_v1",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_credit_change_on_operation_v1 AFTER INSERT ON public.accounting_credit_reduction_operations_v1 FOR EACH ROW EXECUTE FUNCTION fn_accounting_credit_change_on_operation_v1()"
+        },
+        {
+          "name": "credit_reduction_operation_exclusive_v1",
+          "enabled": "O",
+          "definition": "CREATE CONSTRAINT TRIGGER credit_reduction_operation_exclusive_v1 AFTER INSERT ON public.accounting_credit_reduction_operations_v1 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_credit_reduction_terminal_exclusive_v1()"
+        },
+        {
+          "name": "credit_reduction_operation_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER credit_reduction_operation_immutable BEFORE DELETE OR UPDATE OR TRUNCATE ON public.accounting_credit_reduction_operations_v1 FOR EACH STATEMENT EXECUTE FUNCTION fn_credit_reduction_immutable_v1()"
+        },
+        {
+          "name": "zz_accounting_credit_change_deferred_v1",
+          "enabled": "O",
+          "definition": "CREATE CONSTRAINT TRIGGER zz_accounting_credit_change_deferred_v1 AFTER INSERT ON public.accounting_credit_reduction_operations_v1 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_accounting_credit_change_deferred_v1()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_credit_reduction_oper_actor_user_id_operation_id_key",
+          "definition": "UNIQUE (actor_user_id, operation_id)"
+        },
+        {
+          "name": "accounting_credit_reduction_operation_requested_reduction_check",
+          "definition": "CHECK (requested_reduction > 0::numeric AND requested_reduction <= 1000000000::numeric)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations__applied_reduction_check",
+          "definition": "CHECK ((applied_reduction::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND applied_reduction >= 0::numeric)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_action_check",
+          "definition": "CHECK (action = 'reduce_credit_limit'::text)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_after_limit_check",
+          "definition": "CHECK ((after_limit::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND after_limit >= 0::numeric)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_after_revision_check",
+          "definition": "CHECK (after_revision >= 0)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_assignment_id_check",
+          "definition": "CHECK (assignment_id IS NULL OR assignment_id <> '00000000-0000-0000-0000-000000000000'::uuid)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_assignment_id_key",
+          "definition": "UNIQUE (assignment_id)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_before_limit_check",
+          "definition": "CHECK ((before_limit::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND before_limit >= 0::numeric)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_before_revision_check",
+          "definition": "CHECK (before_revision >= 0)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_check",
+          "definition": "CHECK (NOT ('00000000-0000-0000-0000-000000000000'::uuid = ANY (ARRAY[id, actor_user_id, operation_id, club_id, agent_id, target_user_id])))"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_check1",
+          "definition": "CHECK (applied_reduction = LEAST(requested_reduction, before_limit) AND after_limit = (before_limit - applied_reduction))"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_check2",
+          "definition": "CHECK (assignment_reason =\nCASE\n    WHEN reason IS NULL OR reason = ''::text THEN 'Credit line reduced'::text\n    ELSE reason\nEND)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_check3",
+          "definition": "CHECK (applied_reduction > 0::numeric AND NOT before_prepaid AND before_limit > 0::numeric AND credit_used <= after_limit AND after_prepaid = (after_limit = 0::numeric) AND after_revision::numeric = (before_revision::numeric + 1::numeric) AND assignment_id IS NOT NULL AND document_id IS NOT NULL AND invoice_id IS NOT NULL AND assignment_id <> document_id AND assignment_id <> invoice_id AND document_id <> invoice_id OR applied_reduction = 0::numeric AND before_limit = 0::numeric AND after_limit = 0::numeric AND credit_used = 0::numeric AND before_prepaid AND after_prepaid AND before_revision = after_revision AND assignment_id IS NULL AND document_id IS NULL AND invoice_id IS NULL)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_credit_used_check",
+          "definition": "CHECK ((credit_used::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND credit_used >= 0::numeric)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_document_id_check",
+          "definition": "CHECK (document_id IS NULL OR document_id <> '00000000-0000-0000-0000-000000000000'::uuid)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_document_id_key",
+          "definition": "UNIQUE (document_id)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_invoice_id_check",
+          "definition": "CHECK (invoice_id IS NULL OR invoice_id <> '00000000-0000-0000-0000-000000000000'::uuid)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_invoice_id_key",
+          "definition": "UNIQUE (invoice_id)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v1_recorded_at_check",
+          "definition": "CHECK (isfinite(recorded_at))"
+        },
+        {
+          "name": "accounting_credit_reduction_operations_v_contract_version_check",
+          "definition": "CHECK (contract_version = 1)"
+        },
+        {
+          "name": "credit_reduction_operation_exclusive_v1",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "zz_accounting_credit_change_deferred_v1",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        }
+      ]
+    },
+    {
+      "name": "accounting_invoice_counters",
+      "columns": [
+        {
+          "name": "year",
+          "type": "integer",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "next_number",
+          "type": "bigint",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "name": "accounting_invoice_counters_next_number_check",
+          "definition": "CHECK (next_number > 0)"
+        },
+        {
+          "name": "accounting_invoice_counters_pkey",
+          "definition": "PRIMARY KEY (year)"
+        }
+      ]
+    },
+    {
+      "name": "accounting_invoice_deliveries",
+      "columns": [
+        {
+          "name": "invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "recipient_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "message_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "notification_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "delivery_mode",
+          "type": "text",
+          "default": "'immediate'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "name": "accounting_invoice_deliveries_delivery_mode_check",
+          "definition": "CHECK (delivery_mode = ANY (ARRAY['immediate'::text, 'weekly_detail'::text]))"
+        },
+        {
+          "name": "accounting_invoice_deliveries_invoice_id_fkey",
+          "definition": "FOREIGN KEY (invoice_id) REFERENCES settlement_invoices(id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_message_id_fkey",
+          "definition": "FOREIGN KEY (message_id) REFERENCES social_messages(id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_message_id_key",
+          "definition": "UNIQUE (message_id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_notification_id_fkey",
+          "definition": "FOREIGN KEY (notification_id) REFERENCES notifications(id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_notification_id_key",
+          "definition": "UNIQUE (notification_id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_pkey",
+          "definition": "PRIMARY KEY (invoice_id, recipient_id)"
+        },
+        {
+          "name": "accounting_invoice_deliveries_recipient_id_fkey",
+          "definition": "FOREIGN KEY (recipient_id) REFERENCES profiles(id)"
+        }
+      ]
+    },
+    {
+      "name": "ca_launch_reset_operations",
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "performed_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scoped_club_ids",
+          "type": "uuid[]",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "scoped_recovery_certificate_sha256",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "closing_sha256",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "undone_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "name": "ca_launch_reset_operations_pkey",
+          "definition": "PRIMARY KEY (operation_id)"
+        },
+        {
+          "name": "ca_launch_reset_operations_scoped_recovery_certificate_sh_check",
+          "definition": "CHECK (scoped_recovery_certificate_sha256 ~ '^[0-9a-f]{64}$'::text)"
+        },
+        {
+          "name": "ca_launch_reset_operations_state_check",
+          "definition": "CHECK (state = ANY (ARRAY['captured'::text, 'executed'::text, 'undone'::text]))"
+        }
+      ]
+    },
+    {
+      "name": "ca_launch_reset_positions",
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "relation_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "row_key",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "column_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "account_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entity_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "balance",
+          "type": "numeric",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "counted_in_supply",
+          "type": "boolean",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "closing_leg_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "immutable_launch_positions",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER immutable_launch_positions BEFORE DELETE OR UPDATE ON public.ca_launch_reset_positions FOR EACH ROW EXECUTE FUNCTION fn_ca_launch_reset_testimony_immutable()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_launch_reset_positions_closing_leg_id_key",
+          "definition": "UNIQUE (closing_leg_id)"
+        },
+        {
+          "name": "ca_launch_reset_positions_pkey",
+          "definition": "PRIMARY KEY (operation_id, relation_name, row_key, column_name)"
+        }
+      ]
+    },
+    {
+      "name": "ca_launch_reset_rows",
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "relation_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "row_key",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "raw_row",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "immutable_launch_rows",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER immutable_launch_rows BEFORE DELETE OR UPDATE ON public.ca_launch_reset_rows FOR EACH ROW EXECUTE FUNCTION fn_ca_launch_reset_testimony_immutable()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_launch_reset_rows_pkey",
+          "definition": "PRIMARY KEY (operation_id, relation_name, row_key)"
+        }
+      ]
+    },
+    {
+      "name": "ca_launch_reset_wallet_movements",
+      "columns": [
+        {
+          "name": "operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "operation_key",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "relation_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "row_key",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "column_name",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "account_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "entity_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "before_value",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "after_value",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bank_before",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "bank_after",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "performed_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "direction",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "immutable_launch_wallet_movements",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER immutable_launch_wallet_movements BEFORE DELETE OR UPDATE ON public.ca_launch_reset_wallet_movements FOR EACH ROW EXECUTE FUNCTION fn_ca_launch_reset_testimony_immutable()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_launch_reset_wallet_movements_pkey",
+          "definition": "PRIMARY KEY (operation_key)"
+        }
+      ]
+    },
+    {
+      "name": "settlement_invoices",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "period_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "from_entity_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "from_entity_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "to_entity_type",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "to_entity_id",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "gross_amount",
+          "type": "numeric(12,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "net_amount",
+          "type": "numeric(12,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "deductions",
+          "type": "numeric(12,2)",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "breakdown",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'generated'::text",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "chip_transfer_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "chips_transferred",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "transferred_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "message_sent",
+          "type": "boolean",
+          "default": "false",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "message_sent_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "invoice_number",
+          "type": "text",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "adjusts_invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "overdue_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "reminders_sent",
+          "type": "integer",
+          "default": "0",
+          "notnull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "last_reminder_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_ledger_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_credit_invoice_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_credit_payment_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_credit_reduction_operation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "name": "source_union_presettlement_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ],
+      "triggers": [
+        {
+          "name": "accounting_invoice_deliver",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_invoice_deliver AFTER INSERT ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION fn_accounting_invoice_deliver_on_insert()"
+        },
+        {
+          "name": "accounting_invoice_immutable",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER accounting_invoice_immutable BEFORE DELETE OR UPDATE ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION fn_accounting_document_immutable()"
+        },
+        {
+          "name": "trg_weekly_statement_issue_settled",
+          "enabled": "O",
+          "definition": "CREATE TRIGGER trg_weekly_statement_issue_settled BEFORE INSERT ON public.settlement_invoices FOR EACH ROW EXECUTE FUNCTION fn_weekly_statement_issue_settled()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "accounting_invoice_credit_reduction_source_fk",
+          "definition": "FOREIGN KEY (source_credit_reduction_operation_id) REFERENCES accounting_credit_reduction_operations_v1(id)"
+        },
+        {
+          "name": "accounting_invoice_credit_reduction_source_unique",
+          "definition": "UNIQUE (source_credit_reduction_operation_id)"
+        },
+        {
+          "name": "accounting_invoice_has_one_source",
+          "definition": "CHECK (source_union_presettlement_id IS NULL AND (source_credit_reduction_operation_id IS NULL AND invoice_type <> 'credit_limit_change'::text AND num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) <= 1 AND (period_id IS NOT NULL OR num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) = 1) OR source_credit_reduction_operation_id IS NOT NULL AND invoice_type = 'credit_limit_change'::text AND period_id IS NULL AND num_nonnulls(source_ledger_id, source_credit_invoice_id, source_credit_payment_id) = 0) OR source_union_presettlement_id IS NOT NULL AND invoice_type = 'transaction_receipt'::text AND NOT (breakdown ->> 'category'::text) IS DISTINCT FROM 'union_presettlement'::text AND from_entity_type = 'union'::text AND to_entity_type = 'club'::text AND status = 'paid'::text AND chips_transferred IS FALSE AND period_id IS NULL AND source_ledger_id IS NULL AND source_credit_invoice_id IS NULL AND source_credit_payment_id IS NULL AND source_credit_reduction_operation_id IS NULL AND transferred_at IS NULL AND due_at IS NULL AND chip_transfer_id IS NULL)"
+        },
+        {
+          "name": "ck_whole_cents",
+          "definition": "CHECK (created_at < '2026-09-07 22:00:00+00'::timestamp with time zone OR net_amount = round(net_amount, 2) AND gross_amount = round(gross_amount, 2)) NOT VALID"
+        },
+        {
+          "name": "settlement_invoices_adjusts_invoice_id_fkey",
+          "definition": "FOREIGN KEY (adjusts_invoice_id) REFERENCES settlement_invoices(id)"
+        },
+        {
+          "name": "settlement_invoices_club_id_fkey",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "settlement_invoices_from_entity_type_check",
+          "definition": "CHECK (from_entity_type = ANY (ARRAY['union'::text, 'club'::text, 'agent'::text, 'player'::text]))"
+        },
+        {
+          "name": "settlement_invoices_invoice_type_check",
+          "definition": "CHECK (invoice_type = ANY (ARRAY['union_to_club'::text, 'club_to_agent'::text, 'agent_to_subagent'::text, 'agent_to_player'::text, 'union_club_pnl'::text, 'club_to_union'::text, 'union_weekly_squareup'::text, 'union_weekly_credit_note'::text, 'transaction_receipt'::text, 'club_weekly_accounting'::text, 'cashier_cashout'::text, 'accounting_correction'::text, 'credit_limit_change'::text]))"
+        },
+        {
+          "name": "settlement_invoices_period_id_fkey",
+          "definition": "FOREIGN KEY (period_id) REFERENCES settlement_periods(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "settlement_invoices_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "settlement_invoices_source_credit_invoice_id_fkey",
+          "definition": "FOREIGN KEY (source_credit_invoice_id) REFERENCES credit_invoices(id)"
+        },
+        {
+          "name": "settlement_invoices_source_credit_invoice_id_key",
+          "definition": "UNIQUE (source_credit_invoice_id)"
+        },
+        {
+          "name": "settlement_invoices_source_credit_payment_id_fkey",
+          "definition": "FOREIGN KEY (source_credit_payment_id) REFERENCES credit_payments(id)"
+        },
+        {
+          "name": "settlement_invoices_source_credit_payment_id_key",
+          "definition": "UNIQUE (source_credit_payment_id)"
+        },
+        {
+          "name": "settlement_invoices_source_ledger_id_fkey",
+          "definition": "FOREIGN KEY (source_ledger_id) REFERENCES chip_ledger(id)"
+        },
+        {
+          "name": "settlement_invoices_source_ledger_id_key",
+          "definition": "UNIQUE (source_ledger_id)"
+        },
+        {
+          "name": "settlement_invoices_source_union_presettlement_id_fkey",
+          "definition": "FOREIGN KEY (source_union_presettlement_id) REFERENCES union_presettlements(id)"
+        },
+        {
+          "name": "settlement_invoices_status_check",
+          "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'generated'::text, 'paid'::text, 'cancelled'::text, 'overdue'::text, 'disputed'::text]))"
+        },
+        {
+          "name": "settlement_invoices_to_entity_type_check",
+          "definition": "CHECK (to_entity_type = ANY (ARRAY['club'::text, 'agent'::text, 'player'::text, 'union'::text]))"
+        }
+      ]
+    }
+  ],
+  "captured_at": "2026-10-28T19:34:43.93338+00:00"
+}

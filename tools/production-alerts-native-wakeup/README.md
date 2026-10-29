@@ -10,6 +10,14 @@ create new wakes. Original financial and engine evidence stays service-only.
 On subscription/reconnection and each inbox/ack event, one bounded RPC reads at
 most 32 opaque pending IDs. One active native queue operation is committed in a local SQLite journal before invoking the documented `codex queue --thread ... --message ...`
 command without a shell. Only its exact accepted receipt is called queued.
+Queue acceptance persists input but does not activate an unloaded chat. After
+persisting that receipt, the consumer requests the installed desktop's native
+`codex://threads/wake/<canonical-task-id>` route with `/usr/bin/open -g -a
+/Applications/ChatGPT.app`. This resumes the existing queued input without
+creating another message. The journal records the wake attempt before invoking
+the desktop. A crash or unknown wake outcome never automatically retries it.
+An accepted pre-upgrade queue with no wake record gets one such native wake
+on the next explicit subscription/event; its operation and message ID survive.
 The canonical Codex chat reads full originals through its existing authenticated
 Supabase tool and acknowledges only complete observed deliveries. Reading is
 not resolving an incident. The committed acknowledgement advances the next batch.
@@ -44,11 +52,17 @@ production with DDL or replay an installed version. The credential-authenticated
 exposes only opaque identifiers; client INSERT is restrictively denied even if
 another permissive writer policy is added. Full read/ack RPCs are service-only.
 
-Configure the existing gateway's plugin entry, then use its supported gateway
+The manifest explicitly activates this receive service at Gateway startup.
+Discovery or a plugin listing alone does not execute its service. Configure the
+required plugin entry before linking so the supported installer can validate it;
+then use the supported `plugins install --link` and gateway
 restart only after checking existing service ownership. Require
 `production-alerts-native-wakeup.status`, a SUBSCRIBED private channel, a committed
 native receipt, actual full inbox read and persisted delivery acknowledgement
 for one real event. A local unit test or manual queue is not that live proof.
+The supported plugin registry must resolve the newly pinned source; if an older
+pin remains cached, use `plugins registry --refresh` and verify its exact source
+before a safe gateway restart. A successful OS open request is not read/ack proof.
 Do not reactivate the stopped historical alerts fleet or paused heartbeat.
 
 The SQLite connection holds an exclusive OS file lock for the service lifetime.

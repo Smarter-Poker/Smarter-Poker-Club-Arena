@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import {
   horseSocialFrames,
   horseSocialTableEligible,
+  rankHorseSocialCohorts,
   postHandChatDelay,
   sharedPayout,
   type HorseSocialFrame,
@@ -91,6 +92,13 @@ import {
   sharedNaturalEngineLevel,
   type EngineHudLevel,
 } from './support/engineHudLevelWitness';
+
+async function expectNoOpponentHud(page: Page): Promise<void> {
+  await expect(
+    page.locator('.mini-hud, .seat__style-badge, .ft-player__style'),
+    'Opponent statistics and playing-style classifications must never render'
+  ).toHaveCount(0);
+}
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -422,7 +430,8 @@ async function selectCashLobbyTab(page: Page, tabName: string): Promise<void> {
  */
 async function selectOccupiedRunningCashTables(
   page: Page,
-  request: APIRequestContext
+  request: APIRequestContext,
+  options: { perVariantLimit?: number } = {}
 ): Promise<{ tables: OccupiedCashTable[]; health: EngineHealth }> {
   await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (/\/auth(?:\/|\?|$)/.test(page.url())) {
@@ -443,10 +452,14 @@ async function selectOccupiedRunningCashTables(
   // Explicit tabs preserve each witness's navigation owner. The initial active
   // tab can vary, and an unlabelled default witness cannot be restored safely.
   const tabs = ['NLH', 'PLO', 'LIMIT'];
+  const totalLimit = options.perVariantLimit
+    ? options.perVariantLimit * tabs.length
+    : CASH_PROGRESS_CANDIDATES;
   const tables: OccupiedCashTable[] = [];
   const seen = new Set<string>();
   for (const tabName of tabs) {
     await selectCashLobbyTab(page, tabName);
+    let variantCount = 0;
     const candidates = (await visibleRunningCashCandidates(page)).filter((c) => !seen.has(c.id));
     if (candidates.length === 0) continue;
     for (let offset = 0; offset < candidates.length; offset += 32) {
@@ -454,14 +467,24 @@ async function selectOccupiedRunningCashTables(
       const health = await readEngineHealth(request, { tableIds: batch.map((c) => c.id) });
       for (const candidate of batch) {
         const table = healthyRunningTable(health, candidate.id, candidate.gameFormat);
-        if (table && !seen.has(candidate.id) && tables.length < CASH_PROGRESS_CANDIDATES) {
+        if (
+          table &&
+          !seen.has(candidate.id) &&
+          tables.length < totalLimit &&
+          (!options.perVariantLimit || variantCount < options.perVariantLimit)
+        ) {
           seen.add(candidate.id);
           tables.push({ candidate, table, tabName });
+          variantCount++;
         }
       }
-      if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+      if (
+        tables.length >= totalLimit ||
+        (options.perVariantLimit && variantCount >= options.perVariantLimit)
+      )
+        break;
     }
-    if (tables.length >= CASH_PROGRESS_CANDIDATES) break;
+    if (tables.length >= totalLimit) break;
   }
   if (tables.length > 0) {
     // Tab scanning takes time. Start every contender from the same fresh
@@ -1322,6 +1345,8 @@ async function observeTournamentBoard(
     );
 
     await expect(banner).toBeHidden();
+
+    await expectNoOpponentHud(page);
     if (gameFormat === 'mtt') {
       const browser = context.browser();
       if (!browser) throw new Error('HUD witness needs the existing isolated WebKit browser');
@@ -1403,6 +1428,7 @@ async function observeTournamentBoard(
     expect(cycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
     await expectNextHandPresentation(page, cycle, `${candidate.name} live gameplay`);
     await expect(banner).toBeHidden();
+    await expectNoOpponentHud(page);
 
     expect(
       journal.openTransportUrls().every((url) => new URL(url).pathname === '/ws/multi'),
@@ -1538,6 +1564,7 @@ async function observeTournamentBoard(
         `${candidate.name} did not recover exactly one multiplexed transport`
       ).toBe(1);
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
     } finally {
       if (offline) {
         await context.setOffline(false).catch(() => {});
@@ -2104,6 +2131,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         'initial live-table connection'
       );
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
       expect(
         journal.openTransportUrls().every((url) => new URL(url).pathname === '/ws/multi'),
         'the production table bypassed the one-owner multiplexed transport'
@@ -2140,6 +2168,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
       expect(initialCycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
       await expectNextHandPresentation(page, initialCycle, 'live gameplay before the outage');
       await expect(banner).toBeHidden();
+      await expectNoOpponentHud(page);
 
       const preOutageTransports = journal.transportIdsOpenAt(Date.now());
       expect(
@@ -2203,6 +2232,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         expect(recoveredCycle.maxObservedSilenceMs).toBeLessThanOrEqual(MAX_GAMEPLAY_SILENCE_MS);
         await expectNextHandPresentation(page, recoveredCycle, 'live gameplay after reconnect');
         await expect(banner).toBeHidden();
+        await expectNoOpponentHud(page);
 
         /* Give a delayed StrictMode cleanup/reconnect ladder time to expose
            itself, then assert the exact ownership shape rather than merely a
@@ -2244,6 +2274,7 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           `expected one live game transport, got ${journal.openTransportUrls().join(', ')}`
         ).toBe(1);
         await expect(banner).toBeHidden();
+        await expectNoOpponentHud(page);
         // Layout proof follows continuity; its UI reads do not extend any hand deadline.
         testInfo.setTimeout(testInfo.timeout + 45_000);
         await certifyMobileAwardJournal(page, testInfo);
@@ -2313,7 +2344,7 @@ test('natural horse social behavior reaches the live table', async ({
   const content = await db.from('content_settings').select('engine_enabled').limit(2);
   expect(content.error).toBeNull();
   expect(content.data).toEqual([{ engine_enabled: true }]);
-  const selected = await selectOccupiedRunningCashTables(page, request);
+  const selected = await selectOccupiedRunningCashTables(page, request, { perVariantLimit: 3 });
   const candidateIds = selected.tables.map(({ candidate }) => candidate.id);
   const metadata = await db
     .from('tables')
@@ -2343,23 +2374,41 @@ test('natural horse social behavior reaches the live table', async ({
     .eq('is_horse', true);
   expect(horseProfiles.error).toBeNull();
   const selectionHorses = new Set((horseProfiles.data || []).map((row) => row.id));
-  const eligible = selected.tables
-    .flatMap((entry) => {
-      const table = metadata.data?.find((row) => row.id === entry.candidate.id);
-      const asset = clubs.data?.find((club) => club.id === table?.club_id)?.asset;
-      const horseCount = (seatsAtSelection.data || []).filter(
-        (seat) => seat.table_id === entry.candidate.id && selectionHorses.has(seat.user_id)
-      ).length;
-      return table && horseSocialTableEligible(table, asset) && horseCount > 0
-        ? [{ ...entry, horseCount }]
-        : [];
-    })
-    .sort((a, b) => b.horseCount - a.horseCount);
+  const eligible = selected.tables.flatMap((entry) => {
+    const table = metadata.data?.find((row) => row.id === entry.candidate.id);
+    const asset = clubs.data?.find((club) => club.id === table?.club_id)?.asset;
+    const horseCount = (seatsAtSelection.data || []).filter(
+      (seat) => seat.table_id === entry.candidate.id && selectionHorses.has(seat.user_id)
+    ).length;
+    return table && horseSocialTableEligible(table, asset) && horseCount > 0
+      ? [{ ...entry, horseCount }]
+      : [];
+  });
   expect(
     eligible.length,
     'No eligible ordinary chips cash table with a natural horse subject was visible'
   ).toBeGreaterThan(0);
-  const candidate = eligible[0].candidate;
+  // Bounded indexed reads from at most nine discovered tables. Only public
+  // activity metadata leaves the database; no cards or hand actions are read.
+  const activitySince = new Date(Date.now() - 20 * 60_000).toISOString();
+  const showdowns = await db
+    .from('hand_history')
+    .select('table_id,ended_at')
+    .in(
+      'table_id',
+      eligible.map((entry) => entry.candidate.id)
+    )
+    // Match the existing (table_id, created_at, id) index before applying
+    // public showdown/finish filters; ended_at alone scans retained history.
+    .gte('created_at', activitySince)
+    .gte('ended_at', activitySince)
+    .not('showdown', 'is', null)
+    .neq('showdown', '[]')
+    .order('created_at', { ascending: false })
+    .limit(180);
+  expect(showdowns.error).toBeNull();
+  const cohorts = rankHorseSocialCohorts(eligible, showdowns.data || [], activitySince);
+  const candidate = cohorts[0].candidate;
   const began = new Date().toISOString();
   const frames: HorseSocialFrame[] = [];
   const forbidden: string[] = [];
@@ -2612,6 +2661,13 @@ test('natural horse social behavior reaches the live table', async ({
           {
             expectedEngine: EXPECTED_ENGINE_SHA,
             tableId: candidate.id,
+            cohorts: cohorts.map((entry) => ({
+              tableId: entry.candidate.id,
+              tab: entry.tabName,
+              horseCount: entry.horseCount,
+              showdownCount: entry.showdownCount,
+            })),
+            activitySince,
             began,
             proofs,
             forbidden,

@@ -85,7 +85,7 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     // one commit routine (the action may wait for the deeper read); the fence
     // check lives in it.
     const commitStart = horse.indexOf('commitDecision = (): void => {');
-    const commitEnd = horse.indexOf('const thinkTimer = setTimeout(', commitStart);
+    const commitEnd = horse.indexOf('const thinkTimer = this.setHandTimeout(', commitStart);
     expect(commitStart).toBeGreaterThan(-1);
     expect(commitEnd).toBeGreaterThan(commitStart);
     const horseActionTimer = horse.slice(commitStart, commitEnd);
@@ -103,7 +103,9 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(bankExpiry).toContain('!this.lifecycleCanMutate()');
 
     const timeBank = sliceMethod(turns, '  public async activateTimeBank(');
-    const refresh = timeBank.indexOf('await this.refreshTimeBankFromDb(userId)');
+    const refresh = timeBank.indexOf(
+      'await this.weeklyPayoutContinuation(this.refreshTimeBankFromDb(userId))'
+    );
     const postAwaitFence = timeBank.indexOf('if (!this.lifecycleCanMutate())', refresh);
     expect(refresh).toBeGreaterThan(-1);
     expect(postAwaitFence).toBeGreaterThan(refresh);

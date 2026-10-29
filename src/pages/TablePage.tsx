@@ -1,3 +1,8 @@
+import {
+  allInEquityBoardKey,
+  allInEquityHandMatches,
+  validAllInEquityEntries,
+} from '../lib/allInEquityDisplay';
 import { fetchStoppedLightningAnchor } from '../lightning/lightningLeaveAnchor';
 import { useLightningLeaveStop } from '../lightning/useLightningLeaveStop';
 import { LightningLeaveControl } from '../components/lightning/LightningLeaveControl';
@@ -57,7 +62,7 @@ import { TournamentLateRegCallToAction } from '../components/table/TournamentLat
  * Removed: BadBeatJackpot, BBJCelebration, BombPotOverlay, ChipStack,
  * ConfettiCanvas, FinalTableOverlay, HandHistoryPanel (the default export —
  * the HandRecord type it also exports is still used), HandNotation,
- * HandReveal, HeadsUpOverlay, LeaveTableConfirm, MiniHUD, ParticleSystem,
+ * HandReveal, HeadsUpOverlay, LeaveTableConfirm, ParticleSystem,
  * PresenceIndicator, QuickActionsBar, RealTimeResults, SessionHUD,
  * SettingsPanel, SpectatorOverlay, ThrowableSelector, TimerBar,
  * TournamentAnnouncementOverlay, TournamentBreakScreen,
@@ -148,6 +153,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { customCashGameName } from '../utils/customCashGameName';
 import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
@@ -604,7 +610,6 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // IMPROVEMENT PASS 2026-08-19: PremiumCard, PlayerCard, HoleCardReveal and
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
-import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -9512,7 +9517,14 @@ function LiveTablePage({
   // FIX 89: All-in equity display — shows equity percentages for all all-in players
   // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
   const [allInEquities, setAllInEquities] = useState<
-    Array<{ userId: string; username: string; equity: number; seat: number }>
+    Array<{
+      userId: string;
+      username: string;
+      equity: number;
+      seat: number;
+      boardKey?: string;
+      exact?: boolean;
+    }>
   >([]);
   /* True from the first all_in_equity broadcast of a hand until the next hand
      starts. Read by the tournament Show Hand suppression (Dan 2026-08-30). */
@@ -9530,16 +9542,35 @@ function LiveTablePage({
     });
     return ordered.map((pid) => {
       const p = tableState.players.find((pp) => pp?.id === pid);
-      const eq = allInEquities.find((e) => e.userId === pid);
+      const eq = allInEquities.find(
+        (e) =>
+          e.userId === pid &&
+          e.boardKey ===
+            allInEquityBoardKey([
+              tableState.communityCards,
+              tableState.communityCards2,
+              tableState.communityCards3,
+            ])
+      );
       return {
         id: pid,
         name: p?.name || eq?.username || 'Player',
         cards: (p?.holeCards ?? []).filter((c): c is Card => c != null),
         equityPct: eq ? eq.equity : undefined,
+        equityExact: eq?.exact,
         accepted: ritAcceptedIds.includes(pid),
       };
     });
-  }, [ritAllPlayerIds, ritAcceptedIds, ritChooserId, tableState.players, allInEquities]);
+  }, [
+    ritAllPlayerIds,
+    ritAcceptedIds,
+    ritChooserId,
+    tableState.players,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    allInEquities,
+  ]);
 
   // The community cards on the felt at the moment of the all-in — the panel's
   // board preview renders these plus face-down slots for the undealt streets.
@@ -9581,8 +9612,8 @@ function LiveTablePage({
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Only committed, card-free public summaries enter the Mini-HUD.
-  const { getStats: getPlayerHUDStats, observePublicEvent } = usePlayerStats(userId);
+  // Preserve committed, card-free public hand-stat recording; opponent HUDs are retired.
+  const { observePublicEvent } = usePlayerStats(userId);
   const observePublicEventRef = useRef(observePublicEvent);
   observePublicEventRef.current = observePublicEvent;
 
@@ -9669,7 +9700,17 @@ function LiveTablePage({
    * on screen.
    */
   const [squeezeHolding, setSqueezeHolding] = useState(false);
-  const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
+  const heldEquities = useHeldValue(allInEquities, squeezeHolding);
+  const liveEquityBoardKey = allInEquityBoardKey([
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+  ]);
+  // Until this street's exact answer arrives, never label it with the prior
+  // street's chance. A viewer still squeezing keeps the intentional prior view.
+  const displayedEquities = squeezeHolding
+    ? heldEquities
+    : heldEquities.filter((e) => e.boardKey === undefined || e.boardKey === liveEquityBoardKey);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
@@ -13461,10 +13502,24 @@ function LiveTablePage({
           userId: string;
           username: string;
           equity: number;
+          equityRaw?: number;
           seat: number;
         }>;
-        if (equities && equities.length > 0) {
-          setAllInEquities(equities);
+        const currentHand =
+          Number(tableStateRef.current.handNumber) || Number(heroHandRef.current) || 0;
+        const equityHand = Number(handState.hand_number) || 0;
+        const matchesHand = allInEquityHandMatches(currentHand, equityHand);
+        if (matchesHand && validAllInEquityEntries(equities)) {
+          const boards = Array.isArray(handState.boards) ? handState.boards : [handState.board];
+          const boardKey = allInEquityBoardKey(boards);
+          setAllInEquities(
+            equities.map((e) => ({
+              ...e,
+              boardKey,
+              equity: e.equityRaw ?? e.equity,
+              exact: handState.exact === true && e.equityRaw !== undefined,
+            }))
+          );
           /* Dan 2026-08-30: "ANYTIME THERE IS AN ALL IN, ALL CARDS ARE ALWAYS
              SHOW[N]" in a tournament — so the voluntary Show Hand button must
              never render on an all-in showdown there. The equities themselves
@@ -24708,7 +24763,6 @@ function LiveTablePage({
     onAllIn: () => void handleActionPanelAction('allin'),
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
-    onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
       //Use tableState.pot instead of local engine state
@@ -26999,6 +27053,13 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
+                          {customCashGameName(tableState.tableName) && (
+                            <span className="table-brand__line table-brand__line--level">
+                              <MastheadGameLine className="table-brand__game">
+                                {customCashGameName(tableState.tableName)}
+                              </MastheadGameLine>
+                            </span>
+                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."
@@ -27656,26 +27717,6 @@ function LiveTablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
-            /* PERF 2026-08-25. This map body runs for every seat on every
-               render of TablePage. When it was written, TablePage re-rendered
-               once a second for the whole of anybody's turn (and, before the
-               pass that preceded it, about thirty times a second), so anything
-               computed per seat here was really being computed nine times over,
-               continuously, on a phone. The action clock no longer renders this
-               component at all — but the map body is still the hottest loop on
-               the page whenever anything else does render it, so the savings
-               below stay.
-
-               `getPlayerHUDStats(player.id)` was called TWICE per seat: once
-               for `hudStats` and again inside the `playerStyle` IIFE below.
-               Called once now and shared. Nothing about the values changes —
-               it is the same function with the same argument in the same
-               render — so the memo comparator downstream sees exactly what it
-               saw before. `bigBlind` and `holeCardCount` moved out of the map
-               entirely for the same reason (see seatBigBlind /
-               seatHoleCardCount above the return). */
-            const seatHudStats = player && !player.isHero ? getPlayerHUDStats(player.id) : null;
-
             // SPOTLIGHT (Dan 2026-08-15, verbatim: "spotlight on the player's
             // turn isn't working, even if hero folds — that functionality must
             // always be ON AT ALL TIMES").
@@ -28206,8 +28247,6 @@ function LiveTablePage({
                       : undefined
                   }
                   bbjCreditAmount={player ? bbjSeatCredits[player.id] : undefined}
-                  hudStats={seatHudStats}
-                  showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
                   /* Dan 2026-08-23: an opponent's hidden hand drew exactly two
@@ -28251,19 +28290,6 @@ function LiveTablePage({
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
-                  playerStyle={
-                    userSettings.showHUD &&
-                    seatHudStats?.aggressionMeasured &&
-                    (seatHudStats.callActions ?? 0) > 0
-                      ? playerStyleClassifier.classify({
-                          handsPlayed: seatHudStats.handsPlayed,
-                          vpipCount: seatHudStats.vpipCount,
-                          pfrCount: seatHudStats.pfrCount,
-                          aggressiveActions: seatHudStats.aggressiveActions,
-                          passiveActions: seatHudStats.callActions,
-                        })
-                      : null
-                  }
                   onSit={() => handleSeatClick(seatNumber)}
                   /* Dan 2026-08-15: "when a player is seated at the table, the
                      open seats that were a + should now say EMPTY. A user
@@ -28428,7 +28454,7 @@ function LiveTablePage({
                       pos.y < 20
                         ? [inboard, outboard, 'below']
                         : ['above', inboard, outboard, 'below'];
-                    return [{ seatNumber, equity: eq.equity, order }];
+                    return [{ seatNumber, equity: eq.equity, exact: eq.exact, order }];
                   })
             }
           />
@@ -30730,7 +30756,6 @@ function LiveTablePage({
         onCloseSessionHUD={handleCloseSessionHUD}
         // Helpers
         safeBB={safeBB}
-        getPlayerHUDStats={getPlayerHUDStats}
       />
       {/* Dan 2026-08-23: "when players are seated at the table, or are on
           break, there should be a countdown clock."

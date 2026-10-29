@@ -11,6 +11,7 @@ import {
 } from '../services/horseCorrectiveReview/liveKernel.js';
 import { hasPhysicalImpliedDraw } from './HorseOmahaImpliedDraw.js';
 import { horsePlanHandKey } from './HorseDecisionEffects.js';
+import { headsUpCashCommitment } from './HorseHeadsUpCommitment.js';
 import {
   observePhase6Lookup,
   createPhase6Attribution,
@@ -2625,22 +2626,32 @@ function maniacCallDown(
       Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
       (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0));
     const required = exactRake === null ? Math.min(0.99, rawRequired) : rawRequired;
-    // A 240-deal estimate close to the price can reject a profitable call
-    // through sampling noise (retained PLO4 potter hand 74 after full-pot
-    // sizing). Refine that boundary once, with a fixed bounded sample; do
-    // not lower the price, survival premium or realization requirement.
+    // Preserve the existing refinement policy only outside the fixed-budget
+    // domains below. No recovery lowers the price, survival premium or
+    // realization requirement.
     const rawRecoveryMean = Math.max(0, Math.min(1, eq + betSelectionPenalty));
     const uncertainty =
       2 * Math.sqrt(Math.max(0.01, rawRecoveryMean * (1 - rawRecoveryMean)) / recoverySamples);
-    // A heads-up preflop all-in also realizes its sampled equity in full.
-    // Its close rejection needs the same bounded confirmation as postflop;
-    // ordinary preflop flats retain their separate realization policy.
-    // PLO4/PLO5/PLO6 high use their original fixed batch. Retrying only below-price
-    // outcomes (and replacing them with a fresh mean) favors continuation.
-    // Keep the existing price/range model, without outcome-selected samples.
-    const fixedOmahaRecovery = vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount);
+    // Outside the fixed-budget domains, heads-up preflop all-ins share the
+    // existing postflop refinement eligibility; ordinary preflop flats do not.
+    // NLH and PLO4/PLO5/PLO6 high retain their original governed batch.
+    // Retrying only below-price outcomes, then replacing a selected low mean
+    // with a fresh one, biases recovery toward continuation. A noisy false
+    // negative does not justify another attempt selected by that outcome.
+    // Keep the existing price, range and total original sampling allowance.
+    // The already selected variant capabilities own the game, including
+    // default NLH callers whose optional game-state tag is absent or empty.
+    const fixedHoldemRecovery =
+      vi.holeCount === 2 &&
+      !vi.isOmaha &&
+      !vi.isHiLo &&
+      !vi.isFixedLimit &&
+      !vi.isPotLimit &&
+      !vi.isShortDeck;
+    const fixedRecovery =
+      fixedHoldemRecovery || (vi.isOmaha && !vi.isHiLo && [4, 5, 6].includes(vi.holeCount));
     const canRefineRecovery =
-      !fixedOmahaRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
+      !fixedRecovery && live.length === 1 && (street !== 'preflop' || allInCall);
     if (canRefineRecovery && eq < required && required - eq <= uncertainty) {
       const extra = iterations * 4;
       const refined =
@@ -6877,7 +6888,9 @@ export class HorseLogic {
       (hiLoSplit.quarter >= 0.2 || (hiLoSplit.lo > 0.4 && hiLoSplit.hi < 0.18));
     if (scoopy) mw -= 0.04;
     if (quartered) mw += 0.08;
-    const spr = pot > 0 ? stack / pot : 10;
+    const matchedCommitment = headsUpCashCommitment(player, gs);
+    const commitmentStack = matchedCommitment?.exposure ?? stack;
+    const spr = pot > 0 ? commitmentStack / pot : 10;
 
     // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
     let initiative: 'hero' | 'opp' | 'none' = 'none';
@@ -9465,12 +9478,13 @@ export class HorseLogic {
       // V28: the postflop mirror of the V25 commitment law — a stack that
       // already put ~30% of itself in this hand does not raise-FOLD at any
       // reasonable price. investedShare is hero's total commitment this hand
-      // over what he started it with.
+      // over what he started it with. Qualified cash HU uses the same
+      // matchable exposure as the commitment branch below.
       const invested28 = Math.max(
         0,
         Number((player as { totalInvested?: number }).totalInvested ?? 0)
       );
-      const investedShare28 = invested28 > 0 ? invested28 / (stack + invested28) : 0;
+      const investedShare28 = invested28 > 0 ? invested28 / (commitmentStack + invested28) : 0;
       if (plan23 === 'foldToRaise' && potOdds >= 0.15 && investedShare28 < 0.3) {
         if (tele15) noteFire('v23_plan_fold');
         return {
@@ -9504,10 +9518,13 @@ export class HorseLogic {
       isRiver &&
       cat === 4 &&
       made40?.weak === true;
+    // Covering chips cannot change the existing cash HU commitment policy.
+    // Physical stack still owns survival and legality. The same qualified
+    // exposure prices retained-plan commitment and supplies a bounded wager.
     const committed =
       spr < 1.2 ||
       toCall >= stack ||
-      (investedNow > 0 && investedNow / (stack + investedNow) >= 0.3);
+      (investedNow > 0 && investedNow / (commitmentStack + investedNow) >= 0.3);
     if (committed) {
       // V20: the flat-call bar here was potOdds + 0.02 regardless of how many
       // players were in or how many of them were ALL IN — the exact door the
@@ -9632,7 +9649,7 @@ export class HorseLogic {
           if (tele15) noteFire('v51_river_flat');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
-        return { action: 'all_in', thinkTime: 0 };
+        return matchedCommitment?.wager ?? { action: 'all_in', thinkTime: 0 };
       }
       // V34: a solver-approved draw call is honored here too — the committed
       // bar must never fold a hand the solver's own range priced as a call.

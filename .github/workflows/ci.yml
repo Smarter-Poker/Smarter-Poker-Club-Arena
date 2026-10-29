@@ -163,6 +163,11 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+          # Classify Git paths without hydrating the full artwork/source tree.
+          # Cone mode also retains root package and Playwright configuration files.
+          sparse-checkout: |
+            scripts
+            .github
           persist-credentials: false
       - id: f
         env:
@@ -374,6 +379,8 @@ jobs:
     # its 15-minute cap cancelled cache cleanup. Comparable8440 took14:26.
     # Preserve all commands/test deadlines and reserve5minutes for the
     # observed checkout/execution variance plus cache/cleanup.
+    # Run40726879893 passed every guard but exceeded15m during cleanup;
+    # comparable successful run40714001791 took13m45. Preserve execution headroom.
     timeout-minutes: 20
 
     steps:
@@ -2309,6 +2316,25 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-unified-weekly-accounting.sh
+      - name: Original weekly payout owns its complete fleet pause and fixed deadlines
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-owned-phase-postgres.py --scratch "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/protocol.log
+      - name: Original weekly financial rounds wait for the concurrent physical fleet ACK
+        if: matrix.shard == 1
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/weekly-payout-owned-pause
+          python3 -B scripts/ci/test-weekly-payout-financial-phase-postgres.py --pg-bin /usr/lib/postgresql/17/bin --scratch-root "$RUNNER_TEMP" | tee artifacts/weekly-payout-owned-pause/financial.log
+      - name: Preserve original weekly payout qualification evidence
+        if: always() && matrix.shard == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-payout-owned-pause-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/weekly-payout-owned-pause
+          retention-days: 7
       - name: Push health uses exact addressable counts and receipt confirmations
         if: matrix.shard == 1
         env:
@@ -2467,6 +2493,20 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-hand-submission-disposal.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/hand-submission-disposal
+      - name: Superseded horse requests retire only their certified action copy
+        id: superseded_horse_actions
+        if: matrix.shard == 3
+        env:
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-superseded-horse-actions.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-horse-actions
+      - name: Retain superseded horse action proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_horse_actions.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: superseded-horse-actions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/superseded-horse-actions/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain superseded hand disposal proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.hand_submission_disposal.outcome)
         uses: actions/upload-artifact@v4

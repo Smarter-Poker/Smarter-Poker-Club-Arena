@@ -27,6 +27,7 @@ import {
   isPersistedUnlimitedMtt,
   isPersistedSpin,
   isPersistedSeatFirst,
+  isFixedSngSatellite,
   readPersistedTournamentFormatContract,
   type TournamentFormatContract,
 } from './tournamentEntryCapacity.js';
@@ -1876,8 +1877,10 @@ export abstract class TournamentManagerBase {
   /** Only the recorded new format can complete with an unranked qualifier cohort. */
   protected isCohortSatellite(): boolean {
     return (
-      this.tournamentCache?.format_contract === 'mtt-v2' &&
-      Boolean(this.tournamentCache.satellite_target_id || this.tournamentCache.satellite_target)
+      (this.tournamentCache?.format_contract === 'mtt-v2' ||
+        (this.tournamentCache?.format_contract === 'sng-v1' &&
+          isFixedSngSatellite(this.tournamentCache))) &&
+      Boolean(this.tournamentCache?.satellite_target_id || this.tournamentCache?.satellite_target)
     );
   }
 
@@ -6722,8 +6725,9 @@ export abstract class TournamentManagerBase {
          watchdog then reported as "stalled 166s with no current seat". Only
          the seat-first satellite keeps the old rule; its start is advertised. */
       const startsWhenFull =
-        isPersistedSeatFirst(tournament) &&
-        readPersistedTournamentFormatContract(tournament) !== 'seat-first-satellite-v1';
+        isFixedSngSatellite(tournament) ||
+        (isPersistedSeatFirst(tournament) &&
+          readPersistedTournamentFormatContract(tournament) !== 'seat-first-satellite-v1');
       const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''));
       const existingStartMs = Date.parse(String(tournament.started_at ?? ''));
       const scheduledStartIsAdvertised =

@@ -1,3 +1,4 @@
+import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TournamentManager } from './TournamentManager.js';
 import { GameServer } from '../GameServer.js';
@@ -362,3 +363,98 @@ it('breaks the actual failed-stop admission cycle only after every physical stop
   expect(s.tournamentEngines.size).toBe(0);
   expect(mocks.release).toHaveBeenCalledOnce();
 });
+
+it.each(['released', 'pending-writer', 'unknown-identity'] as const)(
+  'terminal custody archive preserves exact ownership for two generations: %s',
+  async (condition) => {
+    const s = server();
+    const oldOwners: object[] = [];
+    const reaches = (value: unknown, target: object, seen = new Set<unknown>()): boolean => {
+      if (value === target) return true;
+      if (!value || typeof value !== 'object' || seen.has(value)) return false;
+      seen.add(value);
+      const values =
+        value instanceof Map
+          ? [...value.keys(), ...value.values()]
+          : value instanceof Set
+            ? [...value]
+            : Object.values(value);
+      return values.some((entry) => reaches(entry, target, seen));
+    };
+    vi.spyOn(TournamentManager.prototype, 'resume').mockImplementation(async function (this: any) {
+      managers.push(this);
+    });
+    for (const generation of [2, 22]) {
+      const m: any = new TournamentManager(id(1), s, id(generation), performance.now() + 30000);
+      managers.push(m);
+      const engines = await Promise.all(
+        [id(3), id(4)].map(async (tableId) => {
+          const engine: any = new ServerTableEngine(tableId, {
+            scope: 'tournament',
+            verified: true,
+            tournamentId: id(1),
+            generation: id(generation),
+            proofDeadlineMonotonicMs: performance.now() + 30000,
+          });
+          engine.installF06Allocator(
+            id(15),
+            async () => 1,
+            () => true,
+            '1'
+          );
+          await engine.stop();
+          expect(engine.captureDrainedF06Identity(tableId, id(1), id(generation))).not.toBeNull();
+          return [tableId, engine] as const;
+        })
+      );
+      m.tableEngines = new Map(engines);
+      s.tableEngines = new Map(engines);
+      s.tournamentEngines.set(id(1), m);
+      m.retainedTournamentBreakSources.set(id(3), { breakId: id(5), engine: engines[0]![1] });
+      m.durableTournamentBreaks.set(id(5), {
+        lifecycle: '1',
+        state: 'park_requested',
+        revision: '0',
+        members: [],
+        custody_id: null,
+        custody_generation: null,
+        terminal_handoff_required: false,
+      });
+      vi.spyOn(m, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
+      m.fenceForTournamentLeaseLoss();
+      await expect(m.stop()).rejects.toThrow('failed to stop');
+      expect(m.captureDrainedF06Originals()).not.toBeNull();
+      oldOwners.push(m, ...engines.map(([, engine]) => engine));
+      mocks.rpc.mockImplementation(async (_name, args) =>
+        response(args, [], [{ receipt: id(generation + 100) }])
+      );
+      expect(await s.transferDrainedF06Custody(id(1), m)).toBe(true);
+      const packet = s.drainedF06TournamentCustody.get(id(1));
+      if (condition === 'pending-writer')
+        engines[0]![1].readContinuationTasks.add(new Promise(() => {}));
+      if (condition === 'unknown-identity') engines[0]![1].f06TableLifecycle = undefined;
+      await s.performTournamentManagerAdmission(id(1), 'resume', 'terminal graph regression', 1);
+      const entry = [...s.completedF06TournamentCustody.get(id(1))].at(-1);
+      if (condition !== 'released') expect(entry.original).toBe(packet);
+
+      engines[0]![1].readContinuationTasks.clear();
+      s.tournamentEngines.get(id(1))?.fenceForTournamentLeaseLoss();
+      s.tournamentEngines.delete(id(1));
+    }
+    expect(s.completedF06TournamentCustody.get(id(1)).size).toBe(2);
+    for (const owner of oldOwners)
+      expect(reaches(s.completedF06TournamentCustody, owner)).toBe(condition !== 'released');
+    if (condition === 'released') {
+      const diagnostic = s.getTournamentLifecycleDiagnostic(id(1));
+      const historical = diagnostic.custody.packets.filter((p: any) => p.historical);
+      expect(historical.length).toBeGreaterThan(0);
+      expect(historical.at(-1).role).toBe('completed-custody-historical');
+      expect(JSON.stringify(diagnostic)).not.toContain('sourceProofSha256');
+      expect(
+        s.inspectCompletedF06Custody(
+          JSON.parse(JSON.stringify([...s.completedF06TournamentCustody.get(id(1))].at(-1)))
+        )
+      ).toBeNull();
+    }
+  }
+);

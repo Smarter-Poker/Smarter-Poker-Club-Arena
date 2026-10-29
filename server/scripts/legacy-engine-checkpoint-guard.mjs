@@ -765,7 +765,38 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
         for (const packet of server.drainedF06TournamentCustody.values()) packetOwner(packet);
         for (const packets of server.completedF06TournamentCustody.values()) {
           require(packets instanceof Set && packets.size <= maxTables, 'mixed_pending_source_maps_unknown');
-          for (const packet of packets) packetOwner(packet.original);
+          for (const packet of packets) {
+            if (packet?.status !== 'sealed') {
+              packetOwner(packet.original);
+              continue;
+            }
+            const inspect = Object.getOwnPropertyDescriptor(
+              modules.gameServer.GameServer.prototype,
+              'inspectCompletedF06Custody'
+            )?.value;
+            require(typeof inspect === 'function' &&
+              server.inspectCompletedF06Custody === inspect, 'mixed_pending_source_maps_unknown');
+            const seal = inspect.call(server, packet);
+            require(record(seal) &&
+              seal.schema === 'completed-f06-custody/v1' &&
+              uuid(seal.tournamentId) &&
+              uuid(seal.originGeneration) &&
+              Array.isArray(seal.sourceTableIds) &&
+              seal.sourceTableIds.length <= maxTables &&
+              Array.isArray(seal.originals) &&
+              seal.originals.length <= maxTables &&
+              seal.sourceTableIds.length === seal.originals.length &&
+              new Set(seal.sourceTableIds).size === seal.sourceTableIds.length &&
+              seal.sourceTableIds.every(
+                (id) =>
+                  uuid(id) &&
+                  seal.originals.some(
+                    (o) => o.tableId === id && uuid(o.engineId) && /^[1-9][0-9]*$/.test(o.lifecycle)
+                  )
+              ), 'mixed_pending_source_maps_unknown');
+            require(!seal.sourceTableIds.includes(tableId) &&
+              seal.originals.every((o) => o.tableId !== tableId), 'mixed_pending_source_present');
+          }
         }
         require(owners.size <= maxTables, 'mixed_pending_source_maps_unknown');
         for (const [owner, tournamentId] of owners) {

@@ -1,3 +1,4 @@
+import { completeF06Custody } from '../tournament/completedF06Custody.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import * as base from './ServerTableEngineBase.js';
@@ -677,6 +678,60 @@ async function nativeCheckpoint(
 }
 afterEach(() => freezeState.setMaintenanceFrozen(false));
 describe('native retained 8825 release checkpoint', () => {
+  it.each(['absent', 'present', 'copied', 'wrong-binding', 'unreadable-coverage'] as const)(
+    'keeps complete native absence coverage for sealed terminal custody: %s',
+    async (kind) => {
+      const f = await nativeCheckpoint(false, false, true);
+      const table = kind === 'present' ? '66b1cb1d-5056-41c1-a951-1bd078f8276f' : id(1990);
+      const owner: any = new manager.TournamentManager(
+        id(1900),
+        f.s,
+        id(1901),
+        performance.now() + 30000
+      );
+      const e: any = new ServerTableEngine(table, {
+        scope: 'tournament',
+        verified: true,
+        tournamentId: id(1900),
+        generation: id(1901),
+        proofDeadlineMonotonicMs: performance.now() + 30000,
+      });
+      e.installF06Allocator(
+        id(1902),
+        async () => 1,
+        () => true,
+        '1'
+      );
+      await e.stop();
+      owner.tableEngines.set(table, e);
+      vi.spyOn(owner, 'resolveTournamentSeatMoveQuarantine').mockResolvedValue(false);
+      owner.fenceForTournamentLeaseLoss();
+      await expect(owner.stop()).rejects.toThrow('failed to stop');
+      const engines = owner.captureDrainedF06Originals();
+      if (kind === 'unreadable-coverage') owner.stoppedDiagnosticOriginals = undefined;
+      const entry = completeF06Custody(
+        {
+          manager: owner,
+          tournamentId: id(1900),
+          originGeneration: id(1901),
+          engines,
+          sources: [],
+          current: () => true,
+          proof: {},
+        },
+        []
+      );
+      expect(entry.status).toBe(kind === 'unreadable-coverage' ? 'unsealed' : 'sealed');
+      if (kind === 'wrong-binding') f.s.inspectCompletedF06Custody = () => (entry as any).seal;
+      f.s.completedF06TournamentCustody.set(
+        id(1900),
+        new Set([kind === 'copied' ? JSON.parse(JSON.stringify(entry)) : entry])
+      );
+      expect(await f.run()).toMatchObject({ ok: kind === 'absent', restartAuthorized: false });
+      if (kind !== 'absent') expect(f.receipts.size).toBe(0);
+    }
+  );
+
   it('retains the exact native original bank snapshot after stop disposes live banks', async () => {
     const f = await nativeCheckpoint(false, true);
     const prior = structuredClone([...f.bankRows]);

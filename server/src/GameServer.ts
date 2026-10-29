@@ -1,3 +1,8 @@
+import {
+  completeF06Custody,
+  inspectCompletedF06Custody,
+  type CompletedF06Custody,
+} from './tournament/completedF06Custody.js';
 import { LightningObserverProjection } from './lightning/LightningObserverProjection.js';
 import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
 import { horseRiverValueAlarmSnapshot } from './engine/HorseRiverValueAudit.js';
@@ -711,10 +716,7 @@ export class GameServer {
     string,
     { manager: TournamentManager; run: () => Promise<void> }
   >();
-  private completedF06TournamentCustody = new Map<
-    string,
-    Set<Readonly<{ original: DrainedF06Custody; terminalProof: unknown }>>
-  >();
+  private completedF06TournamentCustody = new Map<string, Set<CompletedF06Custody>>();
   private tournamentDiagnosticIndexFailures = 0;
   private tournamentReleaseDiagnosticFailures = 0;
 
@@ -2181,6 +2183,11 @@ export class GameServer {
     return this.tournamentEngines.get(tournamentId) === manager;
   }
 
+  /** Read the module-issued immutable terminal seal, never JSON supplied by a caller. */
+  inspectCompletedF06Custody(entry: unknown) {
+    return inspectCompletedF06Custody(entry);
+  }
+
   /** Exact bounded object capture; no getStatus, authority callbacks or external reads. */
   getTournamentLifecycleDiagnostic(
     tournamentId: string,
@@ -2275,7 +2282,43 @@ export class GameServer {
       for (const entry of archivedCustody) {
         if (archivedCustodyScanned >= 32) break;
         archivedCustodyScanned++;
-        addCustody(entry.original, 'completed-custody');
+        if (entry.status !== 'sealed') {
+          addCustody(entry.original, 'completed-custody');
+          continue;
+        }
+        const seal = this.inspectCompletedF06Custody(entry);
+        if (!seal) {
+          unavailableOwners++;
+          retirementIndexComplete = false;
+          continue;
+        }
+        add(seal.managerDiagnostic as Snapshot, 'completed-custody-historical');
+        const selected = boundedSelection.tableIds
+          ? seal.originals.filter((original) =>
+              boundedSelection.tableIds?.includes(original.tableId)
+            )
+          : seal.originals.slice(0, 8);
+        custodyOriginals.push(
+          Object.freeze({
+            role: 'completed-custody-historical',
+            historical: true,
+            capturedAtMs: seal.capturedAtMs,
+            originGeneration: seal.originGeneration,
+            originalsCount: seal.originals.length,
+            originalsReturned: selected.length,
+            originalsOmitted: seal.originals.length - selected.length,
+            originalsUnavailable: 0,
+            originals: Object.freeze(
+              selected.map((original) =>
+                Object.freeze({
+                  tableId: original.tableId,
+                  availability: 'observed',
+                  engine: original.diagnostic,
+                })
+              )
+            ),
+          })
+        );
       }
     }
     retirementIndexComplete &&=
@@ -3236,13 +3279,13 @@ export class GameServer {
         }
         if (durableMixed || packet?.mixed) mixedTerminalProof = state.terminalProof;
         if (packet && !recoveryRequired) {
-          // Terminal dispositions are monotonic. Retain the original objects,
-          // but stop applying their old mutable roster proof before dealers can
-          // start: a later startup error must not strand a newly accepted hand.
+          // Terminal dispositions are monotonic. Preserve their evidence,
+          // detaching original object graphs only when physical release is
+          // proven. A later startup failure must not reapply the old roster.
           this.completedF06TournamentCustody ??= new Map();
           const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
           this.completedF06TournamentCustody.set(tournamentId, archive);
-          archive.add(Object.freeze({ original: packet, terminalProof: state.terminalProof }));
+          archive.add(completeF06Custody(packet, state.terminalProof));
           this.drainedF06TournamentCustody.delete(tournamentId);
         }
       } catch (error) {
@@ -3296,9 +3339,9 @@ export class GameServer {
           new Map(),
           current
         );
-        // This is terminal receipt adoption. The original objects and their
-        // reserved flags remain unchanged in custody; their exact SQL outcomes
-        // now account for every retained preparation in the native gate.
+        // This is terminal receipt adoption. Preserve exact SQL outcomes;
+        // a physical-release seal may detach quiescent original graphs while
+        // any unproven owner remains in exact, unsealed object custody.
         this.terminalMixedF06Admissions ??= new Map();
         this.terminalMixedF06Admissions.set(transfer.transferId, mixedTerminalProof);
         this.mixedF06AdmissionContinuations ??= new Map();
@@ -3318,7 +3361,7 @@ export class GameServer {
           this.completedF06TournamentCustody ??= new Map();
           if (packet) {
             const archive = this.completedF06TournamentCustody.get(tournamentId) ?? new Set();
-            archive.add(Object.freeze({ original: packet, terminalProof: completion }));
+            archive.add(completeF06Custody(packet, completion));
             this.completedF06TournamentCustody.set(tournamentId, archive);
             this.drainedF06TournamentCustody.delete(tournamentId);
           }

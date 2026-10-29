@@ -174,6 +174,8 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'diagnosticOnly',
   'tournamentId',
   'observedAtMs',
+  'historical',
+  'capturedAtMs',
   'observedMonotonicMs',
   'pid',
   'gameServerInitializedAtMs',

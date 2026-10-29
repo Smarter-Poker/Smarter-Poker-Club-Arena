@@ -1,5 +1,6 @@
 {
   "extends": "./tsconfig.runtime.json",
+  "files": ["src/engine/GtoPublicHist215FeatureDescriptor.json"],
   "compilerOptions": {
     "noCheck": true,
     "noResolve": true,

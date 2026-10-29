@@ -55,3 +55,11 @@ the same UUID and never repeats the POST. Scheduled or automatic execution and
 workflow reruns cannot invoke the control job.
 
 The explicit control workflow cancels superseded PR checks per PR while keeping manual production operations serialized and non-cancelling. The existing 98 workflow cancellation laws and four control boundary checks passed.
+
+The bounded runtime emitter explicitly includes the imported public215 JSON
+descriptor as a TypeScript input. With `noResolve` enabled, the inherited
+TypeScript source glob did not discover that dependency, although the full
+checked build emitted it. The resource proof continues comparing every runtime
+file hash; neither resolution limits nor descriptor parity are relaxed. A
+regression check derives relative JSON imports from runtime source and requires
+them in the emitter's explicit roots.

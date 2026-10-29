@@ -72,3 +72,23 @@ it('does not queue a hidden-page sound to burst on resume', async () => {
   });
   expect(sound.playCommunityCard).not.toHaveBeenCalled();
 });
+
+it('enabling sound after an already-visible muted reveal does not replay its cue', async () => {
+  vi.useFakeTimers();
+  const view = render(
+    <CommunityCards
+      cards={[]}
+      stage="preflop"
+      rabbitCards={cards}
+      rabbitHandId={41}
+      playSounds={false}
+    />
+  );
+  view.rerender(
+    <CommunityCards cards={[]} stage="preflop" rabbitCards={cards} rabbitHandId={41} playSounds />
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(sound.playCommunityCard).not.toHaveBeenCalled();
+});

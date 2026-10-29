@@ -1136,7 +1136,10 @@ function CommunityCardsComponent({
   const prevRabbitCueRef = useRef<string | null>(null);
   useEffect(() => {
     if (!rabbitCueIdentity || prevRabbitCueRef.current === rabbitCueIdentity) return;
-    if (!playSounds) return;
+    if (!playSounds) {
+      prevRabbitCueRef.current = rabbitCueIdentity;
+      return;
+    }
     // One beat at the start of the simultaneous turn, after the back hold.
     // Hidden tabs do not queue a stale sound to burst when the phone resumes.
     const cue = () => {

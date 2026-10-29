@@ -46,6 +46,16 @@ async function lobbySettled(page: Page): Promise<void> {
   await prepareCashLobbyActions(page);
 }
 
+/** Cash-door cases must not inherit another case's durable MTT/PLO filter. */
+async function selectAllGames(page: Page): Promise<void> {
+  const all = page.getByRole('tab', { name: 'ALL', exact: true });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.club-home__games .lt-row[data-kind="cash"]').first()).toBeVisible({
+    timeout: 45_000,
+  });
+}
+
 test.describe('Club lobby', () => {
   /* Every case opens a fresh context and may need the 45s cold-read budget.
      Keep the existing 30s route/action budget in addition to that read. A
@@ -136,12 +146,7 @@ test.describe('Club lobby', () => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
-
-    // The previous journey may have persisted MTT for this account. A fresh
-    // browser context keeps that preference; explicitly request this case's list.
-    const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
-    await allGames.click();
-    await expect(allGames).toHaveAttribute('aria-selected', 'true');
+    await selectAllGames(page);
 
     const rows = await rowCount(page);
     test.skip(rows === 0, 'no games in this lobby right now');
@@ -229,12 +234,7 @@ test.describe('Club lobby', () => {
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);
-
-    // The tournament journey persists MTT across contexts. Establish ALL
-    // through the real control before asking this case to review a cash game.
-    const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
-    await allGames.click();
-    await expect(allGames).toHaveAttribute('aria-selected', 'true');
+    await selectAllGames(page);
 
     // R10: a cash GAME opens feeders when a Main fills. It never advertises
     // the game as Full or offers a standalone table queue. The maintained

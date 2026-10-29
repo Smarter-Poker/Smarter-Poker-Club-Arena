@@ -240,6 +240,43 @@ try:
         certificate=q("live", "SELECT jsonb_agg(jsonb_build_object('name',p.proname,'source_md5',md5(p.prosrc),'definition_md5',md5(pg_get_functiondef(p.oid)),'security_definer',p.prosecdef,'settings',p.proconfig)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ("+names_sql+")")
         Path(evidence).write_text(certificate+'\n')
 
+    # Personal earned fees call the real Player Management reader, including
+    # standing shares, redemptions and its own date boundary. No money moves.
+    q("live", "CREATE SCHEMA IF NOT EXISTS smarter_private; "
+      "CREATE TABLE smarter_private.player_rake_share_rules(rule_key text,club_id uuid,from_user uuid,to_user uuid,share_bps int,effective_from timestamptz,effective_until timestamptz); "
+      "CREATE TABLE smarter_private.player_fee_redemptions(club_id uuid,user_id uuid,effective_on date,amount_cents bigint); "
+      "CREATE TABLE ca_club_rake_daily_user(club_id uuid,user_id uuid,day date,rake_cents bigint); "
+      "CREATE TABLE ca_club_member_tournament_fee_daily(club_id uuid,user_id uuid,day date,fees numeric); "
+      "ALTER TABLE rake_attributions ADD COLUMN IF NOT EXISTS rake_amount numeric, ADD COLUMN IF NOT EXISTS created_at timestamptz; "
+      "CREATE FUNCTION fn_ca_fee_counting_start() RETURNS date LANGUAGE sql AS $$SELECT DATE '2026-10-12'$$;")
+    share_source = (M / "20261025030629_a_standing_rake_share_replaces_the_woowoo_cron.sql").read_text()
+    member_reader = share_source.split("CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals", 1)[1].split("$function$;", 1)[0]
+    run(psql("live"), "CREATE OR REPLACE FUNCTION public.ca_club_member_fee_totals" + member_reader + "$function$;")
+    a = "00000000-0000-0000-0000-0000000000a2"
+    owner = "00000000-0000-0000-0000-0000000000a1"
+    q("live", f"INSERT INTO ca_club_rake_daily_user VALUES('{J}','{a}','2026-10-20',10000); "
+      f"INSERT INTO ca_club_member_tournament_fee_daily VALUES('{J}','{a}','2026-10-20',3.50); "
+      f"INSERT INTO smarter_private.player_fee_redemptions VALUES('{J}','{a}','2026-10-20',2000); "
+      f"INSERT INTO smarter_private.player_rake_share_rules VALUES('half','{J}','{a}','{owner}',5000,'2026-10-20T00:00Z',NULL); "
+      f"INSERT INTO rake_attributions(player_id,club_id,rake_amount,created_at) VALUES('{a}','{J}',4,'2026-10-20T12:00Z');")
+    personal = f"SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid','{a}',false); SELECT ca_club_data_screen('{J}','2026-10-20','2026-10-20')->'member_fees'->>'total_fees';"
+    require(q("live", personal, user="authenticator").splitlines()[-1] != '81.50', "baseline reproduces missing personal share reader")
+    earned = (M / "20261027145338_club_data_shows_member_earned_fees_from_the_player_managemen.sql").read_text()
+    run(psql("live"), "BEGIN; ALTER FUNCTION public.ca_club_data_screen(uuid,date,date,text,text,text,integer) SET work_mem='1MB';" + earned, expect_fail="preimage changed")
+    run(psql("live"), earned.replace('COMMIT;', 'ROLLBACK;'))
+    require(q("live", personal, user="authenticator").splitlines()[-1] != '81.50', "rollback preserves the original reader")
+    run(psql("live"), earned)
+    require(q("live", personal, user="authenticator").splitlines()[-1] == '81.50', "personal fees equal 100 gross minus 20 redemption minus 2 standing share plus 3.50 MTT")
+    require(q("live", f"SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid','{a}',false); SELECT ca_club_data_screen('{J}','2026-10-20','2026-10-20','MTT','ALL','no-game')->'member_fees'->>'total_fees';", user="authenticator").splitlines()[-1] == '81.50', "filtered and empty games retain explicitly labelled personal period totals")
+    require(q("live", f"SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid','{a}',false); SELECT ca_club_data_screen('{J}','2026-10-19','2026-10-19')->'member_fees'->>'total_fees';", user="authenticator").splitlines()[-1] == '0', "member ledger dates exclude other days")
+    require(q("live", f"SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid','{owner}',false); SELECT ca_club_data_screen('{J}','2026-10-20','2026-10-20')->'member_fees' = 'null'::jsonb;", user="authenticator").splitlines()[-1] == 't', "whole-club operator keeps gross club fees")
+    q("live", f"INSERT INTO profiles(id,username,is_admin) VALUES('00000000-0000-0000-0000-00000000ffff','Scoped Player',false); INSERT INTO club_members(club_id,user_id,role,status) VALUES('{J}','00000000-0000-0000-0000-00000000ffff','player','active');")
+    run(psql("live", user="authenticator"), f"SET ROLE authenticated; SELECT set_config('test.role','authenticated',false); SELECT set_config('test.uid','00000000-0000-0000-0000-00000000ffff',false); SELECT ca_club_data_screen('{J}');", expect_fail="not authorized")
+    run(psql("live"), earned, expect_fail="preimage changed")
+    require(True, "player authorization and replay refusal retained")
+    print("EARNED_READER_MD5=" + q("live", "SELECT md5(pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))"), flush=True)
+    require(q("live", "SELECT NOT has_function_privilege('anon','public.ca_club_data_screen(uuid,date,date,text,text,text,integer)','EXECUTE') AND has_function_privilege('authenticated','public.ca_club_data_screen(uuid,date,date,text,text,text,integer)','EXECUTE')") == 't', "existing Data reader ACL preserved")
+
 finally:
     if started:
         run([PG / "pg_ctl", "-D", data, "-m", "fast", "-w", "stop"])

@@ -102,6 +102,8 @@ function transport(answer: (request: Request) => Answer): void {
       in: (column: string, value: unknown) => filter(column, 'in', value),
       is: (column: string, value: unknown) => filter(column, 'is', value),
       order: () => query,
+      limit: () => query,
+      gt: () => query,
       not: (column: string, op: string, value: unknown) => filter(column, `not.${op}`, value),
       then: (resolve: (value: Answer) => unknown, reject: (reason: unknown) => unknown) =>
         reply(request).then(resolve, reject),
@@ -120,10 +122,10 @@ function transport(answer: (request: Request) => Answer): void {
 function threeBustsOfFour(players = 4): void {
   transport((request) => {
     if (request.table === 'tournament_players') {
-      if (request.columns === 'user_id, chips')
+      if (request.columns === 'id, user_id, chips')
         return { data: bustedIds.map((user_id) => ({ user_id, chips: 0 })) };
       if (request.head && has(request, 'status', 'eq', 'playing')) return { count: players };
-      if (request.columns === 'position') return { data: [] };
+      if (request.columns === 'id, position') return { data: [] };
       if (request.head && has(request, 'position', 'is', null)) return { count: players };
       if (request.head) return { count: players };
     }

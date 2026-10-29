@@ -824,15 +824,30 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (this.eliminationSweepCursor.nextStage > 1) break bustStage;
         const bustObservation = { firstNewBustAt: null as number | null };
         this.bustObservationInFlight = bustObservation;
-        // Find ALL busted players (0 chips) in a single query
+        // Both the zero-field guard and knockout ordering need the complete
+        // roster. A capped prefix cannot establish either fact.
         this.noteEliminationSweepStep('db:tournament_players');
-        // eslint-disable-next-line prefer-const
-        let { data: busted, error: bustedErr } = await supabase
-          .from('tournament_players')
-          .select('user_id, chips')
-          .eq('tournament_id', this.tournamentId)
-          .eq('status', 'playing')
-          .lte('chips', 0);
+        const bustedRead = await fetchAllRows<{ id: string; user_id: string; chips: number }>(
+          (cursor, pageSize) => {
+            let query = supabase
+              .from('tournament_players')
+              .select('id, user_id, chips')
+              .eq('tournament_id', this.tournamentId)
+              .eq('status', 'playing')
+              .lte('chips', 0)
+              .order('id', { ascending: true })
+              .limit(pageSize);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          {
+            label: 'Tournament.bustedField',
+            pageAttempts: 1,
+            shouldContinue: () => !sweepStopped(),
+          }
+        );
+        let busted = bustedRead.complete ? bustedRead.rows : null;
+        const bustedErr = bustedRead.complete ? null : new Error('incomplete bust roster');
         let bustBatchHasMore = false;
         let preserveBustWait = false;
         if (sweepStopped()) return;
@@ -1381,11 +1396,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            */
           this.noteEliminationSweepStep('db:tournament_players');
           const [takenRead, unplacedRead] = await Promise.all([
-            supabase
-              .from('tournament_players')
-              .select('position')
-              .eq('tournament_id', this.tournamentId)
-              .not('position', 'is', null),
+            fetchAllRows<{ id: string; position: number }>(
+              (cursor, pageSize) => {
+                let query = supabase
+                  .from('tournament_players')
+                  .select('id, position')
+                  .eq('tournament_id', this.tournamentId)
+                  .not('position', 'is', null)
+                  .order('id', { ascending: true })
+                  .limit(pageSize);
+                if (cursor) query = query.gt('id', cursor);
+                return query;
+              },
+              {
+                label: 'Tournament.takenPlaces',
+                pageAttempts: 1,
+                shouldContinue: () => !sweepStopped(),
+              }
+            ),
             // Players who hold no finishing place yet. Monotonic, and immune to
             // the late-reg promotion that made `playingCount` drift.
             supabase
@@ -1394,7 +1422,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               .eq('tournament_id', this.tournamentId)
               .is('position', null),
           ]);
-          const { data: takenRows, error: takenErr } = takenRead;
+          const takenRows = takenRead.complete ? takenRead.rows : null;
+          const takenErr = takenRead.complete ? null : new Error('incomplete taken places');
           const { count: unplacedCount, error: unplacedErr } = unplacedRead;
           if (sweepStopped()) return;
 

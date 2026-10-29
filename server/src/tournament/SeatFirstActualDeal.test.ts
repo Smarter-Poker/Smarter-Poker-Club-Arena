@@ -151,6 +151,16 @@ function fixture(
       is() {
         return builder;
       },
+      // These fixed two/three-player fixtures fit on one keyset page.
+      order() {
+        return builder;
+      },
+      limit() {
+        return builder;
+      },
+      gt() {
+        return builder;
+      },
       update(value: any) {
         patch = value;
         return builder;

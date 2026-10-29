@@ -1,3 +1,4 @@
+import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
   allInEquityBoardKey,
   allInEquityHandMatches,
@@ -2452,6 +2453,7 @@ function LiveTablePage({
     userId,
     event: engineLastEvent,
     follow: (destination) => {
+      if (tableId) sessionStatsService.moveSession(tableId, destination, userId);
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: destination });
         return;
@@ -5024,6 +5026,8 @@ function LiveTablePage({
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const {
     sessionStartRef,
+    sessionCarryRef,
+    vpipCountRef,
     handsPlayedRef,
     handsWonRef,
     biggestPotRef,
@@ -5035,7 +5039,7 @@ function LiveTablePage({
     heroWonCurrentHandRef,
     hadShowdownRef,
     resetSession,
-  } = useTableSession(tableId);
+  } = useTableSession(tableId, userId);
   /* A sitting-out or busted cash seat still owns a session. Restore from
      seat ownership, not from the current hand's funded-player list. */
   // Diamond's finished card reads the exact custody after leave. Restoring
@@ -5073,6 +5077,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         const merged = mergeSessionFacts({
           serverFacts: data,
+          carried: sessionCarryRef.current,
           atAsk: factsAtAsk,
           now: {
             startMs: sessionStartRef.current,
@@ -5094,6 +5099,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         totalBuyInRef.current = sessionBuyInTotal({
           serverBaseline: data,
+          carriedAdjustment: sessionCarryRef.current.fundingAdjustment,
           totalAtAsk: totalAtAsk + sessionBuyInSeedRef.current,
           totalNow: totalBuyInRef.current,
         });
@@ -5313,7 +5319,6 @@ function LiveTablePage({
       hold.pendingExit = null;
     };
   }, []);
-  const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
   // hand", which is what sessionStatsService.recordHand() needs. Set on the
@@ -19153,6 +19158,15 @@ function LiveTablePage({
                  with a Peak Stack of 0 no matter what they held. This is the
                  once-per-hand, dealt-in-guarded emit, which makes it the exact
                  point at which the hero's stack is worth sampling. */
+              if (tableId)
+                sessionStatsService.recordHand(
+                  tableId,
+                  Number(tableStateRef.current.players?.[resolveHeroSeat() - 1]?.stack) || 0,
+                  outcome.won === true,
+                  heroVpipThisHandRef.current,
+                  heroPfrThisHandRef.current,
+                  `${tableId}:${hn}`
+                );
               masterBus.emit('HAND_COMPLETED', {
                 handId: String(tableStateRef.current.handNumber ?? hn),
                 tableId: tableId || '',
@@ -21262,51 +21276,18 @@ function LiveTablePage({
   // The session belongs to the SEAT, not to a modal, so it is owned here and
   // runs for as long as hero is sitting. SessionHUD is now a pure reader.
   // ═══════════════════════════════════════════════════════════════════════
-  const sessionStartedForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!tableId || !userId || userId === 'guest') return;
-    const seated = tableState.heroSeat > 0;
-    const key = `${tableId}:${userId}`;
-
-    if (seated && tableState.arenaAsset && sessionStartedForRef.current !== key) {
-      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      // Guard against seeding the session with a 0 stack from a snapshot that
-      // has the seat but not yet the chips — buyInTotal would be wrong for the
-      // whole session and every P&L reading would be inflated by the buy-in.
-      if (heroStack > 0) {
-        sessionStatsService.startSession(
-          tableId,
-          userId,
-          heroStack,
-          safeBB(tableState.blinds),
-          tableState.arenaAsset
-        );
-        sessionStartedForRef.current = key;
-        prevHandStackRef.current = heroStack;
-      }
-    } else if (!seated && sessionStartedForRef.current === key) {
-      sessionStatsService.endSession(tableId);
-      sessionStartedForRef.current = null;
-    }
-  }, [
+  useGameSessionLifecycle({
     tableId,
     userId,
-    tableState.heroSeat,
-    tableState.players,
-    tableState.blinds,
-    tableState.arenaAsset,
-  ]);
-
-  // End the session on unmount too (navigating away, or MultiTablePage
-  // closing this tab) so the session_history row is written.
-  useEffect(() => {
-    return () => {
-      if (sessionStartedForRef.current && tableId) {
-        sessionStatsService.endSession(tableId);
-        sessionStartedForRef.current = null;
-      }
-    };
-  }, [tableId]);
+    seated: tableState.heroSeat > 0,
+    stack: tableState.players[tableState.heroSeat - 1]?.stack || 0,
+    bigBlind: safeBB(tableState.blinds),
+    arenaAsset: tableState.arenaAsset,
+    onNewSession: resetSession,
+    onStart: (stack) => {
+      prevHandStackRef.current = stack;
+    },
+  });
 
   // Track if hero folds during the current hand (status changes mid-hand)
   useEffect(() => {
@@ -21375,21 +21356,8 @@ function LiveTablePage({
            how it was caught. The VPIP pair twenty lines below - one latch,
            one reader - is the pattern this should have followed. */
 
-        // Dan 2026-08-15 — THE Session Stats fix. SessionStatsService had a
-        // complete, correct recordHand() that computed hands, VPIP%, PFR%,
-        // P&L, BB/100, hands/hr and the sparkline trajectory — and NOTHING in
-        // the entire app ever called it. Every field except the clock sat at
-        // its zeroed initial value forever, which is exactly why the panel
-        // "only recorded the time". This is that missing call.
-        if (tableId) {
-          sessionStatsService.recordHand(
-            tableId,
-            heroStack,
-            heroDidWin,
-            heroVpipThisHandRef.current,
-            heroPfrThisHandRef.current
-          );
-        }
+        // SessionStatsService is fed by the dealt-in HAND_COMPLETED path,
+        // including the last hand before a move or leave. Never count it twice here.
       }
       if (previousHandNumber > 0 && lastDealPresentationHandRef.current !== handNum) {
         // This is a real in-session hand transition, never first-load

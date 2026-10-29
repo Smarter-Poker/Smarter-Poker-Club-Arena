@@ -102,9 +102,9 @@
     },
     {
       "file": "20261029011340_legacy_postflop_void_preserves_original_principal.sql",
-      "sha256": "53431ffdabd682f27dc4718775eaa149ae13fc91e2c43910b789cd40782411a7",
+      "sha256": "af928c3de7304cdc42518e3337efc127c6125004d8877caedca906c01160a6aa",
       "replaces": [
-        "SELECT md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d' AS installed;"
+        "md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'"
       ],
       "proofs": [
         "md5(pg_get_functiondef('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)'::regprocedure)) = 'e416f1fa850c85d656ec55ddfae3386d'"

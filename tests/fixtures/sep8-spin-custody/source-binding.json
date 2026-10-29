@@ -36,7 +36,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+    "scripts/ci/classify-ci-changes.mjs": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1439,5 +1439,16 @@
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+        "current": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+      }
+    },
+    "execution_performed": false
   }
 }

@@ -3149,18 +3149,8 @@ export abstract class ServerTableEngineBase {
        the same helper, split here into the emit half that Step 5 needs
        without Step 6's console line (those two callbacks log the player id,
        which `bridgeToHub` does not). One hub broadcast shape, one place. */
-    const emitToHub = (event: { type: string } & Record<string, unknown>) => {
-      try {
-        this.hub?.emitEvent(this.tableId, {
-          ...event,
-          type: event.type.toLowerCase(),
-          table_id: this.tableId,
-          timestamp: Date.now(),
-        });
-      } catch {
-        /* broadcast failure is non-fatal */
-      }
-    };
+    const emitToHub = (event: { type: string } & Record<string, unknown>) =>
+      this.emitSubEngineEvent(event);
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
@@ -9016,6 +9006,19 @@ export abstract class ServerTableEngineBase {
    * session base is spent first; only the excess hits the DB. Best-effort:
    * accounting must never break gameplay.
    */
+  protected emitSubEngineEvent(event: { type: string } & Record<string, unknown>): void {
+    try {
+      this.hub?.emitEvent(this.tableId, {
+        ...event,
+        type: event.type.toLowerCase(),
+        table_id: this.tableId,
+        timestamp: Date.now(),
+      });
+    } catch {
+      /* broadcast failure is non-fatal */
+    }
+  }
+
   protected dispatchContinuationTimeBank(event: TimeBankEvent, debitId?: string): void {
     console.log(
       `[ServerTableEngine:${this.tableId}] TimeBank: ${event.type} player=${event.playerId}`
@@ -9041,7 +9044,7 @@ export abstract class ServerTableEngineBase {
       event.type === 'TIME_BANK_EXPIRED' ||
       event.type === 'TIME_BANK_DEPLETED'
     ) {
-      this.hub?.emitEvent(this.tableId, {
+      this.emitSubEngineEvent({
         type: event.type,
         tableId: event.tableId,
         playerId: event.playerId,
@@ -9160,6 +9163,9 @@ export abstract class ServerTableEngineBase {
    * need the answer are the ones whose tournament lease is already gone.
    */
   resolveUnconfirmedTimeBankDebits(): Promise<void> {
+    // A retained receipt ID may still belong to its physical first request.
+    // Only an unknown completed request needs the existing explicit re-ask.
+    if (this.timeBankAccountingPending.size > 0) return Promise.resolve();
     if (this.timeBankDebitResolution) return this.timeBankDebitResolution;
     if (this.unresolvedTimeBankDebits.size === 0) return Promise.resolve();
     const run = (async () => {

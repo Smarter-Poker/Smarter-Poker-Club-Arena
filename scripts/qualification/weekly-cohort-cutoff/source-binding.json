@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244685,
-      "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+      "bytes": 245583,
+      "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -745,6 +745,23 @@
     "currentWorkflowPin": {
       "bytes": 244685,
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+    },
+    "execution_performed": false
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the exact additive 14-line Accounting shard 3 durable original-hand continuation native step and its retained artifact, plus classifier alternatives selecting its runner, probe, private fixtures and schema manifest. Existing qualification commands, assertions, matrix, deadlines, financial SQL/fixture bytes, historical audit records and qualification verdicts are unchanged. Refresh only current shared input identities and directly dependent binding identities. This is source identity, not renewed financial execution, installation or production certification.",
+    "source_revision": "0c90ad4c5eb6e4a8f810e4357cf57637b464fcd9",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244685,
+          "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+        },
+        "current": {
+          "bytes": 245583,
+          "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+        }
+      }
     },
     "execution_performed": false
   }

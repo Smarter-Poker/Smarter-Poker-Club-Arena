@@ -399,6 +399,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      matches(/^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/) ||
       privateRecordHosting ||
       matches(nativeAlertSql) ||
       cashHalfNative ||

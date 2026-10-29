@@ -86,6 +86,8 @@ import {
   normalizePhrase,
   pickCandidate,
   sanitizeLine,
+  sanitizeStyledLine,
+  writeChatRow,
   speakAtTheFelt,
   speakAsTheyShove,
   tableRefusal,
@@ -283,14 +285,11 @@ describe('events are read off the captured hand', () => {
 
   it('one candidate per hand: a won pot outranks a loss, and the pick is deterministic', () => {
     const input = bigPotHand(10, {
-      winners: [
-        { userId: HORSE_A, amount: 60 },
-        { userId: HORSE_B, amount: 60 },
-      ],
+      winners: [{ userId: HORSE_A, amount: 120 }],
       showdownResults: [
-        { userId: HORSE_A, handRanking: 3, handName: 'Two Pair' },
+        { userId: HORSE_A, handRanking: 5, handName: 'Straight' },
         { userId: HORSE_B, handRanking: 3, handName: 'Two Pair' },
-        { userId: HUMAN, handRanking: 7, handName: 'Full House' },
+        { userId: HUMAN, handRanking: 2, handName: 'Pair' },
       ],
     });
     const c = detectEvents(input);
@@ -366,9 +365,9 @@ describe('the line is a hash, never a roll', () => {
 describe('the one door every line passes', () => {
   const names = ['danny', 'Plate2', null, undefined];
   it('accepts a plain filled line', () => {
-    expect(sanitizeLine('nice pot, 52 bb, gg', names)).toEqual({
+    expect(sanitizeLine('nice pot, gg', names)).toEqual({
       ok: true,
-      line: 'nice pot, 52 bb, gg',
+      line: 'nice pot, gg',
     });
   });
   it('refuses a banned dash, built from the code point so this file holds none', () => {
@@ -520,23 +519,54 @@ describe('speakAtTheFelt', () => {
     expect(inserts('table_chat')).toHaveLength(0);
   });
 
-  it('never two horses in one hand: a split big pot produces one claim and one line', async () => {
-    const split = bigPotHand(32, {
+  it('a split pot is not a win celebration, including unequal side-pot payouts', async () => {
+    for (const amounts of [
+      [60, 60],
+      [90, 30],
+    ]) {
+      const split = bigPotHand(32, {
+        winners: [
+          { userId: HORSE_A, amount: amounts[0] },
+          { userId: HORSE_B, amount: amounts[1] },
+        ],
+      });
+      expect(detectEvents(split)).toEqual([]);
+      expect(await speakAtTheFelt(split)).toBe('no_event');
+      expect(inserts('horse_table_talk_ledger')).toHaveLength(0);
+      expect(inserts('table_chat')).toHaveLength(0);
+    }
+  });
+
+  it('several pot records paid to one person still represent one winner', () => {
+    const input = bigPotHand(33, {
       winners: [
-        { userId: HORSE_A, amount: 60 },
-        { userId: HORSE_B, amount: 60 },
+        { userId: HORSE_A, amount: 90 },
+        { userId: HORSE_A, amount: 30 },
       ],
     });
-    expect(await speakAtTheFelt(split)).toBe('spoken');
-    expect(inserts('horse_table_talk_ledger')).toHaveLength(1);
-    expect(inserts('table_chat')).toHaveLength(1);
-    const who = inserts('table_chat')[0].payload!.user_id;
-    expect([HORSE_A, HORSE_B]).toContain(who);
-    // and the same hand picks the same horse again
-    _resetTableTalkForTests();
-    h.state.calls = [];
-    expect(await speakAtTheFelt(split)).toBe('spoken');
-    expect(inserts('table_chat')[0].payload!.user_id).toBe(who);
+    expect(detectEvents(input).some((c) => c.event === 'big_pot_won')).toBe(true);
+  });
+
+  it.each([
+    '78bb on the river, somebody wanted to see my cards',
+    '399 bb, nice',
+    '78.5 BB, ty',
+    '78 big blinds on the river',
+    'seventy-eight big blinds, nice',
+  ])('hard ban: BB amounts cannot pass either sanitizer or the chat writer: %s', async (line) => {
+    expect(sanitizeLine(line, [])).toEqual({ ok: false, reason: 'bb_amount' });
+    expect(sanitizeStyledLine(line, [])).toEqual({ ok: false, reason: 'bb_amount' });
+    expect(await writeChatRow(TABLE, HORSE_A, line)).toBe(false);
+    expect(inserts('table_chat')).toHaveLength(0);
+  });
+
+  it('chat phrases do not narrate pot sizes or address numbered seats', () => {
+    for (const { line } of everyPoolLine()) {
+      expect(line).not.toMatch(
+        /\{potBB\}|seat \{seat\}|wanted to see|pay to look|paying me off|you (?:really )?called|bold call|good call|runner runner/i
+      );
+    }
+    expect(fillLine('{potBB} bb', { potBB: 78 })).toBeNull();
   });
 
   it('the hourly cap: that many lines in the last hour, no claim', async () => {
@@ -936,10 +966,24 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
     expect(silent).toBeGreaterThan(spoke);
   });
 
+  it('does not write after-hand chat before five seconds, then writes once after typing', async () => {
+    _setHumanPacingForTests(true);
+    const pending = speakAtTheFelt(bigPotHand(8000));
+    // Flush the gate/history/claim awaits and start the real typing timer.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inserts('horse_table_talk_ledger')).toHaveLength(1);
+    expect(inserts('table_chat')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(inserts('table_chat')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5_001);
+    expect(await pending).toBe('spoken');
+    expect(inserts('table_chat')).toHaveLength(1);
+  });
+
   it('a line lands a human beat after the hand, spread across a range', () => {
     const typed = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'typed'));
-    expect(Math.min(...typed)).toBeGreaterThanOrEqual(1_400);
-    expect(Math.max(...typed)).toBeLessThan(5_200);
+    expect(Math.min(...typed)).toBeGreaterThanOrEqual(5_000);
+    expect(Math.max(...typed)).toBeLessThan(10_000);
     expect(new Set(typed).size).toBeGreaterThan(150);
     const quick = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'quick'));
     expect(Math.max(...quick)).toBeLessThan(900);
@@ -962,6 +1006,27 @@ describe('who is listening, and how the night is going', () => {
     }
     expect(silent).toBeGreaterThan(75);
     expect(spoken).toBeGreaterThan(0);
+  });
+
+  it('a chopped payout cannot build or preserve a winning streak', async () => {
+    const won = (n: number) =>
+      bigPotHand(n, { potSize: 20, winners: [{ userId: HORSE_A, amount: 20 }] });
+    h.state.gate = { engine: true, mode: false };
+    await speakAtTheFelt(won(5001));
+    await speakAtTheFelt(won(5002));
+    await speakAtTheFelt(
+      bigPotHand(5003, {
+        winners: [
+          { userId: HORSE_A, amount: 60 },
+          { userId: HUMAN, amount: 60 },
+        ],
+      })
+    );
+    _resetTableTalkGateForTests();
+    h.state.gate = { engine: true, mode: true };
+    h.state.calls = [];
+    expect(await speakAtTheFelt(won(5004))).toBe('spoken');
+    expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({ event: 'pot_won' });
   });
 
   it('a horse that loses showdown after showdown says it as tilt', async () => {

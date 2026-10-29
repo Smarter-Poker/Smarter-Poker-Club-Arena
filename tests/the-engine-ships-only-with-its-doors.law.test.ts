@@ -12,11 +12,13 @@
  * This law pins: the extractor sees both incidents' call sites and nothing in
  * a comment; the real script, run end to end against a "production" that
  * lacks the reprice door, fails and names it; an unreadable database and a
- * rollback never block; and the workflow runs the check before the break gate
+ * rollback keep their generic policy; continuation targets additionally require
+ * their exact two installed migration histories; and the workflow runs the check before the break gate
  * with production's credentials.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -44,14 +46,23 @@ type Doors = {
 };
 const load = async (): Promise<Doors> => (await import(SCRIPT)) as Doors;
 
-function runScript(env: Record<string, string>) {
+function runScript(env: Record<string, string>, cwd = root) {
   const clean = { ...process.env };
   delete clean.DATABASE_URL;
-  return spawnSync(process.execPath, [SCRIPT], {
-    cwd: root,
-    env: { ...clean, ...env },
-    encoding: 'utf8',
-  });
+  delete clean.ENGINE_DOORS_LIVE_FIXTURE;
+  delete clean.ENGINE_DOORS_MIGRATIONS_FIXTURE;
+  const dir = mkdtempSync(join(tmpdir(), 'door-history-'));
+  try {
+    const histories = join(dir, 'histories.json');
+    writeFileSync(histories, JSON.stringify(continuationHistory()));
+    return spawnSync(process.execPath, [SCRIPT], {
+      cwd,
+      env: { ...clean, ENGINE_DOORS_MIGRATIONS_FIXTURE: histories, ...env },
+      encoding: 'utf8',
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe('the extractor finds every door the engine calls, and only those', () => {
@@ -140,10 +151,19 @@ describe('the real script, end to end', () => {
     expect(res.stdout).toMatch(/::warning title=MISSING DATABASE DOOR::/);
   });
 
-  it('an unreadable database is a warning, never the reason a fix cannot ship', () => {
-    const res = runScript({});
-    expect(res.status).toBe(0);
-    expect(res.stdout).toMatch(/::warning title=DATABASE DOORS UNCHECKED::DATABASE_URL is not set/);
+  it('an unreadable database remains a warning for a target without continuation prerequisites', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'legacy-door-target-'));
+    try {
+      mkdirSync(join(dir, 'server/src'), { recursive: true });
+      writeFileSync(join(dir, 'server/src/legacy.ts'), "db.rpc('legacy_door');");
+      const res = runScript({}, dir);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toMatch(
+        /::warning title=DATABASE DOORS UNCHECKED::DATABASE_URL is not set/
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -169,5 +189,104 @@ describe('the workflow asks before it hands the build to Hetzner', () => {
       expect(typeof reason, name).toBe('string');
       expect(String(reason).length, name).toBeGreaterThan(20);
     }
+  });
+});
+
+const continuationFiles = [
+  '20261028233353_durable_private_hand_continuation.sql',
+  '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
+];
+function continuationHistory() {
+  return continuationFiles.map((file) => ({
+    version: file.slice(0, 14),
+    name: file.slice(15, -4),
+    statement_count: 1,
+    sql_md5: createHash('md5')
+      .update(readFileSync(join(root, 'supabase/migrations', file)))
+      .digest('hex'),
+  }));
+}
+function runContinuationFixture(functions: string[], histories: unknown, extra = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'continuation-doors-'));
+  try {
+    const names = join(dir, 'functions.json');
+    const rows = join(dir, 'migrations.json');
+    writeFileSync(names, JSON.stringify(functions));
+    writeFileSync(rows, JSON.stringify(histories));
+    return runScript({
+      ENGINE_DOORS_LIVE_FIXTURE: names,
+      ENGINE_DOORS_MIGRATIONS_FIXTURE: rows,
+      ...extra,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('continuation migration prerequisites in the existing door job', () => {
+  it('a continuation target refuses an absent played-level migration', async () => {
+    const { engineDoors } = await load();
+    const all = [...engineDoors(resolve(root, 'server/src')).keys()];
+    expect(all).toContain('fn_f06_claim_legacy_river_continuation');
+    const res = runContinuationFixture(all, continuationHistory().slice(0, 1));
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('20261029004521');
+  });
+
+  it('refuses an absent private continuation migration even if every RPC name is present', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const res = runContinuationFixture(all, continuationHistory().slice(1));
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('20261028233353');
+  });
+
+  it.each(['sql_md5', 'name', 'statement_count'] as const)(
+    'refuses changed installed migration %s rather than trusting its version alone',
+    async (field) => {
+      const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+      const history = continuationHistory();
+      const row = history[1] as Record<string, unknown>;
+      row[field] = field === 'statement_count' ? 2 : 'changed';
+      const res = runContinuationFixture(all, history);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
+      expect(res.stdout).toContain('20261029004521');
+    }
+  );
+
+  it('requires exactly one history witness for each immutable target file', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const history = continuationHistory();
+    const res = runContinuationFixture(all, [...history, history[1]]);
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
+  });
+
+  it('passes both exact SQL histories without pinning a later compatible function body', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const res = runContinuationFixture(all, continuationHistory());
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('both exact continuation migration histories are installed');
+  });
+
+  it('fails closed for this continuation target when production is unreadable', () => {
+    const res = runScript({});
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('CONTINUATION PREREQUISITES UNCHECKED');
+    expect(res.stdout).toContain('DATABASE_URL is not set');
+  });
+
+  it('a rollback flag cannot waive the new target migration prerequisite', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const res = runContinuationFixture(all, [], { ROLLBACK_REQUESTED: 'true' });
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('CONTINUATION MIGRATION UNPROVED');
+  });
+
+  it('an unreadable history fixture is a failure, including the outer script error path', async () => {
+    const all = [...(await load()).engineDoors(resolve(root, 'server/src')).keys()];
+    const res = runContinuationFixture(all, null);
+    expect(res.status).toBe(1);
+    expect(res.stdout).toContain('CONTINUATION PREREQUISITES UNCHECKED');
   });
 });

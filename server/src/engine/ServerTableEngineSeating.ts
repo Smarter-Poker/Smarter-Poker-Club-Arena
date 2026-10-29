@@ -93,50 +93,53 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     request_id?: string;
     code?: string;
   }> {
-    if (isMaintenanceFrozen()) {
-      return { success: false, error: 'Scheduled maintenance is in progress' };
-    }
-    const player = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!player) return { success: false, error: 'Player not seated' };
-    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
-
-    // The anchor's physical controller is idle while a Lightning host owns
-    // its chips. The database records an uncharged original intent and owns
-    // its final hand boundary; no ordinary pending-addon ledger is involved.
-    if (
-      this.clusterLightningEnabled === true &&
-      !this.isTournamentTable() &&
-      this.tableInfo?.arena?.asset !== 'diamonds'
-    ) {
-      try {
-        const receipt = await requestLightningTopUp(
-          this.tableId,
-          userId,
-          opId || randomUUID(),
-          amount
-        );
-        if ('status' in receipt) await this.reflectLightningTopUp(receipt);
-        return receipt;
-      } catch (error) {
-        reportError(error, 'LightningTopUp.request_unknown');
-        return {
-          success: false,
-          error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
-          code: 'TRANSPORT',
-        };
+    const weeklyMutation = this.weeklyHandPause.enterMutation();
+    if (!weeklyMutation) return { success: false, error: 'Weekly Accounting Pause' };
+    try {
+      if (isMaintenanceFrozen()) {
+        return { success: false, error: 'Scheduled maintenance is in progress' };
       }
-    }
+      const player = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!player) return { success: false, error: 'Player not seated' };
+      if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
 
-    const maxBuyIn = this.getMaxBuyIn();
-    const midHand = !!this.handController;
+      // The anchor's physical controller is idle while a Lightning host owns
+      // its chips. The database records an uncharged original intent and owns
+      // its final hand boundary; no ordinary pending-addon ledger is involved.
+      if (
+        this.clusterLightningEnabled === true &&
+        !this.isTournamentTable() &&
+        this.tableInfo?.arena?.asset !== 'diamonds'
+      ) {
+        try {
+          const receipt = await requestLightningTopUp(
+            this.tableId,
+            userId,
+            opId || randomUUID(),
+            amount
+          );
+          if ('status' in receipt) await this.reflectLightningTopUp(receipt);
+          return receipt;
+        } catch (error) {
+          reportError(error, 'LightningTopUp.request_unknown');
+          return {
+            success: false,
+            error: 'Unable To Verify This Top Up. Check Your Stack Before Trying Again.',
+            code: 'TRANSPORT',
+          };
+        }
+      }
 
-    // A Diamond CASH seat tops up through custody. A Diamond TOURNAMENT seat
-    // has no top-up (seatCanAddFunds says so, the custody door refuses a
-    // tournament table, and a tournament rebuy is the manager's own door), so
-    // it takes the chip tournament path below and is refused there exactly as
-    // a chip tournament seat is: a tournament table has no buy-in headroom.
-    if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
-      /* A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5).
+      const maxBuyIn = this.getMaxBuyIn();
+      const midHand = !!this.handController;
+
+      // A Diamond CASH seat tops up through custody. A Diamond TOURNAMENT seat
+      // has no top-up (seatCanAddFunds says so, the custody door refuses a
+      // tournament table, and a tournament rebuy is the manager's own door), so
+      // it takes the chip tournament path below and is refused there exactly as
+      // a chip tournament seat is: a tournament table has no buy-in headroom.
+      if (this.tableInfo?.arena?.asset === 'diamonds' && !this.isTournamentTable()) {
+        /* A HAND IS NOT OVER UNTIL IT HAS SETTLED (Diamond Phase 11 line 5).
          The controller is cleared when a hand ends, but its settlement runs
          on after it (postHandTasks is not awaited; the dealing loop waits for
          it before the next deal). A direct top-up in that window raced the
@@ -146,10 +149,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
          longer matched the seat, which it refuses. Until the settlement lands
          the top-up is an intent, exactly as mid hand, and it is applied after
          the settlement and before the next deal. */
-      if (midHand || this.hasSettlementInFlight()) {
-        return this.addDiamonds(userId, amount, maxBuyIn, true, player, opId);
-      }
-      /* A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
+        if (midHand || this.hasSettlementInFlight()) {
+          return this.addDiamonds(userId, amount, maxBuyIn, true, player, opId);
+        }
+        /* A DIAMOND SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-10-08).
          The chip lane below has taken the seat boundary since 2026-09-28; this
          branch returned above it and never did. dealHand() snapshots every
          stack under that boundary and only then sets `handController`, so a
@@ -164,29 +167,29 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
          is owned: either it lands before the roster is snapshotted (and the
          dealt stack includes it), or the hand has started and it is an
          intent. */
-      let releaseSeatBoundary: () => void;
-      try {
-        releaseSeatBoundary = await this.acquireSeatBoundary();
-      } catch {
-        return { success: false, error: 'Diamond Top Up Failed' };
+        let releaseSeatBoundary: () => void;
+        try {
+          releaseSeatBoundary = await this.acquireSeatBoundary();
+        } catch {
+          return { success: false, error: 'Diamond Top Up Failed' };
+        }
+        try {
+          const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+          if (!seated) return { success: false, error: 'Player not seated' };
+          return await this.addDiamonds(
+            userId,
+            amount,
+            this.getMaxBuyIn(),
+            !!this.handController || this.hasSettlementInFlight(),
+            seated,
+            opId
+          );
+        } finally {
+          releaseSeatBoundary();
+        }
       }
-      try {
-        const seated = this.seatedPlayers.find((p) => p.user_id === userId);
-        if (!seated) return { success: false, error: 'Player not seated' };
-        return await this.addDiamonds(
-          userId,
-          amount,
-          this.getMaxBuyIn(),
-          !!this.handController || this.hasSettlementInFlight(),
-          seated,
-          opId
-        );
-      } finally {
-        releaseSeatBoundary();
-      }
-    }
 
-    /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
+      /* A SEAT CREDIT WAITS FOR THE HAND BEING PREPARED (2026-09-28).
 
        `midHand` above is read before any await, but dealHand() snapshots the
        roster's stacks under the seat boundary and only then sets
@@ -205,20 +208,23 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
        roster is snapshotted (and the dealt stack includes it), or the hand has
        started and it is queued in table_pending_addons for settlement. A
        mid-hand request never touches the seat and does not wait. */
-    if (!midHand) {
-      let releaseSeatBoundary: () => void;
-      try {
-        releaseSeatBoundary = await this.acquireSeatBoundary();
-      } catch {
-        return { success: false, error: 'Add-on failed' };
+      if (!midHand) {
+        let releaseSeatBoundary: () => void;
+        try {
+          releaseSeatBoundary = await this.acquireSeatBoundary();
+        } catch {
+          return { success: false, error: 'Add-on failed' };
+        }
+        try {
+          return await this.addChipsDecided(userId, amount, opId);
+        } finally {
+          releaseSeatBoundary();
+        }
       }
-      try {
-        return await this.addChipsDecided(userId, amount, opId);
-      } finally {
-        releaseSeatBoundary();
-      }
+      return this.addChipsDecided(userId, amount, opId);
+    } finally {
+      weeklyMutation();
     }
-    return this.addChipsDecided(userId, amount, opId);
   }
 
   private lightningTopUpRefresh = new Map<string, symbol>();
@@ -250,6 +256,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       .eq('occupancy_id', receipt.occupancy_id)
       .is('left_at', null)
       .maybeSingle();
+    if (!(await this.weeklyHandPause.checkpoint())) return;
     if (error) {
       reportError(error, 'LightningTopUp.current_stack_read');
       return;
@@ -1228,6 +1235,8 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     sitOut: boolean,
     proof?: { completedLightningOccupancyId?: string; requestedByClient?: boolean }
   ): { success: boolean; error?: string; code?: string; willFoldNextHand: boolean } {
+    if (this.weeklyHandPause.held())
+      return { success: false, error: 'Weekly Accounting Pause', willFoldNextHand: false };
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
@@ -1414,395 +1423,399 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY' | 'LIGHTNING_HAND_IN_PROGRESS';
     stay_remaining_ms?: number;
   }> {
-    // Capture legacy internal callers' target before joining the boundary.
-    // A queued leave must not acquire the identity of a subsequent rejoin.
-    const requestedPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (opts.occupancyId === undefined && requestedPlayer?.occupancy_id) {
-      opts = {
-        ...opts,
-        occupancyId: requestedPlayer.occupancy_id,
-        seatNumber: requestedPlayer.seat_number,
-      };
-    }
-    const releaseSeatBoundary = await this.acquireSeatBoundary();
+    const weeklyMutation = this.weeklyHandPause.enterMutation();
+    if (!weeklyMutation)
+      return { success: false, error: 'Weekly Accounting Pause', immediate: false };
     try {
-      // ═══════════════════════════════════════════════════════════════════════
-      // LEAVE MEANS NOW, AND THE AVATAR FINISHES ITS ACTION FIRST
-      // (Dan 2026-10-25, binding, replaces the 2026-08-26 all-in refusal).
-      //
-      // Dan: "IF A USER CLICKS LEAVE GAME, IT NEEDS TO LEAVE GAME RIGHT AWAY,
-      // NOT THE NEXT HAND OR IN A COUPLE HANDS, LEAVE NOW, EVEN IF ITS IN THE
-      // MIDDLE OF A HAND." And: "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL
-      // AFTER THEIR ACTION IS COMPLETED."
-      //
-      // The 2026-08-26 rule ("a player can never leave the table while they
-      // are all in. they must wait for the hand to be finished") REFUSED the
-      // leave, so the all-in player was sent to the lobby with the seat still
-      // live and was dealt the next hand, and the hand after that. Both rules
-      // are kept by splitting the player from the seat:
-      //
-      //   - the PLAYER leaves now: the leave is accepted and recorded as the
-      //     durable departure request, every time, mid-hand included;
-      //   - the SEAT finishes what it owes. A player who can still fold is
-      //     folded at once (out of turn if need be, below). An all-in seat
-      //     cannot fold, so it stays in the hand, is never shown as sitting
-      //     out while the hand is live, and is cashed out by settlement the
-      //     moment that hand is over. It is never dealt another hand.
-      //
-      // This sits before the roster lookup and the cash/tournament split
-      // because `leaveTable` is the single chokepoint for HTTP /leave, the
-      // admin kick and the horse rotator; horses and people get the same door.
-      // ═══════════════════════════════════════════════════════════════════════
-      const originalPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
-      const scoped = opts.occupancyId !== undefined || opts.seatNumber !== undefined;
-      const stale = () => ({
-        success: false,
-        immediate: false,
-        code: 'STALE_OCCUPANCY' as const,
-        error: 'This Request Belongs To A Previous Seat.',
-      });
-      if (
-        scoped &&
-        (typeof opts.occupancyId !== 'string' ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            opts.occupancyId
-          ) ||
-          !Number.isInteger(opts.seatNumber) ||
-          (originalPlayer &&
-            (originalPlayer.occupancy_id !== opts.occupancyId ||
-              originalPlayer.seat_number !== opts.seatNumber)))
-      )
-        return stale();
-
-      const liveHand = this.handController?.getState();
-      const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
-      const leavingWhileAllIn = Boolean(liveSelf?.is_all_in && !liveSelf.is_folded);
-      if (leavingWhileAllIn) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] ${userId} leaving while all-in - the seat finishes the hand, then cashes out`
-        );
-      }
-
-      if (opts.admin) {
-        if (!opts.forced || !scoped) return stale();
-        try {
-          await requestSeatDeparture(
-            userId,
-            this.tableId,
-            opts.seatNumber!,
-            opts.occupancyId!,
-            'forced',
-            opts.admin
-          );
-        } catch {
-          return {
-            success: false,
-            immediate: false,
-            error: 'Could Not Confirm The Administrative Request. Please Try Again.',
-          };
-        }
-        if (
-          this.seatedPlayers.some(
-            (p) => p.user_id === userId && p.occupancy_id !== opts.occupancyId
-          )
-        )
-          return stale();
-      }
-
-      const player = this.seatedPlayers.find((p) => p.user_id === userId);
-      if (!player) {
-        if (scoped) {
-          if (liveSelf)
-            return {
-              success: false,
-              immediate: false,
-              error: 'Your Hand Must Finish Before Cashout.',
-            };
-          // A bound reserved-seat departure is completed by this engine.
-          // Never refresh its identity from a newly occupied seat.
-          while (this.postHandTasksPromise) {
-            const pending = this.postHandTasksPromise;
-            await pending;
-            if (this.postHandTasksPromise === pending) break;
-          }
-          if (this.isTournamentTable()) return stale();
-          const replacement = this.seatedPlayers.find((p) => p.user_id === userId);
-          if (
-            replacement &&
-            (replacement.occupancy_id !== opts.occupancyId ||
-              replacement.seat_number !== opts.seatNumber)
-          )
-            return stale();
-          const out: { locked: number | null; failed: string | null; lightning: boolean } = {
-            locked: null,
-            failed: null,
-            lightning: false,
-          };
-          await atomicCashout(userId, this.tableId, opts.seatNumber!, {
-            occupancyId: opts.occupancyId,
-            leaveMode: opts.forced ? 'forced' : 'voluntary',
-            onLocked: (ms) => {
-              out.locked = ms;
-            },
-            onFailed: (message) => {
-              out.failed = message;
-            },
-            onLightningHandInProgress: () => {
-              out.lightning = true;
-            },
-          });
-          if (out.lightning)
-            return this.queueDepartureBehindLightningHand(
-              userId,
-              opts.seatNumber!,
-              opts.occupancyId!,
-              opts.forced ? 'forced' : 'voluntary',
-              opts.admin
-            );
-          if (out.locked !== null)
-            return {
-              success: false,
-              immediate: false,
-              code: 'LEAVE_LOCKED',
-              stay_remaining_ms: out.locked,
-              error: leaveLabel(out.locked),
-            };
-          if (out.failed !== null)
-            return {
-              success: false,
-              immediate: false,
-              error: 'The Cashout Was Not Confirmed. Please Try Again.',
-            };
-          return { success: true, immediate: true };
-        }
-
-        // Without the original occupancy, a delayed internal request could
-        // target a replacement seat. Neither a fresh lookup nor a browser
-        // handoff can establish that the requested cashout committed.
-        return {
-          success: false,
-          immediate: false,
-          code: 'STALE_OCCUPANCY',
-          error: 'Original Seat Identity Is Required. Please Refresh The Table.',
+      // Capture legacy internal callers' target before joining the boundary.
+      // A queued leave must not acquire the identity of a subsequent rejoin.
+      const requestedPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (opts.occupancyId === undefined && requestedPlayer?.occupancy_id) {
+        opts = {
+          ...opts,
+          occupancyId: requestedPlayer.occupancy_id,
+          seatNumber: requestedPlayer.seat_number,
         };
       }
+      const releaseSeatBoundary = await this.acquireSeatBoundary();
+      try {
+        // ═══════════════════════════════════════════════════════════════════════
+        // LEAVE MEANS NOW, AND THE AVATAR FINISHES ITS ACTION FIRST
+        // (Dan 2026-10-25, binding, replaces the 2026-08-26 all-in refusal).
+        //
+        // Dan: "IF A USER CLICKS LEAVE GAME, IT NEEDS TO LEAVE GAME RIGHT AWAY,
+        // NOT THE NEXT HAND OR IN A COUPLE HANDS, LEAVE NOW, EVEN IF ITS IN THE
+        // MIDDLE OF A HAND." And: "AVATARS SHOULD NOT LEAVE THE TABLE UNTIL
+        // AFTER THEIR ACTION IS COMPLETED."
+        //
+        // The 2026-08-26 rule ("a player can never leave the table while they
+        // are all in. they must wait for the hand to be finished") REFUSED the
+        // leave, so the all-in player was sent to the lobby with the seat still
+        // live and was dealt the next hand, and the hand after that. Both rules
+        // are kept by splitting the player from the seat:
+        //
+        //   - the PLAYER leaves now: the leave is accepted and recorded as the
+        //     durable departure request, every time, mid-hand included;
+        //   - the SEAT finishes what it owes. A player who can still fold is
+        //     folded at once (out of turn if need be, below). An all-in seat
+        //     cannot fold, so it stays in the hand, is never shown as sitting
+        //     out while the hand is live, and is cashed out by settlement the
+        //     moment that hand is over. It is never dealt another hand.
+        //
+        // This sits before the roster lookup and the cash/tournament split
+        // because `leaveTable` is the single chokepoint for HTTP /leave, the
+        // admin kick and the horse rotator; horses and people get the same door.
+        // ═══════════════════════════════════════════════════════════════════════
+        const originalPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
+        const scoped = opts.occupancyId !== undefined || opts.seatNumber !== undefined;
+        const stale = () => ({
+          success: false,
+          immediate: false,
+          code: 'STALE_OCCUPANCY' as const,
+          error: 'This Request Belongs To A Previous Seat.',
+        });
+        if (
+          scoped &&
+          (typeof opts.occupancyId !== 'string' ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              opts.occupancyId
+            ) ||
+            !Number.isInteger(opts.seatNumber) ||
+            (originalPlayer &&
+              (originalPlayer.occupancy_id !== opts.occupancyId ||
+                originalPlayer.seat_number !== opts.seatNumber)))
+        )
+          return stale();
 
-      if (this.isTournamentTable()) {
-        // In tournaments, leaving the table NEVER cashes out or clears the seat.
-        // The player is auto-folded if mid-hand, marked sitting_out in table_seats
-        // and disconnectEngine, and continues to be dealt in / blinded out until
-        // they return and sit down or run out of chips.
-        if (!player.occupancy_id)
-          return {
-            success: false,
-            immediate: false,
-            error: 'Your Seat Identity Could Not Be Verified.',
-          };
-        try {
-          if (!opts.admin)
+        const liveHand = this.handController?.getState();
+        const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
+        const leavingWhileAllIn = Boolean(liveSelf?.is_all_in && !liveSelf.is_folded);
+        if (leavingWhileAllIn) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] ${userId} leaving while all-in - the seat finishes the hand, then cashes out`
+          );
+        }
+
+        if (opts.admin) {
+          if (!opts.forced || !scoped) return stale();
+          try {
             await requestSeatDeparture(
               userId,
               this.tableId,
-              player.seat_number,
-              player.occupancy_id,
-              opts.forced ? 'forced' : 'voluntary'
+              opts.seatNumber!,
+              opts.occupancyId!,
+              'forced',
+              opts.admin
             );
-        } catch {
+          } catch {
+            return {
+              success: false,
+              immediate: false,
+              error: 'Could Not Confirm The Administrative Request. Please Try Again.',
+            };
+          }
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== opts.occupancyId
+            )
+          )
+            return stale();
+        }
+
+        const player = this.seatedPlayers.find((p) => p.user_id === userId);
+        if (!player) {
+          if (scoped) {
+            if (liveSelf)
+              return {
+                success: false,
+                immediate: false,
+                error: 'Your Hand Must Finish Before Cashout.',
+              };
+            // A bound reserved-seat departure is completed by this engine.
+            // Never refresh its identity from a newly occupied seat.
+            while (this.postHandTasksPromise) {
+              const pending = this.postHandTasksPromise;
+              await pending;
+              if (this.postHandTasksPromise === pending) break;
+            }
+            if (this.isTournamentTable()) return stale();
+            const replacement = this.seatedPlayers.find((p) => p.user_id === userId);
+            if (
+              replacement &&
+              (replacement.occupancy_id !== opts.occupancyId ||
+                replacement.seat_number !== opts.seatNumber)
+            )
+              return stale();
+            const out: { locked: number | null; failed: string | null; lightning: boolean } = {
+              locked: null,
+              failed: null,
+              lightning: false,
+            };
+            await atomicCashout(userId, this.tableId, opts.seatNumber!, {
+              occupancyId: opts.occupancyId,
+              leaveMode: opts.forced ? 'forced' : 'voluntary',
+              onLocked: (ms) => {
+                out.locked = ms;
+              },
+              onFailed: (message) => {
+                out.failed = message;
+              },
+              onLightningHandInProgress: () => {
+                out.lightning = true;
+              },
+            });
+            if (out.lightning)
+              return this.queueDepartureBehindLightningHand(
+                userId,
+                opts.seatNumber!,
+                opts.occupancyId!,
+                opts.forced ? 'forced' : 'voluntary',
+                opts.admin
+              );
+            if (out.locked !== null)
+              return {
+                success: false,
+                immediate: false,
+                code: 'LEAVE_LOCKED',
+                stay_remaining_ms: out.locked,
+                error: leaveLabel(out.locked),
+              };
+            if (out.failed !== null)
+              return {
+                success: false,
+                immediate: false,
+                error: 'The Cashout Was Not Confirmed. Please Try Again.',
+              };
+            return { success: true, immediate: true };
+          }
+
+          // Without the original occupancy, a delayed internal request could
+          // target a replacement seat. Neither a fresh lookup nor a browser
+          // handoff can establish that the requested cashout committed.
           return {
             success: false,
             immediate: false,
-            error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+            code: 'STALE_OCCUPANCY',
+            error: 'Original Seat Identity Is Required. Please Refresh The Table.',
           };
         }
-        if (
-          this.seatedPlayers.some(
-            (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+
+        if (this.isTournamentTable()) {
+          // In tournaments, leaving the table NEVER cashes out or clears the seat.
+          // The player is auto-folded if mid-hand, marked sitting_out in table_seats
+          // and disconnectEngine, and continues to be dealt in / blinded out until
+          // they return and sit down or run out of chips.
+          if (!player.occupancy_id)
+            return {
+              success: false,
+              immediate: false,
+              error: 'Your Seat Identity Could Not Be Verified.',
+            };
+          try {
+            if (!opts.admin)
+              await requestSeatDeparture(
+                userId,
+                this.tableId,
+                player.seat_number,
+                player.occupancy_id,
+                opts.forced ? 'forced' : 'voluntary'
+              );
+          } catch {
+            return {
+              success: false,
+              immediate: false,
+              error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+            };
+          }
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+            )
           )
-        )
-          return stale();
-        // Fold now (out of turn if need be); the sit-out is applied only once
-        // this seat has nothing left to do in the live hand (see foldLeaverNow).
-        this.sitOutLeaver(userId, this.foldLeaverNow(userId));
-        /* The other devices have to be told here too (2026-09-05). The cash
+            return stale();
+          // Fold now (out of turn if need be); the sit-out is applied only once
+          // this seat has nothing left to do in the live hand (see foldLeaverNow).
+          this.sitOutLeaver(userId, this.foldLeaverNow(userId));
+          /* The other devices have to be told here too (2026-09-05). The cash
          mid-hand branch below re-broadcasts and this one did not, so a
          tournament player who sat out from one device left every other client -
          including their own second screen - holding a snapshot in which they
          were still active. The seat legitimately stays theirs (a tournament
          sit-out is blinded off by design); what changes is that everyone can
          now see that it is sitting out. */
-        this.broadcastCurrentState();
-        return { success: true, immediate: true, tournament: true };
-      }
+          this.broadcastCurrentState();
+          return { success: true, immediate: true, tournament: true };
+        }
 
-      // ═══════════════════════════════════════════════════════════════════════
-      // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
-      //
-      // A cash player ahead of the money they put in stays seated until the
-      // stay clock reaches zero. This is the synchronous answer from the
-      // engine's mirror of cash_player_session; the database asks the same
-      // question again under the seat lock inside atomic_seat_cashout_locked
-      // (p_leave_mode = 'voluntary'), so a stale mirror cannot let anyone out
-      // and a forged cash-out cannot get past the door either (A0.16).
-      //
-      // Mid-hand the mirror holds the state as of the last settlement - the
-      // roster stack is the pre-hand stack - which is the only honest number
-      // before the pot is awarded. The settlement re-check covers the rest.
-      //
-      // The label is the ONLY copy: "Leave Available In M:SS". No reason, no
-      // essay, no forbidden words (section 6.1).
-      // ═══════════════════════════════════════════════════════════════════════
-      if (!opts.forced) {
-        const lock = this.chipContinuity.leaveLock(userId, player.stack);
-        if (lock.locked) {
-          const label = leaveLabel(lock.remainingMs);
-          console.log(
-            `[ServerTableEngine:${this.tableId}] leave refused for ${userId} - stay clock ${lock.remainingMs}ms remaining`
-          );
+        // ═══════════════════════════════════════════════════════════════════════
+        // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
+        //
+        // A cash player ahead of the money they put in stays seated until the
+        // stay clock reaches zero. This is the synchronous answer from the
+        // engine's mirror of cash_player_session; the database asks the same
+        // question again under the seat lock inside atomic_seat_cashout_locked
+        // (p_leave_mode = 'voluntary'), so a stale mirror cannot let anyone out
+        // and a forged cash-out cannot get past the door either (A0.16).
+        //
+        // Mid-hand the mirror holds the state as of the last settlement - the
+        // roster stack is the pre-hand stack - which is the only honest number
+        // before the pot is awarded. The settlement re-check covers the rest.
+        //
+        // The label is the ONLY copy: "Leave Available In M:SS". No reason, no
+        // essay, no forbidden words (section 6.1).
+        // ═══════════════════════════════════════════════════════════════════════
+        if (!opts.forced) {
+          const lock = this.chipContinuity.leaveLock(userId, player.stack);
+          if (lock.locked) {
+            const label = leaveLabel(lock.remainingMs);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] leave refused for ${userId} - stay clock ${lock.remainingMs}ms remaining`
+            );
+            this.hub?.emitEvent(this.tableId, {
+              type: 'leave_blocked',
+              table_id: this.tableId,
+              user_id: userId,
+              stay_remaining_ms: lock.remainingMs,
+              timestamp: Date.now(),
+            });
+            return {
+              success: false,
+              error: label,
+              immediate: false,
+              code: 'LEAVE_LOCKED',
+              stay_remaining_ms: lock.remainingMs,
+            };
+          }
+        }
+
+        // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
+        // every connected client (including spectators) can re-render the
+        // empty seat without diffing the next state snapshot.
+        // CHIP CONTINUITY (2026-09-04): emitted only once the seat has actually
+        // left - immediately on the mid-hand path (the player is folded out and
+        // the seat is out of play), and AFTER the database has accepted the
+        // cash-out on the between-hands path. It used to go out before the
+        // cash-out, so a refusal at the door left every client showing an empty
+        // chair with a player still in it.
+        const emitSeatLeft = () =>
           this.hub?.emitEvent(this.tableId, {
-            type: 'leave_blocked',
+            type: 'seat_left',
             table_id: this.tableId,
+            seat: player.seat_number,
             user_id: userId,
-            stay_remaining_ms: lock.remainingMs,
+            mid_hand: this.handController !== null,
             timestamp: Date.now(),
           });
-          return {
-            success: false,
-            error: label,
-            immediate: false,
-            code: 'LEAVE_LOCKED',
-            stay_remaining_ms: lock.remainingMs,
-          };
-        }
-      }
 
-      // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
-      // every connected client (including spectators) can re-render the
-      // empty seat without diffing the next state snapshot.
-      // CHIP CONTINUITY (2026-09-04): emitted only once the seat has actually
-      // left - immediately on the mid-hand path (the player is folded out and
-      // the seat is out of play), and AFTER the database has accepted the
-      // cash-out on the between-hands path. It used to go out before the
-      // cash-out, so a refusal at the door left every client showing an empty
-      // chair with a player still in it.
-      const emitSeatLeft = () =>
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: player.seat_number,
-          user_id: userId,
-          mid_hand: this.handController !== null,
-          timestamp: Date.now(),
-        });
+        // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
+        // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
+        // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
+        // leave the table, it silently fails."
+        //
+        // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
+        // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
+        // deal, so they took the mid-hand path anyway: the auto-fold was skipped
+        // (there is no enginePlayer for them), and the seat was merely flagged
+        // leave_pending. That flag is only ever processed by processLeavePending at
+        // SETTLEMENT — so if no hand completed afterwards (the table dropped below
+        // the minimum to deal, or the hand died on the safety timeout, which skips
+        // settlement) the row was never touched again. The player was gone from the
+        // UI, still in the seat, chips still on the table. It could sit like that
+        // forever, and nothing swept it.
+        //
+        // Every participant in this live hand waits for settlement, including a
+        // folded player. Folding removes winning eligibility, not the committed
+        // contribution or the need to persist the final stack. A player who was
+        // not dealt into this hand can still leave immediately.
+        const handState = this.handController?.getState();
+        const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
 
-      // Dan 2026-08-25, BINDING: "LEAVE TABLE SHOULD ALWAYS OVERRIDE ANYTHING
-      // ELSE... LEAVE TABLE IS LIKE THE RESET BUTTON, CLEARS EVERYTHING FROM THAT
-      // TABLE." And: "if you are SITTING OUT but click LEAVE TABLE, it doesn't
-      // leave the table, it silently fails."
-      //
-      // THE BUG WAS THIS BRANCH. It asked "is a hand running AT THIS TABLE", not
-      // "is THIS PLAYER in that hand". A sitting-out player is excluded from the
-      // deal, so they took the mid-hand path anyway: the auto-fold was skipped
-      // (there is no enginePlayer for them), and the seat was merely flagged
-      // leave_pending. That flag is only ever processed by processLeavePending at
-      // SETTLEMENT — so if no hand completed afterwards (the table dropped below
-      // the minimum to deal, or the hand died on the safety timeout, which skips
-      // settlement) the row was never touched again. The player was gone from the
-      // UI, still in the seat, chips still on the table. It could sit like that
-      // forever, and nothing swept it.
-      //
-      // Every participant in this live hand waits for settlement, including a
-      // folded player. Folding removes winning eligibility, not the committed
-      // contribution or the need to persist the final stack. A player who was
-      // not dealt into this hand can still leave immediately.
-      const handState = this.handController?.getState();
-      const playerInLiveHand = handState?.players.find((p) => p.user_id === userId);
-
-      if (this.handController !== null && playerInLiveHand) {
-        // A deferred acknowledgement requires a durable request for this exact
-        // occupancy. Database refusal must reach the caller before success events.
-        if (!player.occupancy_id)
-          return {
-            success: false,
-            immediate: false,
-            error: 'Your Seat Identity Could Not Be Verified.',
-          };
-        try {
-          if (!opts.admin)
-            await requestSeatDeparture(
-              userId,
-              this.tableId,
-              player.seat_number,
-              player.occupancy_id,
-              opts.forced ? 'forced' : 'voluntary'
-            );
-        } catch {
-          return {
-            success: false,
-            immediate: false,
-            error: 'Could Not Confirm Your Leave Request. Please Try Again.',
-          };
-        }
-        if (
-          this.seatedPlayers.some(
-            (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+        if (this.handController !== null && playerInLiveHand) {
+          // A deferred acknowledgement requires a durable request for this exact
+          // occupancy. Database refusal must reach the caller before success events.
+          if (!player.occupancy_id)
+            return {
+              success: false,
+              immediate: false,
+              error: 'Your Seat Identity Could Not Be Verified.',
+            };
+          try {
+            if (!opts.admin)
+              await requestSeatDeparture(
+                userId,
+                this.tableId,
+                player.seat_number,
+                player.occupancy_id,
+                opts.forced ? 'forced' : 'voluntary'
+              );
+          } catch {
+            return {
+              success: false,
+              immediate: false,
+              error: 'Could Not Confirm Your Leave Request. Please Try Again.',
+            };
+          }
+          if (
+            this.seatedPlayers.some(
+              (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+            )
           )
-        )
-          return stale();
-        // The hand may finish while the database acknowledges the request.
-        // foldLeaverNow reads the CURRENT controller, never the snapshot above.
-        const stillLive = this.foldLeaverNow(userId);
+            return stale();
+          // The hand may finish while the database acknowledges the request.
+          // foldLeaverNow reads the CURRENT controller, never the snapshot above.
+          const stillLive = this.foldLeaverNow(userId);
 
-        emitSeatLeft();
-        // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
-        // when settlement processes the leave_pending seat.
+          emitSeatLeft();
+          // CHIP CONTINUITY: a forced (kick) exit must not be judged by the clock
+          // when settlement processes the leave_pending seat.
 
-        // Out of the next deal. Applied now only if this seat's part in the
-        // live hand is over; an all-in seat is sat out at settlement instead,
-        // so watchers never see it go grey while its hand is still running.
-        this.sitOutLeaver(userId, stillLive);
+          // Out of the next deal. Applied now only if this seat's part in the
+          // live hand is over; an all-in seat is sat out at settlement instead,
+          // so watchers never see it go grey while its hand is still running.
+          this.sitOutLeaver(userId, stillLive);
 
-        /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
+          /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
          `seat_left` and then stopped: no state re-broadcast, so every connected
          client kept the snapshot in which this player was still in the hand.
          Between-hands leaves have always re-broadcast (see both calls below);
          the deferred path is the one a player actually hits when they leave
          mid-hand, and it was the silent one. */
-        this.broadcastCurrentState();
+          this.broadcastCurrentState();
 
-        return { success: true, immediate: false };
-      } else {
-        // Between hands: remove immediately via atomic cashout.
-        // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
-        // BEFORE postHandTasks (which commits the accepted hand) finishes. A leave arriving
-        // in that window would take this branch and cash out the STALE pre-hand
-        // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
-        // in-flight settlement to persist the final stack first.
-        // CHIP CONTINUITY (2026-09-04): the answer to POST /leave IS the
-        // database's answer. This used to reply `success: true` and cash out in
-        // the background; when the door refused (mirror empty after a restart,
-        // a settlement landing between the check and the cash-out) the client
-        // had already navigated away from a seat still holding its chips. Now
-        // the cash-out is awaited, a refusal is returned as a refusal, and the
-        // seat_left event follows the money, not the request.
-        //
-        // Voluntary leaves go through atomicCashoutVoluntary (the clock-guarded
-        // door). A forced exit (admin kick) goes through atomicCashout with
-        // leaveMode 'forced': a system exit the clock never blocks, which still
-        // closes the session and writes the rejoin floor.
-        //
-        // There is NO markSeatAsLeft fallback on either path any more - it is the
-        // same RPC and would fail for the same reason, and the old fallback then
-        // tore down the player's engine registrations while they were still in
-        // the chair.
-        while (this.postHandTasksPromise) {
-          // Settlement can append its stack/bank tasks while this leave is
-          // waiting. Re-read the barrier before spending the seat balance.
-          const pending = this.postHandTasksPromise;
-          await pending;
-          if (this.postHandTasksPromise === pending) break;
-        }
+          return { success: true, immediate: false };
+        } else {
+          // Between hands: remove immediately via atomic cashout.
+          // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
+          // BEFORE postHandTasks (which commits the accepted hand) finishes. A leave arriving
+          // in that window would take this branch and cash out the STALE pre-hand
+          // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
+          // in-flight settlement to persist the final stack first.
+          // CHIP CONTINUITY (2026-09-04): the answer to POST /leave IS the
+          // database's answer. This used to reply `success: true` and cash out in
+          // the background; when the door refused (mirror empty after a restart,
+          // a settlement landing between the check and the cash-out) the client
+          // had already navigated away from a seat still holding its chips. Now
+          // the cash-out is awaited, a refusal is returned as a refusal, and the
+          // seat_left event follows the money, not the request.
+          //
+          // Voluntary leaves go through atomicCashoutVoluntary (the clock-guarded
+          // door). A forced exit (admin kick) goes through atomicCashout with
+          // leaveMode 'forced': a system exit the clock never blocks, which still
+          // closes the session and writes the rejoin floor.
+          //
+          // There is NO markSeatAsLeft fallback on either path any more - it is the
+          // same RPC and would fail for the same reason, and the old fallback then
+          // tore down the player's engine registrations while they were still in
+          // the chair.
+          while (this.postHandTasksPromise) {
+            // Settlement can append its stack/bank tasks while this leave is
+            // waiting. Re-read the barrier before spending the seat balance.
+            const pending = this.postHandTasksPromise;
+            await pending;
+            if (this.postHandTasksPromise === pending) break;
+          }
 
-        /* A SEAT WHOSE CHIPS ARE IN A LIVE LIGHTNING HAND IS NOT CASHED OUT
+          /* A SEAT WHOSE CHIPS ARE IN A LIVE LIGHTNING HAND IS NOT CASHED OUT
            (Lightning Phase 6 remediation, 2026-10-01). Its stack is out at
            another table's hand until that hand settles, so the leave is
            recorded as the durable leave_pending request - exactly what the
@@ -1811,155 +1824,159 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
            Asked first, rather than learned from a refused cash-out. If the
            question cannot be answered the cash-out is attempted as before
            and the database guard still decides. */
-        if (player.occupancy_id && (await this.inLiveLightningHand(userId))) {
-          return this.queueDepartureBehindLightningHand(
-            userId,
-            player.seat_number,
-            player.occupancy_id,
-            opts.forced ? 'forced' : 'voluntary',
-            opts.admin
-          );
-        }
+          if (player.occupancy_id && (await this.inLiveLightningHand(userId))) {
+            return this.queueDepartureBehindLightningHand(
+              userId,
+              player.seat_number,
+              player.occupancy_id,
+              opts.forced ? 'forced' : 'voluntary',
+              opts.admin
+            );
+          }
 
-        const teardown = () => {
-          if (
-            this.seatedPlayers.some(
-              (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+          const teardown = () => {
+            if (
+              this.seatedPlayers.some(
+                (p) => p.user_id === userId && p.occupancy_id !== player.occupancy_id
+              )
             )
-          )
-            return false;
-          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.forgetTimeBank(userId);
-          this.straddleEngine.removePlayer(this.tableId, userId);
-          this.preActionEngine.removePlayer(this.tableId, userId);
-          this.leaveHeldByClock.delete(userId);
-          this.chipContinuity.forget(userId);
-          this.lastAddOnAdjustedByUser.delete(userId);
-          this.seatedPlayers = this.seatedPlayers.filter(
-            (p) => p.user_id !== userId || p.occupancy_id !== player.occupancy_id
-          );
-          return true;
-        };
-
-        if (opts.forced) {
-          const out: { failed: string | null; lightning: boolean } = {
-            failed: null,
-            lightning: false,
+              return false;
+            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+            this.forgetTimeBank(userId);
+            this.straddleEngine.removePlayer(this.tableId, userId);
+            this.preActionEngine.removePlayer(this.tableId, userId);
+            this.leaveHeldByClock.delete(userId);
+            this.chipContinuity.forget(userId);
+            this.lastAddOnAdjustedByUser.delete(userId);
+            this.seatedPlayers = this.seatedPlayers.filter(
+              (p) => p.user_id !== userId || p.occupancy_id !== player.occupancy_id
+            );
+            return true;
           };
-          await atomicCashout(userId, this.tableId, player.seat_number, {
-            occupancyId: player.occupancy_id,
-            leaveMode: 'forced',
-            onFailed: (m) => {
-              out.failed = m;
-            },
-            onLightningHandInProgress: () => {
-              out.lightning = true;
-            },
-          });
-          if (out.lightning) {
-            // atomicCashout refuses before the RPC without an occupancy, so
-            // this cannot be reached without one; the guard keeps a refused
-            // exit from ever falling through to the success path below.
-            if (!player.occupancy_id)
+
+          if (opts.forced) {
+            const out: { failed: string | null; lightning: boolean } = {
+              failed: null,
+              lightning: false,
+            };
+            await atomicCashout(userId, this.tableId, player.seat_number, {
+              occupancyId: player.occupancy_id,
+              leaveMode: 'forced',
+              onFailed: (m) => {
+                out.failed = m;
+              },
+              onLightningHandInProgress: () => {
+                out.lightning = true;
+              },
+            });
+            if (out.lightning) {
+              // atomicCashout refuses before the RPC without an occupancy, so
+              // this cannot be reached without one; the guard keeps a refused
+              // exit from ever falling through to the success path below.
+              if (!player.occupancy_id)
+                return {
+                  success: false,
+                  error:
+                    'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
+                  immediate: false,
+                };
+              return this.queueDepartureBehindLightningHand(
+                userId,
+                player.seat_number,
+                player.occupancy_id,
+                'forced',
+                opts.admin
+              );
+            }
+            if (out.failed !== null) {
+              console.warn(
+                `[ServerTableEngine:${this.tableId}] forced cash-out failed for ${userId} - seat preserved: ${out.failed}`
+              );
               return {
                 success: false,
                 error: 'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
                 immediate: false,
               };
+            }
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} removed (forced, between hands)`
+            );
+            if (teardown()) {
+              emitSeatLeft();
+              this.broadcastCurrentState();
+              this.wakeClusterGame('seat_left');
+            }
+            return { success: true, immediate: true };
+          }
+
+          const res = await atomicCashoutVoluntary(
+            userId,
+            this.tableId,
+            player.seat_number,
+            player.occupancy_id
+          );
+          if (res.ok) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+            );
+            if (teardown()) {
+              emitSeatLeft();
+              this.broadcastCurrentState();
+              this.wakeClusterGame('seat_left');
+            }
+            return { success: true, immediate: true };
+          }
+          if (res.code === 'LIGHTNING_HAND_IN_PROGRESS' && player.occupancy_id) {
             return this.queueDepartureBehindLightningHand(
               userId,
               player.seat_number,
               player.occupancy_id,
-              'forced',
-              opts.admin
+              'voluntary'
             );
           }
-          if (out.failed !== null) {
-            console.warn(
-              `[ServerTableEngine:${this.tableId}] forced cash-out failed for ${userId} - seat preserved: ${out.failed}`
+          if (res.code === 'LEAVE_LOCKED') {
+            // The mirror was behind the database (empty after a restart, or a
+            // settlement landed between the check above and the door). The player
+            // is still seated, still in, and is told the clock. The mirror adopts
+            // the database's remaining time.
+            console.log(
+              `[ServerTableEngine:${this.tableId}] leave refused at the door for ${userId} - stay clock ${res.stayRemainingMs}ms remaining`
             );
+            this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+            const label = leaveLabel(res.stayRemainingMs);
+            this.hub?.emitEvent(this.tableId, {
+              type: 'leave_blocked',
+              table_id: this.tableId,
+              user_id: userId,
+              stay_remaining_ms: res.stayRemainingMs,
+              timestamp: Date.now(),
+            });
+            this.broadcastCurrentState();
             return {
               success: false,
-              error: 'Could Not Remove The Player Right Now. Their Chips Are Still In The Seat.',
+              error: label,
               immediate: false,
+              code: 'LEAVE_LOCKED',
+              stay_remaining_ms: res.stayRemainingMs,
             };
           }
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} removed (forced, between hands)`
+          // Transport or database failure: the seat is untouched (one transaction)
+          // and the player can try again. Nothing to tear down, because nothing left.
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${'message' in res ? res.message : res.code}`
           );
-          if (teardown()) {
-            emitSeatLeft();
-            this.broadcastCurrentState();
-            this.wakeClusterGame('seat_left');
-          }
-          return { success: true, immediate: true };
-        }
-
-        const res = await atomicCashoutVoluntary(
-          userId,
-          this.tableId,
-          player.seat_number,
-          player.occupancy_id
-        );
-        if (res.ok) {
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
-          );
-          if (teardown()) {
-            emitSeatLeft();
-            this.broadcastCurrentState();
-            this.wakeClusterGame('seat_left');
-          }
-          return { success: true, immediate: true };
-        }
-        if (res.code === 'LIGHTNING_HAND_IN_PROGRESS' && player.occupancy_id) {
-          return this.queueDepartureBehindLightningHand(
-            userId,
-            player.seat_number,
-            player.occupancy_id,
-            'voluntary'
-          );
-        }
-        if (res.code === 'LEAVE_LOCKED') {
-          // The mirror was behind the database (empty after a restart, or a
-          // settlement landed between the check above and the door). The player
-          // is still seated, still in, and is told the clock. The mirror adopts
-          // the database's remaining time.
-          console.log(
-            `[ServerTableEngine:${this.tableId}] leave refused at the door for ${userId} - stay clock ${res.stayRemainingMs}ms remaining`
-          );
-          this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
-          const label = leaveLabel(res.stayRemainingMs);
-          this.hub?.emitEvent(this.tableId, {
-            type: 'leave_blocked',
-            table_id: this.tableId,
-            user_id: userId,
-            stay_remaining_ms: res.stayRemainingMs,
-            timestamp: Date.now(),
-          });
-          this.broadcastCurrentState();
           return {
             success: false,
-            error: label,
+            error:
+              'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
             immediate: false,
-            code: 'LEAVE_LOCKED',
-            stay_remaining_ms: res.stayRemainingMs,
           };
         }
-        // Transport or database failure: the seat is untouched (one transaction)
-        // and the player can try again. Nothing to tear down, because nothing left.
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${'message' in res ? res.message : res.code}`
-        );
-        return {
-          success: false,
-          error:
-            'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
-          immediate: false,
-        };
+      } finally {
+        releaseSeatBoundary();
       }
     } finally {
-      releaseSeatBoundary();
+      weeklyMutation();
     }
   }
 
@@ -2165,59 +2182,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
-   * B2 2026-08-27 — THE TOURNAMENT COUNTERPART OF registerWaitForBB.
-   *
-   * A tournament player cannot be held out of a hand the way a cash player can:
-   * tournament players must be dealt in and blinded off or the field never
-   * shrinks. So the cash rule ("wait one hand, pay nothing") has no tournament
-   * equivalent, and the two seats it exists to protect were simply unprotected
-   * here — a late registrant or a balanced-in player who landed on the button
-   * or the small blind for the coming hand played out most of an orbit before
-   * the big blind reached them, for free, while everyone already at the table
-   * had paid to be there.
-   *
-   * Those two seats — and ONLY those two — are the ones the big blind has just
-   * passed (one and two hands ago). Every other seat reaches the big blind
-   * inside the current orbit on its own and owes nothing. An arrival in the big
-   * blind seat itself posts it naturally and is likewise left alone.
-   *
-   * Fewer than three in the rotation is heads-up or a table about to be broken,
-   * where the button IS the small blind and both players pay every hand: there
-   * is no free orbit available to take, so nothing is charged.
-   *
-   * TableBalancer keeps moved players out of these two seats wherever another
-   * free seat exists (`findOpenSeat`), so in practice this fires for late
-   * registrants and for the tail of a table break that had nowhere else to sit.
+   * Tournament arrivals never owe an entry post (owner correction 2026-10-27).
+   * A moved or newly registered player pays only the natural blinds/antes.
+   * In particular, receiving the button creates no big-blind debt. Heads-up
+   * button/SB and legal SB arrivals still post through the normal rotation.
+   * Drop any legacy marker instead of carrying it into a later hand.
    */
-  protected noteTournamentArrival(seatNumber: number, userId: string): void {
+  protected noteTournamentArrival(_seatNumber: number, userId: string): void {
     if (!this.isTournamentTable()) return;
-    const rotationSize = this.seatedPlayers.filter((p) => p.stack > 0).length;
-    if (rotationSize < 3) return;
-
-    /* A SMALL BLIND IS A BLIND (Dan, 2026-10-21): "GOT MOVED INTO THE SMALL
-       BLIND, PAID SMALL BLIND WERE DEALT IN AND THEN HAD TO PAY THE SMALL AND
-       BB AGAIN. THIS BUG NEEDS TO BE FIXED."
-
-       An arrival in the small blind seat posts that small blind on its first
-       hand. Under the tournament dead-button rule (TDA Rule 30) that seat is
-       the BUTTON on the next hand, never the big blind, so the old "keep the
-       small blind seat on the hook for the big blind" charged them a second,
-       live big blind from the button straight after the small blind they had
-       already paid. A player who has paid a blind to be dealt in owes nothing
-       more. Only the button seat, which would otherwise be dealt in for free,
-       carries the one live big blind. */
-    const buttonSeatIndex = this.getButtonSeatIndex();
-    const sbSeatIndex = this.getSBSeatIndex();
-    if (
-      buttonSeatIndex > 0 &&
-      seatNumber === buttonSeatIndex &&
-      !(sbSeatIndex > 0 && seatNumber === sbSeatIndex)
-    ) {
-      this.mustPostBB.add(userId);
-      console.log(
-        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed - owes one big blind`
-      );
-    }
+    this.mustPostBB.delete(userId);
   }
 
   /**
@@ -2249,6 +2222,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     error?: string;
     deferred?: boolean;
   } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.waitingForBB.has(userId)) {
       // RACE FIX 2026-08-27: mid-hand joiner not registered yet — see helper.
       if (this.queuePostToEnter(userId)) return { success: true };
@@ -2329,6 +2303,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * POST /straddle — Bible V8 §4.4: Toggle auto-straddle enrollment
    */
   public toggleStraddle(userId: string, enabled: boolean): { success: boolean; error?: string } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.tableInfo?.straddle_enabled) {
       return { success: false, error: 'Straddles are not enabled at this table' };
     }
@@ -2344,6 +2319,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     userId: string,
     cardIndexes?: readonly number[]
   ): { success: boolean; error?: string; shownCardIndexes?: number[] } {
+    if (this.weeklyHandPause.held()) return { success: false, error: 'Weekly Accounting Pause' };
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }

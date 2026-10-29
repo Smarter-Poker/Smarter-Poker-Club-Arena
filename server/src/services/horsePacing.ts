@@ -17,8 +17,8 @@ export type BeatKind = 'typed' | 'tap' | 'quick';
 
 /** [min, max) milliseconds for each kind of reaction. */
 const RANGES: Record<BeatKind, [number, number]> = {
-  /** a typed chat line after a hand: read, think, type */
-  typed: [1_400, 5_200],
+  /** Owner 2026-10-27: never type post-hand chat before five seconds. */
+  typed: [5_000, 10_000],
   /** a throwable after a hand: open the seat menu, pick, send */
   tap: [900, 3_600],
   /** a line or a throw as the horse moves in: already in motion */

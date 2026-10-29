@@ -21,7 +21,13 @@ else
   echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/horse-phase4-pg.XXXXXX")
+# The hosted parity reader admits only this runner's own private fixture socket.
+# Local runs retain their explicit external-SSD TMPDIR.
+WORK_ROOT="${TMPDIR:-/tmp}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  WORK_ROOT="${RUNNER_TEMP:?hosted qualification requires RUNNER_TEMP}"
+fi
+WORK=$(mktemp -d "$WORK_ROOT/horse-phase4-pg.XXXXXX")
 SOCKET="$WORK/socket"
 DB=horse_phase4_probe
 mkdir -p "$SOCKET"
@@ -122,6 +128,25 @@ awk '/^-- node <<.ROLLBACK_JS./ {copy=1;next} /^-- ROLLBACK_JS$/ {copy=0} copy {
 echo V31_V4_CONSUMER_ROLLBACK_RECOVERY_OK
 "${PSQL[@]}" -f "$HERE/v4-version-boundary.sql"
 "${PSQL[@]}" -f "$HERE/physical-position-transition.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261027180942_v31_certification_checks_only_the_selected_dataset.sql"
+# The metadata proof and migration share one connection for temp snapshots.
+"${PSQL[@]}" -f "$HERE/seal-rpc-budget-before.sql" \
+ -f "$ROOT/supabase/migrations/20261028053323_v31_seal_uses_its_bounded_rpc_budget.sql" \
+ -f "$HERE/seal-rpc-budget-after.sql"
+"${PSQL[@]}" -f "$HERE/build-rpc-budget-before.sql" \
+ -f "$ROOT/supabase/migrations/20261028200033_v31_cell_build_uses_its_bounded_rpc_budget.sql" \
+ -f "$HERE/build-rpc-budget-after.sql"
+"${PSQL[@]}" -f "$HERE/feature-subsets-before.sql" \
+ -f "$ROOT/supabase/migrations/20261028223011_v31_feature_subsets_avoid_per_hand_sql.sql" \
+ -f "$HERE/feature-subsets-after.sql"
+V31_FEATURE_PRIVATE_FIXTURE_ROOT="$WORK" PG17_PSQL="$PG_BIN/psql" PGDATABASE="$DB" \
+ node "$HERE/run-board-relative-v2-parity.mjs"
+"${PSQL[@]}" -f "$HERE/dataset-scoped-certification.sql"
+awk '/  result_checksum:=public.fn_gto_v31_seal_build\(dataset\);/ { print "  PERFORM public.v31_dataset_scope_probe(dataset);"; print "  SELECT dataset_checksum INTO result_checksum FROM public.gto_v31_datasets WHERE dataset_id=dataset;"; next } {print}' \
+ "$HERE/certified-v31.sql" > "$WORK/dataset-scoped-certification-fixture.sql"
+"${PSQL[@]}" -f "$WORK/dataset-scoped-certification-fixture.sql"
+"${PSQL[@]}" -c 'DROP FUNCTION public.v31_dataset_scope_probe(uuid)'
+echo V31_DATASET_SCOPED_CERTIFICATION_OK
 "${PSQL[@]}" -f "$HERE/v4-complete-state.sql"
 awk '
  /PERFORM public.fn_gto_v31_ingest_source_artifact\(dataset,.*train_art\);/ && !called {

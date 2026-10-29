@@ -187,12 +187,13 @@ describe('second sweep (2026-09-04): the parts the first fix missed or broke', (
     expect(cashier).toContain('formatWalletChips(accountBalance)');
   });
 
-  it('a busted seat is not released while its owner is at the rebuy dialog', () => {
+  it('an ordinary cash seat keeps its dialog grace while Lightning has a fixed deadline', () => {
     const dealing = read('server/src/engine/ServerTableEngineDealing.ts');
     expect(dealing).toContain('static readonly REBUY_PROMPT_HOLD_MS = 12_000;');
     expect(dealing).toContain(
-      'if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {'
+      'if (!lightning && now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {'
     );
+    expect(dealing).toContain('static readonly LIGHTNING_BUSTED_GRACE_MS = 20_000;');
     const turns = read('server/src/engine/ServerTableEngineTurns.ts');
     expect(turns).toContain(
       'if (presenceOptions?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());'

@@ -50,6 +50,9 @@ interface CompletedTournament {
   prize_pool: number;
   current_players: number;
   max_players: number | null;
+  min_players?: number | null;
+  table_size?: number | null;
+  satellite_seats?: number | null;
   status: string;
   started_at: string | null;
   ended_at: string | null;
@@ -274,7 +277,7 @@ export default function TournamentResultsPage() {
          age out of the top 100 saw their own history shrink toward empty.
          The inner join pushes both problems into one query: the newest 100
          completed events THE PLAYER WAS IN. */
-      const cols = `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`;
+      const cols = `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`;
       const mine = filter === 'mine' && user?.id;
       let query = supabase
         .from('tournaments')
@@ -445,7 +448,7 @@ export default function TournamentResultsPage() {
         const { data, error: deepLinkErr } = await supabase
           .from('tournaments')
           .select(
-            `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
+            `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
           )
           .eq('id', tournamentId)
           .maybeSingle();
@@ -872,7 +875,7 @@ export default function TournamentResultsPage() {
                     const { data, error: hitRowErr } = await supabase
                       .from('tournaments')
                       .select(
-                        `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
+                        `id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, min_players, table_size, satellite_seats, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier, format_contract, satellite_target_id, satellite_target, ${TOURNAMENT_ARENA_EMBED}`
                       )
                       .eq('id', h.tournamentId)
                       .maybeSingle();

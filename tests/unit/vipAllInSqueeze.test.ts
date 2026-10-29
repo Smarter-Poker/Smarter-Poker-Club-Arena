@@ -321,9 +321,7 @@ describe('the markup carries the hold, and the pixels follow the hand', () => {
 describe('the equity the squeezer sees waits for the card (Dan 2026-08-28)', () => {
   it('TablePage holds the displayed equity while the hold is on, and reads it where equity renders', () => {
     const page = read('src/pages/TablePage.tsx');
-    expect(page).toContain(
-      'const displayedEquities = useHeldValue(allInEquities, squeezeHolding);'
-    );
+    expect(page).toContain('const heldEquities = useHeldValue(allInEquities, squeezeHolding);');
     expect(page).toContain('onSqueezeHold={setSqueezeHolding}');
     // Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". ONE board carries the
     // right (the bomb pot's boards 2 and 3 are handed nothing), and the page

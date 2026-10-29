@@ -70,7 +70,13 @@ const passive = (snap: LiveHorseDecisionSnapshot) =>
  * (LiveHorseDecisionWorkerClient: a finalized witness whose batch was not
  * committed is retired as decision_finalized).
  */
-function planLane(decide: Decide, opts: { issue?: boolean } = {}) {
+function planLane(
+  decide: Decide,
+  opts: {
+    issue?: boolean;
+    decorate?: (decision: HorseDecision, snap: LiveHorseDecisionSnapshot) => void;
+  } = {}
+) {
   const issued: Issued[] = [];
   const lane = {
     decideFast: vi.fn(async (snap: LiveHorseDecisionSnapshot) => {
@@ -80,6 +86,7 @@ function planLane(decide: Decide, opts: { issue?: boolean } = {}) {
         amount: answer.amount,
         thinkTime: 300,
       } as unknown as HorseDecision;
+      opts.decorate?.(decision, snap);
       const witness = createHorseExecutionWitness(snap, decision, {
         requestId: issued.length + 1,
         lane: 'fast',
@@ -130,6 +137,8 @@ async function playHand(
     stacks?: number[];
     base?: number;
     refuseFirstWager?: boolean;
+    afterAccepted?: 'throw' | 'false';
+    decorate?: (decision: HorseDecision, snap: LiveHorseDecisionSnapshot) => void;
   } = {}
 ) {
   vi.useFakeTimers({
@@ -137,7 +146,7 @@ async function playHand(
   });
   const formed = formedHand(2, opts.base ?? 3100);
   const stacks = opts.stacks ?? [100, 100];
-  const plan = planLane(decide, { issue: opts.issue });
+  const plan = planLane(decide, { issue: opts.issue, decorate: opts.decorate });
   const t = buildHost(formed, stacks, {
     horses: new Set(formed.players),
     rules: opts.rules,
@@ -155,6 +164,21 @@ async function playHand(
         return false;
       }
       return real(...args);
+    };
+  }
+  if (opts.afterAccepted) {
+    const hc = (t.host as any).hc;
+    const real = hc.performAction.bind(hc);
+    let injected = false;
+    hc.performAction = (...args: any[]) => {
+      const result = real(...args);
+      if (!injected && result && (args[1] === 'bet' || args[1] === 'raise')) {
+        injected = true;
+        if (opts.afterAccepted === 'throw')
+          throw Error('injected after accepted controller action');
+        return false;
+      }
+      return result;
     };
   }
   for (let i = 0; i < 1_800 && t.host.lifecycle === 'dealing'; i++) {
@@ -194,7 +218,194 @@ function scenarioEntry(plan: ReturnType<typeof planLane>): Issued {
   return flop[0]!;
 }
 
+describe('Lightning sized shoves retain their original intent', () => {
+  it.each(['nlh', 'plo4', 'plo5', 'plo6'])(
+    '%s refuses an illegal promoted raise but tolerates an explicit all-in',
+    async (variant) => {
+      vi.useFakeTimers();
+      const { HandController } = await import('../engine/HandController.js');
+      const { shapeLightningHorseAction } = await import('./LightningHorse.js');
+      const formed = formedHand(4, 9700);
+      const t = buildHost(formed, [200, 8, 200, 200]);
+      await t.host.start();
+      const players = [200, 8, 200, 200].map((stack, i) => ({
+        seat: i + 1,
+        user_id: formed.players[i]!,
+        username: `Seat ${i + 1}`,
+        stack,
+        bet: 0,
+        totalInvested: 0,
+        cards: [],
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+      }));
+      const hc = new HandController(
+        {
+          tableId: formed.handId,
+          handNumber: 1000001,
+          gameVariant: variant,
+          smallBlind: 1,
+          bigBlind: 2,
+          rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+        } as any,
+        players as any,
+        1
+      );
+      hc.start();
+      expect(hc.performAction(4, 'raise', 6)).toBe(true);
+      expect(hc.performAction(1, 'call')).toBe(true);
+      expect(hc.performAction(2, 'all_in')).toBe(true);
+      expect(hc.performAction(3, 'call')).toBe(true);
+      const actor = hc.getState().players.find((p) => p.seat === 4)!;
+      expect(hc.getAuthoritativeActionState(actor.user_id)!.legalActions).not.toContain('all_in');
+      (t.host as any).hc = hc;
+      const before = actor.stack;
+      const sized = { action: 'raise', amount: actor.stack + actor.bet };
+      const shaped = shapeLightningHorseAction(hc, actor.user_id, sized, false);
+      expect(
+        (t.host as any).applyAction(actor.user_id, shaped.action, shaped.amount, 'horse_policy')
+          .success
+      ).toBe(false);
+      expect(actor.stack).toBe(before);
+      expect(hc.getState().currentPlayerSeat).toBe(4);
+      expect(
+        (t.host as any).applyAction(actor.user_id, sized.action, sized.amount, 'player').success
+      ).toBe(false);
+      expect(actor.stack).toBe(before);
+      const accepted: any[] = [];
+      expect(
+        (t.host as any).applyAction(
+          actor.user_id,
+          'all_in',
+          undefined,
+          'player',
+          undefined,
+          (r: any) => accepted.push(r)
+        ).success
+      ).toBe(true);
+      expect(accepted).toHaveLength(1);
+      expect(accepted[0].action).toBe('call');
+      expect(accepted[0].amount).toBe(2);
+    }
+  );
+});
+
 describe('Lightning commits a horse plan only for the exact accepted wager', () => {
+  it.each(['throw', 'false'] as const)(
+    'keeps accepted action and effect when controller later %s',
+    async (afterAccepted) => {
+      const { plan, actions } = await playHand(
+        onFirstFlopDecision(() => ({ action: 'bet', amount: 4 })),
+        { afterAccepted }
+      );
+      const entry = scenarioEntry(plan);
+      expect(entry.outcome).toBe('committed');
+      expect(entry.witness.executionStatus).toBe('intended');
+      expect(plan.raw.commitDecisionEffects).toHaveBeenCalledTimes(1);
+      expect(
+        actions.filter((a) => a.stage === 'flop' && a.action === 'bet' && a.amount === 4)
+      ).toHaveLength(1);
+    }
+  );
+  it.each([
+    { field: 'plo4Policy', variant: 'plo4' },
+    { field: 'omahaVariantPolicy', variant: 'plo5' },
+    { field: 'remainingVariantPolicy', variant: 'short_deck' },
+    { field: 'jointPolicy', variant: 'plo5' },
+  ])('withdraws stale $field at the controller door', async ({ field, variant }) => {
+    const { plan } = await playHand(
+      onFirstFlopDecision(() => ({ action: 'bet', amount: 4 })),
+      {
+        decorate: (d, snap) => {
+          if (d.action === 'bet')
+            (d as any)[field] = {
+              variant,
+              boardCount: 1,
+              applied: true,
+              baselineAction: 'check',
+              baselineAmount: null,
+              finalAction: 'bet',
+              finalAmount: 4,
+              selection: 'selected',
+              authority: { epoch: 'missing-worker', generation: 1, authorityKey: 'missing' },
+            } as any;
+        },
+      }
+    );
+    const entry = scenarioEntry(plan);
+    expect(entry.witness.executedAction).toBe('check');
+    expect((entry.result.decision as any)[field]?.selection).toBe('withdrawn_before_acceptance');
+    expect(entry.outcome).toBe('retired');
+    expect(plan.raw.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+  it('withdraws a selected fold before the fast-fold reservation door', async () => {
+    let opened = false;
+    const { plan, actions } = await playHand(
+      (snap) => {
+        if (gs(snap).stage === 'flop') {
+          if (!opened) {
+            opened = true;
+            return { action: 'bet', amount: 4 };
+          }
+          if (gs(snap).toCall > 0) return { action: 'fold' };
+        }
+        return passive(snap);
+      },
+      {
+        decorate: (d, snap) => {
+          if (d.action === 'fold')
+            d.plo4Policy = {
+              applied: true,
+              baselineAction: 'call',
+              baselineAmount: gs(snap).toCall,
+              finalAction: 'fold',
+              finalAmount: null,
+              selection: 'selected',
+              authority: { epoch: 'missing-worker', generation: 1, authorityKey: 'missing' },
+            } as any;
+        },
+      }
+    );
+    const withdrawn = plan.issued.filter(
+      (e) => e.result.decision.plo4Policy?.selection === 'withdrawn_before_acceptance'
+    );
+    expect(withdrawn.length).toBeGreaterThan(0);
+    expect(actions.some((a) => a.stage === 'flop' && a.action === 'call' && a.amount === 4)).toBe(
+      true
+    );
+    expect(actions.some((a) => a.stage === 'flop' && a.action === 'fold')).toBe(false);
+  });
+  it('preserves a candidate when the original release gate is usable', async () => {
+    const { liveHorsePhase10Authority } = await import('../engine/HorsePhase10Authority.js');
+    const check = vi.spyOn(liveHorsePhase10Authority, 'check').mockReturnValue('usable');
+    try {
+      const { plan } = await playHand(
+        onFirstFlopDecision(() => ({ action: 'bet', amount: 4 })),
+        {
+          decorate: (d) => {
+            if (d.action === 'bet')
+              d.plo4Policy = {
+                applied: true,
+                baselineAction: 'check',
+                baselineAmount: null,
+                finalAction: 'bet',
+                finalAmount: 4,
+                selection: 'selected',
+                authority: { epoch: 'mechanical-gate-fixture' },
+              } as any;
+          },
+        }
+      );
+      const entry = scenarioEntry(plan);
+      expect(check).toHaveBeenCalled();
+      expect(entry.witness.executedAction).toBe('bet');
+      expect(entry.result.decision.plo4Policy?.applied).toBe(true);
+      expect(entry.outcome).toBe('committed');
+    } finally {
+      check.mockRestore();
+    }
+  });
   it('an exact accepted bet commits, and its acceptance is the issued wager', async () => {
     const { plan } = await playHand(onFirstFlopDecision(() => ({ action: 'bet', amount: 4 })));
     const entry = scenarioEntry(plan);

@@ -1,16 +1,21 @@
+import {
+  isFixedSngSatellite,
+  type TournamentEntryCapacitySubject,
+} from '../../server/src/tournament/tournamentEntryCapacity';
+
 /** Decode the recorded v3 standings shape, never a raw creation label or cap.
  * The settlement owner keeps co-qualifiers unranked; eliminated ticket winners
  * retain their actual finishing position. This supplies no financial authority.
  */
 export function isRecordedSatelliteQualifier(
   tournament:
-    | {
+    | (TournamentEntryCapacitySubject & {
         id?: unknown;
         status?: unknown;
         format_contract?: unknown;
         satellite_target_id?: unknown;
         satellite_target?: unknown;
-      }
+      })
     | null
     | undefined,
   entry: { status?: unknown; position?: unknown; chips?: unknown }
@@ -19,7 +24,8 @@ export function isRecordedSatelliteQualifier(
   const target = tournament.satellite_target_id ?? tournament.satellite_target;
   return (
     tournament.status === 'COMPLETED' &&
-    tournament.format_contract === 'mtt-v2' &&
+    (tournament.format_contract === 'mtt-v2' ||
+      (tournament.format_contract === 'sng-v1' && isFixedSngSatellite(tournament))) &&
     typeof target === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target) &&
     target !== tournament.id &&
@@ -32,4 +38,11 @@ export function isRecordedSatelliteQualifier(
     Number.isFinite(entry.chips) &&
     entry.chips > 0
   );
+}
+
+/** Only the recorded two-seat fixed-field satellite starts when full. */
+export function satelliteStartsWhenFull(tournament: unknown): boolean {
+  if (!tournament || typeof tournament !== 'object') return false;
+  const row = tournament as TournamentEntryCapacitySubject & { format_contract?: unknown };
+  return row.format_contract === 'sng-v1' && isFixedSngSatellite(row);
 }

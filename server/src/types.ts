@@ -1018,6 +1018,7 @@ export interface HorseTournamentUtilityLedger {
 }
 
 export interface HorseDecision {
+  featureAuthority?: import('./engine/HorseFeatureAuthority.js').HorseFeatureDecisionReceipt;
   correctivePolicy?: import('./services/horseCorrectiveReview/liveKernel.js').CorrectiveLiveKernelReceipt;
   /** Private reference lookup/route evidence; not final causal or GTO proof. */
   tournamentPreflopAttribution?: import('./engine/HorsePhase6Attribution.js').HorsePhase6Attribution;
@@ -1036,7 +1037,8 @@ export interface HorseDecision {
   continuationGuard?:
     | 'multiway_commitment_floor'
     | 'dominated_commitment_floor'
-    | 'omaha_cold_flush_pressure';
+    | 'omaha_cold_flush_pressure'
+    | 'preflop_priced_refusal';
   plo4Policy?: import('./engine/plo4/Plo4LivePolicy.js').Plo4LiveReceipt;
   omahaVariantPolicy?: import('./engine/omaha/OmahaVariantLivePolicy.js').OmahaVariantReceipt;
   remainingVariantPolicy?: import('./engine/remainingVariants/RemainingVariantLivePolicy.js').RemainingVariantReceipt;

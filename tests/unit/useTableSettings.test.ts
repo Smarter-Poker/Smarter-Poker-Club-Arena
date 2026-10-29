@@ -105,3 +105,22 @@ describe('useTableSettings', () => {
     expect(second.result.current.settings.fourColorDeckExplicit).toBe(true);
   });
 });
+
+describe('opponent HUD cannot be enabled by legacy state', () => {
+  it('defaults off and ignores a saved true across reload', () => {
+    store[KEY] = JSON.stringify({ showHUD: true, soundVolume: 40 });
+    const { result } = renderHook(() => useTableSettings());
+    expect(result.current.settings.showHUD).toBe(false);
+    expect(result.current.settings.soundVolume).toBe(40);
+  });
+
+  it('rejects both individual and bulk attempts to turn it on', () => {
+    const { result } = renderHook(() => useTableSettings());
+    act(() => result.current.updateSetting('showHUD', true));
+    expect(result.current.settings.showHUD).toBe(false);
+    act(() => result.current.updateSettings({ showHUD: true, soundVolume: 45 }));
+    expect(result.current.settings.showHUD).toBe(false);
+    expect(result.current.settings.soundVolume).toBe(45);
+    expect(JSON.parse(store[KEY]).showHUD).toBe(false);
+  });
+});

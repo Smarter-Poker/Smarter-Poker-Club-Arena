@@ -4,6 +4,7 @@ import datetime
 import base64
 import hashlib
 import json
+import math
 import re
 import selectors
 import subprocess
@@ -32,16 +33,17 @@ def reference_cases(raw, expected):
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
     uuid = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     if (not isinstance(value, dict) or set(value) != {'version', 'sourceRelease', 'cases'}
-            or type(value['version']) is not int or value['version'] not in (1, 2)
+            or type(value['version']) is not int or value['version'] not in (1, 2, 3)
             or value['sourceRelease'] != expected
             or not re.fullmatch(r'[0-9a-f]{40}', expected)
             or not isinstance(value['cases'], list) or not 1 <= len(value['cases']) <= 6):
         raise ValueError('reference_cases_refused')
-    positive = value['version'] == 2
+    positive = value['version'] in (2, 3)
+    postflop = value['version'] == 3
     seen = set()
     for case in value['cases']:
         if (not isinstance(case, dict) or set(case) != {
-                'handKey', 'tableId', 'decisionRecordSha256' if positive else 'errorAt', 'handId', 'handNumber', 'leaseGeneration'}
+                'handKey', 'tableId', 'decisionRecordSha256' if positive else 'errorAt', 'handId', 'handNumber', 'leaseGeneration'} | ({'stage', 'actorId', 'seat'} if postflop else set())
                 or not all(isinstance(case[k], str) and re.fullmatch(uuid, case[k])
                            for k in ('tableId', 'handId', 'leaseGeneration'))
                 or type(case['handNumber']) is not int or not 1 <= case['handNumber'] <= 9007199254740991
@@ -52,6 +54,10 @@ def reference_cases(raw, expected):
                     or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z', case['errorAt'])))
                 or not isinstance(case['handKey'], str)
                 or not re.fullmatch(r'[0-9a-f]{64}', case['handKey'])):
+            raise ValueError('reference_cases_refused')
+        if postflop and (case['stage'] not in ('flop', 'turn', 'river')
+                or not isinstance(case['actorId'], str) or not re.fullmatch(uuid, case['actorId'])
+                or type(case['seat']) is not int or not 1 <= case['seat'] <= 10):
             raise ValueError('reference_cases_refused')
         if not positive:
             datetime.datetime.fromisoformat(case['errorAt'].replace('Z', '+00:00'))
@@ -130,9 +136,24 @@ export function inspectReferenceRecords(input, batch, api) {
   return {status:cases.every(c=>c.status==='observed')?'observed':'unknown',sourceRelease:input.sourceRelease,cases,
     rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
-// Version 2 observes one explicitly named successful decision. The original
+// Version 2 observes a preflop reference; version 3 pins a postflop actor/seat/stage.
+// Both require one exact successful decision. The original
 // reconciler owns the complete capture/execution/read-frame join, not this report.
+// Optional deterministic installed evaluator; no equity sampling or future cards.
+function originalOmahaCategory(p,g,api) {
+  const count={plo4:4,plo5:5,plo6:6}[g.gameVariant];
+  if(!count || typeof api.omahaNutStatus!=='function' || !Array.isArray(p.cards)
+      || p.cards.length!==count || !Array.isArray(g.communityCards)
+      || g.communityCards.length!=={flop:3,turn:4,river:5}[g.stage]) return null;
+  const cards=[...p.cards,...g.communityCards];
+  if(cards.some(c=>!c || !['hearts','diamonds','clubs','spades'].includes(c.suit)
+      || !['2','3','4','5','6','7','8','9','T','J','Q','K','A'].includes(c.rank))
+      || new Set(cards.map(c=>c.rank+':'+c.suit)).size!==cards.length) return null;
+  try {const n=api.omahaNutStatus(p.cards,g.communityCards).category;
+    return Number.isInteger(n)&&n>=0&&n<=9?n:null;} catch {return null;}
+}
 export function inspectAcceptedCalloffRecords(input, batch, api) {
+  const postflop=input.version===3;
   const unknown = (c, reason) => ({handKey:c.handKey,status:'unknown',reason});
   if (!batch || batch.sourceRelease !== input.sourceRelease || batch.status !== 'canonical_journal_export'
       || !Array.isArray(batch.recordsByHand) || batch.recordsByHand.length !== input.cases.length)
@@ -148,29 +169,55 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
         if (r.handKey!==c.handKey || r.sourceRelease!==input.sourceRelease || seen.has(r.eventId))
           return unknown(c,'record_binding_or_duplicate');
         seen.add(r.eventId);
-        if (r.kind==='decision' && (c.decisionRecordSha256===null || r.sha256===c.decisionRecordSha256)) {
-          const d=JSON.parse(r.body), p=d.snapshot?.player, g=d.snapshot?.gameState, ref=d.decision?.tournamentPreflopAttribution;
-          if (c.decisionRecordSha256!==null || (d.decision?.action==='all_in' && ref?.route==='variant_price'
-              && ref.referenceProposal?.action==='all_in' && ref.referenceProposal.amount===null
-              && Number.isFinite(p?.stack) && p.stack>0 && Number.isFinite(g?.currentBet)
-              && Number.isFinite(p.bet) && g.currentBet-p.bet>=p.stack)) decisions.push(r);
-        }
+        if (r.kind==='decision') decisions.push({r,body:JSON.parse(r.body)});
         if (r.kind==='execution') executions.push(r);
         if (r.kind==='accepted_hand') accepted.push(r);
       }
       if (accepted.length!==1) return unknown(c,'accepted_hand_missing_or_ambiguous');
-      if (decisions.length!==1) return unknown(c,decisions.length?'matching_decision_ambiguous':'matching_decision_missing');
-      const r=decisions[0], body=JSON.parse(r.body), s=body.snapshot, p=s.player, g=s.gameState;
-      const hand=JSON.parse(accepted[0].body), anchor=api.anchorHorseDecisionHand(s);
+      const hand=JSON.parse(accepted[0].body);
       if (hand.committedHandId!==c.handId || api.horseCompletedHandKey(hand)!==coordinate
           || accepted[0].turnKey!==c.handKey) return unknown(c,'accepted_hand_binding_mismatch');
-      if (anchor.status!=='anchored' || api.horseHandAnchorKey(anchor)!==coordinate)
-        return unknown(c,'original_snapshot_binding_mismatch');
-      const ref=body.decision.tournamentPreflopAttribution;
-      const toCall=Math.max(0,g.currentBet-p.bet);
-      if (body.decision.action!=='all_in' || !ref || ref.route!=='variant_price' || ref.referenceProposal?.action!=='all_in'
-          || ref.referenceProposal.amount!==null || !Number.isFinite(p.stack) || !(p.stack>0)
-          || !Number.isFinite(toCall) || !(toCall>=p.stack)) return unknown(c,'calloff_shape_not_observed');
+      // Only aggregate closed categories after every contributing original
+      // snapshot, record hash/source and accepted hand passed their bindings.
+      for (const {body} of decisions) {
+        const anchor=api.anchorHorseDecisionHand(body.snapshot);
+        if (anchor.status!=='anchored' || api.horseHandAnchorKey(anchor)!==coordinate)
+          return unknown(c,'original_snapshot_binding_mismatch');
+      }
+      const selectionCounts={decisionRecords:decisions.length,selectedRecords:0,
+        finalActionMismatch:0,referenceRouteMismatch:0,referenceActionMismatch:0,
+        referenceAmountMismatch:0,stackShapeMismatch:0,callPriceShapeMismatch:0,
+        notWholeStackCall:0,matchingShape:0,...(postflop?{targetMismatch:0}:{})};
+      const shapeReason=body=>{
+        const p=body.snapshot?.player,g=body.snapshot?.gameState;
+        const ref=body.decision?.tournamentPreflopAttribution;
+        if(body.decision?.action!=='all_in')return 'finalActionMismatch';
+        if(postflop && (g?.stage!==c.stage || p?.user_id!==c.actorId || p?.seat!==c.seat)) return 'targetMismatch';
+        if(!postflop && ref?.route!=='variant_price')return 'referenceRouteMismatch';
+        if(!postflop && ref.referenceProposal?.action!=='all_in')return 'referenceActionMismatch';
+        if(!postflop && ref.referenceProposal.amount!==null)return 'referenceAmountMismatch';
+        if(!Number.isFinite(p?.stack)||!(p.stack>0))return 'stackShapeMismatch';
+        if(!Number.isFinite(g?.currentBet)||!Number.isFinite(p.bet)
+            || (postflop && (g.currentBet<0 || p.bet<0)))return 'callPriceShapeMismatch';
+        const price=g.currentBet-p.bet;
+        if(!Number.isFinite(price))return 'callPriceShapeMismatch';
+        if(price<p.stack)return 'notWholeStackCall';
+        return 'matchingShape';
+      };
+      const selected=[];
+      for(const item of decisions) {
+        if(c.decisionRecordSha256!==null && item.r.sha256!==c.decisionRecordSha256)continue;
+        selectionCounts.selectedRecords++;
+        const reason=shapeReason(item.body);selectionCounts[reason]++;
+        if(c.decisionRecordSha256!==null || reason==='matchingShape')selected.push(item);
+      }
+      if(selected.length!==1) {
+        if(selected.length)return unknown(c,'matching_decision_ambiguous');
+        return {...unknown(c,'matching_decision_missing'),selectionCounts};
+      }
+      const {r,body}=selected[0],s=body.snapshot,p=s.player,g=s.gameState;
+      if(shapeReason(body)!=='matchingShape')
+        return {...unknown(c,'calloff_shape_not_observed'),selectionCounts};
       if (api.horsePhase6AttributionMismatch(body.decision,s)!==null
           || !api.horseDecisionReceiptIsValid(body.decision,g.gameVariant,{player:p,gameState:g}))
         return unknown(c,'calloff_receipt_refused');
@@ -183,45 +230,83 @@ export function inspectAcceptedCalloffRecords(input, batch, api) {
           || w.acceptedActions[0].intended!==true || w.acceptedActions[0].record.action!=='all_in'
           || api.bindHorseDecisionToCommittedHand(w,hand).status!=='bound')
         return unknown(c,'calloff_execution_not_intended');
+      if(postflop && (w.identity?.stage!==c.stage || w.acceptedActions[0].record.stage!==c.stage
+          || w.acceptedActions[0].record.seat!==c.seat || w.acceptedActions[0].record.userId!==c.actorId))
+        return unknown(c,'calloff_execution_not_intended');
       const review=api.reconcileHorseJournalHand(entry.records,c.handKey);
       if (review.status!=='reconciled' || review.gaps.length || !(review.matchedActions>0)
           || review.matchedActions!==review.acceptedHorseActions)
         return unknown(c,'calloff_hand_not_reconciled');
       return {handKey:c.handKey,status:'observed',sourceRelease:r.sourceRelease,
-        observation:'accepted_variant_price_whole_stack_calloff',decisionRecordSha256:r.sha256,
+        observation:postflop?'accepted_postflop_whole_stack_calloff':'accepted_variant_price_whole_stack_calloff',
+        ...(postflop?{snapshotSummary:{stage:g.stage,
+          variant:['nlh','plo4','plo5','plo6'].includes(g.gameVariant)?g.gameVariant:null,
+          call:Math.min(g.currentBet-p.bet,p.stack),stack:p.stack,
+          pot:Number.isFinite(g.pot)&&g.pot>=0?g.pot:null,
+          contestablePotPresent:Object.hasOwn(g,'contestablePot'),
+          contestablePot:Number.isFinite(g.contestablePot)&&g.contestablePot>=0?g.contestablePot:null,
+          ownCardCount:Array.isArray(p.cards)&&p.cards.length<=6?p.cards.length:null,
+          readFramePresent:body.readFrame!=null,ownMadeCategory:originalOmahaCategory(p,g,api),finalAction:body.decision.action}}:{}),
+        decisionRecordSha256:r.sha256,
         executionRecordSha256:e.sha256,acceptedRecordSha256:accepted[0].sha256,
         decisionKeySha256:hash(s.decisionKey),guards:{recordHashVerified:true,originalHandBound:true,
           exactDecisionBound:true,positiveStackCalloff:true,receiptValid:true,sameTurnExecution:true,
           intendedAllInAccepted:true,handReconciled:true}};
     } catch {return unknown(c,'record_or_validator_unavailable');}
   });
-  return {version:2,status:cases.every(c=>c.status==='observed')?'observed':'unknown',
+  return {version:postflop?3:2,status:cases.every(c=>c.status==='observed')?'observed':'unknown',
     sourceRelease:input.sourceRelease,cases,rawRecordsExported:false,replayVerified:false,activationAllowed:false};
 }
 if (process.argv[1] === '--reference-shape-diagnostic') {
+  let report;
+  let diagnosticStage='input';
+  // This finite child emits only its validated report, never module startup logs.
+  for (const key of ['log','info','warn','error','debug','trace','dir']) console[key]=()=>{};
   try {
     let raw=''; for await (const c of process.stdin) {raw+=c; if(Buffer.byteLength(raw)>8192)throw Error();}
     const input=JSON.parse(raw);
+    diagnosticStage='module_load_journal';
     const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+    diagnosticStage='module_load_records';
     const records=await import('/app/dist/services/horseDecisionJournal/record.js');
+    diagnosticStage='module_load_binding';
     const binding=await import('/app/dist/engine/HorseDecisionHandBinding.js');
+    diagnosticStage='module_load_phase6';
     const phase6=await import('/app/dist/engine/HorsePhase6Attribution.js');
+    diagnosticStage='module_load_logic';
     const logic=await import('/app/dist/engine/HorseLogic.js');
     // Match the existing private export CLI: this finite child owns no lobby timer.
+    diagnosticStage='module_load_hub';
     const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
+    diagnosticStage='export_contract';
+    if(typeof journal.exportCanonicalHorseJournalBatch!=='function') throw Error();
+    diagnosticStage='journal_read';
     const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
-    if (input.version===2) {
+    if (input.version===2 || input.version===3) {
+      diagnosticStage='module_load_review';
       const review=await import('/app/dist/services/horseDecisionJournal/review.js');
+      diagnosticStage='module_load_validation';
       const validation=await import('/app/dist/engine/horseDecision/responseValidation.js');
-      console.log(JSON.stringify(inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation})));
-    } else console.log(JSON.stringify(inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB})));
-  } catch {console.log(JSON.stringify({status:'unknown',reason:'journal_or_runtime_unavailable'}));}
+      let evaluator={};
+      if(input.version===3) {try {evaluator=await import('/app/dist/engine/HorseEval.js');} catch { /* optional, remains unknown */ }}
+      diagnosticStage='evaluation';
+      report=inspectAcceptedCalloffRecords(input,batch,{...records,...binding,...phase6,...review,...validation,omahaNutStatus:evaluator.omahaNutStatus});
+    } else {
+      diagnosticStage='evaluation';
+      report=inspectReferenceRecords(input,batch,{...records,...binding,...phase6,shortStackNoFlatBb:logic.SHORT_STACK_NO_FLAT_BB});
+    }
+  } catch {report={status:'unknown',reason:'journal_or_runtime_unavailable',diagnostic:{stage:diagnosticStage,code:'exception'}};}
+  await new Promise(resolve=>{
+    process.stdout.once('error',()=>process.exit(1));
+    process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
+  });
   process.exit(0);
 }
 '''
 
 
 def sanitize_positive_calloff_result(result, value):
+    postflop = value['version'] == 3
     reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
                'original_snapshot_binding_mismatch', 'accepted_hand_missing_or_ambiguous',
@@ -239,7 +324,7 @@ def sanitize_positive_calloff_result(result, value):
             raise ValueError()
         return result
     if (set(result) != {'version', 'status', 'sourceRelease', 'cases', 'rawRecordsExported', 'replayVerified', 'activationAllowed'}
-            or type(result['version']) is not int or result['version'] != 2
+            or type(result['version']) is not int or result['version'] != value['version']
             or result['sourceRelease'] != value['sourceRelease']
             or any(result[k] is not False for k in ('rawRecordsExported', 'replayVerified', 'activationAllowed'))
             or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
@@ -251,24 +336,268 @@ def sanitize_positive_calloff_result(result, value):
         if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
             raise ValueError()
         if case.get('status') == 'unknown':
-            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in reasons:
+            extra = {'selectionCounts'} if 'selectionCounts' in case else set()
+            if set(case) != {'handKey', 'status', 'reason'} | extra or case.get('reason') not in reasons:
                 raise ValueError()
+            if extra:
+                counts = case['selectionCounts']
+                categories = {'finalActionMismatch', 'referenceRouteMismatch', 'referenceActionMismatch',
+                              'referenceAmountMismatch', 'stackShapeMismatch', 'callPriceShapeMismatch',
+                              'notWholeStackCall', 'matchingShape'} | ({'targetMismatch'} if postflop else set())
+                if (case['reason'] not in {'matching_decision_missing', 'calloff_shape_not_observed'}
+                        or not isinstance(counts, dict)
+                        or set(counts) != categories | {'decisionRecords', 'selectedRecords'}
+                        or any(type(n) is not int or not 0 <= n <= 256 for n in counts.values())
+                        or counts['selectedRecords'] > counts['decisionRecords']
+                        or sum(counts[k] for k in categories) != counts['selectedRecords']
+                        or counts['matchingShape'] != 0
+                        or (original['decisionRecordSha256'] is not None and counts['selectedRecords'] > 1)
+                        or (original['decisionRecordSha256'] is None
+                            and counts['selectedRecords'] != counts['decisionRecords'])
+                        or (case['reason'] == 'calloff_shape_not_observed'
+                            and (original['decisionRecordSha256'] is None or counts['selectedRecords'] != 1))):
+                    raise ValueError()
             continue
-        if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes
+        if (set(case) != {'handKey', 'status', 'sourceRelease', 'observation', 'guards'} | hashes | ({'snapshotSummary'} if postflop else set())
                 or case['status'] != 'observed' or case['sourceRelease'] != value['sourceRelease']
-                or case['observation'] != 'accepted_variant_price_whole_stack_calloff'
+                or case['observation'] != ('accepted_postflop_whole_stack_calloff' if postflop else 'accepted_variant_price_whole_stack_calloff')
                 or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])
                 or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
                 or not isinstance(case['guards'], dict) or set(case['guards']) != guard_keys
                 or any(v is not True for v in case['guards'].values())):
             raise ValueError()
+        if postflop:
+            summary = case['snapshotSummary']
+            if (not isinstance(summary, dict) or set(summary) != {
+                    'stage', 'variant', 'call', 'stack', 'pot', 'contestablePotPresent',
+                    'contestablePot', 'ownCardCount', 'readFramePresent', 'ownMadeCategory', 'finalAction'}
+                    or summary['stage'] != original['stage']
+                    or summary['variant'] not in (None, 'nlh', 'plo4', 'plo5', 'plo6')
+                    or summary['finalAction'] != 'all_in'
+                    or type(summary['contestablePotPresent']) is not bool
+                    or type(summary['readFramePresent']) is not bool
+                    or (summary['ownMadeCategory'] is not None and
+                        (type(summary['ownMadeCategory']) is not int or not 0 <= summary['ownMadeCategory'] <= 9))
+                    or (summary['ownCardCount'] is not None and
+                        (type(summary['ownCardCount']) is not int or not 0 <= summary['ownCardCount'] <= 6))):
+                raise ValueError()
+            for key in ('call', 'stack', 'pot', 'contestablePot'):
+                n = summary[key]
+                if n is None and key in ('pot', 'contestablePot'):
+                    continue
+                if type(n) not in (int, float) or not math.isfinite(n) or n < 0:
+                    raise ValueError()
+            if (summary['stack'] <= 0 or summary['call'] != summary['stack']
+                    or (not summary['contestablePotPresent'] and summary['contestablePot'] is not None)):
+                raise ValueError()
     if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
         raise ValueError()
     return result
 
 
+def reference_case_metadata(raw, expected):
+    """Exact original metadata only; never an operator command or journal path."""
+    if len(raw) > REFERENCE_CASE_BYTES:
+        raise ValueError('reference_cases_refused')
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError('reference_cases_refused')
+            value[key] = item
+        return value
+    value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 5:
+        if (set(value) != {'version', 'sourceRelease', 'probe', 'cases'} or value['probe'] != 'cash_turn_fold'
+                or not isinstance(value.get('cases'), list)):
+            raise ValueError('reference_cases_refused')
+        ordinary = []
+        for case in value['cases']:
+            if (not isinstance(case, dict) or set(case) != {'handKey','tableId','handId','handNumber',
+                    'leaseGeneration','decisionRecordSha256','actionOrdinal','actorId','seat'}
+                    or type(case['actionOrdinal']) is not int or not 0 <= case['actionOrdinal'] < 4096):
+                raise ValueError('reference_cases_refused')
+            ordinary.append({**{k:v for k,v in case.items() if k != 'actionOrdinal'}, 'stage':'turn'})
+        reference_cases(json.dumps({'version':3,'sourceRelease':value['sourceRelease'],'cases':ordinary}).encode('utf-8'), expected)
+        return value
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 4:
+        if (set(value) != {'version', 'sourceRelease', 'probe', 'cases'}
+                or value['probe'] not in ('matched_risk', 'phase7_allocated')):
+            raise ValueError('reference_cases_refused')
+        # Reuse the original coordinate, uniqueness and full-list ordinal contract.
+        tournament_cases(json.dumps({'version': 2, 'sourceRelease': value['sourceRelease'],
+                                     'cases': value['cases']}).encode('utf-8'), expected)
+        return value
+    return reference_cases(raw, expected)
+
+
+def sanitize_cash_turn_fold_result(result, value):
+    reasons = {'input_refused','journal_source_or_shape_mismatch','journal_missing_or_bounds',
+               'record_binding_or_duplicate','accepted_hand_missing_or_ambiguous','accepted_hand_binding_mismatch',
+               'original_action_ordinal_unavailable','original_cash_turn_fold_not_observed',
+               'matching_decision_ambiguous','matching_decision_missing','original_snapshot_binding_mismatch',
+               'execution_not_intended','original_price_geometry_unavailable','hand_not_reconciled',
+               'record_or_validator_unavailable','journal_or_runtime_unavailable'}
+    fixed = {'version':5,'probe':'cash_turn_fold','rawRecordsExported':False,'replayVerified':False,
+             'causalReplayVerified':False,'activationAllowed':False}
+    if not isinstance(result,dict) or result.get('status') not in ('unknown','observed'):
+        raise ValueError('decision_result_refused')
+    if set(result) == {'status','reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons: raise ValueError('decision_result_refused')
+        return result
+    if any(type(result.get(k)) is not type(v) or result[k] != v for k,v in fixed.items()):
+        raise ValueError('decision_result_refused')
+    if set(result) == set(fixed) | {'status','reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons: raise ValueError('decision_result_refused')
+        return result
+    if (set(result) != set(fixed) | {'status','sourceRelease','cases'} or result['sourceRelease'] != value['sourceRelease']
+            or not isinstance(result['cases'],list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError('decision_result_refused')
+    hashes = {'decisionRecordSha256','executionRecordSha256','acceptedRecordSha256','decisionKeySha256'}
+    guards = {'recordHashesVerified','originalHandBound','intendedActionAccepted','handReconciled'}
+    keys = hashes | guards | {'handKey','status','observation','actionOrdinal','variant','ownCardCount','ownMadeCategory',
+            'rawCall','effectiveCall','uncallableExcess','stack','pot','capturedContestablePot','derivedReference',
+            'policyReceipts','originalReferenceEquity','originalReferenceReason'}
+    closed_reasons = {'off','reference_retained','call_declined','postflop_fold','equity_below_price',
+        'insufficient_equity','range_unavailable','invalid_equity_evidence','canonical_state_unavailable','invalid_geometry',
+        'invalid_wager_geometry','rake_schedule_unavailable','depth_or_ante_outside_pack','variant_outside_pack'}
+    def number(v): return type(v) in (int,float) and math.isfinite(v) and v >= 0
+    def unit(v): return v is None or (number(v) and v <= 1)
+    for case,original in zip(result['cases'],value['cases']):
+        if not isinstance(case,dict) or case.get('handKey') != original['handKey']: raise ValueError('decision_result_refused')
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey','status','reason'} or case['reason'] not in reasons: raise ValueError('decision_result_refused')
+            continue
+        if (set(case) != keys or case.get('status') != 'observed' or case['observation'] != 'accepted_original_cash_turn_fold'
+                or type(case['actionOrdinal']) is not int or case['actionOrdinal'] != original['actionOrdinal']
+                or case['variant'] not in ('nlh','plo4','plo5','plo6')
+                or (case['ownCardCount'] is not None and (type(case['ownCardCount']) is not int or case['ownCardCount'] not in (2,4,5,6)))
+                or any(case[k] is not None for k in ('ownMadeCategory','originalReferenceEquity','originalReferenceReason'))
+                or any(not isinstance(case[k],str) or not re.fullmatch(r'[0-9a-f]{64}',case[k]) for k in hashes)
+                or any(case[k] is not True for k in guards)
+                or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])
+                or any(not number(case[k]) for k in ('rawCall','effectiveCall','uncallableExcess','stack','pot'))
+                or not case['rawCall'] > 0 or not case['stack'] > 0
+                or case['effectiveCall'] != min(case['rawCall'],case['stack'])
+                or case['uncallableExcess'] != case['rawCall']-case['effectiveCall']
+                or (case['capturedContestablePot'] is not None and not number(case['capturedContestablePot']))):
+            raise ValueError('decision_result_refused')
+        derived=case['derivedReference']
+        pot=case['capturedContestablePot'] if case['capturedContestablePot'] is not None else case['pot']-case['uncallableExcess']
+        if (not isinstance(derived,dict) or set(derived) != {'contestablePot','unrakedCallPrice'}
+                or not number(pot) or derived['contestablePot'] != pot or not unit(derived['unrakedCallPrice'])
+                or derived['unrakedCallPrice'] is None
+                or abs(derived['unrakedCallPrice']-case['effectiveCall']/(pot+case['effectiveCall'])) > 1e-12):
+            raise ValueError('decision_result_refused')
+        receipts=case['policyReceipts']
+        if not isinstance(receipts,list) or len(receipts)!=3: raise ValueError('decision_result_refused')
+        for receipt,owner in zip(receipts,('plo4Policy','omahaVariantPolicy','remainingVariantPolicy')):
+            if (not isinstance(receipt,dict) or set(receipt) != {'owner','present','mode','applied','callPrice','equity','reason'}
+                    or receipt['owner'] != owner or type(receipt['present']) is not bool
+                    or (receipt['mode'] is not None and receipt['mode'] not in ('off','shadow','candidate'))
+                    or (receipt['applied'] is not None and type(receipt['applied']) is not bool)
+                    or not unit(receipt['callPrice']) or not unit(receipt['equity'])
+                    or (receipt['reason'] is not None and receipt['reason'] not in closed_reasons)
+                    or (not receipt['present'] and any(receipt[k] is not None for k in ('mode','applied','callPrice','equity','reason')))):
+                raise ValueError('decision_result_refused')
+    if (result['status']=='observed') != all(c['status']=='observed' for c in result['cases']): raise ValueError('decision_result_refused')
+    return result
+
+
+def sanitize_decision_8464_result(result, value):
+    reasons = {'input_refused', 'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
+               'record_binding_or_duplicate', 'accepted_hand_missing_or_ambiguous',
+               'accepted_hand_binding_mismatch', 'original_action_ordinal_unavailable',
+               'matching_decision_ambiguous', 'matching_decision_missing',
+               'original_snapshot_binding_mismatch', 'execution_not_intended',
+               'hand_not_reconciled', 'record_or_validator_unavailable',
+               'journal_or_runtime_unavailable', 'matched_risk_not_observed',
+               'matched_wager_not_retained', 'allocated_nonempty_context_not_observed',
+               'phase7_interpreter_not_observed'}
+    if not isinstance(result, dict) or result.get('status') not in ('observed', 'unknown'):
+        raise ValueError('decision_result_refused')
+    if set(result) == {'status', 'reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('decision_result_refused')
+        return result
+    fixed = {'version': 4, 'probe': value['probe'], 'rawRecordsExported': False,
+             'replayVerified': False, 'causalReplayVerified': False, 'activationAllowed': False}
+    if any(type(result.get(k)) is not type(v) or result[k] != v for k,v in fixed.items()):
+        raise ValueError('decision_result_refused')
+    if set(result) == set(fixed) | {'status', 'reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('decision_result_refused')
+        return result
+    if (set(result) != set(fixed) | {'status', 'sourceRelease', 'cases'}
+            or result['sourceRelease'] != value['sourceRelease']
+            or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError('decision_result_refused')
+    hashes = {'decisionRecordSha256', 'executionRecordSha256', 'acceptedRecordSha256', 'decisionKeySha256'}
+    guards = {'recordHashesVerified', 'originalHandBound', 'intendedActionAccepted', 'handReconciled'}
+    common = hashes | guards | {'handKey', 'status', 'actionOrdinal', 'observation'}
+    for case, original in zip(result['cases'], value['cases']):
+        if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
+            raise ValueError('decision_result_refused')
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey', 'status', 'reason'} or case['reason'] not in reasons:
+                raise ValueError('decision_result_refused')
+            continue
+        if (case.get('status') != 'observed' or type(case.get('actionOrdinal')) is not int
+                or case['actionOrdinal'] != original['actionOrdinal']
+                or any(not isinstance(case.get(k), str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
+                or any(case.get(k) is not True for k in guards)
+                or (original['decisionRecordSha256'] is not None
+                    and case['decisionRecordSha256'] != original['decisionRecordSha256'])):
+            raise ValueError('decision_result_refused')
+        if value['probe'] == 'matched_risk':
+            extra = {'variant', 'stage', 'exposure', 'physicalStack', 'raiseTo', 'helperEligible',
+                     'coveringStack', 'finalWagerMatchesHelper'}
+            if (set(case) != common | extra or case['observation'] != 'accepted_matched_risk_bounded_wager'
+                    or case['variant'] not in ('nlh', 'plo4', 'plo5', 'plo6')
+                    or case['stage'] not in ('flop', 'turn', 'river')
+                    or any(case[k] is not True for k in ('helperEligible','coveringStack','finalWagerMatchesHelper'))
+                    or any(type(case[k]) not in (int,float) or not math.isfinite(case[k]) or case[k] <= 0
+                           for k in ('exposure','physicalStack','raiseTo'))
+                    or case['exposure'] >= case['physicalStack']):
+                raise ValueError('decision_result_refused')
+        else:
+            extra = {'readFrameSha256','allocatedContext','nonemptyHistory','allocatedKeyDiffersFromLegacy','phase7'}
+            proof = case.get('phase7')
+            if (set(case) != common | extra or case['observation'] != 'allocated_nonempty_phase7_interpreter_observed'
+                    or not isinstance(case['readFrameSha256'],str) or not re.fullmatch(r'[0-9a-f]{64}',case['readFrameSha256'])
+                    or any(case[k] is not True for k in ('allocatedContext','nonemptyHistory','allocatedKeyDiffersFromLegacy'))
+                    or not isinstance(proof,dict) or set(proof) != {'status','reason','application'}
+                    or proof['status'] != 'applicable-active' or proof['reason'] != 'supported_uncalibrated_utility_baseline'
+                    or proof['application'] not in ('accepted','not-selected')):
+                raise ValueError('decision_result_refused')
+    if (result['status'] == 'observed') != all(c['status']=='observed' for c in result['cases']):
+        raise ValueError('decision_result_refused')
+    return result
+
+
+DECISION_8464_ADAPTER = r'''
+let report;
+for (const key of ['log','info','warn','error','debug','trace','dir']) console[key]=()=>{};
+try {
+  let raw=''; for await(const chunk of process.stdin) {raw+=chunk;if(Buffer.byteLength(raw)>8192)throw Error();}
+  const input=JSON.parse(raw);
+  const api=await loadInstalledDecision8464Api();
+  const {channelHub}=await import('/app/dist/hub/ChannelHub.js');channelHub.close();
+  const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+  const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
+  report=inspectDecision8464Records(input,batch,api);
+} catch {report={status:'unknown',reason:'journal_or_runtime_unavailable'};}
+await new Promise(resolve=>{process.stdout.once('error',()=>process.exit(1));
+  process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());});
+process.exit(0);
+'''
+
+
+CASH_TURN_FOLD_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledCashTurnFoldApi').replace('inspectDecision8464Records', 'inspectCashTurnFoldRecords')
+
+
 def sanitize_reference_result(result, value):
-    if value['version'] == 2:
+    if value['version'] in (2, 3):
         return sanitize_positive_calloff_result(result, value)
     unknown_reasons = {'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
                        'record_binding_or_duplicate', 'accepted_hand_binding_mismatch',
@@ -320,16 +649,81 @@ def sanitize_reference_result(result, value):
     return result
 
 
+DIAGNOSTIC_CHILD_STAGES = {'input', 'module_load_journal', 'module_load_records',
+    'module_load_binding', 'module_load_phase6', 'module_load_logic', 'module_load_hub',
+    'module_load_review', 'module_load_validation', 'export_contract', 'journal_read', 'evaluation'}
+
+
+def diagnostic_failure(stage, code):
+    return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable',
+            'diagnostic': {'stage': stage, 'code': code}}
+
+
 def reference_diagnostic(value):
     try:
         raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
                                '-e', REFERENCE_DIAGNOSTIC_JS, '--', '--reference-shape-diagnostic'],
-                              input_bytes=json.dumps(value).encode('utf-8'))
-        # Parse without printing untrusted child output, including import errors.
+                              input_bytes=json.dumps(value).encode('utf-8'), separate_stderr=True)
+    except Exception as error:
+        # Never expose exception text. Only our own closed transport codes escape.
+        code = (error.code if isinstance(error, DiagnosticCommandFailure)
+                and error.code in {'timeout', 'output_bound', 'nonzero_exit'} else 'unavailable')
+        return diagnostic_failure('child_transport', code)
+    try:
         result = json.loads(raw)
+    except Exception:
+        return diagnostic_failure('stdout_parse', 'invalid_json')
+    try:
+        if isinstance(result, dict) and 'diagnostic' in result:
+            diagnostic = result['diagnostic']
+            if (set(result) != {'status', 'reason', 'diagnostic'}
+                    or result['status'] != 'unknown' or result['reason'] != 'journal_or_runtime_unavailable'
+                    or not isinstance(diagnostic, dict) or set(diagnostic) != {'stage', 'code'}
+                    or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
+                raise ValueError()
+            return result
         return sanitize_reference_result(result, value)
     except Exception:
-        return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
+        return diagnostic_failure('sanitizer', 'result_refused')
+
+def decision_case_diagnostic(value):
+    if value.get('version') not in (4,5):
+        return reference_diagnostic(value)
+    try:
+        diagnostic_js = REFERENCE_DIAGNOSTIC_JS
+        if value.get('version') in (4,5):
+            helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
+            if not helper or len(helper.encode('utf-8')) > 65536:
+                raise ValueError('decision_helper_unavailable')
+            diagnostic_js = helper + '\n' + DECISION_8464_ADAPTER
+            if value.get('version') == 5:
+                diagnostic_js = helper + '\n' + CASH_TURN_FOLD_ADAPTER
+        raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
+                               '-e', diagnostic_js, '--', '--reference-shape-diagnostic'],
+                              input_bytes=json.dumps(value).encode('utf-8'), separate_stderr=True)
+    except Exception as error:
+        # Never expose exception text. Only our own closed transport codes escape.
+        code = (error.code if isinstance(error, DiagnosticCommandFailure)
+                and error.code in {'timeout', 'output_bound', 'nonzero_exit'} else 'unavailable')
+        return diagnostic_failure('child_transport', code)
+    try:
+        result = json.loads(raw)
+    except Exception:
+        return diagnostic_failure('stdout_parse', 'invalid_json')
+    try:
+        if isinstance(result, dict) and 'diagnostic' in result:
+            diagnostic = result['diagnostic']
+            if (set(result) != {'status', 'reason', 'diagnostic'}
+                    or result['status'] != 'unknown' or result['reason'] != 'journal_or_runtime_unavailable'
+                    or not isinstance(diagnostic, dict) or set(diagnostic) != {'stage', 'code'}
+                    or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
+                raise ValueError()
+            return result
+        return (sanitize_cash_turn_fold_result(result,value) if value.get('version') == 5
+                else sanitize_decision_8464_result(result, value))
+    except Exception:
+        return diagnostic_failure('sanitizer', 'result_refused')
+
 EVENTS = (
     'sng_atomic_creation_failed', 'spin_atomic_creation_failed',
     'sng_atomic_identity_mismatch', 'spin_atomic_identity_mismatch',
@@ -583,6 +977,206 @@ def merge_bounded_events(target, addition):
     target['events'] = combined[-128:]
 
 
+
+def tournament_cases(raw, expected):
+    """Version 2 adds the original public full-list ordinal; version 1 is unchanged."""
+    if len(raw) > REFERENCE_CASE_BYTES:
+        raise ValueError('tournament_cases_refused')
+    def unique(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError('tournament_cases_refused')
+            result[key] = item
+        return result
+    value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique)
+    if not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] not in (1, 2):
+        raise ValueError('tournament_cases_refused')
+    if value['version'] == 1:
+        validated = reference_cases(json.dumps({**value, 'version': 2}).encode('utf-8'), expected)
+        return {**validated, 'version': 1}
+    if not isinstance(value.get('cases'), list):
+        raise ValueError('tournament_cases_refused')
+    cases = []
+    for case in value['cases']:
+        if (not isinstance(case, dict) or 'actionOrdinal' not in case
+                or type(case['actionOrdinal']) is not int or not 0 <= case['actionOrdinal'] < 4096):
+            raise ValueError('tournament_cases_refused')
+        cases.append({k:v for k,v in case.items() if k != 'actionOrdinal'})
+    reference_cases(json.dumps({**value, 'cases': cases, 'version': 2}).encode('utf-8'), expected)
+    return value
+
+
+def sanitize_tournament_result(result, value):
+    reasons = {'input_refused', 'journal_source_or_shape_mismatch', 'journal_missing_or_bounds',
+               'record_binding_or_duplicate', 'accepted_hand_missing_or_ambiguous',
+               'matching_decision_ambiguous', 'matching_decision_missing',
+               'accepted_hand_binding_mismatch', 'original_snapshot_binding_mismatch',
+               'execution_missing_or_ambiguous', 'execution_not_intended',
+               'hand_not_reconciled', 'record_or_validator_unavailable', 'journal_or_runtime_unavailable',
+               'runtime_identity_unverified'}
+    if value['version'] == 2:
+        reasons.add('original_action_ordinal_unavailable')
+    fixed = {'version': value['version'], 'rawRecordsExported': False, 'replayVerified': False,
+             'activationAllowed': False, 'v56Causality': 'unknown', 'previousLevelBranch': 'unknown'}
+    if not isinstance(result, dict) or result.get('status') not in ('unknown', 'observed'):
+        raise ValueError('tournament_result_refused')
+    if set(result) == {'status', 'reason'}:
+        if result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('tournament_result_refused')
+        return result
+    if any(type(result.get(k)) is not type(v) or result[k] != v for k, v in fixed.items()):
+        raise ValueError('tournament_result_refused')
+    if 'cases' not in result:
+        if set(result) != set(fixed) | {'status', 'reason'} or result['status'] != 'unknown' or result['reason'] not in reasons:
+            raise ValueError('tournament_result_refused')
+        return result
+    if (set(result) != set(fixed) | {'status', 'sourceRelease', 'cases'}
+            or result['sourceRelease'] != value['sourceRelease']
+            or not isinstance(result['cases'], list) or len(result['cases']) != len(value['cases'])):
+        raise ValueError('tournament_result_refused')
+    hashes = {'decisionRecordSha256', 'executionRecordSha256', 'acceptedRecordSha256', 'decisionKeySha256',
+              'payoutTermsDigest', 'contextDigest', 'phase7InputDigest'}
+    guards = {'finalizedLadderValidated', 'unitGridAndPoolReserveConserved', 'bubbleProtectionCaptured',
+              'completeOriginalContextProvenance', 'phase7ReceiptReadFrameBound', 'recordHashesVerified',
+              'originalHandBound', 'sameTurnExecution', 'intendedActionAccepted', 'handReconciled'}
+    observed = hashes | guards | {'handKey', 'status', 'observation', 'bubbleProtectionEnabled'}
+    if value['version'] == 2:
+        observed.add('actionOrdinal')
+    for case, original in zip(result['cases'], value['cases']):
+        if not isinstance(case, dict) or case.get('handKey') != original['handKey']:
+            raise ValueError('tournament_result_refused')
+        if case.get('status') == 'unknown':
+            if set(case) != {'handKey', 'status', 'reason'} or case.get('reason') not in reasons:
+                raise ValueError('tournament_result_refused')
+            continue
+        if (set(case) != observed or case['status'] != 'observed'
+                or case['observation'] != 'accepted_original_tournament_payout_context'
+                or any(not isinstance(case[k], str) or not re.fullmatch(r'[0-9a-f]{64}', case[k]) for k in hashes)
+                or any(case[k] is not True for k in guards)
+                or type(case['bubbleProtectionEnabled']) is not bool
+                or (value['version'] == 2 and (type(case['actionOrdinal']) is not int or case['actionOrdinal'] != original['actionOrdinal']))
+                or (original['decisionRecordSha256'] is not None and case['decisionRecordSha256'] != original['decisionRecordSha256'])):
+            raise ValueError('tournament_result_refused')
+    if (result['status'] == 'observed') != all(c['status'] == 'observed' for c in result['cases']):
+        raise ValueError('tournament_result_refused')
+    return result
+
+
+TOURNAMENT_DIAGNOSTIC_ADAPTER = r'''
+let report;
+try {
+  let raw=''; for await (const chunk of process.stdin) { raw+=chunk; if(Buffer.byteLength(raw)>8192)throw Error(); }
+  const input=JSON.parse(raw);
+  if(!tournamentPredicateInputIsValid(input,input.sourceRelease))throw Error();
+  const api=await loadInstalledTournamentPredicateApi();
+  const {channelHub}=await import('/app/dist/hub/ChannelHub.js'); channelHub.close();
+  const journal=await import('/app/dist/services/horseCorrectiveReview/journalTransport.js');
+  const batch=journal.exportCanonicalHorseJournalBatch(input.cases.map(c=>c.handKey),process.env);
+  report=inspectTournamentPredicateRecords(input,batch,api);
+} catch { report={status:'unknown',reason:'journal_or_runtime_unavailable'}; }
+await new Promise(resolve=>{
+  process.stdout.once('error',()=>process.exit(1));
+  process.stdout.write(JSON.stringify(report)+'\n',error=>error?process.exit(1):resolve());
+});
+process.exit(0);
+'''
+
+
+def tournament_diagnostic(value):
+    try:
+        helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
+        if not isinstance(helper, str) or not helper or len(helper.encode('utf-8')) > 65536:
+            raise ValueError('tournament_helper_unavailable')
+        raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
+                               '-e', helper + '\n' + TOURNAMENT_DIAGNOSTIC_ADAPTER],
+                              input_bytes=json.dumps(value).encode('utf-8'))
+        return sanitize_tournament_result(json.loads(raw), value)
+    except Exception:
+        return {'status': 'unknown', 'reason': 'journal_or_runtime_unavailable'}
+
+
+ADDON_POLICY_JS = r"""
+import {createHash} from 'node:crypto';
+export function inspectMttAddonPolicy(api) {
+  if (api.HORSE_ADDON_PARTICIPATION_RATE !== 0.74 || typeof api.horseTakesAddOn !== 'function')
+    throw new Error('mtt_addon_policy_mismatch');
+  const eventA='00000000-0000-4000-8000-000000000001';
+  const eventB='00000000-0000-4000-8000-000000000002';
+  const bucket=(horse,event)=>createHash('sha256').update(`${horse}|${event}|addon-participation`).digest().readUInt32BE(0)%1000;
+  const horses=new Map();
+  for (let i=0;i<50000 && horses.size<1000;i++) {
+    const horse=`00000000-0000-4000-8000-${(i+1000).toString(16).padStart(12,'0')}`;
+    const b=bucket(horse,eventA);
+    if (!horses.has(b)) horses.set(b,horse);
+  }
+  if (horses.size!==1000) throw new Error('mtt_addon_bucket_coverage_refused');
+  let selected=0,varied=0;
+  for (const [b,horse] of horses) {
+    const expected=b<740;
+    for (let repeat=0;repeat<8;repeat++) {
+      if (api.horseTakesAddOn(horse,eventA)!==expected) throw new Error('mtt_addon_policy_mismatch');
+    }
+    const other=api.horseTakesAddOn(horse,eventB);
+    if (other!==(bucket(horse,eventB)<740)) throw new Error('mtt_addon_event_policy_mismatch');
+    selected+=Number(expected); varied+=Number(other!==expected);
+  }
+  if (varied===0) throw new Error('mtt_addon_event_variation_refused');
+  return {rate:api.HORSE_ADDON_PARTICIPATION_RATE,buckets:1000,selected,declined:1000-selected,
+    repeatsPerPair:8,stableOnRepeat:true,variedAcrossEvents:true,verified:true};
+}
+if (process.argv.includes('--inspect-mtt-addon-policy')) {
+  const {readFile}=await import('node:fs/promises');
+  const path='/app/dist/services/FreeBuy.js';
+  const api=await import(path);
+  const moduleSha256=createHash('sha256').update(await readFile(path)).digest('hex');
+  console.log(JSON.stringify({...inspectMttAddonPolicy(api),moduleSha256}));
+}
+"""
+
+
+def addon_policy_result(value):
+    expected = {'rate': 0.74, 'buckets': 1000, 'selected': 740, 'declined': 260,
+                'repeatsPerPair': 8, 'stableOnRepeat': True, 'variedAcrossEvents': True, 'verified': True}
+    if (not isinstance(value, dict) or set(value) != set(expected) | {'moduleSha256'}
+            or any(type(value.get(key)) is not type(wanted) or value[key] != wanted for key, wanted in expected.items())
+            or not isinstance(value['moduleSha256'], str)
+            or not re.fullmatch(r'[0-9a-f]{64}', value['moduleSha256'])):
+        raise ValueError('mtt_addon_policy_result_refused')
+    return value
+
+
+def addon_policy_main(expected):
+    # Fixed pure installed module only. No player/table/receipt reads or writes.
+    if not re.fullmatch(r'[0-9a-f]{40}', expected):
+        raise ValueError('expected_sha_refused')
+    before = identity(expected)
+    if before['health'] != 'ok' or before['instanceId'] is None:
+        raise ValueError('mtt_addon_runtime_unavailable')
+    raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module',
+                           '--max-old-space-size=64', '-e', ADDON_POLICY_JS, '--', '--inspect-mtt-addon-policy'],
+                          separate_stderr=True)
+    if len(raw.encode('utf-8')) > 4096:
+        raise ValueError('mtt_addon_policy_size_refused')
+    policy = addon_policy_result(json.loads(raw))
+    after = identity(expected)
+    if before != after:
+        raise ValueError('mtt_addon_runtime_changed')
+    print(json.dumps({'schema': 'mtt-addon-policy-observation/v1', 'readOnly': True,
+                      'engineSha': expected, 'instanceId': before['instanceId'],
+                      'identityBefore': before, 'identityAfter': after,
+                      'runtimeStable': True, 'policy': policy,
+                      'purchasesPerformed': False, 'naturalPurchaseCohortVerified': False}, sort_keys=True))
+
+
+def tournament_host_script():
+    """Protected checkout source only; caller never supplies a path or command."""
+    helper = Path(__file__).with_name('horse-tournament-predicate-proof.mjs').read_text(encoding='utf-8')
+    if not helper or len(helper.encode('utf-8')) > 65536:
+        raise ValueError('tournament_helper_unavailable')
+    return 'TOURNAMENT_PREDICATE_JS = ' + repr(helper) + '\n' + Path(__file__).read_text(encoding='utf-8')
+
+
 def merge_worker_receipt_errors(target, addition):
     target['matchingRecords'] += addition['matchingRecords']
     combined = target['events'] + addition['events']
@@ -591,35 +1185,53 @@ def merge_worker_receipt_errors(target, addition):
     target['events'] = combined[-128:]
 
 
-def bounded_command(args, input_bytes=None):
+class DiagnosticCommandFailure(RuntimeError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+def bounded_command(args, input_bytes=None, separate_stderr=False):
     process = subprocess.Popen(args, stdin=subprocess.PIPE if input_bytes is not None else None,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE if separate_stderr else subprocess.STDOUT)
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
+    if separate_stderr:
+        selector.register(process.stderr, selectors.EVENT_READ)
     payload = bytearray()
+    total_bytes = 0
     deadline = time.monotonic() + 25
     try:
         if input_bytes is not None:
             process.stdin.write(input_bytes)
             process.stdin.close()
-        while True:
+        while selector.get_map():
             if time.monotonic() >= deadline:
-                raise RuntimeError('read_deadline')
+                raise DiagnosticCommandFailure('timeout')
             ready = selector.select(min(1, max(0, deadline - time.monotonic())))
-            if not ready:
-                continue
-            chunk = process.stdout.read1(65536)
-            if not chunk:
-                break
-            payload.extend(chunk)
-            if len(payload) > MAX_BYTES:
-                raise RuntimeError('read_size_bound')
-        if process.wait(timeout=2) != 0:
-            raise RuntimeError('read_command_refused')
+            for key, _ in ready:
+                chunk = key.fileobj.read1(65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                total_bytes += len(chunk)
+                if total_bytes > MAX_BYTES:
+                    raise DiagnosticCommandFailure('output_bound')
+                if key.fileobj is process.stdout:
+                    payload.extend(chunk)
+        try:
+            code = process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            raise DiagnosticCommandFailure('timeout') from None
+        if code != 0:
+            raise DiagnosticCommandFailure('nonzero_exit')
         return payload.decode('utf-8', errors='replace')
     finally:
         selector.close()
         process.stdout.close()
+        if separate_stderr:
+            process.stderr.close()
         if process.poll() is None:
             process.kill()  # Only this read-only diagnostic child, never the engine.
             process.wait(timeout=2)
@@ -705,6 +1317,55 @@ PROCESS_FRAMES = {'index.js', 'GameServer.js', 'services/leadership.js',
     'engine/EquityWorkerPool.js', 'services/supabase/client.js'}
 
 
+def v8_crash_contexts(raw):
+    """Closed scalars only; nearby native frames are hints, not isolate ownership."""
+    lines = raw.splitlines()
+    result = {}
+    stamp_re = r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s'
+    gc_re = re.compile(r'^\[(\d{1,10}):0x[0-9a-fA-F]+\]\s+\d+(?:\.\d+)? ms: (?:Mark-Compact|Mark-sweep|Scavenge)(?: \(reduce\))?\s+(\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) -> (\d+(?:\.\d+)?) \((\d+(?:\.\d+)?)\) MB,')
+    count = 0
+    for i, line in enumerate(lines):
+        stamp = re.match(stamp_re, line)
+        if len(line) > 4096 or not stamp:
+            continue
+        key = next((k for k in ('v8_heap_exhausted', 'v8_ineffective_gc')
+                    if line[stamp.end():].startswith(PROCESS_SIGNALS[k])), None)
+        if key is None or count >= 8:
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+        except ValueError:
+            continue
+        context = {'timestamp': stamp.group(1) + 'Z', 'gc': [],
+                   'workerNativeFrame': False, 'mainNativeFrame': False,
+                   'isolateOwner': 'unknown', 'heapLimitMB': None,
+                   'allocationOwner': 'unknown', 'association': 'nearby_only'}
+        for nearby in lines[max(0, i - 8):i + 13]:
+            ns = re.match(stamp_re, nearby)
+            if len(nearby) > 4096 or not ns:
+                continue
+            try:
+                delta = (datetime.datetime.fromisoformat(ns.group(1) + '+00:00') - instant).total_seconds()
+            except ValueError:
+                continue
+            if not -2 <= delta <= 2:
+                continue
+            payload = nearby[ns.end():]
+            gc = gc_re.match(payload)
+            if gc and len(context['gc']) < 8:
+                numbers = [float(x) for x in gc.groups()[1:]]
+                if all(0 <= x <= 1048576 for x in numbers) and numbers[0] <= numbers[1] and numbers[2] <= numbers[3]:
+                    context['gc'].append(dict(zip(('pid', 'beforeMB', 'beforeTotalMB', 'afterMB', 'afterTotalMB'), [int(gc[1]), *numbers])))
+            # Native frame grammar only: arbitrary application text cannot assert a hint.
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::worker::Worker::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['workerNativeFrame'] = True
+            if re.fullmatch(r'\s*\d{1,3}: 0x[0-9a-fA-F]+ node::NodeMainInstance::Run\(\) \[[^\]\r\n]{1,128}\]', payload):
+                context['mainNativeFrame'] = True
+        result.setdefault(key, []).append(context)
+        count += 1
+    return result
+
+
 def process_signals(raw):
     result = {}
     active = None
@@ -750,6 +1411,9 @@ def process_signals(raw):
                     if re.search(r'(?<![A-Za-z0-9_])' + re.escape(cause) + r'(?![A-Za-z0-9_])', payload):
                         counts = result[key]['causes']
                         counts[cause] = counts.get(cause, 0) + 1
+    for key, contexts in v8_crash_contexts(raw).items():
+        if key in result:
+            result[key]['crashContexts'] = contexts
     return result
 
 
@@ -761,6 +1425,10 @@ def merge_signals(target, addition):
             entry['lastTimestamp'] = value['lastTimestamp']
         for cause, count in value['causes'].items():
             entry['causes'][cause] = entry['causes'].get(cause, 0) + count
+        if value.get('crashContexts'):
+            contexts = entry.setdefault('crashContexts', [])
+            retained = sum(len(item.get('crashContexts', [])) for item in target.values())
+            contexts.extend(value['crashContexts'][:max(0, 8 - retained)])
         for frame in value['frames']:
             if frame not in entry['frames'] and len(entry['frames']) < 8:
                 entry['frames'].append(frame)
@@ -780,6 +1448,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     yields = tournament_yields('')
     cap_refusals = booking_cap_refusals('')
     block = []
+    recent_gc = []
     pending = b''
     dropping = False
     total = 0
@@ -799,7 +1468,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
         block = []
 
     def record(raw):
-        nonlocal records, block, oldest, newest
+        nonlocal records, block, oldest, newest, recent_gc
         records += 1
         if len(raw) > 4096:
             if block:
@@ -822,11 +1491,13 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
                 '[ServerTableEngine.' in line and '.horse_decision_worker_failed]' in line):
             if block:
                 flush_block()
-            block = [line]
+            block = [*[x for x in recent_gc if re.search(r'\[\d{1,10}:0x[0-9a-fA-F]+\]', x)], line] if 'FATAL ERROR:' in line else [line]
+            recent_gc = []
         elif block:
             block.append(line)
-            if len(block) >= 13:
+            if len(block) >= 21:
                 flush_block()
+        recent_gc = (recent_gc + [line])[-8:]
 
     try:
         while True:
@@ -990,11 +1661,16 @@ def sanitize_restart_evidence(state, restarts, raw_events):
     return result
 
 
-def main(expected, selected_cases=None):
+def main(expected, selected_cases=None, selected_tournament_cases=None):
     if not re.fullmatch(r'[0-9a-f]{40}', expected):
         raise RuntimeError('expected_sha_refused')
+    if selected_cases is not None and selected_tournament_cases is not None:
+        raise ValueError('case_modes_mutually_exclusive')
+    if selected_tournament_cases is not None:
+        selected_tournament_cases = tournament_cases(json.dumps(selected_tournament_cases).encode('utf-8'), expected)
     before = identity(expected)
-    original_cases = reference_diagnostic(selected_cases) if selected_cases is not None else None
+    tournament_observations = tournament_diagnostic(selected_tournament_cases) if selected_tournament_cases is not None else None
+    original_cases = decision_case_diagnostic(selected_cases) if selected_cases is not None else None
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
     restarts = restart_evidence()
@@ -1015,23 +1691,43 @@ def main(expected, selected_cases=None):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    if tournament_observations is not None and (not runtime_stable or before['health'] != 'ok' or before['instanceId'] is None):
+        tournament_observations = {'status': 'unknown', 'reason': 'runtime_identity_unverified'}
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'workerReceiptErrors': worker_receipt_errors(raw), 'tournamentYields': tournament_yields(raw), 'bookingCapRefusals': booking_cap_refusals(raw), 'referenceCases': original_cases, 'tournamentCases': tournament_observations, 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):
     try:
-        if len(argv) == 3 and argv[1] == '--encode-reference-cases':
-            value = reference_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
+        if len(argv) == 3 and argv[1] == '--mtt-addon-policy':
+            addon_policy_main(argv[2])
+            return 0
+        if len(argv) == 2 and argv[1] == '--host-script':
+            print(tournament_host_script())
+            return 0
+        if len(argv) == 3 and argv[1] == '--encode-tournament-cases':
+            value = tournament_cases(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
             print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
             return 0
-        if len(argv) not in (2, 3):
+        if len(argv) == 3 and argv[1] == '--encode-reference-cases':
+            value = reference_case_metadata(sys.stdin.buffer.read(REFERENCE_CASE_BYTES + 1), argv[2])
+            print(base64.b64encode(json.dumps(value, separators=(',', ':')).encode('utf-8')).decode('ascii'))
+            return 0
+        if len(argv) not in (2, 3, 4):
             raise RuntimeError('argument_refused')
         selected = None
-        if len(argv) == 3 and argv[2]:
+        if len(argv) >= 3 and argv[2]:
             if len(argv[2]) > 11000:
                 raise ValueError('reference_cases_refused')
-            selected = reference_cases(base64.b64decode(argv[2], validate=True), argv[1])
-        main(argv[1], selected)
+            selected = reference_case_metadata(base64.b64decode(argv[2], validate=True), argv[1])
+        tournament_selected = None
+        if len(argv) == 4 and argv[3]:
+            if len(argv[3]) > 11000 or selected is not None:
+                raise ValueError('tournament_cases_refused')
+            tournament_selected = tournament_cases(base64.b64decode(argv[3], validate=True), argv[1])
+        if tournament_selected is None:
+            main(argv[1], selected)
+        else:
+            main(argv[1], selected, tournament_selected)
         return 0
     except Exception:
         # Never emit subprocess output, exception messages, URLs or log bodies.

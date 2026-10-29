@@ -78,6 +78,7 @@ export const TAB_IDS: readonly TabId[] = [
  */
 export const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'detail', label: 'Details' },
+  { id: 'satellites', label: 'Satellites' },
   { id: 'blinds', label: 'Blinds' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'entries', label: 'Entries' },
@@ -135,6 +136,8 @@ export interface TournamentEntry {
   position?: number;
   /** Exact settled prize from tournament_players; required for dealt finishes. */
   prize?: number;
+  /** Cash bounties already awarded, excluding the head still carried in play. */
+  bounty_winnings?: number;
   chips?: number;
   status: 'registered' | 'playing' | 'eliminated' | 'finished' | 'winner';
   table_id?: string | null;

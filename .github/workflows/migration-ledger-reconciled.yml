@@ -71,7 +71,9 @@ jobs:
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          # World Hub (repository ID 1132365826) remains in Smarter-Poker;
+          # this Club Arena repository transferred independently.
+          owner: Smarter-Poker
           repositories: Smarter-Poker-World-Hub
           permission-contents: read
 

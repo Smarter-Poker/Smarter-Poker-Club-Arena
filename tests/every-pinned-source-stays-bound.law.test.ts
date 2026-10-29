@@ -135,6 +135,31 @@ describe('a pinned source file is checked on the pull request, not on main', () 
     }
   });
 
+  it('checks current byte-count/hash pins early and refuses stale size or malformed records', () => {
+    const { root, script } = scratchTree();
+    try {
+      const kept = 'reviewed workflow bytes\n';
+      const dir = join('tests', 'fixtures', 'sized');
+      mkdirSync(join(root, dir), { recursive: true });
+      writeFileSync(join(root, dir, 'kept.txt'), kept);
+      const pins = (bytes: number | string, hash = sha256(kept)) => ({
+        files: { 'kept.txt': { bytes, sha256: hash } },
+      });
+      writeBinding(root, dir, pins(Buffer.byteLength(kept)));
+      expect(runVerifier(script).status).toBe(0);
+      writeBinding(root, dir, pins(Buffer.byteLength(kept) + 1));
+      expect(runVerifier(script).status).toBe(1);
+      writeBinding(root, dir, pins(Buffer.byteLength(kept), '0'.repeat(64)));
+      expect(runVerifier(script).status).toBe(1);
+      writeBinding(root, dir, pins('unknown'));
+      const invalid = runVerifier(script);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain('malformed byte-count/SHA256');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a pin whose file is gone rather than skipping it', () => {
     const { root, script } = scratchTree();
     try {

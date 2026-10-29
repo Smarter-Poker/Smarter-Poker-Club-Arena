@@ -44,6 +44,7 @@
  * that a badge lands halfway between the layer's corner and its seat.
  */
 
+import { formatAllInEquity } from '../../lib/allInEquityDisplay';
 import { useLayoutEffect, useRef, useState } from 'react';
 import {
   placeEquityBadges,
@@ -55,6 +56,7 @@ import {
 export interface EquityBadge {
   seatNumber: number;
   equity: number;
+  exact?: boolean;
   /** Spots to try, best first (Dan 2026-08-28: above; top-cap seats to a side). */
   order: EquitySpot[];
 }
@@ -102,9 +104,14 @@ export function EquityBadgeLayer({
   const [placements, setPlacements] = useState<Record<string, EquityBadgePlacement>>({});
   const [measureTick, setMeasureTick] = useState(0);
   /* Position depends on WHICH seats carry a badge and where they may go, not
-     on the number printed in it - the street-by-street change of a percentage
-     must not re-measure the felt. */
-  const signature = badges.map((b) => `${b.seatNumber}:${b.order.join('')}`).join('|');
+     on equal-width numbers. A label length change must
+     re-measure so a wider label cannot grow over a displayed card. */
+  const signature = badges
+    .map(
+      (b) =>
+        `${b.seatNumber}:${b.order.join('')}:${formatAllInEquity(b.equity, b.exact)?.length ?? 0}`
+    )
+    .join('|');
 
   const hasBadges = badges.length > 0;
   useLayoutEffect(() => {
@@ -123,13 +130,17 @@ export function EquityBadgeLayer({
     }
 
     /* A hand was tabled (or mucked): the class list of a `.seat__cards` row
-       changed. Only that - the layer's own slots and every other class on the
-       felt change constantly during a runout and move nothing. */
+       changed, or an individual winning card rose above the row. The layer's
+       own slots and unrelated classes must not trigger another layout read. */
     let mutationObserver: MutationObserver | null = null;
     if (typeof MutationObserver !== 'undefined') {
       mutationObserver = new MutationObserver((records) => {
         if (
-          records.some((r) => r.target instanceof Element && r.target.classList.contains(CARD_ROW))
+          records.some(
+            (r) =>
+              r.target instanceof Element &&
+              (r.target.classList.contains(CARD_ROW) || r.target.classList.contains('seat__card'))
+          )
         ) {
           remeasure();
         }
@@ -213,45 +224,50 @@ export function EquityBadgeLayer({
 
   return (
     <div className="equity-layer" ref={layerRef}>
-      {badges.map((badge) => {
-        const key = String(badge.seatNumber);
-        const at = placements[key];
-        const isAhead = badge.equity >= 50;
-        return (
-          <div
-            key={key}
-            className="equity-layer__slot"
-            data-equity-seat={key}
-            data-equity-spot={at?.spot}
-            /* Until it has been measured it is laid out (so it CAN be
+      {badges
+        .filter((badge) => formatAllInEquity(badge.equity, badge.exact) !== null)
+        .map((badge) => {
+          const key = String(badge.seatNumber);
+          const at = placements[key];
+          const isAhead = badge.equity >= 50;
+          const label = formatAllInEquity(badge.equity, badge.exact);
+          return (
+            <div
+              key={key}
+              className="equity-layer__slot"
+              data-equity-seat={key}
+              data-equity-spot={at?.spot}
+              /* Until it has been measured it is laid out (so it CAN be
                measured) but not painted: a badge must never flash in the
                corner of the felt on its way to its seat. */
-            style={
-              at
-                ? { left: `${at.left}px`, top: `${at.top}px` }
-                : { left: 0, top: 0, visibility: 'hidden' }
-            }
-          >
-            {/* Keyed on the value so each street's new percentage replays the
+              style={
+                at
+                  ? { left: `${at.left}px`, top: `${at.top}px` }
+                  : { left: 0, top: 0, visibility: 'hidden' }
+              }
+            >
+              {/* Keyed on the value so each street's new percentage replays the
                 pop (ANIMATION AUDIT 2026-08-19); ahead/behind colours
                 cross-fade in CSS. */}
-            <div
-              key={`eq-${badge.equity}`}
-              className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
-            >
-              {badge.equity}%
-              {/* Fixed-width track (AUDIT-2 2026-08-20) so every seat's bar is
+              <div
+                key={`eq-${badge.equity}`}
+                className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
+              >
+                {label}
+                {/* Fixed-width track (AUDIT-2 2026-08-20) so every seat's bar is
                   drawn on the same scale. */}
-              <span className="equity-overlay__track">
-                <span
-                  className="equity-overlay__bar"
-                  style={{ width: `${Math.max(2, Math.min(100, badge.equity))}%` }}
-                />
-              </span>
+                <span className="equity-overlay__track">
+                  <span
+                    className="equity-overlay__bar"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, badge.equity))}%`,
+                    }}
+                  />
+                </span>
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
     </div>
   );
 }

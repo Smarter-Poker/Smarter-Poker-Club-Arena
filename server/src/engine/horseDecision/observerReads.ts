@@ -1,3 +1,4 @@
+import { riverPublicNode } from '../HorseMultiwayRiverRead.js';
 import { PooledPublicProfiles, type PooledPublicProfileReceipt } from './pooledPublicProfiles.js';
 import { opponentMemoryKey } from '../HorseOpponentMemory.js';
 import { observerParticipantsBind } from './observerParticipants.js';
@@ -109,11 +110,16 @@ export class HorseObserverReads {
       const actions = completedHandActionsForMind(hand.actions, scope);
       const parts = hand.handKey.split(':');
       if (actions)
-        HorseMind.observe(actions.actions, [], {
-          version: 1,
-          tableId: parts[0]!,
-          handNumber: Number(parts[1]),
-        });
+        HorseMind.observe(
+          actions.actions,
+          [],
+          {
+            version: 1,
+            tableId: parts[0]!,
+            handNumber: Number(parts[1]),
+          },
+          entry.context.dealtCount
+        );
       HorseMind.observeHandComplete(
         hand.handKey,
         hand.actions,
@@ -128,8 +134,10 @@ export class HorseObserverReads {
     });
   }
   /** Keep only public learning fields. No accepted roster, donor packet,
-   * private cards, public-node capsule or policy/financial authority is copied. */
+   * private cards or policy/financial authority is copied. Only the first four
+   * explicitly projected public river structural snapshots may accompany actions. */
   private publicCopy(hand: ObserveCompletedHandRequest): ObserveCompletedHandRequest {
+    let riverCount = 0;
     return {
       type: 'OBSERVE_COMPLETED_HAND',
       requestId: hand.requestId,
@@ -141,15 +149,20 @@ export class HorseObserverReads {
       riverCallContext: hand.riverCallContext ? { ...hand.riverCallContext } : undefined,
       retainedRiverCalls: hand.retainedRiverCalls?.map((s) => ({ ...s })),
       scope: hand.scope,
-      actions: hand.actions?.map((a) => ({
-        seat: a.seat,
-        userId: a.userId,
-        action: a.action,
-        amount: a.amount,
-        stage: a.stage,
-        timestamp: a.timestamp,
-        ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
-      })),
+      actions: hand.actions?.map((a) => {
+        const publicNode =
+          a.stage === 'river' && riverCount++ < 4 ? riverPublicNode(a.publicNode, true) : null;
+        return {
+          seat: a.seat,
+          userId: a.userId,
+          action: a.action,
+          amount: a.amount,
+          stage: a.stage,
+          timestamp: a.timestamp,
+          ...(a.isFullRaise === undefined ? {} : { isFullRaise: a.isFullRaise }),
+          ...(publicNode ? { publicNode } : {}),
+        };
+      }),
       results: hand.results?.map((r) => ({ user_id: r.user_id, net: r.net })),
       showdown:
         hand.showdown?.map((r) => ({

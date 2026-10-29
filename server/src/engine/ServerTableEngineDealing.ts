@@ -11,6 +11,12 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import {
+  HandContinuationLane,
+  type ContinuationEvent,
+  type ContinuationEventIdentity,
+} from './HandContinuationLane.js';
+import { continuationEventId } from './PrivateHandContinuation.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import {
@@ -67,7 +73,7 @@ import {
   handCompletionHoldMs,
   boardClearMs,
 } from '../config/handCompletionSpec.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { maintenanceActiveNow, isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { presenceFromFsm } from '../lightning/LightningPresence.js';
 import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
 import {
@@ -119,6 +125,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     let deferredRosterBeforeArrival: Map<string, SeatedPlayer['occupancy_id']> | null = null;
     while (this.running) {
       try {
+        if (this.handContinuation) {
+          await this.handContinuation.join();
+          this.handContinuation = null;
+        }
+        if (this.pendingOriginalContinuation) {
+          await this.resumeOriginalController();
+          continue;
+        }
         // FIX 211: Await any pending postHandTasks before reloading players
         // This ensures DB stacks are synced before the next hand starts.
         // There is no time-based escape from settlement. Retry slices preserve
@@ -227,6 +241,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // via hand-for-hand. Same shape as the start-up loop gate on the base
         // class, on purpose.
         if (
+          this.weeklyPayoutPauseOwners.size > 0 ||
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
@@ -429,8 +444,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                   this.persistEntryHold(p.user_id, { hold: 'waiting', agreed: true });
                 }
               } else if (this.isTournamentTable()) {
-                // B2 2026-08-27: a tournament arrival cannot be held out for a
-                // hand, so it is classified instead — see noteTournamentArrival.
+                // Tournament arrival: discard legacy entry debt; the natural
+                // blind rotation alone determines the blinds owed.
                 this.noteTournamentArrival(p.seat_number, p.user_id);
               }
               this.knownPlayerIds.add(p.user_id);
@@ -1141,6 +1156,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // awaitPauseGate on the base class.
         if (
           (this.handForHandPaused ||
+            this.weeklyPayoutPauseOwners.size > 0 ||
             this.maintenancePaused ||
             this.finalTableDealPaused ||
             this.terminalCloseoutPaused ||
@@ -2283,6 +2299,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.handsDealtThisSession++;
       const handNumber = this.handCount;
       const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
+      this.currentHandStartedAt = handStartMs;
+      this.currentHandHoleCards.clear();
       this.currentHandWentToFlop = false;
       this.currentHandPotSize = 0;
       this.currentHandWinnerIds = [];
@@ -3114,21 +3132,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
 
-      // B2 2026-08-27: the seats posting a live-big-blind-only this hand. Two
-      // sources, one list — cash "post BB to enter", and tournament arrivals that
-      // took a seat the big blind had just passed (see `mustPostBB`). Both are a
-      // single live big blind into the pot, so chips are conserved; HandController
-      // skips anyone who is the small or big blind this hand, which is what makes
-      // "never two big blinds in one orbit" true by construction.
+      // Entry posting belongs exclusively to cash games. Tournament moves and
+      // late registration never add a live BB outside the natural blind seats,
+      // even if an old in-memory arrival marker remains.
       const bbOnlyPostSeats: { seat: number }[] = [];
       if (!this.isTournamentTable() && this.postingBBToEnter.size > 0) {
         for (const p of players) {
           if (this.postingBBToEnter.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
-        }
-      }
-      if (this.isTournamentTable() && this.mustPostBB.size > 0) {
-        for (const p of players) {
-          if (this.mustPostBB.has(p.user_id)) bbOnlyPostSeats.push({ seat: p.seat_number });
         }
       }
 
@@ -3225,7 +3235,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 .map((p) => ({ seat: p.seat_number }))
             : undefined,
         // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
-        // B2 2026-08-27: tournament arrivals that owe a big blind join the same list.
+        // Cash only: tournament arrivals never post to enter.
         bbOnlyPosts: bbOnlyPostSeats.length > 0 ? bbOnlyPostSeats : undefined,
         /**
          * THE HAND IS TOLD ITS BLIND SEATS (2026-09-25, the dead button at
@@ -3442,16 +3452,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         this.postingBBToEnter.clear();
       }
-      // B2 2026-08-27: a tournament arrival's entry is settled by the first hand
-      // it is dealt. Every arrival dealt this hand has paid a blind to be here:
-      // the live big blind bbOnlyPosts charged, or the small or big blind of the
-      // seat it is in (bbOnlyPosts skips both, never a blind on top of a blind).
-      //
-      // Dan 2026-10-21: the small blind seat used to stay "on the hook" for a big
-      // blind the next hand. Under the tournament dead button the small blind
-      // seat is the BUTTON next hand, so that debt was billed as a second live
-      // big blind straight after the small blind - a moved-in player paid the
-      // small blind and then the big blind again. A paid small blind settles it.
+      // Retire legacy tournament arrival markers without billing them.
       if (this.mustPostBB.size > 0) {
         for (const p of players) {
           if (this.mustPostBB.has(p.user_id)) {
@@ -3557,243 +3558,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
 
-      // Step 5: Wire disconnect auto-action callback into HandController
-      this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
-        if (!this.handController) return;
-        const state = this.handController.getState();
-        const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
-        if (!dcPlayer) return;
-        // Stale deadline: the turn has already moved on. Acting here would be a
-        // phantom action attributed to a player who is not in the decision.
-        if (state.currentPlayerSeat !== dcPlayer.seat) return;
+      this.wireOriginalDisconnectAction();
 
-        // This callback is the ONLY resolution path for a disconnected or
-        // sitting-out player's turn — handleTurnChange returns early for them
-        // WITHOUT arming a clock. performAction returns false on an illegal
-        // action (the countdown captures `canCheck` up to 30s earlier, so it goes
-        // stale), and the old try/catch never saw that: no action, no clock, no
-        // retry. Permanent freeze.
-        let applied = false;
-        try {
-          applied = this.handController.performAction(
-            dcPlayer.seat,
-            disconnectAction.action as any,
-            undefined,
-            'forced'
-          );
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
-        }
-        if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
-        if (applied) {
-          this.markProgress();
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
-          );
-        } else {
-          reportError(
-            new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
-            'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
-          );
-          this.forceArmTurnTimer(dcPlayer.seat, this.actionClockSeconds());
-        }
-      });
-
-      // Wait for hand to complete
-      // Existing seatBoundary owns preparation and synchronous start. This
-      // phase/authority check does not acquire a second mutex.
-      const publicationStart = await this.acquireFinancialControllerStart();
+      const attempt = { started: false, cause: null as string | null };
       try {
-        if (
-          this.handController !== preparedController ||
-          !this.running ||
-          !this.isCurrentEngine() ||
-          !this.lifecycleCanMutate()
-        ) {
-          return;
-        }
-        if (this.discardPreparedHandForPause()) return;
-        return new Promise<void>((resolve) => {
-          const controllerForHand = preparedController;
-          let persistenceGeneration: number | undefined;
-          // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
-          // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
-          // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
-          // The old 60s timeout was killing hands prematurely mid-action.
-          const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-          // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
-          let unsub: () => void = () => {};
-          let handWaitReleased = false;
-          const releaseHandWait = (reason: string): void => {
-            if (handWaitReleased) return;
-            handWaitReleased = true;
-            try {
-              clearTimeout(handTimeout);
-              if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
-              unsub();
-            } catch (error) {
-              reportError(
-                error,
-                'ServerTableEngine.' + this.tableId + '.hand_wait_release_failed',
-                {
-                  reason,
-                  handNumber,
-                }
-              );
-            } finally {
-              if (this.activeHandWaitRelease?.controller === controllerForHand) {
-                this.activeHandWaitRelease = null;
-              }
-              if (this.handController === controllerForHand) this.handController = null;
-              this.runoutRevealActive = false;
-              resolve();
-            }
-          };
-          const handTimeout = setTimeout(() => {
-            // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
-            // or superseded while the void timer was armed, the shared timers now
-            // belong to the replacement engine — clearing them here would wipe the
-            // LIVE table's turn clock ten minutes after the handover. Detach and
-            // get out without touching anything shared.
-            if (!this.running || !this.isCurrentEngine()) {
-              // (review fix) Even when superseded we must still drop OUR OWN
-              // hand state: resolving with handController set would let
-              // dealingLoop deal the next hand from a superseded instance — two
-              // engines dealing one table. Local teardown only; never the shared
-              // timers (they belong to the successor).
-              releaseHandWait('engine_stopped_or_superseded');
-              return;
-            }
-            console.warn(
-              `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
-            );
-            // AUDIT FIX 2026-07-19: previously the timeout nulled the controller but
-            // left the HAND_COMPLETE listener attached and action timers running. A
-            // late completion (e.g. a pending horse think-timer) could then fire the
-            // HAND_COMPLETE branch and null the NEXT live hand's controller. Detach
-            // the listener and cancel this table's action timers on timeout.
-            this.preciseTimer.clearTable(this.tableId);
-            this.actionValidator.clearTable(this.tableId);
-            /**
-             * THE BOMB OVERLAY MUST BE DISMISSED ON THIS PATH TOO (2026-08-29).
-             *
-             * BOMB_POT_COMPLETED is what tells the client's BombPotOverlay the
-             * hand is over. HandController emits it after every HAND_COMPLETE —
-             * the normal settlement, the skip-distribution path, the no-winner
-             * path and the catch block, four places, all covered. This is the
-             * fifth exit and it is the only one that does not go through
-             * HandController at all: the safety timer tears the hand down from
-             * outside, so nothing ever emits it.
-             *
-             * A voided bomb hand therefore left the overlay on screen with no
-             * dismissal signal, on top of a table that had just started dealing
-             * the next hand. Ten minutes is rare, but "rare" is exactly when a
-             * player is already looking at a table that has misbehaved.
-             *
-             * Emitted through handleHandEvent so it takes the same route to the
-             * hub as the four that already work.
-             */
-            if (this.currentHandBombPot) {
-              void this.handleHandEvent(
-                { type: 'BOMB_POT_COMPLETED', handNumber } as HandEvent,
-                players
-              ).catch((err) =>
-                reportError(err, 'ServerTableEngine.' + this.tableId + '.bomb_completed_on_void')
-              );
-            }
-            releaseHandWait('hand_safety_timeout');
-          }, HAND_SAFETY_TIMEOUT_MS);
-          // Track on the instance so stop()/killForRestart() can clear it.
-          this.handSafetyTimer = handTimeout;
-
-          unsub = controllerForHand.onEvent((event: HandEvent) => {
-            // 2026-08-15: handleHandEvent is async and its promise was discarded,
-            // so ANY rejection inside it (broadcast, hub publish, settlement DB
-            // write) vanished into index.ts's unhandled-rejection swallow while the
-            // hand silently stopped advancing. Catch it here so at minimum it is
-            // reported and the watchdog can see the table stop making progress.
-            const dispatch = () => this.handleHandEvent(event, players, persistenceGeneration);
-            const handled =
-              event.type === 'HAND_COMPLETE'
-                ? this.dispatchFinancialHandComplete(dispatch)
-                : dispatch();
-            void handled.catch((err) =>
-              reportError(err, 'ServerTableEngine.' + this.tableId + '.handleHandEvent_rejected', {
-                eventType: event.type,
-                handNumber: this.handCount,
-              })
-            );
-
-            if (event.type === 'HAND_COMPLETE') {
-              // GUARD (2026-08-22): everything between here and resolve() used to
-              // run unprotected inside HandController.emit's listener loop. A
-              // throw from recordHandTiming or clearTurnTimer escaped back into
-              // completeHand AFTER the void timer was cleared — the dealHand
-              // promise then hung forever and the table stopped dealing. Nothing
-              // in this block may prevent resolve() from running.
-              try {
-                // FIX 149: Wire telemetry — record hand timing
-                const handElapsedMs = Date.now() - handStartMs;
-                this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
-
-                // Clear the action clock here. Tournament hand-complete callbacks
-                // intentionally do NOT fire here: handleHandEvent has only queued
-                // postHandTasks at this point, so table_seats still carries the
-                // pre-hand stacks and the knockout hand is not queryable yet.
-                // ServerTableEngineSettlement fires it after both writes succeed.
-                this.clearTurnTimer();
-              } catch (e) {
-                reportError(
-                  e,
-                  'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw'
-                );
-              }
-
-              releaseHandWait('hand_complete');
-            }
-          });
-          this.activeHandWaitRelease = {
-            controller: controllerForHand,
-            release: releaseHandWait,
-          };
-
-          // Start the hand!
-          try {
-            // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
-            // inherit a stale all-in reveal flag from an abnormal exit.
-            this.runoutRevealActive = false;
-            if (this.discardPreparedHandForPause()) {
-              releaseHandWait('terminal_closeout_before_start');
-              return;
-            }
-            const startExactController = () => {
-              persistenceGeneration = this.beginTerminalBoundaryPersistence();
-              handStarted = true;
-              controllerForHand.start();
-            };
-            const startWithPermit = () => {
-              if (this.f06CurrentPermit) this.f06CurrentPermit.start(startExactController);
-              else startExactController();
-            };
-            if (publicationStart) publicationStart.start(startWithPermit);
-            else startWithPermit();
-
-            // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
-            // C15: deliberately NOT coalesced. The hand-start snapshot is the anchor
-            // every later delta is read against, so it is worth one guaranteed write.
-            this.snapshotDirty = true;
-            void this.flushSnapshot();
-          } catch (err) {
-            if (persistenceGeneration !== undefined) {
-              this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
-            }
-            reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start_hand`);
-            unstartedCause = 'start_failed:' + ServerTableEngineDealing.causeOf(err);
-            releaseHandWait('hand_start_failed');
-          }
-        });
+        await this.runOriginalController(
+          players,
+          preparedController,
+          handNumber,
+          handStartMs,
+          attempt
+        );
       } finally {
-        publicationStart?.release();
+        handStarted = attempt.started;
+        unstartedCause ??= attempt.cause;
       }
     } catch (error) {
       unstartedCause ??= 'threw:' + ServerTableEngineDealing.causeOf(error);
@@ -3842,6 +3620,556 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       } finally {
         if (this.f06HandPreparation === preparation) this.f06HandPreparation = null;
       }
+    }
+  }
+
+  /** One controller's existing event, publication and completion owner. */
+  protected wireOriginalDisconnectAction(): void {
+    this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
+      if (!this.handController) return;
+      const state = this.handController.getState();
+      const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
+      if (!dcPlayer) return;
+      // Stale deadline: the turn has already moved on. Acting here would be a
+      // phantom action attributed to a player who is not in the decision.
+      if (state.currentPlayerSeat !== dcPlayer.seat) return;
+
+      // This callback is the ONLY resolution path for a disconnected or
+      // sitting-out player's turn — handleTurnChange returns early for them
+      // WITHOUT arming a clock. performAction returns false on an illegal
+      // action (the countdown captures `canCheck` up to 30s earlier, so it goes
+      // stale), and the old try/catch never saw that: no action, no clock, no
+      // retry. Permanent freeze.
+      let applied = false;
+      try {
+        applied = this.handController.performAction(
+          dcPlayer.seat,
+          disconnectAction.action as any,
+          undefined,
+          'forced'
+        );
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
+      }
+      if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
+      if (applied) {
+        this.markProgress();
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
+        );
+      } else {
+        reportError(
+          new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
+          'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
+        );
+        this.forceArmTurnTimer(dcPlayer.seat, this.actionClockSeconds());
+      }
+    });
+  }
+
+  protected async resumeOriginalController(): Promise<void> {
+    const original = this.pendingOriginalContinuation;
+    if (!original) return;
+    const fields = original.batch.engine.fields;
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields))
+      throw new Error('Original Hand Engine Capture Is Unproven');
+    const self = this as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(fields)) {
+      if (!key.startsWith('currentHand') || !Object.prototype.hasOwnProperty.call(self, key))
+        throw new Error('Original Hand Capture Field Is Invalid');
+      self[key] = structuredClone(value);
+    }
+    this.handCount = Number(original.original.hand_number);
+    const controller = HandController.fromRecoveryState(
+      original.batch.controller,
+      this.tableId,
+      this.handCount,
+      () => getTournamentBrainContextSnapshot(original.original.tournament_id)
+    );
+    this.handController = controller;
+    this.lastButtonSeat = controller.getState().dealerSeat;
+    this.currentHandDealerSeat = this.lastButtonSeat;
+    const originalSeats = controller
+      .getState()
+      .players.map((p) => p.seat)
+      .sort((a, b) => a - b);
+    this.dealerSeatIndex = Math.max(0, originalSeats.indexOf(this.lastButtonSeat)) + 1;
+    for (const p of controller.getState().players) this.dealtInUserIds.add(p.user_id);
+    const blinds = controller.getBlindSeatsSnapshot();
+    if (blinds) {
+      this.lastBigBlindSeat = blinds.bigBlind;
+      this.lastSmallBlindSeat = blinds.smallBlind ?? this.lastSmallBlindSeat;
+    }
+    const originalConfig = JSON.parse(original.batch.controller).config;
+    if (this.tableInfo)
+      this.tableInfo = {
+        ...this.tableInfo,
+        small_blind: originalConfig.smallBlind,
+        big_blind: originalConfig.bigBlind,
+        ante: originalConfig.ante,
+      };
+    const capture = original.batch.engine;
+    await this.restoreContinuationAccounting(capture);
+    if (!this.running || !this.isCurrentEngine() || !this.lifecycleCanMutate()) return;
+    if (capture.disconnectStates && typeof capture.disconnectStates === 'object')
+      this.disconnectEngine.restoreFsmStates(
+        this.tableId,
+        capture.disconnectStates as Parameters<typeof this.disconnectEngine.restoreFsmStates>[1]
+      );
+    if (Array.isArray(capture.timeBanks))
+      for (const entry of capture.timeBanks) {
+        if (entry.bank)
+          this.timeBankEngine.restorePlayerForRecovery(
+            this.tableId,
+            entry.userId,
+            entry.bank,
+            Number(capture.capturedAt)
+          );
+      }
+    const players = this.seatedPlayers.filter((p) =>
+      original.seats.some((s) => s.user_id === p.user_id)
+    );
+    if (players.length !== original.seats.length)
+      throw new Error('Original Hand Roster Is Unproven');
+    const statePlayers = controller.getState().players;
+    const baselines = statePlayers.map((p) => {
+      const seat = original.seats.find((s) => s.user_id === p.user_id)!;
+      const chair = players.find((s) => s.user_id === p.user_id)!;
+      if (
+        !seat ||
+        !chair ||
+        chair.seat_id !== seat.seat_id ||
+        chair.seat_joined_at !== seat.seat_joined_at ||
+        Number(chair.stack) !== seat.stack_before
+      )
+        throw new Error('Original Hand Chair Changed');
+      return { ...p, stack: seat.stack_before };
+    });
+    this.stateVerifier.recordInitialChipTotal(this.tableId, baselines);
+    const newBanks = statePlayers.filter(
+      (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
+    );
+    const preferenceIds = statePlayers
+      .filter((p) => !this.timeBankEngine.hasAutoActivatePreference(this.tableId, p.user_id))
+      .map((p) => p.user_id);
+    const [allowances, preferences] = await Promise.all([
+      this.fetchTimeBankExtras(newBanks.map((p) => p.user_id)),
+      readAutoTimeBankPreferences(preferenceIds).catch((error) => {
+        reportError(error, 'ServerTableEngine.original_time_bank_preferences_unreadable');
+        return new Map(preferenceIds.map((id) => [id, false]));
+      }),
+    ]);
+    if (
+      this.handController !== controller ||
+      !this.running ||
+      !this.isCurrentEngine() ||
+      !this.lifecycleCanMutate()
+    )
+      return;
+    for (const [id, enabled] of preferences)
+      if (!this.timeBankEngine.hasAutoActivatePreference(this.tableId, id))
+        this.timeBankEngine.setAutoActivate(this.tableId, id, enabled);
+    for (const p of baselines) {
+      this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
+      if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
+        const allowance = allowances.get(p.user_id);
+        const total = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
+        this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
+          remainingSeconds: total,
+          usesRemaining: Math.ceil(total / 20),
+          unlimitedActivations: allowance?.unlimitedActivations === true,
+        });
+        this.timeBankMeta.set(p.user_id, {
+          initialSeconds: total,
+          baseSeconds: this.timeBankBaseSeconds,
+          dbConsumedSeconds: 0,
+          ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
+        });
+      }
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        players.find((s) => s.user_id === p.user_id)?.reconnect_membership
+      );
+    }
+    this.wireOriginalDisconnectAction();
+    await this.runOriginalController(
+      players,
+      controller,
+      this.handCount,
+      this.currentHandStartedAt || Date.now(),
+      { started: true, cause: null }
+    );
+  }
+
+  protected async runOriginalController(
+    players: SeatedPlayer[],
+    preparedController: HandController,
+    handNumber: number,
+    handStartMs: number,
+    attempt: { started: boolean; cause: string | null }
+  ): Promise<void> {
+    const recovered = this.pendingOriginalContinuation;
+    const original = recovered?.original ?? this.f06CurrentPermit?.binding;
+    const seats =
+      recovered?.seats ??
+      (original
+        ? players
+            .filter((p) =>
+              preparedController.getState().players.some((h) => h.user_id === p.user_id)
+            )
+            .map((p) => {
+              const generation = this.currentHandSeatGenerations.get(p.user_id);
+              const stack = this.currentHandDealtStacks.get(p.user_id);
+              if (!generation || stack === undefined)
+                throw new Error('Original Hand Seat Is Unproven');
+              return { user_id: p.user_id, ...generation, stack_before: stack };
+            })
+        : []);
+    // A prepared controller's exact deck is durable BEFORE synchronous start.
+    // The original permit must never be converted to never_started after this.
+    if (original && !recovered) {
+      try {
+        this.f06CurrentPermit?.assertPreparedStartAllowed();
+      } catch (error) {
+        attempt.cause = 'start_failed:' + ServerTableEngineDealing.causeOf(error);
+        return;
+      }
+      // From this point a database write may have retained the original even
+      // without an acknowledgement. No local no-start proof may cancel it.
+      this.f06CurrentPermit?.attemptOriginalRetention();
+      const preparedBatch = {
+        version: 1 as const,
+        sequence: 0,
+        controller: preparedController.serializeRecoveryState(),
+        events: [],
+        engine: this.captureContinuationEngine(),
+      };
+      await this.retainOriginalBatch(original, seats, preparedBatch);
+      if (
+        this.handController !== preparedController ||
+        !this.running ||
+        !this.isCurrentEngine() ||
+        !this.lifecycleCanMutate()
+      )
+        return;
+      this.markRetainedPreparedOriginal(preparedController, original, preparedBatch);
+    }
+    if (original) {
+      if (recovered) {
+        if (JSON.parse(recovered.batch.controller).handStarted === false)
+          this.markRetainedPreparedOriginal(preparedController, original, recovered.batch);
+        else this.weeklyPayoutStartedController = preparedController;
+      }
+      if (this.weeklyHandPause.held())
+        for (const owner of this.weeklyPayoutPauseOwners)
+          preparedController.pauseForWeeklyPayout(owner);
+      if (!(await this.weeklyHandPause.checkpoint())) return;
+    }
+    // Wait for hand to complete
+    // Existing seatBoundary owns preparation and synchronous start. This
+    // phase/authority check does not acquire a second mutex.
+    const publicationStart = await this.acquireFinancialControllerStart();
+    try {
+      if (original) {
+        // A hold may arrive between a resolved async checkpoint and this
+        // caller's continuation. Rejoin that same cooperative owner, then
+        // check synchronously: no await may separate held=false from start.
+        for (;;) {
+          if (!(await this.weeklyHandPause.checkpoint())) return;
+          if (this.weeklyHandPause.held()) continue;
+          if (this.isHandForHandReleaseBlocked() || this.handForHandPaused) {
+            // Keep the retained prepared controller at the same existing
+            // physical owner gate. Polled floor/admin/Cluster locks are not
+            // routed here: this gate does not own their read/wait protocol.
+            await this.awaitPauseGate();
+            if (!this.running || !this.isCurrentEngine() || !this.lifecycleCanMutate()) return;
+            continue;
+          }
+          break;
+        }
+      }
+      if (
+        this.handController !== preparedController ||
+        !this.running ||
+        !this.isCurrentEngine() ||
+        !this.lifecycleCanMutate()
+      ) {
+        return;
+      }
+      if (!original && this.discardPreparedHandForPause()) return;
+      if (
+        original &&
+        JSON.parse(preparedController.serializeRecoveryState()).handStarted === false &&
+        this.isNextHandPaused()
+      ) {
+        // Polled holds keep their existing read/wait owner. A prepared
+        // retained original (fresh or claimed) cannot bypass them or become
+        // an ordinary local cancellation; fence for canonical custody.
+        this.killForRestart('retained_original_start_unproven');
+        return;
+      }
+      return new Promise<void>((resolve) => {
+        const controllerForHand = preparedController;
+        let persistenceGeneration: number | undefined;
+        // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
+        // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
+        // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
+        // The old 60s timeout was killing hands prematurely mid-action.
+        const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+        // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
+        let unsub: () => void = () => {};
+        let handWaitReleased = false;
+        const releaseHandWait = (reason: string): void => {
+          if (handWaitReleased) return;
+          handWaitReleased = true;
+          try {
+            this.clearHandTimeout(handTimeout);
+            if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
+            unsub();
+          } catch (error) {
+            reportError(error, 'ServerTableEngine.' + this.tableId + '.hand_wait_release_failed', {
+              reason,
+              handNumber,
+            });
+          } finally {
+            if (this.activeHandWaitRelease?.controller === controllerForHand) {
+              this.activeHandWaitRelease = null;
+            }
+            if (this.handController === controllerForHand) this.handController = null;
+            this.runoutRevealActive = false;
+            resolve();
+          }
+        };
+        const handTimeout = this.setHandTimeout(() => {
+          // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
+          // or superseded while the void timer was armed, the shared timers now
+          // belong to the replacement engine — clearing them here would wipe the
+          // LIVE table's turn clock ten minutes after the handover. Detach and
+          // get out without touching anything shared.
+          if (!this.running || !this.isCurrentEngine()) {
+            // (review fix) Even when superseded we must still drop OUR OWN
+            // hand state: resolving with handController set would let
+            // dealingLoop deal the next hand from a superseded instance — two
+            // engines dealing one table. Local teardown only; never the shared
+            // timers (they belong to the successor).
+            releaseHandWait('engine_stopped_or_superseded');
+            return;
+          }
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
+          );
+          if (this.handContinuation) {
+            // Retained unfinished hands remain the original hand. A deadline
+            // fences this owner; it cannot authorize a replacement deal.
+            this.killForRestart('retained_hand_safety_timeout');
+            return;
+          }
+          // AUDIT FIX 2026-07-19: previously the timeout nulled the controller but
+          // left the HAND_COMPLETE listener attached and action timers running. A
+          // late completion (e.g. a pending horse think-timer) could then fire the
+          // HAND_COMPLETE branch and null the NEXT live hand's controller. Detach
+          // the listener and cancel this table's action timers on timeout.
+          this.preciseTimer.clearTable(this.tableId);
+          this.actionValidator.clearTable(this.tableId);
+          /**
+           * THE BOMB OVERLAY MUST BE DISMISSED ON THIS PATH TOO (2026-08-29).
+           *
+           * BOMB_POT_COMPLETED is what tells the client's BombPotOverlay the
+           * hand is over. HandController emits it after every HAND_COMPLETE —
+           * the normal settlement, the skip-distribution path, the no-winner
+           * path and the catch block, four places, all covered. This is the
+           * fifth exit and it is the only one that does not go through
+           * HandController at all: the safety timer tears the hand down from
+           * outside, so nothing ever emits it.
+           *
+           * A voided bomb hand therefore left the overlay on screen with no
+           * dismissal signal, on top of a table that had just started dealing
+           * the next hand. Ten minutes is rare, but "rare" is exactly when a
+           * player is already looking at a table that has misbehaved.
+           *
+           * Emitted through handleHandEvent so it takes the same route to the
+           * hub as the four that already work.
+           */
+          if (this.currentHandBombPot) {
+            void this.handleHandEvent(
+              { type: 'BOMB_POT_COMPLETED', handNumber } as HandEvent,
+              players
+            ).catch((err) =>
+              reportError(err, 'ServerTableEngine.' + this.tableId + '.bomb_completed_on_void')
+            );
+          }
+          releaseHandWait('hand_safety_timeout');
+        }, HAND_SAFETY_TIMEOUT_MS);
+        // Track on the instance so stop()/killForRestart() can clear it.
+        this.handSafetyTimer = handTimeout;
+
+        const dispatchOriginalEvent = async (
+          event: ContinuationEvent,
+          identity?: ContinuationEventIdentity
+        ): Promise<void> => {
+          if (event.type === 'CONTINUATION_TIME_BANK') {
+            this.dispatchContinuationTimeBank(
+              event.event,
+              original && identity
+                ? continuationEventId(original, identity.sequence, identity.index)
+                : undefined
+            );
+            return;
+          }
+          // 2026-08-15: handleHandEvent is async and its promise was discarded,
+          // so ANY rejection inside it (broadcast, hub publish, settlement DB
+          // write) vanished into index.ts's unhandled-rejection swallow while the
+          // hand silently stopped advancing. Catch it here so at minimum it is
+          // reported and the watchdog can see the table stop making progress.
+          const dispatch = () => this.handleHandEvent(event, players, persistenceGeneration);
+          const handled =
+            event.type === 'HAND_COMPLETE'
+              ? this.dispatchFinancialHandComplete(dispatch)
+              : dispatch();
+          if (['CARDS_DEALT', 'PINEAPPLE_DISCARDED', 'HAND_COMPLETE'].includes(event.type))
+            this.trackWeeklyPayoutOriginalWork(handled);
+          if (original) await handled;
+          else
+            void handled.catch((error) =>
+              reportError(error, `ServerTableEngine.${this.tableId}.handleHandEvent_rejected`)
+            );
+
+          if (event.type === 'HAND_COMPLETE') {
+            // GUARD (2026-08-22): everything between here and resolve() used to
+            // run unprotected inside HandController.emit's listener loop. A
+            // throw from recordHandTiming or clearTurnTimer escaped back into
+            // completeHand AFTER the void timer was cleared — the dealHand
+            // promise then hung forever and the table stopped dealing. Nothing
+            // in this block may prevent resolve() from running.
+            try {
+              // FIX 149: Wire telemetry — record hand timing
+              const handElapsedMs = Date.now() - handStartMs;
+              this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
+
+              // Clear the action clock here. Tournament hand-complete callbacks
+              // intentionally do NOT fire here: handleHandEvent has only queued
+              // postHandTasks at this point, so table_seats still carries the
+              // pre-hand stacks and the knockout hand is not queryable yet.
+              // ServerTableEngineSettlement fires it after both writes succeed.
+              this.clearTurnTimer();
+            } catch (e) {
+              reportError(e, 'ServerTableEngine.' + this.tableId + '.hand_complete_listener_threw');
+            }
+
+            releaseHandWait('hand_complete');
+          }
+        };
+        if (original) {
+          this.handContinuation = new HandContinuationLane(
+            recovered?.batch.sequence ?? 0,
+            () => controllerForHand.serializeRecoveryState(),
+            () => this.captureContinuationEngine(),
+            (batch) => this.retainOriginalBatch(original, seats, batch),
+            dispatchOriginalEvent,
+            () => this.running && this.isCurrentEngine() && this.lifecycleCanMutate(),
+            (error) => {
+              reportError(error, `ServerTableEngine.${this.tableId}.hand_continuation_unproven`);
+              this.killForRestart('hand_continuation_unproven');
+            }
+          );
+        }
+        unsub = controllerForHand.onEvent((event: HandEvent) => {
+          if (this.handContinuation) this.handContinuation.enqueue(event);
+          else
+            void dispatchOriginalEvent(event).catch((error) =>
+              reportError(error, `ServerTableEngine.${this.tableId}.handleHandEvent_rejected`)
+            );
+        });
+        this.activeHandWaitRelease = {
+          controller: controllerForHand,
+          release: releaseHandWait,
+        };
+
+        // Start the hand!
+        try {
+          // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
+          // inherit a stale all-in reveal flag from an abnormal exit.
+          this.runoutRevealActive = false;
+          if (!original && this.discardPreparedHandForPause()) {
+            releaseHandWait('terminal_closeout_before_start');
+            return;
+          }
+          const startExactController = () => {
+            persistenceGeneration = this.beginTerminalBoundaryPersistence();
+            attempt.started = true;
+            this.weeklyPayoutStartedController = controllerForHand;
+            this.retainedPreparedOriginalController = null;
+            controllerForHand.start();
+          };
+          const startWithPermit = () => {
+            if (this.f06CurrentPermit) this.f06CurrentPermit.start(startExactController);
+            else startExactController();
+          };
+          if (recovered) {
+            const resumeExactOriginal = () => {
+              persistenceGeneration = this.beginTerminalBoundaryPersistence();
+              attempt.started = true;
+              this.weeklyPayoutStartedController = controllerForHand;
+              this.retainedPreparedOriginalController = null;
+              this.pendingOriginalContinuation = null;
+              // Replay the one retained pending event batch through the original
+              // consumers. It contains no invented action or replacement deal.
+              void this.runOwnedReadContinuation(async () => {
+                try {
+                  const originalDecisionCount = controllerForHand.getState().actionHistory.length;
+                  for (const [index, event] of recovered.batch.events.entries())
+                    await dispatchOriginalEvent(event, {
+                      sequence: recovered.batch.sequence,
+                      index,
+                    });
+                  if (
+                    controllerForHand.getState().actionHistory.length === originalDecisionCount &&
+                    !this.ownsContinuationTimeBankClock() &&
+                    !recovered.batch.events.some((event) =>
+                      [
+                        'TURN_CHANGE',
+                        'ALL_IN_RUNOUT',
+                        'PINEAPPLE_DISCARD_REQUIRED',
+                        'HAND_COMPLETE',
+                      ].includes(event.type)
+                    )
+                  )
+                    controllerForHand.resumeRecoveredHand();
+                } catch (error) {
+                  reportError(error, `ServerTableEngine.${this.tableId}.original_replay_failed`);
+                  this.killForRestart('original_replay_failed');
+                }
+              });
+            };
+            if (publicationStart) publicationStart.start(resumeExactOriginal);
+            else resumeExactOriginal();
+          } else if (publicationStart) publicationStart.start(startWithPermit);
+          else startWithPermit();
+
+          // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
+          // C15: deliberately NOT coalesced. The hand-start snapshot is the anchor
+          // every later delta is read against, so it is worth one guaranteed write.
+          this.snapshotDirty = true;
+          void this.flushSnapshot();
+        } catch (err) {
+          if (persistenceGeneration !== undefined) {
+            this.finishTerminalBoundaryPersistence(persistenceGeneration, false);
+          }
+          reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start_hand`);
+          attempt.cause = 'start_failed:' + ServerTableEngineDealing.causeOf(err);
+          if (original) {
+            // A retained original is not a local no-start cancellation. If
+            // another authority refuses actuation, fence this owner and leave
+            // its exact private capsule for canonical successor admission.
+            this.killForRestart('retained_original_start_unproven');
+            return;
+          }
+          releaseHandWait('hand_start_failed');
+        }
+      });
+    } finally {
+      publicationStart?.release();
     }
   }
 
@@ -4135,6 +4463,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * is skipped outright.
    */
   private bustedSince: Map<string, number> = new Map();
+  private lightningBustedSince: Map<string, number> = new Map();
 
   /** How long a seat must sit at zero before it is released. */
   static readonly BUSTED_GRACE_MS = 10_000;
@@ -4146,6 +4475,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * because the heartbeat (Turns) writes it and this sweep (Dealing) reads it.
    */
   static readonly REBUY_PROMPT_HOLD_MS = 12_000;
+
+  static readonly LIGHTNING_BUSTED_GRACE_MS = 20_000;
+
+  protected override async passWhileDealingHalted(): Promise<void> {
+    await super.passWhileDealingHalted();
+    if (!this.lifecycleCanMutate() || this.isTournamentTable() || isMaintenanceFrozen()) return;
+    // Only a busted anchor can need this boundary. Funded parked tables keep
+    // their existing halt contract; a paid bust rebuy must not await a deal.
+    const busted = this.seatedPlayers.filter((p) => p.user_id && Number(p.stack) === 0);
+    if (busted.length === 0) return;
+    const owed = await this.usersWithPendingLedgerChips(busted.map((p) => p.user_id));
+    if (owed === null) return;
+    // The existing resolver owns lease checks, live-hand refusal and receipts.
+    if (owed.size > 0) await this.processPendingAddOns(this.seatedPlayers);
+    if (!this.lifecycleCanMutate() || isMaintenanceFrozen()) return;
+    await this.standUpBustedCashPlayers();
+  }
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
@@ -4165,17 +4511,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // person is stood up here after the grace; a busted horse now is too,
     // through the same door, the same grace and the same cash-out (10.5).
     const diamondCash = this.tableInfo?.arena?.asset === 'diamonds';
-    const seated = this.seatedPlayers.filter((p) => p.user_id && (!p.is_horse || diamondCash));
-    const broke = seated.filter((p) => Number(p.stack ?? 0) <= 0);
+    const lightning = this.clusterLightningEnabled === true || Boolean(this.dealingHaltLock);
+    const seated = this.seatedPlayers.filter(
+      (p) => p.user_id && (!p.is_horse || lightning || diamondCash)
+    );
+    const broke = seated.filter(
+      (p) => p.stack !== null && p.stack !== undefined && Number(p.stack) === 0
+    );
+    const clocks = lightning ? this.lightningBustedSince : this.bustedSince;
+    const clockKey = (p: (typeof broke)[number]) => (lightning ? p.occupancy_id : p.user_id);
 
     // Anyone who is funded again stops being watched.
-    const brokeIds = new Set(broke.map((p) => p.user_id));
-    for (const [id] of this.bustedSince) {
-      if (!brokeIds.has(id)) this.bustedSince.delete(id);
+    const brokeIds = new Set(broke.map(clockKey));
+    for (const [id] of clocks) {
+      if (!brokeIds.has(id)) clocks.delete(id);
     }
     if (broke.length === 0) return;
 
-    const now = Date.now();
+    const now = lightning ? maintenanceActiveNow() : Date.now();
     const removed: string[] = [];
 
     /* CHIP STANDARD C3 (2026-09-02): the in-memory `pendingAddOns` map only
@@ -4190,11 +4543,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     if (owed === null) return;
 
     for (const player of broke) {
+      const key = clockKey(player);
+      if (!key) continue; // Never time out an unidentified occupancy.
       /* Money already on its way to this seat. `pendingAddOns` is the queue
          processPendingAddOns drains a few lines above; a player in it has been
          DEBITED already and is owed their chips, not their seat taken away. */
       if (this.pendingAddOns.has(player.user_id) || owed.has(player.user_id)) {
-        this.bustedSince.delete(player.user_id);
+        clocks.delete(key);
         continue;
       }
 
@@ -4202,17 +4557,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          restarts the grace: the clock measures how long a seat sat at zero
          with NOBODY minding it, not how long a human took to decide. */
       const promptSeen = this.rebuyPromptOpenAt.get(player.user_id) ?? 0;
-      if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
-        this.bustedSince.set(player.user_id, now);
+      if (!lightning && now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
+        clocks.set(key, now);
         continue;
       }
 
-      const firstSeen = this.bustedSince.get(player.user_id);
+      const firstSeen = clocks.get(key);
       if (firstSeen === undefined) {
-        this.bustedSince.set(player.user_id, now);
+        clocks.set(key, now);
         continue;
       }
-      if (now - firstSeen < ServerTableEngineDealing.BUSTED_GRACE_MS) continue;
+      const grace = lightning
+        ? ServerTableEngineDealing.LIGHTNING_BUSTED_GRACE_MS
+        : ServerTableEngineDealing.BUSTED_GRACE_MS;
+      if (now - firstSeen < grace) continue;
 
       /* Never remove a player who is all-in in a live hand. Same rule the
          eviction sweep and leaveTable both enforce — a seat cannot leave the
@@ -4228,7 +4586,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          the same cashout again. An unknown outcome is not a leave. */
       const released = await this.releaseBustedSeat(player, 'busted_no_rebuy');
       if (!released) continue;
-      this.bustedSince.delete(player.user_id);
+      clocks.delete(key);
       this.rebuyPromptOpenAt.delete(player.user_id);
       removed.push(player.occupancy_id!);
       console.log(

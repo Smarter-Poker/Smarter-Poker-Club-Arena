@@ -7,6 +7,12 @@ on:
       - supabase/migrations/**
       - scripts/ci/fixtures/weekly-refusal-cover/**
       - scripts/ci/test-weekly-refusal-cover-postgres.py
+      - scripts/ci/test-cash-refusal-pointer-batch-postgres.py
+      - scripts/ci/fixtures/cash-refusal-scope-set/**
+      - tests/cash-refusals-read-their-pointer-batch.law.test.ts
+      - scripts/ci/test-cash-assert-status-cover-postgres.py
+      - scripts/ci/fixtures/cash-assert-status-cover/**
+      - tests/cash-evidence-reads-the-accrual-status-cover.law.test.ts
       - .github/workflows/weekly-refusal-cover.yml
       - tests/the-weekly-refusal-check-reads-the-receipt-cover.law.test.ts
 
@@ -49,3 +55,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-refusal-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Cash refusal pointer batch preserves the original refusal owner
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-cash-refusal-pointer-batch-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"
+      - name: Original raw cash completeness reads the compact batch status cover
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-cash-assert-status-cover-postgres.py --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}"

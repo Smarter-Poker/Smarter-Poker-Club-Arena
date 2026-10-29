@@ -53,6 +53,7 @@ test('provider read errors never become an empty successful inventory', async ()
     guardRosterRun(
       {
         GITHUB_REPOSITORY: 'Smarter-Poker/Smarter-Poker-Club-Arena',
+        GITHUB_REPOSITORY_ID: '1132369872',
         GITHUB_RUN_ID: '2',
         GITHUB_TOKEN: 'not-a-real-token',
       },
@@ -76,3 +77,5 @@ test('manual workflow verifies ownership and durable baseline before any product
   assert.match(s, /run-id: \$\{\{ inputs.prepare_run \}\}/);
   assert.match(s, /if: always\(\)/);
 });
+
+test('transferred immutable repository reaches only original provider read route',async()=>{let calls=0;await assert.rejects(guardRosterRun({GITHUB_REPOSITORY:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:'1132369872',GITHUB_RUN_ID:'2',GITHUB_TOKEN:'modeled'},async url=>{calls++;assert.match(url,/repos\/Smarter-Software-PIQ\/Smarter-Poker-Club-Arena\/actions\/runs\/2$/);return {ok:false}}));assert.equal(calls,1);for(const id of [undefined,'42']){calls=0;await assert.rejects(guardRosterRun({GITHUB_REPOSITORY:'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',GITHUB_REPOSITORY_ID:id,GITHUB_RUN_ID:'2',GITHUB_TOKEN:'modeled'},async()=>{calls++;throw Error('unexpected credential use')}));assert.equal(calls,0)}});

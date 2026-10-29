@@ -1,0 +1,18 @@
+{
+  "kind": "source_composition_contract",
+  "source_owners_changed": 3,
+  "source65_changed_entries": 2,
+  "other_source65_entries_preserved": 63,
+  "generation_owner_unchanged": "58dc20e1ba380ccb9b9dee8809731d33",
+  "original_md5": {
+    "report": "49b47361e2ccd195968d293b1bb7c3c0",
+    "advance": "736539c3d60fd047c352e127f18d54bb",
+    "guard": "edc8545a57d017a7cce79550dd0520f9"
+  },
+  "post_md5": {
+    "report": "f4664dbbf53c790d967680a51a4d7cd6",
+    "advance": "f7a88542088f2a0469972a54c21b3011",
+    "guard": "1736142e39ca72275a6b9197ab0a6123"
+  },
+  "candidate_sha256": "03e05e0a613b0e0e10d3338b7686022dd731c4e59d4d9f0826e25f60cf2ff555"
+}

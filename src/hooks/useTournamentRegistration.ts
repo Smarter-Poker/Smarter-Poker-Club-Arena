@@ -46,6 +46,8 @@ export interface RegisterTournamentParams {
   is_pko?: boolean;
   is_mystery_bounty?: boolean;
   start_time?: string | null;
+  /** Recorded fixed-field satellite: the internal scheduling timestamp is not a start clock. */
+  startsWhenFull?: boolean;
   /**
    * The tournament's status, so the hook can work out for itself whether this
    * is a late registration.
@@ -168,6 +170,7 @@ export function useTournamentRegistration() {
         isPko: t.is_pko,
         isMysteryBounty: t.is_mystery_bounty,
         startTime: t.start_time ?? null,
+        startsWhenFull: t.startsWhenFull,
         userId: currentUserId,
         clubId: t.club_id ?? null,
         unionId: t.union_id ?? null,

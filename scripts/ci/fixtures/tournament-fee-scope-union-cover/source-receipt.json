@@ -1,0 +1,7 @@
+{
+  "migration_file": "supabase/migrations/20261028030330_original_tournament_fee_scope_reads_union_scalars.sql",
+  "index_name": "accounting_tournament_fee_scope_union_cover",
+  "actual0258catalog_sha256": "5c5d11b6ea0fd5b4d41d99cc4a3534cbe39bf33314be6d571cb1b2228cac8766",
+  "exact_original_aggregate_sha256": "ba615230603bc978477977b9cf31b69b359b045f55636cc17ef51730fdb3d7b1",
+  "source_query": "Original fee_scope allsources count/scope_count/min union; candidate ID upstream boundary controlled in native"
+}

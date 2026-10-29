@@ -1,0 +1,9 @@
+# tests/approved-agent-adjustments-settle-once.law.test.ts
+
+A positive, approved chip adjustment for an agent wallet can settle from its specified club treasury only once. The existing adjustment row, its complete approved payload, conserved bank and agent deltas, and one immutable keyed journal leg are one atomic operation. A retry returns that original receipt; changed intent, missing approval, insufficient funds, inactive wallet, freeze, failed journal or deferred imbalance refuses the whole operation. Existing paid periods and earning contracts remain unchanged.
+
+The execution door is PostgreSQL only. It uses the same real platform journal attribution as the original weekly commission stage. Metadata separately identifies the original proposal, standing approval, actual database user and session, and application. It does not fabricate an authenticated human cashier action or an audit actor in auth.users. The audit reader recognizes settled approvals while retaining its original independence test. A platform-attributed execution whose journal actor equals the standing approver remains truthfully marked single_actor.
+
+The focused PostgreSQL fixture uses the current table columns and checks, real performer foreign key and actor triggers, original balance synchronization, declaration, enrichment, key claim, transaction tallies and deferred invariant. External foreign keys other than performer and unrelated notification/report triggers are outside this isolated boundary. The external refusal recorder is a controlled observer; it cannot change the original refusal. Production completion still requires the exact installed identity and a rollback proof with all actual guards before any correction commit.
+
+Approved past-earned credits remain payable to existing suspended agent wallets without reactivation; frozen wallets are still refused.

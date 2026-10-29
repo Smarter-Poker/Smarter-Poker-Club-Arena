@@ -1,0 +1,6 @@
+{
+  "migration_file": "supabase/migrations/20261028042250_original_tournament_credits_read_their_record_cover.sql",
+  "index_name": "accounting_tournament_source_record_credit_cover",
+  "exact_original_aggregate_sha256": "d1390cea5b9048021a15518179deb4941acc536985f552f82cdb199e71725b64",
+  "source_query": "Exact original5c8 src_sum two fields/SUM/ANYarray_agg record membership, no filters or DISTINCT. Native only controls input raw record IDs."
+}

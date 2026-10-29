@@ -166,7 +166,7 @@ describe('the seating path reads the assignment', () => {
   const SIT = readFileSync(join(process.cwd(), 'src/services/HorseSitVerdict.ts'), 'utf8');
   it('loads assignments and preserves pilot scope outside the bankroll-only cash roster', () => {
     expect(SRC).toContain('await loadPilotSeatScope(supabase)');
-    expect(SRC).toContain('const bankrollOnly = cashRosterAllows(h.id) === true;');
+    expect(SRC).toContain('const bankrollOnly = cashRosterAllows(h.id, table) === true;');
     expect(SRC).toMatch(
       /if \(!bankrollOnly && pilotSeatVerdict\(h\.id, seatClub\) === 'elsewhere'\) \{\s*pilotElsewhereDropped\+\+;\s*return false;\s*\}/
     );

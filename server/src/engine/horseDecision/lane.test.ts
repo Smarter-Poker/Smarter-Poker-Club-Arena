@@ -508,3 +508,60 @@ describe('ONE FLOOR, ONE READ: every shard learns every completed hand (2026-10-
     void pool.stop().catch(() => undefined);
   });
 });
+
+it('keeps distinct isolate ownership and main-cache totals in the existing pool status', async () => {
+  const { pool, workers } = poolOf(2);
+  workers.forEach((w) => w.emit(ready()));
+  await pool.ready();
+  const clients = (pool as any).clients;
+  for (let i = 0; i < 2; i++) {
+    const pending = clients[i].enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    workers[i]!.emit({
+      ...ready(),
+      type: 'STATUS_RESULT',
+      requestId: 1,
+      generation: 0,
+      fence: 'worker:status',
+      isolateMemory: {
+        source: 'node_v8_heap_statistics',
+        threadId: 10 + i,
+        shardIndex: i,
+        sampledAtMs: Date.now(),
+        heapUsedBytes: 100 + i,
+        heapTotalBytes: 200,
+        heapLimitBytes: 1000,
+      },
+    });
+    await pending;
+    clients[i].ownPublicHistory = {
+      status: () => ({
+        owner: 'main',
+        entries: i + 1,
+        maxEntries: 2048,
+        decodedPacketCount: i,
+        serializedPacketCount: 1,
+        acknowledgedCount: 1,
+        pendingCount: 0,
+        retainedSerializedUtf8Bytes: 100,
+      }),
+    };
+  }
+  const status = pool.status();
+  expect(status.isolateMemory).toBeNull();
+  expect(status.mainHistoryCacheClientCount).toBe(2);
+  expect(
+    status.workers.map((w) => [w.isolateMemory?.threadId, w.isolateMemory?.shardIndex])
+  ).toEqual([
+    [10, 0],
+    [11, 1],
+  ]);
+  expect(status.mainHistoryCache).toMatchObject({
+    owner: 'main',
+    entries: 3,
+    maxEntries: 4096,
+    retainedSerializedUtf8Bytes: 200,
+  });
+});

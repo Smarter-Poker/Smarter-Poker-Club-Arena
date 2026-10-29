@@ -138,6 +138,11 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { useFitText } from '../components/lobby/game-cards/useFitText';
+import {
+  claimReturnWallets,
+  CLAIM_DESTINATION_LABELS,
+  type ClaimDestination,
+} from '../components/wallet/claimReturnWallets';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips, formatWalletChips } from '../utils/format';
 import {
@@ -454,13 +459,11 @@ type HistoryKind = 'all' | 'cashout' | 'transfer' | 'game';
 type HistoryRange = 'all' | 'today' | '7d' | '30d';
 
 const HISTORY_KINDS: ReadonlyArray<readonly [HistoryKind, string]> = [
-  ['all', 'All'],
+  ['all', 'Chip Movements'],
   ['cashout', 'Cash-Outs'],
   ['transfer', 'Transfers'],
-  ['game', 'Games'],
 ];
 const HISTORY_RANGES: ReadonlyArray<readonly [HistoryRange, string]> = [
-  ['all', 'All Time'],
   ['today', 'Today'],
   ['7d', '7 Days'],
   ['30d', '30 Days'],
@@ -601,7 +604,7 @@ function CashierTradeWorkspace() {
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
   const [recordQuery, setRecordQuery] = useState('');
-  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out' | 'managed'>('all');
+  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsLoadingMore, setRecordsLoadingMore] = useState(false);
   /** The search the server runs: a name or an invoice number, debounced. */
@@ -615,7 +618,7 @@ function CashierTradeWorkspace() {
      (fn_cashier_history_page), so this is a choice, never a grant. */
   const [historyScope, setHistoryScope] = useState<HistoryBook>('club');
   const [historyKind, setHistoryKind] = useState<HistoryKind>('all');
-  const [historyRange, setHistoryRange] = useState<HistoryRange>('all');
+  const [historyRange, setHistoryRange] = useState<HistoryRange>('today');
   const [historyTotals, setHistoryTotals] = useState<HistorySummary | null>(null);
   const [historyTotalsState, setHistoryTotalsState] = useState<'loading' | 'ready' | 'unavailable'>(
     'loading'
@@ -690,6 +693,8 @@ function CashierTradeWorkspace() {
   const [mgmtClaimAmount, setMgmtClaimAmount] = useState('');
   const [mgmtClaiming, setMgmtClaiming] = useState(false);
   const [mgmtClaimSource, setMgmtClaimSource] = useState<SendDestination>('player_wallet');
+  const [mgmtClaimDestination, setMgmtClaimDestination] =
+    useState<ClaimDestination>('agent_wallet');
   const [claimWalletRead, setClaimWalletRead] = useState<{
     key: string;
     balances: Partial<Record<SendDestination, number>>;
@@ -1499,7 +1504,7 @@ function CashierTradeWorkspace() {
     ? 'mine'
     : isClubStaffRole(myRole) && historyScope === 'club'
       ? 'club'
-      : isAgentRole(myRole) && historyScope === 'downline'
+      : isAgentRole(myRole) && historyScope !== 'mine'
         ? 'downline'
         : 'mine';
 
@@ -1858,7 +1863,7 @@ function CashierTradeWorkspace() {
           rows.push([
             new Date(r.created_at).toISOString(),
             txLabel(r.transaction_type),
-            direction === 'in' ? 'In' : direction === 'out' ? 'Out' : 'Managed',
+            direction === 'in' ? 'In' : direction === 'out' ? 'Out' : 'Transfer',
             r.from_name || (r.from_user_id ? 'A Member' : 'Club'),
             r.to_name || (r.to_user_id ? 'A Member' : ''),
             (Math.round((Number(r.amount) || 0) * 100) / 100).toFixed(2),
@@ -2625,12 +2630,13 @@ function CashierTradeWorkspace() {
     };
   }, [amountModal, clubUuid, user?.id, pickedWalletKey]);
 
+  const selfSelected = picked.some((target) => target.userId === user?.id);
   const availableSendSources: SendSource[] = [
     ...(canSeeClubBank(myRole)
       ? (['agent_wallet', 'club_bank', 'promo_wallet', 'club_promo_wallet'] as const)
       : (['agent_wallet', 'promo_wallet'] as const)),
     ...(holdsPlayerWallet(myRole) ? (['player_wallet'] as const) : []),
-  ];
+  ].filter((source) => !selfSelected || source !== 'promo_wallet');
   const sourceBalanceFor = (source: SendSource): number | null =>
     source === 'player_wallet'
       ? myBalance
@@ -2659,7 +2665,8 @@ function CashierTradeWorkspace() {
       {recipientSendWallets(target.role)
         .filter(
           (wallet) =>
-            !(target.isSelf && sendSource === 'agent_wallet') || wallet === 'player_wallet'
+            target.userId !== user?.id ||
+            (sendSource === 'agent_wallet' ? wallet === 'player_wallet' : wallet !== sendSource)
         )
         .map((wallet) => (
           <option key={wallet} value={wallet}>
@@ -2673,13 +2680,19 @@ function CashierTradeWorkspace() {
   );
 
   const transferDestination = (target: DownlineRow): SendDestination =>
-    target.isSelf && sendSource === 'agent_wallet'
+    target.userId === user?.id && sendSource === 'agent_wallet'
       ? 'player_wallet'
-      : (transferRecovery?.submissionId === submissionIdRef.current
-          ? transferRecovery.destinations?.[target.userId]
-          : undefined) ||
-        recipientWallets[target.userId] ||
-        (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+      : (() => {
+          const recovered =
+            transferRecovery?.submissionId === submissionIdRef.current
+              ? transferRecovery.destinations?.[target.userId]
+              : undefined;
+          if (recovered) return recovered;
+          const chosen = recipientWallets[target.userId];
+          // A source change must not retain a destination that is the same wallet.
+          if (target.userId === user?.id && chosen === sendSource) return 'agent_wallet';
+          return chosen || (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+        })();
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -3277,14 +3290,22 @@ function CashierTradeWorkspace() {
       transferAuthorityEpoch.current === owningAuthority;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
+    const returnWallets = claimReturnWallets(row.destination, myRole);
+    const returnWallet = returnWallets.includes(mgmtClaimDestination)
+      ? mgmtClaimDestination
+      : returnWallets[0];
+    const returnLabel = CLAIM_DESTINATION_LABELS[returnWallet];
     try {
       const operation = await reserveCashierWalletOperation(
         user?.id || '',
         clubUuid,
-        'fn_agent_wallet_claim_back',
+        'fn_club_wallet_claim_back',
         {
           p_club_id: clubUuid,
           p_transaction_id: row.transaction_id,
+          p_from_user_id: row.to_user_id,
+          p_source: row.destination,
+          p_destination: returnWallet,
           p_amount: null,
           p_reason: 'Claimed Back From The Trade Grid',
         }
@@ -3293,9 +3314,12 @@ function CashierTradeWorkspace() {
       if (!current()) return;
       const heldOpId = operation.operationId;
       claimOpIdsRef.current.set(row.transaction_id, heldOpId);
-      const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+      const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
         p_club_id: clubUuid,
         p_transaction_id: row.transaction_id,
+        p_from_user_id: row.to_user_id,
+        p_source: row.destination,
+        p_destination: returnWallet,
         // Ask the database for the maximum whole-cent remainder. Historical
         // rows can contain a sub-cent claimed_back value from the pre-Phase-1
         // RPC; echoing that fractional remainder would now be refused. Null is
@@ -3327,7 +3351,7 @@ function CashierTradeWorkspace() {
       const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In Your Agent Wallet`
+          ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In ${returnLabel}`
           : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`,
         undefined,
         undefined,
@@ -3373,14 +3397,41 @@ function CashierTradeWorkspace() {
      message goes to the player's own agent only. */
   const pendingCashouts = useClubPendingCashouts(clubUuid, roleResolved && managementClaims);
   const [showCashoutQueue, setShowCashoutQueue] = useState(false);
-  /** The one player a management claim acts on: the dialog's, else the single selection. */
-  const managementClaimTarget: DownlineRow | null = !managementClaims
-    ? null
-    : claimRecipient
-      ? (rosterById.get(claimRecipient) ?? null)
-      : picked.length === 1
-        ? picked[0]
-        : null;
+  // Staff may reclaim from eligible members; every agent may reclaim their own
+  // personal chips without an original send or a ten-minute deadline.
+  const claimCandidate = claimRecipient
+    ? (rosterById.get(claimRecipient) ??
+      (claimRecipient === user?.id
+        ? {
+            userId: user.id,
+            name: 'My Account',
+            username: '',
+            avatarUrl: null,
+            role: myRole,
+            chipBalance: myBalance,
+            depth: 0,
+            isMine: false,
+            playerNumber: null,
+            isSelf: true,
+          }
+        : null))
+    : picked.length === 1
+      ? picked[0]
+      : null;
+  const managementClaimTarget: DownlineRow | null =
+    claimCandidate &&
+    (managementClaims || (claimCandidate.userId === user?.id && canHoldAgentWallet(myRole)))
+      ? claimCandidate
+      : null;
+  const personalClaim = managementClaimTarget?.userId === user?.id;
+
+  const claimDestinations = claimReturnWallets(mgmtClaimSource, myRole).filter(
+    (wallet) => !personalClaim || wallet !== mgmtClaimSource
+  );
+  const claimDestination = claimDestinations.includes(mgmtClaimDestination)
+    ? mgmtClaimDestination
+    : claimDestinations[0];
+  const claimDestinationLabel = CLAIM_DESTINATION_LABELS[claimDestination];
 
   const claimWalletKey = JSON.stringify([
     clubUuid,
@@ -3388,6 +3439,7 @@ function CashierTradeWorkspace() {
     claimOpen,
     managementClaims,
     managementClaimTarget?.userId,
+    myRole,
   ]);
   const claimWalletBalance =
     claimWalletRead?.key === claimWalletKey
@@ -3396,12 +3448,14 @@ function CashierTradeWorkspace() {
   const claimWalletError = claimWalletRead?.key === claimWalletKey ? claimWalletRead.error : null;
 
   useEffect(() => {
-    setMgmtClaimSource('player_wallet');
+    setMgmtClaimSource(
+      personalClaim && !holdsPlayerWallet(myRole) ? 'agent_wallet' : 'player_wallet'
+    );
     setMgmtClaimAmount('');
   }, [claimWalletKey]);
 
   useEffect(() => {
-    if (!claimOpen || !managementClaims || !managementClaimTarget || !clubUuid) return;
+    if (!claimOpen || !managementClaimTarget || !clubUuid) return;
     let live = true;
     setClaimWalletRead(null);
     void (async () => {
@@ -3581,22 +3635,24 @@ function CashierTradeWorkspace() {
       const operation = await reserveCashierWalletOperation(
         user.id,
         clubUuid,
-        'fn_club_bank_claim_back',
+        'fn_club_wallet_claim_back',
         {
           p_club_id: clubUuid,
           p_from_user_id: target.userId,
           p_source: mgmtClaimSource,
+          p_destination: claimDestination,
           p_amount: parsed.value,
           p_reason: 'Cashier Claim Back',
         }
       );
       if (!operation) throw new Error('Cashier Safety Storage Is Unavailable. Try Again');
       if (!current()) return;
-      const { data, error } = await supabase.rpc('fn_club_bank_claim_back', {
+      const { data, error } = await supabase.rpc('fn_club_wallet_claim_back', {
         p_club_id: clubUuid,
         p_from_user_id: target.userId,
         p_amount: parsed.value,
         p_source: mgmtClaimSource,
+        p_destination: claimDestination,
         p_reason: 'Cashier Claim Back',
         p_op_id: operation.operationId,
       });
@@ -3613,8 +3669,8 @@ function CashierTradeWorkspace() {
       if (!current()) return;
       toast?.success?.(
         res.replayed
-          ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
-          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`,
+          ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In ${claimDestinationLabel}`
+          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into ${claimDestinationLabel}`,
         undefined,
         undefined,
         operation.operationId
@@ -4414,6 +4470,35 @@ function CashierTradeWorkspace() {
                   Transaction History
                 </button>
               </div>
+              {canHoldAgentWallet(myRole) && holdsPlayerWallet(myRole) && (
+                <button
+                  type="button"
+                  className={styles.historyLink}
+                  disabled={
+                    busy ||
+                    loading ||
+                    !roleResolved ||
+                    Boolean(transferRecovery) ||
+                    !downline.some((row) => row.userId === user?.id)
+                  }
+                  onClick={() => {
+                    const own = downline.find((row) => row.userId === user?.id);
+                    if (!own) return;
+                    setSearch(own.name);
+                    setMineOnly(false);
+                    setRoleFilter('all');
+                    setSelected(new Set([own.userId]));
+                    setAmount('');
+                    setRecipientAmounts({});
+                    setRecipientWallets({});
+                    setSendSource('agent_wallet');
+                    setTransferFailures([]);
+                    setAmountModal('send');
+                  }}
+                >
+                  Transfer Between My Wallets
+                </button>
+              )}
               {/* Balance strip */}
               <div className={styles.strip}>
                 <div className={styles.stripCell}>
@@ -4852,7 +4937,7 @@ function CashierTradeWorkspace() {
           {tab === 'record' && (
             <section
               id="cashier-panel-record"
-              className={styles.sectionShell}
+              className={`${styles.sectionShell} ${styles.historyPanel}`}
               role="tabpanel"
               aria-labelledby="cashier-tab-record"
               aria-busy={recordsLoading}
@@ -4861,7 +4946,11 @@ function CashierTradeWorkspace() {
               <div className={styles.sectionHeading}>
                 <div>
                   <span className={styles.sectionEyebrow}>
-                    {historyBook === 'club' ? 'All Club Transactions' : 'My Transactions'}
+                    {historyBook === 'club'
+                      ? 'Club Chip Movements'
+                      : historyBook === 'downline'
+                        ? 'My Wallets And Downline'
+                        : 'My Chip Movements'}
                   </span>
                   <h2 className={styles.sectionTitle} id="ledger-title">
                     Transaction History
@@ -4889,7 +4978,7 @@ function CashierTradeWorkspace() {
                   ? []
                   : isClubStaffRole(myRole)
                     ? [
-                        ['club', 'All Club Transactions'],
+                        ['club', 'Club Transactions'],
                         ['mine', 'My Transactions'],
                       ]
                     : isAgentRole(myRole)
@@ -5090,7 +5179,7 @@ function CashierTradeWorkspace() {
                   aria-label="Search Transaction History"
                 />
                 <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
-                  {(['all', 'in', 'out', 'managed'] as const).map((direction) => (
+                  {(['all', 'in', 'out'] as const).map((direction) => (
                     <button
                       key={direction}
                       type="button"
@@ -5099,17 +5188,18 @@ function CashierTradeWorkspace() {
                       onClick={() => setRecordDirection(direction)}
                     >
                       {direction === 'all'
-                        ? 'All'
+                        ? 'Latest Transactions'
                         : direction === 'in'
                           ? 'Incoming'
                           : direction === 'out'
                             ? 'Outgoing'
-                            : 'Managed'}
+                            : 'Chip Movement'}
                     </button>
                   ))}
                 </div>
               </div>
 
+              <p className={styles.historyCaption}>Newest First · Chip Movements Only</p>
               <div className={styles.list}>
                 {recordsLoading && !historyAuthorityUnverified && (
                   <div className={styles.empty}>Loading Transactions...</div>
@@ -5165,7 +5255,7 @@ function CashierTradeWorkspace() {
                         dialogTriggerRef.current = event.currentTarget;
                         setReceipt(r);
                       }}
-                      aria-label={`Open Receipt For ${r.title ? r.title : `${r.direction === 'managed' ? 'Managed Transfer' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}`}, ${fmt(r.amount)} Chips`}
+                      aria-label={`Open Receipt For ${r.title ? r.title : `${r.direction === 'managed' ? 'Chip Movement' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}`}, ${fmt(r.amount)} Chips`}
                     >
                       <div className={styles.rowInfo}>
                         <span className={styles.rowName}>
@@ -5571,7 +5661,7 @@ function CashierTradeWorkspace() {
                 <div className={styles.receiptAmount}>
                   <span className="sc-label sc-ink--blue">
                     {receipt.direction === 'managed'
-                      ? 'Managed Transfer'
+                      ? 'Chip Movement'
                       : receipt.direction === 'in'
                         ? 'Incoming'
                         : 'Outgoing'}
@@ -6179,13 +6269,25 @@ function CashierTradeWorkspace() {
           >
             <SpadeConsole
               onClose={claimingId || mgmtClaiming ? undefined : () => setClaimOpen(false)}
-              eyebrow={managementClaims ? 'Into The Club Bank' : 'Ten Minute Reversal'}
+              eyebrow={
+                managementClaimTarget ? `Return To ${claimDestinationLabel}` : 'Ten Minute Reversal'
+              }
               title="Claim Back"
               titleId="cashier-claim-title"
               pill={
-                claimingId || mgmtClaiming ? 'Working' : managementClaims ? 'Any Time' : 'Limited'
+                claimingId || mgmtClaiming
+                  ? 'Working'
+                  : managementClaimTarget || managementClaims
+                    ? 'Any Time'
+                    : 'Limited'
               }
-              pillInk={claimingId || mgmtClaiming ? 'blue' : managementClaims ? 'blue' : 'red'}
+              pillInk={
+                claimingId || mgmtClaiming
+                  ? 'blue'
+                  : managementClaimTarget || managementClaims
+                    ? 'blue'
+                    : 'red'
+              }
               foot={managementClaimTarget ? 'plates' : 'foot'}
               plates={
                 managementClaimTarget
@@ -6214,11 +6316,10 @@ function CashierTradeWorkspace() {
               className={styles.console}
             >
               <div className={styles.glass}>
-                {/* OWNERS, CO OWNERS AND ADMINS CLAIM BACK AT ANY POINT (Dan
-                    2026-10-15). Claim from the selected member wallet into the
-                    Club Bank, on fn_club_bank_claim_back. Every other role keeps
-                    the ten minute reversal below. */}
-                {managementClaims && managementClaimTarget && (
+                {/* Staff reclaim eligible member wallets at any time. Agents
+                    also reclaim their own personal wallets at any time; other
+                    member claims keep the original-send window below. */}
+                {managementClaimTarget && (
                   <>
                     <CashierPlayerCard
                       row={managementClaimTarget}
@@ -6235,8 +6336,15 @@ function CashierTradeWorkspace() {
                             setMgmtClaimAmount('');
                           }}
                         >
-                          {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const).map(
-                            (wallet) => {
+                          {(['player_wallet', 'agent_wallet', 'promo_wallet'] as const)
+                            .filter(
+                              (wallet) =>
+                                (!personalClaim || managementClaims || wallet !== 'promo_wallet') &&
+                                (!personalClaim ||
+                                  wallet !== 'player_wallet' ||
+                                  holdsPlayerWallet(myRole))
+                            )
+                            .map((wallet) => {
                               const balance =
                                 claimWalletRead?.key === claimWalletKey
                                   ? claimWalletRead.balances[wallet]
@@ -6249,11 +6357,35 @@ function CashierTradeWorkspace() {
                                     : formatWalletChips(balance)}
                                 </option>
                               );
-                            }
-                          )}
+                            })}
                         </select>
                       }
                     />
+                    <label className={styles.entryRow}>
+                      <span className={styles.entryRowSlot}>Return To</span>
+                      <span className={styles.entryRowPlate}>
+                        <select
+                          className={styles.walletSelect}
+                          aria-label="Claim Back To"
+                          value={claimDestination}
+                          disabled={mgmtClaiming}
+                          onChange={(event) =>
+                            setMgmtClaimDestination(event.target.value as ClaimDestination)
+                          }
+                        >
+                          {claimDestinations.map((wallet) => (
+                            <option key={wallet} value={wallet}>
+                              {CLAIM_DESTINATION_LABELS[wallet]}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                    <p className={styles.modalHint}>
+                      {mgmtClaimSource === 'promo_wallet'
+                        ? 'Promo Chips Return Only To Your Promo Wallet Or The Club Promo Wallet.'
+                        : `Claimed Chips Go To ${claimDestinationLabel}.`}
+                    </p>
                     {claimWalletError && (
                       <div className={styles.modalHint} role="alert">
                         {claimWalletError}{' '}
@@ -6267,7 +6399,7 @@ function CashierTradeWorkspace() {
                         </button>
                       </div>
                     )}
-                    <CashierWalletRow label="Into The Club Bank" balance={bankBalance} />
+
                     <label className={styles.entryRow}>
                       <span className={styles.entryRowSlot}>Amount</span>
                       <span className={styles.entryRowPlate}>
@@ -6302,6 +6434,16 @@ function CashierTradeWorkspace() {
                         : formatWalletChips(claimWalletBalance)}
                     </button>
                   </>
+                )}
+                {!managementClaimTarget && canHoldAgentWallet(myRole) && user?.id && (
+                  <button
+                    type="button"
+                    className={styles.claimAll}
+                    disabled={mgmtClaiming || Boolean(claimingId)}
+                    onClick={() => setClaimRecipient(user.id)}
+                  >
+                    Claim From My Wallets
+                  </button>
                 )}
                 {managementClaims && !managementClaimTarget && (
                   <div className={styles.modalHint}>
@@ -6355,6 +6497,29 @@ function CashierTradeWorkspace() {
                           const ss = String(left % 60).padStart(2, '0');
                           return (
                             <div className={styles.claimRow} key={row.transaction_id}>
+                              <label className={styles.claimReturnChoice}>
+                                Return To
+                                <select
+                                  aria-label={`Return Wallet For ${row.to_name}`}
+                                  value={
+                                    claimReturnWallets(row.destination, myRole).includes(
+                                      mgmtClaimDestination
+                                    )
+                                      ? mgmtClaimDestination
+                                      : claimReturnWallets(row.destination, myRole)[0]
+                                  }
+                                  disabled={claimingId !== null}
+                                  onChange={(event) =>
+                                    setMgmtClaimDestination(event.target.value as ClaimDestination)
+                                  }
+                                >
+                                  {claimReturnWallets(row.destination, myRole).map((wallet) => (
+                                    <option key={wallet} value={wallet}>
+                                      {CLAIM_DESTINATION_LABELS[wallet]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                               <img
                                 className={styles.modalTargetAvatar}
                                 src={

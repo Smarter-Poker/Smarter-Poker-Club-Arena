@@ -4002,6 +4002,10 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        // These chairs already have an unfinished original hand. They are
+        // not between hands: do not execute leaves, moves, add-ons or eviction
+        // before restoring that controller and its original financial baseline.
+        if (this.pendingOriginalContinuation) break;
         // A SEAT CHANGED WHILE WAITING (2026-09-09, must-move audit). The
         // dealing loop's roster diff wakes the game's ClusterController; this
         // loop, where a one-player Main 1 or a fresh feeder spends its life,
@@ -4209,7 +4213,7 @@ export abstract class ServerTableEngineBase {
       // process, so recovery is just "resolve whatever is still open". Doing it
       // here as well as in postHandTasks matters for a table that goes idle:
       // otherwise an orphaned row would wait for a next hand that never comes.
-      await this.resolveOrphanedAddOns();
+      if (!this.pendingOriginalContinuation) await this.resolveOrphanedAddOns();
       if (!this.lifecycleCanMutate()) return;
 
       // Start dealing loop.

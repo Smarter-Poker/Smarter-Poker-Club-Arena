@@ -3556,47 +3556,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
 
-      // Step 5: Wire disconnect auto-action callback into HandController
-      this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
-        if (!this.handController) return;
-        const state = this.handController.getState();
-        const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
-        if (!dcPlayer) return;
-        // Stale deadline: the turn has already moved on. Acting here would be a
-        // phantom action attributed to a player who is not in the decision.
-        if (state.currentPlayerSeat !== dcPlayer.seat) return;
-
-        // This callback is the ONLY resolution path for a disconnected or
-        // sitting-out player's turn — handleTurnChange returns early for them
-        // WITHOUT arming a clock. performAction returns false on an illegal
-        // action (the countdown captures `canCheck` up to 30s earlier, so it goes
-        // stale), and the old try/catch never saw that: no action, no clock, no
-        // retry. Permanent freeze.
-        let applied = false;
-        try {
-          applied = this.handController.performAction(
-            dcPlayer.seat,
-            disconnectAction.action as any,
-            undefined,
-            'forced'
-          );
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
-        }
-        if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
-        if (applied) {
-          this.markProgress();
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
-          );
-        } else {
-          reportError(
-            new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
-            'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
-          );
-          this.forceArmTurnTimer(dcPlayer.seat, this.actionClockSeconds());
-        }
-      });
+      this.wireOriginalDisconnectAction();
 
       const attempt = { started: false, cause: null as string | null };
       try {
@@ -3662,6 +3622,49 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   /** One controller's existing event, publication and completion owner. */
+  protected wireOriginalDisconnectAction(): void {
+    this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
+      if (!this.handController) return;
+      const state = this.handController.getState();
+      const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
+      if (!dcPlayer) return;
+      // Stale deadline: the turn has already moved on. Acting here would be a
+      // phantom action attributed to a player who is not in the decision.
+      if (state.currentPlayerSeat !== dcPlayer.seat) return;
+
+      // This callback is the ONLY resolution path for a disconnected or
+      // sitting-out player's turn — handleTurnChange returns early for them
+      // WITHOUT arming a clock. performAction returns false on an illegal
+      // action (the countdown captures `canCheck` up to 30s earlier, so it goes
+      // stale), and the old try/catch never saw that: no action, no clock, no
+      // retry. Permanent freeze.
+      let applied = false;
+      try {
+        applied = this.handController.performAction(
+          dcPlayer.seat,
+          disconnectAction.action as any,
+          undefined,
+          'forced'
+        );
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
+      }
+      if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
+      if (applied) {
+        this.markProgress();
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
+        );
+      } else {
+        reportError(
+          new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
+          'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
+        );
+        this.forceArmTurnTimer(dcPlayer.seat, this.actionClockSeconds());
+      }
+    });
+  }
+
   protected async resumeOriginalController(): Promise<void> {
     const original = this.pendingOriginalContinuation;
     if (!original) return;
@@ -3682,6 +3685,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       () => getTournamentBrainContextSnapshot(original.original.tournament_id)
     );
     this.handController = controller;
+    this.lastButtonSeat = controller.getState().dealerSeat;
+    this.currentHandDealerSeat = this.lastButtonSeat;
+    const originalSeats = controller
+      .getState()
+      .players.map((p) => p.seat)
+      .sort((a, b) => a - b);
+    this.dealerSeatIndex = Math.max(0, originalSeats.indexOf(this.lastButtonSeat)) + 1;
+    for (const p of controller.getState().players) this.dealtInUserIds.add(p.user_id);
+    const blinds = controller.getBlindSeatsSnapshot();
+    if (blinds) {
+      this.lastBigBlindSeat = blinds.bigBlind;
+      this.lastSmallBlindSeat = blinds.smallBlind ?? this.lastSmallBlindSeat;
+    }
     const originalConfig = JSON.parse(original.batch.controller).config;
     if (this.tableInfo)
       this.tableInfo = {
@@ -3713,6 +3729,68 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     );
     if (players.length !== original.seats.length)
       throw new Error('Original Hand Roster Is Unproven');
+    const statePlayers = controller.getState().players;
+    const baselines = statePlayers.map((p) => {
+      const seat = original.seats.find((s) => s.user_id === p.user_id)!;
+      const chair = players.find((s) => s.user_id === p.user_id)!;
+      if (
+        !seat ||
+        !chair ||
+        chair.seat_id !== seat.seat_id ||
+        chair.seat_joined_at !== seat.seat_joined_at ||
+        Number(chair.stack) !== seat.stack_before
+      )
+        throw new Error('Original Hand Chair Changed');
+      return { ...p, stack: seat.stack_before };
+    });
+    this.stateVerifier.recordInitialChipTotal(this.tableId, baselines);
+    const newBanks = statePlayers.filter(
+      (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
+    );
+    const preferenceIds = statePlayers
+      .filter((p) => !this.timeBankEngine.hasAutoActivatePreference(this.tableId, p.user_id))
+      .map((p) => p.user_id);
+    const [allowances, preferences] = await Promise.all([
+      this.fetchTimeBankExtras(newBanks.map((p) => p.user_id)),
+      readAutoTimeBankPreferences(preferenceIds).catch((error) => {
+        reportError(error, 'ServerTableEngine.original_time_bank_preferences_unreadable');
+        return new Map(preferenceIds.map((id) => [id, false]));
+      }),
+    ]);
+    if (
+      this.handController !== controller ||
+      !this.running ||
+      !this.isCurrentEngine() ||
+      !this.lifecycleCanMutate()
+    )
+      return;
+    for (const [id, enabled] of preferences)
+      if (!this.timeBankEngine.hasAutoActivatePreference(this.tableId, id))
+        this.timeBankEngine.setAutoActivate(this.tableId, id, enabled);
+    for (const p of baselines) {
+      this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
+      if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
+        const allowance = allowances.get(p.user_id);
+        const total = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
+        this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
+          remainingSeconds: total,
+          usesRemaining: Math.ceil(total / 20),
+          unlimitedActivations: allowance?.unlimitedActivations === true,
+        });
+        this.timeBankMeta.set(p.user_id, {
+          initialSeconds: total,
+          baseSeconds: this.timeBankBaseSeconds,
+          dbConsumedSeconds: 0,
+          ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
+        });
+      }
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        players.find((s) => s.user_id === p.user_id)?.reconnect_membership
+      );
+    }
+    this.wireOriginalDisconnectAction();
     await this.runOriginalController(
       players,
       controller,

@@ -91,7 +91,20 @@ function fixture() {
     emitted.push(event);
   };
   e.killForRestart = vi.fn();
-  const roster = players.map((p) => ({ user_id: p.user_id, seat_number: p.seat, stack: p.stack }));
+  const roster = players.map((p) => ({
+    user_id: p.user_id,
+    seat_number: p.seat,
+    stack: p.stack,
+    seat_id: '00000000-0000-4000-8000-00000000000' + p.seat,
+    seat_joined_at: '2026-10-28T00:00:00Z',
+    is_horse: false,
+  }));
+  e.seatedPlayers = roster;
+  e.fetchTimeBankExtras = async () => new Map();
+  for (const p of players) {
+    e.timeBankEngine.initializePlayer(config.tableId, p.user_id);
+    e.timeBankEngine.setAutoActivate(config.tableId, p.user_id, false);
+  }
   return { e, emitted, roster };
 }
 it('retains the prepared deck and every actual controller mutation before its original consumer', async () => {
@@ -176,7 +189,7 @@ it('continues the saved all-in hand with the same cards and payout through the o
   original.start();
   expect(original.performAction(original.getState().currentPlayerSeat, 'all_in')).toBe(true);
   const saved = original.serializeRecoveryState();
-  const restored = HandController.fromRecoveryState(saved, config.tableId, 42);
+  let restored = HandController.fromRecoveryState(saved, config.tableId, 42);
   const deck = restored.getRemainingDeck();
   const complete = (c: HandController) => {
     for (let n = 0; n < 30 && c.getState().stage !== 'showdown'; n++) {
@@ -196,7 +209,7 @@ it('continues the saved all-in hand with the same cards and payout through the o
     original: binding,
     seats: roster.map((p) => ({
       ...p,
-      seat_id: 's',
+      seat_id: p.seat_id,
       seat_joined_at: '2026-10-28T00:00:00Z',
       stack_before: 1000,
     })),
@@ -206,12 +219,15 @@ it('continues the saved all-in hand with the same cards and payout through the o
   e.retainOriginalBatch = async (_o: unknown, _s: unknown, b: any) => {
     writes.push(structuredClone(b));
   };
-  const resumed = e.runOriginalController(roster, restored, 42, Date.now(), {
-    started: true,
-    cause: null,
-  });
+  const resumed = e.resumeOriginalController();
   await vi.waitFor(() => expect(e.pendingOriginalContinuation).toBeNull());
   await e.handContinuation.join();
+  restored = e.handController;
+  expect(e.lastButtonSeat).toBe(1);
+  expect(e.lastBigBlindSeat).toBe(2);
+  expect(e.predictButtonSeat(roster)).toBe(2);
+  expect(e.dealtInUserIds).toEqual(new Set(['u1', 'u2']));
+  expect(e.atomicStackService.getStackWithVersion(config.tableId, 'u1').stack).toBe(1000);
   expect(restored.getRemainingDeck()).toEqual(deck);
   expect(emitted.some((x) => x.type === 'HAND_START')).toBe(false);
   expect(emitted.some((x) => x.type === 'TURN_CHANGE')).toBe(true);

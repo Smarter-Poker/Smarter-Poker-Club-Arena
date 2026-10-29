@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 244685,
-      "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+      "bytes": 245583,
+      "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42836,
-      "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+      "bytes": 42973,
+      "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4244,6 +4244,33 @@
     "currentWorkflowPin": {
       "bytes": 244685,
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+    },
+    "execution_performed": false
+  },
+  "durableOriginalContinuationCiIdentity20261029": {
+    "review": "Reviewed the additive 14-line required Accounting shard 3 original-hand continuation native step and retained artifact, plus classifier alternatives for only its runner, probe, private fixture and schema inputs. All 27 fixed cash inputs were audited together: only current CI workflow and classifier identities differ. Original cash checker/intake/rollback SQL, native pg_cron builder, financial assertions, fixture bytes, limits, source inventory and qualification verdicts remain unchanged. Existing cash qualification commands and their execution/receipt requirements remain intact. No runtime owner pin changes or renewed financial execution/installation certification.",
+    "source_revision": "bff941b20bccec34913de17089c7712175fe4830",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244685,
+          "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
+        },
+        "current": {
+          "bytes": 245583,
+          "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+        },
+        "current": {
+          "bytes": 42973,
+          "sha256": "d513e8ca10bf6d124f1a0698732946e91194b0d9006d37308702a2941860c6c1"
+        }
+      }
     },
     "execution_performed": false
   }

@@ -230,6 +230,7 @@ import {
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
+import { useSeatMoveAnnouncement } from '../hooks/useSeatMoveAnnouncement';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
 import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
@@ -6229,6 +6230,23 @@ function LiveTablePage({
   } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId, throwId) =>
     receiveThrowRef.current?.(fromSeat, toSeat, throwableId, throwId)
   );
+
+  useSeatMoveAnnouncement({
+    tableId,
+    event: engineLastEvent,
+    players: tableState.players,
+    announce: (message, id) => {
+      setChatMessages((previous) =>
+        previous.some((entry) => entry.id === id)
+          ? previous
+          : [
+              ...previous.slice(-49),
+              { id, type: 'SYSTEM', playerName: 'System', content: message, timestamp: new Date() },
+            ]
+      );
+      toast.info(message);
+    },
+  });
 
   // ═══════════════════════════════════════════════════════════════════════
   // Observer chat permission — Admin/Owner roles can chat even when observing
@@ -17775,8 +17793,8 @@ function LiveTablePage({
       }
       /**
        * The move landed: the hero's chair, chips and clock are now at the
-       * other table. Follow them. Anyone else just sees the seat empty on the
-       * next state broadcast.
+       * other table. Follow them. useSeatMoveAnnouncement explains the move
+       * to the players watching this source table.
        */
       case 'SEAT_MOVED': {
         setClusterRefreshKey((k) => k + 1);

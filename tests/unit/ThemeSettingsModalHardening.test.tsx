@@ -262,7 +262,9 @@ describe('ThemeSettingsModal hardening', () => {
     const other = renderStudio();
     fireEvent.change(screen.getByLabelText('Apply To'), { target: { value: 'PLO' } });
     other.unmount();
-    resident.rerender(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />);
+    resident.rerender(
+      <ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />
+    );
     expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
     await act(async () => {});
   });
@@ -1017,7 +1019,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(useSettingsStore.getState().themePreference).toBe('auto');
     expect(mocks.toast.error).not.toHaveBeenCalled();
   });
-  it('rolls interface mode back when account persistence fails', async () => {
+  it('keeps interface mode selected when account persistence fails', async () => {
     mocks.persistMode.mockResolvedValue({ ok: false, error: new Error('write failed') });
     renderStudio();
     await waitFor(() =>
@@ -1026,9 +1028,9 @@ describe('ThemeSettingsModal hardening', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Light' }));
 
-    await waitFor(() => expect(useSettingsStore.getState().theme).toBe('dark'));
+    await waitFor(() => expect(useSettingsStore.getState().theme).toBe('light'));
     expect(mocks.toast.error).toHaveBeenCalledWith(
-      'Could Not Save Interface Mode. Please Try Again.'
+      'Interface Mode Saved On This Device Only. Could Not Sync To Your Account.'
     );
   });
 

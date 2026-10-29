@@ -39,6 +39,8 @@ function publicActionCounts(
         'post_ante',
         'dead_blind',
         'bring_in',
+        // Uncalled chips returning to their owner are settlement bookkeeping.
+        'return',
       ].includes(action) ||
       typeof actor !== 'string' ||
       !actor ||

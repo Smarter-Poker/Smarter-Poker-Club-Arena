@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250381,
-      "sha256": "6be50c74b5819cec2a48e8119d403c6928c035f2953cb3a3e7f848821b0e0b3a"
+      "bytes": 250558,
+      "sha256": "a48a0140340d3b033f094c2f1918949ded801baba2b22edd159a96c79f8c1870"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -911,5 +911,33 @@
     },
     "financial_qualification_performed": false,
     "production_actions": false
+  },
+  "playerManagementPeriodFees20261029": {
+    "reason": "Add one required server shard 4 native qualification step for the compatible Chicago-period fee reader. Existing commands, assertions, financial rules and historical qualification remain unchanged. Current workflow source identity only; not installation or production certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "current": {
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2",
+      "bytes": 248781
+    }
+  },
+  "playerManagementPeriodMainIntegration20261029": {
+    "reason": "Preserve newer protected-main workflow and every source audit while adding only the period-fee native qualification step. No financial rules, assertions or historical certificates changed. Current combined workflow source identity only.",
+    "path": ".github/workflows/ci.yml",
+    "current": {
+      "bytes": 249679,
+      "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
+    }
+  },
+  "retentionProgressPeriodFeeMainIntegration20261029": {
+    "reason": "Combine existing required retention Accounting3 qualification and protected-main period-fee Accounting4 step. Both parents historical audit records preserved; current workflow source identity only. No financial source, assertions or runtime changes and no financial recertification.",
+    "path": ".github/workflows/ci.yml",
+    "current": {
+      "bytes": 250558,
+      "sha256": "a48a0140340d3b033f094c2f1918949ded801baba2b22edd159a96c79f8c1870"
+    }
   }
 }

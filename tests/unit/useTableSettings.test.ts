@@ -94,6 +94,16 @@ describe('useTableSettings', () => {
     const second = renderHook(() => useTableSettings());
     expect(second.result.current.settings.autoMuck).toBe(false);
   });
+  it('a bulk four-color choice stays explicit across a reload', () => {
+    const first = renderHook(() => useTableSettings());
+    act(() => first.result.current.updateSettings({ fourColorDeck: false }));
+    expect(first.result.current.settings.fourColorDeckExplicit).toBe(true);
+    first.unmount();
+    __resetTableSettingsStoreForTest();
+    const second = renderHook(() => useTableSettings());
+    expect(second.result.current.settings.fourColorDeck).toBe(false);
+    expect(second.result.current.settings.fourColorDeckExplicit).toBe(true);
+  });
 });
 
 describe('opponent HUD cannot be enabled by legacy state', () => {

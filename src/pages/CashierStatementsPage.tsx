@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * CASHIER FULL STATEMENT (Cashier Phase 5, 2026-09-23)
  * ============================================================================
@@ -248,8 +249,12 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
   const [rangeProblem, setRangeProblem] = useState<keyof typeof RANGE_PROBLEM_WORD | null>(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [draft, setDraft] = useState<StatementFilters>(EMPTY_STATEMENT_FILTERS);
-  const [filters, setFilters] = useState<StatementFilters>(EMPTY_STATEMENT_FILTERS);
+  const [filters, setFilters] = usePlayerPreference<StatementFilters>(
+    'CashierStatementsPage:filters',
+    EMPTY_STATEMENT_FILTERS
+  );
+  const draft = filters;
+  const setDraft = setFilters;
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);

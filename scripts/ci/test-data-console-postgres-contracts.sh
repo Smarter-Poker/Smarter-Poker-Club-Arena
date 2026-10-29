@@ -85,6 +85,8 @@ PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-club-data-union-mtt-postgres.py"
 
+# Player-selected filters never expire or cross account ownership.
+bash "$repo/scripts/dev/test-player-preferences-postgres.sh"
 # Personal earned-fee headline and standing share parity with Player Management.
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \

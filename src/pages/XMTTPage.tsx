@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { isTournamentEntryUnavailable } from '../utils/tournamentPresentation';
 /**
@@ -109,7 +110,10 @@ export default function XMTTPage() {
   const toast = useToast();
   const [searchParams] = useSearchParams();
 
-  const [filter, setFilter] = useState<'all' | 'registering' | 'running' | 'completed'>('all');
+  const [filter, setFilter] = usePlayerPreference<'all' | 'registering' | 'running' | 'completed'>(
+    'XMTTPage:filter',
+    'all'
+  );
   const requestedClub = searchParams.get('club') || searchParams.get('clubId');
   const lobby = useXmttLobby(user?.id, requestedClub, filter);
   const { clubId, rows: tournaments, loading } = lobby;

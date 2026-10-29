@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { titleCase } from '../../utils/titleCase';
 import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
 /**
@@ -301,10 +302,11 @@ export default function ClubDashboard() {
     if (urlTab && VALID_TABS.includes(urlTab as TabId)) return urlTab as TabId;
     return getLocalStorage('ca_dashboard_tab', 'overview');
   });
-  const [dateRange, setDateRange] = useState<RangeId>(() =>
-    getLocalStorage('ca_dashboard_range', 'week')
+  const [dateRange, setDateRange] = usePlayerPreference<RangeId>(
+    'club/ClubDashboard:dateRange',
+    () => getLocalStorage('ca_dashboard_range', 'week')
   );
-  const [sortBy, setSortBy] = useState<SortId>(() =>
+  const [sortBy, setSortBy] = usePlayerPreference<SortId>('club/ClubDashboard:sortBy', () =>
     getLocalStorage('ca_dashboard_sort', 'profit')
   );
   const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
@@ -317,12 +319,19 @@ export default function ClubDashboard() {
   const [members, setMembers] = useState<ClubMemberRow[]>([]);
   const [memberTotal, setMemberTotal] = useState(0);
   const [memberPage, setMemberPage] = useState(0);
-  const [memberSearch, setMemberSearch] = useState('');
-  const [membersLoading, setMembersLoading] = useState(false);
-  const [memberSort, setMemberSort] = useState<MemberSortId>(() =>
-    getLocalStorage('ca_dashboard_member_sort', 'hands')
+  const [memberSearch, setMemberSearch] = usePlayerPreference(
+    'club/ClubDashboard:memberSearch',
+    ''
   );
-  const [memberRole, setMemberRole] = useState<string>('');
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [memberSort, setMemberSort] = usePlayerPreference<MemberSortId>(
+    'club/ClubDashboard:memberSort',
+    () => getLocalStorage('ca_dashboard_member_sort', 'hands')
+  );
+  const [memberRole, setMemberRole] = usePlayerPreference<string>(
+    'club/ClubDashboard:memberRole',
+    ''
+  );
   const memberRequestIdRef = useRef(0);
   // Drives the "Updated Xs ago" label without re-fetching anything.
   const [nowTick, setNowTick] = useState(() => Date.now());

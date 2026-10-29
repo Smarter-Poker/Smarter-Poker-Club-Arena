@@ -500,6 +500,10 @@ jobs:
           assert labels['com.smarterpoker.engine.build-contract'] == 'clean-server-archive-v1'
           print('ENGINE_PREPARED_IMAGE=' + json.dumps({'targetSha': os.environ['TARGET_SHA'], 'controlSha': os.environ['CONTROL_SHA'], 'imageId': image['Id'], 'serverTree': os.environ['EXPECTED_TREE'], 'activated': False}, sort_keys=True))
           PYTHON
+          IMAGE_ID="$(printf '%s' "$IMAGE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["Id"])')"
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/prewarm-engine-image.sh" \
+            | cmp -s - "$STAGE/server/scripts/prewarm-engine-image.sh"
+          "$STAGE/server/scripts/prewarm-engine-image.sh" "$IMAGE_ID" "$RUN_KEY" "$NOT_AFTER_EPOCH"
           REMOTE
           fi
 

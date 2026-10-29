@@ -1,0 +1,99 @@
+{
+  "_owner": "own-agent-v1 migration 20261028184531",
+  "_comment": "PROMISED, NOT INSTALLED. Immutable unpaid interpretations and typed destination sidecars preserve every original paid receipt. Daily-maintenance trigger DDL; no financial execution at installation. Native existing CI enforces actual document owners and R0/R2/R3 transition.",
+  "functions": [
+    "smarter_private.admit_own_agent_source",
+    "smarter_private.assert_own_agent_scope_interpreted",
+    "smarter_private.own_agent_destination_contract",
+    "smarter_private.own_agent_interpreted_contract",
+    "smarter_private.prepare_own_agent_interpretation",
+    "smarter_private.rakeback_certificate_wallets",
+    "smarter_private.rakeback_wallet_payout_complete",
+    "smarter_private.rakeback_wallet_plan",
+    "smarter_private.record_rakeback_wallet_contracts"
+  ],
+  "tables": [
+    "accounting_rakeback_wallet_contracts",
+    "accounting_rakeback_wallet_transfers",
+    "accounting_own_agent_interpretations",
+    "accounting_own_agent_preparation_versions",
+    "accounting_effective_tournament_fee_sources",
+    "accounting_own_agent_source_reviews"
+  ],
+  "columns": {
+    "accounting_rakeback_wallet_contracts": [
+      "calculation_id",
+      "payer_kind",
+      "payer_entity_id",
+      "payer_user_id",
+      "destination_kind",
+      "amount",
+      "unrounded",
+      "rake",
+      "source_count",
+      "source_fingerprint"
+    ],
+    "accounting_rakeback_wallet_transfers": [
+      "payout_id",
+      "calculation_id",
+      "period_id",
+      "payer_kind",
+      "payer_entity_id",
+      "destination_kind",
+      "amount",
+      "ledger_id",
+      "wallet_transaction_id"
+    ],
+    "accounting_own_agent_interpretations": [
+      "source_type",
+      "source_id",
+      "version",
+      "club_id",
+      "player_id",
+      "earned_at",
+      "raw_source",
+      "raw_source_md5",
+      "original_contract",
+      "admitted_contract",
+      "original_commissions",
+      "admitted_at"
+    ],
+    "accounting_own_agent_preparation_versions": [
+      "scope_kind",
+      "scope_id",
+      "period_start",
+      "period_end",
+      "version",
+      "original_partials",
+      "original_certificates",
+      "owner_hashes",
+      "admitted_at"
+    ],
+    "accounting_own_agent_source_reviews": [
+      "source_type",
+      "source_id",
+      "version",
+      "original_contract_md5",
+      "effective_contract_md5",
+      "outcome",
+      "reviewed_at"
+    ],
+    "accounting_effective_tournament_fee_sources": [
+      "id",
+      "rake_record_id",
+      "tournament_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "game_type",
+      "registration_id",
+      "source_charge_ledger_id",
+      "source_entitlement_id",
+      "charged_at",
+      "rake_credit",
+      "contract",
+      "recorded_at"
+    ]
+  }
+}

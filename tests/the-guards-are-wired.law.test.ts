@@ -88,85 +88,101 @@ describe('LAW - the merged-branch guard is wired into the push path', () => {
     const guard = read(GUARD_PATH);
     expect(guard).toContain('REMOTE_URL="${3:-}"');
     expect(guard).toContain('SLUG="$OWNER/$REPO"');
-    expect(guard).toContain('head=$OWNER:$BRANCH');
+    expect(guard).toContain('head=$HEAD_OWNER:$BRANCH');
     expect(guard).not.toMatch(/remote\.origin\.url/);
   });
 
-  it('binds transferred destinations to the canonical owner and immutable repository', () => {
-    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ca-branch-transfer-')));
-    const trace = join(directory, 'trace');
-    const gh = join(directory, 'gh');
-    writeFileSync(
-      gh,
-      `#!/usr/bin/env python3
-import json,os,sys
-with open(os.environ['TRANSFER_TRACE'],'a') as f:f.write(json.dumps(sys.argv[1:])+'\\n')
-if sys.argv[4].endswith('/pulls'):
- print(os.environ.get('TRANSFER_PRS','[]'))
-else:
- print(os.environ.get('TRANSFER_METADATA',''))
+  function runDestinationGuard(owner: string, identity: unknown, prs: unknown) {
+    const dir = mkdtempSync(join(tmpdir(), 'merged-transfer-'));
+    try {
+      const trace = join(dir, 'trace');
+      writeFileSync(
+        join(dir, 'gh'),
+        `#!/bin/bash
+printf '%s\\n' "$*" >> "$GUARD_TRACE"
+case "$*" in
+  *'/pulls'*) printf '%s' "$GUARD_PRS" ;;
+  *) printf '%s' "$GUARD_IDENTITY" ;;
+esac
 `,
-      { mode: 0o755 }
-    );
-    const run = (
-      owner: string,
-      metadata: string,
-      prs = '[]',
-      repository = 'Smarter-Poker-Club-Arena'
-    ) => {
-      writeFileSync(trace, '');
+        { mode: 0o755 }
+      );
       const result = spawnSync(
         'bash',
-        [GUARD_PATH, 'fix/transfer-proof', 'origin', `git@github.com:${owner}/${repository}.git`],
+        [
+          resolve(root, GUARD_PATH),
+          'fix/timing',
+          'origin',
+          `git@github.com:${owner}/Smarter-Poker-Club-Arena.git`,
+        ],
         {
           cwd: root,
           encoding: 'utf8',
+          timeout: 5000,
           env: {
             ...process.env,
-            PATH: directory + ':' + process.env.PATH,
-            TRANSFER_TRACE: trace,
-            TRANSFER_METADATA: metadata,
-            TRANSFER_PRS: prs,
+            PATH: `${dir}:${process.env.PATH}`,
+            GUARD_TRACE: trace,
+            GUARD_IDENTITY: JSON.stringify(identity),
+            GUARD_PRS: JSON.stringify(prs),
           },
         }
       );
-      return { status: result.status, calls: readFileSync(trace, 'utf8') };
-    };
-    try {
-      const valid = JSON.stringify({
-        id: 1132369872,
-        full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
-      });
-      for (const owner of ['Smarter-Poker', 'Smarter-Software-PIQ']) {
-        const result = run(owner, valid);
-        expect(result.status).toBe(0);
-        expect(result.calls).toContain('repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pulls');
-        expect(result.calls).toContain('head=Smarter-Software-PIQ:fix/transfer-proof');
-      }
-      expect(
-        run(
-          'Smarter-Software-PIQ',
-          JSON.stringify({ id: 1, full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' })
-        ).status
-      ).toBe(1);
-      expect(run('Smarter-Software-PIQ', '').status).toBe(1);
-      expect(run('Smarter-Software-PIQ', valid, '[]', 'Other-Repo').status).toBe(1);
-      expect(
-        run(
-          'Smarter-Software-PIQ',
-          JSON.stringify({ id: 1132369872, full_name: 'Unapproved/Smarter-Poker-Club-Arena' })
-        ).status
-      ).toBe(1);
-      expect(
-        run('Smarter-Software-PIQ', valid, JSON.stringify([{ number: 1, state: 'closed' }])).status
-      ).toBe(1);
-      const old = run('Smarter-Poker', '', '[]', 'Smarter-Poker-World-Hub');
-      expect(old.status).toBe(0);
-      expect(old.calls).toContain('head=Smarter-Poker:fix/transfer-proof');
+      return {
+        status: result.status,
+        output: result.stdout + result.stderr,
+        trace: existsSync(trace) ? readFileSync(trace, 'utf8') : '',
+      };
     } finally {
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
+  }
+  const transferredIdentity = {
+    id: 1132369872,
+    full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
+    owner: { login: 'Smarter-Software-PIQ' },
+  };
+
+  it.each(['Smarter-Poker', 'Smarter-Software-PIQ'])(
+    'resolves the approved transfer before filtering %s heads',
+    (owner) => {
+      const result = runDestinationGuard(owner, transferredIdentity, [
+        { number: 8479, state: 'open' },
+      ]);
+      expect(result.status).toBe(0);
+      expect(result.trace).toContain('repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pulls');
+      expect(result.trace).toContain('head=Smarter-Software-PIQ:fix/timing');
+      expect(result.trace).not.toContain('head=Smarter-Poker:');
+    }
+  );
+  it.each([
+    { ...transferredIdentity, id: 42 },
+    {
+      ...transferredIdentity,
+      full_name: 'Stranger/Smarter-Poker-Club-Arena',
+      owner: { login: 'Stranger' },
+    },
+    {},
+  ])('refuses an unproved transfer before querying PRs', (identity) => {
+    const result = runDestinationGuard('Smarter-Poker', identity, []);
+    expect(result.status).toBe(1);
+    expect(result.trace).not.toContain('/pulls');
   });
+  it.each([
+    { prs: [{ number: 8479, state: 'closed' }], refusal: 'CLOSED pull request #8479' },
+    {
+      prs: [{ number: 8479, state: 'closed', merged_at: '2026-10-28T22:00:00Z' }],
+      refusal: 'MERGED pull request #8479',
+    },
+    { prs: { message: 'Bad credentials' }, refusal: 'unreadable branch verdict' },
+  ])(
+    'still blocks closed, merged or unreadable transferred branch verdicts',
+    ({ prs, refusal }) => {
+      const result = runDestinationGuard('Smarter-Software-PIQ', transferredIdentity, prs);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(refusal);
+    }
+  );
 
   it('an auth failure is loud and blocks the orphaning push', () => {
     const guard = read(GUARD_PATH);

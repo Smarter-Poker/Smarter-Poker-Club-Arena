@@ -18,18 +18,12 @@ if ! git check-ref-format "refs/heads/$BRANCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Parse only GitHub HTTPS/SSH destinations; the new owner is trusted only for
-# the explicitly approved Club Arena repository and immutable identity below.
-if [[ "$REMOTE_URL" =~ ^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)/*$ ]]; then
+if [[ "$REMOTE_URL" =~ ^(git@github.com:|https://github.com/|ssh://git@github.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
   OWNER="${BASH_REMATCH[2]}"
   REPO="${BASH_REMATCH[3]}"
   REPO="${REPO%.git}"
 else
-  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified GitHub destination." >&2
-  exit 1
-fi
-if [[ "$OWNER" != Smarter-Poker && "$REPO" != Smarter-Poker-Club-Arena ]]; then
-  echo "[merged-branch guard] BLOCKED: unapproved transferred repository." >&2
+  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter Poker GitHub destination." >&2
   exit 1
 fi
 SLUG="$OWNER/$REPO"
@@ -39,34 +33,37 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-# Resolve the approved Club Arena alias through authenticated repository metadata.
-# Both requested and returned names must belong to the same immutable repository.
-if [[ "$REPO" == Smarter-Poker-Club-Arena ]]; then
-  METADATA="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
-  CANONICAL="$(printf '%s' "$METADATA" | node --input-type=module -e '
-import { isClubArenaRepository } from "./scripts/ci/repository-identity.mjs";
-let input = "";
-for await (const part of process.stdin) input += part;
+# Resolve transfers before filtering heads: GitHub redirects the old repository
+# API, but does not rewrite an old-owner head filter. Trust the maintained
+# approved names plus immutable ID, never an arbitrary redirected owner.
+IDENTITY="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
+TRUST_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci/repository-identity.mjs"
+RESOLVED="$(printf '%s' "$IDENTITY" | node --input-type=module -e '
+import {readFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+const {isClubArenaRepository}=await import(pathToFileURL(process.argv[1]));
 try {
-  const metadata = JSON.parse(input);
-  if (!isClubArenaRepository(process.argv[1], metadata.id) ||
-      !isClubArenaRepository(metadata.full_name, metadata.id)) process.exit(1);
-  console.log(metadata.full_name);
-} catch { process.exit(1); }
-' "$SLUG" 2>/dev/null)" || CANONICAL=""
-  if [[ -z "$CANONICAL" ]]; then
-    echo "[merged-branch guard] BLOCKED: unreadable or mismatched immutable repository identity." >&2
-    exit 1
-  fi
-  SLUG="$CANONICAL"
-  OWNER="${SLUG%%/*}"
+  const r=JSON.parse(readFileSync(0,"utf8"));
+  const requested=process.argv[2];
+  if (requested.endsWith("/Smarter-Poker-Club-Arena")) {
+    if (!isClubArenaRepository(requested,r.id) || !isClubArenaRepository(r.full_name,r.id)) throw Error();
+  } else if (!requested.startsWith("Smarter-Poker/") || r.full_name!==requested) throw Error();
+  if (r.owner?.login !== r.full_name.split("/")[0]) throw Error();
+  console.log(r.full_name);
+} catch { process.exitCode=1; }
+' "$TRUST_HELPER" "$SLUG" 2>/dev/null)"
+if [[ -z "$RESOLVED" ]]; then
+  echo "[merged-branch guard] BLOCKED: GitHub did not identify the trusted destination repository." >&2
+  exit 1
 fi
+SLUG="$RESOLVED"
+HEAD_OWNER="${SLUG%%/*}"
 
 # `gh` uses its credential store or a standard process-level GH_TOKEN. This
 # guard never opens a repository `.env`, never scrapes another product's
 # credentials, and never copies a token into a command line.
 RESP="$(GH_PAGER=cat gh api -X GET "repos/$SLUG/pulls" \
-  -f "head=$OWNER:$BRANCH" -f state=all -F per_page=10 \
+  -f "head=$HEAD_OWNER:$BRANCH" -f state=all -F per_page=10 \
   2>/dev/null || true)"
 
 if [[ -z "$RESP" ]]; then

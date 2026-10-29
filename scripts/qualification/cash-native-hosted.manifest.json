@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 249727,
-      "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
+      "bytes": 249781,
+      "sha256": "53740dec70b3d55a4c425f55d3d13974bd965c3e50ff8a79094dde50da65699e"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 43260,
-      "sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+      "bytes": 43288,
+      "sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4575,6 +4575,33 @@
     "current": {
       "bytes": 249727,
       "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "publisherBacklogSelectionIdentity20261029": {
+    "review": "Reviewed unchanged financial job programs and matrices. Compiler adds only the published-baseline regression; classifier adds only the new publisher-selection authority to the existing full-qualification prefix. The publisher proves both actual origins, successful protected publisher, immutable artifact source, origin verification and ancestry before selecting the complete unpublished backlog; unknown or mixed financial backlog remains full. No financial fixture, SQL, amount, assertion, timeout, native command, historical receipt or qualification verdict is altered. Current source identity only.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 249727,
+          "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
+        },
+        "current": {
+          "bytes": 249781,
+          "sha256": "53740dec70b3d55a4c425f55d3d13974bd965c3e50ff8a79094dde50da65699e"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 43260,
+          "sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+        },
+        "current": {
+          "bytes": 43288,
+          "sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0"
+        }
+      }
     },
     "financial_recertification": false,
     "execution_performed": false

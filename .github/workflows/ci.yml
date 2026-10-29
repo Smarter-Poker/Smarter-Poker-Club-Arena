@@ -467,7 +467,7 @@ jobs:
         run: npx vitest run tests/an-asset-never-ships-a-white-matte.law.test.ts
 
       - name: UI selection proves presentation boundaries and retains unknown readers
-        run: node --test tests/operations/ui-test-selection.test.mjs
+        run: node --test tests/operations/ui-test-selection.test.mjs tests/operations/publisher-ui-selection-base.test.mjs
       - name: Actual client runtime retention refuses incomplete and changed inputs
         run: node --test tests/operations/client-runtime-retention.test.mjs
 

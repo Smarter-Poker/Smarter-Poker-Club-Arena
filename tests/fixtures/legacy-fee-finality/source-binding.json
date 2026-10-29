@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "scripts/ci/classify-ci-changes.mjs": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1236,5 +1236,11 @@
     },
     "financial_recertification": false,
     "execution_performed": false
+  },
+  "publisherBacklogSelectionIdentity20261029": {
+    "review": "Reviewed the single classifier prefix extension admitting the new publisher published-baseline authority to full qualification. All financial/native job commands, matrices, assertions, fixtures, SQL, historical receipts and verdicts remain unchanged. Only current classifier source identity changes; not renewed execution or certification.",
+    "previous_sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
+    "current_sha256": "b52c34d04cba8dd738f7c5fa1ee0e99ed783c3a49e90be59e06971feaf6caef0",
+    "financial_recertification": false
   }
 }

@@ -88,19 +88,21 @@ describe('native publishing requires the exact origin verification', () => {
     expect(eligible(other)).toBe(false);
   });
 
-  it('uses the same conservative selector on the immutable merged delta', () => {
+  it('uses the same conservative selector on the entire verified published backlog', () => {
     const client = workflow.jobs['client-tests'];
     const checkout = client.steps.find(
       (step: { uses?: string }) => step.uses === 'actions/checkout@v4'
     );
     expect(checkout.with.ref).toBe('${{ needs.publish-needed.outputs.target_sha }}');
-    expect(checkout.with['fetch-depth']).toBe(2);
+    expect(checkout.with['fetch-depth']).toBe(0);
+    expect(checkout.with.filter).toBe('blob:none');
     const tests = client.steps.find((step: { name?: string }) =>
       step.name?.startsWith('Client tests must pass')
     );
     expect(tests.env.CI_HEAD_SHA).toBe('${{ needs.publish-needed.outputs.target_sha }}');
-    expect(tests.run).toContain(
-      'export CI_BASE_SHA="$(git rev-parse "$CI_HEAD_SHA^" 2>/dev/null || true)"'
+    expect(tests.env.CI_BASE_SHA).toBe('${{ needs.publish-needed.outputs.selection_base }}');
+    expect(workflow.jobs['publish-needed'].outputs.selection_base).toBe(
+      '${{ steps.selection-base.outputs.base_sha }}'
     );
     expect(tests.run).toContain(
       'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'

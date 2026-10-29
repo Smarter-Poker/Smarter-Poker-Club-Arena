@@ -85,6 +85,7 @@ jobs:
     outputs:
       target_sha: ${{ steps.target.outputs.sha }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
+      selection_base: ${{ steps.selection-base.outputs.base_sha }}
       publish: ${{ steps.runtime.outputs.publish }}
     steps:
       # ═══════════════════════════════════════════════════════════════════════
@@ -147,6 +148,12 @@ jobs:
           fetch-depth: 0
           filter: blob:none
           persist-credentials: false
+
+      - name: Bind UI selection to the complete published backlog
+        id: selection-base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/publisher-ui-selection-base.mjs "${{ steps.target.outputs.sha }}"
 
       - name: Prove unchanged client runtime
         id: runtime
@@ -276,8 +283,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
-          # The immutable first parent is the merged delta, not a moving main.
-          fetch-depth: 2
+          # Compare every unpublished commit, including financial predecessors.
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -301,11 +309,9 @@ jobs:
 
       - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
         env:
+          CI_BASE_SHA: ${{ needs.publish-needed.outputs.selection_base }}
           CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
-        run: |
-          # A missing parent is uncertainty: the maintained selector runs all tests.
-          export CI_BASE_SHA="$(git rev-parse "$CI_HEAD_SHA^" 2>/dev/null || true)"
-          node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
 
   # Retention qualifies the CURRENT source tests and preserves the already
   # published immutable bytes. It never writes the origin or fabricates dist.

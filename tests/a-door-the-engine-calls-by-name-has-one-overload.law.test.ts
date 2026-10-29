@@ -43,6 +43,53 @@ const files = readdirSync(DIR)
   .filter((f) => f.endsWith('.sql'))
   .sort();
 
+/** Preserve SQL-literal boundaries. Catalog JSON may contain DDL that a later
+ * EXECUTE extracts, so inspect every decoded string separately, conservatively.
+ * Never join a stored, incomplete header to the following executable function.
+ */
+function catalogSQLUnits(sql: string): Array<{ sql: string; offset: number }> {
+  const values: Array<{ sql: string; offset: number }> = [];
+  function strings(value: unknown, offset: number) {
+    if (typeof value === 'string') values.push({ sql: value, offset });
+    else if (value !== null && typeof value === 'object')
+      Object.entries(value).forEach(([key, child]) => {
+        strings(key, offset);
+        strings(child, offset);
+      });
+  }
+  function bodyUnits(text: string, base: number): string {
+    const tags = /\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$/g;
+    let result = '';
+    let from = 0;
+    for (let match = tags.exec(text); match; match = tags.exec(text)) {
+      const start = match.index + match[0].length;
+      const end = text.indexOf(match[0], start);
+      if (end < 0) break;
+      const body = text.slice(start, end);
+      let json: object | undefined;
+      if (body.trimStart().startsWith('{') || body.trimStart().startsWith('[')) {
+        try {
+          const value = JSON.parse(body);
+          if (value !== null && typeof value === 'object') json = value;
+        } catch {
+          // Invalid JSON remains SQL text; it cannot hide a declaration.
+        }
+      }
+      result += text.slice(from, start);
+      if (json) {
+        strings(json, base + start);
+        result += body.replace(/[^\n]/g, ' ');
+      } else result += bodyUnits(body, base + start);
+      result += match[0];
+      from = end + match[0].length;
+      tags.lastIndex = from;
+    }
+    return result + text.slice(from);
+  }
+  const outer = bodyUnits(sql, 0);
+  return [{ sql: outer, offset: 0 }, ...values];
+}
+
 function stripComments(sql: string): string {
   return sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 }
@@ -118,18 +165,33 @@ const CREATE_RE =
 const DROP_RE =
   /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?\s*\(([^)]*)\)/gi;
 
-const parsed = files.map((file) => {
-  const sql = stripComments(readFileSync(join(DIR, file), 'utf8'));
-  const creates: Created[] = [];
-  const drops: Created[] = [];
-  for (const m of sql.matchAll(CREATE_RE)) {
-    creates.push({ file, name: m[1].toLowerCase(), types: inputTypes(m[2]) });
+function declarations(file: string, source: string) {
+  const units = catalogSQLUnits(source);
+  const creates: Array<Created & { offset: number }> = [];
+  const drops: Array<Created & { offset: number }> = [];
+  for (const unit of units) {
+    const sql = stripComments(unit.sql);
+    for (const m of sql.matchAll(CREATE_RE))
+      creates.push({
+        file,
+        name: m[1].toLowerCase(),
+        types: inputTypes(m[2]),
+        offset: unit.offset + m.index,
+      });
+    for (const m of sql.matchAll(DROP_RE))
+      drops.push({
+        file,
+        name: m[1].toLowerCase(),
+        types: inputTypes(m[2]),
+        offset: unit.offset + m.index,
+      });
   }
-  for (const m of sql.matchAll(DROP_RE)) {
-    drops.push({ file, name: m[1].toLowerCase(), types: inputTypes(m[2]) });
-  }
-  return { file, sql, creates, drops };
-});
+  creates.sort((a, b) => a.offset - b.offset);
+  drops.sort((a, b) => a.offset - b.offset);
+  return { file, sql: stripComments(units[0].sql), creates, drops };
+}
+
+const parsed = files.map((file) => declarations(file, readFileSync(join(DIR, file), 'utf8')));
 
 const sig = (types: string[]) => types.join(',');
 
@@ -178,7 +240,105 @@ const DELIBERATE_OVERLOADS: Record<string, string[]> = {
 const deliberatePair = (name: string, a: string, b: string): boolean =>
   (DELIBERATE_OVERLOADS[name] ?? []).includes(a) && (DELIBERATE_OVERLOADS[name] ?? []).includes(b);
 
+function signatureOffenders(migrations: typeof parsed): string[] {
+  const lastSeen = new Map<string, string>();
+  const offenders: string[] = [];
+  migrations.forEach(({ file, creates }, index) => {
+    for (const c of creates) {
+      const previous = lastSeen.get(c.name);
+      const now = sig(c.types);
+      if (
+        file >= LAW_FROM &&
+        previous !== undefined &&
+        previous !== now &&
+        !deliberatePair(c.name, previous, now)
+      ) {
+        const dropped = migrations
+          .slice(index)
+          .some(({ drops }) => drops.some((d) => d.name === c.name && sig(d.types) === previous));
+        if (!dropped) offenders.push(`${file}: ${c.name}(${previous}) -> (${now}) without a drop`);
+      }
+      lastSeen.set(c.name, now);
+    }
+    // A dropped signature is no longer the one a later file replaces.
+    for (const d of migrations[index].drops) {
+      if (lastSeen.get(d.name) === sig(d.types)) lastSeen.delete(d.name);
+    }
+  });
+  return offenders;
+}
+
 describe('a door the engine calls by name has one overload', () => {
+  it('keeps catalog JSON definitions separate from the next real helper', () => {
+    const snapshot = {
+      owners: [
+        {
+          definition:
+            'CREATE OR REPLACE FUNCTION public.fn_award_vip_points_from_rake()\nRETURNS trigger LANGUAGE plpgsql AS $function$BEGIN -- stored comment\nRETURN NEW;END;$function$',
+        },
+      ],
+    };
+    const source = `DO $guard$DECLARE expected jsonb:=$snapshot$${JSON.stringify(snapshot)}$snapshot$::jsonb;BEGIN NULL;END$guard$;
+      CREATE FUNCTION smarter_private.native_helper(p_value jsonb) RETURNS integer LANGUAGE sql AS $$SELECT 1$$;`;
+    const result = declarations('fixture', source);
+    expect(result.creates.map(({ name, types }) => ({ name, types }))).toEqual([
+      { name: 'fn_award_vip_points_from_rake', types: [] },
+    ]);
+  });
+
+  it('still sees actual, dynamic and JSON-extracted CREATE and DROP signatures', () => {
+    const json = {
+      sql: 'CREATE FUNCTION public.dynamic_json(p_id uuid, p_key text)\nRETURNS void LANGUAGE sql AS $$SELECT NULL$$; DROP FUNCTION public.dynamic_json(uuid);',
+    };
+    const source = `CREATE FUNCTION public.actual(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;
+      DO $do$BEGIN EXECUTE 'CREATE FUNCTION public.dynamic(p_id uuid) RETURNS void LANGUAGE sql AS $b$SELECT NULL$b$';END$do$;
+      DO $guard$DECLARE j jsonb:=$snapshot$${JSON.stringify(json)}$snapshot$::jsonb;BEGIN EXECUTE(j->>'sql');END$guard$;`;
+    const result = declarations('fixture', source);
+    expect(result.creates.map(({ name, types }) => ({ name, types }))).toEqual([
+      { name: 'actual', types: ['uuid'] },
+      { name: 'dynamic', types: ['uuid'] },
+      { name: 'dynamic_json', types: ['uuid', 'text'] },
+    ]);
+    expect(result.drops.map(({ name, types }) => ({ name, types }))).toEqual([
+      { name: 'dynamic_json', types: ['uuid'] },
+    ]);
+    const baseline = declarations(
+      '99999999999990_base.sql',
+      'CREATE FUNCTION public.actual(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$; ' +
+        'CREATE FUNCTION public.dynamic(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$; ' +
+        'CREATE FUNCTION public.dynamic_json(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$; ' +
+        'CREATE FUNCTION public.dynamic_json_key(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;'
+    );
+    for (const [name, changed] of [
+      [
+        'actual',
+        'CREATE FUNCTION public.actual(p_id uuid,p_key text) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;',
+      ],
+      [
+        'dynamic',
+        `DO $do$BEGIN EXECUTE 'CREATE FUNCTION public.dynamic(p_id uuid,p_key text) RETURNS void LANGUAGE sql AS $b$SELECT NULL$b$';END$do$;`,
+      ],
+      [
+        'dynamic_json',
+        `DO $do$DECLARE j jsonb:=$j$${JSON.stringify({ sql: 'CREATE FUNCTION public.dynamic_json(p_id uuid,p_key text) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;' })}$j$::jsonb;BEGIN EXECUTE(j->>'sql');END$do$;`,
+      ],
+      [
+        'dynamic_json_key',
+        `DO $do$DECLARE j jsonb:=$j$${JSON.stringify({ 'CREATE FUNCTION public.dynamic_json_key(p_id uuid,p_key text) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;': true })}$j$::jsonb;k text;BEGIN FOR k IN SELECT jsonb_object_keys(j) LOOP EXECUTE k;END LOOP;END$do$;`,
+      ],
+    ]) {
+      const offender = declarations('99999999999991_changed.sql', changed);
+      expect(signatureOffenders([baseline, offender])).toEqual([
+        `99999999999991_changed.sql: ${name}(uuid) -> (uuid,text) without a drop`,
+      ]);
+      const dropped = declarations(
+        '99999999999991_changed.sql',
+        changed + ` DROP FUNCTION public.${name}(uuid);`
+      );
+      expect(signatureOffenders([baseline, dropped])).toEqual([]);
+    }
+  });
+
   it('reads implicit and explicit OUT records without consuming the body or following function', () => {
     for (const [file, nextName] of [
       [
@@ -257,31 +417,7 @@ describe('a door the engine calls by name has one overload', () => {
   });
 
   it('from this law forward, a migration that changes a function signature drops the old one', () => {
-    const lastSeen = new Map<string, string>();
-    const offenders: string[] = [];
-    parsed.forEach(({ file, creates }, index) => {
-      for (const c of creates) {
-        const previous = lastSeen.get(c.name);
-        const now = sig(c.types);
-        if (
-          file >= LAW_FROM &&
-          previous !== undefined &&
-          previous !== now &&
-          !deliberatePair(c.name, previous, now)
-        ) {
-          const dropped = parsed
-            .slice(index)
-            .some(({ drops }) => drops.some((d) => d.name === c.name && sig(d.types) === previous));
-          if (!dropped)
-            offenders.push(`${file}: ${c.name}(${previous}) -> (${now}) without a drop`);
-        }
-        lastSeen.set(c.name, now);
-      }
-      // A dropped signature is no longer the one a later file replaces.
-      for (const d of parsed[index].drops) {
-        if (lastSeen.get(d.name) === sig(d.types)) lastSeen.delete(d.name);
-      }
-    });
+    const offenders = signatureOffenders(parsed);
     expect(offenders).toEqual([]);
   });
 

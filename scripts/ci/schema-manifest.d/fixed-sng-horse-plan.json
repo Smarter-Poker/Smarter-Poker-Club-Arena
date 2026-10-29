@@ -1,5 +1,11 @@
 {
   "_owner": "feat/sng-satellite-horse-wait-01a18347",
-  "_comment": "Service-only advisory plan; actual admission claimed by atomic paid-roster trigger.",
-  "functions": ["fn_sng_satellite_horse_fill_plan", "fn_ca_fixed_sng_horse_paid_admission"]
+  "_comment": "Declared preparation objects only; not evidence of installation. Service-only advisory plan and private union-day metadata; actual paid-roster guard activates through its separate daily-maintenance migration.",
+  "functions": [
+    "fn_sng_satellite_horse_fill_plan",
+    "fn_ca_fixed_sng_horse_paid_admission",
+    "smarter_private.sng_horse_wait_until",
+    "smarter_private.sng_horse_plan"
+  ],
+  "tables": ["smarter_private.sng_horse_days", "smarter_private.sng_horse_claims"]
 }

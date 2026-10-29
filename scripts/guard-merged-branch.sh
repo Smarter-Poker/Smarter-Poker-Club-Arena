@@ -18,32 +18,52 @@ if ! git check-ref-format "refs/heads/$BRANCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-case "$REMOTE_URL" in
-  *github.com:Smarter-Poker/*|*github.com/Smarter-Poker/*) ;;
-  *)
-    echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter-Poker GitHub destination." >&2
-    exit 1
-    ;;
-esac
-REPO="${REMOTE_URL##*Smarter-Poker/}"
-REPO="${REPO%.git}"
-REPO="${REPO%/}"
-if [[ ! "$REPO" =~ ^[A-Za-z0-9._-]+$ ]]; then
-  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' has an unreadable repository name." >&2
+if [[ "$REMOTE_URL" =~ ^(git@github.com:|https://github.com/|ssh://git@github.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
+  OWNER="${BASH_REMATCH[2]}"
+  REPO="${BASH_REMATCH[3]}"
+  REPO="${REPO%.git}"
+else
+  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter Poker GitHub destination." >&2
   exit 1
 fi
-SLUG="Smarter-Poker/$REPO"
+SLUG="$OWNER/$REPO"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "[merged-branch guard] BLOCKED: GitHub CLI is required to verify destination branch '$BRANCH'." >&2
   exit 1
 fi
 
+# Resolve transfers before filtering heads: GitHub redirects the old repository
+# API, but does not rewrite an old-owner head filter. Trust the maintained
+# approved names plus immutable ID, never an arbitrary redirected owner.
+IDENTITY="$(GH_PAGER=cat gh api -X GET "repos/$SLUG" 2>/dev/null || true)"
+TRUST_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci/repository-identity.mjs"
+RESOLVED="$(printf '%s' "$IDENTITY" | node --input-type=module -e '
+import {readFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+const {isClubArenaRepository}=await import(pathToFileURL(process.argv[1]));
+try {
+  const r=JSON.parse(readFileSync(0,"utf8"));
+  const requested=process.argv[2];
+  if (requested.endsWith("/Smarter-Poker-Club-Arena")) {
+    if (!isClubArenaRepository(requested,r.id) || !isClubArenaRepository(r.full_name,r.id)) throw Error();
+  } else if (!requested.startsWith("Smarter-Poker/") || r.full_name!==requested) throw Error();
+  if (r.owner?.login !== r.full_name.split("/")[0]) throw Error();
+  console.log(r.full_name);
+} catch { process.exitCode=1; }
+' "$TRUST_HELPER" "$SLUG" 2>/dev/null)"
+if [[ -z "$RESOLVED" ]]; then
+  echo "[merged-branch guard] BLOCKED: GitHub did not identify the trusted destination repository." >&2
+  exit 1
+fi
+SLUG="$RESOLVED"
+HEAD_OWNER="${SLUG%%/*}"
+
 # `gh` uses its credential store or a standard process-level GH_TOKEN. This
 # guard never opens a repository `.env`, never scrapes another product's
 # credentials, and never copies a token into a command line.
 RESP="$(GH_PAGER=cat gh api -X GET "repos/$SLUG/pulls" \
-  -f "head=Smarter-Poker:$BRANCH" -f state=all -F per_page=10 \
+  -f "head=$HEAD_OWNER:$BRANCH" -f state=all -F per_page=10 \
   2>/dev/null || true)"
 
 if [[ -z "$RESP" ]]; then

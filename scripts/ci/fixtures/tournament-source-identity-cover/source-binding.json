@@ -1,4 +1,10 @@
 {
+  "currentMainC4eComposition20261029": {
+    "review": "Incoming main changes maintained UI/config selector inputs and independent cash manifest audits. Index062/runner/all33 executable native inputs unchanged. Retains all incoming fields except existing assigned combined CI identity; source pin only, not native re-execution or financial restamp.",
+    "path": "scripts/qualification/cash-native-hosted.manifest.json",
+    "before": "f31b56c00d279ee6ffddf42a2038dd8fc22a22bbc15ec696d9f4fc094fa2ad2e",
+    "after": "45d358b13eb89b515d9ca54e17a4ca9dd5a82c5aea24d10220cbce3a4207fb46"
+  },
   "schemaVersion": 1,
   "scope": "Source-only fixed UUID fee identity cover; native33/full FOR24 plans. Root solely installs; no production capacity or financial producer claim.",
   "sourceFiles": {
@@ -21,7 +27,7 @@
     "scripts/ci/test-tournament-source-identity-cover-postgres.py": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
     "supabase/migrations/20261029020140_weekly_fee_source_identities_retain_their_tournament_and_rak.sql": "062ca87b4f99f5f42860fa3ee2ec91302d56ed9c9e9aec1c62f83111c4d5b7b0",
     "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "1cb0e3b2d89ffd2fdb1bbfdb18bb53d22b06cc0e882fd822887920c750afc78b",
-    "scripts/qualification/cash-native-hosted.manifest.json": "f31b56c00d279ee6ffddf42a2038dd8fc22a22bbc15ec696d9f4fc094fa2ad2e"
+    "scripts/qualification/cash-native-hosted.manifest.json": "45d358b13eb89b515d9ca54e17a4ca9dd5a82c5aea24d10220cbce3a4207fb46"
   },
   "normalPrecommitFormattingAudit": {
     "review": "Normal pre-commit Prettier reformatted only JSON object layout; complete parsed authority and meaningful contract values are unchanged from native33 inputs. No migration/runner/query/workflow change.",

@@ -1,4 +1,28 @@
 {
+  "identityCoverC4eComposition20261029": {
+    "review": "One append-only JSON conflict; real three-way merge retains every incoming main field and all prior audit values, with this PR's unchanged combined CI identity. New owned audits precede history to avoid repeated unrelated append conflicts. No source or financial qualification restamp.",
+    "main": "c4e33dddb0c7c3c1e4ebf02df9ae268642614809"
+  },
+  "sourceIdentityCoverWorkflowAudit20261029": {
+    "review": "Adds only the identity-cover native PG17 command and artifact on required accounting shard2; prior commands/financial inputs/qualification verdicts unchanged. Current source composition only, not a repeated financial certificate.",
+    "before": {
+      "bytes": 245805,
+      "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+    },
+    "after": {
+      "bytes": 246563,
+      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
+    },
+    "prior_commands_preserved": true
+  },
+  "identityCoverCurrentMainComposition20261029": {
+    "review": "Actual three-way integration retains every incoming #8439 field/audit and all financial sources/assertions. Only conflicting active CI size/hash replaced by actual combined workflow, which preserves paid-organization runner routing and adds the sole identity native/artifact. No financial certificate or hosted execution restamp.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "combinedWorkflow": {
+      "bytes": 249362,
+      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
+    }
+  },
   "uiPresentationSelection20261028": {
     "reason": "Reviewed existing client unit/browser entrypoint wrappers and connected negative/real-runner tests. Accounting PostgreSQL matrix, all financial commands/assertions, server join, financial browser decision gates and qualification state unchanged. Current source identity only, not a financial/native/live certificate.",
     "previous": {
@@ -275,8 +299,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42854,
-      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
+      "bytes": 43037,
+      "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4343,24 +4367,16 @@
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
   },
-  "sourceIdentityCoverWorkflowAudit20261029": {
-    "review": "Adds only the identity-cover native PG17 command and artifact on required accounting shard2; prior commands/financial inputs/qualification verdicts unchanged. Current source composition only, not a repeated financial certificate.",
-    "before": {
-      "bytes": 245805,
-      "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+  "horseTimingInputRouting20261029": {
+    "review": "Only additive admission for the existing horse daily-counts, purchase-budget and timing drivers and five SQL inputs. All cash financial sources, assertions, timeouts and historical receipts unchanged. CI workflow bytes are exact protected main. Current classifier identity only, not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42854,
+      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
     },
-    "after": {
-      "bytes": 246563,
-      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
+    "currentClassifierPin": {
+      "bytes": 43037,
+      "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
     },
-    "prior_commands_preserved": true
-  },
-  "identityCoverCurrentMainComposition20261029": {
-    "review": "Actual three-way integration retains every incoming #8439 field/audit and all financial sources/assertions. Only conflicting active CI size/hash replaced by actual combined workflow, which preserves paid-organization runner routing and adds the sole identity native/artifact. No financial certificate or hosted execution restamp.",
-    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
-    "combinedWorkflow": {
-      "bytes": 249362,
-      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
-    }
+    "validation": "Eight sole-input routing cases fail before, all65horse routing cases pass after; connected native horse chain passes timing31 and budget27."
   }
 }

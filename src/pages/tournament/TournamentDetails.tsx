@@ -1,3 +1,4 @@
+import { satelliteStartsWhenFull } from '../../utils/satelliteQualification';
 import { readTournamentStandings } from '../../services/readTournamentStandings';
 import {
   tournamentEntryWindow,
@@ -1302,6 +1303,7 @@ export default function TournamentDetails({
         is_pko: !!t.is_pko,
         is_mystery_bounty: !!t.is_mystery_bounty,
         start_time: tournament.start_time,
+        startsWhenFull: satelliteStartsWhenFull(tournament),
         // main's typed `t` cast is cleaner than the `as any` this branch had.
         club_id: t.club_id ?? null,
         // The hook derives late-registration from status, so LATE_REG is not

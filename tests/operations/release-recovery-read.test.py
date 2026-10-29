@@ -625,16 +625,14 @@ class InspectorTests(unittest.TestCase):
             with patch.object(R,'inspector_command',return_value=json.dumps(row).encode()),self.subTest(row=row),self.assertRaises(ValueError):R.inspector_probe('c'*64,123)
 
 
-    def test_actual_node22_scalar_read_and_proxy_environment_independence(self):
+    def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local
         # process deliberately is not a production container or target.
         import re
         expression = re.search(r'const evaluate="(.*)";', R.INSPECTOR_NODE)[1]
         script = "import inspector from 'node:inspector';const s=new inspector.Session();s.connect();s.post('Runtime.evaluate'," + json.dumps({'expression':expression,'returnByValue':True,'timeout':500}) + ",(e,r)=>{if(e||r.exceptionDetails)process.exitCode=1;else console.log(JSON.stringify(r.result.value));s.disconnect()});"
-        node = '/Users/smarter.poker/.nvm/versions/node/v22.23.3/bin/node'
-        if not Path(node).exists():
-            node = 'node'  # Hosted Node22 uses its configured binary.
+        node = os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
         reply = R.subprocess.run([node,'--input-type=module','-e',script],capture_output=True,timeout=5,
             env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','HTTPS_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
         self.assertEqual(reply.returncode,0,reply.stderr)
@@ -655,8 +653,7 @@ class InspectorTests(unittest.TestCase):
         # Real inspector HTTP/WS in our own tiny child; fixture substitutes the
         # ephemeral port/PID and Linux socket-table seam only. No live target.
         import re
-        node='/Users/smarter.poker/.nvm/versions/node/v22.23.3/bin/node'
-        if not Path(node).exists():node='node'
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
         target=R.subprocess.Popen([node,'--input-type=module','-e',
             "import inspector from 'node:inspector';inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));process.stdin.resume();"],
             stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.DEVNULL)
@@ -669,7 +666,7 @@ class InspectorTests(unittest.TestCase):
             source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
             source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
             digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
-            reply=R.subprocess.run([node,'--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
                 env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
             self.assertEqual(reply.returncode,0,reply.stderr)
             value=json.loads(reply.stdout)

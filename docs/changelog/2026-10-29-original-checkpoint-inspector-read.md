@@ -29,3 +29,9 @@ must match the still-running original engine; invocation, positive exit status
 and completion time must be valid. Partial request retirement, missing or
 changed receipts and every identity mismatch refuse. The failure attestation
 CLI is never invoked, since it can write audit state.
+
+The isolated native fixtures use the configured Node interpreter (or the
+TEST-ONLY `RELEASE_RECOVERY_TEST_NODE`) and enable experimental WebSocket only
+for that fixture's client on Node 20. The production helper invocation is
+unchanged. All 54 fixtures passed on Node 22; both native transport/scalar
+fixtures also passed on Node 20.20.2.

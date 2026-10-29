@@ -1289,6 +1289,12 @@ BEGIN
  anchor:='  v_modelcell:=jsonb_populate_record(NULL::public.gto_v31_runtime_cells,v_cell||jsonb_build_object(''dataset_id'',p_dataset_id));';body:=pg_temp.public215_replace(body,anchor,anchor||E'\n  IF EXISTS(SELECT 1 FROM jsonb_array_elements(v_source_nodes)s WHERE public.fn_gto_v31_public215_template_geometry(v_modelcell.public_template,public.fn_gto_v31_public215_source_geometry(s->''node''))IS NOT TRUE)THEN RAISE EXCEPTION ''numeric template and actual M1/M2 source root geometry/actor/rake disagree'';END IF;');EXECUTE body;
 END $bind_geometry$;
 ALTER TABLE public.gto_v31_datasets ADD CONSTRAINT gto_v31_public215_frozen_quality_gates_chk CHECK(policy_representation IS DISTINCT FROM 'public_hist215_v1'OR quality_gates='{"max_frequency_mae":0.05,"max_sizing_mae":0.05,"max_policy_ev_mae_bb":0.05,"max_action_regret_bb":0.05,"min_regret_coverage":0.95}'::jsonb);
+-- Restate the retained ACLs on each replaced definer entry point explicitly.
+REVOKE ALL ON FUNCTION public.fn_gto_v31_heldout_metrics(uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_gto_v31_heldout_metrics(uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_solver_agreement_v31_decision(jsonb) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_gto_v31_build_cell(uuid,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_gto_v31_build_cell(uuid,jsonb) TO service_role;
 -- Readback is limited to actual definitions/permissions; it does not certify data.
 -- @live-proof: public.fn_gto_v31_public215_physics_implementation()='66f413bc9179d5b10df7c5a73547931c47a3e90fd7895c4de596c7287e98e733' AND public.fn_gto_v31_public215_encoding_implementation()='1121d3ff6873757d8560e55f397e29df8978cc8b845259bbaa2c529f40950f6d'
 -- @live-proof: md5(pg_get_functiondef('public.fn_gto_v31_prepare_model(uuid,jsonb)'::regprocedure))='04f244517d103efb3eb532376a427eae' AND md5(pg_get_functiondef('public.fn_gto_v31_freeze_model(uuid,jsonb)'::regprocedure))='972b0c77ed9d94a7e607d1b03e8bac68' AND md5(pg_get_functiondef('public.fn_gto_v31_model_freeze_authority(uuid)'::regprocedure))='303e01fa4993ff49ab043a9dc1bd89f6'

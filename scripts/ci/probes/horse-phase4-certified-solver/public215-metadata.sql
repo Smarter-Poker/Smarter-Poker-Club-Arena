@@ -22,3 +22,8 @@ BEGIN
  IF public.fn_gto_v31_source_artifact_checksum('public-only',matrix)<>'b02cfb6725ffc5c6006dae3a10aaa92141323c668c6f17c573e1debdfc4a2f45'THEN RAISE EXCEPTION 'actual gateway-normalized source identity';END IF;
  RAISE NOTICE 'PUBLIC215_GATEWAY_NORMALIZED_PG17_SYNTHETIC_IDENTITY_PASS';
 END $transport$;
+
+DO $entry_acl$ BEGIN
+ IF has_function_privilege('anon','public.fn_gto_v31_heldout_metrics(uuid,text)','EXECUTE') OR NOT has_function_privilege('service_role','public.fn_gto_v31_heldout_metrics(uuid,text)','EXECUTE') OR has_function_privilege('anon','public.fn_gto_v31_build_cell(uuid,jsonb)','EXECUTE') OR NOT has_function_privilege('service_role','public.fn_gto_v31_build_cell(uuid,jsonb)','EXECUTE') OR has_function_privilege('service_role','public.fn_horse_solver_agreement_v31_decision(jsonb)','EXECUTE') OR has_function_privilege('anon','public.fn_gto_v31_public215_ingest_m2(uuid,text,jsonb)','EXECUTE') OR has_function_privilege('service_role','public.fn_gto_v31_ingest_source_artifact_matrix_v2(uuid,text,jsonb)','EXECUTE') THEN RAISE EXCEPTION 'retained explicit service/private definer ACLs differ';END IF;
+ RAISE NOTICE 'PUBLIC215_RETAINED_EXPLICIT_ENTRY_AND_PRIVATE_CLONE_ACLS_PASS';
+END $entry_acl$;

@@ -58,10 +58,11 @@ def refusal(request, error):
 
 
 def validate_refusal(value, request):
-    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'phase', 'code'}
+    fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'phase', 'code'} | ({'mode'} if 'mode' in request else set())
     if (not isinstance(value, dict) or set(value) != fields
             or value['schema'] != FAILURE_SCHEMA or value['readOnly'] is not True
             or value['runKey'] != request['runKey'] or value['releaseSha'] != request['releaseSha']
+            or value.get('mode') != request.get('mode')
             or not isinstance(value['phase'], str) or not isinstance(value['code'], str)
             or (value['phase'], value['code']) not in REFUSAL_CODES):
         raise ValueError('Scoped evidence transport unavailable')
@@ -69,7 +70,8 @@ def validate_refusal(value, request):
 
 
 def selection(value):
-    if not isinstance(value, dict) or set(value) != {'runKey', 'releaseSha'}:
+    if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
+            or ('mode' in value and value['mode'] != 'pending_transaction')):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -313,11 +315,172 @@ def retained_reason(request, window, result):
     return reason_from_rows(reply.stdout, request, window, result)
 
 
+
+PENDING_SCHEMA = 'existing-release-pending-observation/v1'
+PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
+                      'locked_budget_missed', 'legacy_entry_deferred'}
+
+
+def read_lines(directory_fd, name, optional=False):
+    """Same bounded immutable-file protocol as JSON, without exporting raw text."""
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+    except FileNotFoundError:
+        if optional:
+            return None
+        raise
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_size > 4096
+                or before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600):
+            raise ValueError('Pending metadata refused')
+        raw = os.read(fd, 4097)
+        after = os.fstat(fd)
+        identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns, row.st_uid, row.st_gid, row.st_mode)
+        if identity(before) != identity(after) or len(raw) != before.st_size:
+            raise ValueError('Pending metadata changed')
+        return raw.decode('utf-8').splitlines()
+    finally:
+        os.close(fd)
+
+
+def pending_unit(request):
+    unit = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
+    reply = bounded_journal(['systemctl', 'show', unit, '--no-pager',
+        '--property=ActiveState,SubState,InvocationID'])
+    if reply.returncode:
+        raise ValueError('Pending unit unavailable')
+    rows = reply.stdout.decode('ascii').splitlines()
+    pairs = [row.split('=', 1) for row in rows]
+    if len(pairs) != 3 or any(len(pair) != 2 for pair in pairs):
+        raise ValueError('Pending unit refused')
+    values = unique_object(pairs)
+    if set(values) != {'ActiveState', 'SubState', 'InvocationID'}:
+        raise ValueError('Pending unit fields refused')
+    answer = {'activeState': values['ActiveState'], 'subState': values['SubState'],
+              'invocationId': values['InvocationID']}
+    validate_pending_unit(answer)
+    return answer
+
+
+def validate_pending_unit(value):
+    if (not isinstance(value, dict) or set(value) != {'activeState', 'subState', 'invocationId'}
+            or value['activeState'] not in {'active', 'activating', 'reloading', 'inactive', 'failed', 'deactivating'}
+            or value['subState'] not in {'running', 'start', 'start-pre', 'start-post', 'exited',
+                'dead', 'failed', 'auto-restart', 'stop', 'stop-sigterm', 'stop-sigkill', 'stop-post', 'final-sigterm', 'final-sigkill'}
+            or not isinstance(value['invocationId'], str) or not INVOCATION.fullmatch(value['invocationId'])):
+        raise ValueError('Pending unit identity refused')
+
+
+def pending_journal(request, unit):
+    invocation = unit['invocationId']
+    name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
+    reply = bounded_journal(['journalctl', '--no-pager', '--output=json', '--lines=12',
+        '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
+        '--grep=^\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit)',
+        '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
+    if reply.returncode:
+        raise ValueError('Pending journal unavailable')
+    signs = []
+    for line in reply.stdout.splitlines():
+        row = json.loads(line, object_pairs_hook=unique_object)
+        if (not isinstance(row, dict) or row.get('_SYSTEMD_INVOCATION_ID') != invocation
+                or row.get('_SYSTEMD_UNIT') != name):
+            raise ValueError('Pending journal ownership refused')
+        stamp = row.get('__REALTIME_TIMESTAMP')
+        message = row.get('MESSAGE')
+        if (not isinstance(stamp, str) or not re.fullmatch(r'[0-9]{16}', stamp)
+                or not isinstance(message, str) or len(message) > 2048):
+            raise ValueError('Pending journal shape refused')
+        category = None
+        # Literal producer prefixes in engine-release-transaction.sh. Unknown
+        # messages remain unknown; their text never leaves the host.
+        if message.startswith('[engine-release-transaction] the restart certificate is shut with '):
+            category = 'certificate_shut'
+        elif (message.startswith('[engine-release-transaction] the durable table break has ')
+              and message.endswith('candidate-and-recovery budget; refusing before mutation and waiting for a later certificate')):
+            category = 'candidate_budget_missed'
+        elif (message.startswith('[engine-release-transaction] the locked table break has ')
+              and message.endswith('candidate-and-recovery budget; waiting for a later certificate')):
+            category = 'locked_budget_missed'
+        elif message == '[engine-release-transaction] the legacy checkpoint entry did not fit inside this break and nothing was attempted; waiting for a later certificate':
+            category = 'legacy_entry_deferred'
+        if category:
+            sign = {'category': category, 'observedAtMs': int(stamp) // 1000}
+            timestamp(sign['observedAtMs'])
+            signs.append(sign)
+    return signs
+
+
+def pending_metadata(request, rows, intent, marker, deadline):
+    if (not isinstance(rows, list) or len(rows) != 6 or rows != intent
+            or rows[0] != request['releaseSha']
+            or rows[1] not in {
+                'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/' + request['runKey'].split('-')[0],
+                'https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs/' + request['runKey'].split('-')[0]}
+            or not SHA.fullmatch(rows[4])
+            or not re.fullmatch(r'[1-9][0-9]{8,9}', rows[5])):
+        raise ValueError('Pending request identity refused')
+    # Validate generation ownership without exporting an internal filesystem path.
+    if not re.fullmatch(r'/usr/local/lib/club-arena/engine-control-generations/' + rows[4], rows[3]):
+        raise ValueError('Pending generation refused')
+    stamp = int(rows[5])
+    timestamp(stamp * 1000)
+    if marker is not None and marker != [request['releaseSha']]:
+        raise ValueError('Pending marker identity refused')
+    if deadline is not None and (len(deadline) != 1 or not re.fullmatch(r'[1-9][0-9]{8,9}', deadline[0])):
+        raise ValueError('Pending deadline refused')
+    break_deadline = int(deadline[0]) if deadline else None
+    if break_deadline is not None:
+        timestamp(break_deadline * 1000)
+    return rows[4], stamp, break_deadline
+
+
+def pending_observation(request, rows, intent, marker, deadline, unit, signs):
+    control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
+    validate_pending_unit(unit)
+    validate_pending_signs(signs)
+    return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
+        'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
+        'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
+        'unit': unit, 'journalSigns': signs,
+        'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
+
+
+def validate_pending_signs(signs):
+    if not isinstance(signs, list) or len(signs) > 12:
+        raise ValueError('Pending signs refused')
+    for sign in signs:
+        if (not isinstance(sign, dict) or set(sign) != {'category', 'observedAtMs'}
+                or sign['category'] not in PENDING_CATEGORIES):
+            raise ValueError('Pending sign refused')
+        timestamp(sign['observedAtMs'])
+
+
+def pending_remote(request, root_fd):
+    directory = os.open('engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    try:
+        names = [request['runKey'] + suffix for suffix in
+                 ('.request', '.intent', '.awaiting-certificate', '.break-deadline')]
+        read = lambda: [read_lines(directory, name, optional=index > 1) for index, name in enumerate(names)]
+        before = read()
+        pending_metadata(request, *before)
+        unit = pending_unit(request)
+        signs = pending_journal(request, unit)
+        if before != read() or unit != pending_unit(request):
+            raise ValueError('Pending evidence changed across read')
+        return pending_observation(request, *before, unit, signs)
+    finally:
+        os.close(directory)
+
+
 def remote(request):
     request = selection(request)
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'pending_transaction':
+            return pending_remote(request, root_fd)
         result_fd = os.open('engine-release-results', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                             dir_fd=root_fd)
         try:
@@ -338,6 +501,23 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'pending_transaction':
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'absenceMeans'}
+        if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
+                or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
+                or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
+                or value['stage'] not in {'awaiting_certificate_marker_retained', 'unknown_not_retained'}
+                or value['absenceMeans'] != 'unknown; bounded latest journal rows do not prove absence'):
+            raise ValueError('Pending export refused')
+        for key in ('requestDeadlineEpoch', 'breakDeadlineEpoch'):
+            if value[key] is None and key == 'breakDeadlineEpoch':
+                continue
+            if type(value[key]) is not int:
+                raise ValueError('Pending exported deadline refused')
+            timestamp(value[key] * 1000)
+        validate_pending_unit(value['unit'])
+        validate_pending_signs(value['journalSigns'])
+        return value
     fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'cause', 'announcedAtMs',
               'freezeAtMs', 'windowEndsAtMs', 'sealedAtMs', 'evidenceBasis', 'emergencyBasisStatus', 'emergencyBasis'}
     if not isinstance(value, dict) or set(value) != fields:

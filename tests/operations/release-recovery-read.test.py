@@ -51,6 +51,129 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(answer['emergencyBasisStatus'], 'unknown_not_retained_in_selected_receipts')
         self.assertEqual(R.validate_reply(answer, REQUEST), answer)
 
+    def test_pending_transaction_reads_exact_request_without_requiring_a_seal(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'
+        directory.mkdir()
+        raw = '\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+            'b' * 40, '1791829999']) + '\n'
+        (directory / (REQUEST['runKey'] + '.request')).write_text(raw)
+        (directory / (REQUEST['runKey'] + '.intent')).write_text(raw)
+        (directory / (REQUEST['runKey'] + '.awaiting-certificate')).write_text(REQUEST['releaseSha'] + '\n')
+        for metadata in directory.iterdir(): metadata.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        with patch.object(R, 'pending_unit', return_value=unit, create=True), patch.object(R, 'pending_journal', return_value=[], create=True):
+            answer = R.remote(request)
+        self.assertEqual(answer['stage'], 'awaiting_certificate_marker_retained')
+        self.assertEqual(answer['requestDeadlineEpoch'], 1791829999)
+        self.assertEqual(answer['controlSha'], 'b' * 40)
+        self.assertNotIn('private actor fixture', json.dumps(answer))
+        self.assertNotIn('/opt/', json.dumps(answer))
+        self.assertEqual(R.validate_reply(answer, request), answer)
+
+    def test_pending_mode_refuses_unknown_modes_and_export_forgery(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        for mode in ['pending', 'status', None, True, '$(id)']:
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                R.selection({**REQUEST, 'mode': mode})
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'actor', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        answer = R.pending_observation(request, rows, rows, None, None, unit, [])
+        for mutation in [{'stage': 'ready'}, {'controlSha': 'secret'}, {'requestDeadlineEpoch': True},
+                         {'unit': {**unit, 'invocationId': 'bad'}}, {'raw': 'private'},
+                         {'journalSigns': [{'category': 'arbitrary', 'observedAtMs': WINDOW['announcedAt']}]},
+                         {'journalSigns': [{'category': 'certificate_shut', 'observedAtMs': True}]}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_reply({**answer, **mutation}, request)
+        for index, value in [(0, 'c' * 40), (1, 'https://other.invalid'), (3, '/etc/keys'), (4, 'bad'), (5, '0')]:
+            bad = [*rows]; bad[index] = value
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                R.pending_observation(request, bad, bad, None, None, unit, [])
+        with self.assertRaises(ValueError):
+            R.pending_observation(request, rows, rows, ['c' * 40], None, unit, [])
+        with self.assertRaises(ValueError):
+            R.pending_observation(request, rows, rows, None, ['0'], unit, [])
+
+    def test_pending_native_unit_and_journal_are_exact_readonly_and_sanitized(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        calls = []
+        def show(args):
+            calls.append(args)
+            return types.SimpleNamespace(returncode=0, stdout=b'SubState=running\nActiveState=active\nInvocationID=' + b'1' * 32 + b'\n')
+        with patch.object(R, 'bounded_journal', side_effect=show):
+            self.assertEqual(R.pending_unit(request), unit)
+        self.assertEqual(calls[0][:3], ['systemctl', 'show', 'club-arena-engine-release-v1@38268897283-1.service'])
+        row = {'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+               '_SYSTEMD_UNIT': calls[0][2], '__REALTIME_TIMESTAMP': '1791821800000000',
+               'MESSAGE': '[engine-release-transaction] the restart certificate is shut with 299000ms of the break left: unparkedTables=66 unparkedReasons={cards_in_air:66} handsInFlightTotal=0',
+               'ignored_metadata': 'private fixture'}
+        def journal(args):
+            calls.append(args)
+            return types.SimpleNamespace(returncode=0, stdout=json.dumps(row).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual(signs, [{'category': 'certificate_shut', 'observedAtMs': 1791821800000}])
+        self.assertNotIn('private', json.dumps(signs))
+        self.assertIn('_SYSTEMD_INVOCATION_ID=' + '1' * 32, calls[-1])
+        self.assertIn('_SYSTEMD_UNIT=' + calls[0][2], calls[-1])
+        self.assertIn('--lines=12', calls[-1])
+        for mutation in [{'_SYSTEMD_INVOCATION_ID': '2' * 32}, {'_SYSTEMD_UNIT': 'other.service'},
+                         {'__REALTIME_TIMESTAMP': 'bad'}, {'MESSAGE': ['private']}]:
+            with patch.object(R, 'bounded_journal', return_value=types.SimpleNamespace(returncode=0, stdout=json.dumps({**row, **mutation}).encode())), self.assertRaises(ValueError):
+                R.pending_journal(request, unit)
+        row['MESSAGE'] = 'arbitrary private message'
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            self.assertEqual(R.pending_journal(request, unit), [])
+
+    def test_pending_native_files_refuse_links_fifo_changed_and_oversized_bytes(self):
+        fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            path = self.root / 'pending'
+            self.assertIsNone(R.read_lines(fd, 'pending', optional=True))
+            path.symlink_to(self.window)
+            with self.assertRaises(OSError): R.read_lines(fd, 'pending', optional=True)
+            path.unlink(); os.mkfifo(path)
+            with self.assertRaises(ValueError): R.read_lines(fd, 'pending')
+            path.unlink(); path.write_bytes(b'x' * 4097)
+            with self.assertRaises(ValueError): R.read_lines(fd, 'pending')
+            path.write_text('one\n'); path.chmod(0o644)
+            with self.assertRaises(ValueError): R.read_lines(fd, 'pending')
+            path.chmod(0o600)
+            before = os.fstat
+            calls = 0
+            def changed(value):
+                nonlocal calls
+                row = before(value); calls += 1
+                if calls == 2:
+                    return types.SimpleNamespace(st_dev=row.st_dev, st_ino=row.st_ino, st_size=row.st_size,
+                                                 st_mtime_ns=row.st_mtime_ns + 1, st_ctime_ns=row.st_ctime_ns,
+                                                 st_uid=row.st_uid, st_gid=row.st_gid, st_mode=row.st_mode)
+                return row
+            with patch.object(R.os, 'fstat', side_effect=changed), self.assertRaises(ValueError):
+                R.read_lines(fd, 'pending')
+        finally:
+            os.close(fd)
+
+    def test_provenance_fixed_hash_only_census_covers_original_custody_modules(self):
+        spec = importlib.util.spec_from_file_location('provenance', ROOT / 'scripts/ci/read-scoped-operator-hold-provenance.py')
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        needed = {'engine/HandController.js', 'engine/HandContinuationLane.js',
+            'engine/PrivateHandContinuation.js', 'engine/TimeBankEngine.js',
+            'engine/DisconnectEngine.js', 'engine/ServerTableEngineTurns.js',
+            'services/F06HandPermit.js', 'services/TournamentRetirementCustody.js',
+            'services/supabase/handContinuation.js', 'services/supabase/snapshots.js'}
+        self.assertTrue(needed <= set(module.FILES))
+        self.assertEqual(len(module.FILES), 24)
+        self.assertEqual(len(set(module.FILES)), 24)
+        self.assertTrue(all(path.endswith('.js') and '..' not in path for path in module.FILES))
+        self.assertNotIn('process.env', module.NODE_READ)
+        self.assertIn("return {path,bytes:bytes.length,sha256:", module.NODE_READ)
+
     def test_selection_refuses_paths_commands_wrong_types_and_unbounded_ids(self):
         for request in [None, {}, {**REQUEST, 'command': 'cat /app/.env'},
                         {**REQUEST, 'runKey': '../../keys'}, {**REQUEST, 'runKey': '1;id-1'},
@@ -195,7 +318,14 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('8193 - len(raw)', source)
         self.assertNotIn('shell=True', source)
         self.assertNotIn('docker', source)
-        self.assertNotIn('systemctl', source)
+        # The only systemd operation is a bounded exact-unit metadata show.
+        tree = ast.parse(source)
+        lists = [node for node in ast.walk(tree) if isinstance(node, ast.List)
+                 and node.elts and isinstance(node.elts[0], ast.Constant)
+                 and node.elts[0].value == 'systemctl']
+        self.assertEqual(len(lists), 1)
+        self.assertEqual(lists[0].elts[1].value, 'show')
+        self.assertIn('--property=ActiveState,SubState,InvocationID', source)
 
     def witness_fixture(self):
         invocation = 'd' * 32

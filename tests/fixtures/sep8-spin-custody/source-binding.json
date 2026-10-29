@@ -1414,16 +1414,15 @@
       }
     }
   },
-  "privateRecordGatewayHosting20261028": {
-    "reason": "Reviewed additive required shard2 gateway native hosting/bootstrap qualification and classification. Existing financial commands, sources, assertions, verdicts and historical receipts remain unchanged. Current input identity only; hosted execution remains required.",
-    "changes": [
-      {
-        "section": "repository_files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
         "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "1d8616209edfc077bc34cf9077d74c5914b9fee9815a4564a8c1dbdf3f04910a"
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
       }
-    ]
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
   },
   "nativeAlertRuntimeAudit20261027": {
     "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
@@ -1436,35 +1435,10 @@
       "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
     ]
   },
-  "gatewayNativeAlertComposition20261028": {
-    "reason": "Preserve both protected-main native-alert qualification selectors and independent gateway hosting selectors. JSON three-way composition retains both parents audit records. Current classifier/nested binding identity only; financial source, assertions and historical qualification unchanged.",
-    "changes": [
-      {
-        "section": "repository_files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "1d8616209edfc077bc34cf9077d74c5914b9fee9815a4564a8c1dbdf3f04910a",
-        "current": "c35b9acbd6451e346cb09a5e19abf0f372f1b8e4b12939eb3d8e0602e06f6ef0"
-      }
-    ]
-  },
-  "supersededHorseActionQualification20261028": {
-    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
-    "bindings": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
-      }
-    },
-    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
-  },
   "retentionMainIntegration20261028": {
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",
     "path": "scripts/ci/classify-ci-changes.mjs",
     "current": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
-  },
-  "gatewayRetentionMainComposition20261028": {
-    "reason": "Preserve both parents gateway hosting and merged superseded horse action retention qualification and audit records. Active workflow/classifier bindings reflect composed source; historical financial assertions and certification remain unchanged.",
-    "main": "859ed4eac45449f53af4f9ced021a65b64263d71"
   },
   "interruptedPostflopNativeRouting20261028": {
     "reason": "Reviewed additive classification assertions for the interrupted-postflop native module, its fixture and its migration in the existing required F06 runner. Financial inputs, assertions, all previous audit records and qualification states are unchanged. Current source identity only; matching hashes are not financial or production certification.",
@@ -1583,54 +1557,5 @@
     },
     "financial_recertification": false,
     "execution_performed": false
-  },
-  "gatewayProtectedMainComposition20261029": {
-    "reason": "Compose protected main repository-transfer and provider-runner fixes with gateway qualification. Preserve both parent audit objects and all financial SQL/fixtures/assertions. Exact current source identity only, not financial or production recertification.",
-    "main": "915d5e2ac0ae3a9c8d10eb3de38cfb1d56cf733d",
-    "changes": [
-      {
-        "section": "repository_files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "f45171a86206de8b4412c1ac44ecb25c5e26cdfe419b58de79a89ce35360c079",
-        "current": "9e5ed80298e47f9821b956c479e6e7853da5c8ea42f867f4e235a460f253c4f7"
-      }
-    ]
-  },
-  "supersededRetentionProgressEnforcement20261028": {
-    "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
-    "changes": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "previous": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
-        "current": "7cdf8eef50913a0fa8dcd6d1d80d76d803a989b852ce6edb9574a768b94523e6"
-      }
-    },
-    "financial_qualification_performed": false,
-    "production_actions": false
-  },
-  "retentionProgressProtectedMainComposition20261029": {
-    "reason": "Combine protected main915d5e2 with the retention progress qualification and additive Accounting3 selectors. Preserve every protected-main and branch historical audit object; update only current enforcement inputs and their derived child binding identities. Financial sources, assertions and qualification states remain unchanged.",
-    "protectedMainRevision": "915d5e2ac0ae3a9c8d10eb3de38cfb1d56cf733d",
-    "branchRevision": "22b1078f8a19df37b7608a3111d5fab281da32c8",
-    "changes": {
-      "scripts/ci/classify-ci-changes.mjs": {
-        "protectedMain": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02",
-        "combined": "dd765f387a791128e7572a4620820707d09e9f12294684456886fe9dc6c97c4e"
-      }
-    },
-    "financial_qualification_performed": false,
-    "production_actions": false
-  },
-  "gatewayRetentionUnion20261029": {
-    "reason": "Consolidate the two authorized Supabase cost deliveries into one protected PR, preserving all A2 gateway, A3 retention and A4 period-fee checks and both audit histories. Only current combined enforcement identities and derived binding identities change; financial SQL, fixtures, assertions and historical qualification states remain unchanged. No financial recertification or production mutation.",
-    "gatewayParent": "7072e0c8d3f22b8f67ff349a16c0569d0bb9372a",
-    "retentionParent": "9bff34890fd20525a8f903b7c73dddefde95e454",
-    "changes": [
-      {
-        "section": "repository_files",
-        "path": "scripts/ci/classify-ci-changes.mjs",
-        "previous": "9e5ed80298e47f9821b956c479e6e7853da5c8ea42f867f4e235a460f253c4f7",
-        "current": "39892c85bbd394dbecf82fab95fcdc5244d2405589b02d5bef1982cff92252de"
-      }
-    ]
   }
 }

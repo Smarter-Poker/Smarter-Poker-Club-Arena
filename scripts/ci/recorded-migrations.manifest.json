@@ -1765,6 +1765,17 @@
       "recoveredFrom": "Exact body from public.fn_ca_migration_text(20261029003622), 1856 bytes, independently read back after active production outage installation.",
       "refusedBy": [],
       "liveVerdict": "Active outage: three Evening Mystery Bounty PLO5 tables could not admit their original generation after engine loss; the owner explicitly directed picking up at the next hand. Only the exact interrupted river fingerprint is admitted to the existing void transaction, retaining current lease/lane/roster/registration/stack/pot/final-submission/commit guards and idempotent generation receipt. Native actual authority qualification passed acceptance with lease release, receipt replay, changed snapshot/stack refusals and complete data/catalog rollback. Live function body MD5 8fb3869ea1cac37357e482a0bb0f661c; SECURITY DEFINER/search_path unchanged, ACL postgres and service_role only, anon/authenticated execute false. Native void receipt 69c36368-6102-4a1a-a9cf-ad54361983b1 at 00:36:37.547578Z preserved all 18 committed chairs and 1025000 chips, disposed three reserved permits, restored level index 15 (1250/2500) and a fresh eight-minute anchor without an engine process restart. All three tables subsequently committed new accepted hands; independent readback at 00:38:36Z confirmed 1025000 chips, no original reservations and a legitimate subsequent zero-stack elimination. This is the required immediate byte-exact recording of an already installed outage change; it neither replays the migration nor certifies the separate permanent continuation engine fix."
+    },
+    {
+      "version": "20261029062111",
+      "name": "project_the_original_f06_permit_evidence_identity",
+      "file": "supabase/migrations/20261029062111_project_the_original_f06_permit_evidence_identity.sql",
+      "md5": "e37eacbcc8989b9a4bb854c5446c2803",
+      "appliedToProductionAt": "2026-10-29T06:21:30.108234Z",
+      "recoveredOn": "2026-10-29",
+      "recoveredFrom": "Exact body independently read from public.fn_ca_migration_text(20261029062111), 2365 bytes, byte-identical to qualified outage-install source.",
+      "refusedBy": [],
+      "liveVerdict": "Active production outage: 204 stalled tables included retained original hands whose positive private claim could not pass the serving manager because the canonical unresolved-permit projection omitted evidence_id. The one qualified outage installation adds actual h.evidence_id from the same permit row, preserving the shared table lane and every other function byte (reverse substitution proved). Native PostgreSQL 17 passed 24 cases including old missing-key failure, actual null/non-null identities, wrong-generation/ACL/body-drift refusals, unchanged row data, DDL/catalog rollback and actual catalog proof false before/true after. Read back exact function body MD5 c71e331cc40d676c931f2d711f2d02a0/full 570441684fd001cd76d4591e04194b98; owner postgres, SECURITY DEFINER, search_path and service-only ACL unchanged; anon/authenticated execute false. This immediately records the already installed compatible projection without replay, hand disposal, payout or engine restart. Originating continuation failures remain a separate investigation; natural recovery is verified separately."
     }
   ]
 }

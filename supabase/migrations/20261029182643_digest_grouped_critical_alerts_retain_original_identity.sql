@@ -1,6 +1,6 @@
--- Grouped daily critical signals must carry exact original inbox identities.
+-- Grouped daily signals must carry exact original inbox/incident identities.
 -- Counts, thresholds, original events and financial state are preserved.
--- @live-proof: (SELECT md5(prosrc) = 'aa0d0c539e7e03de275c018d1b3c7313' FROM pg_proc WHERE oid = 'public.fn_sp_digest_attention(date,jsonb)'::regprocedure) AND (SELECT md5(prosrc) = '884fffb024e00922acf9eb73d9cece75' FROM pg_proc WHERE oid = 'public.fn_sp_daily_digest(date,boolean)'::regprocedure)
+-- @live-proof: (SELECT md5(prosrc) = '0538501e5fabbfcf46599384b952346b' FROM pg_proc WHERE oid = 'public.fn_sp_daily_digest(date,boolean)'::regprocedure) AND (SELECT md5(prosrc) = 'c998e04f2ea0b12d0a4b271595306a9e' FROM pg_proc WHERE oid = 'public.fn_sp_digest_attention(date,jsonb)'::regprocedure)
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
@@ -14,6 +14,7 @@ BEGIN
  SELECT pg_get_functiondef('public.fn_sp_digest_attention(date,jsonb)'::regprocedure) INTO b;
  old := $old$  prev jsonb;$old$;
  replacement := $new$  v_source_events jsonb;
+  v_drift_ids jsonb;
   prev jsonb;$new$;
  IF (length(b)-length(replace(b,old,'')))/length(old) <> 1 THEN
   RAISE EXCEPTION 'DIGEST_GROUP_PREIMAGE_DRIFT fn_sp_digest_attention(date,jsonb)';
@@ -97,6 +98,11 @@ $new$;
                               WHEN grouped.reviewed = grouped.members THEN 'fixed'
                               WHEN grouped.investigating > 0 THEN 'in_progress'
                               ELSE 'not_picked_up' END
+                       WHEN it->>'rule' = 'drift_past_deadline' THEN
+                         CASE WHEN NOT drift_group.linkage_complete OR drift_group.unverified > 0 THEN 'tracked'
+                              WHEN drift_group.reviewed = drift_group.members THEN 'fixed'
+                              WHEN drift_group.reviewed > 0 OR drift_group.investigating > 0 THEN 'in_progress'
+                              ELSE 'not_picked_up' END
                        WHEN NOT (it ? 'alert_event_id') THEN 'tracked'$new$;
  IF (length(b)-length(replace(b,old,'')))/length(old) <> 1 THEN
   RAISE EXCEPTION 'DIGEST_GROUP_PREIMAGE_DRIFT fn_sp_daily_digest(date,boolean)';
@@ -108,6 +114,10 @@ $new$;
                          CASE WHEN NOT grouped.linkage_complete
                               THEN 'Original alert linkage is incomplete; historical counts are retained. No assignment or resolution is inferred.'
                               ELSE format('%s of %s linked original alert records are resolved or reviewed; historical daily counts are retained.',grouped.reviewed,grouped.members) END
+                       WHEN it->>'rule' = 'drift_past_deadline' THEN
+                         CASE WHEN NOT drift_group.linkage_complete OR drift_group.unverified > 0
+                              THEN 'Original incident linkage or verified closure evidence is incomplete; historical counts are retained. No resolution is inferred.'
+                              ELSE format('%s of %s linked original drift incidents are verified resolved; %s remain open. Historical daily counts are retained.',drift_group.reviewed,drift_group.members,drift_group.members-drift_group.reviewed) END
                        ELSE o.investigation->>'resolution' END) x$new$;
  IF (length(b)-length(replace(b,old,'')))/length(old) <> 1 THEN
   RAISE EXCEPTION 'DIGEST_GROUP_PREIMAGE_DRIFT fn_sp_daily_digest(date,boolean)';
@@ -172,10 +182,51 @@ $new$;
                    AND x->'expected_count'=to_jsonb(jsonb_array_length(CASE WHEN jsonb_typeof(x->'event_ids')='array' THEN x->'event_ids' ELSE '[]'::jsonb END)),false)),false)
                    FROM groups) linkage_complete
           FROM members m LEFT JOIN public.operational_alert_events original ON original.id=m.id
-      ) grouped ON it->>'rule'='critical_alert_rising') z;$new$;
+       ) grouped ON it->>'rule'='critical_alert_rising'
+      LEFT JOIN LATERAL (
+        WITH members AS (
+          SELECT CASE WHEN jsonb_typeof(q.x)='string' AND pg_input_is_valid(q.x#>>'{}','uuid')
+                      THEN (q.x#>>'{}')::uuid END id
+            FROM jsonb_array_elements(CASE WHEN jsonb_typeof(it#>'{detail,incident_ids}')='array'
+                 THEN it#>'{detail,incident_ids}' ELSE '[]'::jsonb END) q(x)
+        ), witness AS (
+          SELECT CASE WHEN pg_input_is_valid(it#>>'{detail,as_of}','timestamp with time zone')
+                      THEN (it#>>'{detail,as_of}')::timestamptz END at
+        ), outcomes AS (
+          SELECT m.id,d.id found_id,d.created_at,d.detected_at,d.deadline_at,d.resolved_at,d.status,
+                 COALESCE(d.status='resolved' AND d.resolved_at>=d.detected_at
+                   AND d.closure_basis IS DISTINCT FROM 'aged_out_unverified'
+                   AND length(btrim(COALESCE(d.root_cause,'')))>=40
+                   AND nullif(btrim(d.resolution),'') IS NOT NULL
+                   AND d.correction_ref ~* '^(migration[[:space:]]+[^[:space:]]|PR[[:space:]]*#[0-9]|chip_ledger[[:space:]]+[^[:space:]]|correction:[^[:space:]]|(ruling:|verified:|no-change-needed:)[[:space:]]*[^[:space:]])',false) verified
+            FROM members m LEFT JOIN public.ca_drift_incidents d ON d.id=m.id
+        )
+        SELECT count(*) members,count(*) FILTER(WHERE verified) reviewed,
+               count(*) FILTER(WHERE status IN ('acknowledged','reconciling')) investigating,
+               count(*) FILTER(WHERE status='resolved' AND NOT verified) unverified,
+               count(*)>0 AND count(*)=count(DISTINCT id)
+               AND to_jsonb(count(*))=it#>'{detail,count}'
+               AND COALESCE(bool_and(COALESCE(found_id IS NOT NULL AND witness.at<=now()
+                 AND created_at<=witness.at AND detected_at<=witness.at AND deadline_at<witness.at
+                 AND (resolved_at IS NULL OR resolved_at>witness.at),false)),false) linkage_complete
+          FROM outcomes CROSS JOIN witness
+      ) drift_group ON it->>'rule'='drift_past_deadline') z;$new$;
  IF (length(b)-length(replace(b,old,'')))/length(old) <> 1 THEN
   RAISE EXCEPTION 'DIGEST_GROUP_PREIMAGE_DRIFT fn_sp_daily_digest(date,boolean)';
  END IF;
+ EXECUTE replace(b,old,replacement);
+ SELECT pg_get_functiondef('public.fn_sp_digest_attention(date,jsonb)'::regprocedure) INTO b;
+ old := $old$  v := (SELECT count(*) FROM public.ca_drift_incidents WHERE resolved_at IS NULL AND deadline_at < now());
+  IF v > 0 THEN
+    a := a || jsonb_build_object('rule','drift_past_deadline','severity','warning','dispatch',false,
+      'title', format('%s drift incidents are open past their deadline', v), 'detail', jsonb_build_object('count', v));$old$;
+ replacement := $new$  SELECT count(*),jsonb_agg(id ORDER BY id) INTO v,v_drift_ids
+    FROM public.ca_drift_incidents WHERE resolved_at IS NULL AND deadline_at < now();
+  IF v > 0 THEN
+    a := a || jsonb_build_object('rule','drift_past_deadline','severity','warning','dispatch',false,
+      'title', format('%s drift incidents are open past their deadline', v),
+      'detail', jsonb_build_object('count',v,'incident_ids',v_drift_ids,'as_of',now()));$new$;
+ IF (length(b)-length(replace(b,old,'')))/length(old) <> 1 THEN RAISE EXCEPTION 'DIGEST_GROUP_PREIMAGE_DRIFT drift producer'; END IF;
  EXECUTE replace(b,old,replacement);
 END $fix$;
 -- Only this witnessed historical group can be linked retroactively. Other
@@ -207,4 +258,30 @@ BEGIN
     WHERE m.day='2026-10-28';
  END IF;
 END $history$;
+
+-- The original five have an independently witnessed snapshot and immutable
+-- creation history. This links cold report metadata only, never incident state.
+DO $drift_history$
+DECLARE original jsonb; cutoff timestamptz := '2026-10-29T05:21:21.075476Z';
+ expected uuid[] := ARRAY['d8d6f0e1-4dd6-4aa4-9e67-d7ab9fe2a87d','86d034c6-a2a1-4b35-97d6-e9627cd513f9','b0cf9085-5a22-474d-8ca3-68e0064ba11e','def15085-a152-4e88-899a-2258443b737f','d8a2905c-58db-444e-b9f7-b5a291ee944d']::uuid[]; cohort uuid[];
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.sp_daily_metrics WHERE day='2026-10-28') THEN
+   SELECT x INTO original FROM public.sp_daily_metrics m,
+     LATERAL jsonb_array_elements(m.attention) q(x)
+    WHERE m.day='2026-10-28' AND m.computed_at=cutoff AND x->>'rule'='drift_past_deadline';
+   SELECT array_agg(id ORDER BY id) INTO cohort FROM public.ca_drift_incidents
+     WHERE created_at<=cutoff AND deadline_at<cutoff AND (resolved_at IS NULL OR resolved_at>cutoff);
+   IF original IS DISTINCT FROM '{"rule":"drift_past_deadline","title":"5 drift incidents are open past their deadline","detail":{"count":5},"dispatch":false,"severity":"warning"}'::jsonb
+      OR (SELECT count(*) FROM public.sp_daily_metrics m,LATERAL jsonb_array_elements(m.attention) q(x)
+           WHERE m.day='2026-10-28' AND x->>'rule'='drift_past_deadline')<>1
+      OR cohort IS DISTINCT FROM (SELECT array_agg(x ORDER BY x) FROM unnest(expected) x)
+      OR EXISTS(SELECT 1 FROM public.ca_drift_incidents d WHERE d.id=ANY(expected) AND (
+          (SELECT count(*) FROM public.ca_incident_events e WHERE e.incident_id=d.id AND e.kind='created' AND e.at=d.detected_at AND e.at<=cutoff)<>1
+          OR EXISTS(SELECT 1 FROM public.ca_incident_events e WHERE e.incident_id=d.id AND e.at<=cutoff AND e.kind NOT IN ('created','notify_withheld','recurred'))))
+   THEN RAISE EXCEPTION 'DIGEST_DRIFT_HISTORICAL_PREIMAGE_DRIFT'; END IF;
+   UPDATE public.sp_daily_metrics m SET attention=(SELECT jsonb_agg(
+     CASE WHEN x=original THEN jsonb_set(jsonb_set(x,'{detail,incident_ids}',to_jsonb(expected),true),'{detail,as_of}',to_jsonb(cutoff),true) ELSE x END ORDER BY ordinal)
+     FROM jsonb_array_elements(m.attention) WITH ORDINALITY q(x,ordinal)) WHERE m.day='2026-10-28';
+ END IF;
+END $drift_history$;
 COMMIT;

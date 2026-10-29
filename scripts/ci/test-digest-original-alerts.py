@@ -33,7 +33,8 @@ CREATE TABLE club_rake_daily_user(day date,rake_amount numeric);
 CREATE FUNCTION fn_ca_horse_roster_digest(date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
 CREATE FUNCTION fn_sp_dispatch_attention(date,jsonb) RETURNS jsonb LANGUAGE sql AS $$ SELECT $2 $$;
 CREATE FUNCTION fn_sp_daily_metrics_snapshot(date) RETURNS jsonb LANGUAGE sql AS $$ SELECT '{}'::jsonb $$;
-CREATE TABLE ca_drift_incidents(resolved_at timestamptz,deadline_at timestamptz);
+CREATE TABLE ca_drift_incidents(id uuid PRIMARY KEY,status text,created_at timestamptz,detected_at timestamptz,resolved_at timestamptz,deadline_at timestamptz,closure_basis text,root_cause text,correction_ref text,resolution text);
+CREATE TABLE ca_incident_events(incident_id uuid,at timestamptz,kind text,detail jsonb);
 CREATE TABLE tournaments(id uuid,name text,tournament_type text,status text,started_at timestamptz);
 CREATE TABLE cashout_requests(completed_at timestamptz,cancelled_at timestamptz,status text,created_at timestamptz);
 CREATE TABLE settlement_invoices(invoice_type text,created_at timestamptz,message_sent boolean);
@@ -149,12 +150,43 @@ INSERT INTO operational_alert_events(id,alertname,severity,received_at,investiga
         metrics={'health':{'alert_names':names},'money':{'ledger_rake_utc_day':0}}
         text='OpenClawFleetLongSilence (1, 0 the day before); Tournament.atomic_satellite_finish_refused (1, 0 the day before)'
         original={'rule':'critical_alert_rising','severity':'critical','dispatch':False,'title':'Original daily signal','detail':{'count':2,'alerts':text}}
-        sql("INSERT INTO sp_daily_metrics VALUES ('2026-10-28',"+literal(metrics)+","+literal([original])+",'2026-10-29T05:21:21.075476Z',1);")
+        drift_ids=['d8d6f0e1-4dd6-4aa4-9e67-d7ab9fe2a87d','86d034c6-a2a1-4b35-97d6-e9627cd513f9','b0cf9085-5a22-474d-8ca3-68e0064ba11e','def15085-a152-4e88-899a-2258443b737f','d8a2905c-58db-444e-b9f7-b5a291ee944d']
+        drift_original={'rule':'drift_past_deadline','severity':'warning','dispatch':False,'title':'5 drift incidents are open past their deadline','detail':{'count':5}}
+        for identity in drift_ids:
+            sql("INSERT INTO ca_drift_incidents(id,status,created_at,detected_at,deadline_at) VALUES('"+identity+"','open','2026-10-28T01:00Z','2026-10-28T01:00Z','2026-10-28T01:20Z'); INSERT INTO ca_incident_events VALUES('"+identity+"','2026-10-28T01:00Z','created','{}');")
+        sql("INSERT INTO sp_daily_metrics VALUES ('2026-10-28',"+literal(metrics)+","+literal([original,drift_original])+",'2026-10-29T05:21:21.075476Z',1);")
         def grouped_report():
             report=json.loads(sql("SELECT fn_sp_daily_digest('2026-10-28',false);").stdout)
             return next(x for x in report['attention'] if x['rule']=='critical_alert_rising')
         assert grouped_report()['status']=='tracked', 'old consumer has no original linkage'
         sql(group_migration.read_text())
+        def drift_report():
+            report=json.loads(sql("SELECT fn_sp_daily_digest('2026-10-28',false);").stdout)
+            return next(x for x in report['attention'] if x['rule']=='drift_past_deadline')
+        historical_drift=json.loads(sql("SELECT attention->1 FROM sp_daily_metrics WHERE day='2026-10-28';").stdout)
+        assert historical_drift['detail']['count']==5 and historical_drift['title']==drift_original['title']
+        assert set(historical_drift['detail']['incident_ids'])==set(drift_ids)
+        assert drift_report()['status']=='not_picked_up'
+        cause='The original underlying condition was independently remeasured and verified clear.'
+        for identity in drift_ids[:4]:
+            sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z',closure_basis='verified_remeasured',root_cause='"+cause+"',correction_ref='verified: authoritative remeasurement',resolution='Verified clear' WHERE id='"+identity+"';")
+        partial=drift_report()
+        assert partial['status']=='in_progress' and '4 of 5' in partial['resolution'] and '1 remain open' in partial['resolution'],partial
+        sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z',closure_basis=NULL,root_cause='"+cause+"',correction_ref='verified: authoritative source outcome',resolution='Verified clear' WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='fixed',drift_report()
+        sql("UPDATE ca_drift_incidents SET closure_basis='aged_out_unverified',correction_ref='aged-out: no new observations' WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='tracked' and 'incomplete' in drift_report()['resolution']
+        sql("UPDATE ca_drift_incidents SET closure_basis=NULL,correction_ref='verified: authoritative source outcome' WHERE id='"+drift_ids[4]+"';")
+        sql("DELETE FROM ca_drift_incidents WHERE id='"+drift_ids[4]+"';")
+        assert drift_report()['status']=='tracked', 'missing original cannot become fixed'
+        # A fresh producer captures the exact live unresolved cohort, independent
+        # of the historical day-end health metric and the prior stored cohort.
+        sql("UPDATE ca_drift_incidents SET status='open',resolved_at=NULL WHERE id='"+drift_ids[0]+"';")
+        fresh_drift=json.loads(sql("SELECT fn_sp_digest_attention('2026-10-29','{}');").stdout)
+        fresh_drift=next(x for x in fresh_drift if x['rule']=='drift_past_deadline')
+        assert fresh_drift['detail']['count']==1 and fresh_drift['detail']['incident_ids']==[drift_ids[0]] and fresh_drift['detail']['as_of']
+        sql("UPDATE ca_drift_incidents SET status='resolved',resolved_at='2026-10-29T15:00Z' WHERE id='"+drift_ids[0]+"';")
+        print('PASS: exact witnessed original five drift identities; 4/5 stays in progress, 5/5 verified fixed, aged-out/missing member unknown, future producer captures actual live cohort and cutoff; historical count/title retained')
         linked=json.loads(sql("SELECT attention FROM sp_daily_metrics WHERE day='2026-10-28';").stdout)[0]
         assert {k:v for k,v in linked['detail'].items() if k!='source_events'}==original['detail']
         assert linked['title']==original['title']

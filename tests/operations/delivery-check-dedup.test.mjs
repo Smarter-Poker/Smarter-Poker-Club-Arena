@@ -62,6 +62,7 @@ for (const failure of [false, true]) {
         'server/package.json': '{}',
         '.github/workflows/ci.yml': 'jobs: {}',
         'server/src/reader.test.ts': '// reads ci.yml and widget.ts\n',
+        'server/src/directory.test.ts': '// scans .github/workflows\n',
         'server/src/unrelated.test.ts': '// unrelated fixture\n',
         'server/src/widget.ts': 'export const widget = 1;\n',
         'server/node_modules/.bin/vitest': `#!${process.execPath}\nimport('node:fs').then(fs => { fs.appendFileSync(process.env.TRACE, JSON.stringify(process.argv.slice(2))+'\\n'); process.exit(process.env.FAIL_DIRECT === 'true' && process.argv[2] === 'run' ? 1 : 0); });\n`,
@@ -78,9 +79,41 @@ for (const failure of [false, true]) {
         });
         assert.equal(result.status, failure ? 1 : 0, result.stderr);
         const calls = readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse);
-        assert.deepEqual(calls[0], ['run', 'src/reader.test.ts']);
+        assert.deepEqual(calls[0], ['run', 'src/directory.test.ts', 'src/reader.test.ts']);
         assert.equal(calls.length, files.includes('widget.ts') ? 2 : 1);
-        if (calls.length === 2) assert.deepEqual(calls[1], ['related', '--run', 'src/widget.ts', '--exclude', 'src/reader.test.ts', '--passWithNoTests']);
+        if (calls.length === 2) assert.deepEqual(calls[1], ['related', '--run', 'src/widget.ts', '--exclude', 'src/directory.test.ts', '--exclude', 'src/reader.test.ts', '--passWithNoTests']);
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+for (const failure of [false, true]) {
+  test(`workflow directory readers execute locally once; failure=${failure}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'client-workflow-reader-'));
+    try {
+      for (const [file, body] of Object.entries({
+        '.github/workflows/ci.yml': 'jobs: {}',
+        'tests/directory.test.ts': '// scans .github/workflows and imports widget.ts',
+        'tests/specific.test.ts': '// reads ci.yml',
+        'tests/unrelated.test.ts': '// unrelated fixture',
+        'src/widget.ts': 'export const widget = 1;',
+        'node_modules/.bin/vitest': `#!${process.execPath}\nimport('node:fs').then(fs => { fs.appendFileSync(process.env.TRACE, JSON.stringify(process.argv.slice(2))+'\\n'); process.exit(process.env.FAIL_DIRECT === 'true' && process.argv[2] === 'run' ? 1 : 0); });\n`,
+      })) {
+        const target = join(dir, file);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, body, { mode: file.endsWith('/vitest') ? 0o755 : 0o644 });
+      }
+      for (const files of ['.github/workflows/ci.yml', '.github/workflows/ci.yml tests/directory.test.ts src/widget.ts']) {
+        const trace = join(dir, 'trace');
+        rmSync(trace, { force: true });
+        const result = spawnSync('bash', ['-c', `set -e\nFAIL=0\n${gate}\nexit "$FAIL"`], {
+          cwd: dir, encoding: 'utf8', env: { ...process.env, CA_TREE_TOP: dir, CLIENT_DEPENDENCY_MODE: 'local', FILES: files, TRACE: trace, FAIL_DIRECT: String(failure) },
+        });
+        assert.equal(result.status, failure ? 1 : 0, result.stderr);
+        const calls = readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse);
+        assert.deepEqual(calls[0], ['run', 'tests/directory.test.ts', 'tests/specific.test.ts']);
+        assert.equal(calls.length, files.includes('widget.ts') ? 2 : 1);
+        if (calls.length === 2) assert.deepEqual(calls[1], ['related', '--run', 'src/widget.ts', '--exclude', 'tests/directory.test.ts', '--exclude', 'tests/specific.test.ts', '--passWithNoTests']);
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

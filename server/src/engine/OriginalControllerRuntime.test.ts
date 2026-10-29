@@ -11,9 +11,22 @@ vi.mock('../services/supabase/client.js', () => ({
   maintenanceSupabase: {},
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
+const { originalAuth } = vi.hoisted(() => ({ originalAuth: { userId: 'u1' } }));
+vi.mock('../http/auth.js', () => ({
+  authenticateRequest: vi.fn(async () => ({ userId: originalAuth.userId })),
+}));
+vi.mock('../http/body.js', () => ({
+  readBody: vi.fn(async (req: { __body?: string }) => req.__body ?? '{}'),
+}));
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
+import { TournamentManagerBase } from '../tournament/TournamentManagerBase.js';
+import type { GameServer } from '../GameServer.js';
+import { handleAction } from '../handlers/action.js';
+import { __resetRateLimiterForTests } from '../http/rateLimit.js';
+import { playerActionContext } from './PlayerActionContext.js';
+import * as freezeState from '../maintenance/freezeState.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 const config: HandConfig = {
   tableId: 'cccccccc-0000-4000-8000-0000000000a1',
@@ -48,6 +61,7 @@ const binding = {
 };
 const engines: any[] = [];
 afterEach(() => {
+  originalAuth.userId = 'u1';
   for (const e of engines.splice(0)) {
     e.running = false;
     e.activeHandWaitRelease?.release('test_cleanup');
@@ -58,14 +72,14 @@ afterEach(() => {
   }
   vi.restoreAllMocks();
 });
-function fixture() {
-  const e: any = new ServerTableEngine(config.tableId);
+function fixture(tableId = config.tableId) {
+  const e: any = new ServerTableEngine(tableId);
   engines.push(e);
   expect(e.claimProcessOwnership()).toBe(true);
   e.running = true;
   e.handCount = 42;
   e.lifecycleCanMutate = () => true;
-  e.handController = new HandController(config, players, 1);
+  e.handController = new HandController({ ...config, tableId }, players, 1);
   e.currentHandSeatGenerations = new Map(
     players.map((p) => [
       p.user_id,
@@ -77,7 +91,7 @@ function fixture() {
   );
   e.currentHandDealtStacks = new Map(players.map((p) => [p.user_id, p.stack]));
   e.f06CurrentPermit = {
-    binding,
+    binding: { ...binding, table_id: tableId },
     assertPreparedStartAllowed: () => {},
     recoveryState: () => 'attempted',
     attemptOriginalRetention: () => {},
@@ -104,8 +118,8 @@ function fixture() {
   e.seatedPlayers = roster;
   e.fetchTimeBankExtras = async () => new Map();
   for (const p of players) {
-    e.timeBankEngine.initializePlayer(config.tableId, p.user_id);
-    e.timeBankEngine.setAutoActivate(config.tableId, p.user_id, false);
+    e.timeBankEngine.initializePlayer(tableId, p.user_id);
+    e.timeBankEngine.setAutoActivate(tableId, p.user_id, false);
   }
   return { e, emitted, roster };
 }
@@ -505,3 +519,394 @@ it.each([false, true])(
     expect(e.f06CurrentPermit.recoveryState()).toBe('attempted');
   }
 );
+
+class OriginalBarrierHarness extends TournamentManagerBase {
+  constructor(held: boolean) {
+    super(binding.tournament_id, {} as GameServer);
+    (this as any).lifecycleEpoch.begin();
+    this.running = true;
+    this.handForHandActive = held;
+    this.gameServer.getTournamentHandForHand = () => this.getHandForHandPresentation();
+  }
+  protected override startEliminationChecker(): void {}
+  protected override async recalculateEliminatedPrizes(): Promise<boolean> {
+    return true;
+  }
+  add(tableId: string, engine: ServerTableEngine): void {
+    this.tableEngines.set(tableId, engine);
+    engine.onPauseReady(() => (this as any).advanceHandForHandBarrier());
+  }
+  arm(): void {
+    this.startHandForHandSync();
+  }
+  edge(): void {
+    (this as any).advanceHandForHandBarrier();
+  }
+}
+
+it.each([
+  { held: false, maintenance: false },
+  { held: true, maintenance: false },
+  { held: true, maintenance: true },
+])(
+  'finishes two started originals before admitting the third prepared original ($held/$maintenance)',
+  async ({ held, maintenance }) => {
+    const manager = new OriginalBarrierHarness(held);
+    const entries = [
+      fixture(),
+      fixture('cccccccc-0000-4000-8000-0000000000a2'),
+      fixture('cccccccc-0000-4000-8000-0000000000a3'),
+    ];
+    const runs: Array<Promise<void> | undefined> = [];
+    const expected: number[][] = [];
+    const decks: ReturnType<HandController['getRemainingDeck']>[] = [];
+    const parked: Promise<void>[] = [];
+    const restored: HandController[] = [];
+    try {
+      for (const [i, { e, roster }] of entries.entries()) {
+        const controller: HandController = e.handController;
+        if (i < 2) controller.start();
+        const saved = controller.serializeRecoveryState();
+        const check = HandController.fromRecoveryState(saved, e.tableId, 42);
+        if (i === 2) check.resumeRecoveredHand();
+        decks.push(check.getRemainingDeck());
+        expect(check.performAction(check.getState().currentPlayerSeat, 'fold')).toBe(true);
+        expected.push(check.getState().players.map((p) => p.stack));
+        e.pendingOriginalContinuation = {
+          version: 1,
+          original: e.f06CurrentPermit.binding,
+          seats: roster.map((p) => ({
+            user_id: p.user_id,
+            seat_id: p.seat_id,
+            seat_joined_at: p.seat_joined_at,
+            stack_before: 1000,
+          })),
+          batch: {
+            version: 1,
+            sequence: i === 2 ? 0 : 3,
+            controller: saved,
+            events: [],
+            engine: { fields: {} },
+          },
+        };
+        e.retainOriginalBatch = async () => {};
+        manager.add(e.tableId, e);
+        if (maintenance) {
+          e.persistPresenceForRestart = async () => {};
+          e.pauseForMaintenance(420000);
+        }
+        if (held) e.pauseAfterHand(420000, { beforeNextHand: true });
+      }
+      if (held) manager.arm();
+      for (const [i, { e }] of entries.entries())
+        if (!held || i < 2) runs[i] = e.resumeOriginalController();
+      await vi.waitFor(() => {
+        for (const { e } of entries.slice(0, 2)) expect(e.pendingOriginalContinuation).toBeNull();
+      });
+      for (const [i, { e, emitted }] of entries.slice(0, 2).entries()) {
+        restored[i] = e.handController;
+        expect(restored[i].getRemainingDeck()).toEqual(decks[i]);
+        expect(emitted.some((x) => x.type === 'HAND_START')).toBe(false);
+        expect(e.handCount).toBe(42);
+        expect(e.isBetweenHands()).toBe(false);
+        expect(e.isParkedBetweenHands()).toBe(false);
+        if (held) expect(e.handForHandPaused).toBe(true);
+        if (maintenance) expect(e.isMaintenancePaused()).toBe(true);
+      }
+      for (const [i, { e, emitted }] of entries.slice(0, 2).entries()) {
+        expect(restored[i].performAction(restored[i].getState().currentPlayerSeat, 'fold')).toBe(
+          true
+        );
+        await runs[i];
+        await e.handContinuation.join();
+        expect(e.handController).toBeNull();
+        expect(restored[i].getState().players.map((p) => p.stack)).toEqual(expected[i]);
+        expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+        if (held) {
+          parked.push(e.awaitPauseGate());
+          expect(e.isWaitingForHandForHand()).toBe(true);
+        }
+      }
+      const third = entries[2];
+      if (held) {
+        expect(third.e.pendingOriginalContinuation.batch.sequence).toBe(0);
+        expect(third.emitted).toEqual([]);
+        expect(entries[0].e.isWaitingForHandForHand()).toBe(true);
+        expect(entries[1].e.isWaitingForHandForHand()).toBe(true);
+        if (maintenance) for (const { e } of entries) e.resumeFromMaintenance();
+        runs[2] = third.e.resumeOriginalController();
+      }
+      await vi.waitFor(() => expect(third.e.pendingOriginalContinuation).toBeNull());
+      await third.e.handContinuation.join();
+      restored[2] = third.e.handController;
+      expect(restored[2].getRemainingDeck()).toEqual(decks[2]);
+      expect(third.emitted.filter((x) => x.type === 'HAND_START')).toHaveLength(1);
+      expect(third.e.handCount).toBe(42);
+      if (held) {
+        await Promise.all(parked);
+        for (const { e } of entries) expect(e.isWaitingForHandForHand()).toBe(false);
+      }
+      expect(restored[2].performAction(restored[2].getState().currentPlayerSeat, 'fold')).toBe(
+        true
+      );
+      await runs[2];
+      await third.e.handContinuation.join();
+      expect(restored[2].getState().players.map((p) => p.stack)).toEqual(expected[2]);
+      expect(third.emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+      expect(expected.flat().reduce((a, b) => a + b, 0)).toBe(6000);
+    } finally {
+      for (const { e } of entries) {
+        e.running = false;
+        e.activeHandWaitRelease?.release('test_cleanup');
+        e.releasePendingPauseWait();
+      }
+      await Promise.allSettled(runs.filter((r): r is Promise<void> => !!r));
+      (manager as any).running = false;
+      (manager as any).stopHandForHandSync();
+    }
+  }
+);
+
+it('does not resume retained live cards during the actual global freeze', async () => {
+  const { e, emitted, roster } = fixture();
+  const original: HandController = e.handController;
+  original.start();
+  const saved = original.serializeRecoveryState();
+  e.pendingOriginalContinuation = {
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: 1000,
+    })),
+    batch: { version: 1, sequence: 3, controller: saved, events: [], engine: { fields: {} } },
+  };
+  e.retainOriginalBatch = async () => {};
+  vi.spyOn(freezeState, 'isMaintenanceFrozen').mockReturnValue(true);
+  await e.resumeOriginalController();
+  expect(e.killForRestart).toHaveBeenCalledWith('retained_original_start_unproven');
+  expect(emitted).toEqual([]);
+  expect(e.pendingOriginalContinuation.batch.controller).toBe(saved);
+  expect(e.handController.serializeRecoveryState()).toBe(saved);
+});
+
+it('refuses HTTP, trusted actions, bank use and controller mutation until the restored original actuates', async () => {
+  const { e, roster, emitted } = fixture();
+  const initial: HandController = e.handController;
+  initial.start();
+  const saved = initial.serializeRecoveryState();
+  e.pendingOriginalContinuation = {
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: 1000,
+    })),
+    batch: { version: 1, sequence: 3, controller: saved, events: [], engine: { fields: {} } },
+  };
+  e.retainOriginalBatch = async () => {};
+  let release!: () => void;
+  e.fetchTimeBankExtras = () =>
+    new Promise<Map<string, never>>((r) => {
+      release = () => r(new Map<string, never>());
+    });
+  const resumed = e.resumeOriginalController();
+  const request = async (key: string, context: string) => {
+    let status = 0;
+    let body = '';
+    const res = {
+      writeHead: (n: number) => {
+        status = n;
+        return res;
+      },
+      end: (b?: string) => {
+        body = b ?? '';
+      },
+    };
+    __resetRateLimiterForTests();
+    await handleAction(
+      {
+        __body: JSON.stringify({
+          tableId: config.tableId,
+          action: 'fold',
+          actionContext: context,
+          idempotencyKey: key,
+        }),
+      } as never,
+      res as never,
+      { gameServer: { getTableEngine: () => e } }
+    );
+    return { status, body: JSON.parse(body) };
+  };
+  try {
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const restored: HandController = e.handController;
+    const context = playerActionContext(restored);
+    if (!context) throw new Error('Expected The Retained Original Decision');
+    const result = await request('original-unactuated-1', context);
+    expect(result.body.success).toBe(false);
+    expect(e.getActionContext()).toBeNull();
+    expect(e.getPlayerActions('u1').actions).toEqual([]);
+    expect(e.handlePlayerAction('u1', 'fold').success).toBe(false);
+    expect((await e.activateTimeBank('u1')).success).toBe(false);
+    expect(restored.performAction(restored.getState().currentPlayerSeat, 'fold')).toBe(false);
+    expect(restored.serializeRecoveryState()).toBe(saved);
+    expect(emitted).toEqual([]);
+    await expect(e.awaitActionPersistence()).rejects.toThrow('Not Actuated');
+    release();
+    await vi.waitFor(() => expect(e.pendingOriginalContinuation).toBeNull());
+    await e.handContinuation.join();
+    expect(e.handController).toBe(restored);
+    expect(e.getActionContext()).toBe(context);
+    const accepted = await request('original-unactuated-2', context);
+    expect(accepted.body.success).toBe(true);
+    await resumed;
+    await e.handContinuation.join();
+    expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+  } finally {
+    e.running = false;
+    release?.();
+    e.activeHandWaitRelease?.release('test_cleanup');
+    e.releasePendingPauseWait();
+    await resumed;
+  }
+});
+
+it('serializes the retained old consumer before a new capsule and publishes original readiness once', async () => {
+  const { e, roster, emitted } = fixture();
+  const c: HandController = e.handController;
+  const events: HandEvent[] = [];
+  c.onEvent((x) => events.push(structuredClone(x)));
+  c.start();
+  const saved = c.serializeRecoveryState();
+  const turn = events.find((x) => x.type === 'TURN_CHANGE')!;
+  expect(turn).toBeTruthy();
+  const expected = HandController.fromRecoveryState(saved, config.tableId, 42);
+  expect(expected.performAction(expected.getState().currentPlayerSeat, 'call')).toBe(true);
+  expect(expected.performAction(expected.getState().currentPlayerSeat, 'fold')).toBe(true);
+  e.pendingOriginalContinuation = {
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: 1000,
+    })),
+    batch: {
+      version: 1,
+      sequence: 3,
+      controller: saved,
+      events: [turn],
+      engine: { fields: { currentHandStartedAt: 111 } },
+    },
+  };
+  e.tableInfo = {
+    id: config.tableId,
+    variant: 'nlh',
+    game_variant: 'nlh',
+    game_type: 'tournament',
+    table_type: 'tournament',
+    big_blind: 20,
+    small_blind: 10,
+    max_players: 2,
+    ante: 0,
+  };
+  const published: any[] = [];
+  e.hub = {
+    publish: (_table: string, payload: any) => published.push(structuredClone(payload)),
+    emitEvent: vi.fn(),
+  };
+  let release!: () => void;
+  let entered = false;
+  let oldConsumers = 0;
+  const writes: any[] = [];
+  e.handleHandEvent = async (x: HandEvent) => {
+    if (x.type === 'TURN_CHANGE' && !entered) {
+      entered = true;
+      oldConsumers++;
+      await e.broadcastCurrentState();
+      await new Promise<void>((r) => (release = r));
+      e.currentHandStartedAt = 222;
+    } else emitted.push(x);
+  };
+  e.retainOriginalBatch = async (_o: unknown, _s: unknown, b: any) => {
+    writes.push(structuredClone(b));
+  };
+  const resumed = e.resumeOriginalController();
+  const request = async (key: string, ctx: string | null) => {
+    let status = 0;
+    let body = '';
+    const res = {
+      writeHead: (x: number) => {
+        status = x;
+        return res;
+      },
+      end: (x?: string) => {
+        body = x ?? '';
+      },
+    };
+    __resetRateLimiterForTests();
+    await handleAction(
+      {
+        __body: JSON.stringify({
+          tableId: config.tableId,
+          action: 'fold',
+          actionContext: ctx,
+          idempotencyKey: key,
+        }),
+      } as never,
+      res as never,
+      { gameServer: { getTableEngine: () => e } }
+    );
+    return { status, body: JSON.parse(body) };
+  };
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const restored: HandController = e.handController;
+    const ctx = playerActionContext(restored);
+    const refused = await request('replay-overlap-1', ctx);
+    expect({
+      success: refused.body.success,
+      retainedStartFields: writes.map((b) => b.engine.fields.currentHandStartedAt),
+    }).toEqual({ success: false, retainedStartFields: [] });
+    expect(e.getActionContext()).toBeNull();
+    expect(published).toEqual([]);
+    expect((await e.activateTimeBank('u1')).success).toBe(false);
+    expect(
+      restored.performAction(restored.getState().currentPlayerSeat, 'call', undefined, 'forced')
+    ).toBe(true);
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    expect(writes).toEqual([]);
+    release();
+    await e.handContinuation.join();
+    await vi.waitFor(() => expect(published).toHaveLength(1));
+    expect(writes.map((b) => b.sequence)).toEqual([4]);
+    expect(writes[0].engine.fields.currentHandStartedAt).toBe(222);
+    expect(oldConsumers).toBe(1);
+    expect(published[0].action_context).toBe(playerActionContext(restored));
+    expect(published[0].action_context).toBeTruthy();
+    expect(e.handController).toBe(restored);
+    originalAuth.userId = 'u2';
+    const accepted = await request('replay-ready-2', published[0].action_context);
+    expect(accepted.body.success).toBe(true);
+    await resumed;
+    await e.handContinuation.join();
+    expect(writes.map((b) => b.sequence)).toEqual([4, 5]);
+    expect(emitted.filter((x) => x.type === 'HAND_START')).toHaveLength(0);
+    expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+    expect(restored.getState().players.map((p) => p.stack)).toEqual(
+      expected.getState().players.map((p) => p.stack)
+    );
+  } finally {
+    e.running = false;
+    release?.();
+    e.activeHandWaitRelease?.release('test_cleanup');
+    e.releasePendingPauseWait();
+    await resumed;
+  }
+});

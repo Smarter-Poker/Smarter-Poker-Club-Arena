@@ -49,6 +49,9 @@ function harness() {
   // Exercise the production serialization/context gate and forced-action owner
   // with a real controller, while excluding unrelated clock/lease infrastructure.
   Object.assign(engine, {
+    // Fresh constructor custody, distinct from the retained-original tests.
+    pendingOriginalContinuation: null,
+    handContinuation: null,
     handController: controller,
     lifecycleCanMutate: () => true,
     actionLock: false,

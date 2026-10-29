@@ -59,6 +59,7 @@ function server(): any {
     tournamentRetirementCustody: new TournamentRetirementCustody(),
     drainedF06TournamentCustody: new Map(),
     completedF06TournamentCustody: new Map(),
+    completedF06DiagnosticWindows: new Map(),
     tournamentManagerRetirementOperations: new WeakMap(),
     tournamentManagerLeaseReleaseOperations: new Map(),
     tournamentManagerPendingLeaseReleases: new Map(),
@@ -1355,4 +1356,16 @@ it('receipt-only successor consumes separately absent original move before compl
   managers.push(ordinary);
   expect(ordinary.isF06RecoveryOwner()).toBe(false);
   expect(ordinary.getTournamentLeaseGeneration()).not.toBe(transfer.successorGeneration);
+});
+
+it('seals the real terminal mixed continuation without retaining its old manager or engines', async () => {
+  const { s, m, engines } = await recoverableMixedScene();
+  const entry = s.completedF06DiagnosticWindows.get(id(1)).sealed[0];
+  expect(entry.status).toBe('sealed');
+  expect(s.inspectCompletedF06Custody(entry)?.sourceTableIds).toEqual(
+    engines.map(([id]) => id).sort()
+  );
+  expect(entry).not.toHaveProperty('original');
+  expect(s.drainedF06TournamentCustody.has(id(1))).toBe(false);
+  expect(m.captureDrainedF06Originals()).not.toBeNull();
 });

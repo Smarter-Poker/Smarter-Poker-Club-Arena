@@ -1,0 +1,86 @@
+{
+  "status": "passed",
+  "migration_sha256": "17e7d6e6dde9ed7aff5c3c61761bd67e9fdfe63a551ed2f54a947b73dab56120",
+  "cases": [
+    "actual9columns2constraints3retained_indexes1raw_trigger_and_original_access",
+    "independent_original_full_touched_counts_duplicates_NULL_opening_and_projection_branches",
+    "genuine_interrupted_CCI_durable_invalid_prefix_refuses_without_rebuild_or_history",
+    "concurrent_original_append_writer_commits_while_CCI_waits_for_existing_writer",
+    "exact_maintained_CCI_new_index_valid_no_old_index_retirement",
+    "all_original_admitted_large_compressible_malformed_NULL_and_near_boundary_union_TEXT_remains_admitted",
+    "valid_CCI_prefix_survives_qualification_history_tail_failure",
+    "same_exact_body_resumes_without_index_rebuild",
+    "original_full_touched_counts_preserved_after_physical_only_transition",
+    "natural_custom_and_generic_original_predicate_uses_union_key_and_keeps_canonical_text_roundtrip",
+    "source65_refuses",
+    "gen_refuses",
+    "window_refuses",
+    "frozen_refuses",
+    "boundary_refuses",
+    "operator_SET request.jwt.claims='{}';",
+    "operator_SET request.jwt.claim.role='service_role';",
+    "operator_SET ROLE anon;",
+    "operator_SET ca.break_window_migration_override='native';",
+    "history_replay",
+    "table_ACL_drift",
+    "table_force_RLS_drift",
+    "old_identity_index_cannot_disappear",
+    "original_trigger_disable_refuses",
+    "critical_helper_ACL_drift",
+    "exact_original_immutable_producer_remains_enforced",
+    "all_original_rows_functions_metadata_raw_trigger_and_three_indexes_unchanged"
+  ],
+  "admitted_width_cases": [
+    {
+      "case": 0,
+      "utf8_bytes": null
+    },
+    {
+      "case": 1,
+      "utf8_bytes": 10
+    },
+    {
+      "case": 2,
+      "utf8_bytes": 0
+    },
+    {
+      "case": 3,
+      "utf8_bytes": 36000
+    },
+    {
+      "case": 4,
+      "utf8_bytes": 2048
+    },
+    {
+      "case": 5,
+      "utf8_bytes": 2400
+    },
+    {
+      "case": 6,
+      "utf8_bytes": 2500
+    },
+    {
+      "case": 7,
+      "utf8_bytes": 2600
+    }
+  ],
+  "original_rejected_width_cases": [8, 9],
+  "actual_contract_sha256": "034e58abdd7b0005d870d619abb4cd162520be990d5a57c6eed7d4a4d3a0016f",
+  "source65_generation_and_maintenance_are_controlled_fixture_boundaries": true,
+  "original_helpers_and_trigger_are_real_captured_bodies": true,
+  "production_capacity_claimed": false,
+  "old_indexes_retained": 3,
+  "runtime_input_sha256": {
+    "scripts/ci/test-tournament-membership-union-key-postgres.py": "10e104066a6d7e175f93d1926eb8c057022f21440801e1c61d66ecdb55a08291",
+    "scripts/ci/migration-concurrent-preamble.mjs": "c50bc71b5c1234a6d505e9125de5744d04a3f97113025550f9eeb53f8b9bd8d6",
+    "supabase/migrations/20261029032041_tournament_membership_keeps_its_union_in_the_identity_key.sql": "17e7d6e6dde9ed7aff5c3c61761bd67e9fdfe63a551ed2f54a947b73dab56120",
+    "scripts/ci/fixtures/tournament-membership-union-key/membership-predicate.sql": "d13d67cddcfe7518fbfef3fd24c6010114706a91e47ab9c28cda23804aeb5eb3",
+    "scripts/ci/fixtures/tournament-membership-union-key/meaningful-table-contract.json": "034e58abdd7b0005d870d619abb4cd162520be990d5a57c6eed7d4a4d3a0016f",
+    "scripts/ci/fixtures/tournament-membership-union-key/original-immutable.sql": "b7e3e5c09a979c20740d2a8199060c7441c0cb1590b7c656f31de918eeea408a",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-table-authority.json": "bb160a5c0a48c4d8c07278c9ffa3e6dd8bcd1bee5fdd642054437ff7234de84a",
+    "scripts/ci/fixtures/tournament-membership-union-key/actual-connected-owners.json": "3ee78f2d0e7846cea3e1d8a18448dfb226e01ae1006085b0c1f0c13c76aa1a07",
+    "scripts/ci/fixtures/tournament-membership-union-key/table-contract-projection.sql": "8ed694f0d28b18fb840f73c64830a306eb863bde12da9905b5f10de7ac5c606d",
+    "scripts/ci/fixtures/tournament-membership-union-key/original-touched-query.sql": "f934e4c491c29794c9ad51f5cfdcc76b5c1855b9fe7404336190a20aa5435287"
+  },
+  "runtime_input_note": "Captured after native-fifth: these unchanged runtime inputs were consumed by the completed native27 run; documentation and additional law-only fixtures are maintained-source bindings, not runtime evidence."
+}

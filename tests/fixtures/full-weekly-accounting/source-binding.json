@@ -522,7 +522,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "c612a81c167ece5d8f69b36fd3e1991a928fb8e43ccea5e2d612e7e2528cb186",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5812,5 +5812,11 @@
         "current": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b"
       }
     }
+  },
+  "spinReaderPopulationDistribution20261029": {
+    "reason": "Rebind the reviewed Sep8 native-only closed-cash background distribution and complete five-document preservation checks; original production SQL and financial assertions unchanged.",
+    "file": "tests/fixtures/sep8-spin-custody/source-binding.json",
+    "from": "f4d2940e0d1a294c3bcaad23c9a52a0bb0c188f446856caeacb6071f8c8ac62b",
+    "to": "c612a81c167ece5d8f69b36fd3e1991a928fb8e43ccea5e2d612e7e2528cb186"
   }
 }

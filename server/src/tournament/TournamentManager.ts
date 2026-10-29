@@ -39,6 +39,7 @@ import { type BalancerTable, type MoveInstruction } from '../engine/TableBalance
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
@@ -4645,20 +4646,43 @@ export class TournamentManager extends TournamentManagerEliminations {
    * stranded" and never "everybody is".
    */
   public async absorbOrphanedSeats(): Promise<number> {
-    if (!(await this.redrivePendingTournamentSeatMoveOutcomes())) return 0;
-    const { data: tableRows, error: tableErr } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted, max_players')
-      .eq('tournament_id', this.tournamentId);
-    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+    const lifecycle = this.captureLifecycleToken();
+    const current = () => this.lifecycleIsCurrent(lifecycle);
+    if (!(await this.redrivePendingTournamentSeatMoveOutcomes()) || !current()) return 0;
+    const { rows: tableRows, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, status, is_deleted, max_players')
+          .eq('tournament_id', this.tournamentId)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_tables', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!tablesComplete || tableRows.length === 0) return 0;
 
-    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('table_id, user_id, seat_number, stack')
-      .in('table_id', tableIds)
-      .is('left_at', null);
-    if (seatErr || !seatRows) return 0;
+    // The tournament relationship bounds the filter without a giant IN URL.
+    // Every live chair is needed before deciding occupancy or source ambiguity.
+    const { rows: seatRows, complete: seatsComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('table_seats')
+          .select(
+            'id, table_id, user_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(tournament_id)'
+          )
+          .eq('tables.tournament_id', this.tournamentId)
+          .is('left_at', null)
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.orphan_seats', pageAttempts: 1, shouldContinue: current }
+    );
+    if (!seatsComplete) return 0;
 
     const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
 

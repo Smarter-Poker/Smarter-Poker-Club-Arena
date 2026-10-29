@@ -487,6 +487,10 @@ export default function RankingTab({
 
   const tournamentId = tournament?.id;
 
+  useEffect(() => {
+    setPicked(null);
+  }, [tournamentId]);
+
   /**
    * The page hands `onWatchPlayer` over only while the event is RUNNING, which
    * is the same gate the footer's WATCH button uses. Reading its presence
@@ -881,10 +885,12 @@ export default function RankingTab({
   }, []);
 
   const confirmWatch = useCallback(() => {
-    const entry = picked;
+    // Confirm against the complete current field, not the row captured before
+    // a balance move or elimination while this dialog was open.
+    const entry = picked ? entries.find((row) => row.user_id === picked.user_id) : undefined;
     setPicked(null);
     // Only reachable if the seat vanished between the click and the confirm.
-    if (!entry?.table_id || !onWatchPlayer) {
+    if (!entry?.table_id || isOut(entry) || !onWatchPlayer) {
       toast.warning('That Player Is No Longer Seated');
       return;
     }
@@ -892,7 +898,7 @@ export default function RankingTab({
        knows whether it is the in-game popup, and there a watch has to put the
        popup away or the table it opens stays hidden behind it. */
     onWatchPlayer(entry.table_id, tableNameById.get(entry.table_id) || entry.username);
-  }, [picked, onWatchPlayer, tableNameById, toast]);
+  }, [picked, entries, onWatchPlayer, tableNameById, toast]);
 
   // ── render ──────────────────────────────────────────────────────────────────
   if (entries.length === 0) {

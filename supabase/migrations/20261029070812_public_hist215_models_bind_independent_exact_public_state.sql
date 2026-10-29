@@ -855,12 +855,37 @@ BEGIN
   IF p.proowner<>r.proowner OR p.proconfig IS DISTINCT FROM r.proconfig OR p.prosecdef<>r.prosecdef OR p.provolatile<>r.provolatile OR EXISTS((SELECT grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner)))EXCEPT SELECT grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(r.proacl,acldefault('f',r.proowner))))UNION ALL(SELECT grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(r.proacl,acldefault('f',r.proowner)))EXCEPT SELECT grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))))) THEN RAISE EXCEPTION 'RPC owner/ACL/security/config changed';END IF;
  END LOOP;
 END $rpc$;
+-- Retain the two already-validated matrix CHECKs and their OIDs. Replacing
+-- them would re-evaluate every historical hand key under ACCESS EXCLUSIVE.
+-- Extend only the new explicit feature version; legacy function bodies and
+-- metadata remain byte-identical after removing the new leading branch.
+DO $matrix_transition$
+DECLARE c record;f record;before_proc pg_proc%ROWTYPE;after_proc pg_proc%ROWTYPE;definition text;patched text;guard text;
+BEGIN
+ FOR c IN SELECT * FROM(VALUES
+  ('gto_v31_runtime_cells_hand_keys_match_street_chk','CHECK (fn_gto_v31_hand_matrix_valid(hand_matrix, street, feature_contract_version))'),
+  ('gto_v31_runtime_cells_compact_matrices_valid_chk','CHECK (fn_gto_v31_compact_matrices_valid(hand_matrix, action_specs, policy_ev_matrix, action_ev_matrix, street, feature_contract_version))')
+ )v(name,definition)LOOP
+  IF NOT EXISTS(SELECT 1 FROM pg_constraint k WHERE k.conrelid='public.gto_v31_runtime_cells'::regclass AND k.conname=c.name AND k.contype='c' AND k.convalidated AND pg_get_constraintdef(k.oid)=c.definition)THEN RAISE EXCEPTION 'validated legacy matrix constraint preimage differs';END IF;
+ END LOOP;
+ IF(SELECT count(*)FROM pg_attribute WHERE attrelid='public.gto_v31_runtime_cells'::regclass AND attname=ANY(ARRAY['hand_matrix','policy_ev_matrix','action_ev_matrix'])AND attnotnull AND NOT attisdropped)<>3 THEN RAISE EXCEPTION 'legacy matrix NOT NULL preimage differs';END IF;
+ FOR f IN SELECT * FROM(VALUES
+  ('public.fn_gto_v31_hand_matrix_valid(jsonb,text,text)','1573e6b4be367ce26fcce32cf659b569',E'  IF p_version = ''holdem-public-hist215-v1'' THEN\n    RETURN COALESCE(p_matrix IS NULL AND p_street IN (''flop'',''turn'',''river''),false);\n  END IF;\n'),
+  ('public.fn_gto_v31_compact_matrices_valid(jsonb,jsonb,jsonb,jsonb,text,text)','802ff7b9b2a93b0951f476176956eed1',E'  IF p_version = ''holdem-public-hist215-v1'' THEN\n    RETURN COALESCE(p_matrix IS NULL AND p_policy_evs IS NULL AND p_action_evs IS NULL AND p_street IN (''flop'',''turn'',''river'') AND public.fn_gto_v31_action_specs_valid(p_specs),false);\n  END IF;\n')
+ )v(signature,preimage,branch)LOOP
+  SELECT * INTO STRICT before_proc FROM pg_proc WHERE oid=f.signature::regprocedure;
+  definition:=pg_get_functiondef(before_proc.oid);
+  IF md5(definition)<>f.preimage OR before_proc.proisstrict OR cardinality(string_to_array(definition,E'BEGIN\n'))<>2 THEN RAISE EXCEPTION 'legacy matrix validator preimage differs';END IF;
+  guard:=f.branch;patched:=replace(definition,E'BEGIN\n',E'BEGIN\n'||guard);EXECUTE patched;
+  SELECT * INTO STRICT after_proc FROM pg_proc WHERE oid=before_proc.oid;
+  IF replace(pg_get_functiondef(after_proc.oid),guard,'')<>definition OR after_proc.proowner<>before_proc.proowner OR after_proc.proacl IS DISTINCT FROM before_proc.proacl OR after_proc.proconfig IS DISTINCT FROM before_proc.proconfig OR after_proc.provolatile<>before_proc.provolatile OR after_proc.prosecdef<>before_proc.prosecdef OR after_proc.proisstrict<>before_proc.proisstrict OR after_proc.proparallel<>before_proc.proparallel OR after_proc.proleakproof<>before_proc.proleakproof THEN RAISE EXCEPTION 'legacy matrix validator body or security metadata changed';END IF;
+ END LOOP;
+END $matrix_transition$;
 ALTER TABLE public.gto_v31_runtime_cells ALTER COLUMN hand_matrix DROP NOT NULL,ALTER COLUMN policy_ev_matrix DROP NOT NULL,ALTER COLUMN action_ev_matrix DROP NOT NULL;
-ALTER TABLE public.gto_v31_runtime_cells DROP CONSTRAINT gto_v31_runtime_cells_hand_keys_match_street_chk,DROP CONSTRAINT gto_v31_runtime_cells_compact_matrices_valid_chk;
-ALTER TABLE public.gto_v31_runtime_cells ADD CONSTRAINT gto_v31_runtime_cells_representation_payload_chk CHECK(
- (COALESCE(policy_representation,'matrix_v2')='matrix_v2' AND hand_matrix IS NOT NULL AND policy_ev_matrix IS NOT NULL AND action_ev_matrix IS NOT NULL AND public_model IS NULL AND public_template IS NULL AND public_training_provenance IS NULL AND public_model_build_receipt IS NULL AND model_checksum IS NULL AND template_checksum IS NULL AND feature_schema_checksum IS NULL AND training_provenance_checksum IS NULL AND model_build_receipt_checksum IS NULL AND sql_physics_checksum IS NULL AND public.fn_gto_v31_hand_matrix_valid(hand_matrix,street,feature_contract_version) AND public.fn_gto_v31_compact_matrices_valid(hand_matrix,action_specs,policy_ev_matrix,action_ev_matrix,street,feature_contract_version)) OR
+ALTER TABLE public.gto_v31_runtime_cells ADD CONSTRAINT gto_v31_runtime_cells_representation_payload_chk CHECK((
+ (COALESCE(policy_representation,'matrix_v2')='matrix_v2' AND hand_matrix IS NOT NULL AND policy_ev_matrix IS NOT NULL AND action_ev_matrix IS NOT NULL AND public_model IS NULL AND public_template IS NULL AND public_training_provenance IS NULL AND public_model_build_receipt IS NULL AND model_checksum IS NULL AND template_checksum IS NULL AND feature_schema_checksum IS NULL AND training_provenance_checksum IS NULL AND model_build_receipt_checksum IS NULL AND sql_physics_checksum IS NULL) OR
  (policy_representation='public_hist215_v1' AND feature_contract_version='holdem-public-hist215-v1' AND policy_export_schema='smarter-poker.pio-policy.v4' AND hand_matrix IS NULL AND policy_ev_matrix IS NULL AND action_ev_matrix IS NULL AND public_model IS NOT NULL AND public_template IS NOT NULL AND public_training_provenance IS NOT NULL AND public_model_build_receipt IS NOT NULL AND model_checksum IS NOT NULL AND template_checksum IS NOT NULL AND feature_schema_checksum IS NOT NULL AND training_provenance_checksum IS NOT NULL AND model_build_receipt_checksum IS NOT NULL AND sql_physics_checksum IS NOT NULL)
-);
+) IS TRUE);
 CREATE FUNCTION public.fn_gto_v31_public215_cell_immutable()RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $fn$
 BEGIN
  IF OLD.policy_representation='public_hist215_v1' THEN RAISE EXCEPTION 'numeric model cell and all immutable receipts cannot be rewritten or deleted';END IF;IF TG_OP='DELETE' THEN RETURN OLD;END IF;RETURN NEW;
@@ -1301,4 +1326,5 @@ GRANT EXECUTE ON FUNCTION public.fn_gto_v31_build_cell(uuid,jsonb) TO service_ro
 -- @live-proof: md5(pg_get_functiondef('public.fn_gto_v31_ingest_source_artifact(uuid,text,jsonb)'::regprocedure))='de268a0908698d7a9c59f8c0b26db8f6' AND md5(pg_get_functiondef('public.fn_gto_v31_public215_frozen_map(public.gto_v31_datasets)'::regprocedure))='e3db693ea0c02f11937e908a9400d9e9' AND md5(pg_get_functiondef('public.fn_gto_v31_public215_source_headers_valid(public.gto_v31_datasets)'::regprocedure))='711af3102caad6db00a254eaa94d6ab0'
 -- @live-proof: md5(pg_get_functiondef('public.fn_gto_v31_active_cells(integer,integer)'::regprocedure))='917c8085678328fc74fe769e95c59190' AND md5(pg_get_functiondef('public.fn_gto_v31_evaluation_cells(uuid,integer,integer)'::regprocedure))='e18f71f77659e807226fe8a00fdcab03' AND md5(pg_get_functiondef('public.fn_horse_solver_agreement_v31_decision(jsonb)'::regprocedure))='d01da4ad1ce32e15c6cf4f77e16bfa3f'
 -- @live-proof: has_function_privilege('service_role','public.fn_gto_v31_model_freeze_authority(uuid)','EXECUTE') AND NOT has_function_privilege('anon','public.fn_gto_v31_model_freeze_authority(uuid)','EXECUTE') AND NOT has_table_privilege('service_role','public.gto_v31_model_preparations','INSERT') AND NOT has_table_privilege('authenticated','public.gto_v31_public_model_audit_combos','SELECT')
+-- @live-proof: md5(pg_get_functiondef('public.fn_gto_v31_hand_matrix_valid(jsonb,text,text)'::regprocedure))='1542e7c78e62f90a5bd9237e7a065a04' AND md5(pg_get_functiondef('public.fn_gto_v31_compact_matrices_valid(jsonb,jsonb,jsonb,jsonb,text,text)'::regprocedure))='9d772c7143c7a843e97d81d3d5474902' AND (SELECT count(*) FROM pg_constraint WHERE conrelid='public.gto_v31_runtime_cells'::regclass AND contype='c' AND convalidated AND conname IN('gto_v31_runtime_cells_hand_keys_match_street_chk','gto_v31_runtime_cells_compact_matrices_valid_chk','gto_v31_runtime_cells_representation_payload_chk'))=3
 COMMIT;

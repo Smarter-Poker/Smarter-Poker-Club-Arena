@@ -539,3 +539,46 @@ describe('13 and 14. Previous Hand', () => {
     );
   });
 });
+
+describe('a pending Watch confirmation uses the current event and seat', () => {
+  it('follows the player to their new table while the confirmation is open', () => {
+    const onWatchPlayer = vi.fn();
+    const initial = props({ onWatchPlayer });
+    const view = render(<RankingTab {...initial} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    view.rerender(
+      <RankingTab
+        {...initial}
+        entries={initial.entries.map((e) => (e.user_id === 'u4' ? { ...e, table_id: 'tbl-2' } : e))}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    expect(onWatchPlayer).toHaveBeenCalledWith('tbl-2', 'Table 2');
+  });
+  it('does not open an eliminated player’s former table', () => {
+    const onWatchPlayer = vi.fn();
+    const initial = props({ onWatchPlayer });
+    const view = render(<RankingTab {...initial} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    view.rerender(
+      <RankingTab
+        {...initial}
+        entries={initial.entries.map((e) =>
+          e.user_id === 'u4' ? { ...e, status: 'eliminated', table_id: null } : e
+        )}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    expect(onWatchPlayer).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalled();
+  });
+  it('drops a previous tournament’s confirmation when the viewed event changes', () => {
+    const onWatchPlayer = vi.fn();
+    const initial = props({ onWatchPlayer });
+    const view = render(<RankingTab {...initial} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Watch Player4,/ }));
+    view.rerender(<RankingTab {...initial} tournament={{ ...initial.tournament, id: 't-2' }} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onWatchPlayer).not.toHaveBeenCalled();
+  });
+});

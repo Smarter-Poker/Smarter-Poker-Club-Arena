@@ -60,11 +60,13 @@ def compare_reference_cases(reference,receipt_cases,actions,approved,decode):
 
 def import_pipeline(config):
  root=Path(config['pipeline_root']);need(root.is_absolute()and root.resolve(strict=True)==root,'PIPELINE_ROOT');lock=load(config['pipeline_source_lock'],16*1024*1024);exact(lock,{'format','files'});need(lock['format']=='public_hist215_encoder_source_graph_v1'and isinstance(lock['files'],list)and lock['files'],'PIPELINE_SOURCE_GRAPH')
+ codec_dir=root/'scripts'/'horse-solver-v31';need(codec_dir.resolve(strict=True)==codec_dir,'REPOSITORY_CODEC_DIRECTORY')
  files={}
  for f in lock['files']:pinned(f,16*1024*1024);need(f['path']not in files,'DUPLICATE_SOURCE_PIN');files[f['path']]=f['sha256']
- for name in ['contract.py','public_hist215.py']:need(str(root/name)in files,'PROTECTED_CODEC_SOURCE_PIN')
- sys.path.insert(0,str(root));contract=importlib.import_module('contract');codec=importlib.import_module('public_hist215')
- for module in [contract,codec]:need(Path(module.__file__).resolve().parent==root,'CODEC_IMPORT_ORIGIN')
+ for name in ['contract.py','public_hist215.py','final_public215_training.py']:need(str(codec_dir/name)in files,'PROTECTED_CODEC_SOURCE_PIN')
+ sys.path.insert(0,str(codec_dir));contract=importlib.import_module('contract');codec=importlib.import_module('public_hist215')
+ for module in [contract,codec]:need(Path(module.__file__).resolve().parent==codec_dir,'CODEC_IMPORT_ORIGIN')
+ need(set(files)=={str(root/name)for name in contract.PUBLIC215_PIPELINE_FILES},'EXACT_NINE_PRODUCER_SOURCE_PINS')
  return contract,codec
 
 def new_bytes(path,payload):
@@ -95,7 +97,7 @@ def assemble(mode,config,config_sha,output):
  pinned(config['manifest'],16*1024*1024)
  manifest=contract.load_manifest(config['manifest']['path'],expected_checksum=config['manifest']['sha256'],input_root=config['input_root'],pipeline_root=config['pipeline_root'])
  raw={**manifest.raw,'_actual_manifest_checksum':manifest.checksum};need(raw.get('policy_representation')=='public_hist215_v1','APPROVED_PUBLIC215_MANIFEST')
- authority=load(config['training_authority'],4*1024*1024);exact(authority,{'format','status','dataset_id','manifest_checksum','input_bundle_checksum','capture_index_checksum','public_feature_index_checksum','trainer_source_checksum','encoder_source_lock_path','encoder_source_lock_checksum','dependency_lock_checksum','whole_variant','python_version','numpy_version','sklearn_version','allow_final_M1_fit','shard_count'});pinned({'path':str(Path(config['pipeline_root'])/'final_public215_training.py'),'sha256':authority['trainer_source_checksum']},1024*1024);need(authority.get('dataset_id')==config['dataset_id']and authority.get('manifest_checksum')==manifest.checksum and authority.get('input_bundle_checksum')==raw['input_bundle_checksum']and authority.get('format')=='public_hist215_final_M1_training_v1'and authority.get('status')=='FROZEN_BEFORE_FIRST_FINAL_M1_FIT'and authority.get('allow_final_M1_fit')is True and authority.get('shard_count')==4,'ACTUAL_TRAINING_AUTHORITY')
+ authority=load(config['training_authority'],4*1024*1024);exact(authority,{'format','status','dataset_id','manifest_checksum','input_bundle_checksum','capture_index_checksum','public_feature_index_checksum','trainer_source_checksum','encoder_source_lock_path','encoder_source_lock_checksum','dependency_lock_checksum','whole_variant','python_version','numpy_version','sklearn_version','allow_final_M1_fit','shard_count'});pinned({'path':str(Path(config['pipeline_root'])/'scripts'/'horse-solver-v31'/'final_public215_training.py'),'sha256':authority['trainer_source_checksum']},1024*1024);need(authority.get('dataset_id')==config['dataset_id']and authority.get('manifest_checksum')==manifest.checksum and authority.get('input_bundle_checksum')==raw['input_bundle_checksum']and authority.get('format')=='public_hist215_final_M1_training_v1'and authority.get('status')=='FROZEN_BEFORE_FIRST_FINAL_M1_FIT'and authority.get('allow_final_M1_fit')is True and authority.get('shard_count')==4,'ACTUAL_TRAINING_AUTHORITY')
  recipe=raw['public215_protocols']['training_recipe'];need(authority['public_feature_index_checksum']==recipe.get('public_feature_index_checksum')and authority['dependency_lock_checksum']==codec.digest(raw['public215_protocols']['dependency_lock']),'APPROVED_FEATURE_INDEX_AND_DEPENDENCY_AUTHORITY')
  encoder_lock=load({'path':authority['encoder_source_lock_path'],'sha256':authority['encoder_source_lock_checksum']},16*1024*1024);exact(encoder_lock,{'format','files'});need(encoder_lock['format']=='public_hist215_encoder_source_graph_v1','ACTUAL_ENCODER_SOURCE_GRAPH')
  for source in encoder_lock['files']:pinned(source,16*1024*1024)

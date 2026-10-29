@@ -289,7 +289,7 @@ describe('closed exact published Stats pagination proof', () => {
       "github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'"
     );
     expect(workflow.jobs['publication-gate'].if).toBe(
-      "github.event_name != 'repository_dispatch' || github.event.action != 'run-stats-pagination-proof'"
+      "github.event_name != 'repository_dispatch' || (github.event.action != 'run-stats-pagination-proof' && github.event.action != 'run-private-record-client-proof')"
     );
     expect(workflow.jobs['production-e2e'].concurrency).toEqual({
       group: 'post-deploy-e2e-production',

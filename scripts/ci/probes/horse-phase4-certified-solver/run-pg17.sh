@@ -177,7 +177,9 @@ echo PHASE4_STATUS_OK
 PUBLIC215_DB=horse_phase4_public215_probe
 "$PG_BIN/createdb" -T "$DB" "$PUBLIC215_DB"
 PUBLIC215_PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$PUBLIC215_DB")
-"${PUBLIC215_PSQL[@]}" -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql"
+"${PUBLIC215_PSQL[@]}" -f "$HERE/public215-install-constraints-before.sql" \
+ -f "$ROOT/supabase/migrations/20261029070812_public_hist215_models_bind_independent_exact_public_state.sql" \
+ -f "$HERE/public215-install-constraints-after.sql"
 node "$HERE/public215-declared-proofs.mjs" | "${PUBLIC215_PSQL[@]}"
 for fixture in public215-model.sql public215-physics.sql public215-metadata.sql public215-selection.sql public215-wtl-parity.sql public215-audit-cost.sql public215-admission.sql; do
  "${PUBLIC215_PSQL[@]}" -c "SET statement_timeout='240s';SET lock_timeout='1s';" -f "$HERE/$fixture"

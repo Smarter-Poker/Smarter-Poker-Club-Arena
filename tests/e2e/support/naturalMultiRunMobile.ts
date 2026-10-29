@@ -123,7 +123,8 @@ export function selectNaturalMultiRunSubject(
       return (
         eligibleNaturalMultiRunTable(table) &&
         mode !== 'mandatory_twice' &&
-        (targetThree || mode !== 'mandatory_three')
+        (targetThree || mode !== 'mandatory_three') &&
+        (!targetThree || (counts.get(table.id)?.[1] ?? 0) > 0)
       );
     })
     .map((table) => {
@@ -139,11 +140,16 @@ export function selectNaturalMultiRunSubject(
       (a.table.id < b.table.id ? -1 : a.table.id > b.table.id ? 1 : 0)
   );
   const selected = ranked[0]?.table;
-  if (!selected) throw new Error('Natural multirun observation requires one eligible cash table');
+  if (!selected)
+    throw new Error(
+      targetThree
+        ? 'Natural multirun observation requires one eligible cash table with positive three-run history'
+        : 'Natural multirun observation requires one eligible cash table'
+    );
   return selected;
 }
 
-/** Use the existing (table_id, created_at, id) index, never global history. */
+/** Keep natural opportunities through provider queue time using the existing table/created index. */
 export async function readNaturalMultiRunHistory(
   tableIds: string[],
   readRows: (query: URLSearchParams) => Promise<NaturalMultiRunHistoryRow[]>,
@@ -164,7 +170,7 @@ export async function readNaturalMultiRunHistory(
           new URLSearchParams({
             select: 'table_id,rit_boards',
             table_id: `eq.${id}`,
-            created_at: `gte.${new Date(now - 30 * 60_000).toISOString()}`,
+            created_at: `gte.${new Date(now - 2 * 60 * 60_000).toISOString()}`,
             rit_boards: 'not.is.null',
             order: 'created_at.desc',
             limit: '500',

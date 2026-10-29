@@ -185,7 +185,11 @@ describe('Every persisted tournament format shares the terminal celebration', ()
       '.github/workflows/ci.yml',
       '.github/workflows/publish-club-arena.yml',
     ]) {
-      expect(readFileSync(workflow, 'utf8')).toMatch(/run: npx vitest run tests\/ --shard=/);
+      expect(readFileSync(workflow, 'utf8')).toMatch(
+        workflow.endsWith('/ci.yml')
+          ? /run: node scripts\/ci\/ui-test-selection\.mjs unit --shard=/
+          : /run: npx vitest run tests\/ --shard=/
+      );
     }
     expect(readFileSync('.github/workflows/ci.yml', 'utf8')).toContain(
       'name: Client Unit Tests (vitest)'

@@ -98,7 +98,25 @@ NOTES=()
 add()  { PROBLEMS+=("$1"); }
 note() { NOTES+=("$1"); echo "  $1"; }
 
-gh_ro() { gh api "$@" 2>/dev/null; }
+# Read-only routing keeps the personal installation for every other estate repo.
+# Never use this helper for issue writes, which retain GITHUB_TOKEN.
+estate_gh_read() {
+  local token="${GH_TOKEN:-}" arg legacy='Smarter-Poker/Smarter-Poker-Club-Arena'
+  local args=()
+  for arg in "$@"; do
+    case "$arg" in
+      repos/Smarter-Poker/Smarter-Poker-Club-Arena|repos/Smarter-Poker/Smarter-Poker-Club-Arena/*|Smarter-Poker/Smarter-Poker-Club-Arena)
+        if [ "$HOME_REPO" = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' ]; then
+          [ "${GITHUB_REPOSITORY_ID:-}" = '1132369872' ] && [ -n "${GH_TOKEN_CA:-}" ] || return 1
+          if [[ "$arg" == repos/* ]]; then arg="repos/$HOME_REPO${arg#repos/$legacy}"; else arg="$HOME_REPO"; fi
+          token="$GH_TOKEN_CA"
+        fi ;;
+    esac
+    args+=("$arg")
+  done
+  GH_TOKEN="$token" command gh "${args[@]}"
+}
+gh_ro() { estate_gh_read api "$@" 2>/dev/null; }
 
 echo "estate-integrity: checking ${#REPOS[@]} repos"
 
@@ -367,7 +385,7 @@ fi
 # GitHub returns `"content": ""` for one, which is not the same as a 404.
 read_shared_file() {
   local repo="$1" path="$2" body rc
-  body=$(gh api "repos/Smarter-Poker/$repo/contents/$path" --jq '.content' 2>/dev/null)
+  body=$(estate_gh_read api "repos/Smarter-Poker/$repo/contents/$path" --jq '.content' 2>/dev/null)
   rc=$?
   if [ "$rc" -eq 0 ]; then
     printf 'present\t%s' "$body"
@@ -556,7 +574,7 @@ for r in "${REPOS[@]}"; do
       continue ;;
   esac
 
-  C=$(gh run list --repo "Smarter-Poker/$r" --workflow agent-autopilot.yml --limit 1 \
+  C=$(estate_gh_read run list --repo "Smarter-Poker/$r" --workflow agent-autopilot.yml --limit 1 \
         --json conclusion,status --jq '"\(.[0].status)/\(.[0].conclusion // "-")"' 2>/dev/null || echo "")
   case "$C" in
     ""|"null/-")   add "**$r** — Agent Autopilot is enabled and has never run. Nothing in that repo auto-merges, so every pull request waits for a human." ;;

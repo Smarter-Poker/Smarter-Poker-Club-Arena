@@ -13,7 +13,7 @@ import time
 def qualify(root, out, cmd, command, run, probe, require, results):
     migration=root/'supabase/migrations/20261029011340_legacy_postflop_void_preserves_original_principal.sql'
     here=root/'scripts/ci/probes/f06-shared-hand-lane/abandoned-addon'
-    results['interruptedPostflopInputs']={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [migration,Path(__file__),Path(__file__).with_name('fixture.sql'),root/'scripts/ci/test-f06-shared-hand-lane.py',*sorted((Path(__file__).parent).glob('*.sql')),Path(__file__).with_name('prerequisite-provenance.json')]}
+    results['interruptedPostflopInputs']={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [migration,Path(__file__),Path(__file__).with_name('fixture.sql'),root/'scripts/ci/check-migrations-are-live.mjs',root/'scripts/ci/test-f06-shared-hand-lane.py',*sorted((Path(__file__).parent).glob('*.sql')),Path(__file__).with_name('prerequisite-provenance.json')]}
     previous=cmd[-1]
     run('postflop-database','CREATE DATABASE interrupted_postflop;')
     cmd[-1]='interrupted_postflop'

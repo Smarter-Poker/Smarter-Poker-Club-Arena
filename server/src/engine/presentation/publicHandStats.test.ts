@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { publicHandStatsFrame } from './publicHandStats.js';
+import recordedBookkeeping from './publicHandStats.bookkeeping-fixture.json';
 const input = {
   tableId: 'table',
   handNumber: 1,
@@ -20,6 +21,111 @@ const input = {
   ],
 };
 describe('committed public tendency frame', () => {
+  it.each(recordedBookkeeping)(
+    'preserves anonymized recorded public history: $name',
+    (recorded) => {
+      const frame = publicHandStatsFrame({
+        ...input,
+        facts: [{ ...input.facts[0], user_id: recorded.hero }],
+        bigBlind: recorded.bigBlind,
+        actions: recorded.actions,
+      })!;
+      expect(frame.players).toEqual([
+        {
+          user_id: recorded.hero,
+          vpip: true,
+          pfr: false,
+          won: true,
+          aggressive_actions: recorded.aggressive,
+          call_actions: recorded.calls,
+        },
+      ]);
+      expect(JSON.stringify(frame)).not.toMatch(/rit_board|Jhearts|system|sourceHand/);
+    }
+  );
+  it.each([
+    {
+      action: 'rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts',
+      userId: 'system',
+      seat: 0,
+      stage: 'river',
+      timestamp: 123,
+    },
+    {
+      action: 'rit_board_3:Ahearts,8spades,8hearts,8clubs,3spades',
+      userId: 'system',
+      seat: 0,
+      stage: 'river',
+      timestamp: 124,
+    },
+    {
+      action: 'bomb_ante',
+      userId: 'a',
+      seat: 3,
+      stage: 'preflop',
+      amount: 2,
+      origin: 'forced',
+      dead: true,
+    },
+  ])('keeps actual public bookkeeping out of action counts: $action', (bookkeeping) => {
+    const frame = publicHandStatsFrame({
+      ...input,
+      actions: [
+        { action: 'bet', userId: 'a', stage: 'flop', amount: 5 },
+        { action: 'call', userId: 'a', stage: 'turn', amount: 5 },
+        bookkeeping,
+      ],
+    })!;
+    expect(frame.players).toEqual([
+      { user_id: 'a', vpip: true, pfr: false, won: true, aggressive_actions: 1, call_actions: 1 },
+    ]);
+    expect(JSON.stringify(frame)).not.toMatch(/Jhearts|rit_board|system|bomb_ante/);
+  });
+  it.each([
+    {
+      action: 'rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts',
+      userId: 'a',
+      seat: 0,
+      stage: 'river',
+      timestamp: 123,
+    },
+    {
+      action: 'rit_board_4:Jhearts,9clubs,Qdiamonds,7diamonds,9hearts',
+      userId: 'system',
+      seat: 0,
+      stage: 'river',
+      timestamp: 123,
+    },
+    {
+      action: 'rit_board_2:Jhearts,9clubs,Qdiamonds,7diamonds,Jhearts',
+      userId: 'system',
+      seat: 0,
+      stage: 'river',
+      timestamp: 123,
+    },
+    {
+      action: 'rit_board_2:Jh,9c,Qd,7d,9h',
+      userId: 'system',
+      seat: 0,
+      stage: 'river',
+      timestamp: 123,
+    },
+    { action: 'bomb_ante', userId: 'a', stage: 'preflop', amount: 2 },
+    {
+      action: 'bomb_ante',
+      userId: 'a',
+      stage: 'preflop',
+      amount: -2,
+      origin: 'forced',
+      dead: true,
+    },
+  ])('refuses malformed bookkeeping: $action', (bookkeeping) => {
+    const frame = publicHandStatsFrame({
+      ...input,
+      actions: [{ action: 'bet', userId: 'a', stage: 'flop', amount: 5 }, bookkeeping],
+    })!;
+    expect(frame.players).toEqual([{ user_id: 'a', vpip: true, pfr: false, won: true }]);
+  });
   it('ignores an uncalled-bet return without discarding measured aggression', () => {
     const frame = publicHandStatsFrame({
       ...input,

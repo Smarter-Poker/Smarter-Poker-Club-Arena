@@ -16,6 +16,24 @@ function publicActionCounts(
     const actor = a.userId ?? a.user_id;
     const stage = typeof a.stage === 'string' ? a.stage.toLowerCase() : '';
     const amount = Number(a.amount);
+    // Produced by ServerTableEngineRunout after public runouts, never a player bet.
+    if (action.startsWith('rit_board_')) {
+      const board =
+        /^rit_board_[23]:((?:[2-9tjqka](?:hearts|diamonds|clubs|spades),){4}[2-9tjqka](?:hearts|diamonds|clubs|spades))$/.exec(
+          action
+        );
+      if (
+        !board ||
+        actor !== 'system' ||
+        a.seat !== 0 ||
+        stage !== 'river' ||
+        !Number.isSafeInteger(a.timestamp) ||
+        Number(a.timestamp) < 0 ||
+        new Set(board[1]!.split(',')).size !== 5
+      )
+        return null;
+      continue;
+    }
     if (
       ![
         'fold',
@@ -39,12 +57,22 @@ function publicActionCounts(
         'post_ante',
         'dead_blind',
         'bring_in',
+        'bomb_ante',
         // Uncalled chips returning to their owner are settlement bookkeeping.
         'return',
       ].includes(action) ||
       typeof actor !== 'string' ||
       !actor ||
       !stage
+    )
+      return null;
+    if (
+      action === 'bomb_ante' &&
+      (a.origin !== 'forced' ||
+        a.dead !== true ||
+        stage !== 'preflop' ||
+        !Number.isFinite(amount) ||
+        amount <= 0)
     )
       return null;
     if (typeof actor === 'string' && actor && !counts.has(actor))

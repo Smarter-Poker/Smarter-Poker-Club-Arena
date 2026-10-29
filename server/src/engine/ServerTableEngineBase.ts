@@ -1,3 +1,4 @@
+import { broadcastTimeBankActivation } from '../services/timeBankBroadcast.js';
 import { cashRakeScope } from '../config/cashRakePolicy.js';
 import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
 import { SeatSitOutPersistence } from './SeatSitOutPersistence.js';
@@ -3155,7 +3156,18 @@ export abstract class ServerTableEngineBase {
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
       if (this.handContinuation)
-        this.handContinuation.enqueue({ type: 'CONTINUATION_TIME_BANK', event });
+        this.handContinuation.enqueue({
+          type: 'CONTINUATION_TIME_BANK',
+          event:
+            event.type === 'TIME_BANK_ACTIVATED'
+              ? {
+                  ...event,
+                  seat: this.handController
+                    ?.getState()
+                    .players.find((p) => p.user_id === event.playerId)?.seat,
+                }
+              : event,
+        });
       else this.dispatchContinuationTimeBank(event);
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
@@ -9028,21 +9040,60 @@ export abstract class ServerTableEngineBase {
       `[ServerTableEngine:${this.tableId}] TimeBank: ${event.type} player=${event.playerId}`
     );
     this.onTimeBankAccounting(event, debitId);
-    /* AND THE TABLE (Dan 2026-09-20: "the time bank badge never goes away").
-         TIME_BANK_ACTIVATED reaches the browser through its OWN hand-written
-         hub broadcast (ServerTableEngineTurns.activateTimeBank). The three
-         events that END a bank had no such path: this callback was the only
-         consumer and it does database accounting, so `setTimeBankActive(true)`
-         had no counterpart and the client's badge cleared only if a later
-         snapshot happened to disagree with it. The accounting call above is
-         untouched - this is a SECOND consumer of an event the engine already
-         produced, not a replacement.
-
-         Forwarded as a NARROWED object rather than the raw event: TimeBankEvent
-         carries an open index signature, and this frame goes to every seat at
-         the table, so only the four fields TablePage's persistTimeBankState
-         reads are named here. Values are passed through exactly as the engine
-         computed them; the client supplies its own defaults. */
+    // Original activations publish only from the retained event consumer. The
+    // cash path retains its existing caller-owned publication below Turns.
+    if (
+      event.type === 'TIME_BANK_ACTIVATED' &&
+      event.publicationDeferred === true &&
+      this.handContinuation
+    ) {
+      this.resumeContinuationTimeBankActivation(event);
+      const automatic = event.activationCause === 'automatic';
+      void broadcastTimeBankActivation(this.tableId, {
+        player_id: event.playerId,
+        table_id: this.tableId,
+        additional_seconds: event.secondsGranted,
+        auto_activated: automatic,
+        uses_remaining: event.usesRemaining,
+        ...(automatic ? {} : { total_remaining: event.totalRemaining }),
+        unlimited_activations: event.unlimitedActivations === true,
+      });
+      if (
+        event.unlimitedActivations !== true &&
+        Number(event.usesRemaining) >= 0 &&
+        Number(event.usesRemaining) <= 1
+      ) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_low',
+            table_id: this.tableId,
+            player_id: event.playerId,
+            uses_remaining: event.usesRemaining,
+          });
+        } catch {
+          /* publication is best effort */
+        }
+      }
+      // Preserve the existing manual activation hub shape for seat badges.
+      if (!automatic) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_activated',
+            table_id: this.tableId,
+            player_id: event.playerId,
+            seat: event.seat,
+            uses_remaining: event.usesRemaining,
+            secondsGranted: event.secondsGranted,
+            usesRemaining: event.usesRemaining,
+            unlimitedActivations: event.unlimitedActivations === true,
+            timestamp: Date.now(),
+          });
+        } catch {
+          /* publication is best effort */
+        }
+      }
+    }
+    // Only named public terminal-bank fields cross the public boundary.
     if (
       event.type === 'TIME_BANK_STOPPED' ||
       event.type === 'TIME_BANK_EXPIRED' ||
@@ -11548,6 +11599,7 @@ export abstract class ServerTableEngineBase {
   protected abstract processPendingAddOns(players: SeatedPlayer[]): Promise<void>;
 
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
+  protected abstract resumeContinuationTimeBankActivation(event: TimeBankEvent): void;
   protected abstract clearTurnTimer(): void;
   protected abstract rearmTurnTimerIfCurrent(userId: string): void;
   protected abstract handlePlayerDisconnectedMidTurn(userId: string): void;

@@ -4067,12 +4067,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               // consumers. It contains no invented action or replacement deal.
               void this.runOwnedReadContinuation(async () => {
                 try {
+                  const originalDecisionCount = controllerForHand.getState().actionHistory.length;
                   for (const [index, event] of recovered.batch.events.entries())
                     await dispatchOriginalEvent(event, {
                       sequence: recovered.batch.sequence,
                       index,
                     });
                   if (
+                    controllerForHand.getState().actionHistory.length === originalDecisionCount &&
+                    !this.ownsContinuationTimeBankClock() &&
                     !recovered.batch.events.some((event) =>
                       [
                         'TURN_CHANGE',

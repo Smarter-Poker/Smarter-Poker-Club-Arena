@@ -65,6 +65,7 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { ValidationContext } from './ServerActionValidator.js';
+import type { TimeBankEvent } from './TimeBankEngine.js';
 import { broadcastTimeBankActivation } from '../services/timeBankBroadcast.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
@@ -997,6 +998,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         !this.timeBankSuppressedThisTurn &&
         this.turnFSM.state === 'timer_running'
       ) {
+        const activationIsDurable = !!this.handContinuation;
         const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
           this.tableId,
           userId,
@@ -1078,7 +1080,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             } catch {
               /* broadcast failure is non-fatal */
             }
-          }
+          },
+          activationIsDurable
         );
 
         if (autoActivated) {
@@ -1093,6 +1096,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           }
           this.turnFSM.transition('time_bank_active');
           this.timeBankActivatedThisTurn = true;
+          if (activationIsDurable) this.clearTurnTimer();
           // Bible V8 §2.15: Log time bank activation
           this.currentHandTimerLog.push({
             playerId: userId,
@@ -1118,36 +1122,38 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
           );
           // Restart turn timer with the granted time bank duration
-          this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
+          if (!activationIsDurable) this.startTurnTimer(userId, seat, grantedSeconds, 'time_bank');
 
-          // Preserve the opponent-timer message without retaining a channel.
-          void broadcastTimeBankActivation(this.tableId, {
-            player_id: userId,
-            table_id: this.tableId,
-            additional_seconds: grantedSeconds,
-            auto_activated: true,
-            uses_remaining: usesAfterActivation,
-            unlimited_activations: bank?.unlimitedActivations === true,
-          });
+          if (!activationIsDurable) {
+            // Preserve the opponent-timer message without retaining a channel.
+            void broadcastTimeBankActivation(this.tableId, {
+              player_id: userId,
+              table_id: this.tableId,
+              additional_seconds: grantedSeconds,
+              auto_activated: true,
+              uses_remaining: usesAfterActivation,
+              unlimited_activations: bank?.unlimitedActivations === true,
+            });
 
-          // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
-          // and at 0 (the very last one was just used). Was firing at <=5
-          // which on a 4-max-uses table means every single use triggered the
-          // warning. Tester reported "after every card" spam.
-          if (
-            bank?.unlimitedActivations !== true &&
-            usesAfterActivation >= 0 &&
-            usesAfterActivation <= 1
-          ) {
-            try {
-              this.hub?.emitEvent(this.tableId, {
-                type: 'time_bank_low',
-                table_id: this.tableId,
-                player_id: userId,
-                uses_remaining: usesAfterActivation,
-              });
-            } catch {
-              /* broadcast failure is non-fatal */
+            // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
+            // and at 0 (the very last one was just used). Was firing at <=5
+            // which on a 4-max-uses table means every single use triggered the
+            // warning. Tester reported "after every card" spam.
+            if (
+              bank?.unlimitedActivations !== true &&
+              usesAfterActivation >= 0 &&
+              usesAfterActivation <= 1
+            ) {
+              try {
+                this.hub?.emitEvent(this.tableId, {
+                  type: 'time_bank_low',
+                  table_id: this.tableId,
+                  player_id: userId,
+                  uses_remaining: usesAfterActivation,
+                });
+              } catch {
+                /* broadcast failure is non-fatal */
+              }
             }
           }
 
@@ -1373,6 +1379,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Activate via TimeBankEngine — it handles pool depletion, the per-street
     // limit, the exhaustion check and event emission.
+    const activationIsDurable = !!this.handContinuation;
     const activation = this.timeBankEngine.tryActivate(
       this.tableId,
       userId,
@@ -1448,7 +1455,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           /* broadcast failure is non-fatal */
         }
       },
-      remainingBeforeBank
+      remainingBeforeBank,
+      'manual',
+      activationIsDurable
     );
 
     if (activation !== 'activated') {
@@ -1467,6 +1476,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     this.timeBankActivatedThisTurn = true;
+    if (activationIsDurable) this.clearTurnTimer();
 
     // Get bank info for the broadcast
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
@@ -1482,57 +1492,59 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       `[ServerTableEngine:${this.tableId}] Player ${userId} spent a time bank. Clock reset to ${bankSeconds}s.`
     );
 
-    this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
+    if (!activationIsDurable) this.startTurnTimer(userId, player.seat, newDuration, 'time_bank');
     await this.awaitActionPersistence();
 
-    // Preserve the opponent-timer message without retaining a channel.
-    void broadcastTimeBankActivation(this.tableId, {
-      player_id: userId,
-      table_id: this.tableId,
-      additional_seconds: bankSeconds,
-      uses_remaining: bank?.usesRemaining ?? 0,
-      total_remaining: bank?.remainingSeconds ?? 0,
-      unlimited_activations: bank?.unlimitedActivations === true,
-      auto_activated: false,
-    });
+    if (!activationIsDurable) {
+      // Preserve the opponent-timer message without retaining a channel.
+      void broadcastTimeBankActivation(this.tableId, {
+        player_id: userId,
+        table_id: this.tableId,
+        additional_seconds: bankSeconds,
+        uses_remaining: bank?.usesRemaining ?? 0,
+        total_remaining: bank?.remainingSeconds ?? 0,
+        unlimited_activations: bank?.unlimitedActivations === true,
+        auto_activated: false,
+      });
 
-    // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
-    // = just used last one). Previous <=5 condition spammed on 4-max tables.
-    const manualUsesLeft = bank?.usesRemaining ?? 0;
-    if (bank?.unlimitedActivations !== true && manualUsesLeft >= 0 && manualUsesLeft <= 1) {
+      // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
+      // = just used last one). Previous <=5 condition spammed on 4-max tables.
+      const manualUsesLeft = bank?.usesRemaining ?? 0;
+      if (bank?.unlimitedActivations !== true && manualUsesLeft >= 0 && manualUsesLeft <= 1) {
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'time_bank_low',
+            table_id: this.tableId,
+            player_id: userId,
+            uses_remaining: manualUsesLeft,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
+        }
+      }
+
+      // Phase X5 (2026-04-29) — Bible V8 §1.16 time_bank_activated public event
+      // distinct from time_bank_low/timeout. Broadcast lets opponents see the
+      // "TIMEBANK" indicator on the acting player's seat ring (not just the
+      // hero who triggered it).
       try {
         this.hub?.emitEvent(this.tableId, {
-          type: 'time_bank_low',
+          type: 'time_bank_activated',
           table_id: this.tableId,
           player_id: userId,
+          seat: player.seat,
           uses_remaining: manualUsesLeft,
+          // Dan 2026-08-21 (item 2): the client extends its countdown from this
+          // number. Without it the hub path fell back to a hard-coded default,
+          // so a bank of any other length was displayed wrong.
+          secondsGranted: bankSeconds,
+          usesRemaining: manualUsesLeft,
+          unlimitedActivations: bank?.unlimitedActivations === true,
+          timestamp: Date.now(),
         });
       } catch {
         /* broadcast failure is non-fatal */
       }
-    }
-
-    // Phase X5 (2026-04-29) — Bible V8 §1.16 time_bank_activated public event
-    // distinct from time_bank_low/timeout. Broadcast lets opponents see the
-    // "TIMEBANK" indicator on the acting player's seat ring (not just the
-    // hero who triggered it).
-    try {
-      this.hub?.emitEvent(this.tableId, {
-        type: 'time_bank_activated',
-        table_id: this.tableId,
-        player_id: userId,
-        seat: player.seat,
-        uses_remaining: manualUsesLeft,
-        // Dan 2026-08-21 (item 2): the client extends its countdown from this
-        // number. Without it the hub path fell back to a hard-coded default,
-        // so a bank of any other length was displayed wrong.
-        secondsGranted: bankSeconds,
-        usesRemaining: manualUsesLeft,
-        unlimitedActivations: bank?.unlimitedActivations === true,
-        timestamp: Date.now(),
-      });
-    } catch {
-      /* broadcast failure is non-fatal */
     }
 
     return { success: true };
@@ -2726,6 +2738,46 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * both self-contained — so the one call site voids the promise and keeps its
    * existing try/catch + forceArmTurnTimer fallback for a synchronous throw.
    */
+  protected ownsContinuationTimeBankClock(): boolean {
+    const state = this.handController?.getState();
+    const actor = state?.players.find((p) => p.seat === state.currentPlayerSeat);
+    const bank = actor && this.timeBankEngine.getPlayerBank(this.tableId, actor.user_id);
+    return !!(bank?.isActive && !bank.pendingPublication && this.timeBankActivatedThisTurn);
+  }
+
+  protected resumeContinuationTimeBankActivation(event: TimeBankEvent): void {
+    const state = this.handController?.getState();
+    const actor = state?.players.find(
+      (p) => p.user_id === event.playerId && p.seat === state.currentPlayerSeat
+    );
+    if (!state || !actor || !this.lifecycleCanMutate()) return;
+    const seconds = this.timeBankEngine.resumeDeferredPublication(
+      this.tableId,
+      actor.user_id,
+      () => {
+        if (
+          !this.lifecycleCanMutate() ||
+          this.handController?.getState().currentPlayerSeat !== actor.seat
+        )
+          return;
+        const current = this.handController.getState();
+        const player = current.players.find((p) => p.seat === actor.seat);
+        if (this.forceResolveSeat(actor.seat, !!player && current.currentBet <= player.bet)) {
+          this.disconnectEngine.recordConnectedTimeout(this.tableId, actor.user_id);
+          this.markProgress();
+        }
+      }
+    );
+    if (seconds === null) return;
+    this.timeBankActivatedThisTurn = true;
+    this.startTurnTimer(actor.user_id, actor.seat, seconds, 'time_bank');
+    const seated = this.seatedPlayers.find(
+      (p) => p.user_id === actor.user_id && p.seat_number === actor.seat
+    );
+    if (seated?.is_horse && !this.isOwnClientControlling(actor.user_id))
+      this.scheduleHorseAction(seated, actor.seat, actor, state);
+  }
+
   protected async handleTurnChange(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     if (event.type !== 'TURN_CHANGE' || !this.lifecycleCanMutate() || !this.handController) return;
 
@@ -2748,6 +2800,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // check in ServerTableEngineHandEvents: never arm a clock or run
     // disconnect/pre-action logic for a seat that is no longer on the clock.
     if (state.currentPlayerSeat !== seat) return;
+
+    const pendingBank = this.timeBankEngine.getPlayerBank(this.tableId, player.user_id);
+    if (pendingBank?.pendingPublication && this.handContinuation) {
+      // A later control-only capsule can retain the real allocated bank with
+      // no activation event in its batch. Do not turn that allocation into a
+      // fresh ordinary clock, or publish it while its own bytes are unproven.
+      if (this.handContinuation.isUnretained()) return;
+      if (!pendingBank.activationCause) throw new Error('Original Paid Clock Cause Is Unproven');
+      this.dispatchContinuationTimeBank({
+        type: 'TIME_BANK_ACTIVATED',
+        publicationDeferred: true,
+        tableId: this.tableId,
+        playerId: player.user_id,
+        seat,
+        activationCause: pendingBank.activationCause,
+        secondsGranted: pendingBank.currentUseSeconds,
+        usesRemaining: pendingBank.usesRemaining,
+        totalRemaining: pendingBank.remainingSeconds,
+        unlimitedActivations: pendingBank.unlimitedActivations,
+      });
+      return;
+    }
 
     // This accepted TURN_CHANGE is the ownership boundary for asynchronous
     // horse work. Retire the previous turn before any pre-action await or an

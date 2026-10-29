@@ -1039,7 +1039,8 @@ BEGIN
  body:=pg_temp.public215_replace(body,'(SELECT count(*) FROM jsonb_object_keys(v_matrix))<>3','(SELECT count(*) FROM jsonb_object_keys(v_matrix))<>5');
  body:=pg_temp.public215_replace(body,$anchor$NOT (v_matrix ?& ARRAY['schema','combo_order','nodes'])$anchor$,$anchor$NOT (v_matrix ?& ARRAY['schema','combo_order','nodes','selection_receipt','selection_receipt_checksum'])$anchor$);EXECUTE body;
 END $clone_ingest$;
-REVOKE ALL ON FUNCTION public.fn_gto_v31_ingest_source_artifact_matrix_v2(uuid,text,jsonb),public.fn_gto_v31_public215_ingest_m2(uuid,text,jsonb)FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_gto_v31_ingest_source_artifact_matrix_v2(uuid,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_gto_v31_public215_ingest_m2(uuid,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 CREATE OR REPLACE FUNCTION public.fn_gto_v31_ingest_source_artifact(p_dataset_id uuid,p_machine_id text,p_artifact jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
 DECLARE d public.gto_v31_datasets;b public.gto_v31_input_bundles;v_receipt jsonb;receipt_sha text;seed text;result jsonb;persisted jsonb;matrix jsonb;node jsonb;v_source_id uuid;entry jsonb;

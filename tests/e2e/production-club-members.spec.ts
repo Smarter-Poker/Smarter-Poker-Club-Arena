@@ -225,6 +225,10 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
   const startedAt = Date.now();
   await page.goto(MEMBERS_PATH, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  await expect(page.locator('[data-players-mode]')).toBeVisible({ timeout: 45_000 });
+  // A previous case may legitimately have saved Advanced mode for this actor.
+  // Choose the mode being checked through its real control, preserving preferences.
+  await page.getByRole('button', { name: 'Simple', exact: true }).click();
   await expect(page.locator('[data-players-mode="simple"]')).toBeVisible({ timeout: 45_000 });
   const viewportWidth = page.viewportSize()?.width;
   if (viewportWidth !== undefined && viewportWidth <= 430) {
@@ -643,10 +647,15 @@ test.describe('Production Kings Club Players', () => {
     await page.locator('.mm-back').click();
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(search).toHaveValue(alias);
-    await expect(sort).toHaveValue('name');
+    await expect(sort).toHaveValue('search');
+    await expect(sort).toBeDisabled();
+    await expect(sort.locator('option:checked')).toHaveText('Player Name Matches');
     await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
       alias
     );
+    await completeNextPageRead(probe, () => search.fill(''), 'workspace clear saved search');
+    await expect(sort).toHaveValue('name');
+    await expect(sort).toBeEnabled();
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
     expect(probe.pageErrorCount).toBe(0);

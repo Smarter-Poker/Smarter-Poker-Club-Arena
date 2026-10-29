@@ -234,6 +234,24 @@ describe('the roster', () => {
   });
 });
 
+describe('production roster mode readiness', () => {
+  it('chooses Simple through its control before asserting it, including saved Advanced mode', () => {
+    const helper = PRODUCTION_PLAYERS.slice(
+      PRODUCTION_PLAYERS.indexOf('async function openMembers('),
+      PRODUCTION_PLAYERS.indexOf('async function expectContainedControls(')
+    );
+    const pageReady = helper.indexOf(`page.locator('[data-players-mode]')`);
+    const chooseSimple = helper.indexOf(
+      `getByRole('button', { name: 'Simple', exact: true }).click()`
+    );
+    const assertSimple = helper.indexOf(`page.locator('[data-players-mode="simple"]')`);
+    expect(pageReady).toBeGreaterThan(-1);
+    expect(chooseSimple).toBeGreaterThan(pageReady);
+    expect(assertSimple).toBeGreaterThan(chooseSimple);
+    expect(helper).not.toMatch(/(?:localStorage|sessionStorage)\.(?:clear|removeItem)/);
+  });
+});
+
 describe('the transfer modal (source pins beside the mount test)', () => {
   it('reads the named recipient directly and offers only members who can receive', () => {
     expect(MODAL).toContain("setPinnedRecipient('missing')");

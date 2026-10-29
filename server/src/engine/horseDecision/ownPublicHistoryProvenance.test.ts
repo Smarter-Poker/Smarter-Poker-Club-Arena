@@ -327,3 +327,93 @@ it('optional valid diagnostics preserve the canonical decision key and actual po
     await second.close();
   }
 });
+
+it('binds a transient read refusal to its exact original cutoff and validates actual worker consumption', async () => {
+  let available = 1024 ** 3;
+  const request = decisionRequest();
+  const c = context(),
+    cutoff = request.decisionTimeMs;
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => ({
+    ...ample(),
+    total_available_size: available,
+  }));
+  const load = vi.fn(async () => window(c));
+  const cache = new HorseOwnPublicHistoryCache(load, () => cutoff, 2048, budget);
+  cache.forSnapshot(c, cutoff);
+  await flush();
+  const original = cache.forSnapshot(c, cutoff)!;
+  available = 0;
+  expect(cache.forSnapshot(c, cutoff)).toBeUndefined();
+  const refused = cache.provenance(c, cutoff);
+  expect(refused).toMatchObject({
+    state: 'unavailable',
+    reason: 'retention_heap_headroom',
+    decisionTimeMs: cutoff,
+  });
+  expect(horseHistoryReadProvenanceIsValid(refused, c, 'unavailable', cutoff)).toBe(true);
+  expect(horseHistoryReadProvenanceIsValid(refused, c, 'unavailable', cutoff + 1)).toBe(false);
+  expect(cache.forSnapshot(c, cutoff - 1)).toBeUndefined();
+  expect(cache.provenance(c, cutoff - 1)).toMatchObject({
+    state: 'available',
+    reason: 'packet_after_cutoff',
+  });
+  const accepted = workerHarness(),
+    forged = workerHarness(),
+    restored = workerHarness();
+  try {
+    await accepted.runtime.start();
+    await forged.runtime.start();
+    await restored.runtime.start();
+    await accepted.fast({
+      ...request,
+      ownPublicHistoryState: 'unavailable',
+      ownPublicHistoryProvenance: refused,
+    });
+    expect(accepted.captures.at(-1)?.snapshot).toMatchObject({
+      ownPublicHistoryProvenance: refused,
+    });
+    forged.runtime.receive({
+      ...request,
+      ownPublicHistoryState: 'unavailable',
+      ownPublicHistoryProvenance: { ...refused, decisionTimeMs: cutoff + 1 },
+    });
+    await forged.runtime.drain();
+    expect(forged.captures).toHaveLength(0);
+    expect(forged.messages).toContainEqual(
+      expect.objectContaining({
+        type: 'ERROR',
+        message: expect.stringContaining('history provenance'),
+      })
+    );
+    available = 1024 ** 3;
+    const packet = cache.forSnapshot(c, cutoff + 1)!;
+    expect(packet).toEqual(original);
+    const provenance = cache.provenance(c, cutoff + 1);
+    expect(provenance).toMatchObject({ state: 'available', reason: 'packet_ready' });
+    const future = {
+      ...request,
+      decisionTimeMs: cutoff + 1,
+      ownPublicHistory: packet,
+      ownPublicHistoryState: 'available' as const,
+      ownPublicHistoryProvenance: provenance,
+    };
+    future.decisionKey = buildHorseDecisionKey(future);
+    await restored.fast(future);
+    expect(restored.captures.at(-1)?.snapshot).toMatchObject({
+      ownPublicHistoryProvenance: provenance,
+    });
+    cache.acknowledge(c, packet.digest);
+    expect(cache.provenance(c, cutoff)).toMatchObject({
+      state: 'available',
+      reason: 'worker_acknowledged',
+    });
+    cache.acknowledge(c, null);
+    expect(cache.forSnapshot(c, cutoff)).toEqual(original);
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally {
+    cache.dispose();
+    await accepted.close();
+    await forged.close();
+    await restored.close();
+  }
+});

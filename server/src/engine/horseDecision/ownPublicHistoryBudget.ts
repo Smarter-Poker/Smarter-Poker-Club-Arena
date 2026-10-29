@@ -38,6 +38,23 @@ export class HorseHistoryRetentionBudget {
     this.retained -= claim.bytes;
     this.claims.delete(owner);
   }
+  /** Same-isolate admission for a synchronous representation of an exact retained packet.
+   * This does not grow a claim, evict an original or guarantee V8 allocation. */
+  canAllocateRepresentation(owner: object): boolean {
+    const claim = this.claims.get(owner);
+    if (!claim || claim.bytes <= 0) return false;
+    try {
+      const h = this.heap();
+      const available = Math.min(h.total_available_size, h.heap_size_limit - h.used_heap_size);
+      return (
+        Number.isFinite(available) &&
+        available >= 0 &&
+        claim.bytes * REPRESENTATION_ALLOWANCE + TRANSIENT_RESERVE <= available
+      );
+    } catch {
+      return false;
+    }
+  }
   reserve(
     owner: object,
     bytes: number,

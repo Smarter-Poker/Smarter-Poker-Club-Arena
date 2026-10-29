@@ -324,6 +324,7 @@ export class HorseOwnPublicHistoryCache {
     {
       packet?: HorseOwnPublicHistoryPacket;
       serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
+      readRefusedAtMs?: number;
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -352,11 +353,22 @@ export class HorseOwnPublicHistoryCache {
       known &&
       (!known.settled || known.packet || known.serialized || cutoffMs < known.retryAfterMs)
     ) {
+      delete known.readRefusedAtMs;
       if (known.acknowledged) return undefined;
-      if (known.packet && known.packet.availableAtMs <= cutoffMs)
+      if (known.packet && known.packet.availableAtMs <= cutoffMs) {
+        if (!this.retentionBudget.canAllocateRepresentation(known)) {
+          known.readRefusedAtMs = cutoffMs;
+          return undefined;
+        }
         return structuredClone(known.packet);
-      if (known.serialized && known.serialized.availableAtMs <= cutoffMs)
+      }
+      if (known.serialized && known.serialized.availableAtMs <= cutoffMs) {
+        if (!this.retentionBudget.canAllocateRepresentation(known)) {
+          known.readRefusedAtMs = cutoffMs;
+          return undefined;
+        }
         return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
+      }
       return undefined;
     }
     if (activeLoads >= HISTORY_ACTIVE_LOADS) {
@@ -372,6 +384,7 @@ export class HorseOwnPublicHistoryCache {
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
       serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
+      readRefusedAtMs?: number;
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -486,7 +499,9 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
     return entry?.packet || entry?.serialized
-      ? 'available'
+      ? !entry.acknowledged && entry.readRefusedAtMs !== undefined
+        ? 'unavailable'
+        : 'available'
       : entry?.settled
         ? 'unavailable'
         : 'pending';
@@ -497,16 +512,24 @@ export class HorseOwnPublicHistoryCache {
     const key = horseObserverReadContextKey(context);
     if (!key || !clock(cutoffMs)) throw Error('Invalid individual history provenance context');
     const entry = this.entries.get(key);
-    const state = this.state(context);
+    // A refusal belongs only to the actual synchronous read attempt, not a
+    // later provenance query with a different original decision cutoff.
+    const refused = !entry?.acknowledged && entry?.readRefusedAtMs === cutoffMs;
+    const state =
+      entry && entry.readRefusedAtMs !== undefined && !refused && (entry.packet || entry.serialized)
+        ? 'available'
+        : this.state(context);
     const availableAt = entry?.packet?.availableAtMs ?? entry?.serialized?.availableAtMs;
     const reason: HorseHistoryReadReason = this.disposed
       ? 'cache_disposed'
       : availableAt !== undefined
         ? entry?.acknowledged
           ? 'worker_acknowledged'
-          : availableAt > cutoffMs
-            ? 'packet_after_cutoff'
-            : 'packet_ready'
+          : refused
+            ? 'retention_heap_headroom'
+            : availableAt > cutoffMs
+              ? 'packet_after_cutoff'
+              : 'packet_ready'
         : entry?.settled
           ? entry.reason
           : entry
@@ -526,7 +549,11 @@ export class HorseOwnPublicHistoryCache {
     if (!entry) return;
     entry.acknowledged =
       digest !== null && digest === (entry.packet?.digest ?? entry.serialized?.digest);
-    if (entry.acknowledged && entry.packet) {
+    if (
+      entry.acknowledged &&
+      entry.packet &&
+      this.retentionBudget.canAllocateRepresentation(entry)
+    ) {
       // Keep the exact original window for a worker's later null ACK (eviction
       // or restart), but stop retaining its decoded graph after delivery.
       // Each client owns its ACK; another worker never acknowledges this one.

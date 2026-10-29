@@ -72,7 +72,7 @@ jobs:
         with:
           app-id: '4680372'
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
-          owner: Smarter-Poker
+          owner: ${{ github.repository_owner }}
           repositories: Smarter-Poker-Club-Arena
           permission-administration: write
           # Keep automatic cancellation cleanup; normal finish revokes sooner.

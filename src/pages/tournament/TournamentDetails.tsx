@@ -634,6 +634,7 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               prize?: number | null;
+              bounty_winnings?: number | null;
               table_id?: string | null;
               registered_at?: string | null;
               rebuys?: number | null;
@@ -680,6 +681,7 @@ export default function TournamentDetails({
                     Number.isFinite(Number(newPlayer.prize))
                       ? Number(newPlayer.prize)
                       : undefined,
+                  bounty_winnings: Number(newPlayer.bounty_winnings) || 0,
                   status: newPlayer.status as TournamentEntry['status'],
                   table_id: newPlayer.table_id || null,
                   created_at: newPlayer.registered_at ?? null,
@@ -701,6 +703,7 @@ export default function TournamentDetails({
               status: string;
               position?: number | null;
               prize?: number | null;
+              bounty_winnings?: number | null;
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
@@ -718,6 +721,10 @@ export default function TournamentDetails({
                         updatedPlayer.prize !== undefined && updatedPlayer.prize !== null
                           ? Number(updatedPlayer.prize)
                           : e.prize,
+                      bounty_winnings:
+                        updatedPlayer.bounty_winnings != null
+                          ? Number(updatedPlayer.bounty_winnings) || 0
+                          : e.bounty_winnings,
                       table_id:
                         updatedPlayer.table_id !== undefined ? updatedPlayer.table_id : e.table_id,
                       rebuys:
@@ -1077,7 +1084,7 @@ export default function TournamentDetails({
           owner.entryPatches = [];
           const { data: playersData, error } = await readTournamentStandings(
             data.id,
-            'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, username, chips, status, position, prize, bounty_winnings, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           );
 
           if (getIsMounted && !getIsMounted()) return;
@@ -1109,6 +1116,7 @@ export default function TournamentDetails({
                     e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
                       ? Number(e.prize)
                       : undefined,
+                  bounty_winnings: Number(e.bounty_winnings) || 0,
                   status: e.status as TournamentEntry['status'],
                   /* `club_id` was selected here and mapped onto the entry solely
                    so the old inline Unions block could count

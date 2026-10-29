@@ -1,3 +1,4 @@
+import {assertClubArenaRepository} from './repository-identity.mjs';
 // Deferred activation guard. Does not wait for a proof in the long PR job.
 import {pathToFileURL} from 'node:url';
 export function assertProtection(rule,app){
@@ -22,7 +23,7 @@ export function assertReadonlyApplicability(rule,app){
 }
 async function main(){
  const repo=process.env.GITHUB_REPOSITORY,app=process.env.MONEY_TRIGGER_REPORTER_APP_ID;
- if(repo!=='Smarter-Poker/Smarter-Poker-Club-Arena')throw Error('wrong repository');
+ assertClubArenaRepository(repo,process.env.GITHUB_REPOSITORY_ID);
  const r=await fetch(`https://api.github.com/repos/${repo}/rulesets/21163380`,{headers:{Authorization:`Bearer ${process.env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json'},signal:AbortSignal.timeout(15000)});
  if(!r.ok)throw Error('cannot establish actual required-check configuration');
  assertReadonlyApplicability(await r.json(),app);

@@ -716,12 +716,32 @@ maintenance_certificate() {
   # the engine is still running and has durably parked every table for this
   # certified break. Preserve that JSON so the certificate predicates below,
   # rather than curl's HTTP-success policy, remain the restart authority.
+  # Read durable weekly ownership before health: the bounded RPC must not
+  # consume a certificate whose remainingMs was captured before that read.
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
   response="$(curl -sS --max-time 10 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in
     200|503) ;;
+    *) return 1 ;;
+  esac
+  # A positive health owner also refuses. Missing/null health is safe only
+  # after the authoritative read above; it never supplies database inactivity.
+  set +e
+  printf '%s' "$body" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(3)
+if not isinstance(d,dict): raise SystemExit(3)
+if "weeklyPayout" not in d: raise SystemExit(2)
+raise SystemExit(0 if d["weeklyPayout"] is None else 1)
+'
+  local weekly_status=$?
+  set -e
+  case "$weekly_status" in
+    0|2) ;;
     *) return 1 ;;
   esac
   set +e
@@ -878,11 +898,31 @@ legacy_checkpoint_countdown() {
   # admission and BEFORE the guard reads the same reserve. Defaulting to 0
   # keeps the historical contract for callers that have nothing left to do.
   headroom="${1:-0}"
+  # Read durable weekly ownership before health: the bounded RPC must not
+  # consume a certificate whose remainingMs was captured before that read.
+  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
   response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
+  # A positive health owner also refuses. Missing/null health is safe only
+  # after the authoritative read above; it never supplies database inactivity.
+  set +e
+  printf '%s' "$body" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(3)
+if not isinstance(d,dict): raise SystemExit(3)
+if "weeklyPayout" not in d: raise SystemExit(2)
+raise SystemExit(0 if d["weeklyPayout"] is None else 1)
+'
+  local weekly_status=$?
+  set -e
+  case "$weekly_status" in
+    0|2) ;;
+    *) return 1 ;;
+  esac
   printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5",
+    "scripts/ci/classify-ci-changes.mjs": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1146,15 +1146,14 @@
       }
     }
   },
-  "supersededHorseActionQualification20261028": {
-    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
-    "bindings": {
+  "uiPresentationSelection20261028": {
+    "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
+    "changes": {
       "scripts/ci/classify-ci-changes.mjs": {
         "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
-        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+        "current": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
       }
-    },
-    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
+    }
   },
   "nativeAlertRuntimeAudit20261027": {
     "reason": "Additive required native alert runtime and SQL-fixture routing only: tools source executes existing native-smoke gate; native SQL fixture inputs execute required PostgreSQL accounting. Every previous selector, financial source, assertion, qualification state and historical audit remains unchanged. This is current classifier source identity, not financial recertification.",
@@ -1166,6 +1165,16 @@
       "actual Node22.23.3 SQLite process-kill/restart, exclusive owner and corrupt-state cases passed",
       "existing required owner-alert PostgreSQL entry executed the exact new native intake/silence fixture successfully"
     ]
+  },
+  "supersededHorseActionQualification20261028": {
+    "review": "Reviewed additive required Accounting shard-three native actions-retention step and its artifact; classifier preserves existing retained correction selection and additionally selects it for the new driver, captured preimages and enforcement test. Existing financial SQL, assertions, input fixtures and runtime deadlines are unchanged. Nested bindings change only for this reviewed routing identity. Hash agreement is not a renewed financial or production certificate.",
+    "bindings": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf",
+        "current": "e755eb067f9778ac7f52bbd3c6e2767c1c650b23c6b4c815946e55a83f1f1683"
+      }
+    },
+    "scoped_validation": "Exact PostgreSQL17 actions-only native proof:138 checks; original economic digest and replay fences retained. Required hosted financial qualification remains pending."
   },
   "retentionMainIntegration20261028": {
     "review": "Merged additive retention and native-alert classifier selectors; preserved both parent audit records and all financial source, fixtures, assertions and deadlines. Current routing binding only; no financial recertification.",

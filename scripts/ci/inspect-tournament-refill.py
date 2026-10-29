@@ -407,6 +407,11 @@ def reference_case_metadata(raw, expected):
             value[key] = item
         return value
     value = json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=unique_object)
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 6:
+        if set(value) != {'version','sourceRelease','probe','cases'} or value['probe'] != 'accepted_all_in_execution':
+            raise ValueError('reference_cases_refused')
+        reference_case_metadata(json.dumps({**value,'version':5,'probe':'cash_turn_fold'}).encode('utf-8'),expected)
+        return value
     if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 5:
         if (set(value) != {'version', 'sourceRelease', 'probe', 'cases'} or value['probe'] != 'cash_turn_fold'
                 or not isinstance(value.get('cases'), list)):
@@ -429,6 +434,73 @@ def reference_case_metadata(raw, expected):
                                      'cases': value['cases']}).encode('utf-8'), expected)
         return value
     return reference_cases(raw, expected)
+
+
+def sanitize_accepted_all_in_result(result, value):
+    reasons={'input_refused','journal_source_or_shape_mismatch','journal_missing_or_bounds',
+        'record_binding_or_duplicate','accepted_hand_missing_or_ambiguous','accepted_hand_binding_mismatch',
+        'accepted_action_not_observed','matching_pair_missing','matching_pair_ambiguous',
+        'execution_binding_mismatch','hand_not_reconciled','geometry_unavailable',
+        'record_or_validator_unavailable','journal_or_runtime_unavailable'}
+    fixed={'version':6,'probe':'accepted_all_in_execution','rawRecordsExported':False,
+        'replayVerified':False,'causalReplayVerified':False,'activationAllowed':False}
+    if not isinstance(result,dict) or result.get('status') not in ('unknown','observed'):raise ValueError('execution_result_refused')
+    if set(result)=={'status','reason'}:
+        if result['status']!='unknown' or result['reason'] not in reasons:raise ValueError('execution_result_refused')
+        return result
+    if any(type(result.get(k)) is not type(v) or result[k]!=v for k,v in fixed.items()):raise ValueError('execution_result_refused')
+    if set(result)==set(fixed)|{'status','reason'}:
+        if result['status']!='unknown' or result['reason'] not in reasons:raise ValueError('execution_result_refused')
+        return result
+    if (set(result)!=set(fixed)|{'status','sourceRelease','cases'} or result['sourceRelease']!=value['sourceRelease']
+        or not isinstance(result['cases'],list) or len(result['cases'])!=len(value['cases'])):raise ValueError('execution_result_refused')
+    hashes={'decisionRecordSha256','executionRecordSha256','acceptedRecordSha256','decisionKeySha256'}
+    guards={'recordHashesVerified','originalHandBound','acceptedActionBound','handReconciled'}
+    keys=hashes|guards|{'handKey','status','observation','actionOrdinal','stage','variant','mode','counts',
+        'capturedAction','capturedAmount','selectedAction','selectedAmount','expectedExecutionAmount',
+        'executedAction','executedAmount','acceptedAction','acceptedAmount','acceptedIsFullRaise',
+        'stack','bet','executionStatus','actionTypeMatches','amountMatches','derivedNormalizationKind','originalNormalizationReason'}
+    actions={'fold','check','call','bet','raise','all_in'}
+    def number(n):return type(n) in (int,float) and math.isfinite(n) and n>=0
+    def valid_counts(c):
+        return (isinstance(c,dict) and set(c)=={'decisionRecords','executionRecords','matchingDecisions','matchingExecutions','matchingPairs'}
+            and all(type(n) is int and 0<=n<=65536 for n in c.values())
+            and c['decisionRecords']<=256 and c['executionRecords']<=256
+            and c['matchingDecisions']<=c['decisionRecords'] and c['matchingExecutions']<=c['executionRecords']
+            and c['matchingPairs']<=c['matchingDecisions']*c['matchingExecutions'])
+    for c,original in zip(result['cases'],value['cases']):
+        if not isinstance(c,dict) or c.get('handKey')!=original['handKey']:raise ValueError('execution_result_refused')
+        if c.get('status')=='unknown':
+            if (set(c)!={'handKey','status','reason','counts'} or c['reason'] not in reasons
+                or (c['counts'] is not None and not valid_counts(c['counts']))
+                or (c['reason']=='matching_pair_missing' and (not valid_counts(c['counts']) or c['counts']['matchingPairs']!=0))
+                or (c['reason']=='matching_pair_ambiguous' and (not valid_counts(c['counts']) or c['counts']['matchingPairs']<2))):raise ValueError('execution_result_refused')
+            continue
+        if (set(c)!=keys or c.get('status')!='observed' or c['observation']!='accepted_original_all_in_execution'
+            or type(c['actionOrdinal']) is not int or c['actionOrdinal']!=original['actionOrdinal']
+            or c['stage'] not in ('preflop','flop','turn','river') or c['mode'] not in ('cash','tournament')
+            or c['variant'] not in ('nlh','plo4','plo5','plo6') or not valid_counts(c['counts']) or c['counts']['matchingPairs']!=1
+            or any(not isinstance(c[k],str) or not re.fullmatch('[0-9a-f]{64}',c[k]) for k in hashes)
+            or any(c[k] is not True for k in guards)
+            or (original['decisionRecordSha256'] is not None and c['decisionRecordSha256']!=original['decisionRecordSha256'])
+            or c['capturedAction'] not in actions or c['selectedAction'] not in actions
+            or c['executedAction']!='all_in' or c['acceptedAction']!='all_in'
+            or any(not number(c[k]) for k in ('expectedExecutionAmount','executedAmount','acceptedAmount','stack','bet'))
+            or any(c[k] is not None and not number(c[k]) for k in ('capturedAmount','selectedAmount'))
+            or not c['stack']>0 or not c['acceptedAmount']>0 or c['executedAmount']!=c['acceptedAmount']
+            or (c['acceptedIsFullRaise'] is not None and type(c['acceptedIsFullRaise']) is not bool)
+            or c['executionStatus'] not in ('intended','coerced') or c['originalNormalizationReason'] is not None
+            or type(c['actionTypeMatches']) is not bool or type(c['amountMatches']) is not bool):raise ValueError('execution_result_refused')
+        action_match=c['selectedAction']==c['acceptedAction'];amount_match=c['expectedExecutionAmount']==c['acceptedAmount']
+        whole=math.floor((c['stack']+c['bet'])*100+0.5)/100
+        kind=('unchanged' if action_match and amount_match else
+            'sized_wager_promoted_to_all_in' if not action_match and amount_match and c['selectedAction'] in ('bet','raise') and c['selectedAmount']==c['acceptedAmount'] and whole==c['acceptedAmount'] else
+            'amount_changed' if action_match else 'action_type_changed' if amount_match else 'action_and_amount_changed')
+        if (c['actionTypeMatches']!=action_match or c['amountMatches']!=amount_match
+            or (c['executionStatus']=='intended')!=(action_match and amount_match)
+            or c['derivedNormalizationKind']!=kind):raise ValueError('execution_result_refused')
+    if (result['status']=='observed')!=all(c['status']=='observed' for c in result['cases']):raise ValueError('execution_result_refused')
+    return result
 
 
 def sanitize_cash_turn_fold_result(result, value):
@@ -593,6 +665,8 @@ process.exit(0);
 '''
 
 
+ACCEPTED_ALL_IN_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledAcceptedAllInExecutionApi').replace('inspectDecision8464Records', 'inspectAcceptedAllInExecutionRecords')
+
 CASH_TURN_FOLD_ADAPTER = DECISION_8464_ADAPTER.replace('loadInstalledDecision8464Api', 'loadInstalledCashTurnFoldApi').replace('inspectDecision8464Records', 'inspectCashTurnFoldRecords')
 
 
@@ -687,15 +761,17 @@ def reference_diagnostic(value):
         return diagnostic_failure('sanitizer', 'result_refused')
 
 def decision_case_diagnostic(value):
-    if value.get('version') not in (4,5):
+    if value.get('version') not in (4,5,6):
         return reference_diagnostic(value)
     try:
         diagnostic_js = REFERENCE_DIAGNOSTIC_JS
-        if value.get('version') in (4,5):
+        if value.get('version') in (4,5,6):
             helper = globals().get('TOURNAMENT_PREDICATE_JS', '')
             if not helper or len(helper.encode('utf-8')) > 65536:
                 raise ValueError('decision_helper_unavailable')
             diagnostic_js = helper + '\n' + DECISION_8464_ADAPTER
+            if value.get('version') == 6:
+                diagnostic_js = helper + '\n' + ACCEPTED_ALL_IN_ADAPTER
             if value.get('version') == 5:
                 diagnostic_js = helper + '\n' + CASH_TURN_FOLD_ADAPTER
         raw = bounded_command(['docker', 'exec', '-i', CONTAINER, 'node', '--input-type=module', '--max-old-space-size=128',
@@ -719,7 +795,8 @@ def decision_case_diagnostic(value):
                     or diagnostic['stage'] not in DIAGNOSTIC_CHILD_STAGES or diagnostic['code'] != 'exception'):
                 raise ValueError()
             return result
-        return (sanitize_cash_turn_fold_result(result,value) if value.get('version') == 5
+        return (sanitize_accepted_all_in_result(result,value) if value.get('version') == 6
+                else sanitize_cash_turn_fold_result(result,value) if value.get('version') == 5
                 else sanitize_decision_8464_result(result, value))
     except Exception:
         return diagnostic_failure('sanitizer', 'result_refused')

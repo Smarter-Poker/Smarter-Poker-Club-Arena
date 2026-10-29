@@ -45,8 +45,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250045,
-      "sha256": "0b6d6594489d70cbb7f754c8e17004899af408107497a315d2701f9c73597369"
+      "bytes": 250924,
+      "sha256": "94ab1096dd6278f148642316261344a33e95cd635899aaf07d01ef68e069378d"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -957,5 +957,68 @@
       "bytes": 250045,
       "sha256": "0b6d6594489d70cbb7f754c8e17004899af408107497a315d2701f9c73597369"
     }
+  },
+  "supersededRetentionProgressEnforcement20261028": {
+    "reason": "Reviewed exact retention progress CI diff: add the real PostgreSQL progress fixture and artifact retention to existing required Accounting shard3; classify its driver and source contract as required accounting inputs. Existing test commands, financial assertions, historical audit records and qualification states remain unchanged. Current source identity only; no financial or production certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 244453,
+          "sha256": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+        },
+        "current": {
+          "bytes": 245332,
+          "sha256": "dd2624fb40c4b7a19dffdc819e0789e3957d3935bd8e833995a9f559124ab52e"
+        }
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
+  },
+  "retentionProgressProtectedMainComposition20261029": {
+    "reason": "Combine protected main915d5e2 with the retention progress qualification and additive Accounting3 selectors. Preserve every protected-main and branch historical audit object; update only current enforcement inputs and their derived child binding identities. Financial sources, assertions and qualification states remain unchanged.",
+    "protectedMainRevision": "915d5e2ac0ae3a9c8d10eb3de38cfb1d56cf733d",
+    "branchRevision": "22b1078f8a19df37b7608a3111d5fab281da32c8",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "protectedMain": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        },
+        "combined": {
+          "bytes": 250381,
+          "sha256": "6be50c74b5819cec2a48e8119d403c6928c035f2953cb3a3e7f848821b0e0b3a"
+        }
+      }
+    },
+    "financial_qualification_performed": false,
+    "production_actions": false
+  },
+  "retentionProgressPeriodFeeMainIntegration20261029": {
+    "reason": "Combine existing required retention Accounting3 qualification and protected-main period-fee Accounting4 step. Both parents historical audit records preserved; current workflow source identity only. No financial source, assertions or runtime changes and no financial recertification.",
+    "path": ".github/workflows/ci.yml",
+    "current": {
+      "bytes": 250558,
+      "sha256": "a48a0140340d3b033f094c2f1918949ded801baba2b22edd159a96c79f8c1870"
+    }
+  },
+  "gatewayRetentionUnion20261029": {
+    "reason": "Consolidate the two authorized Supabase cost deliveries into one protected PR, preserving all A2 gateway, A3 retention and A4 period-fee checks and both audit histories. Only current combined enforcement identities and derived binding identities change; financial SQL, fixtures, assertions and historical qualification states remain unchanged. No financial recertification or production mutation.",
+    "gatewayParent": "7072e0c8d3f22b8f67ff349a16c0569d0bb9372a",
+    "retentionParent": "9bff34890fd20525a8f903b7c73dddefde95e454",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 250045,
+          "sha256": "0b6d6594489d70cbb7f754c8e17004899af408107497a315d2701f9c73597369"
+        },
+        "current": {
+          "bytes": 250924,
+          "sha256": "94ab1096dd6278f148642316261344a33e95cd635899aaf07d01ef68e069378d"
+        }
+      }
+    ]
   }
 }

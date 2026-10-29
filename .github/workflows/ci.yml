@@ -2535,6 +2535,21 @@ jobs:
         env:
           POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-superseded-horse-actions.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-horse-actions
+      - name: Existing retention owner progresses aged superseded requests
+        id: superseded_retention_progress
+        if: matrix.shard == 3
+        env:
+          TMPDIR: ${{ runner.temp }}
+          POKER_AUDIT_PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-superseded-retention-progress.py --pg-bin "$POKER_AUDIT_PG_BIN" --evidence artifacts/superseded-retention-progress
+      - name: Retain superseded retention progress proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_retention_progress.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: superseded-retention-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/superseded-retention-progress/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain superseded horse action proof
         if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.superseded_horse_actions.outcome)
         uses: actions/upload-artifact@v4

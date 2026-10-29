@@ -212,4 +212,5 @@ it('shows ticket prizes rather than the placeholder percentage ladder for a sate
   expect(await screen.findByText('1 Ticket Guaranteed')).toBeInTheDocument();
   expect(screen.queryByRole('columnheader', { name: 'Share' })).not.toBeInTheDocument();
   expect(screen.queryByText('40%')).not.toBeInTheDocument();
+  expect(screen.getByText(/The Bubble Receives Any Remaining Cash/)).toBeInTheDocument();
 });

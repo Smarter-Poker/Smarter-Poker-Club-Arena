@@ -33,13 +33,20 @@ BEGIN
         SELECT i AS level_index,
                public.fn_resolve_tournament_blinds(event.blind_structure,i,
                  event.variant,event.tournament_type,NULL) AS state
-          FROM generate_series(v_found+1,LEAST(event.current_level,600)) AS i
+          FROM generate_series(0,LEAST(event.current_level,600)) AS i
+      ), supported AS (
+        -- Repeated/capped pairs cannot prove a later identical level was
+        -- played. Keep the first matching index, as the existing owner does.
+        SELECT p.small_blind,p.big_blind,p.played_at,
+               min(l.level_index) AS level_index
+          FROM levels l JOIN played p
+            ON p.small_blind=(l.state->>'small_blind')::numeric
+           AND p.big_blind=(l.state->>'big_blind')::numeric
+         GROUP BY p.small_blind,p.big_blind,p.played_at
       )
-      SELECT p.small_blind,p.big_blind,p.played_at AS created_at,l.level_index
-        INTO v_hh FROM levels l JOIN played p
-          ON p.small_blind=(l.state->>'small_blind')::numeric
-         AND p.big_blind=(l.state->>'big_blind')::numeric
-       ORDER BY l.level_index DESC,p.played_at DESC LIMIT 1;
+      SELECT s.small_blind,s.big_blind,s.played_at AS created_at,s.level_index
+        INTO v_hh FROM supported s WHERE s.level_index>v_found
+       ORDER BY s.level_index DESC,s.played_at DESC LIMIT 1;
       IF FOUND THEN
         v_found:=v_hh.level_index;
         v_ev_at:=v_hh.created_at;
@@ -50,7 +57,7 @@ BEGIN
     IF v_found IS NOT NULL AND v_found < event.current_level THEN
       v_r := public.fn_resolve_tournament_blinds(event.blind_structure, v_found,$new_clock$);
   IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_f06_abort_abandoned_generation(uuid,uuid,uuid,text,boolean)')
-      AND md5(pg_get_functiondef(p.oid))='bc1a1fa1e779283192a5e0b390bd5ba4' AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private']) THEN
+      AND md5(pg_get_functiondef(p.oid))='52e7b71547751e500fa10b59185bd456' AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=pg_catalog, public, smarter_private']) THEN
     RAISE EXCEPTION 'PLAYED_CLOCK_OWNER_POSTIMAGE_CHANGED' USING ERRCODE='55000';
   END IF;
 END $played_clock$;

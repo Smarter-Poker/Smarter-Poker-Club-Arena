@@ -18,7 +18,8 @@ The maintained native helper invokes the real F06 abort owner. Its predecessor
 reproduces the wrong rewind to index 14; the candidate retains played index 15.
 It also covers an unchanged index-15 anchor, a legitimate rewind when index 15
 was never played, genuinely played current index 16, and scheduled-break
-preservation. Every case proves duplicate receipts cannot shift the anchor and
+preservation. Repeated or capped identical blind pairs use the earliest
+matching index, so an unplayed later identical level is never inferred. Every case proves duplicate receipts cannot shift the anchor and
 complete public/private rollback. Changed owner configuration or ACL refuses
 installation without changing data or catalog state. The helper is intended
 for the existing required original-continuation native lane; source preparation

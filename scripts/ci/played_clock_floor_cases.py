@@ -51,6 +51,7 @@ END $$;ROLLBACK;"""
   ('preserve-restored',15,'',15),
   ('legitimate-backward',16,"DELETE FROM hand_history WHERE big_blind=2500;",14),
   ('preserve-current-played',16,"UPDATE hand_history SET big_blind=3000,small_blind=1500 WHERE hand_number=51233523;",16),
+  ('repeated-unplayed-pair',16,"UPDATE tournaments SET blind_structure=jsonb_set(blind_structure::jsonb,'{16}',jsonb_build_object('level',17,'smallBlind',1250,'bigBlind',2500,'ante',0,'durationMinutes',8))::text WHERE id='853b3df9-9e15-4d05-97b1-7a38dd0345c1';",15),
   ('preserve-scheduled-break',16,"UPDATE tournaments SET on_break=true WHERE id='853b3df9-9e15-4d05-97b1-7a38dd0345c1';",16),
  ]:
   case=e.database(db);e.sql(case,seed,label=label+'-opening')

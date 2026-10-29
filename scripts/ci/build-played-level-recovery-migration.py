@@ -25,13 +25,20 @@ new="""    -- A RECOVERED OLDER HAND DOES NOT REWIND A PLAYED LATER LEVEL.
         SELECT i AS level_index,
                public.fn_resolve_tournament_blinds(event.blind_structure,i,
                  event.variant,event.tournament_type,NULL) AS state
-          FROM generate_series(v_found+1,LEAST(event.current_level,600)) AS i
+          FROM generate_series(0,LEAST(event.current_level,600)) AS i
+      ), supported AS (
+        -- Repeated/capped pairs cannot prove a later identical level was
+        -- played. Keep the first matching index, as the existing owner does.
+        SELECT p.small_blind,p.big_blind,p.played_at,
+               min(l.level_index) AS level_index
+          FROM levels l JOIN played p
+            ON p.small_blind=(l.state->>'small_blind')::numeric
+           AND p.big_blind=(l.state->>'big_blind')::numeric
+         GROUP BY p.small_blind,p.big_blind,p.played_at
       )
-      SELECT p.small_blind,p.big_blind,p.played_at AS created_at,l.level_index
-        INTO v_hh FROM levels l JOIN played p
-          ON p.small_blind=(l.state->>'small_blind')::numeric
-         AND p.big_blind=(l.state->>'big_blind')::numeric
-       ORDER BY l.level_index DESC,p.played_at DESC LIMIT 1;
+      SELECT s.small_blind,s.big_blind,s.played_at AS created_at,s.level_index
+        INTO v_hh FROM supported s WHERE s.level_index>v_found
+       ORDER BY s.level_index DESC,s.played_at DESC LIMIT 1;
       IF FOUND THEN
         v_found:=v_hh.level_index;
         v_ev_at:=v_hh.created_at;

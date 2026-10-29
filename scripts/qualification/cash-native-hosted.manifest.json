@@ -1,16 +1,61 @@
 {
-  "nativeAlertRuntimeAudit20261027": {
-    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
-    "previousClassifierPin": {
-      "bytes": 42104,
-      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+  "uiPresentationSelection20261028": {
+    "reason": "Reviewed existing client unit/browser entrypoint wrappers and connected negative/real-runner tests. Accounting PostgreSQL matrix, all financial commands/assertions, server join, financial browser decision gates and qualification state unchanged. Current source identity only, not a financial/native/live certificate.",
+    "previous": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
     },
-    "currentClassifierPin": {
-      "bytes": 42678,
-      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
+    "current": {
+      "bytes": 243747,
+      "sha256": "2dd9be8dbc0de960566a6fd177465e6601c5b9d246d1a0841eee9efdb9aa4018"
     },
-    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
-    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 42104,
+          "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+        },
+        "current": {
+          "bytes": 42122,
+          "sha256": "25c29aadd0298f1ad92d44efea6bcb480037fbb1d79aad9eac38680023ad9fff"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 114869,
+          "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+        },
+        "current": {
+          "bytes": 115014,
+          "sha256": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90"
+        }
+      }
+    }
+  },
+  "compilerPresentationScope20261028": {
+    "reason": "The compiler omits unchanged isolated chip-journal replay only after the same immutable positive presentation proof; every financial, executable, shared, mixed or unknown input retains replay. Compiler/invariants and financial matrices remain unchanged. Existing negative/actual-output regressions enforce the condition. Current source identity only, not financial or live certification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 243747,
+          "sha256": "2dd9be8dbc0de960566a6fd177465e6601c5b9d246d1a0841eee9efdb9aa4018"
+        },
+        "current": {
+          "bytes": 243930,
+          "sha256": "5961bb38788534da86a49932d65276ccb71286ad813e56d9abed87ede7964139"
+        }
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "previous": {
+          "bytes": 115014,
+          "sha256": "e2639dd1d3461cee310289d20de9117982d9516a8a0b7675ff2d22e63c89ec90"
+        },
+        "current": {
+          "bytes": 115227,
+          "sha256": "6f7dac37f2ea9e1a9851c6d4ad9e26c4249415e3653c8eb2aad0f7d49bff5d24"
+        }
+      }
+    }
   },
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
@@ -222,16 +267,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 246563,
-      "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
+      "bytes": 249362,
+      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 42836,
-      "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+      "bytes": 42854,
+      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -326,21 +371,9 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 114869,
-      "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      "bytes": 115763,
+      "sha256": "a63680562b511bbab267e1dc50c9eaa23a2f4d48045a6af81b36739d7846bad9"
     }
-  },
-  "compilerJobCleanupBudget20261028": {
-    "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
-    "previousWorkflowPin": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
-    },
-    "currentWorkflowPin": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
-    },
-    "execution_performed": false
   },
   "nativePgCron": {
     "upstreamCommit": "9490f9cc9803f75105f2f7d89839a998f011f8d8",
@@ -4190,18 +4223,30 @@
       "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
     ]
   },
-  "weeklyPayoutOwnedPauseEnforcement20261028": {
-    "reason": "Only add two directly triggered native PG17 weekly-owned-pause protocol/financial concurrency checks and their evidence upload to existing required accounting shard1. All existing cash pg_cron commands, source inputs, checks, assertions, deadlines, matrix and required aggregate remain unchanged. Reviewed exact protected-main workflow diff; workflow identity only, no historical cash financial recertification.",
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+    },
+    "currentClassifierPin": {
+      "bytes": 42678,
+      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
+    },
+    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
+    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
+  },
+  "compilerJobCleanupBudget20261028": {
+    "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
     "previousWorkflowPin": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflowPin": {
       "bytes": 243487,
       "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
     },
-    "currentWorkflowPin": {
-      "bytes": 244607,
-      "sha256": "6b90ecc07e3a940b6bd6c78ec73cb0d76b45a68f79a7ab3626cda7d5f3613470"
-    },
-    "existing_cash_native_execution_performed": false,
-    "hosted_execution_performed": false
+    "execution_performed": false
   },
   "supersededHorseActionQualification20261028": {
     "reason": "Reviewed only additive required Accounting shard-three actions-retention native proof/artifact and classification of its new inputs. Existing cash financial source fixtures, assertions, source inventory, runtime deadlines and qualification states are unchanged. Current source identity is not a financial certificate.",
@@ -4248,11 +4293,18 @@
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
   },
-  "weeklyPayoutProtectedMainComposition20261028": {
-    "reason": "Preserve both parent audit records and additive required native checks. Refresh only merged workflow and classifier source identity; no financial source, assertion, result status or execution certification changes.",
-    "main": "859ed4eac45449f53af4f9ced021a65b64263d71",
-    "candidateBeforeMerge": "c078b0460f9b921d43a6db2b6df5dacf45b7801a",
-    "financial_recertification": false
+  "organizationHostedRunnerTrust20261028": {
+    "scope": "Approved organization hosted runner routing and exact immutable repository identity; financial commands, assertions, history and qualification states unchanged. Current source inputs only; no native, financial or live certificate restamp.",
+    "previousInputs": {
+      ".github/workflows/ci.yml": {
+        "bytes": 243487,
+        "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+      },
+      "tests/unit/fixtureNativeCi.test.ts": {
+        "bytes": 114869,
+        "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
+      }
+    }
   },
   "opponentHudClassifierCheckout20261028": {
     "reason": "The metadata-only changes job checks out scripts and .github in cone mode, retaining root configs and full Git history, instead of hydrating the full artwork tree that timed out in job123044104875. Test commands, assertions, financial qualification and deployment routes are unchanged. Source identity only; not execution or live proof. Integrated current protected main, preserving its compiler cleanup budget and every other workflow change.",
@@ -4265,6 +4317,25 @@
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
     },
     "execution_performed": false
+  },
+  "weeklyPayoutOwnedPauseEnforcement20261028": {
+    "reason": "Only add two directly triggered native PG17 weekly-owned-pause protocol/financial concurrency checks and their evidence upload to existing required accounting shard1. All existing cash pg_cron commands, source inputs, checks, assertions, deadlines, matrix and required aggregate remain unchanged. Reviewed exact protected-main workflow diff; workflow identity only, no historical cash financial recertification.",
+    "previousWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244607,
+      "sha256": "6b90ecc07e3a940b6bd6c78ec73cb0d76b45a68f79a7ab3626cda7d5f3613470"
+    },
+    "existing_cash_native_execution_performed": false,
+    "hosted_execution_performed": false
+  },
+  "weeklyPayoutProtectedMainComposition20261028": {
+    "reason": "Preserve both parent audit records and additive required native checks. Refresh only merged workflow and classifier source identity; no financial source, assertion, result status or execution certification changes.",
+    "main": "859ed4eac45449f53af4f9ced021a65b64263d71",
+    "candidateBeforeMerge": "c078b0460f9b921d43a6db2b6df5dacf45b7801a",
+    "financial_recertification": false
   },
   "weeklyPayoutLatestMainComposition20261028": {
     "reason": "Preserve all protected-main and weekly pause audit records. Only merged current workflow/classifier identity refresh; financial owners, fixtures, assertions, result states and historical qualification remain unchanged.",
@@ -4283,5 +4354,13 @@
       "sha256": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d"
     },
     "prior_commands_preserved": true
+  },
+  "identityCoverCurrentMainComposition20261029": {
+    "review": "Actual three-way integration retains every incoming #8439 field/audit and all financial sources/assertions. Only conflicting active CI size/hash replaced by actual combined workflow, which preserves paid-organization runner routing and adds the sole identity native/artifact. No financial certificate or hosted execution restamp.",
+    "main": "aaa87f90cb95c9eabff25f011712fa6e6c511368",
+    "combinedWorkflow": {
+      "bytes": 249362,
+      "sha256": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
+    }
   }
 }

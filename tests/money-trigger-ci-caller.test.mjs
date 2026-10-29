@@ -138,6 +138,7 @@ test('actual readonly CLI defers an applicable ruleset with GitHub-hidden bypass
   const source = new URL('../scripts/ci/assert-money-trigger-protection.mjs', import.meta.url);
   const script = `
     process.env.GITHUB_REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    process.env.GITHUB_REPOSITORY_ID = '1132369872';
     process.env.GITHUB_TOKEN = 'modeled-standard-token';
     process.env.MONEY_TRIGGER_REPORTER_APP_ID = '4962039';
     globalThis.fetch = async (url, options) => {
@@ -170,7 +171,7 @@ test('privileged reader stays in trusted default-main finish and retains cancell
   assert.match(mint, /if: success\(\) && github\.event_name == 'pull_request_target'/);
   assert.match(mint, /app-id: '4680372'/);
   assert.match(mint, /private-key: \$\{\{ secrets\.AUTOPILOT_APP_PRIVATE_KEY \}\}/);
-  assert.match(mint, /owner: Smarter-Poker\n          repositories: Smarter-Poker-Club-Arena/);
+  assert.match(mint, /owner: \$\{\{ github\.repository_owner \}\}\n          repositories: Smarter-Poker-Club-Arena/);
   assert.deepEqual([...mint.matchAll(/permission-([\w-]+): (\w+)/g)].map(m => [m[1],m[2]]), [['administration','write']]);
   assert.match(mint, /skip-token-revoke: false/);
   assert.match(trustedStep('Finish explicit captured-head check'), /PROTECTION_READER_TOKEN: \$\{\{ steps\.protection-reader\.outputs\.token \}\}/);
@@ -183,7 +184,7 @@ test('privileged reader stays in trusted default-main finish and retains cancell
 
 // Execute the actual trusted finish CLI with a closed fake transport: every
 // request must use its intended identity and an unexpected request throws.
-function finish(kind) {
+function finish(kind, repository = 'Smarter-Poker/Smarter-Poker-Club-Arena') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'money-trigger-finish-'));
   try {
     const source = new URL('../scripts/ci/money-trigger-check-report.mjs', import.meta.url);
@@ -229,8 +230,8 @@ function finish(kind) {
       };
       process.argv=[process.execPath,${JSON.stringify(source.pathname)},'finish'];
       await import(${JSON.stringify(source.href)});
-    `;
-    const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:dir,encoding:'utf8',timeout:5000,env:{PATH:process.env.PATH,GITHUB_REPOSITORY:'Smarter-Poker/Smarter-Poker-Club-Arena',GITHUB_RUN_ID:'1234',PR_NUMBER:'7',REPORTER_APP_ID:'4962039',REPORTER_TOKEN:'modeled-reporter-token',GITHUB_TOKEN:'modeled-standard-token',PROTECTION_READER_TOKEN:kind==='missing-token'?'':'modeled-reader-token',VERIFY_OUTCOME:kind==='sql-failed'?'failure':'success'}});
+    `.replaceAll('Smarter-Poker/Smarter-Poker-Club-Arena',repository);
+    const result=spawnSync(process.execPath,['--input-type=module','-e',script],{cwd:dir,encoding:'utf8',timeout:5000,env:{PATH:process.env.PATH,GITHUB_REPOSITORY:repository,GITHUB_REPOSITORY_ID:'1132369872',GITHUB_RUN_ID:'1234',PR_NUMBER:'7',REPORTER_APP_ID:'4962039',REPORTER_TOKEN:'modeled-reporter-token',GITHUB_TOKEN:'modeled-standard-token',PROTECTION_READER_TOKEN:kind==='missing-token'?'':'modeled-reader-token',VERIFY_OUTCOME:kind==='sql-failed'?'failure':'success'}});
     assert.equal(result.error,undefined);
     assert.equal(result.signal,null,result.stderr);
     return {status:result.status,stderr:result.stderr,patch:JSON.parse(fs.readFileSync(path.join(dir,'patch.json'),'utf8')),calls:JSON.parse(fs.readFileSync(path.join(dir,'requests.json'),'utf8'))};
@@ -244,4 +245,51 @@ test('trusted finish revokes the reader and rereads captured head before exact A
 for(const kind of ['read-denied','read-throws','bad-json','hidden-bypass','nonempty-bypass','unbound','revoke-denied','missing-token','head-advance','sql-failed','wrong-captured-run','wrong-sql-run'])test('actual trusted finish cannot report success: '+kind,()=>{
   const result=finish(kind);assert.equal(result.status,1,result.stderr);assert.equal(result.patch.conclusion,'failure');
   if(kind!=='missing-token')assert.match(result.calls[1],/^DELETE .*installation\/token$/);
+});
+
+// Transfer trust remains anchored to one immutable repository, with no wildcard owner.
+import {isClubArenaRepository} from '../scripts/ci/repository-identity.mjs';
+test('approved transferred repository reports the same protected App check',()=>{const r=finish('success','Smarter-Software-PIQ/Smarter-Poker-Club-Arena');assert.equal(r.status,0,r.stderr);assert.equal(r.patch.conclusion,'success')});
+for(const repo of ['Smarter-Poker/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/Smarter-Poker-Club-Arena'])test('approved repository requires its immutable ID '+repo,()=>{assert.equal(isClubArenaRepository(repo,'1132369872'),true);for(const id of [undefined,'','1','11323698720'])assert.equal(isClubArenaRepository(repo,id),false)});
+for(const repo of ['evil/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/evil','smarter-software-piq/Smarter-Poker-Club-Arena'])test('same ID cannot authorize an unapproved full name '+repo,()=>assert.equal(isClubArenaRepository(repo,'1132369872'),false));
+
+test('paid runners are limited to the transferred immutable repository and preserve hosted fallback',()=>{for(const file of ['ci.yml','publish-club-arena.yml','component-fixture-native-smoke.yml']){const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');const routes=[...text.matchAll(/^    runs-on: (.+)$/gm)].map(x=>x[1]);assert.ok(routes.length);for(const route of routes)assert.match(route,/^\$\{\{ github\.repository_owner == 'Smarter-Software-PIQ' && github\.repository_id == '1132369872' && 'ca-linux-[48]core' \|\| 'ubuntu-(?:latest|24\.04)' \}\}$/)}});
+
+test('local coordinator reads supported REST metadata and refuses another repository before dispatch',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'transfer-coordinator-'));
+  try{
+    const executable=path.join(dir,'gh');
+    fs.writeFileSync(executable,'#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRANSFER_CALLS"\nprintf \'{"nameWithOwner":"Smarter-Software-PIQ/Smarter-Poker-Club-Arena","databaseId":999}\\n\'\n');
+    fs.chmodSync(executable,0o700);
+    const calls=path.join(dir,'calls');
+    const result=spawnSync(process.execPath,[new URL('../scripts/ci/await-money-trigger-proof.mjs',import.meta.url).pathname],{cwd:dir,encoding:'utf8',env:{PATH:dir+path.delimiter+process.env.PATH,TRANSFER_CALLS:calls},timeout:5000});
+    assert.notEqual(result.status,0);assert.match(result.stderr,/Wrong Club Arena repository identity/);
+    assert.equal(fs.readFileSync(calls,'utf8').trim(),'api repos/{owner}/{repo} --jq {nameWithOwner:.full_name,databaseId:.id}');
+  }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+
+test('estate integrity reads split installations without moving issue writes or other repositories',()=>{
+  const source=fs.readFileSync(new URL('../.github/scripts/estate-integrity.sh',import.meta.url),'utf8');
+  const fn=/estate_gh_read\(\) \{[\s\S]*?\n\}\ngh_ro/.exec(source)?.[0].replace(/\ngh_ro$/,'');assert.ok(fn);
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'estate-transfer-route-'));
+  try{
+    const executable=path.join(dir,'gh');fs.writeFileSync(executable,'#!/bin/sh\nprintf "%s|%s\\n" "$GH_TOKEN" "$*"\n');fs.chmodSync(executable,0o700);
+    const invoke=(args,id='1132369872')=>spawnSync('bash',['--noprofile','--norc','-c',`${fn}\nHOME_REPO='Smarter-Software-PIQ/Smarter-Poker-Club-Arena'\nGITHUB_REPOSITORY_ID='${id}'\nGH_TOKEN=modeled-personal\nGH_TOKEN_CA=modeled-organization\nestate_gh_read ${args}`],{encoding:'utf8',env:{PATH:dir+path.delimiter+process.env.PATH},timeout:5000});
+    assert.equal(invoke('api repos/Smarter-Poker/Smarter-Poker-Club-Arena/rulesets').stdout.trim(),'modeled-organization|api repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/rulesets');
+    assert.equal(invoke('run list --repo Smarter-Poker/Smarter-Poker-Club-Arena').stdout.trim(),'modeled-organization|run list --repo Smarter-Software-PIQ/Smarter-Poker-Club-Arena');
+    assert.equal(invoke('api repos/Smarter-Poker/Smarter-Poker-World-Hub/rulesets').stdout.trim(),'modeled-personal|api repos/Smarter-Poker/Smarter-Poker-World-Hub/rulesets');
+    assert.notEqual(invoke('api repos/Smarter-Poker/Smarter-Poker-Club-Arena/rulesets','42').status,0);
+    assert.match(source,/GH_TOKEN="\$\{GH_TOKEN_ISSUES:-\$\{GH_TOKEN:-\}\}" gh "\$@"/);
+  }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+
+test('estate digest uses the organization token only for immutable transferred Club Arena reads',async()=>{
+  const source=fs.readFileSync(new URL('../.github/scripts/estate-digest.mjs',import.meta.url),'utf8');
+  const body=/const gh = async \(path, init = \{\}\) => \{([\s\S]*?)\n\};/.exec(source)?.[1];assert.ok(body);
+  const route=new Function('REPO','TOKEN','process','ghWith','assertClubArenaRepository',`return async (path,init={})=>{${body}}`);
+  const read=route('Smarter-Software-PIQ/Smarter-Poker-Club-Arena','modeled-personal',{env:{GITHUB_REPOSITORY_ID:'1132369872',GH_TOKEN_CA:'modeled-organization'}},token=>async path=>({token,path}),(repo,id)=>{assert.equal(isClubArenaRepository(repo,id),true)});
+  assert.equal((await read('/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs')).token,'modeled-organization');
+  assert.equal((await read('/repos/Smarter-Poker/Smarter-Poker-World-Hub/actions/runs')).token,'modeled-personal');
+  assert.equal((await read('/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena-fork/actions/runs')).token,'modeled-personal');
+  for(const env of [{GITHUB_REPOSITORY_ID:'42',GH_TOKEN_CA:'modeled-organization'},{GITHUB_REPOSITORY_ID:'1132369872'}]){const refused=route('Smarter-Software-PIQ/Smarter-Poker-Club-Arena','modeled-personal',{env},()=>{throw Error('must refuse before credential use')},(repo,id)=>{assert.equal(isClubArenaRepository(repo,id),true)});await assert.rejects(refused('/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs'));}
 });

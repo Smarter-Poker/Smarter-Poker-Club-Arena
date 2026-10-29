@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "scope": "Source-only fixed UUID fee identity cover; native33/full FOR24 plans. Root solely installs; no production capacity or financial producer claim.",
   "sourceFiles": {
-    ".github/workflows/ci.yml": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d",
+    ".github/workflows/ci.yml": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316",
     "docs/changelog/2026-10-29-tournament-source-identity-cover.md": "dac2e337bdd2160e4401986a2cc839ded87db3a17366d397555860e1879d30d4",
     "docs/laws.d/tournament-source-identities-keep-narrow-physical-coverage.md": "35e2fed8e6d6de6270568bc1fbe040c285f104400d960fa5ac82d6ccd56b60ae",
     "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
@@ -21,7 +21,7 @@
     "scripts/ci/test-tournament-source-identity-cover-postgres.py": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
     "supabase/migrations/20261029020140_weekly_fee_source_identities_retain_their_tournament_and_rak.sql": "062ca87b4f99f5f42860fa3ee2ec91302d56ed9c9e9aec1c62f83111c4d5b7b0",
     "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "1cb0e3b2d89ffd2fdb1bbfdb18bb53d22b06cc0e882fd822887920c750afc78b",
-    "scripts/qualification/cash-native-hosted.manifest.json": "6e006ee944e4ef5c4a7a5978c98d8dba204ad0817df523016cd3a23852602703"
+    "scripts/qualification/cash-native-hosted.manifest.json": "f31b56c00d279ee6ffddf42a2038dd8fc22a22bbc15ec696d9f4fc094fa2ad2e"
   },
   "normalPrecommitFormattingAudit": {
     "review": "Normal pre-commit Prettier reformatted only JSON object layout; complete parsed authority and meaningful contract values are unchanged from native33 inputs. No migration/runner/query/workflow change.",
@@ -62,6 +62,19 @@
       "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": {
         "before": "dda20e320e583bd323b72a2cc9c992287e735f5ea95512babaa2351d0e5fbf8a",
         "after": "1cb0e3b2d89ffd2fdb1bbfdb18bb53d22b06cc0e882fd822887920c750afc78b"
+      }
+    }
+  },
+  "currentMainComposition20261029": {
+    "review": "Preserves incoming approved organization runner and presentation selection changes; exact native source, migration062, quality snapshots and all33 cases unchanged. Source composition only; final candidate checks still required.",
+    "changed": {
+      ".github/workflows/ci.yml": {
+        "before": "01d9c7ba75908d3e264c2e95db1c5e3b05713e0571c8bfe91b01ed860673850d",
+        "after": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316"
+      },
+      "scripts/qualification/cash-native-hosted.manifest.json": {
+        "before": "6e006ee944e4ef5c4a7a5978c98d8dba204ad0817df523016cd3a23852602703",
+        "after": "f31b56c00d279ee6ffddf42a2038dd8fc22a22bbc15ec696d9f4fc094fa2ad2e"
       }
     }
   }

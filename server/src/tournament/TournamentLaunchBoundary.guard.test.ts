@@ -122,7 +122,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('proves roster migration, stack funding, seating, linkage and table counts', () => {
-    expect(start).toContain('if (regRowsErr)');
+    expect(start).toContain('if (!regRowsComplete)');
     expect(start).toContain('expectedLaunchPlayerIds = (regRows ?? []).map');
     expect(tableBuild).toContain('assignTournamentPlayerSeatAtomically({');
     expect(tableBuild).toContain('occupiedSeats.get(receipt.tableId)');
@@ -191,9 +191,9 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('fails table construction closed instead of leaving work to a sweep', () => {
-    expect(tableBuild).toContain('if (playersErr) throw');
-    expect(tableBuild).toContain('if (existingTablesErr)');
-    expect(tableBuild).toContain('if (liveSeatRowsErr)');
+    expect(tableBuild).toContain('if (!playersComplete) throw');
+    expect(tableBuild).toContain('if (!tablesComplete) throw');
+    expect(tableBuild).toContain('if (!seatsComplete) throw');
     expect(tableBuild).toMatch(
       /throw new Error\(\s*`Tournament table \$\{i \+ 1\} was not created:/
     );

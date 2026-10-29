@@ -1,0 +1,3 @@
+DO $bounded_rr_helper$DECLARE p pg_proc%ROWTYPE;BEGIN SELECT*INTO STRICT p FROM pg_proc WHERE oid='smarter_private.rake_record_jsonb_raw_size(jsonb)'::regprocedure;
+ IF p.proowner<>'postgres'::regrole OR p.pronamespace<>'smarter_private'::regnamespace OR p.provolatile<>'i'OR NOT p.proisstrict OR p.prosecdef OR p.proparallel<>'s'OR p.proretset OR p.prorettype<>'integer'::regtype OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'OR md5(p.prosrc)<>'77310c794e06e32cdfebb3b71688a2e1' THEN RAISE EXCEPTION 'bounded_rr_exact_size_helper_required';END IF;
+END $bounded_rr_helper$;

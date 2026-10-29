@@ -335,7 +335,7 @@ export class TableBalancer {
         let deficit = under.target - under.playerCount;
 
         while (excess > 0 && deficit > 0 && movablePlayers.length > 0) {
-          const player = movablePlayers.shift()!;
+          const player = movablePlayers[0];
           const sourceHops =
             sourceBB === null ? null : hopsToBigBlind(sourceRing, sourceBB, player.seat);
           const { seat: toSeat } = this.findOpenSeat(under, {
@@ -343,8 +343,9 @@ export class TableBalancer {
             sourceHops,
           });
 
-          if (toSeat === -1) break; // No open seats
+          if (toSeat === -1) break; // Keep this player for the next destination.
 
+          movablePlayers.shift();
           moves.push({
             playerId: player.userId,
             fromTableId: over.tableId,

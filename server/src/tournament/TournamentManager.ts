@@ -2363,9 +2363,10 @@ export class TournamentManager extends TournamentManagerEliminations {
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
       );
-      const occupied = destination?.players.some(
-        (player) => player.seat === member.destination_seat_number
-      );
+      const occupied =
+        destination?.players.some((player) => player.seat === member.destination_seat_number) ||
+        (member.destination_seat_number !== null &&
+          destination?.reservedSeats?.includes(member.destination_seat_number));
       if (
         destination &&
         !occupied &&

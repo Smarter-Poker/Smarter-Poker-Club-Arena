@@ -126,6 +126,11 @@ export class HandContinuationLane {
             throw new Error('Hand Continuation Is Fenced');
           // Engine metadata follows the PREVIOUS fully dispatched batch. The
           // stored events reconstruct only this batch after a process loss.
+          // Each capture copies every hand field and every player's clocks.
+          // Take one coherent accounting snapshot here, rather than repeating
+          // that full work for each of its three selected fields. The earlier
+          // control capture still owns this mutation's presence and time.
+          const accounting = this.captureEngine();
           const batch: HandContinuationBatch = {
             version: 1,
             sequence,
@@ -133,9 +138,9 @@ export class HandContinuationLane {
             events,
             engine: {
               ...control,
-              fields: structuredClone(this.captureEngine().fields),
-              timeBankMeta: structuredClone(this.captureEngine().timeBankMeta),
-              timeBankDebits: structuredClone(this.captureEngine().timeBankDebits),
+              fields: structuredClone(accounting.fields),
+              timeBankMeta: structuredClone(accounting.timeBankMeta),
+              timeBankDebits: structuredClone(accounting.timeBankDebits),
             },
           };
           await this.persist(batch);

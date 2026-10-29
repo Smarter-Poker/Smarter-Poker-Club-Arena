@@ -47,8 +47,37 @@ on:
     types: [run-post-deploy-e2e, run-stats-pagination-proof, run-private-record-client-proof]
 
 jobs:
+  # No production fixture job may enter even its always-cleanup steps until
+  # the root cleanup repair is installed. This job only reads catalog/history.
+  certification-cleanup-safety:
+    name: Installed certification cleanup protects live tables
+    needs: publication-gate
+    if: >-
+      always() && !cancelled() &&
+      (needs.publication-gate.outputs.should_run == 'true' ||
+       (github.event_name == 'repository_dispatch' &&
+        (github.event.action == 'run-stats-pagination-proof' ||
+         github.event.action == 'run-private-record-client-proof')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked read-only verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Require installed scoped cleanup before production fixtures
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/ci/await-certification-cleanup-safety.mjs
+
   # Explicit one-client transport proof. This never publishes or changes source flags.
   private-record-client-proof:
+    needs: certification-cleanup-safety
     if: github.event_name == 'repository_dispatch' && github.event.action == 'run-private-record-client-proof'
     name: Exact published private record client failover proof
     runs-on: ubuntu-latest
@@ -159,6 +188,7 @@ jobs:
 
   # Explicit, closed recovery of the one release-bound Stats case. It never publishes.
   stats-pagination-proof:
+    needs: certification-cleanup-safety
     if: github.event_name == 'repository_dispatch' && github.event.action == 'run-stats-pagination-proof'
     name: Exact published Stats pagination proof
     runs-on: ubuntu-latest
@@ -590,7 +620,7 @@ jobs:
         run: node scripts/ci/check-live-seo-contract.mjs --sha "${{ needs.publication-gate.outputs.client_target_sha }}"
 
   production-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     # A verified publish and a safe forward stand-down both certify the live
     # player route. A failed/skipped origin job makes the gate red, never green
     # without executing the browser suite. Optional downstream failures cannot
@@ -1660,7 +1690,7 @@ jobs:
   # This independent verdict retains real-hand/reconnect coverage after every
   # publication, and exact immutable engine certification after engine cutover.
   live-table-e2e:
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true'
     name: Live-table and engine verification
     runs-on: ubuntu-latest
@@ -2292,7 +2322,7 @@ jobs:
   # an engine dependency to the independent client publication certificate.
   club-channel-lifecycle-e2e:
     name: Exact engine club channel lifecycle
-    needs: publication-gate
+    needs: [publication-gate, certification-cleanup-safety]
     if: "needs.publication-gate.outputs.should_run == 'true' && needs.publication-gate.outputs.client_navigation != 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
     runs-on: ubuntu-latest
     # Up to 15m schedule lead + 12m thaw prerequisite + 15m case/fixture
@@ -2498,6 +2528,7 @@ jobs:
   # record-post-deploy-verdict.mjs and records nothing.
   post-deploy-verdict:
     needs:
+      - certification-cleanup-safety
       - publication-gate
       - seo-contract
       - production-e2e
@@ -2542,6 +2573,7 @@ jobs:
           GATE_RESULT: ${{ needs.publication-gate.result }}
           GATE_SHOULD_RUN: ${{ needs.publication-gate.outputs.should_run }}
           LANES: |
+            ${{ needs.certification-cleanup-safety.result }}|Installed certification cleanup protects live tables
             ${{ needs.seo-contract.result }}|The Live SEO Contract Holds
             ${{ needs.production-e2e.result }}|Client browser verification
             ${{ needs.live-table-e2e.result }}|Live-table and engine verification

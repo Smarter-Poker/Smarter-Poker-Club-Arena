@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252956,
-      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+      "bytes": 253778,
+      "sha256": "c0afa4bade258b3241bbbd8713bf8ccfdccf9e2d0b5874e5969873130ad91e8f"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1128,5 +1128,23 @@
       "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
+  },
+  "certificationClubScope20261029": {
+    "reason": "Add exact catalog lock-concurrency regression and full welcome cleanup qualification to accounting shard 4. Existing financial commands, assertions, budgets and historical qualification remain unchanged. This records current workflow bytes, not a financial or live certificate.",
+    "previous": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    },
+    "current": {
+      "bytes": 253174,
+      "sha256": "539969e6656725b957758955f6bc568ebe9cfd55b35a553676b6996b6e488c3d"
+    }
+  },
+  "certificationClubScopeMainComposition20261029": {
+    "reason": "Compose scoped certification cleanup Accounting4 regression with protected-main CSS5, Diamond3, ca-linux-delivery and retained-checkpoint full-history gates. Preserve both parent audit histories, financial sources, assertions and qualification verdicts. Current workflow source identity only; not execution, installation or financial recertification.",
+    "currentWorkflow": {
+      "bytes": 253778,
+      "sha256": "c0afa4bade258b3241bbbd8713bf8ccfdccf9e2d0b5874e5969873130ad91e8f"
+    }
   }
 }

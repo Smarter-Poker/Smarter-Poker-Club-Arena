@@ -1,0 +1,9 @@
+# Retained checkpoint includes Lightning physical owners
+
+The existing checkpoint counted classic table engines and tournament managers while Lightning room hosts and forming workers used separate native owners. Ten native regression cases failed against the preceding guard because it approved a checkpoint with active or unknown Lightning work.
+
+The exact EED guard now requires empty registered and pending Lightning host collections, no discovery/formation promise or unresolved request, and an exhaustive native concrete worker census that includes detached workers waiting before the formation gate opens. It rechecks the same identities and genuine freeze immediately before the first stop and through final verification. It never expires a formation, aborts a room, or voids a hand. The existing inspector transport, fixed image, notice, certificate, reserve, rollback, and thaw remain authoritative.
+
+Five fixed EED Lightning dependency hashes join the prior24 observed pins. The historical fixture rebuilds the exact old source and requires all29 compiled hashes and29 actual cases. The new five hashes must also match actual running bytes inside the checkpoint before any mutation; a mismatch refuses. Native and hosted results and affected live commits are recorded separately in the existing task checkpoint. No live protection or recovery is claimed from this source alone.
+
+The original full-repository extraction exceeded the unchanged120-second qualification budget on the loaded SSD. The driver now archives the complete historical server subtree and root ESM package metadata, preserving all server source/config/data and the exact compiled hash checks while excluding unrelated client assets and migration archives. The focused archive passed the same bounded qualification; no timeout was enlarged.

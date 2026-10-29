@@ -1,0 +1,29 @@
+{
+  "qualification": "passed",
+  "cases": [
+    "actual20_types_defaults_8constraints_19indexes_39trigger_ABIs_native_snapshot_guard",
+    "exact_helper_migration_and_owner_ACL_body_contract",
+    "decompressed_identity_compressed_external_NULL_scalar_UTF8_depth128_and_private_permissions",
+    "two_exact_CCI_migrations_all17_fields_partition_bag_natural_fast_IndexOnly_bounded_fallback",
+    "guard_source65_refusal_rollback",
+    "guard_GEN_refusal_rollback",
+    "guard_freeze_refusal_rollback",
+    "guard_window_refusal_rollback",
+    "guard_RLS_refusal_rollback",
+    "guard_old_index_refusal_rollback",
+    "guard_trigger_refusal_rollback",
+    "guard_ACL_refusal_rollback",
+    "guard_column_refusal_rollback",
+    "VALID_prefix_resumes_without_rebuild_INVALID_prefix_refuses_atomically",
+    "service_role_INSERT_UPDATE_index_maintenance_across_both_predicates",
+    "actual_applier_atomic_history_mismatch_rolls_back_VALID_prefix_then_exact_file_records",
+    "real_CCI_old_RR_snapshot_wait_and_concurrent_service_FK_writer_preserve_authority"
+  ],
+  "migrations": {
+    "supabase/migrations/20261029180415_rake_record_json_size_is_decompressed.sql": "e50516de2336e1e8e789c93203118f5f9539301eb47cff9af7c5ab5b00a31ecd",
+    "supabase/migrations/20261029180420_tournament_rake_small_rows_are_covered.sql": "01e50ce67eed4d3806ed1e8bba51c0ca4142c78b08bcda782a4f6a68972dab28",
+    "supabase/migrations/20261029180421_tournament_rake_large_rows_keep_their_path.sql": "1652b274d9d1861490d603645f4a2782266726b6200ebb8365d8e04e00abe172"
+  },
+  "limits": "Private PG17/8192/MAXALIGN8 only. Actual20 schema types/defaults,8 constraints,19 indexes,39 trigger identities; financial bodies and five guard collaborators are explicit inert adapters. Native catalog payload OIDs substituted only in fixture. No production build/runtime/wholeScope qualification; no business function changed.",
+  "native_result_sha256": "5f811ad7a65ec4c832b1c03c08a34adb18a85771eb828d360d3fbb39fc7eed5d"
+}

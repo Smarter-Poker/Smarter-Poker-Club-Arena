@@ -168,7 +168,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
             .maybeSingle(),
           readTournamentStandings(
             tournamentId,
-            'user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id'
+            'id, user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id'
           ),
         ]);
 

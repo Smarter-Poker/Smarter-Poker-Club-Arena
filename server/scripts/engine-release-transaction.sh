@@ -17,6 +17,7 @@ LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
 CHECKPOINT_A0_SHA=a0ab287d902879280f0c915e44f5222c5db4d7df
 CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
+CHECKPOINT_EED_SHA=eed06fe51dea622069c661a6213d5b031ff3a9e3
 # The compatibility floors in docs/dr/diamond-release-manifest.md section 4: below
 # the first an engine cannot read Diamond custody, below the second it deals a
 # Diamond tournament table as a chip table. A rollback drill target holds both.
@@ -1093,7 +1094,7 @@ for w in entries:
     if "releaseWitness" in w:
         valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
         if valid: path, digest = witness["path"], witness["sha256"]
-        if not (valid and isinstance(path, str) and re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path)
+        if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs")
                 and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
             print("invalid - - -")
             break
@@ -1999,7 +2000,8 @@ LEGACY_CHECKPOINT_REQUIRED=0
 if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$LEGACY_CHECKPOINT_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
   || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
-  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
   LEGACY_CHECKPOINT_REQUIRED=1
 fi
 if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1 ]; then
@@ -2080,7 +2082,8 @@ while :; do
       # countdown, and an unknown request can never create another announcement.
       if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_758_SHA" ] \
         || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_A0_SHA" ] \
-        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ]; then
+        || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_8825_SHA" ] \
+  || [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
         if [ "$CERTIFICATE_RC" -eq 2 ]; then RECOVERY_ADMISSION_MISSED=1; fi
         request_recovery_window
       fi
@@ -2124,7 +2127,8 @@ while :; do
     if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_A0_SHA" ] \
-      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ]; then
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_8825_SHA" ] \
+      && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_EED_SHA" ]; then
       # A different release may have advanced desired while this run waited.
       # Source/high-water admission above still owns whether our target may
       # follow it. Never apply the old-image compatibility path to its successor.

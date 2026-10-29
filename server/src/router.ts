@@ -252,6 +252,7 @@ const DIAGNOSTIC_WIRE_KEYS = [
   'engine',
   'movement',
   'claimedBoundary',
+  'physicalIdentityRefusal',
   'retainedPermit',
   'phase',
   'session',

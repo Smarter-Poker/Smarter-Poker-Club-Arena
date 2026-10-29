@@ -1401,39 +1401,48 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /** The exact positive-proof predicate, shared with read-only refusal diagnostics. */
+  drainedF06IdentityRefusal(tableId: string, tournamentId: string, generation: string) {
+    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
+    if (!lifecycle) return 'lifecycle_missing' as const;
+    if (!/^[1-9][0-9]{0,18}$/.test(lifecycle)) return 'lifecycle_invalid' as const;
+    if (!this.terminalTeardownComplete) return 'teardown_incomplete' as const;
+    if (!this.terminal) return 'not_terminal' as const;
+    if (this.running) return 'running' as const;
+    if (this.tableId !== tableId) return 'table_id_mismatch' as const;
+    if (ServerTableEngineBase.liveEngines.has(tableId)) return 'live_engine_registered' as const;
+    if (this.dealingLoopPromise !== null) return 'dealing_loop_pending' as const;
+    if (this.settlementInFlight.size !== 0) return 'settlement_pending' as const;
+    if (this.postHandTasksPromise !== null) return 'post_hand_tasks_pending' as const;
+    if (this.tournamentMoveOperations.size !== 0) return 'tournament_move_pending' as const;
+    if (this.tournamentMoveOperationByOwner.size !== 0)
+      return 'tournament_move_owner_pending' as const;
+    if (this.readContinuationTasks.size !== 0) return 'read_continuation_pending' as const;
+    if (this.snapshotFlushPromise !== null) return 'snapshot_flush_pending' as const;
+    if (this.handController !== null) return 'hand_controller_retained' as const;
+    if (this.terminalBoundaryPendingGenerations.size !== 0)
+      return 'terminal_boundary_pending' as const;
+    if (this.f06RecoveryInFlight) return 'recovery_pending' as const;
+    if (this.presenceSavePending !== 0) return 'presence_save_pending' as const;
+    if (this.timeBankAccountingPending.size !== 0) return 'time_bank_accounting_pending' as const;
+    if (this.entryHoldWriteChains.size !== 0) return 'entry_hold_write_pending' as const;
+    if (this.timeBankAccountingUnconfirmed) return 'time_bank_accounting_unconfirmed' as const;
+    if (this.timeBankEngine.hasPlayerBanksForTable(tableId))
+      return 'live_time_banks_retained' as const;
+    if (Object.keys(this.disconnectEngine.getFsmStatesForTable(tableId)).length !== 0)
+      return 'disconnect_states_retained' as const;
+    if (this.engineLeaseScope !== 'tournament') return 'lease_scope_mismatch' as const;
+    if (!this.engineLeaseVerified) return 'lease_unverified' as const;
+    if (this.engineLeaseTournamentId !== tournamentId) return 'tournament_id_mismatch' as const;
+    if (this.engineLeaseGeneration !== generation) return 'generation_mismatch' as const;
+    if (!this.f06PreparationDrained()) return 'hand_preparation_pending' as const;
+    return null;
+  }
+
   /** Positive physical custody proof. It grants no lease or hand outcome. */
   captureDrainedF06Identity(tableId: string, tournamentId: string, generation: string) {
-    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
-    if (!lifecycle || !/^[1-9][0-9]{0,18}$/.test(lifecycle)) return null;
-    if (
-      !this.terminalTeardownComplete ||
-      !this.terminal ||
-      this.running ||
-      this.tableId !== tableId ||
-      ServerTableEngineBase.liveEngines.has(tableId) ||
-      this.dealingLoopPromise !== null ||
-      this.settlementInFlight.size !== 0 ||
-      this.postHandTasksPromise !== null ||
-      this.tournamentMoveOperations.size !== 0 ||
-      this.tournamentMoveOperationByOwner.size !== 0 ||
-      this.readContinuationTasks.size !== 0 ||
-      this.snapshotFlushPromise !== null ||
-      this.handController !== null ||
-      this.terminalBoundaryPendingGenerations.size !== 0 ||
-      this.f06RecoveryInFlight ||
-      this.presenceSavePending !== 0 ||
-      this.timeBankAccountingPending.size !== 0 ||
-      this.entryHoldWriteChains.size !== 0 ||
-      this.timeBankAccountingUnconfirmed ||
-      this.timeBankEngine.hasPlayerBanksForTable(tableId) ||
-      Object.keys(this.disconnectEngine.getFsmStatesForTable(tableId)).length !== 0 ||
-      this.engineLeaseScope !== 'tournament' ||
-      !this.engineLeaseVerified ||
-      this.engineLeaseTournamentId !== tournamentId ||
-      this.engineLeaseGeneration !== generation ||
-      !this.f06PreparationDrained()
-    )
-      return null;
+    if (this.drainedF06IdentityRefusal(tableId, tournamentId, generation) !== null) return null;
+    const lifecycle = (this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle)!;
     return Object.freeze({
       table_id: tableId,
       engine_id: this.lifecycleDiagnostics.instanceId,

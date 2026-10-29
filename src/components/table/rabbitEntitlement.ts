@@ -58,7 +58,7 @@ const NONE: RabbitEntitlement = { isVIP: false, isLifetime: false, vipRemaining:
 /** Last confirmed answer, by user id. Session memory only. */
 const confirmed = new Map<string, RabbitEntitlement>();
 const confirmedMonth = new Map<string, string>();
-function usageMonth(): string {
+export function rabbitVipUsageMonth(): string {
   const now = new Date();
   return `${now.getUTCFullYear()}-${now.getUTCMonth()}`;
 }
@@ -69,7 +69,7 @@ export function rabbitVipUsageVersion(userId: string): number {
 }
 
 export function rememberRabbitEntitlement(userId: string, value: RabbitEntitlement): void {
-  confirmedMonth.set(userId, usageMonth());
+  confirmedMonth.set(userId, rabbitVipUsageMonth());
   confirmed.set(userId, {
     isVIP: value.isVIP || value.isLifetime,
     isLifetime: value.isLifetime,
@@ -88,8 +88,8 @@ export function rememberRabbitVipRemaining(userId: string, remaining: number | n
   if (prior?.isLifetime) return;
   usageVersions.set(userId, rabbitVipUsageVersion(userId) + 1);
   // Within one monthly pool, a delayed receipt cannot put a spent use back.
-  const current = confirmedMonth.get(userId) === usageMonth() ? prior?.vipRemaining : null;
-  confirmedMonth.set(userId, usageMonth());
+  const current = confirmedMonth.get(userId) === rabbitVipUsageMonth() ? prior?.vipRemaining : null;
+  confirmedMonth.set(userId, rabbitVipUsageMonth());
   confirmed.set(userId, {
     isVIP: true,
     isLifetime: false,
@@ -113,7 +113,7 @@ export function initialRabbitEntitlement(
   if (profile?.id === userId && profile.vip_status === 'lifetime') {
     return { isVIP: true, isLifetime: true, vipRemaining: null };
   }
-  return confirmedMonth.get(userId) === usageMonth() ? (known ?? NONE) : NONE;
+  return confirmedMonth.get(userId) === rabbitVipUsageMonth() ? (known ?? NONE) : NONE;
 }
 
 /** Test seam: forget every confirmed answer. */

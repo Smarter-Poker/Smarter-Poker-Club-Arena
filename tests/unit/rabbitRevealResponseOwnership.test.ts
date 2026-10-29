@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { boardForRabbitReveal } from '../../src/components/table/retainedRabbitBoard';
 import { canonicalCards } from '../../src/utils/tableGeometry';
+import { rabbitVipUsageMonth } from '../../src/components/table/rabbitEntitlement';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 const start = page.indexOf('  const handleRabbitReveal = useCallback(');
@@ -32,6 +33,7 @@ function harness() {
     tableId: 'table-one',
     rabbitLiveRequestRef: { current: 0 },
     rememberRabbitVipRemaining: vi.fn(),
+    rabbitVipUsageMonth,
     rabbitViewerRef: { current: { tableId: 'table-one', userId: 'viewer-one' } as object | null },
     useCallback: (fn: unknown) => fn,
     requestRabbitHunt: vi.fn(() => response),
@@ -250,4 +252,20 @@ it('remembers the authoritative remaining count even when the paid surface has c
   finish({ success: true, cards: ghosts, vip_remaining: 0 });
   await pending;
   expect(deps.rememberRabbitVipRemaining).toHaveBeenCalledWith('viewer-one', 0);
+});
+
+it('keeps a paid result but does not apply its old quota across the UTC monthly reset', async () => {
+  const { deps, reveal } = harness();
+  vi.setSystemTime(new Date('2026-10-31T23:59:59Z'));
+  let finish!: (value: any) => void;
+  deps.requestRabbitHunt.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  const pending = reveal();
+  vi.setSystemTime(new Date('2026-11-01T00:00:01Z'));
+  finish({ success: true, cards: ghosts, vip_remaining: 0 });
+  expect(await pending).toMatchObject({ success: true, cards: ghosts, vipRemaining: null });
+  expect(deps.rememberRabbitVipRemaining).toHaveBeenCalledWith('viewer-one', null);
 });

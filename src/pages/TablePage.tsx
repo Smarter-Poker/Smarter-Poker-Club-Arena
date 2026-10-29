@@ -601,7 +601,10 @@ import {
 } from '../lib/heartbeatTarget';
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
-import { rememberRabbitVipRemaining } from '../components/table/rabbitEntitlement';
+import {
+  rememberRabbitVipRemaining,
+  rabbitVipUsageMonth,
+} from '../components/table/rabbitEntitlement';
 //monteCarloEquity import removed — server-authoritative
 import '../components/table/ControlThemeTokens.css';
 import '../styles/table-design-tokens.css';
@@ -9412,10 +9415,15 @@ function LiveTablePage({
       const boardAtRequest = lastBoardOfHandRef.current;
       const requestedViewer = rabbitViewerRef.current;
       const liveRequest = handNumber === undefined ? ++rabbitLiveRequestRef.current : null;
+      const requestedUsageMonth = rabbitVipUsageMonth();
       const result = await requestRabbitHunt(tableId, requestedHandNumber);
+      // A response crossing a UTC monthly reset has an ambiguous quota bucket.
+      // Keep the cards/charge receipt, and let a fresh lookup resolve the count.
+      const vipRemaining =
+        requestedUsageMonth === rabbitVipUsageMonth() ? (result.vip_remaining ?? null) : null;
       // Billing owns the count even if the initiating tile has closed.
       if (result.success && requestedViewer?.userId)
-        rememberRabbitVipRemaining(requestedViewer.userId, result.vip_remaining ?? null);
+        rememberRabbitVipRemaining(requestedViewer.userId, vipRemaining);
       if (rabbitViewerRef.current !== requestedViewer) {
         return { success: false, error: 'Rabbit Hunt View Changed' };
       }
@@ -9456,7 +9464,7 @@ function LiveTablePage({
         // always returned it. It used to be dropped here, one line from the UI,
         // which is why the button could say FREE on the 101st hunt and then
         // silently charge five diamonds.
-        vipRemaining: result.vip_remaining,
+        vipRemaining,
         // Uses left on a purchased pack. Without it a pack reveal spent neither
         // diamonds nor a VIP use, so the player burned one of something they had
         // paid for and nothing on screen acknowledged it.

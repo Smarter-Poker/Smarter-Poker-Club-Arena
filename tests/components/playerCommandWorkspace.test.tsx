@@ -127,18 +127,20 @@ async function settle() {
 const search = () => screen.getByRole('searchbox', { name: 'Search Club Members' });
 const sort = () => screen.getByRole('combobox', { name: 'Sort Players' });
 async function preferences() {
+  fireEvent.change(sort(), { target: { value: 'name' } });
   fireEvent.change(search(), { target: { value: 'Player' } });
   fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
     target: { value: 'agents' },
   });
-  fireEvent.change(sort(), { target: { value: 'name' } });
   fireEvent.click(screen.getByRole('checkbox', { name: 'Wallets', exact: true }));
   await settle();
 }
 function expectPreferences() {
   expect(search()).toHaveValue('Player');
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
-  expect(sort()).toHaveValue('name');
+  expect(sort()).toHaveValue('search');
+  expect(sort()).toBeDisabled();
+  expect(f.page).toHaveBeenLastCalledWith(clubA, expect.objectContaining({ sort: 'name' }));
   expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();
 }
 beforeEach(() => {
@@ -216,6 +218,10 @@ it('gives an explicit deep-linked view and sort precedence over saved preference
   await settle();
   expect(search()).toHaveValue('Player');
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('online');
+  expect(sort()).toHaveValue('search');
+  expect(f.page).toHaveBeenLastCalledWith(clubA, expect.objectContaining({ sort: 'hierarchy' }));
+  fireEvent.change(search(), { target: { value: '' } });
+  await settle();
   expect(sort()).toHaveValue('hierarchy');
 });
 it('restores the virtual roster position after opening a real roster row and returning', async () => {
@@ -608,7 +614,8 @@ it('adopts newest on upgrade while retaining the old workspace search and column
   );
   render(tree());
   await settle();
-  expect(sort()).toHaveValue('newest');
+  expect(sort()).toHaveValue('search');
+  expect(f.page).toHaveBeenLastCalledWith(clubA, expect.objectContaining({ sort: 'newest' }));
   expect(search()).toHaveValue('Player');
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toHaveValue('agents');
   expect(screen.getByRole('checkbox', { name: 'Wallets', exact: true })).toBeChecked();

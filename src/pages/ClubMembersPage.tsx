@@ -1674,7 +1674,8 @@ export default function ClubMembersPage() {
             <button
               type="button"
               className="members-group-role"
-              aria-pressed={sortKey === 'hierarchy'}
+              aria-pressed={!searchQuery.trim() && sortKey === 'hierarchy'}
+              disabled={Boolean(searchQuery.trim())}
               onClick={() => setSortKey(sortKey === 'hierarchy' ? 'name' : 'hierarchy')}
             >
               Group By Role
@@ -1700,9 +1701,11 @@ export default function ClubMembersPage() {
             <span className="members-sort__label">Sort By</span>
             <select
               aria-label="Sort Players"
-              value={sortKey}
+              disabled={Boolean(searchQuery.trim())}
+              value={searchQuery.trim() ? 'search' : sortKey}
               onChange={(event) => setSortKey(event.target.value as RosterSort)}
             >
+              {searchQuery.trim() && <option value="search">Player Name Matches</option>}
               {sorts.map((value) => (
                 <option key={value} value={value}>
                   {SORT_LABEL[value]}
@@ -1849,8 +1852,10 @@ export default function ClubMembersPage() {
                 ? `${exportOperation.selectedCount.toLocaleString()} Selected Loaded Players.`
                 : 'All Matching Players Across Every Page.'}{' '}
               Filter: {FILTER_LABEL[exportOperation.filter]}. Sort:{' '}
-              {SORT_LABEL[exportOperation.sort]}. Search:{' '}
-              {exportOperation.searchApplied ? 'Applied' : 'None'}.
+              {exportOperation.searchApplied
+                ? 'Player Name Matches'
+                : SORT_LABEL[exportOperation.sort]}
+              . Search: {exportOperation.searchApplied ? 'Applied' : 'None'}.
               {exportOperation.auditId ? ` Audit Reference: ${exportOperation.auditId}.` : ''}
             </p>
           )}

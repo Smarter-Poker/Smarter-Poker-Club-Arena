@@ -401,6 +401,11 @@ UNION ALL
      LEFT JOIN fn_ca_launch_accounting_club_cutoffs() bd(club_id, cutoff_at) ON bd.club_id = s.club_id
   WHERE (bd.cutoff_at IS NULL OR s.charged_at IS NOT NULL AND isfinite(s.charged_at) AND s.charged_at >= bd.cutoff_at) AND (bd.cutoff_at IS NULL OR rs.recognized_at IS NOT NULL AND isfinite(rs.recognized_at) AND rs.recognized_at >= bd.cutoff_at) AND rs.disposition = 'earned'::text AND r.status = 'recognized'::text AND rs.rake_credit = s.rake_credit AND rs.recognized_at = r.recognized_at AND NOT s.union_id IS DISTINCT FROM r.union_id;
 
+-- Restate the exact original view ACLs for static admission and preserve them at installation.
+REVOKE ALL ON public.accounting_effective_cash_rake_sources FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON public.accounting_payable_earning_sources FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.accounting_payable_earning_sources TO service_role;
+
 -- Maintained owner: supabase/accounting/own-agent-v1/typed-receipts.sql
 -- New interpretation evidence is separate from every original v3 row shape.
 -- No foreign keys to game, club or wallet tables. Trigger DDL is installed

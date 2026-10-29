@@ -1,10 +1,10 @@
--- Read source-credit and receipt membership by each original selected key.
--- DISTINCT member keys preserve the original semijoin bags and every quality check.
+-- Inline the original selected-source read and join recognized receipts by source_id.
+-- Both transformations preserve the full STABLE source/receipt bags and all predicates.
 -- Read each event fee scope from its original sources; retain selected raw and receipt bags.
 -- Decode six grouped result maps by tournament instead of multiplying join estimates.
 -- Every original count, sum, fingerprint, refusal, full event row and caller snapshot is retained.
 -- No source65/generation owner, grant, raw financial record or money changes.
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))='609720cb15b98f0a9c156ea2aa01eca2')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))='e7844c54bb377c1969b3fa2851eaea7b')
 BEGIN;
 SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='15s';
 -- Original financial-source witnesses are read-only qualification. They do not
@@ -372,11 +372,8 @@ BEGIN
     WHERE r.is_tournament AND EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=r.tournament_id)
   ), src_sum AS (
    SELECT s.rake_record_id,sum(s.rake_credit) AS credited
-    FROM (SELECT DISTINCT original_member.id FROM rr original_member) original_keys
-    CROSS JOIN LATERAL (SELECT original_source.rake_record_id,original_source.rake_credit
-     FROM public.accounting_tournament_fee_sources original_source
-     WHERE original_source.rake_record_id=original_keys.id OFFSET 0) s
-    GROUP BY s.rake_record_id
+    FROM public.accounting_tournament_fee_sources s
+    WHERE EXISTS(SELECT 1 FROM rr original_member WHERE original_member.id=s.rake_record_id) GROUP BY s.rake_record_id
   ), rr_agg AS (
    SELECT rr.tournament_id,
     count(*) FILTER(WHERE rr.rake_amount IS NULL OR rr.rake_amount<>round(rr.rake_amount,2)
@@ -399,7 +396,7 @@ BEGIN
       OR b.rake_amount IS DISTINCT FROM rr.rake_amount
       OR b.rake_amount IS DISTINCT FROM ss.credited)
     GROUP BY rr.tournament_id
-  ), selected_event_sources AS MATERIALIZED (
+  ), selected_event_sources AS NOT MATERIALIZED (
    SELECT s.* FROM public.accounting_tournament_fee_sources s
     WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=s.tournament_id)
   ), selected_event_recognized AS MATERIALIZED (
@@ -407,9 +404,8 @@ BEGIN
     WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=rs.tournament_id)
   ), selected_receipt_recognized AS MATERIALIZED (
    -- Receipt join is by source_id, including wrong-event receipts.
-   SELECT rs.* FROM (SELECT DISTINCT original_member.id FROM selected_event_sources original_member) original_keys
-    CROSS JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt
-     WHERE original_receipt.source_id=original_keys.id OFFSET 0) rs
+   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs
+    WHERE EXISTS(SELECT 1 FROM selected_event_sources original_member WHERE original_member.id=rs.source_id)
   ), orphan_source_identities AS MATERIALIZED (
    -- Global source identities preserve wrong-event and missing-source semantics.
    SELECT s.id,s.tournament_id FROM public.accounting_tournament_fee_sources s
@@ -422,7 +418,8 @@ BEGIN
   ), receipt_bad AS (
    SELECT s.tournament_id,count(*) AS bad
     FROM selected_event_sources s JOIN survivors k ON k.tournament_id=s.tournament_id
-    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id
+    LEFT JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt
+     WHERE original_receipt.source_id=s.id OFFSET 0) rs ON true
     WHERE (rs.source_id IS NULL OR rs.tournament_id IS DISTINCT FROM s.tournament_id
      OR rs.recognized_at IS DISTINCT FROM k.recognized_at
      OR rs.disposition IS DISTINCT FROM 'earned'
@@ -574,10 +571,10 @@ BEGIN
  THEN RAISE EXCEPTION 'weekly_quality_bags_exact_preimage_required';END IF;
  IF NULLIF(current_setting('ca.weekly_quality_source_qualification',true),'')IS NULL THEN RAISE EXCEPTION 'weekly_quality_bags_source_qualification_required';END IF;
  patched:=replace(d,old_query,new_query);
- IF md5(patched)<>'609720cb15b98f0a9c156ea2aa01eca2'THEN RAISE EXCEPTION 'weekly_quality_bags_exact_patch_required';END IF;
+ IF md5(patched)<>'e7844c54bb377c1969b3fa2851eaea7b'THEN RAISE EXCEPTION 'weekly_quality_bags_exact_patch_required';END IF;
  EXECUTE patched;
- IF md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))<>'609720cb15b98f0a9c156ea2aa01eca2'
-  OR(SELECT md5(prosrc)FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)<>'d83edaf7a00daf70d13167e5d493628d'
+ IF md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))<>'e7844c54bb377c1969b3fa2851eaea7b'
+  OR(SELECT md5(prosrc)FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)<>'ea4443e58e524637ab55c0e9d9149343'
   OR(SELECT to_jsonb(p)-'prosrc'FROM pg_proc p WHERE p.oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)IS DISTINCT FROM metadata
  THEN RAISE EXCEPTION 'weekly_quality_bags_postimage_required';END IF;
 END$original_quality_bags$;

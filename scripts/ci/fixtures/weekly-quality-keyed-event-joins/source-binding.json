@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "sourceFiles": {
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "0032f4861d462ea583b0e19ddd3cc444734b53af366ad5a3e8558a0e1d733cbc",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "fe7f7ed8b991ebd8d28103533237a690d302a5910fc7beac336b904ad6930082",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "e6fa3f75c5c4f256cfff2b0806786838120daa4e48c82055ffe719bc5acc3cbe",
-    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "0895827d06ac0df25462d88573b92afa6ddb12b956ed6ce6046bbce44807925b",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/qualification-evidence.json": "6c8ceb725314de3b40fa540cf814e4563380e6de9087749f86a8925b695cd998",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-after.sql": "be8d691d7c8616c2695439ea4fd98573bb7db0ba73b8b1f6191aafba376c8605",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/README.md": "86445a5680bd6cab1ef18505bda81508eebbae6c1184db10c7400ae276564846",
+    "scripts/ci/fixtures/weekly-quality-keyed-event-joins/source-receipt.json": "13fac7362dbf935e0becf4fa516b828e929e8d081eef931ffe6373cab492e4f9",
     "scripts/ci/fixtures/weekly-quality-keyed-event-joins/quality-before.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
-    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "f380e505be1068165d65492a510bd1ea1c55879a1207939220316e7ba498e4e9",
-    ".github/workflows/weekly-close-hour-guard.yml": "24c12727bbc4806071390f5c450b419224557c63817a90824fc527aed6ded578",
-    "tests/weekly-quality-keyed-event-joins.law.test.ts": "388ea48a7b4a4b73ae1b6c7e142bf53c2ce316b8b29f19b436118f8e1271879f",
-    "docs/laws.d/weekly-quality-keyed-event-joins.md": "03203e5310fb5ef788ac957f6e52ae7c43eb2c922c70c6cbc9e01d8ca6a14ca2",
-    "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "037668e5211c31cf44883e6da80370d6f241ddf1e3c29aa2123d33752e7b758a",
-    "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "00caa1f47fdae7b519716b495140c894ab14403cf18f6925130cfdeeb1a24b48"
+    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "c8371293979239b87b46921cccec834bf78b0cae2add0ac3ac20e6e31eeea067",
+    ".github/workflows/weekly-close-hour-guard.yml": "2afbc02b180384be27bab4026413f3f1c442945f74510de7b4708b896743930e",
+    "tests/weekly-quality-keyed-event-joins.law.test.ts": "76a605ca5c8770ee5d85d3c52df629b52d63ccc19aed8c98ba68ef8db8778e1a",
+    "docs/laws.d/weekly-quality-keyed-event-joins.md": "7e5eea3a01637a6b26348a3af0246a378356cce1128638e846906fd9940ceeb7",
+    "docs/changelog/2026-10-28-weekly-quality-keyed-event-joins.md": "441f1f550a63a6aa88811b1ee0c960cb4e726fa2231e6adb5ec1a2e16ff85a50",
+    "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql": "21cd38092f4528b626d7c33f307e69e56866ca96356d2a91e63f3f0a024102c5"
   }
 }

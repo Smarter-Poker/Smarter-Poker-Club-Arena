@@ -5,20 +5,30 @@ const base = 'scripts/ci/fixtures/weekly-quality-keyed-event-joins/';
 const read = (p: string) => readFileSync(p, 'utf8');
 const digest = (algorithm: string, value: string | Buffer) =>
   createHash(algorithm).update(value).digest('hex');
-describe('Weekly quality reads selected source credits and receipts by key', () => {
-  it('changes only the two exact memberships and preserves full original function authority', () => {
+describe('Weekly quality preserves source bags while avoiding redundant intermediate work', () => {
+  it('changes only the two exact source and receipt transformations and preserves full original function authority', () => {
     const receipt = JSON.parse(read(base + 'source-receipt.json'));
     const before = read(base + 'quality-before.sql');
     const after = read(base + 'quality-after.sql');
     expect(before.split(receipt.replacement.old)).toHaveLength(2);
     expect(before.replace(receipt.replacement.old, receipt.replacement.new)).toBe(after);
-    let exact = before;
     expect(receipt.exact_two_replacements).toHaveLength(2);
+    let transformed = before;
     for (const delta of receipt.exact_two_replacements) {
-      expect(exact.split(delta.old)).toHaveLength(2);
-      exact = exact.replace(delta.old, delta.new);
+      expect(transformed.split(delta.old)).toHaveLength(2);
+      transformed = transformed.replace(delta.old, delta.new);
     }
-    expect(exact).toBe(after);
+    expect(transformed).toBe(after);
+    expect(receipt.exact_two_replacements[0]).toEqual({
+      old: 'selected_event_sources AS MATERIALIZED (',
+      new: 'selected_event_sources AS NOT MATERIALIZED (',
+    });
+    expect(receipt.exact_two_replacements[1].old).toBe(
+      '    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id'
+    );
+    expect(receipt.exact_two_replacements[1].new).toContain(
+      'WHERE original_receipt.source_id=s.id OFFSET 0'
+    );
     for (const [text, hash] of [
       [before, receipt.before_full_md5],
       [after, receipt.expected_after_full_md5],
@@ -47,16 +57,16 @@ describe('Weekly quality reads selected source credits and receipts by key', () 
     const receipt = JSON.parse(read(base + 'source-receipt.json'));
     const evidence = JSON.parse(read(base + 'qualification-evidence.json'));
     expect(evidence.qualification).toBe('passed');
-    expect(evidence.case_count).toBe(91);
+    expect(evidence.case_count).toBe(115);
     expect(evidence.migration_sha256).toBe(digest('sha256', readFileSync(receipt.migration_file)));
     expect(evidence.actual_after_full_md5).toBe(receipt.expected_after_full_md5);
     for (const name of [
-      'source_credit_membership_full_bag_NULL',
-      'source_credit_membership_full_bag_duplicate',
-      'source_credit_membership_full_bag_missing',
-      'actual_full_FOR_receipt_credit_key_probes_force_custom_plan',
-      'actual_full_FOR_receipt_credit_key_probes_force_generic_plan',
-      'actual_full_FOR_receipt_credit_key_probes_auto',
+      'combined_source_receipt_full_join_bag_NULL',
+      'combined_source_receipt_full_join_bag_duplicate',
+      'combined_source_receipt_full_join_bag_missing',
+      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_force_custom_plan',
+      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_force_generic_plan',
+      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_auto',
       'large_positive_real_quality_full_result_equal',
       'actual_STABLE_SQL_snapshot_concurrent_recognition_commit',
       'exact_installer_metadata_source_guard_and_GEN_preserved',
@@ -65,6 +75,23 @@ describe('Weekly quality reads selected source credits and receipts by key', () 
       expect(evidence.cases).toContain(name);
     expect(read('.github/workflows/weekly-close-hour-guard.yml')).toContain(
       '--keyed-event-candidate ' + receipt.migration_file
+    );
+  });
+  it('keeps excluded malformed contract casts outside all three actual plan domains', () => {
+    const extra = JSON.parse(read(base + 'qualification-evidence.json'));
+    expect(extra.qualification).toBe('passed');
+    expect(extra.case_count).toBe(115);
+    expect(extra.actual_after_full_md5).toBe(
+      JSON.parse(read(base + 'source-receipt.json')).expected_after_full_md5
+    );
+    for (const scope of ['foreign_scope', 'outside_week'])
+      for (const domain of ['numeric', 'timestamp', 'uuid', 'combined'])
+        for (const mode of ['auto', 'force_custom_plan', 'force_generic_plan'])
+          expect(extra.cases).toContain(
+            'excluded_contract_domain_fullquality_and_fullFOR_' + scope + '_' + domain + '_' + mode
+          );
+    expect(read('scripts/ci/test-weekly-quality-typed-source-maps-postgres.py')).toContain(
+      'if a.keyed_event_candidate:qualify_excluded_contract_domains(q,before,after,rec)'
     );
   });
   it('binds the maintained exact inputs', () => {

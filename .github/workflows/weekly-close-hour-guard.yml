@@ -69,7 +69,7 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-quality-typed-source-maps-postgres.py --rr-membership-candidate supabase/migrations/20261028185823_weekly_quality_reads_exact_event_aggregate_maps.sql --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-quality-typed-source-maps.json"
-      - name: Weekly quality reads selected source credits and receipts by key
+      - name: Weekly quality preserves source bags without redundant intermediate work
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 -B scripts/ci/test-weekly-quality-typed-source-maps-postgres.py --keyed-event-candidate supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql --pg-bin "$PG_BIN" --scratch "${{ runner.temp }}" --output "${{ runner.temp }}/weekly-quality-keyed-event-joins.json"

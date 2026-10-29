@@ -1,3 +1,3 @@
 # tests/weekly-quality-keyed-event-joins.law.test.ts
 
-Weekly tournament quality preserves original verdicts and duplicate/NULL/wrong-event bags while selected receipt and source-credit memberships read their exact original keys in natural custom and generic plans.
+Weekly tournament quality preserves full STABLE source/receipt bags and every shared-scope/contract/numerical check while inlining selected source reads and directly joining the same recognized receipts. Excluded malformed contracts remain excluded under auto/custom/generic full-quality and full-FOR plans.

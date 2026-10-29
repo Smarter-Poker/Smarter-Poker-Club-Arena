@@ -647,6 +647,21 @@ class InspectorTests(unittest.TestCase):
             self.assertEqual(R.validate_refusal(exported,self.request).code, 'evidence_refused')
             self.assertNotIn('secret', json.dumps(exported))
 
+    def test_literal_command_stages_roundtrip_without_exporting_arguments(self):
+        for stage in R.INSPECTOR_COMMAND_STAGES:
+            for message, code in R.INSPECTOR_COMMAND_ERRORS.items():
+                with self.subTest(stage=stage, code=code), patch.object(R, '_inspector_command', side_effect=ValueError(message)):
+                    with patch.object(R, 'inspector_remote', side_effect=lambda *args: R.inspector_command(['private command secret'],123,stage=stage)):
+                        with self.assertRaises(R.ScopedRefusal) as caught:
+                            R.remote(self.request)
+                    exported = R.refusal(self.request,caught.exception)
+                    answer = R.validate_refusal(exported,self.request)
+                    self.assertEqual((answer.phase,answer.code),('inspector_'+stage,code))
+                    self.assertNotIn('private',json.dumps(exported))
+        with patch.object(R,'_inspector_command') as child, self.assertRaises(ValueError):
+            R.inspector_command(['secret'],123,stage='unreviewed_private')
+        child.assert_not_called()
+
     def test_native_child_idle_poll_is_not_the_absolute_deadline(self):
         # A real child stays silent past the old three-second polling slice.
         started = R.time.monotonic()

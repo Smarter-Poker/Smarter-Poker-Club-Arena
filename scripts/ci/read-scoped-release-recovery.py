@@ -71,6 +71,16 @@ REFUSALS = {
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
 
 
+INSPECTOR_COMMAND_STAGES = {'container', 'health', 'image', 'probe', 'history',
+                            'recheck_container', 'recheck_health'}
+INSPECTOR_COMMAND_ERRORS = {'Inspector read deadline': 'command_deadline',
+                            'Inspector read size': 'command_size',
+                            'Inspector native unavailable': 'command_nonzero'}
+REFUSAL_CODES |= {('inspector_' + stage, code)
+                  for stage in INSPECTOR_COMMAND_STAGES
+                  for code in INSPECTOR_COMMAND_ERRORS.values()}
+
+
 class ScopedRefusal(ValueError):
     def __init__(self, phase, code):
         if (phase, code) not in REFUSAL_CODES:
@@ -562,7 +572,19 @@ finally{
 """
 
 
-def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
+def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536, stage=None):
+    if stage is not None and stage not in INSPECTOR_COMMAND_STAGES:
+        raise ValueError('Unqualified inspector command stage')
+    try:
+        return _inspector_command(args, deadline, stderr=stderr, input_bytes=input_bytes, limit=limit)
+    except ValueError as error:
+        code = INSPECTOR_COMMAND_ERRORS.get(str(error))
+        if stage is not None and code is not None:
+            raise ScopedRefusal('inspector_' + stage, code) from None
+        raise
+
+
+def _inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
     """Fixed native child reads, one overall budget, bounded pipes and stderr."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -603,9 +625,9 @@ def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=6
         child.stderr.close()
 
 
-def inspector_identity(deadline):
+def inspector_identity(deadline, *, stage='container'):
     fmt = '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}} {{.RestartCount}}'
-    raw = inspector_command(['docker', 'inspect', '--format', fmt, 'club-arena-engine'], deadline, limit=2048).decode().strip().split()
+    raw = inspector_command(['docker', 'inspect', '--format', fmt, 'club-arena-engine'], deadline, limit=2048, stage=stage).decode().strip().split()
     if (len(raw) != 6 or not re.fullmatch('[0-9a-f]{64}', raw[0])
             or not re.fullmatch('sha256:[0-9a-f]{64}', raw[1]) or raw[2] != 'true'
             or not re.fullmatch(r'\d{4}-\d\d-\d\dT[\d:.]+Z', raw[3])
@@ -614,9 +636,9 @@ def inspector_identity(deadline):
     return dict(zip(['container', 'image', 'running', 'startedAt', 'hostPid', 'restarts'], raw))
 
 
-def inspector_health(deadline):
+def inspector_health(deadline, *, stage='health'):
     raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
-        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144, stage=stage)
     value = json.loads(raw, object_pairs_hook=unique_object)
     if (not isinstance(value, dict) or value.get('running') is not True
             or value.get('releaseSha') != EED or value.get('version') != EED[:8]
@@ -696,7 +718,7 @@ def inspector_endpoint(raw, at):
 def inspector_probe(container, deadline, expected=None):
     raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
-        input_bytes=INSPECTOR_NODE.encode(), limit=16384)
+        input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)
     state = value.get('state') if isinstance(value, dict) else None
     if state not in {'closed', 'open', 'owned', 'foreign', 'unproved'}:
@@ -747,7 +769,7 @@ def inspector_remote(request, root_fd):
                 and binding['result']['recoveredDesiredImageId'] != before['image']):
             raise ScopedRefusal('inspector', 'identity_changed')
         label = inspector_command(['docker', 'image', 'inspect', '--format',
-            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256).decode().strip()
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256, stage='image').decode().strip()
         if label != intent['source']:
             return answer
         answer.update(controlSha=intent['controlSha'], originalSourceSha=EED, instanceId=intent['instance'])
@@ -758,7 +780,7 @@ def inspector_remote(request, root_fd):
             # Docker logs emits the container stderr stream on stderr. Never
             # export raw logs, URL, socket rows, host PID, container ID or paths.
             raw = inspector_command(['docker', 'logs', '--timestamps', '--since', str(intent['at']),
-                '--until', str(intent['at'] + 10), before['container']], deadline, stderr=True)
+                '--until', str(intent['at'] + 10), before['container']], deadline, stderr=True, stage='history')
             try:
                 historical = inspector_endpoint(raw, intent['at'])
             except ValueError:
@@ -779,7 +801,7 @@ def inspector_remote(request, root_fd):
                         answer.update(status='foreign', reason='established_inspector_client')
                     else:
                         answer['reason'] = 'native_read_unproved'
-        if (before != inspector_identity(deadline) or health != inspector_health(deadline)
+        if (before != inspector_identity(deadline, stage='recheck_container') or health != inspector_health(deadline, stage='recheck_health')
                 or intent != inspector_intent(request, directory)
                 or binding != inspector_binding(request, directory, root_fd, intent)):
             raise ScopedRefusal('inspector', 'identity_changed')

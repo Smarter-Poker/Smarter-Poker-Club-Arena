@@ -180,7 +180,10 @@ async function existingResult(args: {
 }
 
 async function persistEvaluation(args: {
-  feature_contract_version?: 'rank-suit-count-v1' | 'holdem-board-relative-v2';
+  feature_contract_version?:
+    | 'rank-suit-count-v1'
+    | 'holdem-board-relative-v2'
+    | 'holdem-public-hist215-v1';
   policy_export_schema?: 'smarter-poker.pio-policy.v4';
   datasetId: string;
   datasetChecksum: string;

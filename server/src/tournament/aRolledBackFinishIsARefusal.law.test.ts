@@ -10,8 +10,8 @@
  * every table engine of the event. Both completed on their own path an hour
  * later, paid exactly once.
  *
- * A response carrying a SQLSTATE is the database stating that this attempt
- * rolled back. When every attempt says so, nothing of this request can still
+ * A response carrying a statement-refusal SQLSTATE states that this attempt
+ * rolled back. Connection/server failures remain unknown. When every attempt says so, nothing of this request can still
  * commit, and the finish is a refusal the manager retries. A lost response, or
  * a resolver that reports a commit, stays unknown and fail-closed.
  */
@@ -71,6 +71,24 @@ describe('a finish the database rolled back is a refusal, not an unknown', () =>
     await expect(finish()).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
   });
 
+  it.each(['08006', '08007', '53100', '57P01', '58030', 'XX000'])(
+    'keeps a potentially interrupted commit unknown for SQLSTATE %s',
+    async (code) => {
+      mocks.rpc
+        .mockResolvedValueOnce({
+          data: null,
+          error: { code, message: 'commit outcome unavailable' },
+        })
+        .mockResolvedValue({ data: null, error: LOCK_TIMEOUT });
+      await expect(finish()).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
+      expect(mocks.rpc).toHaveBeenCalledTimes(6);
+      expect(mocks.rpc).toHaveBeenLastCalledWith(
+        'fn_resolve_tournament_terminal_outcome',
+        expect.objectContaining({ p_tournament_id: TOURNAMENT_ID })
+      );
+    }
+  );
+
   it('NEGATIVE: a thrown transport failure keeps it unknown', async () => {
     mocks.rpc
       .mockRejectedValueOnce(new Error('supabase_timeout'))
@@ -105,7 +123,7 @@ describe('a finish the database rolled back is a refusal, not an unknown', () =>
     await expect(finish()).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
   });
 
-  it('only a SQLSTATE or a PostgREST code is the database stating a rollback', () => {
+  it('only a statement-refusal SQLSTATE or a PostgREST code proves rollback', () => {
     expect(databaseStatedRollback(LOCK_TIMEOUT)).toBe(true);
     expect(databaseStatedRollback({ code: '40P01', message: 'deadlock detected' })).toBe(true);
     expect(databaseStatedRollback({ code: 'PGRST002', message: 'schema cache' })).toBe(true);

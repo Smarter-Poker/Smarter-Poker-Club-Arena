@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { boardForRabbitReveal } from '../../src/components/table/retainedRabbitBoard';
 import { canonicalCards } from '../../src/utils/tableGeometry';
+import { rabbitVipUsageMonth } from '../../src/components/table/rabbitEntitlement';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 const start = page.indexOf('  const handleRabbitReveal = useCallback(');
@@ -30,6 +31,9 @@ function harness() {
   });
   const deps = {
     tableId: 'table-one',
+    rabbitLiveRequestRef: { current: 0 },
+    rememberRabbitVipRemaining: vi.fn(),
+    rabbitVipUsageMonth,
     rabbitViewerRef: { current: { tableId: 'table-one', userId: 'viewer-one' } as object | null },
     useCallback: (fn: unknown) => fn,
     requestRabbitHunt: vi.fn(() => response),
@@ -187,4 +191,81 @@ it('expires old ghosts on foreground resume even when the background timer was t
   expect(cards).toHaveBeenCalledWith([]);
   expect(clear).toHaveBeenCalledWith(123);
   expect(deps.retainedRabbitExpiresAtRef.current).toBe(0);
+});
+
+it('a later live hunt owns the felt when two purchased hands finish out of order', async () => {
+  const { deps, reveal, finish } = harness();
+  const older = reveal();
+  deps.rabbitHandNumberRef.current = 41;
+  deps.lastBoardOfHandRef.current = { handNumber: 41, cards: [], stage: 'preflop' };
+  deps.requestRabbitHunt.mockResolvedValueOnce({
+    success: true,
+    cards: [{ rank: 'Q', suit: 'h' }],
+  } as any);
+  await reveal();
+  finish();
+  expect((await older).success).toBe(true);
+  expect(deps.setRetainedRabbitBoard).toHaveBeenCalledTimes(1);
+  expect(deps.setRetainedRabbitBoard).toHaveBeenLastCalledWith(
+    expect.objectContaining({ handNumber: 41 })
+  );
+});
+
+it('a receipt read cannot adopt a new login while its module is loading', async () => {
+  const api = readFileSync(resolve(__dirname, '../../src/services/GameServerAPI.ts'), 'utf8');
+  const from = api.indexOf('export async function readRabbitHuntReceipt(');
+  const to = api.indexOf('export async function requestRabbitHunt(', from);
+  const code = ts.transpileModule(api.slice(from, to).replace('export ', ''), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  let owner = 'old-login';
+  let finish!: (v: unknown) => void;
+  const module = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const read = vi.fn().mockResolvedValue({ success: true, cards: ghosts });
+  const action = new Function(
+    'storedLoginIdentity',
+    'rabbitReceiptModule',
+    code + ';return readRabbitHuntReceipt;'
+  )(
+    () => owner,
+    () => module
+  );
+  const pending = action('table', 42);
+  owner = 'new-login';
+  finish({ readRabbitReceipt: read });
+  expect(await pending).toBeNull();
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('remembers the authoritative remaining count even when the paid surface has closed', async () => {
+  const { deps, reveal } = harness();
+  let finish!: (v: any) => void;
+  deps.requestRabbitHunt.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  const pending = reveal();
+  deps.rabbitViewerRef.current = null;
+  finish({ success: true, cards: ghosts, vip_remaining: 0 });
+  await pending;
+  expect(deps.rememberRabbitVipRemaining).toHaveBeenCalledWith('viewer-one', 0);
+});
+
+it('keeps a paid result but does not apply its old quota across the UTC monthly reset', async () => {
+  const { deps, reveal } = harness();
+  vi.setSystemTime(new Date('2026-10-31T23:59:59Z'));
+  let finish!: (value: any) => void;
+  deps.requestRabbitHunt.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  const pending = reveal();
+  vi.setSystemTime(new Date('2026-11-01T00:00:01Z'));
+  finish({ success: true, cards: ghosts, vip_remaining: 0 });
+  expect(await pending).toMatchObject({ success: true, cards: ghosts, vipRemaining: null });
+  expect(deps.rememberRabbitVipRemaining).toHaveBeenCalledWith('viewer-one', null);
 });

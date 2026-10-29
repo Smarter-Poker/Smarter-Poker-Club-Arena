@@ -87,3 +87,22 @@ counts these unread failures. They are never silently retried or called read.
 A later complete read can ACK normally; the failure history remains.
 Full-read envelopes include stored JSON length and digest. Stored summaries
 ending mid-sentence are source limitations, distinct from tool truncation.
+
+Each delivered manifest carries its exact count. The reader processes one
+original and any required snapshot, immediately requests its single-ID ACK with
+fresh complete evidence, and confirms that result before reading the next ID.
+It never accumulates a 32-ID ACK whose evidence may exceed review context. A
+review rejection remains a rejection: no tool/identity substitution or replay;
+an explicit failed-attempt record is separately reviewed and remains unread.
+Partial per-record outcomes do not release or resubmit the accepted batch.
+
+## Tournament investigation authority
+
+The owner explicitly instructed this chat on October29,2026 to investigate and
+repair tournament failures automatically. Generated events retain the per-record
+full-read/acknowledgment boundary, then invoke a finite investigation of the
+distinct tournament failures actually read. Historical alerts require current
+authoritative evidence. Existing operation owners, original hands/chips,
+idempotent financial paths, required checks and protected provider delivery
+remain mandatory. Neither the receive plugin nor a timer performs repairs or
+releases. Unread/deferred evidence cannot authorize a repair.

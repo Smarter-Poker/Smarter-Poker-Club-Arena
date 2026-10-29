@@ -820,13 +820,17 @@ jobs:
           if [ -n "$SUPERSEDED_BY" ]; then
             DETAIL="stood down before cutover; protected main had moved to $SUPERSEDED_BY"
           fi
-          echo "::warning title=NOT DEPLOYED::$TARGET_SHA did not reach production ($DETAIL). The engine still runs the previously sealed release."
+          if [ "$RELEASE_RESULT" = sealed ] || [ "$RELEASE_RESULT" = already-released ]; then
+            echo "::warning title=NOT VERIFIED::$TARGET_SHA has a sealed release outcome but no independent production proof ($DETAIL). Activation may have occurred; read current production identity before any retry."
+          else
+            echo "::warning title=NOT DEPLOYED::$TARGET_SHA was not proved shipped by this attempt ($DETAIL)."
+          fi
           {
             echo
-            echo '### NOT DEPLOYED'
-            echo "\`$TARGET_SHA\` did not reach production."
+            echo '### RELEASE NOT VERIFIED'
+            echo "\`$TARGET_SHA\` was not independently proved live by this attempt."
             echo "- Why: $DETAIL"
-            echo '- The engine still runs the previously sealed release.'
+            echo '- Read current production identity and the durable owning operation before any retry.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   certify-production:

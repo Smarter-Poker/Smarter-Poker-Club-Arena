@@ -158,6 +158,33 @@ describe('engine deployment reports what actually happened', () => {
     ).toContain('newer-sha');
   });
 
+  it('a sealed release without proof is unknown, not declared absent from production', () => {
+    const receipt = job(deploy, 'record-receipt');
+    const step = receipt.slice(receipt.indexOf('      - name: Say plainly when nothing shipped'));
+    const script = step
+      .match(/ {8}run: \|\n([\s\S]*)/)?.[1]
+      .split('\n')
+      .map((line) => line.slice(10))
+      .join('\n');
+    expect(script).toBeTruthy();
+    const run = spawnSync('bash', ['-euo', 'pipefail', '-c', script!], {
+      encoding: 'utf8',
+      timeout: 2000,
+      env: {
+        PATH: process.env.PATH,
+        GITHUB_STEP_SUMMARY: '/dev/null',
+        SHIPPED: 'false',
+        TARGET_SHA: 'a'.repeat(40),
+        RELEASE_RESULT: 'sealed',
+        VERIFIED: 'false',
+        SUPERSEDED_BY: '',
+      },
+    });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout).toContain('NOT VERIFIED');
+    expect(run.stdout).not.toMatch(/did not reach production|still runs the previously/);
+  });
+
   it('calls a release shipped only after the durable transaction and independent proof agree', () => {
     expect(deploy).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
     expect(deploy).toContain('case "$RESULT" in sealed|already-released)');

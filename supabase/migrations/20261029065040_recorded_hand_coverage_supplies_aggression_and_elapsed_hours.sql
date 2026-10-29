@@ -11,7 +11,7 @@ CREATE TABLE public.ca_hand_stat_intervals (
  CHECK (isfinite(started_at) AND isfinite(ended_at) AND ended_at>started_at)
 );
 ALTER TABLE public.ca_hand_stat_intervals ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_hand_stat_intervals FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON public.ca_hand_stat_intervals FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT,INSERT ON public.ca_hand_stat_intervals TO service_role;
 
 CREATE OR REPLACE FUNCTION public.ca_capture_fact_aggression_counts()

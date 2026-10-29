@@ -625,8 +625,8 @@ export default function TournamentDetails({
             // registered_at / rebuys / add_on ride along and the contract
             // fields stay populated. It cannot carry the profiles embed, so
             // `avatar_url` and `player_code` are null until the next full
-            // load - EntriesTab fetches those itself, and RankingTab falls
-            // back to initials rather than a broken image.
+            // load; both entry and ranking rows use initials until that
+            // owning reload hydrates the joined profile.
             const newPlayer = payload.new as {
               id: string;
               user_id: string;

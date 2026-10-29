@@ -36,7 +36,7 @@
     "all_original_public_private_function_definitions_and_metadata_unchanged",
     "exact_file_history_commit_and_replay_refusal_preserve_valid_physical_prefix"
   ],
-  "migration_sha256": "e8d5dd8d5254b16259f8884d04427848dc4c14bb94af0071f5c92bc8ad56adba",
+  "migration_sha256": "062ca87b4f99f5f42860fa3ee2ec91302d56ed9c9e9aec1c62f83111c4d5b7b0",
   "runner_sha256": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
   "fixture_contract_width": {
     "rows": 5000,
@@ -44,7 +44,7 @@
   },
   "limits": "Private PG17 source-only physical index. Exact full15column/default/5constraint/14index/access and eight trigger ABI/catalog contracts; trigger bodies and source65/GEN/maintenance/net-plan helpers are controlled external boundaries. Exact old28a and uninstalled541b query snapshots, density/mode full FOR bags. Does not qualify production build latency, whole Scope capacity, all source paths as zero heap, or original financial producers.",
   "plan_count": 24,
-  "raw_native_sha256": "b26030ef24f40238e1a24227e0c2cc5f931ea011a07eeaedbd51da06ac207249",
+  "raw_native_sha256": "715452040ea9d5bd4d8d4d8600c17b2f2743b42b921ff67e72df3cddc1af7efd",
   "natural_source_plans": [
     {
       "stage": "before",

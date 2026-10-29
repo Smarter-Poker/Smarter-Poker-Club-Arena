@@ -29,6 +29,8 @@ describe('tournament source identities retain narrow physical coverage', () => {
     expect(sql).toContain("SET LOCAL statement_timeout='15s'");
     expect(sql).toContain("SET LOCAL statement_timeout='5s'");
     expect(sql).toContain("qualified->'raw_triggers'");
+    expect(sql.match(/\(contract->>'name'\)COLLATE"C"/g)).toHaveLength(2);
+    expect(sql.match(/\(contract->>'function'\)COLLATE"C"/g)).toHaveLength(2);
   });
   it('binds the full actual table and both unchanged query snapshots', () => {
     const table = JSON.parse(readFileSync(base + 'actual-table-authority.json', 'utf8')).table;

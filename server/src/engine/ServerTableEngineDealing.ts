@@ -241,6 +241,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // via hand-for-hand. Same shape as the start-up loop gate on the base
         // class, on purpose.
         if (
+          this.weeklyPayoutPauseOwners.size > 0 ||
           this.maintenancePaused ||
           this.finalTableDealPaused ||
           this.terminalCloseoutPaused ||
@@ -1155,6 +1156,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // awaitPauseGate on the base class.
         if (
           (this.handForHandPaused ||
+            this.weeklyPayoutPauseOwners.size > 0 ||
             this.maintenancePaused ||
             this.finalTableDealPaused ||
             this.terminalCloseoutPaused ||
@@ -3836,13 +3838,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // From this point a database write may have retained the original even
       // without an acknowledgement. No local no-start proof may cancel it.
       this.f06CurrentPermit?.attemptOriginalRetention();
-      await this.retainOriginalBatch(original, seats, {
-        version: 1,
+      const preparedBatch = {
+        version: 1 as const,
         sequence: 0,
         controller: preparedController.serializeRecoveryState(),
         events: [],
         engine: this.captureContinuationEngine(),
-      });
+      };
+      await this.retainOriginalBatch(original, seats, preparedBatch);
       if (
         this.handController !== preparedController ||
         !this.running ||
@@ -3850,12 +3853,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         !this.lifecycleCanMutate()
       )
         return;
+      this.markRetainedPreparedOriginal(preparedController, original, preparedBatch);
+    }
+    if (original) {
+      if (recovered) {
+        if (JSON.parse(recovered.batch.controller).handStarted === false)
+          this.markRetainedPreparedOriginal(preparedController, original, recovered.batch);
+        else this.weeklyPayoutStartedController = preparedController;
+      }
+      if (this.weeklyHandPause.held())
+        for (const owner of this.weeklyPayoutPauseOwners)
+          preparedController.pauseForWeeklyPayout(owner);
+      if (!(await this.weeklyHandPause.checkpoint())) return;
     }
     // Wait for hand to complete
     // Existing seatBoundary owns preparation and synchronous start. This
     // phase/authority check does not acquire a second mutex.
     const publicationStart = await this.acquireFinancialControllerStart();
     try {
+      if (original) {
+        // A hold may arrive between a resolved async checkpoint and this
+        // caller's continuation. Rejoin that same cooperative owner, then
+        // check synchronously: no await may separate held=false from start.
+        for (;;) {
+          if (!(await this.weeklyHandPause.checkpoint())) return;
+          if (!this.weeklyHandPause.held()) break;
+        }
+      }
       if (
         this.handController !== preparedController ||
         !this.running ||
@@ -3880,7 +3904,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (handWaitReleased) return;
           handWaitReleased = true;
           try {
-            clearTimeout(handTimeout);
+            this.clearHandTimeout(handTimeout);
             if (this.handSafetyTimer === handTimeout) this.handSafetyTimer = null;
             unsub();
           } catch (error) {
@@ -3897,7 +3921,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             resolve();
           }
         };
-        const handTimeout = setTimeout(() => {
+        const handTimeout = this.setHandTimeout(() => {
           // CROSS-INSTANCE GUARD (2026-08-22): if this engine has been stopped
           // or superseded while the void timer was armed, the shared timers now
           // belong to the replacement engine — clearing them here would wipe the
@@ -3983,6 +4007,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             event.type === 'HAND_COMPLETE'
               ? this.dispatchFinancialHandComplete(dispatch)
               : dispatch();
+          if (['CARDS_DEALT', 'PINEAPPLE_DISCARDED', 'HAND_COMPLETE'].includes(event.type))
+            this.trackWeeklyPayoutOriginalWork(handled);
           if (original) await handled;
           else
             void handled.catch((error) =>
@@ -4052,6 +4078,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           const startExactController = () => {
             persistenceGeneration = this.beginTerminalBoundaryPersistence();
             attempt.started = true;
+            this.weeklyPayoutStartedController = controllerForHand;
+            this.retainedPreparedOriginalController = null;
             controllerForHand.start();
           };
           const startWithPermit = () => {
@@ -4062,6 +4090,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             const resumeExactOriginal = () => {
               persistenceGeneration = this.beginTerminalBoundaryPersistence();
               attempt.started = true;
+              this.weeklyPayoutStartedController = controllerForHand;
+              this.retainedPreparedOriginalController = null;
               this.pendingOriginalContinuation = null;
               // Replay the one retained pending event batch through the original
               // consumers. It contains no invented action or replacement deal.

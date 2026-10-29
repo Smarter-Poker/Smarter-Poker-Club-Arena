@@ -558,14 +558,14 @@ describe('exact equity reaches the rendered badge without inventing endpoints', 
   it('refuses to call a legacy sampled zero a dead hand', () => {
     installLayout();
     const { container } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
-    expect(container.querySelector('.equity-overlay')?.textContent).toBe('Unknown');
-    expect((container.querySelector('.equity-overlay__bar') as HTMLElement).style.width).toBe('0%');
+    expect(container.querySelector('.equity-overlay')).toBeNull();
+    expect(container.textContent).not.toContain('Unknown');
   });
-  it('remeasures when an Unknown label changes the badge width class', () => {
+  it('remeasures when a percentage changes the badge width class', () => {
     installLayout();
-    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: false }]} />);
+    const { rerender } = render(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
     const before = world.layerReads;
-    rerender(<Felt badges={[{ ...BADGES[0], equity: 0, exact: true }]} />);
+    rerender(<Felt badges={[{ ...BADGES[0], equity: 100, exact: true }]} />);
     expect(world.layerReads).toBeGreaterThan(before);
   });
   it('does not render a malformed percentage', () => {

@@ -5,7 +5,5 @@
   "owner": "postgres",
   "security_definer": true,
   "acl": "{postgres=X/postgres,service_role=X/postgres}",
-  "config": [
-    "search_path=pg_catalog, public, smarter_private"
-  ]
+  "config": ["search_path=pg_catalog, public, smarter_private"]
 }

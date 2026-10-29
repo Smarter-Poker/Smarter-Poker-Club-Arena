@@ -377,6 +377,18 @@ export function stakesRungTaken(
   return null;
 }
 
+/** PostgREST throws plain objects; instanceof Error drops their message. */
+export function cashGameCreateServerMessage(raw: unknown): string | null {
+  if (typeof raw === 'string') return raw.trim() || null;
+  if (!raw || typeof raw !== 'object') return null;
+  try {
+    const message = (raw as { message?: unknown }).message;
+    return typeof message === 'string' ? message.trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The refusals fn_cash_game_create raises, in words a host can read.
  *

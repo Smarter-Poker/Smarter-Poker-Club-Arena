@@ -13,6 +13,7 @@ vi.mock('../services/supabase/client.js', () => ({
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
+import { F06HandPermit } from '../services/F06HandPermit.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 const config: HandConfig = {
   tableId: 'cccccccc-0000-4000-8000-0000000000a1',
@@ -78,6 +79,7 @@ function fixture() {
   e.f06CurrentPermit = {
     binding,
     assertPreparedStartAllowed: () => {},
+    recoveryState: () => 'attempted',
     attemptOriginalRetention: () => {},
     start: (f: () => void) => f(),
   };
@@ -231,6 +233,23 @@ it('continues the saved all-in hand with the same cards and payout through the o
   expect(restored.getRemainingDeck()).toEqual(deck);
   expect(emitted.some((x) => x.type === 'HAND_START')).toBe(false);
   expect(emitted.some((x) => x.type === 'TURN_CHANGE')).toBe(true);
+  // A reconstructed controller remains the original weekly pause's physical
+  // owner. The money phase must not mistake its started hand for preparation.
+  expect(e.weeklyPayoutStartedController).toBe(restored);
+  e.engineLeaseAuthorityIsCurrent = () => true;
+  e.f06CurrentPermit.recoveryState = () => 'attempted';
+  e.broadcastCurrentState = async () => {};
+  const owner = 'weekly-original-recovery';
+  e.pauseForWeeklyPayout(owner);
+  e.engageWeeklyPayoutHandPause(owner);
+  await vi.waitFor(() => expect(e.isParkedForWeeklyPayout(owner)).toBe(true));
+  const paused = restored.serializeRecoveryState();
+  const actor = restored.getState().currentPlayerSeat;
+  expect(restored.performAction(actor, 'call')).toBe(false);
+  expect(restored.serializeRecoveryState()).toBe(paused);
+  expect(restored.getRemainingDeck()).toEqual(deck);
+  e.resumeFromWeeklyPayout(owner);
+  expect(e.isParkedForWeeklyPayout(owner)).toBe(false);
   complete(restored);
   await resumed;
   await e.handContinuation.join();
@@ -280,3 +299,108 @@ it('preserves cash completion release after its existing event consumer rejects'
   expect(e.handSafetyTimer).toBeNull();
   expect(e.handContinuation).toBeNull();
 });
+
+it.each([false, true])(
+  'keeps a retained prepared original through weekly release (outer checkpoint race: %s)',
+  async (outerCheckpointRace) => {
+    const { e, emitted, roster } = fixture();
+    const controller: HandController = e.handController;
+    const permit = new F06HandPermit(
+      binding,
+      async () => ({
+        data: {
+          ok: true,
+          tournament_id: binding.tournament_id,
+          generation: binding.lease_generation,
+          custody_id: binding.custody_id,
+          permit_id: binding.permit_id,
+          table_id: binding.table_id,
+          lifecycle: binding.lifecycle,
+          hand_number: binding.hand_number,
+          state: 'reserved',
+        },
+        error: null,
+      }),
+      () => true,
+      () => !e.isNextHandPaused()
+    );
+    await permit.reserve();
+    e.f06CurrentPermit = permit;
+    e.engineLeaseAuthorityIsCurrent = () => true;
+    let anchor: any;
+    let acknowledge!: () => void;
+    e.retainOriginalBatch = async (_original: unknown, _seats: unknown, batch: any) => {
+      if (batch.sequence === 0) {
+        anchor = structuredClone(batch);
+        await new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        });
+      }
+    };
+    const attempt = { started: false, cause: null };
+    const run = e.runOriginalController(roster, controller, 42, Date.now(), attempt);
+    await vi.waitFor(() => expect(anchor?.sequence).toBe(0));
+    const originalDeck = controller.getRemainingDeck();
+    const owner = 'weekly-prepared-original';
+    const secondOwner = 'weekly-handoff-microtask';
+    let crossedFinalCheckpoint = false;
+    if (outerCheckpointRace) {
+      const checkpoint = e.weeklyHandPause.checkpoint.bind(e.weeklyHandPause);
+      let completedCheckpoints = 0;
+      vi.spyOn(e.weeklyHandPause, 'checkpoint').mockImplementation(() =>
+        checkpoint().then((current: boolean) => {
+          if (current && ++completedCheckpoints === 2) {
+            queueMicrotask(() => {
+              e.pauseForWeeklyPayout(secondOwner);
+              e.engageWeeklyPayoutHandPause(secondOwner);
+              crossedFinalCheckpoint = true;
+            });
+          }
+          return current;
+        })
+      );
+    }
+    let physicalReadyObserved = false;
+    const stopReady = e.onWeeklyPayoutBoundary(() => {
+      if (e.isParkedForWeeklyPayout(owner)) physicalReadyObserved = true;
+    });
+    e.pauseForWeeklyPayout(owner);
+    e.engageWeeklyPayoutHandPause(owner);
+    expect(permit.recoveryState()).toBe('attempted');
+    expect(JSON.parse(anchor.controller).handStarted).toBe(false);
+    expect(emitted).toEqual([]);
+    acknowledge();
+    for (let turn = 0; turn < 8; turn++) await Promise.resolve();
+    expect(e.handController).toBe(controller);
+    expect(attempt.cause).toBeNull();
+    expect(attempt.started).toBe(false);
+    expect(emitted).toEqual([]);
+    expect(controller.getRemainingDeck()).toEqual(originalDeck);
+    await vi.waitFor(() => expect(e.isParkedForWeeklyPayout(owner)).toBe(true));
+    expect(physicalReadyObserved).toBe(true);
+    stopReady();
+    e.broadcastCurrentState = async () => {};
+    e.resumeFromWeeklyPayout(owner);
+    if (outerCheckpointRace) {
+      await vi.waitFor(() => expect(crossedFinalCheckpoint).toBe(true));
+      expect(e.handController).toBe(controller);
+      expect(attempt.cause).toBeNull();
+      expect(attempt.started).toBe(false);
+      expect(emitted).toEqual([]);
+      expect(e.isParkedForWeeklyPayout(secondOwner)).toBe(true);
+      e.resumeFromWeeklyPayout(secondOwner);
+    }
+    await vi.waitFor(() =>
+      expect(emitted.some((event) => event.type === 'CARDS_DEALT')).toBe(true)
+    );
+    expect(e.handCount).toBe(42);
+    expect(permit.binding).toEqual(binding);
+    expect(attempt.started).toBe(true);
+    const state = controller.getState();
+    expect(controller.performAction(state.currentPlayerSeat, 'fold')).toBe(true);
+    await run;
+    await e.handContinuation.join();
+    expect(emitted.filter((event) => event.type === 'HAND_START')).toHaveLength(1);
+    expect(emitted.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
+  }
+);

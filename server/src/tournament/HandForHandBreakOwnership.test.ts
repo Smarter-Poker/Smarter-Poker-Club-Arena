@@ -147,6 +147,48 @@ describe('hand-for-hand respects tournament break ownership', () => {
     expect(b.released).toHaveBeenCalledOnce();
   });
 
+  it.each(['weekly', 'final', 'terminal', 'move'] as const)(
+    'waits for the last independent %s owner and consumes the same parked edge',
+    async (owner) => {
+      const { manager, a, b } = field();
+      manager.hold('synchronized');
+      const parked: Promise<void>[] = [];
+      for (const entry of [a, b]) {
+        entry.state.handForHandResolve = null;
+        entry.state.broadcastCurrentState = async () => {};
+        if (owner === 'weekly') {
+          entry.engine.pauseForWeeklyPayout('weekly');
+          entry.state.maintenancePaused = true;
+        } else if (owner === 'final') entry.engine.pauseForFinalTableDeal(420_000);
+        else if (owner === 'terminal') await entry.engine.parkForTerminalCloseout(0);
+        else await entry.engine.parkForTournamentMove('move', 0);
+        entry.engine.onPauseReady(() => manager.edge());
+        parked.push((entry.state.awaitPauseGate() as Promise<void>).then(entry.released));
+      }
+      const resume = vi.spyOn(a.engine, 'resumeDealing');
+      manager.ready();
+      await manager.resumeFromBreak();
+      if (owner === 'weekly') {
+        a.engine.resumeFromMaintenance();
+        b.engine.resumeFromMaintenance();
+      }
+      vi.advanceTimersByTime(500);
+      expect(resume).not.toHaveBeenCalled();
+      const release = (engine: ServerTableEngine) => {
+        if (owner === 'weekly') engine.resumeFromWeeklyPayout('weekly');
+        else if (owner === 'final') engine.resumeFromFinalTableDeal();
+        else if (owner === 'terminal') engine.releaseTerminalCloseoutPause();
+        else engine.releaseTournamentMovePause('move');
+      };
+      release(a.engine);
+      expect(resume).not.toHaveBeenCalled();
+      release(b.engine);
+      await Promise.all(parked);
+      expect(a.released).toHaveBeenCalledOnce();
+      expect(b.released).toHaveBeenCalledOnce();
+    }
+  );
+
   it('keeps an overlapping add-on break parked after the synchronized break ends', async () => {
     const { manager, a, b } = field();
     manager.hold('synchronized');

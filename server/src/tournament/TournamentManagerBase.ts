@@ -5493,7 +5493,7 @@ export abstract class TournamentManagerBase {
     const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
     if (
       engines.some((engine) => !engine) ||
-      engines.some((engine) => engine!.isMaintenancePaused()) ||
+      engines.some((engine) => engine!.isHandForHandReleaseBlocked()) ||
       !engines.every((engine) => engine!.isWaitingForHandForHand())
     ) {
       return;

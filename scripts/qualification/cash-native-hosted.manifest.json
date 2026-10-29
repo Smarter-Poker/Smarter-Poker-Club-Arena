@@ -1,4 +1,17 @@
 {
+  "nativeAlertRuntimeAudit20261027": {
+    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42104,
+      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
+    },
+    "currentClassifierPin": {
+      "bytes": 42678,
+      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
+    },
+    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
+    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
+  },
   "schemaVersion": 1,
   "diamondLaunchMainInputMerge20261013": {
     "reason": "Preserve protected-main0152591fbeb scoped reset/recovery and measured unchanged25-step Lightning reallocation1\u21923. Peer run38319524263 measured692s family, shard3previous878s; balanced40min cap supersedes dated unbalanced50min allowance. Historical50audit is retained as dated evidence. Current source identity only; financial pins/assertions and qualification states unchanged.",
@@ -209,8 +222,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 245583,
-      "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+      "bytes": 246703,
+      "sha256": "3bff56a5b32cab54435398564354a47f405dd8526ec7fea88f917bcba4e2a42a"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -316,6 +329,18 @@
       "bytes": 114869,
       "sha256": "1972384abd808e3052c47b4aed4c03674fb2d750d85e8b5542df7acd224e8804"
     }
+  },
+  "compilerJobCleanupBudget20261028": {
+    "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
+    "previousWorkflowPin": {
+      "bytes": 243205,
+      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
+    },
+    "currentWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "execution_performed": false
   },
   "nativePgCron": {
     "upstreamCommit": "9490f9cc9803f75105f2f7d89839a998f011f8d8",
@@ -4149,6 +4174,35 @@
     "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470",
     "execution_performed": false
   },
+  "accountingShardRebalance20261027": {
+    "reason": "Move only unchanged weekly-recompute suite and its always-upload from existing shard1 to shard2, retaining four shards,40-minute cap,every native command,deadline,assertion and required aggregate. Current workflow identity is not financial recertification or installation proof.",
+    "previousWorkflowPin": {
+      "bytes": 239586,
+      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
+    },
+    "currentWorkflowPin": {
+      "bytes": 239875,
+      "sha256": "f0fa09c7ace1136aa81ce50da265efcfdd44401df0115bfa72db45b629c16069"
+    },
+    "evidence": [
+      "40542328149 shard1 cancelled at40-minute limit while progressing; weekly proof893seconds,shard2 completed1203seconds",
+      "8326 comparable same qualifier inputs completedshard1 in27minutes",
+      "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
+    ]
+  },
+  "weeklyPayoutOwnedPauseEnforcement20261028": {
+    "reason": "Only add two directly triggered native PG17 weekly-owned-pause protocol/financial concurrency checks and their evidence upload to existing required accounting shard1. All existing cash pg_cron commands, source inputs, checks, assertions, deadlines, matrix and required aggregate remain unchanged. Reviewed exact protected-main workflow diff; workflow identity only, no historical cash financial recertification.",
+    "previousWorkflowPin": {
+      "bytes": 243487,
+      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
+    },
+    "currentWorkflowPin": {
+      "bytes": 244607,
+      "sha256": "6b90ecc07e3a940b6bd6c78ec73cb0d76b45a68f79a7ab3626cda7d5f3613470"
+    },
+    "existing_cash_native_execution_performed": false,
+    "hosted_execution_performed": false
+  },
   "supersededHorseActionQualification20261028": {
     "reason": "Reviewed only additive required Accounting shard-three actions-retention native proof/artifact and classification of its new inputs. Existing cash financial source fixtures, assertions, source inventory, runtime deadlines and qualification states are unchanged. Current source identity is not a financial certificate.",
     "changes": {
@@ -4174,22 +4228,6 @@
       }
     }
   },
-  "accountingShardRebalance20261027": {
-    "reason": "Move only unchanged weekly-recompute suite and its always-upload from existing shard1 to shard2, retaining four shards,40-minute cap,every native command,deadline,assertion and required aggregate. Current workflow identity is not financial recertification or installation proof.",
-    "previousWorkflowPin": {
-      "bytes": 239586,
-      "sha256": "c3fb4552357ee87fd2db337a713cc23650f4411e83611bb3ac1a6d134b69a6a5"
-    },
-    "currentWorkflowPin": {
-      "bytes": 239875,
-      "sha256": "f0fa09c7ace1136aa81ce50da265efcfdd44401df0115bfa72db45b629c16069"
-    },
-    "evidence": [
-      "40542328149 shard1 cancelled at40-minute limit while progressing; weekly proof893seconds,shard2 completed1203seconds",
-      "8326 comparable same qualifier inputs completedshard1 in27minutes",
-      "routing regression fails before and34 focused cases pass after; hosted all-shard execution remains required"
-    ]
-  },
   "supersededHorseActionProtectedMainComposition20261028": {
     "review": "Composed both parents accounting timeout and retention qualification audit records without dropping either. Only additive superseded-actions qualification changes workflow/classifier identities; financial source and assertions remain unchanged. Exact protected-main source integration is not a financial certificate.",
     "main": "ecf65a7a2fffb3f80b0a6a1ead6d538249cdb033",
@@ -4206,34 +4244,15 @@
       "sha256": "e918fba4b0691d7fd2d209522dec2fda7961b6476b401b84a4c8ca0e4c898c07"
     }
   },
-  "nativeAlertRuntimeAudit20261027": {
-    "reason": "Additive native alert runtime/SQL required-check selection only; previous selectors, financial inputs, assertions, qualification states and historical audits unchanged. Identity refresh is not financial recertification.",
-    "previousClassifierPin": {
-      "bytes": 42104,
-      "sha256": "8b6f39c692d4203313bff6c57d6a2719d6ef59b1ca0be9619be4d2aceaa14edf"
-    },
-    "currentClassifierPin": {
-      "bytes": 42678,
-      "sha256": "512e5f8342984b2bbb072cdb50bb5899b538f65943b26fc7c86a22aaa7155aa7"
-    },
-    "validation": "716 focused routing/intake tests; cash manifest oracle rechecked separately.",
-    "integration": "Preserved protected-main river-call Accounting4 workflow binding and all other keys; current classifier adds native alert qualification paths only."
-  },
-  "compilerJobCleanupBudget20261028": {
-    "reason": "Only typecheck_compile outer budget15 to20minutes. PR8443 job122933361176 completed all functional steps by14:59, then was cancelled while saving cache at15:02; comparable8440 job122904827866 passed14:26. Reserve5minutes for observed provider checkout/execution variance and cache/cleanup. Every native command, financial assertion, internal timeout and required aggregate is unchanged. Current workflow identity only, not execution or financial recertification.",
-    "previousWorkflowPin": {
-      "bytes": 243205,
-      "sha256": "52177b46b2a13e29bf978ad7d83ebf7a9cfe1ece42861308436c5824ded90470"
-    },
-    "currentWorkflowPin": {
-      "bytes": 243487,
-      "sha256": "68775a8bff22a459c7f9bb4232dde40b45ba340e0d2fb25f048d67f8e22f0461"
-    },
-    "execution_performed": false
-  },
   "retentionCurrentMainWorkflowIntegration20261028": {
     "review": "Preserved additive incident-reader CI step, existing retention qualification and both parent timeout measurements. Only current workflow source binding changes; financial fixtures, SQL and assertions unchanged; no financial recertification.",
     "current": "23a37ba22d2aaaac105a86bdc74f3bccc9daa2f00a36047348162ded048eb911"
+  },
+  "weeklyPayoutProtectedMainComposition20261028": {
+    "reason": "Preserve both parent audit records and additive required native checks. Refresh only merged workflow and classifier source identity; no financial source, assertion, result status or execution certification changes.",
+    "main": "859ed4eac45449f53af4f9ced021a65b64263d71",
+    "candidateBeforeMerge": "c078b0460f9b921d43a6db2b6df5dacf45b7801a",
+    "financial_recertification": false
   },
   "opponentHudClassifierCheckout20261028": {
     "reason": "The metadata-only changes job checks out scripts and .github in cone mode, retaining root configs and full Git history, instead of hydrating the full artwork tree that timed out in job123044104875. Test commands, assertions, financial qualification and deployment routes are unchanged. Source identity only; not execution or live proof. Integrated current protected main, preserving its compiler cleanup budget and every other workflow change.",
@@ -4246,6 +4265,12 @@
       "sha256": "a3cf7dcade48e1f50ce5c999db0b859167bdfaee4304408f44d64b997b46b449"
     },
     "execution_performed": false
+  },
+  "weeklyPayoutLatestMainComposition20261028": {
+    "reason": "Preserve all protected-main and weekly pause audit records. Only merged current workflow/classifier identity refresh; financial owners, fixtures, assertions, result states and historical qualification remain unchanged.",
+    "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
+    "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
+    "financial_recertification": false
   },
   "durableOriginalContinuationCiIdentity20261029": {
     "review": "Reviewed the additive 14-line required Accounting shard 3 original-hand continuation native step and retained artifact, plus classifier alternatives for only its runner, probe, private fixture and schema inputs. All 27 fixed cash inputs were audited together: only current CI workflow and classifier identities differ. Original cash checker/intake/rollback SQL, native pg_cron builder, financial assertions, fixture bytes, limits, source inventory and qualification verdicts remain unchanged. Existing cash qualification commands and their execution/receipt requirements remain intact. No runtime owner pin changes or renewed financial execution/installation certification.",
@@ -4288,6 +4313,43 @@
         }
       }
     },
+    "execution_performed": false
+  },
+  "weeklyPauseOriginalContinuationComposition20261029": {
+    "review": "Reviewed merged protected-main weekly payout shard 1 physical-pause and financial-phase native steps/artifact alongside the additive 14-line original-continuation shard 3 native step/artifact. Classifier preserves weekly selection and adds only continuation/floor helper, builder, schema, probe and fixture alternatives. Preserve both parent audit histories and all financial SQL, fixture, assertion, budget, status and qualification-command inputs. Only current shared CI/classifier identities and directly dependent binding identities are refreshed. This composition is not renewed financial certification, execution, installation or production evidence.",
+    "main": "ac6a6207042e7671a22803b6e127dbe36afd8e0e",
+    "candidateBeforeMerge": "21a5497b3684e42bdb77e783ee68a6ec97da90f5",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "continuation_parent": {
+          "bytes": 245583,
+          "sha256": "03a48293e4f96eb3db80ba9f8e42a24d190d1d5480c7296902b3b4e7e2864f63"
+        },
+        "weekly_parent": {
+          "bytes": 245805,
+          "sha256": "53bbb8ada0299d5ca48cb5ae9e7a9c8d9ad87c595fb43ae7f2a31be0ab52b96d"
+        },
+        "current": {
+          "bytes": 246703,
+          "sha256": "3bff56a5b32cab54435398564354a47f405dd8526ec7fea88f917bcba4e2a42a"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "continuation_parent": {
+          "bytes": 43059,
+          "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
+        },
+        "weekly_parent": {
+          "bytes": 42836,
+          "sha256": "9d6c91fd2524cc7dce4b83a156e3e104b8ae6ec9534a5fa690cc887bb592c2f5"
+        },
+        "current": {
+          "bytes": 43059,
+          "sha256": "4f5d454b48f197f66fa90678d103a9052925ec163716ce408be187ef83427704"
+        }
+      }
+    },
+    "financial_recertification": false,
     "execution_performed": false
   }
 }

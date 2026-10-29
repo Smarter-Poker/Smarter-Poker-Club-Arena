@@ -91,6 +91,14 @@
       "proofs": [
         "(SELECT count(*) = 0 FROM public.tournaments t WHERE t.id <> 'a70c1028-2000-4000-8000-000000000001'::uuid AND t.schedule_id IS DISTINCT FROM 'a70c1028-2000-4000-9000-000000000001'::uuid AND (COALESCE(t.is_bounty,false) OR COALESCE(t.is_pko,false) OR COALESCE(t.is_mystery_bounty,false)) AND upper(COALESCE(t.tournament_type,'MTT')) = 'MTT' AND lower(COALESCE(t.variant,'')) <> 'satellite' AND t.satellite_target_id IS NULL AND upper(COALESCE(t.status,'')) IN ('REGISTERING','ANNOUNCED') AND COALESCE(t.buy_in_amount,0) + COALESCE(t.buy_in_fee,0) > 0 AND NOT (COALESCE(t.is_rebuy,false) AND COALESCE(t.max_rebuys,1) > 0 AND (COALESCE(t.late_reg_levels,0) = 0 OR t.rebuy_levels = t.late_reg_levels)))"
       ]
+    },
+    {
+      "file": "20261028200033_v31_cell_build_uses_its_bounded_rpc_budget.sql",
+      "sha256": "69ea6ff62fe68aa502db8092dcf67fe80ffe222897064ecf46eb23da1b20c018",
+      "replaces": ["fn_gto_v31_build_cell(uuid,jsonb) retains its exact source body,"],
+      "proofs": [
+        "(SELECT count(*)=1 AND bool_and(md5(pg_get_functiondef(p.oid))='11ffdbe0a66d2fa02df78111c971f834' AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}' AND p.proconfig=ARRAY['search_path=public, extensions','statement_timeout=240s','lock_timeout=1s']::text[] AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE')) FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_gto_v31_build_cell(uuid,jsonb)')) AND (SELECT rolconfig @> ARRAY['statement_timeout=8s']::text[] FROM pg_roles WHERE rolname='service_role')"
+      ]
     }
   ]
 }

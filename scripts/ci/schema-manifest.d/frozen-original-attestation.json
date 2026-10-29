@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/retained-checkpoint-attestation-20261029",
+  "_comment": "Service-only metadata/digest attestation of exact retained original custody during a genuine durable maintenance countdown. No payload, private-table ACL change, claim, retain, settlement, lease change or restart certificate. Native original-continuation qualification exercises this read-only door.",
+  "functions": [
+    "fn_f06_attest_frozen_hand_continuation",
+    "smarter_private.attest_frozen_hand_continuation"
+  ]
+}

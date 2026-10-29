@@ -1820,6 +1820,17 @@
       "issue": "https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pull/8687",
       "refusedBy": [],
       "liveVerdict": "Active outage exception under PUBLISHING.md after the owner renewed FIX IT NOW and all 13 d4b tournament tables stopped at 23:19 UTC. Exact five preimages matched and history was absent before installation. Root operation owner installed this single bounded function-only transaction and atomic exact history without overrides, hot-table locks or engine restart. Readback at 23:26:13.823572Z verified exact version/name, 6811-byte history MD5 d2ec109a11ac4e4f61b9097dd0c9a517, five postdefinition MD5s 9b0480f2e3b78233289c31f8484a5bb2 / 66b05912e3963815a560db03d54c74c9 / c0c18ff26859194b2ad98d3186b30f1d / 11c2a704620600fad8b91d50f3b64e1a / 8bf604a9e6ea826412234d552e83e2a9 and admission helper be823a508db58c1c54158f106cc677be. All owned by postgres; four preparers and helper allow postgres only; guard allows postgres and service_role. This removes certification cleanup global-exclusive admission using existing club scope; it does not certify all-event recovery or install the separate retained-hand shared-lane migration 20261029231647."
+    },
+    {
+      "version": "20261029231647",
+      "name": "retained_original_hands_share_their_tournament_table_lane",
+      "file": "supabase/migrations/20261029231647_retained_original_hands_share_their_tournament_table_lane.sql",
+      "md5": "81acfbc530beaca196e1e798474351a3",
+      "recoveredOn": "2026-10-29",
+      "recoveredFrom": "Exact maintained SQL installed with atomic migration history during active tournament outage; root operation owner verified exact full history bytes and postimage definitions at 2026-10-29T23:29:07.572637Z.",
+      "issue": "https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pull/8687",
+      "refusedBy": [],
+      "liveVerdict": "Active outage exception under PUBLISHING.md after all 13 d4b tables remained stopped at 23:27 UTC. Root operation owner verified exact retain/shared-helper preimages, metadata and ACL with freeze false, then installed the qualified single-call retain correction and atomic exact history in one transaction with 1s lock and 5s statement timeouts, no override or restart. Readback at 23:29:07.572637Z verified exact history name, 4640 bytes and MD5 81acfbc530beaca196e1e798474351a3. Retain postdefinition MD5 95a7b245fe68c5a361fc04a1362f5b11/body 0aba551eac184e0b7a2591228bc69b75; unchanged shared helper definition 7ac5aeac3454c71ded85ff88655a3357/body 4305570df07bbe284d224c0afe3c7d02. Both remain postgres-owned SECURITY DEFINER, search_path pg_catalog,public,smarter_private, ACL postgres and service_role only. Before installation the actual native regression reproduced old exclusive retention blocking under sibling projection shared admission and passed after, preserving same-table, lease, terminal exclusion, duplicates, original financial boundaries and rollback. This installation does not prove retained originals have resumed, unknown statistics holder cause or universal lease liveness."
     }
   ]
 }

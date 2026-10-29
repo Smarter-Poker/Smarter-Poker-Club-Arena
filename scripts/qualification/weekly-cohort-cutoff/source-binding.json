@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252075,
-      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+      "bytes": 252467,
+      "sha256": "bf56a7225ef5f4e874887989048e7b99437994acbc1e3e21211ce0047178ad19"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1028,5 +1028,17 @@
         }
       }
     }
+  },
+  "ciBrowserCriticalPathSourceAudit20261029": {
+    "scope": "Source identity only: five CSS Beat shards and three Diamond playfield shards preserve identical cases and required gates.",
+    "previousCiPin": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "currentCiPin": {
+      "bytes": 252467,
+      "sha256": "bf56a7225ef5f4e874887989048e7b99437994acbc1e3e21211ce0047178ad19"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
   }
 }

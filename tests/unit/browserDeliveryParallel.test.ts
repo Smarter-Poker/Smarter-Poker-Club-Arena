@@ -12,8 +12,8 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('partitions the existing browser selector into three complete, non-fail-fast shards', () => {
-    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3] } });
+  it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {
+    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5] } });
     expect(browser['timeout-minutes']).toBe(30);
     expect(browser['continue-on-error']).toBeUndefined();
     const beats = browser.steps.find((value: { id?: string }) => value.id === 'css-beats');
@@ -21,11 +21,38 @@ describe('browser qualification parallel delivery', () => {
     expect(beats.run).toContain('node scripts/ci/ui-test-selection.mjs browser ');
     expect(beats.run).toContain('--project=chromium --project=webkit-footer');
     expect(beats.run).toContain('--retries=1');
-    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/3$/);
+    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/5$/);
     expect((beats.run.match(/tests\/e2e\//g) || []).length).toBe(26);
     for (const value of browser.steps) expect(value['continue-on-error']).toBeUndefined();
     const evidence = step('Preserve failed CSS beat browser evidence');
     expect(evidence.if).toContain("steps.css-beats.outcome == 'failure'");
+    expect(evidence.with.name).toContain('${{ matrix.shard }}');
+    expect(evidence.with.path).toBe('test-results/');
+  });
+
+  it('partitions every Diamond case across three isolated single-worker VMs', () => {
+    const diamond = ci.jobs['diamond-playfield-e2e'];
+    const cases = readFileSync('tests/e2e/css/diamond-games-playfield.spec.ts', 'utf8');
+    expect(cases).toContain("test.describe.configure({ mode: 'parallel', timeout: 180_000 });");
+    expect(diamond.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3] } });
+    expect(diamond['timeout-minutes']).toBe(25);
+    expect(diamond['continue-on-error']).toBeUndefined();
+    const run = diamond.steps.find((value: { id?: string }) => value.id === 'diamond-playfield');
+    expect(run.if).toBeUndefined();
+    expect(run.run).toContain(
+      'tests/e2e/css/diamond-games-playfield.spec.ts --project=chromium --workers=1 --reporter=line,json --retries=1 --shard=${{ matrix.shard }}/3'
+    );
+    for (const value of diamond.steps) expect(value['continue-on-error']).toBeUndefined();
+    expect(
+      diamond.steps.find(
+        (value: { name?: string }) =>
+          value.name === 'Name every Diamond playfield case that passed only on retry'
+      ).if
+    ).toContain("steps.diamond-playfield.outcome == 'failure'");
+    const evidence = diamond.steps.find(
+      (value: { name?: string }) =>
+        value.name === 'Preserve failed Diamond playfield browser evidence'
+    );
     expect(evidence.with.name).toContain('${{ matrix.shard }}');
     expect(evidence.with.path).toBe('test-results/');
   });
@@ -38,7 +65,7 @@ describe('browser qualification parallel delivery', () => {
         1,
       ],
       ['Insurance and Rabbit Hunt 375px decision gate', 'npm run test:e2e:financial-decisions', 2],
-      ['Push enrollment opt-in browser gate', 'npm run test:e2e:push-enrollment', 3],
+      ['Push enrollment opt-in browser gate', 'npm run test:e2e:push-enrollment', 5],
     ]) {
       const matching = browser.steps.filter((value: { run?: string }) => value.run === command);
       expect(matching).toHaveLength(1);

@@ -1511,6 +1511,43 @@ export const HORSE_MAX_CONCURRENT_TABLES = 4;
  */
 export const REGISTRATION_LOAD_HORIZON_MS = BOOKING_COUNTS_WITHIN_MS;
 
+/**
+ * A BOOKING MUST BE ONE THE HORSE CAN HONOUR (2026-10-19).
+ *
+ * The database counts a booking as a game only inside the hour before its
+ * start, and `fn_enforce_booking_game_cap` asks that count at booking time. A
+ * horse seated in two running tournaments can therefore be booked into three
+ * more events that start in two hours: each booking passes (none counts yet),
+ * then all of them enter their hour together and the horse sits at five or
+ * six games. Tournament seats cannot be given back the way a cash seat can
+ * (HorseTournamentCommitment only vacates cash), so the audit counted 58
+ * horses above the four-game cap with 165 live seats and 133 in-window
+ * bookings between them (2026-10-18 audit, fleet_over_cap).
+ *
+ * The fix is at the door the fleet owns. When registerHorses books a horse
+ * into an event that starts MORE than the horizon from now, it also asks the
+ * horse's FORWARD load: tournament seats it holds plus every booking whose
+ * start falls before this event's hour begins to count. A horse already at
+ * four of those is not booked. Cash seats are deliberately not counted - the
+ * horse leaves them in good time - and a human's registration rules are not
+ * touched.
+ *
+ * Returns the horizon to read bookings out to, or null when this event is
+ * already inside the database's own window (the current load is the answer)
+ * or its start time is unusable.
+ */
+export function forwardLoadHorizonMs(
+  startTime: string | null | undefined,
+  nowMs: number
+): number | null {
+  if (!startTime) return null;
+  const startMs = Date.parse(startTime);
+  if (!Number.isFinite(startMs)) return null;
+  const untilStart = startMs - nowMs;
+  if (untilStart <= REGISTRATION_LOAD_HORIZON_MS) return null;
+  return untilStart + REGISTRATION_LOAD_HORIZON_MS;
+}
+
 export function horseAtCapacity(load: number): boolean {
   return (Number(load) || 0) >= HORSE_MAX_CONCURRENT_TABLES;
 }
@@ -5522,7 +5559,10 @@ export class TournamentRecurringService {
    * - while the logs stay silent because the refusal is discarded too. Unknown
    * is UNKNOWN: the caller declines this pass and tries again in five seconds.
    */
-  private async horseLoadMap(): Promise<Map<string, number> | null> {
+  private async horseLoadMap(
+    horizonMs: number = REGISTRATION_LOAD_HORIZON_MS,
+    tournamentSeatsOnly = false
+  ): Promise<Map<string, number> | null> {
     // One live seat = one game. Cash and tournament tables alike.
     /* NO CEILING (Dan 2026-08-27: "there should never be a cap ... anywhere
        else"). This read carried `.limit(20000)` with a comment explaining
@@ -5630,7 +5670,7 @@ export class TournamentRecurringService {
          full and is deduped against its own seat below anyway). The pure
          counting in buildHorseLoadMap is unchanged; this bounds what it is
          fed. */
-      const horizonIso = new Date(Date.now() + REGISTRATION_LOAD_HORIZON_MS).toISOString();
+      const horizonIso = new Date(Date.now() + horizonMs).toISOString();
       /* THE READ STARTS FROM THE OPEN EVENTS (2026-10-02). It used to start
          from every open registration (~2,000 rows, most in RUNNING events)
          ordered by user_id and probe `tournaments` once per row; PostgREST
@@ -5670,20 +5710,22 @@ export class TournamentRecurringService {
     }
 
     return buildHorseLoadMap(
-      (seatRows ?? []).map((r) => {
-        // PostgREST returns a to-one embed as an object, but the generated
-        // types have been known to widen it to an array; read both shapes
-        // rather than silently losing the id and every dedupe with it.
-        const row = r as {
-          user_id?: string;
-          tables?:
-            | { tournament_id?: string | null }
-            | Array<{ tournament_id?: string | null }>
-            | null;
-        };
-        const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
-        return { user_id: row.user_id, tournament_id: embedded?.tournament_id ?? null };
-      }),
+      (seatRows ?? [])
+        .map((r) => {
+          // PostgREST returns a to-one embed as an object, but the generated
+          // types have been known to widen it to an array; read both shapes
+          // rather than silently losing the id and every dedupe with it.
+          const row = r as {
+            user_id?: string;
+            tables?:
+              | { tournament_id?: string | null }
+              | Array<{ tournament_id?: string | null }>
+              | null;
+          };
+          const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
+          return { user_id: row.user_id, tournament_id: embedded?.tournament_id ?? null };
+        })
+        .filter((r) => !tournamentSeatsOnly || r.tournament_id !== null),
       (regRows ?? []).map((r) => {
         const row = r as { user_id?: string; tournament_id?: string };
         return { user_id: row.user_id, tournament_id: row.tournament_id ?? null };
@@ -7202,6 +7244,28 @@ export class TournamentRecurringService {
       const busyIds = new Set(
         [...load.keys()].filter((id) => TournamentRecurringService.atCapacity(load, id))
       );
+
+      // A booking the horse cannot honour (see forwardLoadHorizonMs): for an
+      // event beyond the database's own window, a horse whose tournament seats
+      // plus bookings before this event's hour already reach four is not booked.
+      const { data: startRow, error: startErr } = await supabase
+        .from('tournaments')
+        .select('start_time')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (startErr) return 0;
+      const forwardMs = forwardLoadHorizonMs(
+        (startRow as { start_time?: string | null } | null)?.start_time,
+        Date.now()
+      );
+      if (forwardMs !== null) {
+        const forward = await this.horseLoadMap(forwardMs, true);
+        // Unknown forward load, not zero: decline the pass like the load map does.
+        if (!forward) return 0;
+        for (const id of forward.keys()) {
+          if (TournamentRecurringService.atCapacity(forward, id)) busyIds.add(id);
+        }
+      }
 
       // Still never twice into the SAME tournament. This is the booking bug
       // the concurrency limit was standing in for, and it is the one that

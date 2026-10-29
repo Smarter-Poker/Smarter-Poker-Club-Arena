@@ -579,8 +579,19 @@ describe('the member record survives a failed background refresh', () => {
   it('keeps the record on screen with a stale banner and no toast', async () => {
     render(<MemberManagementPage />);
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
-    state.getMemberDetail.mockRejectedValueOnce(new Error('offline'));
+    // Own the authority read explicitly: rendering the heading alone does not
+    // finish every initial read. A range read must not consume this failure.
+    let failAuthority!: (error: Error) => void;
+    const authorityRead = new Promise<never>((_, reject) => {
+      failAuthority = reject;
+    });
+    state.getMemberDetail.mockImplementation((_club, _user, range) =>
+      range === undefined ? authorityRead : Promise.resolve(memberDetail)
+    );
     await authorityEvent();
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+    expect(state.getMemberDetail.mock.calls[1][2]).toBeUndefined();
+    await act(async () => failAuthority(new Error('offline')));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Member Connection Interrupted');
     expect(banner).toHaveTextContent('The Record Below Is From The Previous Successful Read.');
@@ -590,12 +601,17 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
 
     // A second failed background read still does not toast.
-    state.getMemberDetail.mockRejectedValueOnce(new Error('still offline'));
+    state.getMemberDetail.mockImplementation((_club, _user, range) =>
+      range === undefined
+        ? Promise.reject(new Error('still offline'))
+        : Promise.resolve(memberDetail)
+    );
     await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
     expect(state.toast.error).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
 
+    state.getMemberDetail.mockResolvedValue(memberDetail);
     fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
     await waitFor(() =>
       expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument()

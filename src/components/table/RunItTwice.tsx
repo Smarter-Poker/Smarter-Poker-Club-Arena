@@ -193,11 +193,12 @@ export function RunItTwicePrompt({
                   ))}
                 </div>
                 <span className="rit-panel__player-name">{p.name}</span>
-                {typeof p.equityPct === 'number' && (
-                  <span className="rit-panel__player-equity">
-                    {formatAllInEquity(p.equityPct, p.equityExact)}
-                  </span>
-                )}
+                {typeof p.equityPct === 'number' &&
+                  formatAllInEquity(p.equityPct, p.equityExact) !== null && (
+                    <span className="rit-panel__player-equity">
+                      {formatAllInEquity(p.equityPct, p.equityExact)}
+                    </span>
+                  )}
                 <span
                   className={`rit-panel__check ${p.accepted ? 'rit-panel__check--on' : ''}`}
                   aria-label={p.accepted ? `${p.name} Accepted` : `${p.name} Deciding`}

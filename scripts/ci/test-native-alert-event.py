@@ -93,6 +93,40 @@ INSERT INTO public.notifications(user_id,type,title,message,data) VALUES($1,$2,$
     check("NOT (fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',ARRAY['00000000-0000-0000-0000-000000000001']::uuid[])->>'active_acknowledged')::boolean")
     sql("UPDATE operational_alert_events SET investigation_status='investigating' WHERE id=2;")
     check('(SELECT count(*)=3 FROM smarter_private.ca_native_alert_deliveries)')
+    # Regression: one unread active ID currently holds every later delivery.
+    blocked=sql('SELECT wake_id FROM smarter_private.ca_native_alert_deliveries WHERE inbox_event_id=4;')
+    check(f"NOT (fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',ARRAY['{w}','{blocked}']::uuid[])->>'active_acknowledged')::boolean")
+    sql((ROOT/'supabase/migrations/20261029153652_an_unreadable_alert_cannot_stop_unrelated_native_intake.sql').read_text())
+    for role in ['anon','authenticated']:
+        check(f"NOT has_table_privilege('{role}','smarter_private.ca_native_alert_read_failures','SELECT')")
+        check(f"NOT has_function_privilege('{role}','fn_ca_defer_native_alert(uuid,uuid,text)','EXECUTE')")
+    for bad in ["NULL", "''", "repeat('x',2001)"]:
+        try:
+            sql(f"SET ROLE service_role; SELECT fn_ca_defer_native_alert('{blocked}','00000000-0000-0000-0000-000000000099',{bad});")
+            raise AssertionError('invalid failure accepted')
+        except RuntimeError as e: assert 'failure reason required' in str(e)
+    defer=f"SET ROLE service_role; SELECT fn_ca_defer_native_alert('{blocked}','00000000-0000-0000-0000-000000000099','stored summary completeness requires inspection');"
+    sql(defer)
+    stamp_failure=sql(f"SELECT recorded_at FROM smarter_private.ca_native_alert_read_failures WHERE wake_id='{blocked}';")
+    sql(defer)
+    assert sql(f"SELECT recorded_at FROM smarter_private.ca_native_alert_read_failures WHERE wake_id='{blocked}';")==stamp_failure
+    check(f"(fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',ARRAY['{w}','{blocked}']::uuid[])->>'active_acknowledged')::boolean")
+    check(f"NOT (fn_ca_native_alert_pending('ca-native-alert-intake-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')->'pending') ? '{blocked}'")
+    check(f"(SELECT read_at IS NULL AND reader_task_id IS NULL FROM smarter_private.ca_native_alert_deliveries WHERE wake_id='{blocked}')")
+    check("(SELECT investigation_status='new' FROM operational_alert_events WHERE id=4)")
+    check("(SELECT count(*)=1 FROM smarter_private.ca_native_alert_read_failures)")
+    check(f"(fn_ca_read_native_alert('{blocked}')->>'stored_inbox_characters')::integer = length((fn_ca_read_native_alert('{blocked}')->'inbox')::text)")
+    check(f"fn_ca_read_native_alert('{blocked}')->>'stored_inbox_md5' = md5((fn_ca_read_native_alert('{blocked}')->'inbox')::text)")
+    check(f"fn_ca_read_native_alert('{blocked}')->'read_failure'->>'reason'='stored summary completeness requires inspection'")
+    # Missing deliveries and already-read deliveries cannot get fake failures.
+    for candidate in [w,'00000000-0000-0000-0000-000000000001']:
+        try:
+            sql(f"SET ROLE service_role; SELECT fn_ca_defer_native_alert('{candidate}','00000000-0000-0000-0000-000000000099','failure');")
+            raise AssertionError('invalid delivery deferred')
+        except RuntimeError: pass
+    # Real ACK after a later complete read remains possible; failure history stays.
+    sql(f"SET ROLE service_role; SELECT fn_ca_ack_native_alert(ARRAY['{blocked}']::uuid[],'01a09b86-5ba8-7290-8657-1041f13dd3ca');")
+    print('PASS: failed individual read unblocks unrelated delivery, retains unread evidence and named failure, real ACLs, duplicate receipt, full-read length/digest, later real ACK')
     # Compile the exact retained preimage body under an isolated test-only name.
     # Its two false verdicts must differ from the new actual trigger body.
     sql(preimage.replace('public.fn_ca_owner_route_reader_silence()', 'public.native_reader_silence_preimage()'))

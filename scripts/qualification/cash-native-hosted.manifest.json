@@ -275,8 +275,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 43077,
-      "sha256": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+      "bytes": 43260,
+      "sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -4343,6 +4343,18 @@
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
     "financial_recertification": false
   },
+  "horseTimingInputRouting20261029": {
+    "review": "Only additive admission for the existing horse daily-counts, purchase-budget and timing drivers and five SQL inputs. All cash financial sources, assertions, timeouts and historical receipts unchanged. CI workflow bytes are exact protected main. Current classifier identity only, not financial recertification.",
+    "previousClassifierPin": {
+      "bytes": 42854,
+      "sha256": "763ebd2761747ca6161605c776ad3df7b0ad6a0f0297373ada2fa2dbd0d2536b"
+    },
+    "currentClassifierPin": {
+      "bytes": 43037,
+      "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
+    },
+    "validation": "Eight sole-input routing cases fail before, all65horse routing cases pass after; connected native horse chain passes timing31 and budget27."
+  },
   "durableOriginalContinuationCiIdentity20261029": {
     "review": "Reviewed the additive 14-line required Accounting shard 3 original-hand continuation native step and retained artifact, plus classifier alternatives for only its runner, probe, private fixture and schema inputs. All 27 fixed cash inputs were audited together: only current CI workflow and classifier identities differ. Original cash checker/intake/rollback SQL, native pg_cron builder, financial assertions, fixture bytes, limits, source inventory and qualification verdicts remain unchanged. Existing cash qualification commands and their execution/receipt requirements remain intact. No runtime owner pin changes or renewed financial execution/installation certification.",
     "source_revision": "bff941b20bccec34913de17089c7712175fe4830",
@@ -4468,6 +4480,43 @@
         "current": {
           "bytes": 43077,
           "sha256": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+        }
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "horseTimingRecoveryMainComposition20261029": {
+    "review": "Preserved every financial source pin and all audit values from both parents, including protected-main own-agent and signup qualification notes. Reviewed the additive horse daily-counts/purchase-budget/registration-timing and five SQL fixture selector alternatives, alongside unchanged original-continuation/floor alternatives. Refresh only the composed classifier identity, existing workflow identity where parents differ, and direct legacy-fee/Spin binding dependencies. No monetary SQL, original financial fixtures, arithmetic, assertions, budgets, native commands or qualification result statuses are changed by this binding resolution. Native6 continuation/floor closure remains exactly source-bound; newly changed protected-main financial paths retain their own qualification requirements. This is not renewed financial execution, installation or production certification.",
+    "main": "cf5fa087169aab7f1c64947d1320ec0435ab9f60",
+    "candidateBeforeMerge": "0cc85eb852d7cf0f6cc2d10131572fdb7ce725d5",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "recovery_parent": {
+          "bytes": 43077,
+          "sha256": "7e6636059d5af63b06052e1237eb49c60fa2e232f40e9835190c116c4c062fc7"
+        },
+        "protected_main": {
+          "bytes": 43037,
+          "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
+        },
+        "current": {
+          "bytes": 43260,
+          "sha256": "323340619338b17f9289eabb658c049dc6450a6f055f4b2327a3d12329c68a02"
+        }
+      },
+      ".github/workflows/ci.yml": {
+        "recovery_parent": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        },
+        "protected_main": {
+          "bytes": 248604,
+          "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+        },
+        "current": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
         }
       }
     },

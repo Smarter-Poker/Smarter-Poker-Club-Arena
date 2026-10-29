@@ -83,6 +83,7 @@ describe('an interrupted postflop hand preserves original principal', () => {
     expect(runner).toContain("results.get('interruptedPostflop', {}).get('passed') is True");
     const proof = read(home + 'qualify.py');
     for (const name of [
+      'postflop-declared-live-proof-reader-wrapper',
       'postflop-fails-before',
       'postflop-floor-required',
       'postflop-bad-sibling-atomic-rollback',

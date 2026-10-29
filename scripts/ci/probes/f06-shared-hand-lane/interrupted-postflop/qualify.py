@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,6 +52,14 @@ def qualify(root, out, cmd, command, run, probe, require, results):
         ]:
             probe('postflop-install-'+name+'-refused',change+install,error='INTERRUPTED_POSTFLOP_CONTINUATION_CONTRACT_UNPROVEN')
         run('postflop-install',migration.read_text())
+        # Execute the actual declared header in the ledger reader's UNION shape.
+        # A standalone SELECT/alias/semicolon is not a scalar boolean expression.
+        declared=re.findall(r'^-- @live-proof: (.*)$',migration.read_text(),re.M)
+        require(len(declared)==1,'Postflop migration must declare exactly one live proof')
+        reader=(root/'scripts/ci/check-migrations-are-live.mjs').read_text()
+        require("`select ${i} as i, coalesce((select (${p}))::text, 'null') as answer`" in reader,'Ledger proof wrapper changed; review native qualification')
+        wrapped="select 0 as i, coalesce((select ("+declared[0]+"))::text, 'null') as answer union all select 1 as i, coalesce((select (true))::text, 'null') as answer"
+        run('postflop-declared-live-proof-reader-wrapper',wrapped,'0|true\n1|true')
         retained="INSERT INTO smarter_private.hand_continuations(table_id,hand_number,tournament_id,permit_id,original_generation,writer_generation,sequence,payload,payload_sha256) VALUES(md5('addon-table')::uuid,11,md5('addon-event')::uuid,md5('addon-permit')::uuid,md5('old-generation')::uuid,md5('new-generation')::uuid,1,'native-original-capsule','"+hashlib.sha256(b'native-original-capsule').hexdigest()+"'); INSERT INTO smarter_private.hand_continuation_dispositions VALUES(md5('addon-table')::uuid,11,'retained');"
         probe('postflop-retained-modern-original-refuses',retained+service+'SELECT '+call+';',error='HAND_CONTINUATION_UNSETTLED')
         probe('postflop-foreign-disposed-permit-refuses',"INSERT INTO smarter_private.hand_submission_dispositions(table_id,hand_number,disposition,submission_id,permit_id) VALUES(md5('addon-table')::uuid,11,'disposed',NULL,md5('foreign-permit')::uuid);"+service+'SELECT '+call+';',error='F06_RETAINED_HAND_SUBMISSION_REQUIRES_ACCEPTED_DISPOSITION')

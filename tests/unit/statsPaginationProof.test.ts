@@ -262,3 +262,52 @@ describe('closed exact published Stats pagination proof', () => {
     );
   });
 });
+
+describe('published Stats pagination clock boundary', () => {
+  const source = readFileSync(resolve(__dirname, '../e2e/stats-deep.spec.ts'), 'utf8');
+  const proof = source.slice(
+    source.indexOf("test('published downline pagination"),
+    source.indexOf("test('traverses every owner")
+  );
+  it('warms real assets, records warmup reads, unmounts and settles before freezing a fresh mount', () => {
+    const points = [
+      'await rake.click();',
+      "await expect(panel.getByRole('row')).toHaveCount(501);",
+      'warmupReads.push(...reads.splice(0));',
+      'await overview.click();',
+      'await expect(panel).toHaveCount(0);',
+      "await expect(page.locator('.stats-range-status.is-refreshing')).toHaveCount(0);",
+      'await expect.poll(() => pendingRest.size).toBe(0);',
+      'await page.clock.install(',
+      'await page.clock.pauseAt(',
+      'armed = true;',
+    ];
+    let last = -1;
+    for (const point of points) {
+      const next = proof.indexOf(point, last + 1);
+      expect(next, point).toBeGreaterThan(last);
+      last = next;
+    }
+    expect(proof.slice(last)).toContain('await rake.click();');
+    expect(proof).toContain('warmupReads,');
+    expect(
+      proof.indexOf('return pendingRest.size;', proof.indexOf('await page.clock.pauseAt('))
+    ).toBeLessThan(proof.indexOf('armed = true;'));
+  });
+  it('flushes due asynchronous work without spending the initial or changed-search debounce budget', () => {
+    const predicate = proof.slice(
+      proof.indexOf('const pausedRows'),
+      proof.indexOf('// pauseAt advances time')
+    );
+    expect(predicate).toContain('await page.clock.runFor(0);');
+    expect(predicate).not.toMatch(/runFor\([1-9]|resume\(|waitForTimeout/);
+    expect(proof.match(/await pausedRows\(501\)/g)).toHaveLength(2);
+    expect(proof.match(/await pausedRows\(621\)/g)).toHaveLength(2);
+    expect(proof.match(/runFor\(299\)/g)).toHaveLength(2);
+    expect(proof).toContain('await page.clock.runFor(300);');
+    expect(proof).toContain('await page.clock.runFor(1);');
+    expect(proof).toContain("await route.abort('blockedbyclient');");
+    for (const event of ['request', 'requestfinished', 'requestfailed'])
+      expect(proof).toContain(`page.off('${event}',`);
+  });
+});

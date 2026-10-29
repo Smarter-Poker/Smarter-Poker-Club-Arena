@@ -233,3 +233,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Bounded physical rake evidence keeps every original oversized row on fallback.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-rake-record-bounded-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('rake-record-bounded-cover.json'))], text=True))
+
+# Genuine relation-level linked-cash union statistics are qualified without changing original proof owners.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-linked-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-linked-cash-statistics.json'))], text=True))

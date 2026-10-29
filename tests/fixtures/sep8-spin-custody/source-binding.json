@@ -87,7 +87,7 @@
     "tests/fixtures/sep8-spin-custody/final-readback.sql": "064f0d0443ec4919d219e5f33524adcc92e8b66b02c5c7e640f28c2fe0c69760",
     "tests/fixtures/sep8-spin-custody/union-journal-guard.sql": "9e51de2fff3be93ea99ea493d54eca2f2da2ede7c189f710ff4a401572a8912d",
     "tests/fixtures/sep8-spin-custody/union-journal-after.sql": "fdb962f82796d0d3d2244de0bd2092467d337c7f4bb86e5bdc06a8745f11d5ae",
-    "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py": "d69d33790e066bca1376c9f3c8c18d65fcc3448ca4e2f0bb5c389f39c5050fe2",
+    "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py": "dad2ba8bd2918bbb473a637c512777dc4c507946d2ba726c4d228238e374b525",
     "tests/fixtures/sep8-spin-custody/current-case-reader-coverage.sql": "8a4ef16e65398f34d72fd683b3993f327cdaa1be016e37d77492b775a65159ae",
     "tests/fixtures/sep8-spin-custody/current-case-reader-catalog.json": "bcd4f2b0dcd810c35d676809b5b1bba7eab81a86df3e09e550cca2c5f6d74766",
     "supabase/migrations/20260918212229_original_spin_reader_preserves_exact_indexed_history_coverag.sql": "e780f7ac61a15aa0b03b34c264e4f87597d41314702847a63cb024cadba36acf",
@@ -589,6 +589,13 @@
       "from": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
       "to": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e",
       "why": "Add exact native on-time maintenance qualifier input routing to required accounting; preserve all existing financial routes, assertions, financial SQL and historical qualification states. Current source identity only, no financial certificate restamp."
+    },
+    {
+      "on": "2026-10-29",
+      "file": "tests/fixtures/sep8-spin-custody/qualify-current-case-reader.py",
+      "from": "d69d33790e066bca1376c9f3c8c18d65fcc3448ca4e2f0bb5c389f39c5050fe2",
+      "to": "dad2ba8bd2918bbb473a637c512777dc4c507946d2ba726c4d228238e374b525",
+      "why": "CI40937402453 Accounting2 held-fee Spin plan chose a real unscoped sequential scan after one-hot30k background over five table identities; retain strict original/successor plan oracles and30k histories, distribute across64 real disjoint closed-cash table parents, and verify all5original documents while populated and after exact cleanup. Focused genuine PostgreSQL qualification required; matching hashes alone are not proof."
     }
   ],
   "union_doors_candidate_20260925": "Restamped for 20260925145748. scripts/dev/test-full-weekly-accounting-activation.sh now applies that migration in the existing pnl-evidence hooks chain, immediately after 20260921023420 and before hooks-regression.sql, and hooks-regression.sql gains assertions for what it changes: the square-up refuses a recorded ECO that does not equal round(-eco_rate*eco_base,2) (the old comparison had become the record against itself and could never fire), keeping both existing refusals; and the closed union send door credits the one owner it resolves from clubs.owner_id instead of every role=owner row, carries the house authorization check, an idempotency key and one club-declaring chip_ledger leg, and records its audit row against wallet='chip_balance' rather than the 'main' that union_wallet_transactions_wallet_check has never permitted. No fixture body owned by these bindings changed and no role gains a key. Diff read before restamping.",

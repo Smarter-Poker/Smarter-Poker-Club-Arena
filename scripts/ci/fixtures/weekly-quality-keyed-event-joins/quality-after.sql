@@ -104,8 +104,8 @@ BEGIN
       OR b.rake_amount IS DISTINCT FROM rr.rake_amount
       OR b.rake_amount IS DISTINCT FROM ss.credited)
     GROUP BY rr.tournament_id
-  ), selected_event_sources AS NOT MATERIALIZED (
-   SELECT s.* FROM public.accounting_tournament_fee_sources s
+  ), selected_event_sources AS MATERIALIZED (
+   SELECT s.id,s.tournament_id,s.rake_record_id FROM public.accounting_tournament_fee_sources s
     WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=s.tournament_id)
   ), selected_event_recognized AS MATERIALIZED (
    SELECT rs.* FROM public.accounting_tournament_recognized_sources rs
@@ -125,7 +125,7 @@ BEGIN
     WHERE rr.id IS NULL GROUP BY s.tournament_id
   ), receipt_bad AS (
    SELECT s.tournament_id,count(*) AS bad
-    FROM selected_event_sources s JOIN survivors k ON k.tournament_id=s.tournament_id
+    FROM public.accounting_tournament_fee_sources s JOIN survivors k ON k.tournament_id=s.tournament_id
     LEFT JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt
      WHERE original_receipt.source_id=s.id OFFSET 0) rs ON true
     WHERE (rs.source_id IS NULL OR rs.tournament_id IS DISTINCT FROM s.tournament_id

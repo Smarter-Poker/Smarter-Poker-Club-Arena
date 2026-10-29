@@ -6,27 +6,26 @@ const read = (p: string) => readFileSync(p, 'utf8');
 const digest = (algorithm: string, value: string | Buffer) =>
   createHash(algorithm).update(value).digest('hex');
 describe('Weekly quality preserves source bags while avoiding redundant intermediate work', () => {
-  it('changes only the two exact source and receipt transformations and preserves full original function authority', () => {
+  it('changes only the three exact source and receipt transformations and preserves full original function authority', () => {
     const receipt = JSON.parse(read(base + 'source-receipt.json'));
     const before = read(base + 'quality-before.sql');
     const after = read(base + 'quality-after.sql');
     expect(before.split(receipt.replacement.old)).toHaveLength(2);
     expect(before.replace(receipt.replacement.old, receipt.replacement.new)).toBe(after);
-    expect(receipt.exact_two_replacements).toHaveLength(2);
+    expect(receipt.exact_three_replacements).toHaveLength(3);
     let transformed = before;
-    for (const delta of receipt.exact_two_replacements) {
+    for (const delta of receipt.exact_three_replacements) {
       expect(transformed.split(delta.old)).toHaveLength(2);
       transformed = transformed.replace(delta.old, delta.new);
     }
     expect(transformed).toBe(after);
-    expect(receipt.exact_two_replacements[0]).toEqual({
-      old: 'selected_event_sources AS MATERIALIZED (',
-      new: 'selected_event_sources AS NOT MATERIALIZED (',
-    });
-    expect(receipt.exact_two_replacements[1].old).toBe(
-      '    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id'
+    expect(receipt.exact_three_replacements[0].new).toContain(
+      'SELECT s.id,s.tournament_id,s.rake_record_id'
     );
-    expect(receipt.exact_two_replacements[1].new).toContain(
+    expect(receipt.exact_three_replacements[1].new).toContain(
+      'FROM public.accounting_tournament_fee_sources s JOIN survivors k'
+    );
+    expect(receipt.exact_three_replacements[2].new).toContain(
       'WHERE original_receipt.source_id=s.id OFFSET 0'
     );
     for (const [text, hash] of [
@@ -61,12 +60,12 @@ describe('Weekly quality preserves source bags while avoiding redundant intermed
     expect(evidence.migration_sha256).toBe(digest('sha256', readFileSync(receipt.migration_file)));
     expect(evidence.actual_after_full_md5).toBe(receipt.expected_after_full_md5);
     for (const name of [
-      'combined_source_receipt_full_join_bag_NULL',
-      'combined_source_receipt_full_join_bag_duplicate',
-      'combined_source_receipt_full_join_bag_missing',
-      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_force_custom_plan',
-      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_force_generic_plan',
-      'actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_auto',
+      'narrow_source_physical_receipt_full_join_bag_NULL',
+      'narrow_source_physical_receipt_full_join_bag_duplicate',
+      'narrow_source_physical_receipt_full_join_bag_missing',
+      'actual_full_FOR_narrow_source_keys_and_physical_receipt_probe_force_custom_plan',
+      'actual_full_FOR_narrow_source_keys_and_physical_receipt_probe_force_generic_plan',
+      'actual_full_FOR_narrow_source_keys_and_physical_receipt_probe_auto',
       'large_positive_real_quality_full_result_equal',
       'actual_STABLE_SQL_snapshot_concurrent_recognition_commit',
       'exact_installer_metadata_source_guard_and_GEN_preserved',

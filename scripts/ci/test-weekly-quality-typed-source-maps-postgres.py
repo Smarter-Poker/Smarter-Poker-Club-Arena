@@ -200,12 +200,13 @@ def qualify_selected_membership_bags(q,before,after,rec):
  for name,members,expected in cohorts:
   prefix='WITH survivors AS MATERIALIZED('+members+'),survivor_ids AS MATERIALIZED(SELECT array_agg(tournament_id)ids FROM survivors),'
   for i,table in enumerate(['selected_event_sources','selected_event_recognized','selected_receipt_recognized','orphan_source_identities']):
-   projection='id,tournament_id' if i==3 else '*';base='fixture.membership_sources' if i in(0,3)else'fixture.membership_receipts'
+   narrow=i==0 and 'SELECT s.id,s.tournament_id,s.rake_record_id FROM public.accounting_tournament_fee_sources s'in after
+   projection='id,tournament_id'if i==3 else'id,tournament_id,rake_record_id'if narrow else'*';base='fixture.membership_sources'if i in(0,3)else'fixture.membership_receipts'
    oracle='SELECT '+projection+' FROM '+base+' WHERE '+expected[i]
    queries=[]
    for source in(before,after):
     cte=block(source).replace('public.accounting_tournament_fee_sources','fixture.membership_sources').replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts')
-    selected='SELECT * FROM '+table
+    selected='SELECT '+projection+' FROM '+table
     query=prefix+cte+',actual AS('+selected+'),expected AS('+oracle+")SELECT jsonb_build_object('bag',coalesce((SELECT jsonb_agg(to_jsonb(x)ORDER BY to_jsonb(x)::text)FROM actual x),'[]'),'wrong',EXISTS((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected)UNION ALL(SELECT * FROM expected EXCEPT ALL SELECT * FROM actual)))"
     value=json.loads(q(query));need(value['wrong'] is False,'independent full-field membership bag differs:'+name+':'+table);queries.append(value['bag'])
    need(queries[0]==queries[1],'composed/candidate full bag differs:'+name+':'+table);rec('four_selected_sets_typed_bag_'+name+'_'+table)
@@ -274,8 +275,8 @@ def qualify_keyed_event_bags(q,before,after,rec):
   start=source.index('selected_event_sources AS ');end=source.index('), scope_bad AS',start)
   return(source[start:end]+')').replace('public.accounting_tournament_fee_sources','fixture.membership_sources').replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts')
  def joins(source):
-  start=source.index('    FROM selected_event_sources s JOIN survivors k',source.index('receipt_bad AS ('));end=source.index('    WHERE (rs.source_id',start)
-  return source[start:end].replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts')
+  start=source.index('    FROM ',source.index('receipt_bad AS ('));end=source.index('    WHERE (rs.source_id',start)
+  return source[start:end].replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts').replace('public.accounting_tournament_fee_sources','fixture.membership_sources')
  for name,ids,want in [('empty',[],0),('NULL',['NULL::uuid'],0),('duplicate',['fixture.u(100)','fixture.u(100)'],12),('missing',['fixture.u(777)'],0),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(101)','fixture.u(100)'],13)]:
   members='SELECT NULL::uuid tournament_id,NULL::timestamptz recognized_at WHERE false'if not ids else"SELECT tournament_id,'2026-10-20'::timestamptz recognized_at FROM(VALUES"+','.join('('+v+')'for v in ids)+')m(tournament_id)'
   bags=[]
@@ -285,7 +286,7 @@ def qualify_keyed_event_bags(q,before,after,rec):
   need(bags[0]==bags[1]and len(bags[1])==want,'NOTMATERIALIZED original full source/receipt/survivor bag differs:'+name)
   if name in('duplicate','mixed'):
    need(sum(1 for row in bags[1]if row['receipt']is not None and row['receipt']['tournament_id']!=row['source']['tournament_id'])==8,'wrong-event receipt multiplicity changed:'+name)
-  rec('combined_source_receipt_full_join_bag_'+name)
+  rec('narrow_source_physical_receipt_full_join_bag_'+name)
 
 def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
  q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
@@ -325,12 +326,12 @@ def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
   prepare='PREPARE native_keyed_events(timestamptz,timestamptz,uuid,uuid)AS '+prepared+';'
   for mode in ['auto','force_custom_plan','force_generic_plan']:
    plan=json.loads(q('SET plan_cache_mode='+mode+';'+prepare+"EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON,TIMING OFF)EXECUTE native_keyed_events('2026-10-05 07:00Z','2026-10-12 07:00Z',fixture.u(1),fixture.u(10))"))[0];plans[mode]=plan
-   fat=[n for n in nodes(plan['Plan'])if n.get('CTE Name')=='selected_event_sources'or n.get('Subplan Name')=='CTE selected_event_sources']
-   need(not any(n.get('Actual Loops',0)>0 for n in fat),'full-contract selected-source spool still executes:'+mode)
+   narrow=[n for n in nodes(plan['Plan'])if n.get('Subplan Name')=='CTE selected_event_sources']
+   need(narrow and all(n.get('Plan Width')==48 and n.get('Actual Loops')==1 for n in narrow),'selected-source key materialization is not exactly3UUIDfields:'+mode)
    need(plan['Plan'].get('Actual Rows')==5000,'complete FOR event cardinality changed:'+mode)
    receipts=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_recognized_sources'and n.get('Alias')=='original_receipt']
    need(receipts and all('source_id ='in n.get('Index Cond','')and n.get('Actual Loops',0)>=5000 and n.get('Actual Rows',0)<=1 and 'Index'in n['Node Type']for n in receipts),'combined physical receipt probe not bounded:'+mode)
-   rec('actual_full_FOR_no_fat_source_spool_and_physical_receipt_probe_'+mode)
+   rec('actual_full_FOR_narrow_source_keys_and_physical_receipt_probe_'+mode)
   q("SELECT fixture.reset();INSERT INTO public.accounting_tournament_fee_recognitions SELECT fixture.u(1000+n),'2026-10-06','cancelled',0,NULL,fixture.u(1),md5('')FROM generate_series(1,5000)n;INSERT INTO public.tournament_rake_settlements SELECT fixture.u(1000+n),'2026-10-06',0,NULL,fixture.u(1)FROM generate_series(1,5000)n;ANALYZE;")
  else:
   need(newbank and all(n.get('Actual Loops',0)==1 for n in newbank),'direct bank bulk access was not proven')

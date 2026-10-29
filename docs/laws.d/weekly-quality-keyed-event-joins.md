@@ -1,3 +1,3 @@
 # tests/weekly-quality-keyed-event-joins.law.test.ts
 
-Weekly tournament quality preserves full STABLE source/receipt bags and every shared-scope/contract/numerical check while inlining selected source reads and directly joining the same recognized receipts. Excluded malformed contracts remain excluded under auto/custom/generic full-quality and full-FOR plans.
+Weekly quality preserves source and receipt bags, shared scope and all contract/numerical checks while materializing only three source keys and joining physical sources/recognized receipts at the original validation boundary. All three plan modes retain excluded malformed-contract domains and complete original FOR results.

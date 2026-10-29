@@ -13,7 +13,7 @@
     "scripts/ci/fixtures/weekly-quality-typed-source-maps/source-receipt.json": "539573f8310cf95b4d948fb71cf90690e59e47ff9c285198396665ccd7c50f31",
     "scripts/ci/fixtures/weekly-quality-typed-source-maps/additional-cases.json": "0759f364bbb78f7407bdb27535fe38c14acca4957af5064c84515bff53a2c190",
     "scripts/ci/fixtures/weekly-quality-typed-source-maps/quality-before.sql": "5370fb8edc3ce9a0c7f130135b2bf02bdbaabeab1405f2689726bf8f3490f47a",
-    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "c8371293979239b87b46921cccec834bf78b0cae2add0ac3ac20e6e31eeea067",
+    "scripts/ci/test-weekly-quality-typed-source-maps-postgres.py": "0c29f380047ac522a239072a93c2ac2509964c42b478c7e44c85b4b876496288",
     "supabase/migrations/20261028185823_weekly_quality_reads_exact_event_aggregate_maps.sql": "a4a8bd2bd6a073e5c5bd14433aa63598615e862fa8bf8ba09823a78e9094d069",
     "tests/weekly-quality-typed-source-maps-preserve-verdicts.law.test.ts": "94190b0f8a7cf6c1af52ba6162f456ade6a54a7b7fd1397b2598d5ea06a0e351",
     "docs/laws.d/weekly-quality-typed-source-maps-preserve-verdicts.md": "c14e66d95652cffe8daa70d7ca502e86c27bca4d8feb3bdfb9508ba36d18062d",

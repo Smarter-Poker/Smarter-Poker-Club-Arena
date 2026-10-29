@@ -1,17 +1,17 @@
 {
   "before_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
-  "expected_after_full_md5": "e7844c54bb377c1969b3fa2851eaea7b",
-  "expected_after_body_md5": "ea4443e58e524637ab55c0e9d9149343",
+  "expected_after_full_md5": "541b13417ffd614be148737ae33242b1",
+  "expected_after_body_md5": "0aadb2726ad545638106d7127e02308a",
   "replacement": {
     "old": "selected_event_sources AS MATERIALIZED (\n   SELECT s.* FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=s.tournament_id)\n  ), selected_event_recognized AS MATERIALIZED (\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=rs.tournament_id)\n  ), selected_receipt_recognized AS MATERIALIZED (\n   -- Receipt join is by source_id, including wrong-event receipts.\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM selected_event_sources original_member WHERE original_member.id=rs.source_id)\n  ), orphan_source_identities AS MATERIALIZED (\n   -- Global source identities preserve wrong-event and missing-source semantics.\n   SELECT s.id,s.tournament_id FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM selected_event_recognized original_member WHERE original_member.source_id=s.id)\n  ), scope_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM selected_event_sources s\n    LEFT JOIN rr ON rr.id=s.rake_record_id AND rr.tournament_id=s.tournament_id AND rr.rake_amount>0\n    WHERE rr.id IS NULL GROUP BY s.tournament_id\n  ), receipt_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM selected_event_sources s JOIN survivors k ON k.tournament_id=s.tournament_id\n    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id",
-    "new": "selected_event_sources AS NOT MATERIALIZED (\n   SELECT s.* FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=s.tournament_id)\n  ), selected_event_recognized AS MATERIALIZED (\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=rs.tournament_id)\n  ), selected_receipt_recognized AS MATERIALIZED (\n   -- Receipt join is by source_id, including wrong-event receipts.\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM selected_event_sources original_member WHERE original_member.id=rs.source_id)\n  ), orphan_source_identities AS MATERIALIZED (\n   -- Global source identities preserve wrong-event and missing-source semantics.\n   SELECT s.id,s.tournament_id FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM selected_event_recognized original_member WHERE original_member.source_id=s.id)\n  ), scope_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM selected_event_sources s\n    LEFT JOIN rr ON rr.id=s.rake_record_id AND rr.tournament_id=s.tournament_id AND rr.rake_amount>0\n    WHERE rr.id IS NULL GROUP BY s.tournament_id\n  ), receipt_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM selected_event_sources s JOIN survivors k ON k.tournament_id=s.tournament_id\n    LEFT JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt\n     WHERE original_receipt.source_id=s.id OFFSET 0) rs ON true"
+    "new": "selected_event_sources AS MATERIALIZED (\n   SELECT s.id,s.tournament_id,s.rake_record_id FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=s.tournament_id)\n  ), selected_event_recognized AS MATERIALIZED (\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM survivors original_member WHERE original_member.tournament_id=rs.tournament_id)\n  ), selected_receipt_recognized AS MATERIALIZED (\n   -- Receipt join is by source_id, including wrong-event receipts.\n   SELECT rs.* FROM public.accounting_tournament_recognized_sources rs\n    WHERE EXISTS(SELECT 1 FROM selected_event_sources original_member WHERE original_member.id=rs.source_id)\n  ), orphan_source_identities AS MATERIALIZED (\n   -- Global source identities preserve wrong-event and missing-source semantics.\n   SELECT s.id,s.tournament_id FROM public.accounting_tournament_fee_sources s\n    WHERE EXISTS(SELECT 1 FROM selected_event_recognized original_member WHERE original_member.source_id=s.id)\n  ), scope_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM selected_event_sources s\n    LEFT JOIN rr ON rr.id=s.rake_record_id AND rr.tournament_id=s.tournament_id AND rr.rake_amount>0\n    WHERE rr.id IS NULL GROUP BY s.tournament_id\n  ), receipt_bad AS (\n   SELECT s.tournament_id,count(*) AS bad\n    FROM public.accounting_tournament_fee_sources s JOIN survivors k ON k.tournament_id=s.tournament_id\n    LEFT JOIN LATERAL (SELECT original_receipt.* FROM public.accounting_tournament_recognized_sources original_receipt\n     WHERE original_receipt.source_id=s.id OFFSET 0) rs ON true"
   },
   "migration_file": "supabase/migrations/20261028235752_weekly_tournament_quality_reads_each_event_recognition_and_b.sql",
   "native_installer": {
     "version": "20261028235752",
     "before_full_md5": "28a130f35342357a4dfa61043f1ce2a2",
-    "post_full_md5": "e7844c54bb377c1969b3fa2851eaea7b",
-    "post_body_md5": "ea4443e58e524637ab55c0e9d9149343"
+    "post_full_md5": "541b13417ffd614be148737ae33242b1",
+    "post_body_md5": "0aadb2726ad545638106d7127e02308a"
   },
   "actual_source": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/DSS185823-a4a-ACTUAL-INSTALLED-readonly15-root.log",
   "actual_source_sha256": "b6ca80ec015b79e9704c6fd663223ca1d979043f974c96c669f078a6971e5f1b",
@@ -48,11 +48,15 @@
   },
   "source_only": true,
   "installed": false,
-  "equivalence": "Inline plain selected-source table/EXISTS within the unchanged STABLE snapshot; every receipt matching current s.id already belongs to selected-receipt membership through s itself. Full duplicates, NULLs, wrong-event rows and all predicates preserved; no PK assumption.",
-  "exact_two_replacements": [
+  "equivalence": "Physical source JOIN survivor already implies selected-source EXISTS membership, even with duplicate/NULL source/survivor/receipt rows; narrow CTE is used only for exact original IDs in nonreceipt consumers; no PK assumption.",
+  "exact_three_replacements": [
     {
-      "old": "selected_event_sources AS MATERIALIZED (",
-      "new": "selected_event_sources AS NOT MATERIALIZED ("
+      "old": "selected_event_sources AS MATERIALIZED (\n   SELECT s.* FROM public.accounting_tournament_fee_sources s",
+      "new": "selected_event_sources AS MATERIALIZED (\n   SELECT s.id,s.tournament_id,s.rake_record_id FROM public.accounting_tournament_fee_sources s"
+    },
+    {
+      "old": "    FROM selected_event_sources s JOIN survivors k ON k.tournament_id=s.tournament_id",
+      "new": "    FROM public.accounting_tournament_fee_sources s JOIN survivors k ON k.tournament_id=s.tournament_id"
     },
     {
       "old": "    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id",

@@ -1,4 +1,6 @@
+import { createClient } from '@supabase/supabase-js';
 import {
+  acknowledgePreferenceWelcome,
   logoutAndOpenFreshPreferenceDevice,
   openFreshPreferenceDevice,
 } from './support/accountPreferenceSession';
@@ -564,32 +566,60 @@ test.describe('the mobile lobby chrome on production', () => {
 });
 
 const preferenceLifecycleTest = test.extend<{ preferenceAccount: TemporaryCustomizationAccount }>({
-  preferenceAccount: async ({ baseURL }, provide) => {
-    if (!baseURL) throw new Error('Configured BASE_URL required');
-    const environment = requireCustomizationCertificationEnvironment();
-    const account = await createTemporaryCustomizationAccount(
-      environment,
-      'preferences-lifecycle',
-      0
-    );
-    try {
-      await provide(account);
-    } finally {
-      await cleanupTemporaryCustomizationAccount(environment, account);
-    }
-  },
-  page: async ({ browser, baseURL, preferenceAccount }, provide) => {
-    if (!baseURL) throw new Error('Configured BASE_URL required');
-    const owned = await openFreshPreferenceDevice(browser, baseURL, preferenceAccount);
-    try {
-      await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
-      await ensureAcceptedTerms(owned.page);
-      await ensurePlayableProfile(owned.page);
-      await provide(owned.page);
-    } finally {
-      await owned.context.close();
-    }
-  },
+  preferenceAccount: [
+    async ({ baseURL }, provide, testInfo) => {
+      if (!baseURL) throw new Error('Configured BASE_URL required');
+      const environment = requireCustomizationCertificationEnvironment();
+      const account = await createTemporaryCustomizationAccount(
+        environment,
+        'preferences-lifecycle',
+        0
+      );
+      try {
+        await testInfo.attach('preference-account-owner.json', {
+          body: Buffer.from(JSON.stringify({ ownerId: account.id })),
+          contentType: 'application/json',
+        });
+        await provide(account);
+      } finally {
+        // The test SDK auth lock stalled a prior teardown. A fresh anonymous
+        // client lets the original guarded cleanup retire this owner's sessions.
+        const cleanupClient = createClient(environment.supabaseUrl, environment.publishableKey, {
+          auth: {
+            storageKey: `preference-cleanup:${account.id}`,
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false,
+          },
+        });
+        await cleanupTemporaryCustomizationAccount(environment, {
+          ...account,
+          client: cleanupClient,
+        });
+        await testInfo.attach('preference-account-cleanup.json', {
+          body: Buffer.from(JSON.stringify({ ownerId: account.id, cleanupVerified: true })),
+          contentType: 'application/json',
+        });
+      }
+    },
+    { timeout: 120_000 },
+  ],
+  page: [
+    async ({ browser, baseURL, preferenceAccount }, provide) => {
+      if (!baseURL) throw new Error('Configured BASE_URL required');
+      const owned = await openFreshPreferenceDevice(browser, baseURL, preferenceAccount);
+      try {
+        await owned.page.goto('settings', { waitUntil: 'domcontentloaded' });
+        await ensureAcceptedTerms(owned.page);
+        await ensurePlayableProfile(owned.page);
+        await acknowledgePreferenceWelcome(owned.page);
+        await provide(owned.page);
+      } finally {
+        await owned.context.close();
+      }
+    },
+    { timeout: 120_000 },
+  ],
 });
 
 preferenceLifecycleTest.describe('owned preference lifecycle', () => {
@@ -624,9 +654,11 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
           (response) =>
             response.url().includes('/rpc/fn_patch_account_settings') &&
             response.ok() &&
-            response.request().postDataJSON()?.p_settings_patch?.[settingKeys[label]] === target
+            response.request().postDataJSON()?.p_settings_patch?.[settingKeys[label]] === target,
+          { timeout: 45_000 }
         );
-        await checkbox.setChecked(target);
+        await checkbox.locator('..').click();
+        await expect(checkbox).toBeChecked({ checked: target });
         await saved;
         controls[label] = target;
         await expect(
@@ -645,7 +677,8 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
           (response) =>
             response.url().includes('/rpc/fn_patch_account_settings') &&
             response.ok() &&
-            response.request().postDataJSON()?.p_settings_patch?.[key] === target
+            response.request().postDataJSON()?.p_settings_patch?.[key] === target,
+          { timeout: 45_000 }
         );
         await select.selectOption(target);
         await saved;
@@ -692,6 +725,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
             label
           ).toBe(value);
         await fresh.page.goto('settings', { waitUntil: 'domcontentloaded' });
+        await acknowledgePreferenceWelcome(fresh.page);
         for (const [label, value] of Object.entries(controls)) {
           if (typeof value === 'boolean')
             await expect(
@@ -763,7 +797,8 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
           response.url().includes('/rest/v1/user_lobby_filters') &&
           response.request().method() === 'POST' &&
           response.ok() &&
-          response.request().postDataJSON()?.filters?.HOLDEM?.seatMin === Number(chosen)
+          response.request().postDataJSON()?.filters?.HOLDEM?.seatMin === Number(chosen),
+        { timeout: 45_000 }
       );
       await seats.evaluate((input: HTMLInputElement, value) => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
@@ -817,6 +852,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
             chosen: true,
           });
         await fresh.page.goto(exactUrl, { waitUntil: 'domcontentloaded' });
+        await acknowledgePreferenceWelcome(fresh.page);
         await prepareCashLobbyActions(fresh.page);
         await expect(fresh.page).toHaveURL(exactUrl);
         await expect(fresh.page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
@@ -898,7 +934,8 @@ preferenceLifecycleTest(
           response.url().includes('/rest/v1/user_table_settings') &&
           response.request().method() === 'POST' &&
           response.ok() &&
-          response.request().postDataJSON()?.[key] === target
+          response.request().postDataJSON()?.[key] === target,
+        { timeout: 45_000 }
       );
       await control.click();
       await save;
@@ -914,6 +951,7 @@ preferenceLifecycleTest(
     );
     try {
       await fresh.page.goto('settings', { waitUntil: 'domcontentloaded' });
+      await acknowledgePreferenceWelcome(fresh.page);
       await fresh.page.getByRole('button', { name: 'Open Menu', exact: true }).click();
       await fresh.page.getByRole('button', { name: 'Table Settings', exact: true }).click();
       const row = await fresh.client
@@ -925,7 +963,9 @@ preferenceLifecycleTest(
       for (const [key, value] of Object.entries(choices)) {
         expect(row.data?.[key], key).toBe(value);
         await expect(
-          fresh.page.locator('.tsp-inline').getByRole('switch', { name: labels[key], exact: true })
+          fresh.page
+            .locator('.tsp-inline')
+            .locator(`[role="switch"][aria-labelledby="table-setting-${key}-label"]`)
         ).toHaveAttribute('aria-checked', String(value), { timeout: 30_000 });
       }
       await testInfo.attach('table-toggle-fresh-device-proof.json', {
@@ -952,6 +992,41 @@ preferenceLifecycleTest(
     test.setTimeout(300_000);
     const table = 'ca_stats_workspace_preferences';
     const ownerId = preferenceAccount.id;
+    const safePreferenceResponses: Array<Record<string, unknown>> = [];
+    page.on('response', (response) => {
+      const request = response.request();
+      if (!['POST', 'PATCH', 'PUT'].includes(request.method())) return;
+      let body: Record<string, unknown>;
+      try {
+        const raw = request.postDataJSON();
+        body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+      } catch {
+        return;
+      }
+      if (!body || (body.user_id && body.user_id !== ownerId)) return;
+      const preferences = Object.fromEntries(
+        Object.entries(body).filter(([key]) =>
+          [
+            'dashboard_layout',
+            'privacy_presentation_mode',
+            'p_dashboard_layout',
+            'p_privacy_presentation_mode',
+          ].includes(key)
+        )
+      );
+      if (!Object.keys(preferences).length) return;
+      safePreferenceResponses.push({
+        method: request.method(),
+        path: new URL(response.url()).pathname,
+        status: response.status(),
+        preferences,
+      });
+    });
+    const attachSafeResponses = () =>
+      testInfo.attach('stats-workspace-preference-response-metadata.json', {
+        body: Buffer.from(JSON.stringify(safePreferenceResponses)),
+        contentType: 'application/json',
+      });
     const read = async (client: typeof preferenceAccount.client) => {
       const result = await client
         .from(table)
@@ -997,33 +1072,64 @@ preferenceLifecycleTest(
       dashboard_layout: ['performance', 'overview'],
       privacy_presentation_mode: false,
     });
-    const layoutSave = page.waitForResponse((response) => {
-      if (
-        !response.url().includes(`/rest/v1/${table}`) ||
-        response.request().method() !== 'POST' ||
-        !response.ok()
-      )
-        return false;
-      const body = response.request().postDataJSON();
-      return (
-        JSON.stringify(body?.dashboard_layout) === JSON.stringify(['hands', 'overview']) &&
-        !Object.hasOwn(body, 'privacy_presentation_mode')
-      );
-    });
+    const layoutSave = page.waitForResponse(
+      (response) => {
+        if (
+          !response.url().includes(`/rest/v1/${table}`) ||
+          response.request().method() !== 'POST' ||
+          !response.ok()
+        )
+          return false;
+        const raw = response.request().postDataJSON();
+        const body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+        return (
+          JSON.stringify(body?.dashboard_layout) === JSON.stringify(['hands', 'overview']) &&
+          !Object.hasOwn(body, 'privacy_presentation_mode')
+        );
+      },
+      { timeout: 45_000 }
+    );
     await zones.fill('hands, overview');
-    await layoutSave;
-    const privacySave = page.waitForResponse((response) => {
-      if (
-        !response.url().includes(`/rest/v1/${table}`) ||
-        response.request().method() !== 'POST' ||
-        !response.ok()
-      )
-        return false;
-      const body = response.request().postDataJSON();
-      return body?.privacy_presentation_mode === true && !Object.hasOwn(body, 'dashboard_layout');
+    await layoutSave.catch(async (error) => {
+      await attachSafeResponses();
+      throw error;
     });
-    await page.getByRole('button', { name: 'Use Presentation Mode', exact: true }).click();
-    await privacySave;
+    await expect(page.getByText('Preference Saved.', { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(await read(preferenceAccount.client)).toEqual({
+      dashboard_layout: ['hands', 'overview'],
+      privacy_presentation_mode: false,
+    });
+    const privacyButton = page.getByRole('button', { name: 'Use Presentation Mode', exact: true });
+    await privacyButton.scrollIntoViewIfNeeded({ timeout: 15_000 });
+    const privacySave = page.waitForResponse(
+      (response) => {
+        if (
+          !response.url().includes(`/rest/v1/${table}`) ||
+          response.request().method() !== 'POST' ||
+          !response.ok()
+        )
+          return false;
+        const raw = response.request().postDataJSON();
+        const body = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
+        return body?.privacy_presentation_mode === true && !Object.hasOwn(body, 'dashboard_layout');
+      },
+      { timeout: 45_000 }
+    );
+    await Promise.all([
+      privacySave,
+      (async () => {
+        await privacyButton.click({ timeout: 15_000 });
+        await expect(
+          page.getByRole('button', { name: 'Show Full Detail', exact: true })
+        ).toBeVisible({ timeout: 15_000 });
+      })(),
+    ]).catch(async (error) => {
+      await attachSafeResponses();
+      throw error;
+    });
+    await attachSafeResponses();
     expect(await read(preferenceAccount.client)).toEqual({
       dashboard_layout: ['hands', 'overview'],
       privacy_presentation_mode: true,
@@ -1035,6 +1141,7 @@ preferenceLifecycleTest(
     );
     try {
       await fresh.page.goto('stats?tab=workspace', { waitUntil: 'domcontentloaded' });
+      await acknowledgePreferenceWelcome(fresh.page);
       await expect(fresh.page.getByLabel('Dashboard Zones', { exact: true })).toHaveValue(
         /^hands, overview,/,
         { timeout: 45_000 }

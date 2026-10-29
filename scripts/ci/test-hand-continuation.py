@@ -89,7 +89,34 @@ def main():
     work=args.work_root.resolve() if args.work_root is not None else out
     work.mkdir(parents=True,exist_ok=True)
     e=native.Execution(ROOT,out,args.pg_bin.resolve(),work,600,socket_parent=args.socket_root)
-    inputs=[Path('supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql'),MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
+    # psql can fill stderr with native NOTICE evidence before reading the next
+    # stdin chunk. File input keeps the identical SQL bytes and existing
+    # capture/deadline/rollback owner without a bidirectional pipe deadlock.
+    native_sql=e.sql
+    def sql_file_input(database, query=None, *, file=None, label="sql", seconds=90, check=True):
+        if query is not None:
+            if file is not None:
+                raise ValueError('SQL query and file are mutually exclusive')
+            file=out/(str(e.index+1).zfill(3)+'-owned-query-input.sql')
+            file.write_bytes(query.encode('utf-8'))
+            if file.read_bytes()!=query.encode('utf-8'):
+                raise RuntimeError('Owned SQL input bytes changed')
+        return native_sql(database, file=file, label=label, seconds=seconds, check=check)
+    e.sql=sql_file_input
+    # Prove the adapter passes bytes by file, never by the text/stdin pipe.
+    adapter_calls=[]
+    actual_sql=native_sql
+    def adapter_probe(database, **kwargs):
+        adapter_calls.append(kwargs)
+        return (0, '', '')
+    native_sql=adapter_probe
+    exact_probe="SELECT 'quote; literal \\ slash';\n-- unicode Ω and newline\n"
+    e.sql('adapter-only',exact_probe,label='adapter-exact-byte-proof')
+    if len(adapter_calls)!=1 or 'query' in adapter_calls[0] or adapter_calls[0]['file'].read_bytes()!=exact_probe.encode('utf-8'):
+        raise RuntimeError('SQL file transport proof failed')
+    native_sql=actual_sql
+    e.report['sql_file_input']={'exact_utf8_bytes':True,'no_text_pipe':True,'existing_execution_owner':True}
+    inputs=[Path('supabase/migrations/20261029093051_attest_frozen_original_hand_continuation_custody.sql'),Path('supabase/migrations/20260904104847_felt_erasure_delta_settlement.sql'),Path('supabase/migrations/20261029081924_original_continuation_preserves_funded_addons.sql'),Path('supabase/migrations/20260917233447_tournament_original_funding_and_obligation_receipts.sql'),Path('supabase/migrations/20261029064404_continuation_waits_for_a_bounded_maintenance_lane.sql'),MIGRATION,PROBE,Path(__file__).relative_to(ROOT),Path('scripts/ci/played_clock_floor_cases.py'),Path('scripts/ci/build-played-level-recovery-migration.py'),Path('supabase/migrations/20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql'),Path('supabase/migrations/20260918232558_mixed_f06_custody_transfer_retains_original_operations.sql')]+sorted(p.relative_to(ROOT) for p in (ROOT/DATA).rglob('*') if p.is_file())
     inputs += [Path('scripts/ci/test-accepted-hand-roster.py'),chain.LIGHTNING,chain.RETIRED_CASH,chain.RAKED_DIAMOND,chain.CAPTURE,chain.MIGRATION]
     inputs += sorted(p.relative_to(ROOT) for p in (ROOT/'scripts/ci/fixtures/played-clock-floor').rglob('*') if p.is_file())
     source=dict(manifest['source_sha256']);source.update({str(p):sha(ROOT/p) for p in inputs})
@@ -128,6 +155,8 @@ def main():
         if before!=after:raise RuntimeError('complete public/private data/catalog rollback differs')
         e.report.update(data_rollback=True,catalog_rollback=True,private_catalog_and_data_rollback=True)
         module(ROOT/DATA/'maintenance_lane_qualification.py','maintenance_lane_wait').qualify(e,ROOT,hand,db)
+        module(ROOT/DATA/'funded_addon_claim_qualification.py','funded_addon_claim').qualify(e,ROOT,hand,db)
+        module(ROOT/DATA/'frozen_attestation_qualification.py','frozen_original_attestation').qualify(e,ROOT,hand,db)
         qualify_fences(e,db,native)
         module(ROOT/'scripts/ci/played_clock_floor_cases.py','played_clock_floor').qualify(e,ROOT,hand)
         if any(sha(ROOT/p)!=digest for p,digest in source.items()):raise RuntimeError('qualification source changed')

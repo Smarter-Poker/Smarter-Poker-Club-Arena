@@ -763,9 +763,68 @@ export async function legacyEngineCheckpointGuard(options, discoveredServers, mo
           server.drainedF06TournamentCustody.size <= maxTables && server.completedF06TournamentCustody.size <= maxTables,
           'mixed_pending_source_maps_unknown');
         for (const packet of server.drainedF06TournamentCustody.values()) packetOwner(packet);
-        for (const packets of server.completedF06TournamentCustody.values()) {
+        const completedPackets = [...server.completedF06TournamentCustody.values()];
+
+        const inspectWindow = Object.getOwnPropertyDescriptor(
+          modules.gameServer.GameServer.prototype, 'inspectCompletedF06DiagnosticWindow')?.value;
+        const inspectHistory = Object.getOwnPropertyDescriptor(
+          modules.gameServer.GameServer.prototype, 'inspectCompletedF06OmittedHistory')?.value;
+        // Pinned historical modules predate this index. A current module cannot
+        // claim that absence: its installed prototype declares both readers.
+        const legacyWithoutWindow = inspectWindow === undefined && inspectHistory === undefined &&
+          !('completedF06DiagnosticWindows' in server);
+        if (!legacyWithoutWindow) {
+        require(server.completedF06DiagnosticWindows instanceof Map &&
+          server.completedF06DiagnosticWindows.size <= maxTables, 'mixed_pending_source_maps_unknown');
+        require(typeof inspectWindow === 'function' && typeof inspectHistory === 'function' &&
+          server.inspectCompletedF06DiagnosticWindow === inspectWindow &&
+          server.inspectCompletedF06OmittedHistory === inspectHistory, 'mixed_pending_source_maps_unknown');
+        for (const [tournamentId, value] of server.completedF06DiagnosticWindows) {
+          require(uuid(tournamentId), 'mixed_pending_source_maps_unknown');
+          const window = inspectWindow.call(server, value, tournamentId);
+          require(record(window) && Array.isArray(window.sealed) && Array.isArray(window.unsealed) &&
+            window.sealed.length <= 32 && window.unsealed.length <= maxTables,
+            'mixed_pending_source_maps_unknown');
+          if (window.omitted !== null)
+            require(inspectHistory.call(server, window.omitted, tournamentId) === window.omitted,
+              'mixed_pending_source_maps_unknown');
+          completedPackets.push(new Set([...window.sealed, ...window.unsealed]));
+        }
+        }
+        for (const packets of completedPackets) {
           require(packets instanceof Set && packets.size <= maxTables, 'mixed_pending_source_maps_unknown');
-          for (const packet of packets) packetOwner(packet.original);
+          for (const packet of packets) {
+            if (packet?.status !== 'sealed') {
+              packetOwner(packet.original);
+              continue;
+            }
+            const inspect = Object.getOwnPropertyDescriptor(
+              modules.gameServer.GameServer.prototype,
+              'inspectCompletedF06Custody'
+            )?.value;
+            require(typeof inspect === 'function' &&
+              server.inspectCompletedF06Custody === inspect, 'mixed_pending_source_maps_unknown');
+            const seal = inspect.call(server, packet);
+            require(record(seal) &&
+              seal.schema === 'completed-f06-custody/v1' &&
+              uuid(seal.tournamentId) &&
+              uuid(seal.originGeneration) &&
+              Array.isArray(seal.sourceTableIds) &&
+              seal.sourceTableIds.length <= maxTables &&
+              Array.isArray(seal.originals) &&
+              seal.originals.length <= maxTables &&
+              seal.sourceTableIds.length === seal.originals.length &&
+              new Set(seal.sourceTableIds).size === seal.sourceTableIds.length &&
+              seal.sourceTableIds.every(
+                (id) =>
+                  uuid(id) &&
+                  seal.originals.some(
+                    (o) => o.tableId === id && uuid(o.engineId) && /^[1-9][0-9]*$/.test(o.lifecycle)
+                  )
+              ), 'mixed_pending_source_maps_unknown');
+            require(!seal.sourceTableIds.includes(tableId) &&
+              seal.originals.every((o) => o.tableId !== tableId), 'mixed_pending_source_present');
+          }
         }
         require(owners.size <= maxTables, 'mixed_pending_source_maps_unknown');
         for (const [owner, tournamentId] of owners) {

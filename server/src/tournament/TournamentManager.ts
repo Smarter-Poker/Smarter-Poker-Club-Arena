@@ -2802,6 +2802,26 @@ export class TournamentManager extends TournamentManagerEliminations {
     return null;
   }
 
+  /** Capture every engine-holding child registry only after the base proves
+   * exact physical original release. No future fresh-state claim is implied. */
+  captureCompletedF06CustodyIdentity(expected: readonly (readonly [string, ServerTableEngine])[]) {
+    const base = this.captureCompletedF06CustodyBaseIdentity(expected);
+    if (!base) return null;
+    const byId = new Map(expected);
+    const source = (id: string, engine: ServerTableEngine): boolean => byId.get(id) === engine;
+    for (const [id, engine] of this.stoppedOriginalBreaks) if (!source(id, engine)) return null;
+    for (const map of [this.retainedTournamentBreakSources, this.pendingNoStartContinuations])
+      for (const [id, value] of map) if (!source(id, value.engine)) return null;
+    for (const [id, wakes] of this.tournamentBreakArrivalWakes)
+      for (const engine of wakes.values()) if (!source(id, engine)) return null;
+    if (
+      this.pendingTableBreakRetirement &&
+      !source(this.pendingTableBreakRetirement.tableId, this.pendingTableBreakRetirement.engine)
+    )
+      return null;
+    return base;
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {

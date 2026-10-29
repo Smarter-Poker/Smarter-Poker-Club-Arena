@@ -1,0 +1,11 @@
+# Maintenance admission drains retention before queuing the global writer lane
+
+A natural retention page still took 13.243 seconds after one-page pruning was installed. Claiming maintenance directly on exclusive advisory lane (530090,1) queued behind that shared retention transaction. PostgreSQL then queued new shared continuation writes behind the exclusive waiter, producing their one-second lock timeouts even though those writes did not conflict with retention.
+
+The existing claim, save and clear doors now reserve retention-only lane (530090,2) through its existing helper before requesting exclusive lane 1. The new private postgres-only invoker wrapper preserves one total 32-second admission budget across both waits and restores the caller's lock timeout. It recognizes an existing exclusive owner before requesting lane 2, preventing nested lock inversion. The serialization trigger retains its invoker permissions and refuses contended raw writes without queuing; an already admitted writer reenters successfully.
+
+Ownership tokens, authentication, freeze predicates, financial guards, cron, transport settings and both thaw functions are unchanged. The actual database freeze remains true after a counting-down row's scheduled end until authoritative clearance, then a completed future v3 release boundary continues holding admission closed.
+
+The existing required installer qualification invokes the finite native PG17 regression as its fourth child. Actual captured maintenance functions and the installed one-page pruner reproduce the old convoy and prove the corrected writer waits only on lane 2 while the original one-second continuation helper succeeds. Qualification also covers installation rollback and drift refusal, permissions and ownership, save/clear transitions, raw-write refusal, reentrant locking, caller timeout restoration and two real waits sharing the existing 32-second budget. Isolated pruner dependency hooks do not establish financial correctness; exact source reversal proves the owning financial and authorization code was preserved.
+
+Source qualification is complete. Protected merge, exact migration installation, catalog readback and live behavioral verification remain separate delivery evidence in the task checkpoint.

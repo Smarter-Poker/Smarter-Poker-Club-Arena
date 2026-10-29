@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/maintenance-admission-reserves-retention-20261029",
+  "_comment": "Private postgres-only invoker admission helper; reserves existing retention lane then waits on the global writer lane within one existing 32-second budget. Required native installer child qualifies actual maintenance doors, custody contention, permissions and reentrant locking.",
+  "functions": ["smarter_private.maintenance_write_admission"]
+}

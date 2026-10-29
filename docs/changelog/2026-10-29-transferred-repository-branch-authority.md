@@ -5,3 +5,5 @@ The merged-branch guard rejected the approved paid-organization SSH destination 
 Executable guard regressions cover old/new HTTPS and SSH forms, immutable identity, current head owner/repository/branch, closed/merged old aliases, unavailable metadata and legacy repositories.
 
 The shared-ledger workflows retain the existing read-only World Hub App-token target under Smarter-Poker (repository1132365826); transferring Club Arena does not transfer that sibling. Default-branch trust, token scope and both ledger questions remain unchanged.
+
+The spent-DSS guard rebinds only the reviewed applied-workflow bytes after that owner correction; its exact historical/retirement/reader identities and mandatory live retirement proof are unchanged. Local fixture scratch stays on the external SSD outside a package scope, and the new guard adapter has an explicit module extension.

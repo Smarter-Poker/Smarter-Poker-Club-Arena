@@ -146,10 +146,10 @@ describe('LAW - transferred Club Arena pushes retain branch authority', () => {
     const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ca-guard-owner-')));
     try {
       const trace = join(directory, 'trace');
+      const mock = join(directory, 'mock-gh.mjs');
       writeFileSync(
-        join(directory, 'gh'),
-        `#!/usr/bin/env node
-import { appendFileSync } from 'node:fs';
+        mock,
+        `import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(process.env.GUARD_FIX_TRACE, JSON.stringify(args) + '\\n');
 const endpoint = args.find(x => x.startsWith('repos/'));
@@ -163,11 +163,18 @@ process.stdout.write(process.env[kind === 'pulls' ? 'GUARD_FIX_PULLS' : 'GUARD_F
 `,
         { mode: 0o755 }
       );
+      writeFileSync(
+        join(directory, 'gh'),
+        '#!/bin/sh\nexec "$GUARD_FIX_NODE" "$GUARD_FIX_MOCK" "$@"\n',
+        { mode: 0o755 }
+      );
       const result = spawnSync('bash', [resolve(root, GUARD_PATH), branch, 'origin', remote], {
         cwd: root,
         env: {
           ...process.env,
           PATH: directory + ':' + process.env.PATH,
+          GUARD_FIX_NODE: process.execPath,
+          GUARD_FIX_MOCK: mock,
           GUARD_FIX_TRACE: trace,
           GUARD_FIX_OWNER: options.expectedOwner || 'Smarter-Software-PIQ',
           GUARD_FIX_BRANCH: branch,

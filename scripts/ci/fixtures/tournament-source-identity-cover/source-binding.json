@@ -8,11 +8,10 @@
   "schemaVersion": 1,
   "scope": "Source-only fixed UUID fee identity cover; native33/full FOR24 plans. Root solely installs; no production capacity or financial producer claim.",
   "sourceFiles": {
-    ".github/workflows/ci.yml": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316",
-    "docs/changelog/2026-10-29-tournament-source-identity-cover.md": "dac2e337bdd2160e4401986a2cc839ded87db3a17366d397555860e1879d30d4",
+    "docs/changelog/2026-10-29-tournament-source-identity-cover.md": "563c6c15b9e27de6cdf443ba9175e8f1831279f3b5110799f67a0deefc6fcf25",
     "docs/laws.d/tournament-source-identities-keep-narrow-physical-coverage.md": "35e2fed8e6d6de6270568bc1fbe040c285f104400d960fa5ac82d6ccd56b60ae",
     "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
-    "scripts/ci/fixtures/tournament-source-identity-cover/README.md": "7df78ad2867a37fca4f827870672af6d7779502b289f49cdad5ab4d6df920dab",
+    "scripts/ci/fixtures/tournament-source-identity-cover/README.md": "69a44db7363317740ec41fa7bd477d8b5930e4794aa67ecf1a26fa18170825db",
     "scripts/ci/fixtures/tournament-source-identity-cover/actual-table-authority.json": "49ec49708441d27f3d37467659953464890439b0d508d04f5280ae35ab1dc648",
     "scripts/ci/fixtures/tournament-source-identity-cover/meaningful-table-contract.json": "62c3fe9a746c851433e3b5c70089448f634e9433326250a21ef569eb6e511f86",
     "scripts/ci/fixtures/tournament-source-identity-cover/qualification-evidence.json": "3939192cf3b60b2240c5d56e223b4554b090433b15ef1a15b3b3ca66ebf0a8d0",
@@ -26,8 +25,7 @@
     "scripts/ci/migration-concurrent-preamble.mjs": "c50bc71b5c1234a6d505e9125de5744d04a3f97113025550f9eeb53f8b9bd8d6",
     "scripts/ci/test-tournament-source-identity-cover-postgres.py": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
     "supabase/migrations/20261029020140_weekly_fee_source_identities_retain_their_tournament_and_rak.sql": "062ca87b4f99f5f42860fa3ee2ec91302d56ed9c9e9aec1c62f83111c4d5b7b0",
-    "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "1cb0e3b2d89ffd2fdb1bbfdb18bb53d22b06cc0e882fd822887920c750afc78b",
-    "scripts/qualification/cash-native-hosted.manifest.json": "45d358b13eb89b515d9ca54e17a4ca9dd5a82c5aea24d10220cbce3a4207fb46"
+    "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "6ed10fe466e78fec94cebcd3b1f005d73183908f52cae2dad52897832da59715"
   },
   "normalPrecommitFormattingAudit": {
     "review": "Normal pre-commit Prettier reformatted only JSON object layout; complete parsed authority and meaningful contract values are unchanged from native33 inputs. No migration/runner/query/workflow change.",
@@ -81,6 +79,27 @@
       "scripts/qualification/cash-native-hosted.manifest.json": {
         "before": "6e006ee944e4ef5c4a7a5978c98d8dba204ad0817df523016cd3a23852602703",
         "after": "f31b56c00d279ee6ffddf42a2038dd8fc22a22bbc15ec696d9f4fc094fa2ad2e"
+      }
+    }
+  },
+  "requiredFloorDispatch20261029": {
+    "review": "Move unchanged runner/native33 to existing required Accounting1 floor family at interior indexed quality boundary. Exact producer arguments, unconditional execution, failure propagation and existing artifact consumer enforced by executable source law. Incoming main CI/cash manifest retained byte for byte; whole-file hashes retired as they were not native inputs. SQL062, runner8e26 and every native fixture remain unchanged.",
+    "removedWholeFileBindings": {
+      ".github/workflows/ci.yml": "da071e7ea8d4c81eb41feef8a0960638c914444c9786a255311b0e36ae4e9316",
+      "scripts/qualification/cash-native-hosted.manifest.json": "45d358b13eb89b515d9ca54e17a4ca9dd5a82c5aea24d10220cbce3a4207fb46"
+    },
+    "changed": {
+      "docs/changelog/2026-10-29-tournament-source-identity-cover.md": {
+        "before": "dac2e337bdd2160e4401986a2cc839ded87db3a17366d397555860e1879d30d4",
+        "after": "563c6c15b9e27de6cdf443ba9175e8f1831279f3b5110799f67a0deefc6fcf25"
+      },
+      "scripts/ci/fixtures/tournament-source-identity-cover/README.md": {
+        "before": "7df78ad2867a37fca4f827870672af6d7779502b289f49cdad5ab4d6df920dab",
+        "after": "69a44db7363317740ec41fa7bd477d8b5930e4794aa67ecf1a26fa18170825db"
+      },
+      "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": {
+        "before": "1cb0e3b2d89ffd2fdb1bbfdb18bb53d22b06cc0e882fd822887920c750afc78b",
+        "after": "6ed10fe466e78fec94cebcd3b1f005d73183908f52cae2dad52897832da59715"
       }
     }
   }

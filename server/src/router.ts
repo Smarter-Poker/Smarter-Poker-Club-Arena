@@ -598,7 +598,7 @@ export function createRouter(
         ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress || '') &&
         req.headers['x-forwarded-for'] === undefined &&
         req.headers.forwarded === undefined;
-      return handleGtoV31Reload(req, res, local && verifyInternalKey(req));
+      return handleGtoV31Reload(req, res, (request) => local && verifyInternalKey(request));
     }
     if (url.split('?')[0] === '/admin/platform-control')
       return handlePlatformControl(req, res, { gameServer });

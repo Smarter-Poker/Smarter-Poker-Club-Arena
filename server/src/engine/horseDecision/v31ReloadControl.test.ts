@@ -125,4 +125,145 @@ describe('explicit V31 worker control', () => {
     await failure;
     expect(post).toHaveBeenCalledTimes(1);
   });
+  it('contains failed owner and duplicate ACK delivery; repaired same-ID status never reloads', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {}),
+      unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      let broken = true;
+      const load = vi.fn(async () => ({ ok: true, count: 107 }));
+      const send = vi.fn((_ack: V31ControlAck) => {
+        if (broken) throw Error('private send detail');
+      });
+      const control = createV31WorkerControl({ load, snapshot, send });
+      control(request);
+      control(request);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(warning.mock.calls).toEqual([['V31_STORE_CONTROL_ACK_UNCONFIRMED', id.requestId]]);
+      broken = false;
+      control({ ...request, operation: 'status' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send.mock.calls.at(-1)?.[0]).toMatchObject({
+        operation: 'status',
+        requestId: id.requestId,
+        ok: true,
+        ...snapshot(),
+        error: null,
+      });
+      control(request);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send.mock.calls.at(-1)?.[0]).toMatchObject({ operation: 'reload', ok: true });
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.removeListener('unhandledRejection', unhandled);
+      warning.mockRestore();
+    }
+  });
+  it('contains rejected owner and duplicate snapshots without fabricating a reload result', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {}),
+      unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      let broken = true;
+      const load = vi.fn(async () => ({ ok: true, count: 107 })),
+        send = vi.fn();
+      const read = () => {
+        if (broken) throw Error('private snapshot detail');
+        return snapshot();
+      };
+      const control = createV31WorkerControl({ load, snapshot: read, send });
+      control(request);
+      control(request);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).not.toHaveBeenCalled();
+      expect(warning.mock.calls).toEqual([['V31_STORE_CONTROL_ACK_UNCONFIRMED', id.requestId]]);
+      broken = false;
+      control({ ...request, operation: 'status' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0][0]).toMatchObject({ operation: 'status', ok: true, ...snapshot() });
+      control(request);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.removeListener('unhandledRejection', unhandled);
+      warning.mockRestore();
+    }
+  });
+  it('settles rejected status so a fresh same-ID read can observe the repaired snapshot', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let broken = true;
+      const load = vi.fn(),
+        send = vi.fn();
+      const control = createV31WorkerControl({
+        load,
+        send,
+        snapshot: () => {
+          if (broken) throw Error('private state');
+          return snapshot();
+        },
+      });
+      control({ ...request, operation: 'status' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).not.toHaveBeenCalled();
+      broken = false;
+      control({ ...request, operation: 'status' });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0][0]).toMatchObject({ operation: 'status', ok: true });
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+    }
+  });
+  it('contains synchronous snapshot/send failures on conflict and reload-busy ACKs', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      let finish!: (r: { ok: boolean; count: number }) => void,
+        badSnapshot = true,
+        badSend = true;
+      const load = vi.fn(
+        () =>
+          new Promise<{ ok: boolean; count: number }>((resolve) => {
+            finish = resolve;
+          })
+      );
+      const send = vi.fn((_ack: V31ControlAck) => {
+        if (badSend) throw Error('private sender');
+      });
+      const control = createV31WorkerControl({
+        load,
+        send,
+        snapshot: () => {
+          if (badSnapshot) throw Error('private snapshot');
+          return snapshot();
+        },
+      });
+      const conflict = { ...request, checksum: 'b'.repeat(64) },
+        busy = { ...request, requestId: '12345678-1234-4234-8234-123456789abe' };
+      control(request);
+      expect(() => control(conflict)).not.toThrow();
+      expect(() => control(busy)).not.toThrow();
+      badSnapshot = false;
+      expect(() => control(conflict)).not.toThrow();
+      expect(() => control(busy)).not.toThrow();
+      badSend = false;
+      finish({ ok: true, count: 107 });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(warning.mock.calls).toEqual([
+        ['V31_STORE_CONTROL_ACK_UNCONFIRMED', id.requestId],
+        ['V31_STORE_CONTROL_ACK_UNCONFIRMED', busy.requestId],
+      ]);
+      expect(send.mock.calls.at(-1)?.[0]).toMatchObject({ operation: 'reload', ok: true });
+    } finally {
+      warning.mockRestore();
+    }
+  });
 });

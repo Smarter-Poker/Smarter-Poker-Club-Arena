@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { IncomingMessage } from 'node:http';
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     rpc: vi.fn(() => {
@@ -88,10 +89,49 @@ describe('single explicit active-corpus reload owner', () => {
   });
   it('rejects unauthorized HTTP before reading the body or contacting authority', async () => {
     const run = vi.fn(),
-      response = { setHeader: vi.fn(), writeHead: vi.fn(), end: vi.fn() };
-    await handleGtoV31Reload({} as any, response as any, false, { run } as any);
+      response = { setHeader: vi.fn(), writeHead: vi.fn(), end: vi.fn() },
+      req = { headers: { authorization: 'Bearer wrong' }, on: vi.fn() },
+      verifyInternalKey = vi.fn(
+        (request: IncomingMessage) => request.headers.authorization === 'Bearer expected'
+      );
+    await handleGtoV31Reload(req as any, response as any, verifyInternalKey, { run } as any);
+    expect(verifyInternalKey).toHaveBeenCalledTimes(1);
+    expect(verifyInternalKey).toHaveBeenCalledWith(req);
+    expect(req.on).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
     expect(response.writeHead.mock.calls[0][0]).toBe(401);
+  });
+  it('retains a rejected owner outcome and returns HTTP 503 before any worker load', async () => {
+    const failure = Error('active_authority_unavailable'),
+      authority = vi.fn(async () => {
+        throw failure;
+      }),
+      dispatch = vi.fn(),
+      owner = new V31ReloadRequests(authority, dispatch);
+    const first = owner.run(id, 'reload'),
+      second = owner.run(id, 'reload');
+    await Promise.all([expect(first).rejects.toBe(failure), expect(second).rejects.toBe(failure)]);
+    await expect(owner.run(id, 'reload')).rejects.toBe(failure);
+    expect(authority).toHaveBeenCalledTimes(1);
+    const req = {
+        method: 'POST',
+        on: vi.fn((event: string, callback: (...args: any[]) => void) => {
+          if (event === 'data') callback(Buffer.from(JSON.stringify(id)));
+          if (event === 'end') callback();
+        }),
+      },
+      response = { setHeader: vi.fn(), writeHead: vi.fn(), end: vi.fn() },
+      verifyInternalKey = vi.fn(() => true);
+    await handleGtoV31Reload(req as any, response as any, verifyInternalKey, owner);
+    expect(verifyInternalKey).toHaveBeenCalledTimes(1);
+    expect(verifyInternalKey).toHaveBeenCalledWith(req);
+    expect(response.writeHead.mock.calls[0][0]).toBe(503);
+    expect(JSON.parse(response.end.mock.calls[0][0])).toEqual({
+      error: 'active_authority_unavailable',
+      activationPerformed: false,
+    });
+    expect(authority).toHaveBeenCalledTimes(1);
+    expect(dispatch).not.toHaveBeenCalled();
   });
   it('rechecks authoritative active identity after worker acknowledgments', async () => {
     let reads = 0;

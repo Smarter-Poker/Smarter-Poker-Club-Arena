@@ -87,14 +87,10 @@ export class V31ReloadRequests {
     // Reserve synchronously before authority/network await, so concurrent duplicates join one owner.
     const record = { binding, settled: false, pending };
     this.receipts.set(key, record);
-    void pending.then(
-      () => {
-        record.settled = true;
-      },
-      () => {
-        record.settled = true;
-      }
-    );
+    const markSettled = () => {
+      record.settled = true;
+    };
+    void pending.then(markSettled).catch(markSettled);
     return pending;
   }
 }
@@ -125,11 +121,11 @@ const requests = new V31ReloadRequests(
 export async function handleGtoV31Reload(
   req: IncomingMessage,
   res: ServerResponse,
-  authorized: boolean,
+  verifyInternalKey: (req: IncomingMessage) => boolean,
   owner: V31ReloadRequests = requests
 ) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!authorized) return sendJSON(res, 401, { error: 'Unauthorized' });
+  if (!verifyInternalKey(req)) return sendJSON(res, 401, { error: 'Unauthorized' });
   try {
     const url = new URL(req.url ?? '/', 'http://engine.local');
     if (req.method === 'GET' && url.searchParams.size !== 3) throw Error('invalid_request');

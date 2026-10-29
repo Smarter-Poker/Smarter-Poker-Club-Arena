@@ -77,3 +77,12 @@ The lexical require regression lives under `tests/operations`, while the
 ordinary guard still invokes it directly before scanning. It is a test suite,
 not a second `scripts/ci/check-*` guard requiring an independent CI reader.
 The existing guard-reader law remains unchanged.
+
+The V31 reload handler now invokes its required internal-credential callback on
+the current request before reading a body or contacting the reload owner; the
+router retains its loopback and forwarded-header restrictions. Settlement
+observation has an explicit rejection handler while callers retain the original
+rejected owner outcome, so an unavailable active authority returns HTTP 503
+without dispatching a worker load or implicitly retrying the operation.
+
+Worker acknowledgment delivery catches both snapshot construction and channel-send failures across every control response. Rejected owner outcomes remain retained, diagnostics contain only a fixed code and request UUID, and a fresh same-ID status can inspect the store without replaying a reload. The original unhandled-promise and authorization laws, focused controls and full server typecheck pass.

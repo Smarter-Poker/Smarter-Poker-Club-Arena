@@ -79,6 +79,22 @@ export function createV31WorkerControl(deps: {
     { binding: string; pending: Promise<V31ControlAck>; settled: boolean }
   >();
   let loading = false;
+  // At most one fixed public diagnostic per retained request, bounded in memory.
+  // Delivery failure is UNKNOWN to the controller, never a fabricated ACK.
+  const diagnosed = new Set<string>();
+  const deliveryUnknown = (requestId: string): void => {
+    if (diagnosed.has(requestId)) return;
+    if (diagnosed.size >= 32) diagnosed.delete(diagnosed.values().next().value!);
+    diagnosed.add(requestId);
+    console.warn('V31_STORE_CONTROL_ACK_UNCONFIRMED', requestId);
+  };
+  const deliver = (requestId: string, ack: () => V31ControlAck): void => {
+    try {
+      deps.send(ack());
+    } catch {
+      deliveryUnknown(requestId);
+    }
+  };
   return (input: unknown): boolean => {
     if ((input as any)?.type !== 'V31_STORE_CONTROL') return false;
     if (!v31ControlRequestValid(input)) return true;
@@ -91,16 +107,23 @@ export function createV31WorkerControl(deps: {
       known = undefined;
     }
     if (known) {
-      if (known.binding === binding) void known.pending.then(deps.send);
-      else
-        deps.send({
+      if (known.binding === binding) {
+        const receipt = known;
+        void receipt.pending
+          .then((ack) => deliver(r.requestId, () => ack))
+          .catch(() => {
+            receipt.settled = true;
+            deliveryUnknown(r.requestId);
+          });
+      } else
+        deliver(r.requestId, () => ({
           type: 'V31_STORE_CONTROL_ACK',
           operation: r.operation,
           requestId: r.requestId,
           ok: false,
           ...deps.snapshot(),
           error: 'request_identity_conflict',
-        });
+        }));
       return true;
     }
     // Never evict a pending operation, and never start a retry after losing its owner.
@@ -109,14 +132,14 @@ export function createV31WorkerControl(deps: {
       if (evict) receipts.delete(evict[0]);
     }
     if (receipts.size >= 32 || (r.operation === 'reload' && loading)) {
-      deps.send({
+      deliver(r.requestId, () => ({
         type: 'V31_STORE_CONTROL_ACK',
         operation: r.operation,
         requestId: r.requestId,
         ok: false,
         ...deps.snapshot(),
         error: 'control_capacity_or_reload_busy',
-      });
+      }));
       return true;
     }
     if (r.operation === 'reload') loading = true;
@@ -151,10 +174,17 @@ export function createV31WorkerControl(deps: {
     });
     const receipt = { binding, pending, settled: false };
     receipts.set(key, receipt);
-    void pending.then((ack) => {
-      receipt.settled = true;
-      deps.send(ack);
-    });
+    void pending
+      .then((ack) => {
+        receipt.settled = true;
+        deliver(r.requestId, () => ack);
+      })
+      .catch(() => {
+        // Preserve the rejected canonical outcome. A fresh explicit status can
+        // inspect the current store; the same reload must never be rerun.
+        receipt.settled = true;
+        deliveryUnknown(r.requestId);
+      });
     return true;
   };
 }

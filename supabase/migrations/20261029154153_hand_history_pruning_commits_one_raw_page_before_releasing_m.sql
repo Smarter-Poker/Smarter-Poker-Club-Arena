@@ -2,7 +2,8 @@
 -- Releasing its transaction releases the maintenance shared lane between pages.
 -- An unfinished pass never resets merely because an hour elapsed; only EOF permits reset.
 -- Same 250-row page, horse/human eight-day policy, guards, disposal and atomic cursor.
--- @live-proof: EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.sp_prune_hand_history(integer)'::regprocedure AND p.proowner='postgres'::regrole AND NOT p.prosecdef AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'] AND md5(pg_get_functiondef(p.oid))='1b2f59cf765985058a8b146f9ed986d1')
+-- Preserve throughput through the SAME existing retention job at ten seconds; command unchanged.
+-- @live-proof: EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid='public.sp_prune_hand_history(integer)'::regprocedure AND p.proowner='postgres'::regrole AND NOT p.prosecdef AND p.proacl::text='{postgres=X/postgres}' AND p.proconfig=ARRAY['search_path=public, pg_temp'] AND md5(pg_get_functiondef(p.oid))='1b2f59cf765985058a8b146f9ed986d1') AND EXISTS(SELECT 1 FROM cron.job WHERE jobid=117 AND jobname='sp_prune_hand_history_10m' AND schedule='10 seconds' AND active AND database='postgres' AND username='postgres' AND md5(command)='fc97e3391af1e3a6e27d5662c6bfb954')
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='5s';
@@ -283,4 +284,29 @@ DO $post$ DECLARE d text; BEGIN
 ');
  IF md5(d) IS DISTINCT FROM '92ef94b3abace0012fd6338e84378816' THEN RAISE EXCEPTION 'PRUNER_ONE_PAGE_UNRELATED_BYTES_CHANGED' USING ERRCODE='55000'; END IF;
 END $post$;
+DO $cadence$
+DECLARE prior_job jsonb; prior_others jsonb;
+BEGIN
+ SELECT to_jsonb(j) INTO prior_job FROM cron.job j WHERE jobid=117;
+ SELECT jsonb_agg(to_jsonb(j) ORDER BY jobid) INTO prior_others FROM cron.job j WHERE jobid<>117;
+ IF (SELECT count(*) FROM cron.job WHERE jobid=117)<>1
+    OR prior_job->>'jobname' IS DISTINCT FROM 'sp_prune_hand_history_10m'
+    OR prior_job->>'schedule' IS DISTINCT FROM '30 seconds'
+    OR prior_job->>'database' IS DISTINCT FROM 'postgres'
+    OR prior_job->>'username' IS DISTINCT FROM 'postgres'
+    OR prior_job->>'active' IS DISTINCT FROM 'true'
+    OR md5(prior_job->>'command') IS DISTINCT FROM 'fc97e3391af1e3a6e27d5662c6bfb954' THEN
+  RAISE EXCEPTION 'PRUNER_ONE_PAGE_CRON_PREIMAGE_CHANGED' USING ERRCODE='55000';
+ END IF;
+ -- Same existing business job and immutable command; 250 rows/10s gives
+ -- 2,160,000 raw rows/day versus the measured 881,640 incoming rows/day.
+ -- The 30s cadence would cap at 720,000 before retained-prefix work.
+ PERFORM cron.alter_job(job_id:=117,schedule:='10 seconds');
+ IF (SELECT count(*) FROM cron.job WHERE jobid=117)<>1
+    OR (SELECT to_jsonb(j) FROM cron.job j WHERE jobid=117) IS DISTINCT FROM
+       (prior_job||jsonb_build_object('schedule','10 seconds'))
+    OR (SELECT jsonb_agg(to_jsonb(j) ORDER BY jobid) FROM cron.job j WHERE jobid<>117) IS DISTINCT FROM prior_others THEN
+  RAISE EXCEPTION 'PRUNER_ONE_PAGE_CRON_POSTIMAGE_CHANGED' USING ERRCODE='55000';
+ END IF;
+END $cadence$;
 COMMIT;

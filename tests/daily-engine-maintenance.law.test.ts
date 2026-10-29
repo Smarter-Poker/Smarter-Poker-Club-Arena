@@ -231,6 +231,7 @@ describe('daily routine admission uses the existing protected receiver only', ()
     expect(recovery).not.toHaveProperty('announceAtChicagoMinutes');
     expect(recovery.migrations).toEqual([]);
     expect(recovery.ownerOrder).toContain('1a2aee9264a6ee30ede540c2655ee32e860a22bf');
+    expect(recovery.ownerOrder).toContain('aca0b52c832447c5f0e4636a19a4fcdbe2f1047a');
     expect(recovery.ownerOrder).toContain('full 285-second');
   });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {

@@ -172,6 +172,7 @@ describe('Phase 6 real roster row render budget', () => {
       total: 419,
       selected: true,
       simpleMode: true,
+      winLoss: { cash: 0, mtt: 0, net: 0, fees: 87.5, downline_fees: 0 },
     };
     view.rerender(<MemberRow {...next} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open Player 0, Player, Offline' }));
@@ -186,7 +187,7 @@ describe('Phase 6 real roster row render budget', () => {
     expect(item.querySelector('mark')).toHaveTextContent('Player');
     // Simple mode leads with fees generated, never a wallet balance.
     expect(screen.getByText('87.50')).toBeVisible();
-    expect(screen.getByText('Fees Generated')).toBeVisible();
+    expect(screen.getByText('Fees This Week')).toBeVisible();
     expect(screen.queryByText('250.00')).not.toBeInTheDocument();
     expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
     expect(screen.queryByText('Agent Wallet')).not.toBeInTheDocument();

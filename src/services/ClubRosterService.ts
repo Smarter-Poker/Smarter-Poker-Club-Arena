@@ -353,7 +353,7 @@ export interface DownlineMember {
   is_online: boolean;
 }
 
-/** Today uses Chicago midnight. Week/month use UTC; the week starts Monday. */
+/** Calendar periods use Chicago midnight; the current week starts Monday. */
 export type WinLossPeriod = 'today' | 'week' | 'month' | 'overall';
 
 /** One window of a member's results, in club chips. Positive is a win. */
@@ -364,6 +364,9 @@ export interface WinLossFigure {
   mtt: number;
   /** cash + mtt. */
   net: number;
+  /** Fees for this exact selected period, never lifetime roster totals. */
+  fees?: number;
+  downline_fees?: number;
 }
 
 export interface MemberWinLoss {
@@ -640,7 +643,7 @@ export const ClubRosterService = {
       const batch = ids.slice(start, start + 100);
       const data = await runRosterReadWithRetry(
         async (attemptSignal) => {
-          let request = supabase.rpc('ca_club_members_win_loss', {
+          let request = supabase.rpc('ca_club_members_period_summary', {
             p_club_id: clubId,
             p_user_ids: batch,
             p_period: period,
@@ -655,7 +658,18 @@ export const ClubRosterService = {
         { ...WIN_LOSS_READ, signal }
       );
       for (const row of (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>) {
-        if (typeof row.user_id === 'string') out.set(row.user_id, winLossFigure(row));
+        if (typeof row.user_id === 'string') {
+          const validFee = (value: unknown) =>
+            (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+            Number.isFinite(Number(value));
+          if (!validFee(row.fees) || !validFee(row.downline_fees))
+            throw new Error('The Period Fee Response Was Incomplete');
+          out.set(row.user_id, {
+            ...winLossFigure(row),
+            fees: num(row.fees),
+            downline_fees: num(row.downline_fees),
+          });
+        }
       }
     }
     return out;

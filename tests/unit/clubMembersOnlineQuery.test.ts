@@ -284,7 +284,7 @@ describe('Players tab shows what the brief asked for', () => {
     expect(PAGE).toContain('member.downline_total');
     expect(PAGE).toContain('member.agent_wallet');
     expect(PAGE).toContain('member.player_wallet');
-    expect(PAGE).toContain('member.total_fees');
+    expect(PAGE).toContain('periodFeeText(winLoss?.fees');
   });
 
   it('offers every sort the brief listed, hierarchy first', () => {

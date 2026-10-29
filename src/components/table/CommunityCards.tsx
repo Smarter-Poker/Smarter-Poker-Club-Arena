@@ -1270,13 +1270,13 @@ function CommunityCardsComponent({
         /* Dan 2026-10-24: the band is announced, not only painted. A polite
            live region reads the winner and the hand once, as it lands. */
         <div className="community-cards__hand-name" role="status" aria-live="polite">
-          {rabbitCount > 0 && (
-            <div className="community-cards__rabbit-caption">{rabbitCaption}</div>
-          )}
           {winningPlayerLabel && (
             <div className="community-cards__winner-line">
               {formatPopupText(winningPlayerLabel)}
             </div>
+          )}
+          {rabbitCount > 0 && (
+            <div className="community-cards__rabbit-caption">{rabbitCaption}</div>
           )}
           {/* POKERBROS PARITY 2026-08-26: the name is its own span so the
               band background (parent) and the gold gradient fill

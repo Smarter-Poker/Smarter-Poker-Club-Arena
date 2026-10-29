@@ -7,6 +7,7 @@ import io
 import ast
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import types
@@ -94,7 +95,7 @@ class ReaderTests(unittest.TestCase):
             path.write_text(raw); path.chmod(0o600)
         unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
         cases = [('read_lines', 'request_read'), ('pending_metadata', 'request_binding'),
-                 ('pending_unit', 'unit'), ('pending_journal', 'journal')]
+                 ('pending_unit', 'unit')]
         for function, stage in cases:
             with self.subTest(stage=stage), \
                     patch.object(R, 'pending_unit', return_value=unit), \
@@ -112,6 +113,55 @@ class ReaderTests(unittest.TestCase):
             with self.assertRaises(R.ScopedRefusal) as caught:
                 R.remote(request)
             self.assertEqual(caught.exception.phase, 'pending_recheck_unit')
+
+    def test_pending_journal_failure_preserves_only_rechecked_metadata_as_unknown(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        for suffix in ('.request', '.intent'):
+            path = directory / (REQUEST['runKey'] + suffix)
+            path.write_text('\n'.join(rows) + '\n'); path.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        with patch.object(R, 'pending_unit', return_value=unit) as reads, \
+                patch.object(R, 'pending_journal', side_effect=ValueError('private journal detail')):
+            answer = R.remote(request)
+        self.assertEqual(reads.call_count, 2)
+        self.assertEqual(answer['journalStatus'], 'unavailable')
+        self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['journalFailure'], {'phase': 'pending_journal', 'code': 'evidence_unavailable'})
+        self.assertEqual(R.validate_reply(answer, request), answer)
+        self.assertNotIn('private', json.dumps(answer))
+        failures = [(ValueError('Recovery witness output refused'), 'output_bound'),
+                    (ValueError('Pending journal unavailable'), 'command_nonzero'),
+                    (ValueError('Pending journal ownership refused'), 'ownership_refused'),
+                    (ValueError('Pending journal shape refused'), 'shape_refused'),
+                    (ValueError('Duplicate persisted field'), 'fields_refused'),
+                    (subprocess.TimeoutExpired('private command', 5), 'command_deadline'),
+                    (OSError('private command'), 'command_unavailable'),
+                    (json.JSONDecodeError('private', 'private', 0), 'json_refused')]
+        for error, code in failures:
+            with self.subTest(code=code), self.assertRaises(R.ScopedRefusal) as caught:
+                R.pending_stage('journal', lambda: (_ for _ in ()).throw(error))
+            self.assertEqual((caught.exception.phase, caught.exception.code), ('pending_journal', code))
+        with self.assertRaises(RuntimeError):
+            R.pending_stage('journal', lambda: (_ for _ in ()).throw(RuntimeError('unexpected')))
+        for mutation in [{'journalSigns': []}, {'journalStatus': 'observed'},
+                         {'journalFailure': {'phase': 'pending_unit', 'code': 'evidence_unavailable'}},
+                         {'journalFailure': {'phase': 'pending_journal', 'code': 'private detail'}},
+                         {'schema': 'existing-release-pending-observation/v1'}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_reply({**answer, **mutation}, request)
+        for target in ('unit', 'requests'):
+            def journal(*args):
+                if target == 'requests':
+                    path = directory / (REQUEST['runKey'] + '.request')
+                    path.write_text('changed')
+                raise ValueError('private journal detail')
+            with patch.object(R, 'pending_unit', side_effect=[unit, {**unit, 'invocationId': '2' * 32}] if target == 'unit' else None, return_value=unit), \
+                    patch.object(R, 'pending_journal', side_effect=journal), self.assertRaises(R.ScopedRefusal):
+                R.remote(request)
 
     def test_pending_mode_refuses_unknown_modes_and_export_forgery(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}

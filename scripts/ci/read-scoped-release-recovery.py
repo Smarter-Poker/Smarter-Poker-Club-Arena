@@ -85,6 +85,15 @@ REFUSAL_CODES |= {('pending_' + stage, 'evidence_unavailable')
                   for stage in PENDING_READ_STAGES}
 REFUSAL_CODES |= {('pending_' + stage, 'records_absent')
                   for stage in ('directory', 'request_read', 'recheck_requests')}
+PENDING_JOURNAL_ERRORS = {
+    'Pending journal unavailable': 'command_nonzero',
+    'Recovery witness output refused': 'output_bound',
+    'Pending journal ownership refused': 'ownership_refused',
+    'Pending journal shape refused': 'shape_refused',
+    'Duplicate persisted field': 'fields_refused',
+}
+REFUSAL_CODES |= {('pending_journal', code) for code in
+    set(PENDING_JOURNAL_ERRORS.values()) | {'command_deadline', 'command_unavailable', 'json_refused'}}
 
 
 class ScopedRefusal(ValueError):
@@ -361,7 +370,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v1'
+PENDING_SCHEMA = 'existing-release-pending-observation/v2'
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'locked_budget_missed', 'legacy_entry_deferred'}
 
@@ -481,15 +490,28 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs):
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
-    validate_pending_signs(signs)
+    validate_pending_journal(signs, journal_failure)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
+        'journalStatus': 'unavailable' if journal_failure else 'observed',
+        'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
+
+
+def validate_pending_journal(signs, failure):
+    if failure is None:
+        validate_pending_signs(signs)
+        return
+    if (signs is not None or not isinstance(failure, dict)
+            or set(failure) != {'phase', 'code'}
+            or failure['phase'] != 'pending_journal' or not isinstance(failure['code'], str)
+            or (failure['phase'], failure['code']) not in REFUSAL_CODES):
+        raise ValueError('Pending journal unknown export refused')
 
 
 def validate_pending_signs(signs):
@@ -508,6 +530,14 @@ def pending_stage(stage, read):
     try:
         return read()
     except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if isinstance(error, ScopedRefusal):
+            raise
+        if stage == 'journal':
+            code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired) else
+                    'command_unavailable' if isinstance(error, OSError) else
+                    'json_refused' if isinstance(error, json.JSONDecodeError) else
+                    PENDING_JOURNAL_ERRORS.get(str(error), 'evidence_unavailable'))
+            raise ScopedRefusal('pending_journal', code) from None
         absent = isinstance(error, FileNotFoundError) and stage in {
             'directory', 'request_read', 'recheck_requests'}
         raise ScopedRefusal('pending_' + stage,
@@ -524,12 +554,19 @@ def pending_remote(request, root_fd):
         before = pending_stage('request_read', read)
         pending_stage('request_binding', lambda: pending_metadata(request, *before))
         unit = pending_stage('unit', lambda: pending_unit(request))
-        signs = pending_stage('journal', lambda: pending_journal(request, unit))
+        journal_failure = None
+        try:
+            signs = pending_stage('journal', lambda: pending_journal(request, unit))
+        except ScopedRefusal as error:
+            if error.phase != 'pending_journal':
+                raise
+            signs = None
+            journal_failure = {'phase': error.phase, 'code': error.code}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs)
+        return pending_observation(request, *before, unit, signs, journal_failure)
     finally:
         os.close(directory)
 
@@ -903,7 +940,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -917,7 +954,9 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
-        validate_pending_signs(value['journalSigns'])
+        validate_pending_journal(value['journalSigns'], value['journalFailure'])
+        if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
+            raise ValueError('Pending journal status refused')
         return value
     fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'cause', 'announcedAtMs',
               'freezeAtMs', 'windowEndsAtMs', 'sealedAtMs', 'evidenceBasis', 'emergencyBasisStatus', 'emergencyBasis'}

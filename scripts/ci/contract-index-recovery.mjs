@@ -29,7 +29,7 @@ export const CASH_HASH_FILE =
   '20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql';
 export const CASH_HASH_INDEX = 'public.union_pnl_cash_links_valid_union_hash';
 export const CASH_HASH_FAILED_OID = '275975891';
-export const CASH_HASH_SHA = 'dc7196271facd28499f5b6a56413d0ced4ccc4230fd9a5428a606db00b8dcce9';
+export const CASH_HASH_SHA = '3502c23afe6fe795ecff563e1e3aa7dc0b101c52237921613a59133ca7cb67f1';
 export const CASH_HASH_OLD_DEFINITION =
   "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text))) WHERE (proof_md5 = md5((proof)::text))";
 export function isCashHashRecovery(request) {
@@ -40,7 +40,7 @@ export const CASH_PROOF_HAND_INDEX = 'public.union_pnl_cash_links_valid_proof_ha
 export const CASH_PROOF_HAND_DEFINITION =
   'CREATE INDEX union_pnl_cash_links_valid_proof_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id) INCLUDE (table_id, hand_number) WHERE (proof_md5 = md5((proof)::text))';
 export const CASH_HASH_NEW_DEFINITION =
-  "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text))) WHERE ((game_scope ->> 'game_union_id'::text) IS NOT NULL)";
+  "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text)))";
 export function recoveryRequest(
   file,
   sql,

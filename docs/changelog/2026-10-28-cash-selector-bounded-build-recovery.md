@@ -1,6 +1,6 @@
 # Cash selector bounded build recovery
 
-The original partial HASH build timed out at its 600-second cap while scanning global proof rows. No migration history or financial writes committed. The corrected uninstalled 184144 file builds fixed-size union HASH keys with a cheap non-NULL union-key predicate, preserving the unchanged original linked reader, all four output fields, every proof and identity check, table constraints, source owners and generation.
+The original partial HASH build timed out at its 600-second cap while scanning global proof rows. No migration history or financial writes committed. The corrected uninstalled 184144 file builds fixed-size union HASH keys without a partial predicate, preserving the unchanged original linked reader, all four output fields, every proof and identity check, table constraints, source owners and generation.
 
 Native plans exposed a second cause: the old partial proof-hand index appeared falsely selective and caused a global bitmap scan. The exact observed old index is therefore retired only after the new selector is valid. Its original unique hand-id index and primary key remain. No reader or dependency-chain source is changed; installed 65332 migration bytes/history are preserved as historical installation evidence.
 
@@ -11,3 +11,5 @@ Verification retains the full original bags, natural custom/generic plans and so
 Clean installation binds the selector OID returned by its own successful build. A partial outcome with a valid selector and old proof-hand index still present has a separate explicit retirement-only continuation, bound to the fresh selector OID, exact old OID and same protected file. It performs no CCI and cannot drop the valid selector; dry-run exits before all DDL.
 
 If retirement completed but pure qualification or atomic history failed, fresh exact selector shape/OID, remaining constraints and index inventory admit only the original pure qualification and same-byte atomic history. Old-index absence never triggers a DROP or CCI replay. Both normal and explicit continuation validate this completed physical state; dry-run remains read-only. Native fault cases prove failed qualification, failed history and successful history-only continuation on real PostgreSQL.
+
+A subsequent dominant-scope boundary exposed an unqualified plan in the cheap non-NULL partial candidate: 95%/100% target scopes filtered5700/6000 proofs before a narrow week. The nonpartial selector instead permits natural week-to-unique-hand plans. Maintained 1%,95%,100% cases require at most60 actual proof-bearing rows/lookups for the60-row week, allowing an efficient hand lookup rather than requiring a HASH node. All original reader/owner bytes remain unchanged.

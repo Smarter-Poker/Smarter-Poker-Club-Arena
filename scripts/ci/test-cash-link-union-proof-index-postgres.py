@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PG17 original linked reader, cheap union selector and exact two-index recovery."""
+"""PG17 original linked reader, nonpartial union selector and exact two-index recovery."""
 from pathlib import Path
 import argparse,subprocess,tempfile,os,json,hashlib,socket,time
 R=Path(__file__).resolve().parents[2];FX=R/'scripts/ci/fixtures/cash-link-union-proof-index';M=R/'supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql'
@@ -79,8 +79,8 @@ def main():
     yield n
     for c in n.get('Plans',[]):yield from nodes(c)
    for plan in plans:
-    ns=list(nodes(plan['Plan']));assert any(n.get('Index Name')=='union_pnl_cash_links_valid_union_hash'for n in ns);assert not any(n.get('Node Type')=='Seq Scan'and n.get('Relation Name')=='union_pnl_cash_outcome_link_resolutions'for n in ns);assert not any(n.get('Index Name')=='union_pnl_cash_links_valid_proof_hand'for n in ns)
-   cases+=['original_all4field_60rows_fullbag_unchanged','natural_custom_and_GENERIC_PLAN_union_hash_index_selected','6000_actual_constraints_large_JSON_sources_retained','valid_16KB_payload_and_foreign_union_text_accepted_hash_index']
+    ns=list(nodes(plan['Plan']));assert any(n.get('Index Name')in('union_pnl_cash_links_valid_union_hash','union_pnl_cash_outcome_link_resolutions_hand_id_key')for n in ns);assert not any(n.get('Node Type')=='Seq Scan'and n.get('Relation Name')=='union_pnl_cash_outcome_link_resolutions'for n in ns);assert not any(n.get('Index Name')=='union_pnl_cash_links_valid_proof_hand'for n in ns)
+   cases+=['original_all4field_60rows_fullbag_unchanged','natural_custom_and_generic_union_hash_or_week_hand_lookup','6000_actual_constraints_large_JSON_sources_retained','valid_16KB_payload_and_foreign_union_text_accepted_hash_index']
    seal=q("SELECT jsonb_build_array(md5(pg_get_functiondef('public.fn_union_pnl_linked_cash_outcomes(uuid,timestamptz,timestamptz)'::regprocedure)),smarter_private.original_inventory_proof_sources_match(),smarter_private.original_inventory_basis_generation(),(SELECT count(*)FROM public.union_pnl_cash_outcome_link_resolutions))")
    point_source=q("SELECT md5(to_jsonb(r)::text)FROM public.union_pnl_cash_outcome_link_resolutions r WHERE hand_id=md5('hand100')::uuid")
    hand_plan=json.loads(q("EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)SELECT *FROM public.union_pnl_cash_outcome_link_resolutions WHERE hand_id=md5('hand100')::uuid"))[0];assert any(n.get('Index Name')=='union_pnl_cash_outcome_link_resolutions_hand_id_key'for n in nodes(hand_plan['Plan']));assert point_source;cases.append('original_hand_id_lookup_uses_surviving_unique_constraint_index')
@@ -98,6 +98,31 @@ def main():
     reader.stdin.write(point+';ROLLBACK;\n');reader.stdin.close();second=reader.stdout.readline().strip();reader.wait(timeout=10);assert reader.returncode==0 and first==second and int(q(point))==int(first)+1;cases.append('real_two_backend_RR_snapshot_index_maintained_valid_write')
    finally:
     if reader.poll()is None:reader.kill();reader.wait()
-   result={'qualification':'passed','cases':cases,'case_count':len(cases),'candidate_sha256':hashlib.sha256(M.read_bytes()).hexdigest(),'runner_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'plans':plans,'build_cost':build_cost,'native_oid_mapping':{'only_delta':'two actual fixture index OID constants','production_failed_oid':'275975891','production_retired_oid':'271236984','fixture_observed_oid':observed,'fixture_retired_oid':retire_observed},'limits':(FX/'README.md').read_text()};a.out.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:v for k,v in result.items()if k!='plans'}))
+   # Dominant and sole union scopes must not hash/filter historical proofs
+   # before applying a narrow week. Fresh isolated databases retain original
+   # schemas/reader/candidate; no planner flags or altered proof predicates.
+   boundary_plans=[]
+   query="SELECT r.table_id,r.hand_number,r.game_scope,r.evidence FROM public.union_pnl_cash_outcome_link_resolutions r JOIN public.union_pnl_cash_outcomes o ON o.table_id=r.table_id AND o.hand_number=r.hand_number WHERE r.game_scope->>'game_union_id'=PARAMUNION AND o.recognized_at>=PARAMSTART AND o.recognized_at<PARAMEND AND r.hand_id=o.hand_id AND r.outcome_payload_hash=o.payload_hash AND r.outcome_evidence_md5=md5(o.evidence::text) AND r.proof_md5=md5(r.proof::text)"
+   for pct,threshold in [(1,60),(95,5700),(100,6000)]:
+    db='narrow_week_'+str(pct);q('CREATE DATABASE '+db);env['PGDATABASE']=db
+    narrow=prefix.replace('n%100=0 THEN',('n%100=0 THEN'if pct==1 else'n<='+str(threshold)+' THEN')).replace("'1','2026-10-20',","'1',CASE WHEN n%100=0 THEN '2026-10-20'::timestamptz ELSE '2025-10-20'::timestamptz END,").replace('CREATE ROLE service_role;CREATE ROLE authenticated;CREATE ROLE anon;','')
+    narrow='\n'.join(line for line in narrow.splitlines()if not line.startswith('CREATE TEMP TABLE baseline'))
+    q(narrow);q(statement+';');q('DROP INDEX public.union_pnl_cash_links_valid_proof_hand;VACUUM ANALYZE public.union_pnl_cash_outcome_link_resolutions;')
+    assert q("SELECT md5(pg_get_functiondef('public.fn_union_pnl_linked_cash_outcomes(uuid,timestamptz,timestamptz)'::regprocedure))")=='0c3a826553e9ef65a03030c3ef78eaaf'
+    custom=query.replace('PARAMUNION',"'fade0000-0000-0000-0000-000000000001'::uuid::text").replace('PARAMSTART',"'2026-10-19 07:00Z'::timestamptz").replace('PARAMEND',"'2026-10-26 07:00Z'::timestamptz")
+    generic=query.replace('PARAMUNION','$1::text').replace('PARAMSTART','$2').replace('PARAMEND','$3')
+    actual=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+custom))[0];generic_plan=json.loads(q('EXPLAIN(GENERIC_PLAN TRUE,FORMAT JSON)'+generic))[0]
+    for checked in [actual,generic_plan]:
+     ns=list(nodes(checked['Plan']));link_nodes=[n for n in ns if n.get('Relation Name')=='union_pnl_cash_outcome_link_resolutions'];assert link_nodes and not any(n.get('Node Type')=='Seq Scan'for n in link_nodes);assert not any(n.get('Index Name')=='union_pnl_cash_links_valid_proof_hand'for n in ns)
+     # Every proof-bearing relation scan is either a small selected union or
+     # an inner unique-hand lookup driven by the outcome week. Dominant
+     # unions must always take the latter; full-scope HASH is refused.
+     if pct>=95:
+      assert checked['Plan']['Node Type']=='Nested Loop';outer,inner=checked['Plan']['Plans'];assert outer.get('Relation Name')=='union_pnl_cash_outcomes'and inner.get('Index Name')=='union_pnl_cash_outcome_link_resolutions_hand_id_key'
+    assert actual['Plan']['Actual Rows']==(57 if pct==95 else 60)
+    actual_links=[n for n in nodes(actual['Plan'])if n.get('Relation Name')=='union_pnl_cash_outcome_link_resolutions'];assert all(n['Actual Loops']<=60 and n['Actual Rows']*n['Actual Loops']<=60 for n in actual_links)
+    boundary_plans.append({'synthetic_target_percent':pct,'week_total_rows':60,'actual':actual,'generic':generic_plan,'production_distribution_not_claimed':True});cases.append('narrow_week_'+str(pct)+'pct_custom_generic_proof_work_bounded_to_at_most_60_rows')
+   env['PGDATABASE']='postgres'
+   result={'qualification':'passed','cases':cases,'case_count':len(cases),'candidate_sha256':hashlib.sha256(M.read_bytes()).hexdigest(),'runner_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'plans':plans,'narrow_week_plans':boundary_plans,'build_cost':build_cost,'native_oid_mapping':{'only_delta':'two actual fixture index OID constants','production_failed_oid':'275975891','production_retired_oid':'271236984','fixture_observed_oid':observed,'fixture_retired_oid':retire_observed},'limits':(FX/'README.md').read_text()};a.out.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:v for k,v in result.items()if k!='plans'}))
   finally:subprocess.run([str(pg/'pg_ctl'),'-D',str(data),'-m','fast','-w','stop'],capture_output=True)
 if __name__=='__main__':main()

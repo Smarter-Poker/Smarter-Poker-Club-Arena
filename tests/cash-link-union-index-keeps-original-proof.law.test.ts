@@ -6,13 +6,13 @@ const base = 'scripts/ci/fixtures/cash-link-union-proof-index/';
 const migration =
   'supabase/migrations/20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql';
 describe('cash link union index keeps the original proof', () => {
-  it('stores fixed-width non-null union keys while retaining every original reader proof check', () => {
+  it('stores fixed-width nonpartial union keys while retaining every original reader proof check', () => {
     const sql = readFileSync(migration, 'utf8');
     const shape = migrationTransactionShape(migration.split('/').at(-1), sql);
     expect(shape.ok).toBe(true);
     expect(shape.ok && shape.indexes.length).toBe(1);
     expect(sql).toContain("USING hash((game_scope->>'game_union_id'))");
-    expect(sql).toContain("WHERE game_scope->>'game_union_id' IS NOT NULL");
+    expect(shape.ok && shape.indexes[0].statement).not.toContain('WHERE');
     expect(readFileSync(base + 'original-linked.sql', 'utf8')).toContain(
       'AND r.proof_md5=md5(r.proof::text)'
     );
@@ -46,16 +46,25 @@ describe('cash link union index keeps the original proof', () => {
         .digest('hex')
     ).toBe('0c3a826553e9ef65a03030c3ef78eaaf');
     const evidence = JSON.parse(readFileSync(base + 'qualification-evidence.json', 'utf8'));
-    expect(evidence.case_count).toBe(55);
+    expect(evidence.case_count).toBe(58);
     expect(evidence.qualification).toBe('passed');
     expect(evidence.candidate_sha256).toBe(
       createHash('sha256').update(readFileSync(migration)).digest('hex')
     );
-    expect(evidence.cases).toContain('natural_custom_and_GENERIC_PLAN_union_hash_index_selected');
+    expect(evidence.cases).toContain('natural_custom_and_generic_union_hash_or_week_hand_lookup');
     expect(evidence.cases).toContain(
       'valid_16KB_payload_and_foreign_union_text_accepted_hash_index'
     );
     expect(evidence.cases).toContain('real_two_backend_RR_snapshot_index_maintained_valid_write');
+    expect(
+      evidence.narrow_week_plans.map(
+        (x: { synthetic_target_percent: number }) => x.synthetic_target_percent
+      )
+    ).toEqual([1, 95, 100]);
+    for (const pct of [1, 95, 100])
+      expect(evidence.cases).toContain(
+        'narrow_week_' + pct + 'pct_custom_generic_proof_work_bounded_to_at_most_60_rows'
+      );
     expect(evidence.build_cost.old_global_proof_serializations).toBe(6000);
     expect(evidence.build_cost.new_global_proof_serializations).toBe(0);
     expect(evidence.cases).toContain(

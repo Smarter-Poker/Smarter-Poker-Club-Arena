@@ -212,6 +212,7 @@ ${body}`,
               GITHUB_STEP_SUMMARY: summary,
               GITHUB_OUTPUT: output,
               RUNTIME_RESUMED: 'true',
+              SEAT_MOVE_NOTICE_OUTCOME: 'success',
               LIVE_COVERAGE_COMPLETE: 'true',
               FETCH_REFUSED: String(kind === 'fetch-refused'),
             },
@@ -301,6 +302,7 @@ ${script}`,
               GITHUB_STEP_SUMMARY: summary,
               GITHUB_OUTPUT: output,
               RUNTIME_RESUMED: 'true',
+              SEAT_MOVE_NOTICE_OUTCOME: 'success',
               LIVE_COVERAGE_COMPLETE: complete,
               CLASSIFIER_STATUS: String(status),
               CLASSIFIER_OUTPUT: status === 3 ? `superseded ${'b'.repeat(40)}` : 'certified',
@@ -398,6 +400,7 @@ ${script}`,
             GITHUB_STEP_SUMMARY: summary,
             GITHUB_OUTPUT: output,
             RUNTIME_RESUMED: 'true',
+            SEAT_MOVE_NOTICE_OUTCOME: 'success',
             LIVE_COVERAGE_COMPLETE: 'true',
           },
         }
@@ -668,6 +671,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     );
     expect(tableAlign).toContain('tests/e2e/global-setup.ts');
     expect(tableAlign).toContain('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(tableAlign).toContain('tests/e2e/production-seat-move-announcement.spec.ts');
     expect(tableAlign).toContain('tests/e2e/support');
   });
 
@@ -863,6 +867,7 @@ describe('explicit natural multirun certificate gates its own release verdict', 
             ...process.env,
             EXPECTED_LIVE_SHA: 'a'.repeat(40),
             RUNTIME_RESUMED: 'true',
+            SEAT_MOVE_NOTICE_OUTCOME: 'success',
             LIVE_COVERAGE_COMPLETE: 'true',
             GITHUB_STEP_SUMMARY: summary,
             GITHUB_OUTPUT: output,
@@ -882,4 +887,53 @@ describe('explicit natural multirun certificate gates its own release verdict', 
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe('the served seat-move notice must actually pass before certification', () => {
+  it.each(['failure', 'skipped', 'cancelled', ''])(
+    'refuses notice outcome %s even when all continuity cases passed',
+    (outcome) => {
+      const script = step(TABLE_WORKFLOW, 'Classify the release window this certificate covers')
+        .split('\n        run: |\n')[1]
+        .replace(/^ {10}/gm, '');
+      const dir = mkdtempSync(join(tmpdir(), 'seat-move-proof-verdict-'));
+      const summary = join(dir, 'summary.md');
+      const output = join(dir, 'output.txt');
+      writeFileSync(summary, '');
+      writeFileSync(output, '');
+      try {
+        // Control only external I/O. Without the notice guard this is an
+        // otherwise healthy exact release, so it would wrongly certify.
+        const healthyRelease = `
+          curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+          timeout() { shift; "$@"; }
+          git() { return 0; }
+          node() { cat >/dev/null; printf 'certified'; return 0; }
+          ${script}
+        `;
+        const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-c', healthyRelease], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            EXPECTED_LIVE_SHA: 'a'.repeat(40),
+            RUNTIME_RESUMED: 'true',
+            LIVE_COVERAGE_COMPLETE: 'true',
+            SEAT_MOVE_NOTICE_OUTCOME: outcome,
+            GITHUB_STEP_SUMMARY: summary,
+            GITHUB_OUTPUT: output,
+          },
+        });
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        expect(readFileSync(output, 'utf8')).not.toContain('certified=true');
+        expect(readFileSync(summary, 'utf8')).toContain(
+          'served seat-move notice did not pass its isolated browser proof'
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
 });

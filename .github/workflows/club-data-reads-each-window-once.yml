@@ -11,6 +11,9 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - supabase/migrations/20261029054242_club_data_player_search_matches_player_identities_before_its.sql
+      - scripts/ci/fixtures/agent-data-boundary/data-player-search-contract.py
+      - scripts/ci/test-agent-data-boundary-postgres.py
       - supabase/migrations/20261027145338_club_data_shows_member_earned_fees_from_the_player_managemen.sql
       - supabase/migrations/20261022165130_club_data_and_union_data_read_each_window_once.sql
       - supabase/migrations/20261027002505_legacy_rake_data_authorizes_every_club_separately.sql
@@ -63,3 +66,8 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-club-data-union-mtt-postgres.py
+      - name: Data player search uses authorized identities before its limit
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          AGENT_BOUNDARY_SCRATCH: ${{ runner.temp }}
+        run: python3 scripts/ci/test-agent-data-boundary-postgres.py

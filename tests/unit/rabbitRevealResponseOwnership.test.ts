@@ -30,6 +30,7 @@ function harness() {
   });
   const deps = {
     tableId: 'table-one',
+    rabbitViewerRef: { current: { tableId: 'table-one', userId: 'viewer-one' } as object | null },
     useCallback: (fn: unknown) => fn,
     requestRabbitHunt: vi.fn(() => response),
     rabbitHandNumberRef: { current: 40 as number | null },
@@ -41,7 +42,6 @@ function harness() {
     boardForRabbitReveal,
     canonicalCards,
     retainedRabbitTimerRef: { current: null },
-    rabbitRevealClearTimerRef: { current: null },
     RABBIT_REVEAL_MIN_VISIBLE_MS: 3000,
   };
   const reveal = new Function(...Object.keys(deps), callback + '\nreturn handleRabbitReveal;')(
@@ -76,6 +76,60 @@ describe('a delayed Rabbit Hunt response belongs to the clicked hand', () => {
     expect(deps.setRabbitRevealedCards).not.toHaveBeenCalled();
   });
 
+  it('never paints a paid response into a replacement viewer or closed table', async () => {
+    for (const replacement of [{ tableId: 'table-two', userId: 'viewer-two' }, null]) {
+      const { deps, reveal, finish } = harness();
+      const buying = reveal();
+      deps.rabbitViewerRef.current = replacement;
+      finish();
+      expect((await buying).success).toBe(false);
+      expect(deps.setRetainedRabbitBoard).not.toHaveBeenCalled();
+      expect(deps.setRabbitRevealedCards).not.toHaveBeenCalled();
+    }
+  });
+
+  it('clears the retained and live copies on the same expiry beat', async () => {
+    const { deps, reveal, finish } = harness();
+    const buying = reveal();
+    finish();
+    await buying;
+    deps.setRabbitRevealedCards.mockClear();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(deps.setRetainedRabbitBoard).toHaveBeenLastCalledWith(null);
+    expect(deps.setRabbitRevealedCards).toHaveBeenLastCalledWith([]);
+  });
+
+  it('clears already-visible private cards and timers when the table or account changes', () => {
+    const begin = page.indexOf('  // Private cards and an offer must never survive');
+    const end = page.indexOf('  /**', begin);
+    const effect = ts.transpileModule(page.slice(begin, end), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const deps = {
+      useEffect: (fn: () => unknown, keys: unknown[]) => {
+        expect(keys.slice(0, 2)).toEqual(['replacement-table', 'replacement-user']);
+        return fn();
+      },
+      tableId: 'replacement-table',
+      userId: 'replacement-user',
+      rabbitViewerRef: { current: {} as unknown },
+      rabbitStateViewerRef: { current: {} as unknown },
+      setRabbitRevealedCards: vi.fn(),
+      setRabbitRevealedHandNumber: vi.fn(),
+      setRetainedRabbitBoard: vi.fn(),
+      clearRabbitOffer: vi.fn(),
+      retainedRabbitTimerRef: { current: 1 },
+      rabbitExpiryTimerRef: { current: 2 },
+      clearTimeout: vi.fn(),
+    };
+    new Function(...Object.keys(deps), effect)(...Object.values(deps));
+    expect(deps.setRabbitRevealedCards).toHaveBeenCalledWith([]);
+    expect(deps.setRabbitRevealedHandNumber).toHaveBeenCalledWith(null);
+    expect(deps.setRetainedRabbitBoard).toHaveBeenCalledWith(null);
+    expect(deps.clearRabbitOffer).toHaveBeenCalledWith(true);
+    expect(deps.clearTimeout.mock.calls).toEqual([[1], [2]]);
+  });
+
   it('does not paint late old-hand ghost cards on the new live board', () => {
     const from = page.indexOf('  const liveRabbitCards =');
     const to = page.indexOf(';', from) + 1;
@@ -85,9 +139,11 @@ describe('a delayed Rabbit Hunt response belongs to the clicked hand', () => {
       'retainedRabbitBoard',
       'retainedRabbitCards',
       'tableState',
+      'rabbitViewIsCurrent',
       page.slice(from, to) + '\nreturn liveRabbitCards;'
     );
-    expect(select(ghosts, 40, null, [], { handNumber: 41 })).toEqual([]);
-    expect(select(ghosts, 40, null, [], { handNumber: 40 })).toEqual(ghosts);
+    expect(select(ghosts, 40, null, [], { handNumber: 41 }, true)).toEqual([]);
+    expect(select(ghosts, 40, null, [], { handNumber: 40 }, true)).toEqual(ghosts);
+    expect(select(ghosts, 40, null, [], { handNumber: 40 }, false)).toEqual([]);
   });
 });

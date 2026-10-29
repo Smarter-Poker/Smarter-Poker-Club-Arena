@@ -130,17 +130,16 @@
 }
 
 .rabbit-hunt__button--loading {
-  animation: rabbitPulse 1s ease-in-out infinite;
+  cursor: progress;
+  animation: rabbitPending calc(0.7s * var(--animation-speed, 1)) ease-in-out infinite alternate;
 }
 
-@keyframes rabbitPulse {
-  0%,
-  100% {
-    opacity: 1;
+@keyframes rabbitPending {
+  from {
+    transform: scale(1);
   }
-
-  50% {
-    opacity: 0.6;
+  to {
+    transform: scale(0.96);
   }
 }
 

@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import {
   isUnlimitedTournamentFormat,
   isKnownTournamentFormat,
@@ -747,7 +748,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [view, setView] = useState<View>('all');
+  const [view, setView] = usePlayerPreference<View>('gameManagement.view', 'all');
   // The section is read from the address, never held as a private tab.
   const surface = surfaceFromSection(searchParams.get('section'));
   const [surfaceDirty, setSurfaceDirty] = useState(false);

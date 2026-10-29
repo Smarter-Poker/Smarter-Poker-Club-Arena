@@ -8,6 +8,7 @@ const f = vi.hoisted(() => ({
   toast: vi.fn(),
   page: vi.fn(),
   summary: vi.fn(),
+  period: vi.fn(),
   channel: null as null | {
     onPayload: (payload: unknown) => void;
     restartKey?: number;
@@ -62,7 +63,7 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
   ClubNotFoundError: class extends Error {},
 }));
 vi.mock('../../src/services/ClubRosterService', () => ({
-  default: { getRosterPage: f.page, getSummary: f.summary },
+  default: { getRosterPage: f.page, getSummary: f.summary, getMembersWinLoss: f.period },
 }));
 import ClubMembersPage, {
   MemberRow,
@@ -75,6 +76,8 @@ beforeEach(() => {
   f.searches = [];
   f.page.mockReset();
   f.summary.mockReset();
+  f.period.mockResolvedValue(new Map());
+  localStorage.clear();
   sessionStorage.clear();
   f.summary.mockResolvedValue({
     viewer_role: 'player',
@@ -249,7 +252,48 @@ it('routes Simple agent and role grouping controls through the existing server q
   expect(f.page.mock.calls.at(-1)?.[1].sort).toBe('name');
 });
 
-it('shows the authorized fees generated, never the wallet, and opens the existing management route', async () => {
+it('labels lifetime fee criteria Overall while preserving current-week display and query values', async () => {
+  f.summary.mockResolvedValue({
+    viewer_role: 'owner',
+    capabilities: { can_view_financials: true },
+    counts: { total: 0, online: 0, seated: 0, agents: 0, admins: 0 },
+    page_size: 80,
+  });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(screen.getByRole('combobox', { name: 'Win And Loss Period' })).toHaveValue('week');
+  expect(screen.getByRole('combobox', { name: 'Sort Players' })).toHaveValue('newest');
+  fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+  expect(screen.getByRole('option', { name: 'Overall Fees 100+' })).toHaveValue('high_fees');
+  expect(screen.getByRole('option', { name: 'Most Overall Fees' })).toHaveValue('fees');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter Players' }), {
+    target: { value: 'high_fees' },
+  });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Sort Players' }), {
+    target: { value: 'fees' },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ filter: 'high_fees', sort: 'fees' });
+  expect(screen.getByRole('combobox', { name: 'Win And Loss Period' })).toHaveValue('week');
+  expect(
+    screen.getByText('No Visible Players Have Recorded At Least 100 In Overall Fees.')
+  ).toBeInTheDocument();
+});
+
+it('shows the authorized period fees, never the wallet, and opens the existing management route', async () => {
+  f.period.mockResolvedValue(
+    new Map([['player-1', { cash: 0, mtt: 0, net: 0, fees: 12345, downline_fees: 0 }]])
+  );
   f.page.mockResolvedValue({
     items: [
       {
@@ -290,7 +334,7 @@ it('shows the authorized fees generated, never the wallet, and opens the existin
     await vi.advanceTimersByTimeAsync(110);
   });
   expect(screen.getByText('12,345.00')).toBeInTheDocument();
-  expect(screen.getByText('Fees Generated')).toBeInTheDocument();
+  expect(screen.getByText('Fees This Week')).toBeInTheDocument();
   expect(screen.queryByText('98.7K')).not.toBeInTheDocument();
   expect(screen.queryByText('Player Wallet')).not.toBeInTheDocument();
   expect(screen.getByText(/ID: 3258017/)).toBeInTheDocument();
@@ -553,4 +597,41 @@ it.each([
   expect(amount?.textContent?.trim()).toBe(label);
   expect(amount).toHaveAttribute('aria-label', `Week W/L ${label}`);
   expect(container.querySelector('.member-subline')?.textContent).not.toMatch(/^Player\s/);
+});
+
+it('shows automatic name relevance during search and restores the selected manual order on clear', async () => {
+  f.page.mockResolvedValue({ items: [], has_more: false, next_cursor: null, filtered_total: 0 });
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  const sort = screen.getByRole('combobox', { name: 'Sort Players' });
+  await act(async () => {
+    fireEvent.change(sort, { target: { value: 'oldest' } });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  const search = screen.getByRole('searchbox', { name: 'Search Club Members' });
+  fireEvent.change(search, { target: { value: 'Burls' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(sort).toHaveValue('search');
+  expect(sort).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Player Name Matches' })).toBeInTheDocument();
+  expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ search: 'Burls', sort: 'oldest' });
+  fireEvent.change(search, { target: { value: '' } });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  expect(sort).toHaveValue('oldest');
+  expect(sort).not.toBeDisabled();
+  expect(f.page.mock.calls.at(-1)?.[1]).toMatchObject({ search: '', sort: 'oldest' });
 });

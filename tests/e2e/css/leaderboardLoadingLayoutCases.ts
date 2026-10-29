@@ -8,6 +8,7 @@ export function registerLeaderboardLoadingLayoutCases() {
     test.beforeAll(async () => {
       // Real page, styles, React and router; only external reads and unrelated dialogs are isolated.
       const stubs: Record<string, string> = {
+        usePlayerPreference: `import {useState} from 'react';export const usePlayerPreference=(_name,initial)=>useState(initial);`,
         useAuthUser: `const user={id:'layout-viewer'};export const useAuthUser=()=>({user,isHydrating:false});`,
         useVisibilityRefresh: `export const useVisibilityRefresh=()=>({isRefreshing:false});`,
         ClubsService: `export const getUserMemberships=()=>new Promise(resolve=>{window.releaseMemberships=()=>resolve([1,2,3].map(i=>({club_id:'club-'+i,role:'player',club:{id:'club-'+i,name:'Club '+i,club_id:'10000'+i}})));});`,
@@ -43,7 +44,7 @@ export function registerLeaderboardLoadingLayoutCases() {
               builder.onResolve(
                 {
                   filter:
-                    /(?:useAuthUser|useVisibilityRefresh|ClubsService|LeaderboardService|Toast|MasterBus|errorReporter|LeaderboardPrizeWizard|LeaderboardSettlementCard|PlayerAvatar)$/,
+                    /(?:usePlayerPreference|useAuthUser|useVisibilityRefresh|ClubsService|LeaderboardService|Toast|MasterBus|errorReporter|LeaderboardPrizeWizard|LeaderboardSettlementCard|PlayerAvatar)$/,
                 },
                 (args) => {
                   const name = args.path.split('/').pop()!;
@@ -52,6 +53,7 @@ export function registerLeaderboardLoadingLayoutCases() {
               );
               builder.onLoad({ filter: /.*/, namespace: 'fixture' }, (args) => ({
                 contents: stubs[args.path],
+                resolveDir: process.cwd(),
                 loader: 'js',
               }));
             },

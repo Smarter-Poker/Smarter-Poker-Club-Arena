@@ -430,7 +430,9 @@ describe('cold-return preference proof', () => {
     expect(source).toContain('new AggregateError(failures,');
     expect(source).toContain('if (failures.length === 1) throw failures[0]');
     expect(source).toContain('timeout: 120_000');
-    expect(source).not.toContain('test.setTimeout');
+    expect(source.slice(0, source.indexOf('const preferenceLifecycleTest'))).not.toContain(
+      'test.setTimeout'
+    );
     expect(source).toContain('preferenceDiagnostics.delete(page)');
   });
 });

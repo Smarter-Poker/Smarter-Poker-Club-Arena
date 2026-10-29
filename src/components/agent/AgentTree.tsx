@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -242,7 +243,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
   const [tree, setTree] = useState<AgentNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('agentTree.search', '', clubId);
 
   useEffect(() => {
     loadAgents();

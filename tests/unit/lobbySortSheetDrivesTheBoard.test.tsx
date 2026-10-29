@@ -82,7 +82,9 @@ describe('the Sort The Board chips drive the board', () => {
     press('players', 4);
     press('recommended', 5);
     expect(ids()).toEqual(['low', 'mid', 'high']);
-    expect(localStorage.getItem('ca_lobby_sort_club-x_OMAHA')).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem('ca_player_preference:guest:lobby:headingSort:OMAHA:club-x')!)
+    ).toEqual({ key: '', dir: 'asc', chosen: false });
   });
 
   it('the same chip pressed again after a heading tap still applies', () => {
@@ -99,12 +101,17 @@ describe('the Sort The Board chips drive the board', () => {
 
   it('a chip on ALL clears a heading tapped earlier so the page order shows', () => {
     localStorage.clear();
-    localStorage.setItem('ca_lobby_sort_club-x_ALL', JSON.stringify({ key: 'cost', dir: 'asc' }));
+    localStorage.setItem(
+      'ca_player_preference:guest:lobby:headingSort:ALL:club-x',
+      JSON.stringify({ key: 'cost', dir: 'asc', chosen: true })
+    );
     const { press, ids } = board('ALL');
     expect(ids()).toEqual(['low', 'mid', 'high']);
     press('stakes_high', 1);
     expect(ids()).toEqual(['mid', 'low', 'high']); // the page's own order, as handed in
-    expect(localStorage.getItem('ca_lobby_sort_club-x_ALL')).toBeNull();
+    expect(
+      JSON.parse(localStorage.getItem('ca_player_preference:guest:lobby:headingSort:ALL:club-x')!)
+    ).toEqual({ key: '', dir: 'asc', chosen: false });
   });
 
   it('a heading the player taps is reported so the sheet can light its chip', () => {

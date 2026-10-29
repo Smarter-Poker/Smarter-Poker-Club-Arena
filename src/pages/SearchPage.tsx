@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { getTournamentEntryCapacity } from '../utils/tournamentPresentation';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -37,7 +38,6 @@ import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
-import { STORAGE_KEYS } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { PlayerSearchService, type PlayerSearchResult } from '../services/PlayerSearchService';
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
@@ -363,8 +363,26 @@ export default function SearchPage() {
   const { user } = useAuthUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryFromUrl = searchParams.get('q') || '';
-  const category = getSearchCategory(searchParams.get('type') || searchParams.get('tab'));
-  const [query, setQuery] = useState(queryFromUrl);
+  const [savedCategory, saveCategory] = usePlayerPreference<SearchCategory>(
+    'SearchPage:category',
+    'all'
+  );
+  const category =
+    searchParams.has('type') || searchParams.has('tab')
+      ? getSearchCategory(searchParams.get('type') || searchParams.get('tab'))
+      : savedCategory;
+  const [savedQuery, saveQuery] = usePlayerPreference('SearchPage:query', '');
+  const [urlQuery, setUrlQuery] = useState<string | null>(() =>
+    searchParams.has('q') ? queryFromUrl : null
+  );
+  const query = urlQuery ?? savedQuery;
+  const setQuery = useCallback(
+    (value: string) => {
+      setUrlQuery(value);
+      saveQuery(value);
+    },
+    [saveQuery]
+  );
   const [snapshot, setSnapshot] = useState<SearchSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -376,7 +394,10 @@ export default function SearchPage() {
     tables: 'idle',
     tournaments: 'idle',
   });
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentSearches, setRecentSearches] = usePlayerPreference<string[]>(
+    'SearchPage:recentSearches',
+    []
+  );
   const [friendAdded, setFriendAdded] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const searchRequestIdRef = useRef(0);
@@ -387,8 +408,8 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    setQuery(queryFromUrl);
-  }, [queryFromUrl]);
+    if (searchParams.has('q')) setUrlQuery(queryFromUrl);
+  }, [queryFromUrl, searchParams]);
 
   useEffect(() => {
     const legacyCategory = searchParams.get('tab');
@@ -401,17 +422,6 @@ export default function SearchPage() {
     next.delete('tab');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) setRecentSearches(parsed.filter((v) => typeof v === 'string'));
-    } catch {
-      localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
-    }
-  }, []);
 
   /* The index strip is live before the first keystroke: an empty query is a
      cheap call that returns only the four record counts. */
@@ -441,15 +451,17 @@ export default function SearchPage() {
     [category, searchParams, setSearchParams]
   );
 
-  const rememberSearch = useCallback((value: string) => {
-    const normalized = value.trim();
-    if (normalized.length < 2) return;
-    setRecentSearches((previous) => {
-      const updated = [normalized, ...previous.filter((item) => item !== normalized)].slice(0, 6);
-      localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
+  const rememberSearch = useCallback(
+    (value: string) => {
+      const normalized = value.trim();
+      if (normalized.length < 2) return;
+      setRecentSearches((previous) => {
+        const updated = [normalized, ...previous.filter((item) => item !== normalized)].slice(0, 6);
+        return updated;
+      });
+    },
+    [setRecentSearches]
+  );
 
   const search = useCallback(
     async (searchQuery: string, getIsMounted?: () => boolean) => {
@@ -675,6 +687,7 @@ export default function SearchPage() {
   };
 
   const setScope = (scope: SearchCategory) => {
+    saveCategory(scope);
     updateLocation(query, scope, false);
   };
 
@@ -685,7 +698,6 @@ export default function SearchPage() {
 
   const clearHistory = () => {
     setRecentSearches([]);
-    localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
   };
 
   // ── Derived ────────────────────────────────────────────────────────────

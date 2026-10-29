@@ -407,9 +407,10 @@ export default async function globalSetup(config: FullConfig) {
     // fixture club, which made all eight lobby assertions time out without
     // ever reaching the UI they claim to test. Use the public Join Club flow
     // once and prove the lobby is reachable before sharing this storageState.
-    if (process.env.E2E_NEW_CLUB_CERT === '1') {
+    if (process.env.E2E_NEW_CLUB_CERT === '1' || process.env.E2E_STATS_PAGINATION_PROOF === '1') {
       // The Create A Club production certificate must begin with a genuinely
-      // empty account. Joining the shared fixture here would prove creation for
+      // empty account. The fixed Stats pagination proof also needs no shared membership.
+      // Joining the shared fixture here would prove creation for
       // an existing member, not the first-run promise the certificate owns.
       console.log('[global-setup] preserving the isolated account with zero club memberships.');
     } else {

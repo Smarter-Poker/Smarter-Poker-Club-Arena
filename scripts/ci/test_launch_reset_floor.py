@@ -155,6 +155,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The real certificate CHECK accepts the per-club quality key written by R4.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-statement-certificate-kind-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-statement-certificate-kind'))], text=True))
 
+# Fee source identities retain exact full FOR bags through the narrow UUID cover.
+# The existing scoped-launch artifact retains this fail-closed native receipt.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-source-identity-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-source-identity-cover.json'))], text=True))
+
 # Statement validation retains all original checks while reading indexed event owners.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-statement-indexed-quality-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-statement-indexed-quality.json"))], text=True))
 
@@ -213,3 +217,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original tournament membership keeps raw Union equality in its physical key.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-membership-union-key-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-membership-union-key.json'))], text=True))
+
+# Original shaped cash keeps its exact Boolean evidence gate in a fixed-width physical key.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-boolgate-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-boolgate.json'))], text=True))

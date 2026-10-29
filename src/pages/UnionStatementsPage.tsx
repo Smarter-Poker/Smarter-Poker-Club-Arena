@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * UNION STATEMENTS
  * ============================================================================
@@ -198,11 +199,17 @@ export default function UnionStatementsPage() {
   const activeRouteRef = useRef(routeIdentity);
   activeRouteRef.current = routeIdentity;
 
+  const [savedPeriod, setSavedPeriod] = usePlayerPreference<string | null>(
+    'unionStatements.period',
+    null,
+    unionId ?? unionRef
+  );
   const [periodSelection, setPeriodSelection] = useState<{
     owner: string;
     value: string | null;
-  }>({ owner: routeIdentity, value: null });
-  const period = periodSelection.owner === routeIdentity ? periodSelection.value : null;
+  }>({ owner: '', value: null });
+  // Issuing a new statement may temporarily show latest; only a period-chip gesture changes the saved preference.
+  const period = periodSelection.owner === routeIdentity ? periodSelection.value : savedPeriod;
   const boardScopeKey = `${routeIdentity}:${period ?? 'latest'}`;
   const lastBoardScopeRef = useRef(boardScopeKey);
   const boardScopeVersionRef = useRef(0);
@@ -790,7 +797,10 @@ export default function UnionStatementsPage() {
                   role="tab"
                   aria-selected={board.period_end === h.period_end}
                   className={`${styles.chip} ${board.period_end === h.period_end ? styles.active : ''}`}
-                  onClick={() => setPeriodSelection({ owner: routeIdentity, value: h.period_end })}
+                  onClick={() => {
+                    setSavedPeriod(h.period_end);
+                    setPeriodSelection({ owner: routeIdentity, value: h.period_end });
+                  }}
                 >
                   {h.period_end}
                 </button>

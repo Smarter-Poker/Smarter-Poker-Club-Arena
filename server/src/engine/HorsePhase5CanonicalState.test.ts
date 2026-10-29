@@ -177,6 +177,9 @@ describe('Phase 5 canonical legality boundary', () => {
   it.each(['call', 'all_in'])('rejects a cap-breaking %s before chips move', (action) => {
     const performAction = vi.fn();
     const engine = Object.create(ServerTableEngineTurns.prototype) as any;
+    // This cap oracle models a fresh engine, not pending original custody.
+    engine.pendingOriginalContinuation = null;
+    engine.handContinuation = null;
     engine.handController = {
       getState: () => ({
         currentPlayerSeat: 1,

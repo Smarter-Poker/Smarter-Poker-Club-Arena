@@ -40,9 +40,11 @@ vi.mock('../../src/lib/analytics', () => ({
   capture: (...args: unknown[]) => capture(...args),
 }));
 
+import { pendingAppearanceIntents } from '../../src/lib/appearanceIntentJournal';
 import { applyTableAppearance } from '../../src/lib/applyTableAppearance';
 
 beforeEach(() => {
+  localStorage.clear();
   emit.mockClear();
   capture.mockClear();
   rpc.mockReset();
@@ -260,7 +262,7 @@ describe('a rejected write puts the felt back', () => {
     expect(emitsOf('UI_THEME_CHANGED')).toHaveLength(1);
   });
 
-  it('turns exhausted network retries into a stale-safe rollback result', async () => {
+  it('keeps the chosen appearance and original request after exhausted network retries', async () => {
     rpc.mockRejectedValue(new Error('network down'));
     const result = await applyTableAppearance(
       { background_id: 'vegas' },
@@ -270,10 +272,11 @@ describe('a rejected write puts the felt back', () => {
     expect(result.ok).toBe(false);
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc.mock.calls[0][1].p_mutation_id).toBe(rpc.mock.calls[1][1].p_mutation_id);
-    expect(result.reverted).toEqual({ background_id: 'midnight' });
+    expect(result.reverted).toBeUndefined();
+    expect(pendingAppearanceIntents('u1')[0].mutationId).toBe(rpc.mock.calls[0][1].p_mutation_id);
     expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
       key: 'ALL',
-      value: { background_id: 'midnight' },
+      value: { background_id: 'vegas' },
     });
   });
 
@@ -299,9 +302,10 @@ describe('a rejected write puts the felt back', () => {
 
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc.mock.calls[0][1].p_mutation_id).toBe(rpc.mock.calls[1][1].p_mutation_id);
-    expect(result).toMatchObject({ ok: false, reverted: { table_id: 'durable' } });
+    expect(result).toMatchObject({ ok: false });
+    expect(result.reverted).toBeUndefined();
     expect(emitsOf('UI_THEME_CHANGED').at(-1)).toMatchObject({
-      value: { table_id: 'durable' },
+      value: { table_id: 'hung' },
     });
   });
 
@@ -348,4 +352,20 @@ describe('signed out', () => {
     expect(rpc).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
   });
+});
+
+it('a newer successful choice retires older interrupted fields without losing other chosen fields', async () => {
+  rpc.mockRejectedValue(new Error('network down'));
+  await applyTableAppearance(
+    { table_id: 'jade_city', background_id: 'vegas' },
+    { userId: 'superseded-user' }
+  );
+  expect(pendingAppearanceIntents('superseded-user')).toHaveLength(1);
+  rpc.mockResolvedValue({ error: null });
+  await applyTableAppearance({ table_id: 'neon_city' }, { userId: 'superseded-user' });
+  expect(rpc.mock.calls.at(-1)?.[1].p_patch).toEqual({
+    table_id: 'neon_city',
+    background_id: 'vegas',
+  });
+  expect(pendingAppearanceIntents('superseded-user')).toEqual([]);
 });

@@ -53,7 +53,7 @@ echo 'DATA_CONSOLE_POSTGRES PASS Club Data Report'
 
 # Player Record: funded-club attribution and private event delivery.
 echo 'DATA_CONSOLE_POSTGRES RUN Member Record'
-bash "$repo/scripts/dev/test-member-record-live-postgres.sh"
+bash "$repo/scripts/ci/test-private-record-hosting.sh"
 echo 'DATA_CONSOLE_POSTGRES PASS Member Record'
 
 # A redeemed fee total must reach Member Record and Player Statistics together.
@@ -85,6 +85,8 @@ PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-club-data-union-mtt-postgres.py"
 
+# Player-selected filters never expire or cross account ownership.
+bash "$repo/scripts/dev/test-player-preferences-postgres.sh"
 # Personal earned-fee headline and standing share parity with Player Management.
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \

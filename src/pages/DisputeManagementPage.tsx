@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DISPUTE MANAGEMENT PAGE — Club Owner/Admin Dispute Dashboard
@@ -76,7 +77,10 @@ export default function DisputeManagementPage() {
     loading: true,
     loadError: false,
   });
-  const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [activeTab, setActiveTab] = usePlayerPreference<FilterTab>(
+    'DisputeManagementPage:activeTab',
+    'all'
+  );
   const [resolving, setResolving] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [escalating, setEscalating] = useState<string | null>(null);
@@ -85,7 +89,10 @@ export default function DisputeManagementPage() {
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit' | 'none'>('none');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePlayerPreference(
+    'DisputeManagementPage:searchQuery',
+    ''
+  );
   const isMounted = useIsMounted();
   const requestVersionRef = useRef(0);
   const inFlightRef = useRef<{ scope: string; requestId: number } | null>(null);
@@ -101,7 +108,6 @@ export default function DisputeManagementPage() {
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
-    setActiveTab('all');
     setResolving(null);
     setReviewing(null);
     setEscalating(null);
@@ -110,7 +116,6 @@ export default function DisputeManagementPage() {
     setAdjustmentAmount('');
     setAdjustmentType('none');
     setExpandedId(null);
-    setSearchQuery('');
     setRequestState({ scope: scopeKey, loading: true, loadError: false });
   }, [scopeKey]);
 

@@ -17,6 +17,7 @@ import { soundService } from '../services/SoundService';
 import { isSoundAllowed } from '../utils/soundGate';
 import { setVibrationAllowed, isVibrationPreferred } from '../utils/vibrationGate';
 import { setTableSetting } from './useTableSettings';
+import { usePlayerPreference } from './usePlayerPreference';
 
 export interface UseTableSoundReturn {
   /** Whether sound effects are active. Read this for UI toggle state. */
@@ -45,7 +46,6 @@ const STORAGE_SOUND = 'ca_sound_enabled';
 /* `STORAGE_VIBRATION` is gone with the last hand-rolled read of it: the haptic
    switch both reads and writes through `utils/vibrationGate`, which owns that
    key and its sibling. */
-const STORAGE_AUTO_REBUY = 'ca_auto_rebuy';
 
 /* `readBool` and `SETTINGS_VIBRATION` lived here until 2026-08-29. Both were
    this file's own copy of what `utils/soundGate` and `utils/vibrationGate`
@@ -93,13 +93,11 @@ export function useTableSound(): UseTableSoundReturn {
   const [isVibrationEnabled, setIsVibrationEnabledRaw] = useState<boolean>(() =>
     isVibrationPreferred()
   );
-  const [isAutoRebuyEnabled, setIsAutoRebuyEnabledRaw] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_AUTO_REBUY) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [isAutoRebuyEnabled, setIsAutoRebuyEnabled] = usePlayerPreference(
+    'table:autoRebuyEnabled',
+    false,
+    'global'
+  );
 
   // Persist to localStorage whenever values change
   useEffect(() => {
@@ -120,14 +118,6 @@ export function useTableSound(): UseTableSoundReturn {
   useEffect(() => {
     setVibrationAllowed(isVibrationEnabled);
   }, [isVibrationEnabled]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_AUTO_REBUY, String(isAutoRebuyEnabled));
-    } catch {
-      /* unavailable */
-    }
-  }, [isAutoRebuyEnabled]);
 
   // Mount-only sync: align soundService singleton with the stored preference.
   // SOUND AUDIT 2026-08-27: two fixes here.
@@ -174,8 +164,6 @@ export function useTableSound(): UseTableSoundReturn {
     // The persist effect ABOVE writes the gate; this is the store half.
     setTableSetting('isHapticEnabled', v);
   };
-
-  const setIsAutoRebuyEnabled = setIsAutoRebuyEnabledRaw;
 
   // NEW-BUG-1 FIX: use dynamic isEnabled() not stale closure
   const playTurnAlert = () => {

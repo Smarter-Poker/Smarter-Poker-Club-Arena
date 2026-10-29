@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  STATS EXPORT — Download Club / Player Statistics
@@ -56,9 +57,17 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const { user } = useAuthUser();
   const toast = useToast();
 
-  const [format, setFormat] = useState<'csv' | 'json'>('csv');
+  const [format, setFormat] = usePlayerPreference<'csv' | 'json'>(
+    'statsExport.format',
+    'csv',
+    clubId
+  );
   const [dataset, setDataset] = useState<Dataset>(clubId ? 'members' : 'hands');
-  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+  const [dateRange, setDateRange] = usePlayerPreference<'7d' | '30d' | '90d' | 'all'>(
+    'statsExport.dateRange',
+    '30d',
+    clubId
+  );
   const [exporting, setExporting] = useState(false);
   /** Set by fetchOwnHands when the club had more tables than one scan covers. */
   const handScopeWasClipped = useRef(false);

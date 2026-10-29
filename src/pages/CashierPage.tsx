@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { useRecentRecipients } from '../hooks/useRecentRecipients';
 import { formatCashierAmountInput, cashierAmountInputValue } from '../utils/cashierAmount';
 import {
@@ -561,7 +562,7 @@ function CashierContent() {
     };
   }, [user?.id, clubId, clubChipsNonce]);
 
-  const [txFilter, setTxFilter] = useState('all');
+  const [txFilter, setTxFilter] = usePlayerPreference('CashierPage:txFilter', 'all');
   const [txPage, setTxPage] = useState(1);
   const TX_PAGE_SIZE = 25;
 
@@ -599,7 +600,6 @@ function CashierContent() {
     setIsInUnion(false);
     setIsUnionOwner(false);
     setSelectedRecipient('');
-    setTxFilter('all');
     setPendingCashouts([]);
     recipientsCacheRef.current = null;
     setTxPage(1);

@@ -1,0 +1,5 @@
+{
+  "_owner": "Player preferences persistence, migration 20261027173138. New account-owned page filters; installation and live proof recorded in CHECKPOINT-player-preferences.md.",
+  "tables": ["user_page_preferences"],
+  "columns": { "user_page_preferences": ["user_id", "preference_key", "value"] }
+}

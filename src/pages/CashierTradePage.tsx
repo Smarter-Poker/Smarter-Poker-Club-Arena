@@ -1,3 +1,4 @@
+import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import {
   SEND_SOURCE_LABELS,
   SEND_DESTINATION_LABELS,
@@ -590,31 +591,49 @@ function CashierTradeWorkspace() {
   /** Claim Back list guard (launch audit 2026-10-09, P-03): bumped with the rest. */
   const reversibleSeqRef = useRef(0);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePlayerPreference('CashierTradePage:search', '');
   const rosterSearchRef = useRef<HTMLInputElement>(null);
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [groupByRole, setGroupByRole] = useState(false);
-  const [sortKey, setSortKey] = useState<'recent' | 'balance' | 'name'>('recent');
+  const [roleFilter, setRoleFilter] = usePlayerPreference('CashierTradePage:roleFilter', 'all');
+  const [groupByRole, setGroupByRole] = usePlayerPreference('CashierTradePage:groupByRole', false);
+  const [sortKey, setSortKey] = usePlayerPreference<'recent' | 'balance' | 'name'>(
+    'CashierTradePage:sortKey',
+    'recent'
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(25);
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
-  const [recordQuery, setRecordQuery] = useState('');
-  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
+  const [recordQuery, setRecordQuery] = usePlayerPreference('CashierTradePage:recordQuery', '');
+  const [recordDirection, setRecordDirection] = usePlayerPreference<'all' | 'in' | 'out'>(
+    'CashierTradePage:recordDirection',
+    'all'
+  );
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsLoadingMore, setRecordsLoadingMore] = useState(false);
   /** The search the server runs: a name or an invoice number, debounced. */
   const [historySearch, setHistorySearch] = useState('');
   /** One player inside an agent's downline, or null for the whole book. */
-  const [historyPerson, setHistoryPerson] = useState<string | null>(null);
+  const [historyPerson, setHistoryPerson] = usePlayerPreference<string | null>(
+    'CashierTradePage:historyPerson',
+    null
+  );
   const [recordsReload, setRecordsReload] = useState(0);
   /* TRANSACTION HISTORY (Dan 2026-10-24): owners, co-owners and admins choose
      between every transaction in the club and their own; every other role
      reads only its own. The server enforces the same rule
      (fn_cashier_history_page), so this is a choice, never a grant. */
-  const [historyScope, setHistoryScope] = useState<HistoryBook>('club');
-  const [historyKind, setHistoryKind] = useState<HistoryKind>('all');
-  const [historyRange, setHistoryRange] = useState<HistoryRange>('today');
+  const [historyScope, setHistoryScope] = usePlayerPreference<HistoryBook>(
+    'CashierTradePage:historyScope',
+    'club'
+  );
+  const [historyKind, setHistoryKind] = usePlayerPreference<HistoryKind>(
+    'CashierTradePage:historyKind',
+    'all'
+  );
+  const [historyRange, setHistoryRange] = usePlayerPreference<HistoryRange>(
+    'CashierTradePage:historyRange',
+    'today'
+  );
   const [historyTotals, setHistoryTotals] = useState<HistorySummary | null>(null);
   const [historyTotalsState, setHistoryTotalsState] = useState<'loading' | 'ready' | 'unavailable'>(
     'loading'
@@ -1474,11 +1493,6 @@ function CashierTradeWorkspace() {
     // to a club where you have no assigned players left the filter stuck ON
     // with the only control that clears it greyed out - reload was the way out.
     setMineOnly(false);
-    setRoleFilter('all');
-    setRecordQuery('');
-    setRecordDirection('all');
-    setHistorySearch('');
-    setHistoryPerson(null);
     setRecordsHasMore(false);
     setRequests([]);
     setRequestsError(null);

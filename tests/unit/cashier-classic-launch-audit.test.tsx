@@ -699,10 +699,14 @@ describe('Cashier Classic launch audit', () => {
     await waitFor(() => expect(sendCalls()).toHaveLength(1));
     const original = sendCalls()[0][1];
     await screen.findByText('The Cashier Refused That Send');
-    const journal = localStorage.getItem(localStorage.key(0)!);
+    const journalKey = Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.key(index)!
+    ).find((key) => key.startsWith('smarter-poker:cashier-wallet-intent:v1'))!;
+    const journal = localStorage.getItem(journalKey);
     expect(journal).toContain(original.p_op_id);
     fireEvent.change(document.getElementById('cashier-send-amount')!, { target: { value: '30' } });
-    expect(localStorage.getItem(localStorage.key(0)!)).toBe(journal);
+    expect(localStorage.getItem(journalKey)).toBe(journal);
     cleanup();
     nowMs += 20_000;
     await sendTabWith('25');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   mkdirSync,
@@ -433,6 +433,66 @@ describe('the exact downline journey is pinned at its own start', () => {
     expect(execute(block, 3)).toContain('after:1111111111111111111111111111111111111111:0:unset');
     expect(execute(block, 1)).toContain('seen:1111111111111111111111111111111111111111:UNKNOWN');
     expect(execute(block, 1)).toContain('after:1111111111111111111111111111111111111111:1:unset');
+  });
+
+  it('qualifies the dedicated journey after its fresh LIVE_SHA and passes only that qualified pin to the one case', () => {
+    const workflow = parse(readFileSync('.github/workflows/post-deploy-e2e.yml', 'utf8'));
+    const job = workflow.jobs['stats-pagination-proof'];
+    const pin = job.steps.findIndex((step: any) => step.id === 'pin');
+    const qualified = job.steps.findIndex((step: any) => step.id === 'journey_pin');
+    const proof = job.steps.findIndex((step: any) => step.id === 'proof');
+    expect(qualified).toBeGreaterThan(pin);
+    expect(qualified).toBeLessThan(proof);
+    const directory = mkdtempSync(join(tmpdir(), 'downline-dedicated-wiring-'));
+    const environmentFile = join(directory, 'github-env');
+    const expected = '1'.repeat(40);
+    const execute = (returned: string, exit = 0) => {
+      writeFileSync(environmentFile, '');
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `
+        node() {
+          [ "$1" = scripts/ci/downline-journey-pin.mjs ] || return 99
+          printf '%s\\n' '${returned}'
+          return ${exit}
+        }
+        ${job.steps[qualified].run}
+      `,
+        ],
+        {
+          env: { ...process.env, LIVE_SHA: expected, GITHUB_ENV: environmentFile },
+          encoding: 'utf8',
+        }
+      );
+      return { status: result.status, written: readFileSync(environmentFile, 'utf8') };
+    };
+    try {
+      // The existing pin step alone sets LIVE_SHA. The case reads the separate
+      // journey variable, so this actual old route could not execute its proof.
+      expect(job.steps[pin].run).not.toContain('DOWNLINE_JOURNEY_SHA=');
+      expect(execute(expected)).toEqual({
+        status: 0,
+        written: `DOWNLINE_JOURNEY_SHA=${expected}\n`,
+      });
+      for (const [returned, exit] of [
+        [expected, 3],
+        [expected, 1],
+        ['UNKNOWN', 0],
+        ['2'.repeat(40), 0],
+      ] as const) {
+        const result = execute(returned, exit);
+        expect(result.status).not.toBe(0);
+        expect(result.written).toBe('');
+      }
+      expect(job.steps[qualified].run).not.toMatch(/(?:^|\n)\s*(?:export )?LIVE_SHA=/);
+      const artifact = job.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
+      expect(artifact.with.path).toContain('e2e-report/downline-journey-pin.json');
+      expect(job.steps[proof].run).toContain('--workers=1 --retries=0');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('wires only the seventh journey pin and both-origin brackets without changing the job pin', () => {

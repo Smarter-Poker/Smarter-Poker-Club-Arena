@@ -43,7 +43,7 @@ describe('superseded action retention progress remains enforced', () => {
         '-B',
         '-c',
         `
-import sys, pathlib, subprocess
+import sys, pathlib, subprocess, tempfile
 from unittest.mock import patch
 sys.path.insert(0, 'scripts/ci')
 from satellite_qualifier_fixture import module
@@ -55,13 +55,18 @@ with patch.object(owner.subprocess, 'run') as run:
     assert command[1].endswith('/scripts/ci/test-superseded-retention-progress.py')
     assert command[2:] == ['--pg-bin', '/native/pg17', '--evidence', '/evidence/actions/retention-progress']
     assert run.call_args.kwargs == {'check': True}
-with patch.object(owner.subprocess, 'run', side_effect=subprocess.CalledProcessError(7, ['child'])):
-    try:
-        owner.run_retention_progress(pathlib.Path('/native/pg17'), pathlib.Path('/evidence/actions'))
-    except subprocess.CalledProcessError as error:
-        assert error.returncode == 7
-    else:
-        raise AssertionError('Child failure was swallowed')
+with tempfile.TemporaryDirectory(prefix='retention-child-contract-', dir=pathlib.Path.cwd()) as scratch:
+    root = pathlib.Path(scratch)
+    child = root / 'scripts/ci/test-superseded-retention-progress.py'
+    child.parent.mkdir(parents=True)
+    child.write_text("import sys; assert sys.argv[1:] == ['--pg-bin', '/native/pg17', '--evidence', '/evidence/actions/retention-progress']; sys.exit(7)")
+    with patch.object(owner, 'ROOT', root):
+        try:
+            owner.run_retention_progress(pathlib.Path('/native/pg17'), pathlib.Path('/evidence/actions'))
+        except subprocess.CalledProcessError as error:
+            assert error.returncode == 7
+        else:
+            raise AssertionError('Child failure was swallowed')
 `,
       ],
       { stdio: 'pipe' }

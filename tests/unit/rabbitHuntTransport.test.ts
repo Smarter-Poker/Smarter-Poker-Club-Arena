@@ -64,7 +64,10 @@ describe('the connected Rabbit Hunt transport', () => {
   it('does not carry old private results into a different login', async () => {
     fetchMock.mockResolvedValue({ status: 200, json: async () => response });
     await requestRabbitHunt('t', 42);
+    const priorSession = localStorage.getItem('smarter-poker-auth')!;
     localStorage.removeItem('smarter-poker-auth');
+    expect(await readRabbitHuntReceipt('t', 42)).toBeNull();
+    localStorage.setItem('smarter-poker-auth', priorSession);
     expect(await readRabbitHuntReceipt('t', 42)).toBeNull();
   });
 });

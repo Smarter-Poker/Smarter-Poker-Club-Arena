@@ -573,3 +573,6 @@ export type HorseDecisionWorkerResponse =
   | HorseDecisionWorkerCancelled
   | HorseDecisionWorkerError
   | { type: 'STOPPED' };
+
+/** Administrative control is separate from fenced action/FIFO request types. */
+export type { V31ControlRequest, V31ControlAck } from './v31ReloadControl.js';

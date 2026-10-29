@@ -8,6 +8,10 @@ on:
       - .github/workflows/gto-v31-qualification.yml
       - scripts/ci/gto-v31-qualification.mjs
       - scripts/ci/gto-v31-qualification.test.mjs
+      - server/scripts/*evaluation-worker*.mjs
+      - server/scripts/gto-v31-evaluate-worker.mjs
+      - server/scripts/build-public-hist215-native.mjs
+      - server/native/**
   workflow_dispatch:
     inputs:
       dataset:
@@ -65,6 +69,9 @@ jobs:
       - name: Install only the locked evaluator dependencies
         working-directory: runtime/server
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build the receiving-platform exact public-state kernel
+        working-directory: runtime/server
+        run: node scripts/build-public-hist215-native.mjs
       - name: Run the existing source-pinned evaluator once
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

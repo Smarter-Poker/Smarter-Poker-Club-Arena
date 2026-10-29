@@ -19,6 +19,8 @@ export const EXPECTED = Object.freeze({
   'public.fn_ca_prepare_unused_welcome_certification_board_origins(uuid)':
     '8bf604a9e6ea826412234d552e83e2a9',
 });
+// Derived from the exact migration in the isolated PostgreSQL fixture.
+export const HELPER_HASH = 'be823a508db58c1c54158f106cc677be';
 export const WAIT_MS = 12 * 60_000;
 export const POLL_MS = 15_000;
 export const PROOF_SQL = `SELECT
@@ -26,6 +28,7 @@ export const PROOF_SQL = `SELECT
      FROM supabase_migrations.schema_migrations WHERE version=$1 OR name=$2) AS history,
   (SELECT jsonb_object_agg(signature, md5(pg_get_functiondef(to_regprocedure(signature))))
      FROM unnest($3::text[]) AS signatures(signature)) AS definitions,
+  md5(pg_get_functiondef(to_regprocedure('smarter_private.certification_club_admission(uuid)'))) AS helper_hash,
   EXISTS (SELECT 1 FROM pg_proc p
     WHERE p.oid=to_regprocedure('smarter_private.certification_club_admission(uuid)')
       AND NOT EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
@@ -52,6 +55,7 @@ export function classifyProof(row) {
     if (row.definitions[signature] !== hash)
       throw new Error(`Cleanup function identity differs: ${signature}`);
   }
+  if (row.helper_hash !== HELPER_HASH) throw new Error('Cleanup admission helper identity differs');
   if (row.helper_owner_only !== true)
     throw new Error('Cleanup admission helper is missing or grants non-owner access');
   return 'ready';
@@ -128,6 +132,7 @@ export function safeFailure(error) {
     'Cleanup migration history identity differs',
     'Cleanup function catalog is incomplete',
     'Cleanup admission helper is missing or grants non-owner access',
+    'Cleanup admission helper identity differs',
     'Cleanup catalog connection became unreadable',
     'Cleanup catalog proof must return exactly one row',
     'Scoped certification cleanup was not proven within the 12-minute prerequisite budget; no fixture admitted',

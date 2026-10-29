@@ -33,6 +33,7 @@ import {
   classifyProof,
   connectionConfig,
   EXPECTED,
+  HELPER_HASH,
   NAME,
   POLL_MS,
   PROOF_SQL,
@@ -44,6 +45,7 @@ const installed = () => ({
   history: [{ version: VERSION, name: NAME }],
   definitions: { ...EXPECTED },
   helper_owner_only: true,
+  helper_hash: HELPER_HASH,
 });
 
 describe('catalog proof admits no unsafe fixture', () => {
@@ -259,3 +261,10 @@ it('rolls back a PostgreSQL statement timeout before any next catalog read', asy
   await expect(readProof(client)).rejects.toThrow(/statement timeout/);
   expect(calls).toEqual(['BEGIN TRANSACTION READ ONLY', PROOF_SQL, 'ROLLBACK']);
 });
+
+it.each([null, undefined, 'wrong'])(
+  'refuses admission helper body drift even with owner-only ACL %j',
+  (helper_hash) => {
+    expect(() => classifyProof({ ...installed(), helper_hash })).toThrow(/helper identity differs/);
+  }
+);

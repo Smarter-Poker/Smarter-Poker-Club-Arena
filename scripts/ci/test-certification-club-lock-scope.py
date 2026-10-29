@@ -177,6 +177,14 @@ try {
         readiness('non-owner access')
         sql('REVOKE ALL ON FUNCTION smarter_private.certification_club_admission(uuid) FROM ' + role + ';')
     readiness('ready')
+    helper_sig = 'smarter_private.certification_club_admission(uuid)'
+    helper_definition = sql(f"SELECT pg_get_functiondef('{helper_sig}'::regprocedure);").stdout
+    helper_hash = sql(f"SELECT md5(pg_get_functiondef('{helper_sig}'::regprocedure));").stdout.strip()
+    (OUT / 'helper-function-hash.json').write_text(json.dumps({'signature':helper_sig,'md5':helper_hash}) + '\n')
+    sql(f"ALTER FUNCTION {helper_sig} SET statement_timeout='3s';")
+    readiness('helper identity differs')
+    sql(helper_definition)
+    readiness('ready')
     passed = True
 finally:
     for thread in threads:

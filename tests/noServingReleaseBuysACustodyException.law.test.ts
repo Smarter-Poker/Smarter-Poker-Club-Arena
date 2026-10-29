@@ -80,7 +80,7 @@ function inflightHelper(rc: number): string {
   const path = join(dir, 'engine-release-inflight-hands.py');
   writeFileSync(
     path,
-    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+    `#!/bin/sh\nif [ "\${3:-}" = --weekly-payout-only ]; then echo database-proves-no-weekly-owner; exit 0; fi\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
   );
   chmodSync(path, 0o755);
   return path;

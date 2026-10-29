@@ -55,6 +55,8 @@ function runCertificate({
     [
       '-c',
       `set -u
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"

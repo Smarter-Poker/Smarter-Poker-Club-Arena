@@ -177,6 +177,11 @@ mapfile() {
         ].join('\n')}\n`
       );
       writeFileSync(join(sandbox, 'engine.env'), 'DATABASE_URL=test-only\n');
+      writeFileSync(
+        join(generation, 'engine-release-inflight-hands.py'),
+        '#!/bin/sh\n[ "${3:-}" = --weekly-payout-only ] || exit 3\necho database-proves-no-weekly-owner\n'
+      );
+      chmodSync(join(generation, 'engine-release-inflight-hands.py'), 0o755);
 
       writeFileSync(
         join(generation, 'engine-release-seal.py'),

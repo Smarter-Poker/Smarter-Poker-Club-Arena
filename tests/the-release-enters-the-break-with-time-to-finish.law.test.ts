@@ -131,6 +131,8 @@ function admit(remainingMs: number, headroomMs: number) {
     [
       '-c',
       `set -euo pipefail
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${countdown}
@@ -504,6 +506,8 @@ function certificate(remainingMs: number, minimum?: number) {
     [
       '-c',
       `set -u
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}

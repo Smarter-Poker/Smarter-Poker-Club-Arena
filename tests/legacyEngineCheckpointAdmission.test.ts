@@ -47,6 +47,8 @@ function probe(patch: Record<string, unknown> = {}, httpStatus = 200) {
     [
       '-c',
       `set -euo pipefail
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() { printf '%s\\n%s' "$CHECKPOINT_TEST_BODY" "$CHECKPOINT_TEST_HTTP"; }
 ${countdown}

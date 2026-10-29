@@ -3877,7 +3877,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // check synchronously: no await may separate held=false from start.
         for (;;) {
           if (!(await this.weeklyHandPause.checkpoint())) return;
-          if (!this.weeklyHandPause.held()) break;
+          if (this.weeklyHandPause.held()) continue;
+          if (this.isHandForHandReleaseBlocked() || this.handForHandPaused) {
+            // Keep the retained prepared controller at the same existing
+            // physical owner gate. Polled floor/admin/Cluster locks are not
+            // routed here: this gate does not own their read/wait protocol.
+            await this.awaitPauseGate();
+            if (!this.running || !this.isCurrentEngine() || !this.lifecycleCanMutate()) return;
+            continue;
+          }
+          break;
         }
       }
       if (
@@ -3889,6 +3898,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         return;
       }
       if (!original && this.discardPreparedHandForPause()) return;
+      if (
+        original &&
+        JSON.parse(preparedController.serializeRecoveryState()).handStarted === false &&
+        this.isNextHandPaused()
+      ) {
+        // Polled holds keep their existing read/wait owner. A prepared
+        // retained original (fresh or claimed) cannot bypass them or become
+        // an ordinary local cancellation; fence for canonical custody.
+        this.killForRestart('retained_original_start_unproven');
+        return;
+      }
       return new Promise<void>((resolve) => {
         const controllerForHand = preparedController;
         let persistenceGeneration: number | undefined;
@@ -4138,6 +4158,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           }
           reportError(err, `ServerTableEngine.${this.tableId}.failed_to_start_hand`);
           attempt.cause = 'start_failed:' + ServerTableEngineDealing.causeOf(err);
+          if (original) {
+            // A retained original is not a local no-start cancellation. If
+            // another authority refuses actuation, fence this owner and leave
+            // its exact private capsule for canonical successor admission.
+            this.killForRestart('retained_original_start_unproven');
+            return;
+          }
           releaseHandWait('hand_start_failed');
         }
       });

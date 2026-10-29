@@ -109,6 +109,31 @@ function fixture() {
   }
   return { e, emitted, roster };
 }
+async function originalPermit(e: any): Promise<F06HandPermit> {
+  const permit = new F06HandPermit(
+    binding,
+    async () => ({
+      data: {
+        ok: true,
+        tournament_id: binding.tournament_id,
+        generation: binding.lease_generation,
+        custody_id: binding.custody_id,
+        permit_id: binding.permit_id,
+        table_id: binding.table_id,
+        lifecycle: binding.lifecycle,
+        hand_number: binding.hand_number,
+        state: 'reserved',
+      },
+      error: null,
+    }),
+    () => true,
+    () => !e.isNextHandPaused()
+  );
+  await permit.reserve();
+  e.f06CurrentPermit = permit;
+  e.engineLeaseAuthorityIsCurrent = () => true;
+  return permit;
+}
 it('retains the prepared deck and every actual controller mutation before its original consumer', async () => {
   const { e, emitted, roster } = fixture();
   const writes: any[] = [];
@@ -305,28 +330,7 @@ it.each([false, true])(
   async (outerCheckpointRace) => {
     const { e, emitted, roster } = fixture();
     const controller: HandController = e.handController;
-    const permit = new F06HandPermit(
-      binding,
-      async () => ({
-        data: {
-          ok: true,
-          tournament_id: binding.tournament_id,
-          generation: binding.lease_generation,
-          custody_id: binding.custody_id,
-          permit_id: binding.permit_id,
-          table_id: binding.table_id,
-          lifecycle: binding.lifecycle,
-          hand_number: binding.hand_number,
-          state: 'reserved',
-        },
-        error: null,
-      }),
-      () => true,
-      () => !e.isNextHandPaused()
-    );
-    await permit.reserve();
-    e.f06CurrentPermit = permit;
-    e.engineLeaseAuthorityIsCurrent = () => true;
+    const permit = await originalPermit(e);
     let anchor: any;
     let acknowledge!: () => void;
     e.retainOriginalBatch = async (_original: unknown, _seats: unknown, batch: any) => {
@@ -402,5 +406,102 @@ it.each([false, true])(
     await e.handContinuation.join();
     expect(emitted.filter((event) => event.type === 'HAND_START')).toHaveLength(1);
     expect(emitted.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
+  }
+);
+
+it('keeps the retained prepared original when maintenance arrives during its first private save', async () => {
+  const { e, emitted, roster } = fixture();
+  const controller: HandController = e.handController;
+  const permit = await originalPermit(e);
+  let anchor: any;
+  let acknowledge!: () => void;
+  e.retainOriginalBatch = async (_original: unknown, _seats: unknown, batch: any) => {
+    if (batch.sequence === 0) {
+      anchor = structuredClone(batch);
+      await new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      });
+    }
+  };
+  const attempt = { started: false, cause: null };
+  const run = e.runOriginalController(roster, controller, 42, Date.now(), attempt);
+  await vi.waitFor(() => expect(anchor?.sequence).toBe(0));
+  const deck = controller.getRemainingDeck();
+  e.pauseForMaintenance(420_000);
+  acknowledge();
+  await vi.waitFor(() => expect(e.handForHandResolve).not.toBeNull());
+  expect(e.handController).toBe(controller);
+  expect(e.isMaintenancePaused()).toBe(true);
+  expect(e.isBetweenHands()).toBe(false);
+  expect(permit.recoveryState()).toBe('attempted');
+  expect(attempt.cause).toBeNull();
+  expect(attempt.started).toBe(false);
+  expect(emitted).toEqual([]);
+  expect(controller.getRemainingDeck()).toEqual(deck);
+  e.resumeFromMaintenance();
+  await vi.waitFor(() => expect(emitted.some((event) => event.type === 'CARDS_DEALT')).toBe(true));
+  expect(e.handCount).toBe(42);
+  expect(permit.binding).toEqual(binding);
+  const state = controller.getState();
+  expect(controller.performAction(state.currentPlayerSeat, 'fold')).toBe(true);
+  await run;
+  await e.handContinuation.join();
+  expect(emitted.filter((event) => event.type === 'HAND_START')).toHaveLength(1);
+  expect(emitted.filter((event) => event.type === 'HAND_COMPLETE')).toHaveLength(1);
+});
+
+it.each([false, true])(
+  'fences a prepared original refused by a polled owner (claimed: %s)',
+  async (claimed) => {
+    const { e, emitted, roster } = fixture();
+    const controller: HandController = e.handController;
+    if (claimed) {
+      e.f06CurrentPermit = new F06HandPermit(
+        binding,
+        async () => {
+          throw Error('Unexpected Recovered RPC');
+        },
+        () => true,
+        () => !e.isNextHandPaused(),
+        binding.lease_generation
+      );
+      e.pendingOriginalContinuation = {
+        version: 1,
+        original: binding,
+        seats: roster.map((player) => ({
+          user_id: player.user_id,
+          seat_id: player.seat_id,
+          seat_joined_at: player.seat_joined_at,
+          stack_before: player.stack,
+        })),
+        batch: {
+          version: 1,
+          sequence: 0,
+          controller: controller.serializeRecoveryState(),
+          events: [],
+          engine: { fields: {} },
+        },
+      };
+      e.adminPauseLock = true;
+      e.retainOriginalBatch = async () => {
+        throw Error('Unexpected Second Retention');
+      };
+    } else {
+      await originalPermit(e);
+      e.retainOriginalBatch = async (_original: unknown, _seats: unknown, batch: any) => {
+        expect(batch.sequence).toBe(0);
+        // The polled owner arrives after exact private retention, before start.
+        e.adminPauseLock = true;
+      };
+    }
+    await e.runOriginalController(roster, controller, 42, Date.now(), {
+      started: false,
+      cause: null,
+    });
+    expect(e.killForRestart).toHaveBeenCalledWith('retained_original_start_unproven');
+    expect(emitted).toEqual([]);
+    expect(e.handController).toBe(controller);
+    expect(JSON.parse(controller.serializeRecoveryState()).handStarted).toBe(false);
+    expect(e.f06CurrentPermit.recoveryState()).toBe('attempted');
   }
 );

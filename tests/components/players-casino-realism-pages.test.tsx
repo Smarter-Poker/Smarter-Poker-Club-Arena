@@ -564,13 +564,21 @@ it('keeps a local draft and original note receipt through a failed range read an
 });
 
 describe('the member record survives a failed background refresh', () => {
+  const authorityEvent = async () => {
+    const { useMasterBusBroadcastChannel } =
+      await import('../../src/hooks/useMasterBusBroadcastChannel');
+    const options = vi
+      .mocked(useMasterBusBroadcastChannel)
+      .mock.calls.map(([options]) => options)
+      .filter((options) => options.event === 'record_changed')
+      .at(-1)!;
+    await act(async () => options.onPayload?.({}));
+  };
   it('keeps the record on screen with a stale banner and no toast', async () => {
     render(<MemberManagementPage />);
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
     state.getMemberDetail.mockRejectedValueOnce(new Error('offline'));
-    await act(async () => {
-      window.dispatchEvent(new Event('focus'));
-    });
+    await authorityEvent();
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Member Connection Interrupted');
     expect(banner).toHaveTextContent('The Record Below Is From The Previous Successful Read.');
@@ -581,9 +589,7 @@ describe('the member record survives a failed background refresh', () => {
 
     // A second failed background read still does not toast.
     state.getMemberDetail.mockRejectedValueOnce(new Error('still offline'));
-    await act(async () => {
-      window.dispatchEvent(new Event('online'));
-    });
+    await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
     expect(state.toast.error).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
@@ -609,9 +615,7 @@ describe('the member record survives a failed background refresh', () => {
     render(<MemberManagementPage />);
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
     state.getDownline.mockRejectedValueOnce(new Error('downline down'));
-    await act(async () => {
-      window.dispatchEvent(new Event('focus'));
-    });
+    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
     expect(
       await screen.findByText(
         'Could Not Refresh The Downline. Showing The Previous Successful Read.'

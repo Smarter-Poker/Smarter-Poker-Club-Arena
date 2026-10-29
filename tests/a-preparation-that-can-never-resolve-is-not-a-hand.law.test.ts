@@ -246,7 +246,7 @@ describe('3. the release gate asks the database, and fails closed', () => {
     // is that it cannot be talked out of a refusal by hand.
     expect(INFLIGHT).not.toMatch(/--force|--skip|ALLOW_|FORCE_|SKIP_|BYPASS/);
     // Scope to the admission block only - up to the close of the function.
-    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
+    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2\n');
     const admission = TRANSACTION.slice(from, TRANSACTION.indexOf('\n}', from));
     expect(admission).not.toMatch(/\|\|\s*true/);
     expect(admission).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE/);

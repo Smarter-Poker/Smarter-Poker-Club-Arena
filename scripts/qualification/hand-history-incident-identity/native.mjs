@@ -196,7 +196,7 @@ try {
  let creatorReady=false;const creatorUntil=Date.now()+5000;
  while(Date.now()<creatorUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND state='idle in transaction' AND query LIKE '%${r1}%'`) === '1'){creatorReady=true;break;}await new Promise(r=>setTimeout(r,20));}
  assert.ok(creatorReady,'first observation owns an uncommitted cause-group insert');
- const contender=client();contender.p.stdin.write('BEGIN;'+genericInsert(r2,1)+'\\echo CONTENDER_READY\n');
+ const contender=client();contender.p.stdin.write('BEGIN;'+genericInsert(r2,5)+'\\echo CONTENDER_READY\n');
  let insertBlocked=false;const insertUntil=Date.now()+3000;
  while(Date.now()<insertUntil){if(sql(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory' AND query LIKE '%${r2}%'`) === '1'){insertBlocked=true;break;}await new Promise(r=>setTimeout(r,20));}
  assert.ok(insertBlocked,'second first observation actually waits on original insert');

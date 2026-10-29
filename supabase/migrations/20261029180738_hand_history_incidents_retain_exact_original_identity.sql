@@ -6,7 +6,7 @@
 -- only after every exact member resolves. Legacy correlation is event-specific
 -- and must be unique; missing/ambiguous members stay unknown. Historical rows
 -- and events, financial rules, wallet state and schedules remain unchanged.
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_financial_alert_to_incident()'::regprocedure)) = 'f3b7353cbbb7dd3a03b5dedbecc034b7'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_financial_alert_to_incident()'::regprocedure)) = 'b771ffd8f509edac6108ca5417852530'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)'::regprocedure)) = '8687f48f6ebd164536a561a5d4e57dfb'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_alert_resolution_reaches_the_incident()'::regprocedure)) = '6aeff3afb938b152034f9a250efb3e21'
 BEGIN;
@@ -34,6 +34,12 @@ BEGIN
  v_new:=replace(v_new,$old$     AND i.suspected_cause = left(NEW.message, 300)$old$,$new$     AND i.suspected_cause = left(NEW.message, 300)
      AND NOT EXISTS(SELECT 1 FROM public.ca_drift_incidents active_group
        WHERE active_group.dedupe_key=v_dedupe AND active_group.status<>'resolved')$new$);
+
+ IF array_length(string_to_array(v_new,$old$  SELECT i.id INTO v_echo_id FROM public.ca_drift_incidents i$old$),1)<>2 THEN
+ RAISE EXCEPTION 'INCIDENT_BRIDGE_OWNER_ANCHOR_CHANGED';END IF;
+ v_new:=replace(v_new,$old$  SELECT i.id INTO v_echo_id FROM public.ca_drift_incidents i$old$,$new$  -- Echo selection and the original raise share the same transaction owner.
+  PERFORM pg_advisory_xact_lock(hashtextextended('ca-financial-incident-members:' || public.fn_ca_stable_dedupe_key(v_dedupe),0));
+  SELECT i.id INTO v_echo_id FROM public.ca_drift_incidents i$new$);
 
  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_financial_alert_to_incident','migration 20261029180738_hand_history_incidents_retain_exact_original_identity');
  EXECUTE v_new;

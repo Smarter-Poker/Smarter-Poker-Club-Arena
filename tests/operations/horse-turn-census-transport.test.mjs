@@ -312,6 +312,20 @@ test('the predeclared256turn partition plus worst closed phase rows and outer en
   const reasonHeadroom = limit * ('retention_heap_unavailable'.length - 'unknown'.length);
   assert.ok(size + reasonHeadroom < 1572864, 'longest closed history reason must also fit');
   assert.ok(size < 1572864, `closed envelope ${size} must fit remote stdout1572864`);
+  const planned = structuredClone(envelope);
+  planned.observation.version = 5;
+  planned.observation.turns.forEach((row) => {
+    row.planStatus = 'observed';
+    row.planUse = [-1, -1, 3];
+  });
+  sanitizeHorseTurnCensusResult(planned.observation);
+  const plannedSize = Buffer.byteLength(JSON.stringify(planned));
+  t.diagnostic(`Closed version5 envelope ${plannedSize} bytes for256 turns`);
+  assert.ok(
+    plannedSize + reasonHeadroom < 1572864,
+    'v5 plan codes and longest history reason fit unchanged cap'
+  );
+  assert.equal(envelope.observation.version, 4, 'legacy v4 envelope remains separate');
   const old = {
     ...envelope,
     observation: { ...result, expectedTurns: 512, turns: [...result.turns, ...result.turns] },

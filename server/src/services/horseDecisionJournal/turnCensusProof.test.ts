@@ -4,6 +4,8 @@ vi.hoisted(() => {
   vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'unit-test-placeholder-key');
 });
 afterAll(() => vi.unstubAllEnvs());
+import * as planReadApi from '../../engine/HorsePlanReadReceipt.js';
+import { horsePlanContextKey } from '../../engine/HorsePlanHandIdentity.js';
 import * as rangeApi from '../../engine/HorseRangeConsumptionReceipt.js';
 import { simulateEquity, variantInfo } from '../../engine/HorseEval.js';
 import * as recordsApi from './record.js';
@@ -49,6 +51,7 @@ import * as historyContextApi from '../../engine/HorseObserverReadContext.js';
 import * as observerApi from '../../engine/HorseObserverReadEvidence.js';
 const api = {
   ...recordsApi,
+  ...planReadApi,
   ...rangeApi,
   ...bindingApi,
   ...reviewApi,
@@ -1077,4 +1080,186 @@ it('v4 treats original not-reached, refused and invalid-deck diagnostics as dist
   const refused = new rangeApi.HorseRangeConsumptionCapture(s);
   refused.begin(4, s.gameState.players, s.gameState.players.slice(1), 1, undefined, undefined);
   expect(read(refused)).toEqual({ rangeStatus: 'refused', rangeUse: null });
+});
+
+function planReadCensus(value: boolean | undefined = undefined, consulted = true) {
+  const x = rangeCensus();
+  (x.packet as any).version = 5;
+  const c: any = x.f.capture,
+    s = c.snapshot;
+  const context = horsePlanContextFromDecision(s),
+    key = horsePlanContextKey(context)!;
+  const view = HorseMind.createSandbox();
+  if (value !== undefined) view.plans.set(`${key}|${s.player.user_id}`, value);
+  c.readFrame = encodeHorseDecisionReads(view, s.gameState.players, key, context);
+  const capture = new planReadApi.HorsePlanReadCapture(s);
+  if (consulted) capture.note('barrel', key, s.player.user_id, s.gameState.stage, value);
+  c.planReads = capture.finish(c.readFrame.sha256);
+  return x;
+}
+it.each([undefined, false, true])(
+  'v5 binds original consulted barrel return %s without confusing absent/false/true',
+  (value) => {
+    const x = planReadCensus(value),
+      result = inspectHorseTurnCensus(x.packet, x.batch(), api);
+    const row = result.turns.at(-1);
+    expect(row).toMatchObject({
+      planStatus: 'observed',
+      planUse: [value === undefined ? 0 : value ? 2 : 1, -1, -1],
+      inputBinding: 'canonical_digest_and_read_frame',
+      selection: 'matched',
+    });
+    expect(sanitizeHorseTurnCensusResult(result)).toEqual(result);
+    expect(result.turns[0]).toMatchObject({ planStatus: 'unknown', planUse: null });
+    expect(JSON.stringify(result)).not.toContain('planReads');
+  }
+);
+it('v5 retains valid original not-reached and missing/API-unavailable evidence independently', () => {
+  const x = planReadCensus(undefined, false);
+  expect(inspectHorseTurnCensus(x.packet, x.batch(), api).turns.at(-1)).toMatchObject({
+    planStatus: 'not_reached',
+    planUse: null,
+  });
+  expect(
+    inspectHorseTurnCensus(x.packet, x.batch(), {
+      ...api,
+      horsePlanReadsAreValid: undefined,
+    }).turns.at(-1)
+  ).toMatchObject({ planStatus: 'unknown', planUse: null });
+  delete (x.f.capture as any).planReads;
+  expect(inspectHorseTurnCensus(x.packet, x.batch(), api).turns.at(-1)).toMatchObject({
+    planStatus: 'unknown',
+    planUse: null,
+  });
+});
+it('v5 rejects copied input/frame, unclosed fields, invalid empty observation and false return codes', () => {
+  const x = planReadCensus(false),
+    c: any = x.f.capture,
+    original = structuredClone(c.planReads);
+  for (const changes of [
+    { inputSha256: 'f'.repeat(64) },
+    { readFrameSha256: 'e'.repeat(64) },
+    { lookups: [-1, -1, -1] },
+    { lookups: [2, -1, -1] },
+    { lookups: [true, -1, -1] },
+    { private: ['As', 'Ah'] },
+  ]) {
+    c.planReads = { ...original, ...changes };
+    expect(inspectHorseTurnCensus(x.packet, x.batch(), api).turns.at(-1)).toMatchObject({
+      planStatus: 'unknown',
+      planUse: null,
+    });
+  }
+});
+it('v5 cannot credit plans through failed context or incomplete original hand', () => {
+  const x = planReadCensus(false);
+  (x.packet.hands[0] as any).context.variant = 'plo8';
+  expect(inspectHorseTurnCensus(x.packet, x.batch(), api).turns.at(-1)).toMatchObject({
+    planStatus: 'unknown',
+    planUse: null,
+  });
+  (x.packet.hands[0] as any).context.variant = 'nlh';
+  const b = x.batch();
+  b.recordsByHand[0]!.records = b.recordsByHand[0]!.records.filter(
+    (r: any) => r.kind !== 'execution'
+  );
+  expect(inspectHorseTurnCensus(x.packet, b, api).turns.at(-1)).toMatchObject({
+    planStatus: 'unknown',
+    planUse: null,
+  });
+});
+it('v5 host sanitizer refuses plan credit through coerced or unmatched selection and preserves v4 shape', () => {
+  const x = planReadCensus(false),
+    good = inspectHorseTurnCensus(x.packet, x.batch(), api);
+  for (const changes of [
+    { execution: 'coerced' },
+    { selection: 'unknown' },
+    { planUse: [-1, -1, -1] },
+    { planStatus: 'not_reached', planUse: [0, -1, -1] },
+  ]) {
+    const r = structuredClone(good);
+    Object.assign(r.turns.at(-1), changes);
+    expect(() => sanitizeHorseTurnCensusResult(r)).toThrow();
+  }
+  (x.packet as any).version = 4;
+  const old = inspectHorseTurnCensus(x.packet, x.batch(), api);
+  expect(old.turns.at(-1)).not.toHaveProperty('planStatus');
+  expect(old.turns.at(-1)).not.toHaveProperty('planUse');
+  expect(sanitizeHorseTurnCensusResult(old)).toEqual(old);
+});
+
+it.each(['good', 'scare', 'blank'] as const)(
+  'v5 copies actual original outlook %s and raise projection codes only',
+  (label) => {
+    const x = planReadCensus(),
+      c: any = x.f.capture,
+      s = c.snapshot;
+    s.gameState.stage = 'turn';
+    s.gameState.communityCards.push({ rank: '2', suit: 'hearts' });
+    s.decisionKey = buildHorseDecisionKey(s);
+    const context = horsePlanContextFromDecision(s),
+      key = horsePlanContextKey(context)!;
+    const view = HorseMind.createSandbox();
+    view.outlooks.set(`${key}|${s.player.user_id}|flop`, {
+      good: new Set(label === 'good' ? ['2h'] : []),
+      scare: new Set(label === 'scare' ? ['2h'] : []),
+    } as any);
+    view.raisePlans.set(`${key}|${s.player.user_id}|turn`, 'callOnce');
+    c.readFrame = encodeHorseDecisionReads(view, s.gameState.players, key, context);
+    const capture = new planReadApi.HorsePlanReadCapture(s);
+    capture.note('outlook', key, s.player.user_id, 'flop', label);
+    capture.note('raise', key, s.player.user_id, 'turn', 'callOnce');
+    c.planReads = capture.finish(c.readFrame.sha256);
+    expect(censusApi.horseTurnPlanEvidence(c, api)).toEqual({
+      planStatus: 'observed',
+      planUse: [-1, { good: 1, scare: 2, blank: 3 }[label], 2],
+    });
+  }
+);
+
+it.each(['nlh', 'plo4', 'plo5', 'plo6', 'plo8'])(
+  'v5 validates original plan projections separately in %s without crossvariant copies',
+  (variant) => {
+    const x = planReadCensus(),
+      c: any = x.f.capture,
+      s = c.snapshot;
+    s.gameState.gameVariant = variant;
+    s.decisionKey = buildHorseDecisionKey(s);
+    const context = horsePlanContextFromDecision(s),
+      key = horsePlanContextKey(context)!;
+    c.readFrame = encodeHorseDecisionReads(
+      HorseMind.createSandbox(),
+      s.gameState.players,
+      key,
+      context
+    );
+    const capture = new planReadApi.HorsePlanReadCapture(s);
+    capture.note('barrel', key, s.player.user_id, s.gameState.stage, undefined);
+    c.planReads = capture.finish(c.readFrame.sha256);
+    expect(censusApi.horseTurnPlanEvidence(c, api)).toEqual({
+      planStatus: 'observed',
+      planUse: [0, -1, -1],
+    });
+    s.gameState.gameVariant = variant === 'nlh' ? 'plo8' : 'nlh';
+    s.decisionKey = buildHorseDecisionKey(s);
+    expect(censusApi.horseTurnPlanEvidence(c, api)).toEqual({
+      planStatus: 'unknown',
+      planUse: null,
+    });
+  }
+);
+it('v5 preserves original refused and outside-domain evidence with no consultation credit', () => {
+  const x = planReadCensus(),
+    c: any = x.f.capture;
+  const refused = new planReadApi.HorsePlanReadCapture(c.snapshot);
+  refused.refuse();
+  c.planReads = refused.finish(c.readFrame.sha256);
+  expect(censusApi.horseTurnPlanEvidence(c, api)).toEqual({ planStatus: 'refused', planUse: null });
+  c.snapshot.gameState.boardCount = 2;
+  c.snapshot.decisionKey = buildHorseDecisionKey(c.snapshot);
+  c.planReads = new planReadApi.HorsePlanReadCapture(c.snapshot).finish(c.readFrame.sha256);
+  expect(censusApi.horseTurnPlanEvidence(c, api)).toEqual({
+    planStatus: 'outside_domain',
+    planUse: null,
+  });
 });

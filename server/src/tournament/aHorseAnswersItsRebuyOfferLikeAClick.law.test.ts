@@ -40,7 +40,13 @@ const declining = ids.filter((id) => !willing.includes(id));
 type Purchase = 'ok' | 'transport';
 
 function setup(
-  opts: { horses?: string[]; offers?: string[]; purchase?: Purchase; freeBuyUsed?: number } = {}
+  opts: {
+    horses?: string[];
+    offers?: string[];
+    purchase?: Purchase;
+    freeBuyUsed?: number;
+    profileFailure?: 'error' | 'throw' | 'null';
+  } = {}
 ) {
   const horses = opts.horses ?? ids;
   const offers = opts.offers ?? ids;
@@ -91,10 +97,18 @@ function setup(
         asked = list;
         return q;
       });
-      q.eq = vi.fn(async () => ({
-        data: asked.filter((id) => horses.includes(id)).map((id) => ({ id })),
-        error: null,
-      }));
+      q.eq = vi.fn(async () => {
+        if (opts.profileFailure === 'throw') throw new Error('profile transport lost');
+        if (opts.profileFailure)
+          return {
+            data: null,
+            error: opts.profileFailure === 'error' ? { message: 'profile unavailable' } : null,
+          };
+        return {
+          data: asked.filter((id) => horses.includes(id)).map((id) => ({ id })),
+          error: null,
+        };
+      });
       return q;
     }
     throw new Error(`unexpected table ${table}`);
@@ -255,6 +269,46 @@ describe('a horse answers its rebuy offer like a click', () => {
     const humansOnly = setup({ horses: [], purchase: 'transport' });
     expect(await humansOnly.answerOpenHorseRebuyOffers()).toBe(false);
     expect(purchases()).toEqual([]);
+  });
+
+  it.each(['error', 'throw', 'null'] as const)(
+    'keeps the existing bounded input continuation when profile identification returns %s',
+    async (profileFailure) => {
+      vi.useFakeTimers();
+      try {
+        const options = {
+          offers: [willing[0]!],
+          profileFailure: profileFailure as typeof profileFailure | undefined,
+        };
+        const manager = setup(options);
+        manager.horseRebuyOfferMayHaveOpened();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(purchases()).toEqual([]);
+        expect(declines()).toEqual([]);
+        options.profileFailure = undefined;
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(purchases()).toEqual([willing[0]!]);
+        expect(manager.horseRebuyInputTimer).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('bounds persistent profile failures without purchasing or declining', async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = setup({ profileFailure: 'error' });
+      manager.horseRebuyOfferMayHaveOpened();
+      await vi.advanceTimersByTimeAsync(40_000);
+      const reads = fixture.from.mock.calls.filter(([table]) => table === 'profiles');
+      expect(reads).toHaveLength(TournamentManagerEliminations.HORSE_REBUY_INPUT_MAX_PASSES);
+      expect(manager.horseRebuyInputTimer).toBeNull();
+      expect(purchases()).toEqual([]);
+      expect(declines()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('answers to the maintenance freeze and to manager stop', async () => {

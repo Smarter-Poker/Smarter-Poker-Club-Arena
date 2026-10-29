@@ -60,6 +60,16 @@ export interface HandLike {
   handNumber: number;
 }
 
+/** Pages and live refreshes share immutable hand identities, never row offsets. */
+export function mergeHandHistoryPages<T extends HandLike>(
+  retained: readonly T[],
+  incoming: readonly T[]
+): T[] {
+  const byId = new Map(retained.map((hand) => [hand.id, hand]));
+  for (const hand of incoming) byId.set(hand.id, hand);
+  return [...byId.values()].sort((a, b) => (b.handNumber || 0) - (a.handNumber || 0));
+}
+
 /**
  * The saved hand into the list, newest first, once. A hand the list already
  * holds (a recovered-queue re-emit, a duplicate event) replaces its copy.

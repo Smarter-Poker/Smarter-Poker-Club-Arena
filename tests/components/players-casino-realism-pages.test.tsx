@@ -407,9 +407,9 @@ describe('Players detail surfaces', () => {
     // Each figure prints once, on its card.
     // Net is a signed result (winLossChips), Fees a fee figure (feeFigure).
     expect(screen.getAllByText('+120')).toHaveLength(1);
-    expect(screen.getByText('18')).toBeVisible();
+    expect(screen.getByText('18.00')).toBeVisible();
     expect(screen.queryByText('120.00')).not.toBeInTheDocument();
-    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('18')).not.toBeInTheDocument();
   });
 
   it('keeps the last verified figures visible and names a failed range refresh', async () => {

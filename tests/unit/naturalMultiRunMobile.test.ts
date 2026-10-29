@@ -572,10 +572,11 @@ it('requires explicit landed phase before using departed geometry, never a flyin
 it.each([undefined, 'null'])('keeps default BOTH natural coverage for target %s', (target) => {
   expect(naturalMultiRunRequiredRuns(target, 'true', 'null')).toEqual([2, 3]);
 });
-it('admits only explicit numeric three for a client observation', () => {
+it('admits explicit numeric one and three for client observations', () => {
+  expect(naturalMultiRunRequiredRuns('1', 'true', 'null')).toEqual([1]);
   expect(naturalMultiRunRequiredRuns('3', 'true', 'null')).toEqual([3]);
 });
-it.each(['"3"', '2', 'true', '[]', '{}', '[3]', 'false', '""', 'invalid'])(
+it.each(['"1"', '"3"', '2', 'true', '[]', '{}', '[3]', 'false', '""', 'invalid'])(
   'refuses malformed or unsupported target %s',
   (target) => {
     expect(() => naturalMultiRunRequiredRuns(target, 'true', 'null')).toThrow(/target/);
@@ -726,4 +727,22 @@ it('retains a natural three-run opportunity across provider queue time within th
     expect(query.get('limit')).toBe('500');
     expect(query.get('created_at')).toBe('gte.2026-10-28T22:15:47.000Z');
   }
+});
+
+it('selects once only from player-choice tables with actual recent RIT activity', () => {
+  const tables = ['mandatory_twice', 'mandatory_three', 'player_choice'].map((run_it_mode) => ({
+    ...subject(run_it_mode),
+    run_it_mode,
+  }));
+  expect(
+    selectNaturalMultiRunSubject(
+      tables,
+      tables.flatMap((t) => history(t.id, 2, 2)),
+      [1]
+    ).id
+  ).toBe('player_choice');
+  expect(() =>
+    selectNaturalMultiRunSubject(tables.slice(0, 2), history('mandatory_three', 2, 2), [1])
+  ).toThrow(/player-choice.*history/);
+  expect(() => selectNaturalMultiRunSubject([tables[2]], [], [1])).toThrow(/history/);
 });

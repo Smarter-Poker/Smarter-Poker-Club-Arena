@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 export type CspViolation = {
   directive: string;
@@ -44,4 +44,20 @@ export async function visitCspRoute(
     if (!Array.isArray(violations)) throw new Error('CSP collector is unavailable');
     return violations;
   });
+}
+
+/** Each route owns its first document; the preceding app cannot navigate this page. */
+export async function visitIsolatedCspRoute(
+  context: BrowserContext,
+  url: string,
+  label: string,
+  collect: () => void
+): Promise<CspViolation[]> {
+  const page = await context.newPage();
+  try {
+    await page.addInitScript(collect);
+    return await visitCspRoute(page, url, label);
+  } finally {
+    await page.close();
+  }
 }

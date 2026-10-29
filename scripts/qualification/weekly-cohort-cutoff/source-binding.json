@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252467,
-      "sha256": "bf56a7225ef5f4e874887989048e7b99437994acbc1e3e21211ce0047178ad19"
+      "bytes": 252744,
+      "sha256": "2284721a2fa4de0c60069fe78931d9ad722c8d8c95d75d4777ac8d6b495a7db1"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1002,6 +1002,19 @@
   "clubPromoProtectedMainIntegration20261029": {
     "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
   },
+  "v31ControllerContractEnforcement20261029": {
+    "reason": "Adds one directly triggered shard-1 Python controller test step for V31 public feature and final model/index/input-draft contracts. Existing accounting/native/financial test commands, assertions, deadlines, joins and historical evidence are unchanged. This updates current workflow byte identity only and is not a financial or live certificate.",
+    "file": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 250705,
+      "sha256": "eebb38c9ac3849ef680707e40af3652a6ff01c0c82568cd97aeb1e7010e289d6"
+    },
+    "current": {
+      "bytes": 250982,
+      "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+    },
+    "execution_performed": false
+  },
   "browserDeliveryParallelSourceAudit20261029": {
     "scope": "Source identity refresh only for disjoint CSS Beat browser shards and capacity-proven SDK cleanup.",
     "previousCiPin": {
@@ -1013,6 +1026,25 @@
       "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
     },
     "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
+  },
+  "v31Public215ProtectedMainComposition20261029": {
+    "reason": "Compose protected main browser-check sharding with the additive V31 controller check. Preserve both audit histories and every non-CI input, financial command, fixture, assertion and qualification status. Current merged CI byte identity only; not financial recertification or live proof.",
+    "file": ".github/workflows/ci.yml",
+    "parents": [
+      {
+        "bytes": 250982,
+        "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+      },
+      {
+        "bytes": 251615,
+        "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+      }
+    ],
+    "current": {
+      "bytes": 251892,
+      "sha256": "357032b42e80424b3c5431f5b70a2b3ea6940f7bcceaec4e223ced7e4b67bf63"
+    },
+    "execution_performed": false
   },
   "retentionPageAdmissionSourceAudit20261029": {
     "reason": "Reviewed additive required native one-page retention step and exact fixture classification. Current source identities and reviewed nested binding audit only; preserve financial assertions, historical qualification states, receipts and ledger installation. No financial or live certificate restamp.",
@@ -1029,6 +1061,13 @@
       }
     }
   },
+  "v31Public215RetentionPageComposition20261029": {
+    "reason": "Compose the existing R7 controller qualification step with protected-main retention one-page native fixture. Preserve both parent audit records and all non-CI file pins. Current workflow fingerprint only; not financial or production qualification.",
+    "currentWorkflow": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    }
+  },
   "ciBrowserCriticalPathSourceAudit20261029": {
     "scope": "Source identity only: five CSS Beat shards and three Diamond playfield shards preserve identical cases and required gates.",
     "previousCiPin": {
@@ -1036,8 +1075,8 @@
       "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
     },
     "currentCiPin": {
-      "bytes": 252467,
-      "sha256": "bf56a7225ef5f4e874887989048e7b99437994acbc1e3e21211ce0047178ad19"
+      "bytes": 252744,
+      "sha256": "2284721a2fa4de0c60069fe78931d9ad722c8d8c95d75d4777ac8d6b495a7db1"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
   }

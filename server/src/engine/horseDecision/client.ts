@@ -1,5 +1,10 @@
 import type { HorseOwnPublicHistoryLoader } from './ownPublicHistoryProvenance.js';
 import {
+  V31ControlClient,
+  type V31ControlRequest,
+  type V31ControlAck,
+} from './v31ReloadControl.js';
+import {
   isolateMemoryIsValid,
   type IsolateMemorySample,
 } from '../../observability/isolateMemory.js';
@@ -104,7 +109,7 @@ import {
 } from './responseValidation.js';
 
 export interface WorkerLike {
-  postMessage(message: HorseDecisionWorkerRequest): void;
+  postMessage(message: HorseDecisionWorkerRequest | V31ControlRequest): void;
   on(event: 'message', listener: (message: HorseDecisionWorkerResponse) => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'exit', listener: (code: number) => void): this;
@@ -1094,6 +1099,7 @@ export class LiveHorseDecisionWorkerClient {
    * the worker to flush and stop its owned services. No abrupt normal path.
    */
   stop(): Promise<void> {
+    this.v31Control?.close(Error('v31_control_worker_stopping'));
     if (this.stopPromise) return this.stopPromise;
     if (this.phase === 'stopped') return Promise.resolve();
     if (this.phase === 'failed') {
@@ -1407,7 +1413,27 @@ export class LiveHorseDecisionWorkerClient {
     if (next) this.startExecutionClock(next);
   }
 
-  private onMessage(message: HorseDecisionWorkerResponse): void {
+  private v31Control?: V31ControlClient;
+  requestV31Control(request: V31ControlRequest): Promise<V31ControlAck> {
+    if (this.phase !== 'ready') return Promise.reject(Error('v31_control_worker_not_ready'));
+    this.v31Control ??= new V31ControlClient((message) => this.worker.postMessage(message));
+    return this.v31Control.request(request).then((ack) => {
+      // Each acknowledgment comes from this exact worker; never infer sibling readiness.
+      if (ack.ok && this.solverStores)
+        this.solverStores = {
+          ...this.solverStores,
+          postflopV31: ack.count,
+          postflopV31Dataset: ack.dataset,
+        };
+      return ack;
+    });
+  }
+  private onMessage(message: HorseDecisionWorkerResponse | V31ControlAck): void {
+    if (message?.type === 'V31_STORE_CONTROL_ACK') {
+      this.v31Control?.receive(message);
+      return;
+    }
+
     if (
       !message ||
       typeof message !== 'object' ||
@@ -2136,6 +2162,7 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private fail(error: Error): void {
+    this.v31Control?.close(error);
     if (this.phase === 'failed' || this.phase === 'stopped') return;
     // Work returned by a dead worker is restarted authority from here on.
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);

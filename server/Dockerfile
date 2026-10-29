@@ -1,5 +1,17 @@
 # Pin the official multi-architecture Node 22 slim manifest. A mutable base tag
 # made the same protected-main SHA produce different engine bytes on rebuild.
+FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS public-hist215-native
+
+# Compile the maintained numeric kernel for the receiving Linux architecture
+# and Node's stable N-API. The runtime image contains neither a workstation
+# binary nor a compiler. Compiler/network work is confined to image creation.
+RUN apt-get update && apt-get install -y --no-install-recommends g++ \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /native-build
+COPY native/public_hist215_wtl.cc ./native/public_hist215_wtl.cc
+COPY scripts/build-public-hist215-native.mjs ./scripts/build-public-hist215-native.mjs
+RUN node scripts/build-public-hist215-native.mjs
+
 FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 WORKDIR /app
@@ -13,6 +25,7 @@ RUN npm ci --include=dev --no-audit --no-fund
 # Copy source
 COPY tsconfig.json tsconfig.runtime.json tsconfig.emit.json ./
 COPY src/ ./src/
+COPY --from=public-hist215-native /native-build/native/build/public_hist215_wtl.node ./native/build/public_hist215_wtl.node
 # Committed admission evidence for the Horse Brain protected release selections
 # (qualification, strength and completion records). The image is built from the
 # server tree alone, so these are the only copies the running engine can read;

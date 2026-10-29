@@ -315,3 +315,15 @@ test('positive seed points need no extra seed diagnostic interval gate', () => {
   assert.ok(v.criticalCells.every((x: any) => x.intervalTrusted));
   assert.equal(summary.qualified, true);
 });
+
+// Native decision dependencies are exact maintained entries, never an open path prefix.
+test('source closure admits the registered public215 kernel and refuses arbitrary native sources', () => {
+  const p = fixture();
+  for (const path of ['native/public_hist215_wtl.cc', 'scripts/build-public-hist215-native.mjs'])
+    p.runtimeSourceFiles[path] = H;
+  p.runtimeSourceDigest = hash(p.runtimeSourceFiles);
+  assert.deepEqual(validateLockedFeatureAblationPlan(p), []);
+  p.runtimeSourceFiles['native/unregistered.cc'] = H;
+  p.runtimeSourceDigest = hash(p.runtimeSourceFiles);
+  assert.ok(validateLockedFeatureAblationPlan(p).includes('runtime_source_closure'));
+});

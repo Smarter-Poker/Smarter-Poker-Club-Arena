@@ -1,6 +1,8 @@
 """Original build evidence parsing; real Linux containment remains a separate gate."""
 import importlib.util
+import json
 from pathlib import Path
+import re
 import unittest
 
 spec = importlib.util.spec_from_file_location(
@@ -11,6 +13,23 @@ spec.loader.exec_module(proof)
 
 class OriginalBuildResourceEvidenceTests(unittest.TestCase):
     boundary = f'ENGINE_BUILD_RESOURCE_BOUNDARY=memory:{proof.LIMIT},swap:0,cpu:100000 100000'
+
+    def test_no_resolve_emitter_selects_actual_imported_runtime_json(self):
+        root = Path(__file__).resolve().parents[2] / 'server'
+        config = json.loads((root / 'tsconfig.emit.json').read_text())
+        self.assertTrue(config['compilerOptions']['noResolve'])
+        selected = {(root / name).resolve() for name in config.get('files', [])}
+        imported = set()
+        for source in (root / 'src').rglob('*.ts'):
+            if source.name.endswith(('.test.ts', '.spec.ts')) or '__tests__' in source.parts:
+                continue
+            for name in re.findall(r'''\bfrom\s+['"]([^'"]+\.json)['"]''', source.read_text()):
+                if name.startswith('.'):
+                    dependency = (source.parent / name).resolve()
+                    self.assertTrue(dependency.is_file(), str(dependency))
+                    imported.add(dependency)
+        self.assertTrue(imported, 'the runtime JSON import census must not disappear')
+        self.assertLessEqual(imported, selected, 'noResolve cannot discover imported JSON outside its explicit roots')
 
     def output(self, peak, boundary=None):
         return f'{boundary if boundary is not None else self.boundary}\nENGINE_BUILD_MEMORY_PEAK_BYTES={peak}\n'

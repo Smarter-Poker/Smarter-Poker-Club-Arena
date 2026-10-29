@@ -7,7 +7,7 @@ import { canonicalCards } from '../../src/utils/tableGeometry';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
 const start = page.indexOf('  const handleRabbitReveal = useCallback(');
-const end = page.indexOf('  // Leaderboard state', start);
+const end = page.indexOf('  // Mobile browsers throttle timers', start);
 // Execute the actual callback without booting the full table, auth, and sockets.
 const callback = ts.transpileModule(page.slice(start, end), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
@@ -42,6 +42,7 @@ function harness() {
     boardForRabbitReveal,
     canonicalCards,
     retainedRabbitTimerRef: { current: null },
+    retainedRabbitExpiresAtRef: { current: 0 },
     RABBIT_REVEAL_MIN_VISIBLE_MS: 3000,
   };
   const reveal = new Function(...Object.keys(deps), callback + '\nreturn handleRabbitReveal;')(
@@ -146,4 +147,44 @@ describe('a delayed Rabbit Hunt response belongs to the clicked hand', () => {
     expect(select(ghosts, 40, null, [], { handNumber: 40 }, true)).toEqual(ghosts);
     expect(select(ghosts, 40, null, [], { handNumber: 40 }, false)).toEqual([]);
   });
+});
+
+it('expires old ghosts on foreground resume even when the background timer was throttled', () => {
+  const begin = page.indexOf('  // Mobile browsers throttle timers');
+  const end = page.indexOf('  const handleRabbitReceipt', begin);
+  const effect = ts.transpileModule(page.slice(begin, end), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const listeners: Record<string, () => void> = {};
+  const remove = vi.fn();
+  const clear = vi.fn();
+  const board = vi.fn();
+  const cards = vi.fn();
+  const deps = {
+    useEffect: (fn: () => unknown) => fn(),
+    document: {
+      hidden: false,
+      addEventListener: (name: string, fn: () => void) => {
+        listeners[name] = fn;
+      },
+      removeEventListener: remove,
+    },
+    window: {
+      addEventListener: (name: string, fn: () => void) => {
+        listeners[name] = fn;
+      },
+      removeEventListener: remove,
+    },
+    retainedRabbitExpiresAtRef: { current: Date.now() - 1 },
+    retainedRabbitTimerRef: { current: 123 },
+    clearTimeout: clear,
+    setRetainedRabbitBoard: board,
+    setRabbitRevealedCards: cards,
+  };
+  new Function(...Object.keys(deps), effect)(...Object.values(deps));
+  listeners.visibilitychange();
+  expect(board).toHaveBeenCalledWith(null);
+  expect(cards).toHaveBeenCalledWith([]);
+  expect(clear).toHaveBeenCalledWith(123);
+  expect(deps.retainedRabbitExpiresAtRef.current).toBe(0);
 });

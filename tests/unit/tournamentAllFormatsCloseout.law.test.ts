@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { consumedInputs } from '../../scripts/ci/ui-test-selection.mjs';
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { sliceMethod } from '../helpers/sourceWindow';
@@ -186,11 +187,14 @@ describe('Every persisted tournament format shares the terminal celebration', ()
       '.github/workflows/publish-club-arena.yml',
     ]) {
       expect(readFileSync(workflow, 'utf8')).toMatch(
-        workflow.endsWith('/ci.yml')
-          ? /run: node scripts\/ci\/ui-test-selection\.mjs unit --shard=/
-          : /run: npx vitest run tests\/ --shard=/
+        /node scripts\/ci\/ui-test-selection\.mjs unit --shard=/
       );
     }
+    // This matrix reads dynamic source paths. The maintained selector must
+    // conservatively retain it even for an unrelated presentation-only delta.
+    expect(
+      consumedInputs(process.cwd(), 'tests/unit/tournamentAllFormatsCloseout.law.test.ts').unknown
+    ).toBe(true);
     expect(readFileSync('.github/workflows/ci.yml', 'utf8')).toContain(
       'name: Client Unit Tests (vitest)'
     );

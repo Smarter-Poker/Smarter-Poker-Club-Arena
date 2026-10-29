@@ -1,6 +1,9 @@
 import {
   completeF06Custody,
   inspectCompletedF06Custody,
+  inspectCompletedF06OmittedHistory,
+  inspectCompletedF06DiagnosticWindow,
+  COMPLETED_F06_DIAGNOSTIC_LIMIT,
   type CompletedF06Custody,
 } from './tournament/completedF06Custody.js';
 import { LightningObserverProjection } from './lightning/LightningObserverProjection.js';
@@ -2183,6 +2186,54 @@ export class GameServer {
     return this.tournamentEngines.get(tournamentId) === manager;
   }
 
+  /** The verified terminal cleanup caller owns this exact manager. Retire only
+   * detached historical data; unresolved or mismatched custody is untouched. */
+  retireCompletedF06CustodyMetadata(
+    tournamentId: string,
+    manager: unknown,
+    receiptTournamentId: string
+  ): number {
+    if (receiptTournamentId !== tournamentId || !(this.tournamentEngines instanceof Map)) return 0;
+    const current = this.tournamentEngines.get(tournamentId);
+    if (
+      !current ||
+      current !== manager ||
+      current.isRunning() ||
+      current.getTableIds().length > 0 ||
+      current.isF06RecoveryOwner()
+    )
+      return 0;
+    for (const active of [
+      this.drainedF06TournamentCustody,
+      this.durableMixedF06Custody,
+      this.mixedF06AdmissionContinuations,
+    ])
+      if (!(active instanceof Map) || active.has(tournamentId)) return 0;
+    if (!(this.completedF06TournamentCustody instanceof Map)) return 0;
+    const entries = this.completedF06TournamentCustody.get(tournamentId);
+    if (!(entries instanceof Set)) return 0;
+    let retired = 0;
+    for (const entry of entries) {
+      try {
+        if (this.inspectCompletedF06Custody(entry)?.tournamentId !== tournamentId) continue;
+      } catch {
+        continue; /* unreadable evidence retains custody */
+      }
+      entries.delete(entry);
+      retired++;
+    }
+    if (entries.size === 0) this.completedF06TournamentCustody.delete(tournamentId);
+    return retired;
+  }
+
+  inspectCompletedF06DiagnosticWindow(value: unknown, tournamentId: string) {
+    return inspectCompletedF06DiagnosticWindow(value, tournamentId);
+  }
+
+  inspectCompletedF06OmittedHistory(value: unknown, tournamentId: string) {
+    return inspectCompletedF06OmittedHistory(value, tournamentId);
+  }
+
   /** Read the module-issued immutable terminal seal, never JSON supplied by a caller. */
   inspectCompletedF06Custody(entry: unknown) {
     return inspectCompletedF06Custody(entry);
@@ -2280,7 +2331,7 @@ export class GameServer {
     if (activeCustody) addCustody(activeCustody, 'drained-custody');
     if (archivedCustody) {
       for (const entry of archivedCustody) {
-        if (archivedCustodyScanned >= 32) break;
+        if (archivedCustodyScanned >= COMPLETED_F06_DIAGNOSTIC_LIMIT) break;
         archivedCustodyScanned++;
         if (entry.status !== 'sealed') {
           addCustody(entry.original, 'completed-custody');

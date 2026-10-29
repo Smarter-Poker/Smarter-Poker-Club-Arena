@@ -124,7 +124,17 @@ esac
             PATH: `${dir}:${process.env.PATH}`,
             GUARD_TRACE: trace,
             GUARD_IDENTITY: JSON.stringify(identity),
-            GUARD_PRS: JSON.stringify(prs),
+            GUARD_PRS: JSON.stringify(
+              Array.isArray(prs)
+                ? prs.map((p) => ({
+                    ...p,
+                    head: {
+                      ref: 'fix/timing',
+                      repo: { id: 1132369872, owner: { login: 'Smarter-Software-PIQ' } },
+                    },
+                  }))
+                : prs
+            ),
           },
         }
       );
@@ -147,7 +157,14 @@ esac
     'resolves the approved transfer before filtering %s heads',
     (owner) => {
       const result = runDestinationGuard(owner, transferredIdentity, [
-        { number: 8479, state: 'open' },
+        {
+          number: 8479,
+          state: 'open',
+          head: {
+            ref: 'fix/timing',
+            repo: { id: 1132369872, owner: { login: 'Smarter-Software-PIQ' } },
+          },
+        },
       ]);
       expect(result.status).toBe(0);
       expect(result.trace).toContain('repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pulls');
@@ -208,6 +225,188 @@ esac
     expect(guard).toContain('git check-ref-format "refs/heads/$BRANCH"');
     expect(guard).toContain('is not a valid destination branch');
     expect(guard).not.toMatch(/\*\[\^A-Za-z0-9._\/-\]\*\)\s*exit 0/);
+  });
+});
+
+describe('LAW - transferred Club Arena pushes retain branch authority', () => {
+  const branch = 'codex/guard-transfer-fixture';
+  const canonical = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena';
+  const repositoryId = 1132369872;
+  const pull = (
+    state = 'open',
+    merged = false,
+    owner = 'Smarter-Software-PIQ',
+    id = repositoryId
+  ) => ({
+    number: 9001,
+    state,
+    merged_at: merged ? '2026-10-29T00:00:00Z' : null,
+    head: { ref: branch, repo: { id, owner: { login: owner } } },
+  });
+  function runGuard(
+    remote: string,
+    options: {
+      metadata?: unknown;
+      pulls?: unknown;
+      fail?: string;
+      expectedOwner?: string;
+      emptyForWrongOwner?: boolean;
+    } = {}
+  ) {
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ca-guard-owner-')));
+    try {
+      const trace = join(directory, 'trace');
+      const mock = join(directory, 'mock-gh.mjs');
+      writeFileSync(
+        mock,
+        `import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(process.env.GUARD_FIX_TRACE, JSON.stringify(args) + '\\n');
+const endpoint = args.find(x => x.startsWith('repos/'));
+const kind = endpoint?.endsWith('/pulls') ? 'pulls' : 'metadata';
+if (process.env.GUARD_FIX_FAIL === kind) process.exit(1);
+if (kind === 'pulls' && !args.includes('head=' + process.env.GUARD_FIX_OWNER + ':' + process.env.GUARD_FIX_BRANCH)) {
+  if (process.env.GUARD_FIX_WRONG_OWNER_EMPTY === '1') { process.stdout.write('[]'); process.exit(0); }
+  process.exit(2);
+}
+process.stdout.write(process.env[kind === 'pulls' ? 'GUARD_FIX_PULLS' : 'GUARD_FIX_METADATA']);
+`,
+        { mode: 0o755 }
+      );
+      writeFileSync(
+        join(directory, 'gh'),
+        '#!/bin/sh\nexec "$GUARD_FIX_NODE" "$GUARD_FIX_MOCK" "$@"\n',
+        { mode: 0o755 }
+      );
+      const result = spawnSync('bash', [resolve(root, GUARD_PATH), branch, 'origin', remote], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: directory + ':' + process.env.PATH,
+          GUARD_FIX_NODE: process.execPath,
+          GUARD_FIX_MOCK: mock,
+          GUARD_FIX_TRACE: trace,
+          GUARD_FIX_OWNER: options.expectedOwner || 'Smarter-Software-PIQ',
+          GUARD_FIX_BRANCH: branch,
+          GUARD_FIX_FAIL: options.fail || '',
+          GUARD_FIX_WRONG_OWNER_EMPTY: options.emptyForWrongOwner ? '1' : '',
+          GUARD_FIX_METADATA:
+            typeof options.metadata === 'string'
+              ? options.metadata
+              : JSON.stringify(
+                  options.metadata ?? {
+                    full_name: canonical,
+                    id: repositoryId,
+                    owner: { login: 'Smarter-Software-PIQ' },
+                  }
+                ),
+          GUARD_FIX_PULLS:
+            typeof options.pulls === 'string'
+              ? options.pulls
+              : JSON.stringify(options.pulls ?? [pull()]),
+        },
+        encoding: 'utf8',
+      });
+      const calls = existsSync(trace)
+        ? readFileSync(trace, 'utf8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((x) => JSON.parse(x))
+        : [];
+      return { ...result, calls };
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+  for (const owner of ['Smarter-Poker', 'Smarter-Software-PIQ'])
+    for (const remote of [
+      `git@github.com:${owner}/Smarter-Poker-Club-Arena.git`,
+      `https://github.com/${owner}/Smarter-Poker-Club-Arena`,
+      `ssh://git@github.com/${owner}/Smarter-Poker-Club-Arena.git/`,
+    ])
+      it(`accepts authenticated canonical open authority through ${remote}`, () => {
+        const result = runGuard(remote);
+        expect(result.status, result.stderr).toBe(0);
+        expect(
+          result.calls.some(
+            (args) =>
+              args.includes('repos/' + canonical + '/pulls') &&
+              args.includes('head=Smarter-Software-PIQ:' + branch)
+          )
+        ).toBe(true);
+      });
+  for (const state of ['closed', 'merged'])
+    it(`old HTTPS alias cannot turn a ${state} PR into an empty old-owner answer`, () => {
+      const result = runGuard('https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git', {
+        pulls: [pull('closed', state === 'merged')],
+        emptyForWrongOwner: true,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(state === 'merged' ? 'MERGED' : 'CLOSED');
+    });
+  for (const metadata of [
+    { full_name: canonical, id: 42 },
+    { full_name: 'Other-Owner/Smarter-Poker-Club-Arena', id: repositoryId },
+    '{',
+  ])
+    it('refuses wrong immutable identity or unreadable repository metadata', () => {
+      expect(runGuard('git@github.com:' + canonical + '.git', { metadata }).status).toBe(1);
+    });
+  for (const remote of [
+    'git@github.com:Smarter-Software-PIQ/Other-Repo.git',
+    'git@evilgithub.com:Smarter-Poker/Smarter-Poker-Club-Arena.git',
+    'https://github.com/Other-Owner/Smarter-Poker-Club-Arena.git',
+    'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/extra',
+  ])
+    it(`refuses foreign or malformed destination ${remote}`, () => {
+      const result = runGuard(remote);
+      expect(result.status).toBe(1);
+      expect(result.calls).toHaveLength(0);
+    });
+  for (const pulls of [
+    [pull('open', false, 'Smarter-Poker')],
+    [pull('open', false, 'Smarter-Software-PIQ', 42)],
+    [{ ...pull(), head: { ...pull().head, ref: 'other-branch' } }],
+    [{ ...pull(), state: 'unknown' }],
+    '{',
+    { message: 'unreadable' },
+  ])
+    it('refuses wrong head authority and unreadable PR verdicts', () => {
+      expect(runGuard('git@github.com:' + canonical + '.git', { pulls }).status).toBe(1);
+    });
+  for (const fail of ['metadata', 'pulls'])
+    it(`fails closed on ${fail} API failure`, () => {
+      expect(runGuard('git@github.com:' + canonical + '.git', { fail }).status).toBe(1);
+    });
+  it('allows a genuine new branch only after exact repository and current-owner query', () => {
+    expect(runGuard('git@github.com:' + canonical + '.git', { pulls: [] }).status).toBe(0);
+  });
+  it('retains pre-transfer canonical authority', () => {
+    expect(
+      runGuard('git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git', {
+        metadata: {
+          full_name: 'Smarter-Poker/Smarter-Poker-Club-Arena',
+          id: repositoryId,
+          owner: { login: 'Smarter-Poker' },
+        },
+        expectedOwner: 'Smarter-Poker',
+        pulls: [pull('open', false, 'Smarter-Poker')],
+      }).status
+    ).toBe(0);
+  });
+  it('preserves other existing Smarter-Poker repository checks', () => {
+    expect(
+      runGuard('git@github.com:Smarter-Poker/Smarter-Poker-World-Hub.git', {
+        expectedOwner: 'Smarter-Poker',
+        metadata: {
+          full_name: 'Smarter-Poker/Smarter-Poker-World-Hub',
+          id: 42,
+          owner: { login: 'Smarter-Poker' },
+        },
+        pulls: [pull('open', false, 'Smarter-Poker', 42)],
+      }).status
+    ).toBe(0);
   });
 });
 

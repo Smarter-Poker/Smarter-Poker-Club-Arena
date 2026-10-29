@@ -11,6 +11,15 @@ const workflow = parse(
 );
 const target = '1'.repeat(40);
 const other = '2'.repeat(40);
+// The mismatched fixture preserves all 12 rounds and both real Node CLI calls
+// per round. The old fixed 5s child expired under the ordinary full hook before
+// its authoritative exit. Budget one second per CLI plus process cleanup;
+// retain outer headroom for both child runs. Production budgets are unchanged.
+const verificationAttempts = 12;
+const verificationCliCallsPerAttempt = 2;
+const verificationChildBudgetMs =
+  verificationAttempts * verificationCliCallsPerAttempt * 1000 + 1000;
+const verificationParentBudgetMs = verificationChildBudgetMs * 2 + 5000;
 
 function eligible(verifiedSha: string, overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
@@ -48,6 +57,11 @@ function runOriginVerification(liveSha: string) {
     );
     const command = step.run.replace('${{ steps.verdict.outputs.ours }}', target);
     expect(command).not.toContain('${{');
+    expect(command).toContain('for _ in $(seq 1 ' + verificationAttempts + ')');
+    expect(
+      command.match(/node scripts\/ci\/production-e2e-provenance\.mjs unchanged/g)
+    ).toHaveLength(verificationCliCallsPerAttempt);
+
     // Run the committed shell. Only transport and delay are substituted:
     // the JSON parsing, equality check, output emission and exit are real.
     writeFileSync(
@@ -69,7 +83,7 @@ function runOriginVerification(liveSha: string) {
         GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       },
       encoding: 'utf8',
-      timeout: 5000,
+      timeout: verificationChildBudgetMs,
     });
     return { status: result.status, output: readFileSync(output, 'utf8'), error: result.error };
   } finally {
@@ -121,19 +135,21 @@ describe('native publishing requires the exact origin verification', () => {
     expect(eligible(target, overrides)).toBe(false);
   });
 
-  it('the actual HTTP verification shell emits evidence only for the matched SHA', () => {
-    const matched = runOriginVerification(target);
-    expect(matched.error).toBeUndefined();
-    expect(matched.status).toBe(0);
-    expect(matched.output).toBe('sha=' + target + '\n');
-    const mismatched = runOriginVerification(other);
-    expect(mismatched.error).toBeUndefined();
-    expect(mismatched.status).toBe(1);
-    expect(mismatched.output).toBe('');
-    // Two real child processes each retain their 5s bound. The parent also
-    // needs assertion/cleanup time; a 5s parent can expire before either
-    // child reports its authoritative outcome under full-suite contention.
-  }, 15_000);
+  it(
+    'the actual HTTP verification shell emits evidence only for the matched SHA',
+    () => {
+      const matched = runOriginVerification(target);
+      expect(matched.error).toBeUndefined();
+      expect(matched.status).toBe(0);
+      expect(matched.output).toBe('sha=' + target + '\n');
+      const mismatched = runOriginVerification(other);
+      expect(mismatched.error).toBeUndefined();
+      expect(mismatched.status).toBe(1);
+      expect(mismatched.output).toBe('');
+      // Parent includes both derived child budgets and assertion/cleanup time.
+    },
+    verificationParentBudgetMs
+  );
 
   it('the local template and publisher do not accept paid error telemetry configuration', () => {
     const template = readFileSync(join(root, '.env.example'), 'utf8');

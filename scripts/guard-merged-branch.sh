@@ -18,15 +18,28 @@ if ! git check-ref-format "refs/heads/$BRANCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$REMOTE_URL" =~ ^(git@github.com:|https://github.com/|ssh://git@github.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
-  OWNER="${BASH_REMATCH[2]}"
-  REPO="${BASH_REMATCH[3]}"
-  REPO="${REPO%.git}"
-else
-  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter Poker GitHub destination." >&2
+case "$REMOTE_URL" in
+  git@github.com:Smarter-Poker/*|https://github.com/Smarter-Poker/*|ssh://git@github.com/Smarter-Poker/*)
+    REPO="${REMOTE_URL##*Smarter-Poker/}"
+    OWNER="Smarter-Poker"
+    ;;
+  git@github.com:Smarter-Software-PIQ/*|https://github.com/Smarter-Software-PIQ/*|ssh://git@github.com/Smarter-Software-PIQ/*)
+    REPO="${REMOTE_URL##*Smarter-Software-PIQ/}"
+    OWNER="Smarter-Software-PIQ"
+    ;;
+  *)
+    echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' is not an identified Smarter-Poker GitHub destination." >&2
+    exit 1
+    ;;
+esac
+REPO="${REPO%/}"
+REPO="${REPO%.git}"
+if [[ ! "$REPO" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "$OWNER" == "Smarter-Software-PIQ" && "$REPO" != "Smarter-Poker-Club-Arena" ]]; then
+  echo "[merged-branch guard] BLOCKED: remote '$REMOTE_NAME' has an unreadable or unapproved repository name." >&2
   exit 1
 fi
 SLUG="$OWNER/$REPO"
+HEAD_REPO_ID=""
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "[merged-branch guard] BLOCKED: GitHub CLI is required to verify destination branch '$BRANCH'." >&2
@@ -49,14 +62,14 @@ try {
     if (!isClubArenaRepository(requested,r.id) || !isClubArenaRepository(r.full_name,r.id)) throw Error();
   } else if (!requested.startsWith("Smarter-Poker/") || r.full_name!==requested) throw Error();
   if (r.owner?.login !== r.full_name.split("/")[0]) throw Error();
-  console.log(r.full_name);
+  console.log(r.full_name + "\t" + (requested.endsWith("/Smarter-Poker-Club-Arena") ? r.id : ""));
 } catch { process.exitCode=1; }
 ' "$TRUST_HELPER" "$SLUG" 2>/dev/null)"
 if [[ -z "$RESOLVED" ]]; then
   echo "[merged-branch guard] BLOCKED: GitHub did not identify the trusted destination repository." >&2
   exit 1
 fi
-SLUG="$RESOLVED"
+IFS=$'\t' read -r SLUG HEAD_REPO_ID <<< "$RESOLVED"
 HEAD_OWNER="${SLUG%%/*}"
 
 # `gh` uses its credential store or a standard process-level GH_TOKEN. This
@@ -73,6 +86,7 @@ fi
 
 VERDICT="$(printf '%s' "$RESP" | python3 -c '
 import json, sys
+owner, branch, repo_id = sys.argv[1:]
 try:
     prs = json.load(sys.stdin)
 except Exception:
@@ -82,6 +96,13 @@ if not isinstance(prs, list):
     print("ERROR")
 elif not prs:
     print("NONE")
+elif any(not isinstance(p, dict) or p.get("state") not in ("open", "closed")
+         or not isinstance(p.get("number"), int)
+         or p.get("head", {}).get("ref") != branch
+         or p.get("head", {}).get("repo", {}).get("owner", {}).get("login") != owner
+         or (repo_id and str(p.get("head", {}).get("repo", {}).get("id")) != repo_id)
+         for p in prs):
+    print("ERROR")
 else:
     prs.sort(key=lambda p: p.get("number", 0), reverse=True)
     pr = prs[0]
@@ -92,7 +113,7 @@ else:
         print(f"CLOSED {number}")
     else:
         print(f"OPEN {number}")
-' 2>/dev/null || echo ERROR)"
+' "$HEAD_OWNER" "$BRANCH" "$HEAD_REPO_ID" 2>/dev/null || echo ERROR)"
 
 case "$VERDICT" in
   NONE|OPEN\ *) exit 0 ;;

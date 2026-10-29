@@ -1437,3 +1437,98 @@ it('refuses an unfunded post-claim stack change before original controller mutat
   expect(encodePrivateHandContinuation(claimed)).toEqual(encoded);
   expect(e.killForRestart).not.toHaveBeenCalled();
 });
+
+it.each([
+  'ready',
+  'peer_resync',
+  'publish_failed',
+  'superseded',
+  'hand_completed',
+  'retention_failed',
+] as const)('publishes only retained current input after a pending read: %s', async (mode) => {
+  const { e, roster } = fixture();
+  const published: any[] = [];
+  e.tableInfo = { game_variant: 'nlh', big_blind: 20, small_blind: 10, max_players: 2 };
+  e.hub = {
+    publish: (_id: string, state: any) => {
+      if (mode === 'publish_failed') throw Error('publication unavailable');
+      published.push(structuredClone(state));
+    },
+    emitEvent: vi.fn(),
+  };
+  let blocked = false;
+  let release: (() => void) | undefined;
+  e.retainOriginalBatch = async (_o: unknown, _s: unknown, batch: any) => {
+    if (blocked) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      if (mode === 'retention_failed') throw Error('retention refused');
+    }
+    e.retainedPublicHandState = JSON.parse(batch.controller).state;
+  };
+  const controller = e.handController;
+  const started = e.runOriginalController(roster, controller, 42, Date.now(), {
+    started: false,
+    cause: null,
+  });
+  try {
+    await vi.waitFor(() => expect(e.handContinuation).toBeTruthy());
+    await e.handContinuation.join();
+    const decision = e.getActionContext();
+    expect(decision).toBeTruthy();
+    blocked = true;
+    if (mode === 'peer_resync') {
+      e.handleHandEvent = async () => {
+        expect(e.getTableState('u2').action_context).toBe(decision);
+      };
+      e.handContinuation.enqueue({
+        type: 'TURN_CHANGE',
+        seat: controller.getState().currentPlayerSeat,
+        availableActions: [],
+      });
+    } else e.handContinuation.checkpoint();
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    expect(e.getTableState('u1').action_context).toBeNull();
+    expect(e.getActionContext()).toBeNull();
+    expect(published).toHaveLength(0);
+    if (mode === 'superseded') e.isCurrentEngine = () => false;
+    if (mode === 'hand_completed')
+      expect(controller.performAction(controller.getState().currentPlayerSeat, 'fold')).toBe(true);
+    blocked = false;
+    release!();
+    if (mode === 'retention_failed' || mode === 'superseded') {
+      await expect(e.handContinuation.join()).rejects.toThrow();
+      expect(published).toHaveLength(0);
+      return;
+    }
+    await e.handContinuation.join();
+    if (mode === 'hand_completed') {
+      expect(published).toHaveLength(0);
+      return;
+    }
+    expect(e.getActionContext()).toBe(decision);
+    if (mode === 'publish_failed') {
+      expect(published).toHaveLength(0);
+      expect(e.handContinuation.isUnretained()).toBe(false);
+      expect(e.killForRestart).not.toHaveBeenCalled();
+      return;
+    }
+    expect(published).toHaveLength(1);
+    expect(published[0].action_context).toBe(decision);
+    e.handContinuation.checkpoint();
+    await e.handContinuation.join();
+    expect(published).toHaveLength(1);
+    expect(
+      controller
+        .getState()
+        .actionHistory.filter((a: any) => !['sb', 'bb', 'ante'].includes(a.action))
+    ).toEqual([]);
+  } finally {
+    blocked = false;
+    release?.();
+    e.running = false;
+    e.activeHandWaitRelease?.release('test_cleanup');
+    await started;
+  }
+});

@@ -4233,7 +4233,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                     )
                       controllerForHand.resumeRecoveredHand();
                   })
-              : undefined
+              : undefined,
+            () => this.publishRetainedInputReadiness()
           );
         }
         unsub = controllerForHand.onEvent((event: HandEvent) => {

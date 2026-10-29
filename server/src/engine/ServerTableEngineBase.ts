@@ -304,6 +304,42 @@ async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number
 }
 
 export abstract class ServerTableEngineBase {
+  private withheldInputPublication: string | null = null;
+
+  /** Remember only a real decision whose public capability was withheld. */
+  protected publishedActionContext(allViewers = false): string | null {
+    const context = this.getActionContext();
+    const controller = this.handController;
+    const decision = controller ? playerActionContext(controller) : null;
+    if (context === null && controller && decision) this.withheldInputPublication = decision;
+    else if (allViewers || !decision) this.withheldInputPublication = null;
+    return context;
+  }
+
+  /** Called by this original lane's completed retention, never a timer/retry. */
+  protected async publishRetainedInputReadiness(): Promise<void> {
+    const withheld = this.withheldInputPublication;
+    if (!withheld) return;
+    if (
+      !this.handController ||
+      !this.running ||
+      !this.isCurrentEngine() ||
+      !this.lifecycleCanMutate() ||
+      playerActionContext(this.handController) !== withheld
+    ) {
+      this.withheldInputPublication = null;
+      return;
+    }
+    if (this.getActionContext() !== withheld) return;
+    try {
+      await this.broadcastCurrentState();
+    } catch (error) {
+      // Already retained state stays retained. A publication failure cannot
+      // fail the financial lane or acknowledge an unretained action.
+      reportError(error, `ServerTableEngine.${this.tableId}.input_ready_publication_failed`);
+    }
+  }
+
   public getActionContext(): string | null {
     if (this.isOriginalInputPending() || this.handContinuation?.isUnretained()) return null;
     return this.handController ? playerActionContext(this.handController) : null;

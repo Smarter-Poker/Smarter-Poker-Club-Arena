@@ -589,6 +589,7 @@ import GameServerAPI, {
   // once more. It was dropped on 2026-08-25 when entry briefly became free.
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
+  readRabbitHuntReceipt,
 } from '../services/GameServerAPI';
 import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from '../services/heartbeatCodes';
 import {
@@ -9245,6 +9246,7 @@ function LiveTablePage({
    */
   const [retainedRabbitBoard, setRetainedRabbitBoard] = useState<RetainedRabbitBoard | null>(null);
   const retainedRabbitTimerRef = useRef<number | null>(null);
+  const retainedRabbitExpiresAtRef = useRef(0);
   /** The last non-empty board the felt showed, and whose hand it belonged to. */
   const lastBoardOfHandRef = useRef<{
     handNumber: number;
@@ -9410,7 +9412,7 @@ function LiveTablePage({
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
-        return { success: false, error: result.error };
+        return { success: false, error: result.error, retryable: result.retryable };
       }
 
       // Server card format -> the one client spelling (2026-10-25).
@@ -9428,6 +9430,7 @@ function LiveTablePage({
         );
         // One expiry owns both copies, including an idle table with no next deal.
         if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+        retainedRabbitExpiresAtRef.current = Date.now() + RABBIT_REVEAL_MIN_VISIBLE_MS;
         retainedRabbitTimerRef.current = window.setTimeout(() => {
           retainedRabbitTimerRef.current = null;
           setRetainedRabbitBoard(null);
@@ -9449,6 +9452,45 @@ function LiveTablePage({
         // paid for and nothing on screen acknowledged it.
         usesRemaining: result.uses_remaining,
       };
+    },
+    [tableId]
+  );
+
+  // Mobile browsers throttle timers in the background. Resume against the
+  // original wall-clock expiry so an old hand cannot flash back onto the felt.
+  useEffect(() => {
+    const expireOnResume = () => {
+      if (
+        document.hidden ||
+        !retainedRabbitExpiresAtRef.current ||
+        Date.now() < retainedRabbitExpiresAtRef.current
+      )
+        return;
+      retainedRabbitExpiresAtRef.current = 0;
+      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+      retainedRabbitTimerRef.current = null;
+      setRetainedRabbitBoard(null);
+      setRabbitRevealedCards([]);
+    };
+    document.addEventListener('visibilitychange', expireOnResume);
+    window.addEventListener('pageshow', expireOnResume);
+    return () => {
+      document.removeEventListener('visibilitychange', expireOnResume);
+      window.removeEventListener('pageshow', expireOnResume);
+    };
+  }, []);
+
+  const handleRabbitReceipt = useCallback(
+    async (handNumber: number): Promise<RabbitHuntRevealResult | null> => {
+      if (!tableId) return null;
+      const result = await readRabbitHuntReceipt(tableId, handNumber);
+      return result?.success && result.cards?.length
+        ? {
+            success: true,
+            cards: canonicalCards(result.cards) as Card[],
+            source: 'already_revealed',
+          }
+        : null;
     },
     [tableId]
   );
@@ -29972,6 +30014,7 @@ function LiveTablePage({
            shows the offer for ~2.5s; a player who missed it can buy the same
            reveal here, through the same charging call. */
         onRabbitHunt={handleRabbitReveal}
+        onRabbitHuntReceipt={handleRabbitReceipt}
         rabbitUserId={userId === 'guest' ? null : userId}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from

@@ -1625,6 +1625,7 @@ export async function postBBToEnter(tableId: string): Promise<ActionResult> {
 export interface RabbitHuntResult {
   success: boolean;
   error?: string;
+  retryable?: boolean;
   cards?: { rank: string; suit: string }[];
   board_length?: number;
   source?: string;
@@ -1635,27 +1636,55 @@ export interface RabbitHuntResult {
   uses_remaining?: number | null;
 }
 
+/** Read a purchased result without contacting a billing endpoint. */
+export async function readRabbitHuntReceipt(
+  tableId: string,
+  handNumber: number
+): Promise<RabbitHuntResult | null> {
+  const { readRabbitReceipt } = await import('./rabbitHuntReceipts');
+  const owner = storedLoginIdentity();
+  const result = await readRabbitReceipt(owner, tableId, handNumber);
+  return storedLoginIdentity() === owner ? result : null;
+}
+
 export async function requestRabbitHunt(
   tableId: string,
   handNumber?: number
 ): Promise<RabbitHuntResult> {
-  try {
-    const headers = await getAuthHeaders();
-    const resp = await engineFetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ tableId, handNumber }),
-    });
-    // A 400 carries a real, human-readable reason from the engine ("Not Enough
-    // Diamonds", "You Were Not Dealt Into That Hand"), so parse the body rather
-    // than flattening every non-200 into a generic failure.
-    const data = (await resp.json().catch(() => null)) as RabbitHuntResult | null;
-    if (data) return data;
-    return { success: false, error: `Server error (${resp.status})` };
-  } catch (err: unknown) {
-    console.warn('[GameServerAPI] requestRabbitHunt failed:', err);
-    return { success: false, error: 'Server unreachable' };
-  }
+  const owner = storedLoginIdentity();
+  const { withRabbitReceipt } = await import('./rabbitHuntReceipts');
+  return withRabbitReceipt(owner, tableId, handNumber, async () => {
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const headers = await getAuthHeaders();
+      if (!owner || storedLoginIdentity() !== owner)
+        return { success: false, error: 'Rabbit Hunt Login Changed' };
+      // A quiet connection must not leave the paid control spinning forever.
+      // An interrupted response is UNKNOWN, never proof that no charge happened.
+      const controller = new AbortController();
+      deadline = setTimeout(() => controller.abort(), 12_000);
+      const resp = await engineFetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ tableId, handNumber }),
+        signal: controller.signal,
+      });
+      const data = (await resp.json().catch(() => null)) as RabbitHuntResult | null;
+      if (storedLoginIdentity() !== owner)
+        return { success: false, error: 'Rabbit Hunt Login Changed' };
+      if (data) return data;
+      return { success: false, error: 'Rabbit Hunt Response Interrupted', retryable: true };
+    } catch (err: unknown) {
+      console.warn('[GameServerAPI] requestRabbitHunt failed:', err);
+      return {
+        success: false,
+        error: 'Connection Interrupted. Try This Hand Again',
+        retryable: true,
+      };
+    } finally {
+      if (deadline !== undefined) clearTimeout(deadline);
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -571,7 +571,12 @@ function RabbitCard({ card, index, deckStyle, cardBack }: RabbitCardProps) {
       className="community-cards__card community-cards__card--rabbit"
       style={{ '--card-index': index } as React.CSSProperties}
     >
-      <div className="community-cards__rabbit-flip">
+      <div
+        className="community-cards__rabbit-flip"
+        onAnimationEnd={(event) => {
+          if (event.animationName === 'ccRabbitFlip') event.currentTarget.style.willChange = 'auto';
+        }}
+      >
         <div className="community-cards__flip-face community-cards__flip-face--back">
           <CardBack size="lg" style={cardBack} />
         </div>
@@ -1121,16 +1126,32 @@ function CommunityCardsComponent({
   // RABBIT HUNT 2026-08-26: one snap + a light haptic when the reveal lands.
   // ONE beat, not per-card — the reference turns all cards over in the same
   // frame, so five staggered snaps would invent a deal that never happened.
-  const prevRabbitCountRef = useRef(0);
+  const rabbitCueIdentity =
+    rabbitCount > 0
+      ? JSON.stringify([
+          rabbitHandId ?? 'local',
+          rabbitCards.map((card) => `${card.rank}${card.suit}`),
+        ])
+      : null;
+  const prevRabbitCueRef = useRef<string | null>(null);
   useEffect(() => {
-    if (rabbitCount > 0 && prevRabbitCountRef.current === 0) {
-      if (playSounds) {
-        haptic.light();
-        if (soundService.isEnabled()) soundService.playCommunityCard();
-      }
+    if (!rabbitCueIdentity || prevRabbitCueRef.current === rabbitCueIdentity) return;
+    if (!playSounds) return;
+    // One beat at the start of the simultaneous turn, after the back hold.
+    // Hidden tabs do not queue a stale sound to burst when the phone resumes.
+    const cue = () => {
+      if (document.hidden) return;
+      prevRabbitCueRef.current = rabbitCueIdentity;
+      haptic.light();
+      if (soundService.isEnabled()) soundService.playCommunityCard();
+    };
+    if (prefersReducedMotion()) {
+      cue();
+      return;
     }
-    prevRabbitCountRef.current = rabbitCount;
-  }, [rabbitCount, playSounds]);
+    const timer = setTimeout(cue, 120 * getAnimationSpeed());
+    return () => clearTimeout(timer);
+  }, [rabbitCueIdentity, playSounds]);
 
   // Create array of 5 slots
   const slots = useMemo(() => {

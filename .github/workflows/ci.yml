@@ -4419,7 +4419,9 @@ jobs:
         if: matrix.shard == 2
         env:
           ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
-        run: npm run test:e2e:financial-decisions
+        run: |
+          npm run test:e2e:financial-decisions
+          npm run test:e2e:rabbit-flow
 
       # Push opt-in in a real Chromium: the real prompt host, push client and
       # nudge policy against a local recorded stand-in for the hub API. No

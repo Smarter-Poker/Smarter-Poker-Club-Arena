@@ -72,3 +72,8 @@ cross-scope bindings and reassignment remain refused. The ordinary guard runs
 its focused regression suite, including an actual ESM worker binding, before
 scanning runtime source. The frozen encoder and native loading source are
 unchanged.
+
+The lexical require regression lives under `tests/operations`, while the
+ordinary guard still invokes it directly before scanning. It is a test suite,
+not a second `scripts/ci/check-*` guard requiring an independent CI reader.
+The existing guard-reader law remains unchanged.

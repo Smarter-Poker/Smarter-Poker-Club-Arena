@@ -4,7 +4,7 @@ import {mkdtempSync, writeFileSync, rmSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {Worker} from 'node:worker_threads';
-import {sourceViolations} from './check-esm-require.mjs';
+import {sourceViolations} from '../../scripts/ci/check-esm-require.mjs';
 
 const factory = "import {createRequire} from 'node:module';\n";
 const body = "function workerNative(){\n const require=createRequire(import.meta.url);\n return require('node:path');\n}";

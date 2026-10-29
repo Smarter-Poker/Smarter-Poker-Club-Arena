@@ -168,7 +168,7 @@ function main() {
   try {
     // The ordinary gate always executes its own focused regression suite.
     // Imports from that test do not enter main, so there is no recursive run.
-    const tests = spawnSync(process.execPath, ['--test', fileURLToPath(new URL('./check-esm-require.test.mjs', import.meta.url))], {stdio: 'inherit'});
+    const tests = spawnSync(process.execPath, ['--test', fileURLToPath(new URL('../../tests/operations/esm-require-bindings.test.mjs', import.meta.url))], {stdio: 'inherit'});
     if (tests.error || tests.status !== 0) throw new Error('lexical require regression suite failed');
   for (const file of walk(ROOT)) {
     const raw = readFileSync(file, 'utf8');

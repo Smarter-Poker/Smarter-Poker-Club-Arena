@@ -22,17 +22,19 @@ describe('gateway-only actor-bound read access', () => {
   });
   it('uses only public key, actor JWT and exact read-only RPCs without shared actor state', async () => {
     const requests: { path: string; token: string | null; body: unknown }[] = [];
-    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = new URL(String(input)).pathname;
-      const headers = new Headers(init?.headers);
-      const token = headers.get('authorization');
-      expect(headers.get('apikey')).toBe(PRIVATE_RECORD_GATEWAY_PUBLISHABLE_KEY);
-      expect(init?.redirect).toBe('error');
-      requests.push({ path, token, body: init?.body ? JSON.parse(String(init.body)) : null });
-      if (path === '/auth/v1/user')
-        return reply({ id: token === 'Bearer actor-one' ? 'one' : 'two' });
-      return reply(true);
-    });
+    const fetch = vi.fn(
+      async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+        const path = new URL(String(input)).pathname;
+        const headers = new Headers(init?.headers);
+        const token = headers.get('authorization');
+        expect(headers.get('apikey')).toBe(PRIVATE_RECORD_GATEWAY_PUBLISHABLE_KEY);
+        expect(init?.redirect).toBe('error');
+        requests.push({ path, token, body: init?.body ? JSON.parse(String(init.body)) : null });
+        if (path === '/auth/v1/user')
+          return reply({ id: token === 'Bearer actor-one' ? 'one' : 'two' });
+        return reply(true);
+      }
+    );
     const access = createPrivateRecordGatewayAccess(environment, { fetch });
     expect(
       await Promise.all([

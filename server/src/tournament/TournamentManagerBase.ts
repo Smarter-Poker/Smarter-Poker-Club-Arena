@@ -3957,7 +3957,7 @@ export abstract class TournamentManagerBase {
     // remaining time instead of measuring a null timer as a fresh full level;
     // the synchronized break becomes the pause owner until one of them ends.
     const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock;
-    this.synchronizedBreakStartGeneration++;
+    const acceptedBreakGeneration = ++this.synchronizedBreakStartGeneration;
     this.onBreak = true;
     if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
@@ -4026,7 +4026,12 @@ export abstract class TournamentManagerBase {
     // Persistence was admitted by this generation, but its response may return
     // after the generation was fenced. The retired manager must not publish or
     // pause table engines behind shutdown's final ownership snapshot.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
     // Derived past the end of the structure. The clamped index used to show the
@@ -4064,7 +4069,12 @@ export abstract class TournamentManagerBase {
           }
         : null,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     // 2026-08-18: the break screen is a full-screen opaque overlay
     // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and

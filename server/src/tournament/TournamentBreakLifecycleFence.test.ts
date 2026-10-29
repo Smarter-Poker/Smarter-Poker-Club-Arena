@@ -207,6 +207,48 @@ describe('tournament break lifecycle fence', () => {
     }
   );
 
+  it.each([
+    { boundary: 'persistence', nextBreak: false },
+    { boundary: 'broadcast', nextBreak: false },
+    { boundary: 'persistence', nextBreak: true },
+    { boundary: 'broadcast', nextBreak: true },
+  ])(
+    'does not repark released tables after delayed break-start $boundary (next break=$nextBreak)',
+    async ({ boundary, nextBreak }) => {
+      const persistence = deferred<unknown>();
+      const notification = deferred<boolean>();
+      const manager = new BreakHarness();
+      manager.activate();
+      const persist = stubBreakPersistence();
+      const engine = { pauseAfterHand: vi.fn(), resumeDealing: vi.fn() };
+      manager.addTableEngine(engine);
+      if (boundary === 'persistence') persist.eq.mockImplementationOnce(() => persistence.promise);
+      else manager.broadcastCall.mockImplementationOnce(() => notification.promise);
+      const pausing = manager.pauseForBreak(300_000);
+      await vi.waitFor(() =>
+        expect(
+          boundary === 'persistence' ? persist.eq : manager.broadcastCall
+        ).toHaveBeenCalledOnce()
+      );
+      await manager.resumeFromBreak();
+      expect(engine.resumeDealing).toHaveBeenCalledOnce();
+      if (nextBreak) await manager.pauseForBreak(300_000);
+      const pauses = engine.pauseAfterHand.mock.calls.length;
+      const announcements = manager.broadcastCall.mock.calls.length;
+      persistence.resolve({ error: null });
+      notification.resolve(true);
+      await pausing;
+      expect(manager.broadcastCall).toHaveBeenCalledTimes(announcements);
+      expect(engine.pauseAfterHand).toHaveBeenCalledTimes(pauses);
+      expect(manager.breakIsActive()).toBe(nextBreak);
+      if (!nextBreak) {
+        await manager.pauseForBreak(300_000);
+        expect(engine.pauseAfterHand).toHaveBeenCalledOnce();
+      }
+      manager.fence();
+    }
+  );
+
   it('cannot begin a break after eligibility returns to a fenced manager', async () => {
     const eligibility = deferred<boolean>();
     const manager = new BreakHarness();

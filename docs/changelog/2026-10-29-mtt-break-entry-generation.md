@@ -27,3 +27,5 @@ their existing recovery owner. Source/test completion is not engine activation
 or live verification.
 
 A second deferred-response regression reproduces a countdown-start event arriving after break release. Countdown continuations now require the same still-active break generation after persistence and broadcast, so a delayed acknowledgement cannot reannounce a completed break or trigger its add-on continuation.
+
+The same accepted generation also fences the break-start persistence and broadcast continuations. A delayed response could otherwise publish Last Hand after release or park already-resumed tables indefinitely. Both boundaries reproduce before the fix and pass afterward; a subsequent genuine break still parks the field.

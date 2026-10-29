@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+      "bytes": 248781,
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4397,5 +4397,17 @@
       "sha256": "5a2a61f8c476b6cf90000892e10c5fc87b67bf8c7e086fe2c9d9b15d2e2c1855"
     },
     "validation": "Eight sole-input routing cases fail before, all65horse routing cases pass after; connected native horse chain passes timing31 and budget27."
+  },
+  "playerManagementPeriodFees20261029": {
+    "reason": "Add the isolated period-fee read-contract qualification to required server shard 4; existing cash-native commands/assertions and financial qualification are unchanged. Current source binding only, not a new financial certificate.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "current": {
+      "bytes": 248781,
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2"
+    }
   }
 }

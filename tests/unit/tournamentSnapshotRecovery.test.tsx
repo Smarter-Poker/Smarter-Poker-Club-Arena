@@ -119,7 +119,17 @@ vi.mock('../../src/lib/supabase', () => ({
       const response =
         result >= 0 ? fixture.queries.splice(result, 1)[0].response : { data: [], error: null };
       const chain: any = { then: (yes: any, no: any) => Promise.resolve(response).then(yes, no) };
-      for (const method of ['select', 'eq', 'order', 'not', 'in', 'range', 'maybeSingle'])
+      for (const method of [
+        'select',
+        'eq',
+        'order',
+        'not',
+        'in',
+        'range',
+        'limit',
+        'gt',
+        'maybeSingle',
+      ])
         chain[method] = () => chain;
       return chain;
     },

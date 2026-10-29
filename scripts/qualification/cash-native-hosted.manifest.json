@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252926,
-      "sha256": "eaafaa33a7c201c8a0d4bf3fbbb0b3325e92970bbb6eced5a7790fdcbd078c85"
+      "bytes": 253530,
+      "sha256": "c655aba6021291d77e84a5ac2682517872fb2677da99a93bd828a232223c5c8d"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -225,24 +225,24 @@
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 12859,
-      "sha256": "68ae074abcf5f4fd9c330b6c8c1235a319ec6847c81f81807e154cb7c34d197e"
+      "bytes": 13575,
+      "sha256": "64ed92f5a283a755aa581107627efb0fe976e5873cb39a2841bce918415ef739"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 31582,
-      "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
+      "bytes": 32026,
+      "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3454,
       "sha256": "032a0942d016fcd97f763e000da4666caa14f464920cb04ef0f243de4cb6d3c8"
     },
     "scripts/ci/test_production_alert_core_postgres.py": {
-      "bytes": 7903,
-      "sha256": "868cf2000502522cf1374bf4bd3763763e56172d2fb9f8672b885b0970d00589"
+      "bytes": 8238,
+      "sha256": "d9876aa36dccfa5a4bacc73e75211c4f9b687cbc2506ca9f0928180ad5895f2d"
     },
     "scripts/operational-alerts/cash-pot-failed-run-intake.md": {
       "bytes": 1677,
@@ -4826,6 +4826,126 @@
       "bytes": 252926,
       "sha256": "eaafaa33a7c201c8a0d4bf3fbbb0b3325e92970bbb6eced5a7790fdcbd078c85"
     },
+    "financial_recertification": false
+  },
+  "retainedCheckpointMain35e20Composition20261029": {
+    "review": "Ordinary protected-main35e20c94f1 composition preserves its additive shard4 one-page retention fixture and server/tests classifier routing, together with this branch full-history server checkout. Both parents financial inputs, historical audit records, assertions, limits and qualification states are retained. Only the active current CI identity is composed here; existing financial commands are unchanged and no financial/native/live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 251812,
+      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "combinedWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "historicalRuntimeCheckoutAvailability20261029": {
+    "review": "Exact historical runtime qualification needs the fixed deployed EED Git object and its old source blobs before its existing bounded native run. Only server_shards Checkout gains fetch-depth 0; the immutable auto-deploy preflight retains depth 0 and removes blob:none plus its obsolete no-historical-reads comment. Parsed workflow comparison proves all other jobs, test selection, financial owner commands, budgets, matrices, assertions and joins unchanged. Refresh only this current CI input identity; preserve every historical audit and qualification state. This is not native financial requalification, installation or live certification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 251812,
+          "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+        }
+      }
+    },
+    "all_other_parsed_workflow_fields_identical": true,
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "handHistoryIncidentIdentitySourceAudit20261029": {
+    "reason": "Reviewed four additive lines registering the hand-history identity fixture, migration and native runner and invoking it through the existing composed alert qualification. No cash source, financial assertion, native scheduler test, historical qualification state or verdict changes. This refresh records current source identity only, not financial recertification.",
+    "changes": {
+      "scripts/ci/test-production-alert-core-postgres.py": {
+        "previous": {
+          "bytes": 31582,
+          "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
+        },
+        "current": {
+          "bytes": 32026,
+          "sha256": "f17b213f001ac1f11b2edd9bdfbde7eb200264835bd9d073b6c836a09e59bb75"
+        }
+      }
+    }
+  },
+  "handHistoryIncidentIdentityManifestAdmissionAudit20261029": {
+    "reason": "Add the three actual hand identity checkout dependencies omitted from the composed qualifier manifest and a real maintained-manifest admission regression. Current source identities only; preserve assertions, financial qualifications and historical receipts.",
+    "changes": {
+      "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+        "previous": {
+          "bytes": 12859,
+          "sha256": "68ae074abcf5f4fd9c330b6c8c1235a319ec6847c81f81807e154cb7c34d197e"
+        },
+        "current": {
+          "bytes": 13575,
+          "sha256": "64ed92f5a283a755aa581107627efb0fe976e5873cb39a2841bce918415ef739"
+        }
+      },
+      "scripts/ci/test_production_alert_core_postgres.py": {
+        "previous": {
+          "bytes": 7903,
+          "sha256": "868cf2000502522cf1374bf4bd3763763e56172d2fb9f8672b885b0970d00589"
+        },
+        "current": {
+          "bytes": 8238,
+          "sha256": "d9876aa36dccfa5a4bacc73e75211c4f9b687cbc2506ca9f0928180ad5895f2d"
+        }
+      }
+    }
+  },
+  "retainedCheckpointV31MainComposition20261029": {
+    "review": "Ordinary protected-main f8fbd791a1 composition preserves its additive V31 public feature/model-index controller contract step alongside the recovery full-history server checkout. Both parents financial source inputs, historical audits, assertions, deadlines and qualification states remain exact. Only active current CI identity is composed; no financial, native or live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    },
+    "combinedWorkflow": {
+      "bytes": 252549,
+      "sha256": "8cc7e43503f6a4bc0b0002a25a3a3b24b9123a6418bd5a164016912f9171b422"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "ciBrowserCriticalPathSourceAudit20261029": {
+    "scope": "Source identity only: five CSS Beat shards and three Diamond playfield shards preserve identical cases and required gates.",
+    "previousCiPin": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "currentCiPin": {
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
+  },
+  "privateGatewayShardRouteComposition20261029": {
+    "reason": "Preserve both parent audit histories while composing protected-main CSS five-shard and Diamond three-shard required joins, delivery runner routes and native qualification inputs. Only current workflow or derived binding identity changes. Financial SQL, assertions and historical qualification states are unchanged.",
+    "protectedMain": "4aaa198afcb605700201ebffa92e45cf7ae13132",
+    "changes": [
+      {
+        "section": "files",
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 252926,
+          "sha256": "eaafaa33a7c201c8a0d4bf3fbbb0b3325e92970bbb6eced5a7790fdcbd078c85"
+        },
+        "current": {
+          "bytes": 253530,
+          "sha256": "c655aba6021291d77e84a5ac2682517872fb2677da99a93bd828a232223c5c8d"
+        }
+      }
+    ],
     "financial_recertification": false
   }
 }

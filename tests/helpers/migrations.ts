@@ -25,6 +25,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { catalogSQLUnits } from './migrationSQLUnits';
 
 export const MIGRATIONS_DIR = resolve(__dirname, '..', '..', 'supabase/migrations');
 
@@ -49,6 +50,37 @@ export function readMigration(name: string): string {
   return sql;
 }
 
+const catalogUnits = new Map<string, ReturnType<typeof catalogSQLUnits>>();
+
+/** JSON catalog pre-images are data, not the migration's active declaration.
+ * Dynamic JSON-carried DDL is ambiguous to this source-only reader: refuse it
+ * rather than silently reading an older function and manufacturing a pass.
+ */
+export function authoritativeMigrationSQL(sql: string, fn: string): string {
+  let units = catalogUnits.get(sql);
+  if (!units) {
+    units = catalogSQLUnits(sql);
+    catalogUnits.set(sql, units);
+  }
+  const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const header = new RegExp(
+    `CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+public\\.${escaped}\\s*\\(`,
+    'i'
+  );
+  if (units.slice(1).some((unit) => header.test(unit.sql))) {
+    const outer = units[0].sql
+      .replace(/'(?:''|[^'])*'/g, (literal) => literal.replace(/[^\n]/g, ' '))
+      .replace(/--[^\n]*/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const dynamic = [...outer.matchAll(/\bEXECUTE\b/gi)].some(
+      (match) => !/(?:GRANT|REVOKE)\s+$/i.test(outer.slice(0, match.index))
+    );
+    if (dynamic)
+      throw new Error(`${fn}: dynamic JSON-carried DDL requires an explicit source reader`);
+  }
+  return units[0].sql;
+}
+
 const declaring = new Map<string, { name: string; sql: string }>();
 
 /**
@@ -60,7 +92,7 @@ export function latestDeclaring(fn: string): { name: string; sql: string } {
   const hit = declaring.get(fn);
   if (hit) return hit;
   const hits = migrationFiles().filter((f) => {
-    const sql = readMigration(f);
+    const sql = authoritativeMigrationSQL(readMigration(f), fn);
     return (
       sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
       sql.includes(`CREATE FUNCTION public.${fn}(`)
@@ -83,6 +115,7 @@ export function latestNamed(fragment: string): { name: string; sql: string } {
 
 /** The body of `fn` as declared in `sql`, between its dollar quotes. */
 export function functionBody(sql: string, fn: string): string {
+  sql = authoritativeMigrationSQL(sql, fn);
   const escaped = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const declarations = [
     ...sql.matchAll(

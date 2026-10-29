@@ -131,6 +131,8 @@ vi.mock('../../src/lib/supabase', () => ({
         in: () => chain,
         order: () => chain,
         range: () => chain,
+        limit: () => chain,
+        gt: () => chain,
         maybeSingle: () => answer(),
         then: (ok: any, no: any) => answer().then(ok, no),
       };

@@ -2104,6 +2104,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     return prepared.n;
   }
 
+  /** A retained sequence-zero controller has no live hand to finish. The
+   * successor drain may stop it only at its explicit owner park, after the
+   * exact private write and every accepted mutation have returned. Its saved
+   * original remains authoritative for the existing custody handoff. */
+  isPreparedOriginalParkedForSuccessor(): boolean {
+    const controller = this.handController;
+    if (
+      !this.running ||
+      !this.lifecycleCanMutate() ||
+      !this.isCurrentEngine() ||
+      !this.requiresExplicitPauseResume() ||
+      !this.isParkedBetweenHands() ||
+      !controller ||
+      this.retainedPreparedOriginalController !== controller ||
+      this.f06CurrentPermit?.recoveryState() !== 'attempted' ||
+      this.f06CurrentPermit.binding.hand_number !== String(this.handCount) ||
+      // A claimed sequence-zero original carries the same positive marker;
+      // pendingOriginalContinuation is intentionally retained until actuation.
+      this.handContinuation !== null ||
+      this.hasWeeklyPayoutMutationInFlight()
+    )
+      return false;
+    return JSON.parse(controller.serializeRecoveryState()).handStarted === false;
+  }
+
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
     // Seats and cash rake can be prepared in parallel under the rest.
     // Tournament blinds must wait until that rest ends: a level may advance

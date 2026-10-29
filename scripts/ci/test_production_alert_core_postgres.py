@@ -3,6 +3,7 @@
 These do not replace the native SQL invocation in the same required check.
 """
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -14,6 +15,12 @@ SPEC.loader.exec_module(runner)
 
 
 class OwnerNotificationPostgresGuards(unittest.TestCase):
+    def test_actual_maintained_manifest_binds_every_current_input(self):
+        manifest = json.loads((runner.ROOT / runner.FIXTURE / "manifest.json").read_text())
+        sources = runner.pinned_sources(runner.ROOT, manifest)
+        for path in runner.CHECKOUT_INPUTS.values():
+            self.assertIn(path, sources)
+
     def test_current_checkout_bytes_must_match_the_qualified_pin(self):
         data = b'original real component\n'
         pin = {'sha256': runner.digest(data), 'bytes': len(data)}

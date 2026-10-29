@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   mutations: [] as string[],
   plain: false,
   status: 'COMPLETING',
+  candidates: 1,
+  scanFailure: false,
   failAfterCursor: false,
   fieldCursors: [] as (string | null)[],
 }));
@@ -25,20 +27,23 @@ vi.mock('../services/supabase.js', () => ({
       const answer = () => {
         if (table === 'tournaments') {
           return {
-            data: [
-              {
-                id: SATELLITE,
-                name: 'Daily Satellite',
-                status: state.status,
-                format_contract: null,
-                variant: state.plain ? 'spin' : 'satellite',
-                tournament_type: state.plain ? 'MTT' : 'SATELLITE',
-                satellite_target_id: state.plain ? null : '00000000-0000-4000-8000-000000000103',
-                started_at: new Date().toISOString(),
-                payout_structure: [{ place: 1, percentage: 100 }],
-              },
-            ],
-            error: null,
+            data: Array.from({ length: state.candidates }, (_, i) => ({
+              id:
+                state.candidates === 1
+                  ? SATELLITE
+                  : `00000000-0000-4000-9000-${i.toString(16).padStart(12, '0')}`,
+              name: 'Daily Satellite',
+              status: state.status,
+              format_contract: null,
+              variant: state.plain ? 'spin' : 'satellite',
+              tournament_type: state.plain ? 'MTT' : 'SATELLITE',
+              satellite_target_id: state.plain ? null : '00000000-0000-4000-8000-000000000103',
+              started_at: new Date().toISOString(),
+              payout_structure: [{ place: 1, percentage: 100 }],
+            }))
+              .filter((row) => cursor === null || row.id > cursor)
+              .slice(0, Math.min(limit, 1000)),
+            error: cursor && state.scanFailure ? { message: 'later event page failed' } : null,
           };
         }
         if (table === 'tournament_players') {
@@ -127,9 +132,24 @@ describe('satellite recovery requires readable result authority', () => {
     state.mutations = [];
     state.plain = false;
     state.status = 'COMPLETING';
+    state.candidates = 1;
+    state.scanFailure = false;
     state.failAfterCursor = false;
     state.fieldCursors = [];
     vi.clearAllMocks();
+  });
+
+  it('does not omit the 1001st completing tournament', async () => {
+    state.candidates = 1001;
+    await recoverStuckCompletingTournaments('whole-board');
+    expect(requestSatelliteSettlementReceipt).toHaveBeenCalledTimes(1001);
+  });
+
+  it('does not settle a prefix when a later board page fails', async () => {
+    state.candidates = 1001;
+    state.scanFailure = true;
+    await recoverStuckCompletingTournaments('whole-board');
+    expect(requestSatelliteSettlementReceipt).not.toHaveBeenCalled();
   });
 
   const field = (count: number) =>

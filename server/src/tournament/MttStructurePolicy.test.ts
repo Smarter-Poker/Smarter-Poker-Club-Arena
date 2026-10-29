@@ -150,6 +150,21 @@ describe('engine MTT structure policy', () => {
     expect(row.payout_depth_percent).toBeNull();
   });
 
+  it.each([
+    ['1.5e1', 10],
+    ['15', 15],
+    [undefined, 10],
+    [false, 10],
+  ])('preserves strict legacy SNG input %j', async (payoutPercent, expected) => {
+    const row = await (new ScheduledTournamentService() as any).buildInsertRow(
+      schedule,
+      { ...scheduledConfig, type: 'sng', maxPlayers: 9, payoutPercent },
+      new Date()
+    );
+    expect(row.payout_percent).toBe(expected);
+    expect(row.payout_depth_percent).toBeNull();
+  });
+
   it('manual repeats copy paid depth with their advertised configuration', () => {
     expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_percent');
     expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain(

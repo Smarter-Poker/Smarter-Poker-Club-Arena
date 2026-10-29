@@ -85,6 +85,20 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     }
   );
 
+  it.each(['payout1', 'payout2', 'payout20'])(
+    'normalizes legacy saved MTT draft %s to fifteen',
+    (choice) => {
+      const payload = tournamentService.buildRpcConfig(
+        buildTournamentConfig({ ...draft, payoutStructure: choice }, 'nlh')
+      );
+      expect(payload.payoutPercent).toBe(15);
+      expect(payload.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+      render(<Form initial={choice} />);
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByRole('option', { name: 'Top 15% Of Field (Standard)' })).toBeTruthy();
+    }
+  );
+
   it('requires a supported SNG choice when switching from the new MTT-only depth', () => {
     expect(() =>
       buildTournamentConfig({ ...draft, gameMode: 'sng', payoutStructure: 'payout20' }, 'nlh')
@@ -104,7 +118,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     }
   );
 
-  it.each(['payout1', 'payout2', 'payout20', 'winner_take_all', '', 'standard', 'retired-preset'])(
+  it.each(['winner_take_all', '', 'standard', 'retired-preset'])(
     'refuses unsupported restored MTT choice %s before creating a misleading event',
     (payoutStructure) => {
       const input = Object.freeze({ ...draft, payoutStructure });

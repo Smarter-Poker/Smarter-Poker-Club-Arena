@@ -1,6 +1,6 @@
 import { buildLadder, type GeneratedBlindLevel } from './blindLadder.js';
 import { mttSpeedForMinutes, type MttClockSpeed } from './mttStructureDescription.js';
-import { mttPayoutDepthColumn } from './mttPayoutDepth.js';
+import { legacyPayoutPercentColumn, mttPayoutDepthColumn } from './mttPayoutDepth.js';
 
 /** One engine-owned definition for both scheduled and recurring MTT creators.
  * Existing advertised ladders are preserved; speed and stack depth are separate.
@@ -65,6 +65,13 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
         : 10;
   const speed = mttSpeedForMinutes(openingMinutes)!;
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
+}
+
+/** Preserve the existing non-MTT field writer's validated legacy percentage. */
+export function nonMttPayoutPercent(value: unknown): 10 | 15 | 20 {
+  if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
+  if (typeof value !== 'string' && typeof value !== 'number') return 10;
+  return legacyPayoutPercentColumn(Number(value));
 }
 
 /** New MTTs store the same 15% in both current and legacy depth columns. */

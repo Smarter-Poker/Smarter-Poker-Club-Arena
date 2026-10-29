@@ -1,4 +1,5 @@
 /** Owner October 29: all new MTTs pay the top 15% of the field. */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -63,6 +64,29 @@ describe('every new MTT pays the top fifteen percent', () => {
       'scripts/ci/test-mtt-unlimited.py --mode preparation'
     );
   });
+  it('carries only a finite certified incident continuation through the existing provider', () => {
+    const { windows } = JSON.parse(read('server/release/owner-maintenance-windows.json'));
+    const window = windows.find(
+      (w: { id: string }) => w.id === '2026-10-29-tournament-hand-gap-and-paid-depth-recovery'
+    );
+    expect(window.notBefore).toBe('2026-10-29T21:00:00Z');
+    expect(window.notAfter).toBe('2026-10-30T01:20:00Z');
+    expect(Date.parse(window.notAfter) - Date.parse(window.notBefore)).toBeLessThanOrEqual(
+      6 * 3600000
+    );
+    expect(window.announceAtChicagoMinutes).toEqual([53]);
+    expect(window.migrations).toEqual([]);
+    expect(window.releaseWitness.sha256).toBe(createHash('sha256').update(migration).digest('hex'));
+    for (const safeguard of [
+      'protected PR8648',
+      'full285-second',
+      'completed v3 thaw',
+      'No forced action',
+      'does not reuse or extend',
+    ])
+      expect(window.ownerOrder).toContain(safeguard);
+  });
+
   it('installs once as an atomic exact-preimage replacement without hot-table locks or financial writes', () => {
     expect(migration.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(migration.match(/^COMMIT;$/gm)).toHaveLength(1);

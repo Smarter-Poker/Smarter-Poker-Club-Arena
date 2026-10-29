@@ -1,4 +1,3 @@
-import { legacyPayoutPercentColumn } from '../tournament/mttPayoutDepth.js';
 import {
   isUnlimitedMtt,
   isPersistedUnlimitedMtt,
@@ -75,6 +74,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  nonMttPayoutPercent,
   mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
@@ -2185,7 +2185,7 @@ export class ScheduledTournamentService {
       payout_structure: payouts,
       payout_percent:
         isSng || isSpin || type === 'satellite'
-          ? legacyPayoutPercentColumn(cfg.payoutPercent)
+          ? nonMttPayoutPercent(cfg.payoutPercent)
           : mttPayoutPercent(cfg.payoutPercent),
       payout_depth_percent:
         isSng || isSpin || type === 'satellite' ? null : mttPayoutDepthPercent(cfg.payoutPercent),

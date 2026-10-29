@@ -16,7 +16,11 @@ export function isSupportedMttPayoutDepth(value: unknown): value is MttPayoutDep
 }
 
 export function mttPayoutDepthForChoice(choice: unknown): MttPayoutDepth | null {
-  return MTT_PAYOUT_DEPTH_CHOICES.find((item) => item.value === choice)?.percent ?? null;
+  // Restored manual drafts use legacy keys; every new MTT still saves fifteen.
+  return typeof choice === 'string' &&
+    ['payout1', 'payout2', 'payout3', 'payout20'].includes(choice)
+    ? MTT_DEFAULT_PAYOUT_DEPTH
+    : null;
 }
 
 /** New MTT creation cannot inherit an obsolete saved schedule depth. */

@@ -983,29 +983,6 @@
   pointer-events: none;
 }
 
-/* Recenter the existing board continuously as the private runout fills it.
-   The flip's existing face-down hold runs during this slide. */
-.community-cards__container--rabbit-reveal {
-  animation: ccRabbitAlign calc(0.24s * var(--animation-speed, 1)) var(--cc-ease-smooth) both;
-}
-
-@keyframes ccRabbitAlign {
-  from {
-    transform: translateX(
-      calc(var(--rabbit-added-cards) * (var(--cc-card-w) + var(--cc-card-gap)) / 2)
-    );
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .community-cards__container--rabbit-reveal {
-    animation: none;
-  }
-}
-
 /* Fold wins already occupy the band under the board. Stack the private
    caption in that same band instead of painting two labels on one line. */
 .community-cards__hand-name .community-cards__rabbit-caption {

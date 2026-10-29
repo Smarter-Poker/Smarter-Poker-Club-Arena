@@ -29,7 +29,6 @@ describe('Rabbit Hunt display continuity', () => {
     );
     const original = Array.from(container.querySelectorAll('.community-cards__card--rabbit'));
     expect(original).toHaveLength(2);
-    expect(container.querySelector('.community-cards__container--rabbit-reveal')).toBeTruthy();
     rerender(
       <CommunityCards
         cards={[]}
@@ -41,11 +40,52 @@ describe('Rabbit Hunt display continuity', () => {
       />
     );
     const next = Array.from(container.querySelectorAll('.community-cards__card--rabbit'));
-    expect(container.querySelector('.community-cards__container--rabbit-reveal')).toBeNull();
     expect(next[0]).toBe(original[0]);
     expect(next[1]).toBe(original[1]);
     expect(container.querySelectorAll('.community-cards__slot-reserve[style]')).toHaveLength(3);
   });
+  it.each([false, true])('uses measured geometry for recentering (fixed slots: %s)', (fixed) => {
+    const { container, rerender } = render(
+      <CommunityCards cards={flop} stage="flop" playSounds={false} handId={41} />
+    );
+    const row = container.querySelector('.community-cards__container') as HTMLElement;
+    const card = container.querySelector('.community-cards__card') as HTMLElement;
+    card.getBoundingClientRect = () =>
+      ({
+        left: container.querySelector('.community-cards__card--rabbit') && !fixed ? 60 : 100,
+      }) as DOMRect;
+    const cancel = vi.fn();
+    row.animate = vi.fn(() => ({ cancel }) as unknown as Animation);
+    rerender(<CommunityCards cards={flop} stage="flop" playSounds={false} handId={42} />);
+    rerender(
+      <CommunityCards
+        cards={flop}
+        stage="flop"
+        rabbitCards={rabbit}
+        playSounds={false}
+        handId={42}
+      />
+    );
+    if (fixed) expect(row.animate).not.toHaveBeenCalled();
+    else {
+      expect(row.animate).toHaveBeenCalledWith(
+        [{ transform: 'translateX(40px)' }, { transform: 'translateX(0)' }],
+        expect.objectContaining({ duration: 240 })
+      );
+      rerender(
+        <CommunityCards
+          cards={[]}
+          stage="preflop"
+          rabbitCards={rabbit}
+          rabbitStartIndex={3}
+          playSounds={false}
+          handId={43}
+        />
+      );
+      expect(cancel).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it('fills an incomplete completed board even when its stage is showdown', () => {
     const { container, getByRole } = render(
       <CommunityCards cards={flop} stage="showdown" rabbitCards={rabbit} playSounds={false} />

@@ -10,7 +10,7 @@
  * - Uses CardImage component for custom deck rendering
  */
 
-import React, { useMemo, useEffect, useRef, useState, useId, memo } from 'react';
+import React, { useMemo, useEffect, useLayoutEffect, useRef, useState, useId, memo } from 'react';
 import { CardImage, CardBack, cardBackImageUrl, getCardImagePath, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
@@ -722,6 +722,47 @@ function CommunityCardsComponent({
    * entire paid reveal: the player paid and saw nothing.
    */
   const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - rabbitStart));
+  const rabbitRowRef = useRef<HTMLDivElement>(null);
+  const previousRabbitLayoutRef = useRef<{
+    left: number | null;
+    viewport: number;
+    handId: typeof handId;
+    rabbitCount: number;
+  } | null>(null);
+  // Measure the actual layout. The felt can reserve all five slots, while
+  // standalone/replay boards can shrink around the dealt cards. A guessed
+  // card-width offset moves one of those layouts in the wrong direction.
+  useLayoutEffect(() => {
+    const row = rabbitRowRef.current;
+    if (!row) return;
+    const dealtCard = row.querySelector<HTMLElement>(
+      '.community-cards__card:not(.community-cards__card--rabbit)'
+    );
+    const left = dealtCard?.getBoundingClientRect().left ?? null;
+    const viewport = window.innerWidth;
+    const previous = previousRabbitLayoutRef.current;
+    previousRabbitLayoutRef.current = { left, viewport, handId, rabbitCount };
+    if (
+      !previous ||
+      previous.rabbitCount !== 0 ||
+      rabbitCount === 0 ||
+      previous.handId !== handId ||
+      previous.viewport !== viewport ||
+      previous.left === null ||
+      left === null ||
+      prefersReducedMotion() ||
+      !row.animate
+    )
+      return;
+    const distance = previous.left - left;
+    if (Math.abs(distance) < 0.5) return;
+    const motion = row.animate(
+      [{ transform: `translateX(${distance}px)` }, { transform: 'translateX(0)' }],
+      { duration: 240 * getAnimationSpeed(), easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)' }
+    );
+    return () => motion.cancel();
+  }, [cards, visibleCount, rabbitCount, rabbitHandId, handId]);
+
   const prevStageRef = useRef(stage);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
@@ -1172,10 +1213,7 @@ function CommunityCardsComponent({
           makes descendants presentational, so the reader says "Squeeze To
           Reveal, button" and not the card's name after it.)
           Pinned in tests/components/RiverSqueeze.test.tsx. */}
-      <div
-        className={`community-cards__container ${rabbitCount > 0 && visibleCount > 0 && rabbitStartIndex === undefined ? 'community-cards__container--rabbit-reveal' : ''}`}
-        style={{ '--rabbit-added-cards': rabbitCount } as React.CSSProperties}
-      >
+      <div className="community-cards__container" ref={rabbitRowRef}>
         {slots.map((slot, i) =>
           slot.type === 'rabbit' ? (
             // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the

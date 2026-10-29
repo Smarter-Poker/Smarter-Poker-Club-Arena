@@ -1,0 +1,7 @@
+# Hand-history incidents retain their original identity
+
+The drift board folded hand-history failures from different hands under a normalized message shape. Incident `0377a5ef` combined hands 51853419 and 51860852: its typed table remained the first table while its metadata and closing alert referred to the second. Both actual hands later completed, but resolving the latest alert could have hidden an earlier unresolved original.
+
+The original financial-alert trigger now uses its existing validated table/hand identity branch for hand-history failures as well as pending leaves. Invalid identity remains an individual alert. The original resolution trigger verifies every reconstructable member of a legacy shape group, including its occurrence count, before closing it. It can close when an older member is the last to resolve. Existing incident rows and financial records are untouched by installation.
+
+Migration `20261029180738` guards the exact installed definitions and authority of both functions and changes no money, engine behavior, schedule or historical record. The PostgreSQL 17 qualifier executes the real bridge, normalizer, incident raiser and resolution trigger. It reproduces the old premature closure and verifies distinct originals, same-original recurrence, unknown identity, incomplete legacy membership, exact closure and preservation of historical rows. The existing accounting shard 4 runs it.

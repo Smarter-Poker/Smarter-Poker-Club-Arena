@@ -526,3 +526,316 @@ export async function loadInstalledDecision8464Api() {
     ...(await Promise.all(paths.map((path) => import(/* @vite-ignore */ path))))
   );
 }
+
+/** Closed observation of one original accepted cash turn fold. Never re-runs policy. */
+export function cashTurnFoldInputIsValid(input, source) {
+  if (
+    !exact(input, ['version', 'sourceRelease', 'probe', 'cases']) ||
+    input.version !== 5 ||
+    input.probe !== 'cash_turn_fold' ||
+    !Array.isArray(input.cases) ||
+    Buffer.byteLength(JSON.stringify(input)) > 8192
+  )
+    return false;
+  return tournamentPredicateInputIsValid(
+    {
+      version: 2,
+      sourceRelease: input.sourceRelease,
+      cases: input.cases.map((c) => {
+        if (
+          !exact(c, [
+            'handKey',
+            'tableId',
+            'handId',
+            'handNumber',
+            'leaseGeneration',
+            'decisionRecordSha256',
+            'actionOrdinal',
+            'actorId',
+            'seat',
+          ]) ||
+          !uuid(c.actorId) ||
+          !Number.isInteger(c.seat) ||
+          c.seat < 1 ||
+          c.seat > 10
+        )
+          return {};
+        const { actorId, seat, ...ordinary } = c;
+        return ordinary;
+      }),
+    },
+    source
+  );
+}
+const foldReasons = new Set([
+  'off',
+  'reference_retained',
+  'call_declined',
+  'postflop_fold',
+  'equity_below_price',
+  'insufficient_equity',
+  'range_unavailable',
+  'invalid_equity_evidence',
+  'canonical_state_unavailable',
+  'invalid_geometry',
+  'invalid_wager_geometry',
+  'rake_schedule_unavailable',
+  'depth_or_ante_outside_pack',
+  'variant_outside_pack',
+]);
+const finiteNonnegative = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+const capturedUnit = (n) =>
+  typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+export function inspectCashTurnFoldRecords(input, batch, api) {
+  const base = {
+    version: 5,
+    probe: 'cash_turn_fold',
+    status: 'unknown',
+    rawRecordsExported: false,
+    replayVerified: false,
+    causalReplayVerified: false,
+    activationAllowed: false,
+  };
+  if (!cashTurnFoldInputIsValid(input, input?.sourceRelease))
+    return { ...base, reason: 'input_refused' };
+  if (
+    !batch ||
+    batch.status !== 'canonical_journal_export' ||
+    batch.sourceRelease !== input.sourceRelease ||
+    !Array.isArray(batch.recordsByHand) ||
+    batch.recordsByHand.length !== input.cases.length
+  )
+    return { ...base, reason: 'journal_source_or_shape_mismatch' };
+  const deadline = performance.now() + 5000;
+  const budget = () => {
+    if (performance.now() >= deadline) throw Error();
+  };
+  const cases = input.cases.map((c, index) => {
+    const unknown = (reason) => ({ handKey: c.handKey, status: 'unknown', reason });
+    try {
+      const entry = batch.recordsByHand[index];
+      if (
+        !entry ||
+        entry.handKey !== c.handKey ||
+        !Array.isArray(entry.records) ||
+        !entry.records.length ||
+        entry.records.length > 256
+      )
+        return unknown('journal_missing_or_bounds');
+      const decisions = [],
+        executions = [],
+        accepted = [],
+        seen = new Set();
+      for (const r of entry.records) {
+        budget();
+        api.validateHorseJournalRecord(r);
+        if (
+          r.handKey !== c.handKey ||
+          r.sourceRelease !== input.sourceRelease ||
+          seen.has(r.eventId)
+        )
+          return unknown('record_binding_or_duplicate');
+        seen.add(r.eventId);
+        if (r.kind === 'decision') decisions.push(r);
+        if (r.kind === 'execution') executions.push(r);
+        if (r.kind === 'accepted_hand') accepted.push(r);
+      }
+      if (accepted.length !== 1) return unknown('accepted_hand_missing_or_ambiguous');
+      const hand = JSON.parse(accepted[0].body),
+        coordinate = `${c.tableId}:${c.handNumber}:${c.leaseGeneration}`;
+      if (
+        hand.committedHandId !== c.handId ||
+        api.horseCompletedHandKey(hand) !== coordinate ||
+        accepted[0].turnKey !== c.handKey
+      )
+        return unknown('accepted_hand_binding_mismatch');
+      if (
+        !Array.isArray(hand.actions) ||
+        hand.actions.length > 4096 ||
+        c.actionOrdinal >= hand.actions.length
+      )
+        return unknown('original_action_ordinal_unavailable');
+      const action = hand.actions[c.actionOrdinal],
+        node = action.publicNode;
+      if (
+        action.action !== 'fold' ||
+        action.origin !== 'horse_policy' ||
+        action.stage !== 'turn' ||
+        action.userId !== c.actorId ||
+        action.seat !== c.seat ||
+        node?.status !== 'captured' ||
+        node.mode !== 'cash' ||
+        node.street !== 'turn' ||
+        node.actorSeat !== c.seat
+      )
+        return unknown('original_cash_turn_fold_not_observed');
+      const selected = [];
+      for (const r of decisions) {
+        budget();
+        if (c.decisionRecordSha256 !== null && r.sha256 !== c.decisionRecordSha256) continue;
+        const same = executions.filter(
+          (e) => e.turnKey === r.turnKey && e.producerId === r.producerId
+        );
+        if (same.length !== 1) continue;
+        const w = JSON.parse(same[0].body),
+          bound = api.bindHorseDecisionToCommittedHand(w, hand);
+        if (bound.status === 'bound' && bound.actionOrdinal === c.actionOrdinal)
+          selected.push({ r, e: same[0], w });
+      }
+      if (selected.length !== 1)
+        return unknown(
+          selected.length ? 'matching_decision_ambiguous' : 'matching_decision_missing'
+        );
+      const { r, e, w } = selected[0],
+        capture = JSON.parse(r.body),
+        s = capture.snapshot,
+        g = s?.gameState,
+        p = s?.player;
+      const anchor = api.anchorHorseDecisionHand(s);
+      if (
+        anchor.status !== 'anchored' ||
+        api.horseHandAnchorKey(anchor) !== coordinate ||
+        anchor.actionOrdinal !== c.actionOrdinal ||
+        anchor.actorId !== c.actorId ||
+        anchor.seat !== c.seat ||
+        p?.user_id !== c.actorId ||
+        p?.seat !== c.seat ||
+        g?.stage !== 'turn' ||
+        g.currentPlayerSeat !== c.seat ||
+        anchor.earlyLook === true ||
+        g.gameMode !== 'cash' ||
+        !['nlh', 'plo4', 'plo5', 'plo6'].includes(g.gameVariant) ||
+        g.gameVariant !== node.variant ||
+        capture.decision?.action !== 'fold'
+      )
+        return unknown('original_snapshot_binding_mismatch');
+      const ar = w.acceptedActions?.[0]?.record;
+      if (
+        r.sequence >= e.sequence ||
+        (e.producerId === accepted[0].producerId && e.sequence >= accepted[0].sequence) ||
+        w.executionStatus !== 'intended' ||
+        w.retirementReason !== null ||
+        w.policyFallback === 'brain_exception' ||
+        w.selected?.action !== 'fold' ||
+        (w.selected.amount ?? null) !== (capture.decision.amount ?? null) ||
+        w.executedAction !== 'fold' ||
+        w.acceptedActions?.length !== 1 ||
+        w.acceptedActions[0].intended !== true ||
+        ar?.action !== 'fold' ||
+        ar.stage !== 'turn' ||
+        ar.userId !== c.actorId ||
+        ar.seat !== c.seat
+      )
+        return unknown('execution_not_intended');
+      const heroes = node.seats?.filter((row) => Array.isArray(row) && row[0] === c.seat);
+      const hero = heroes?.length === 1 ? heroes[0] : null;
+      const requestHeroes = g.players?.filter(
+        (row) => row.seat === c.seat && row.user_id === c.actorId
+      );
+      const ownCardCount = { nlh: 2, plo4: 4, plo5: 5, plo6: 6 }[g.gameVariant];
+      if (
+        !finiteNonnegative(p.stack) ||
+        !(p.stack > 0) ||
+        !finiteNonnegative(p.bet) ||
+        !finiteNonnegative(g.currentBet) ||
+        !finiteNonnegative(g.pot) ||
+        !hero ||
+        !Array.isArray(p.cards) ||
+        p.cards.length !== ownCardCount ||
+        !Array.isArray(g.communityCards) ||
+        g.communityCards.length !== 4 ||
+        requestHeroes?.length !== 1 ||
+        requestHeroes[0].stack !== p.stack ||
+        requestHeroes[0].bet !== p.bet ||
+        hero[1] !== p.stack ||
+        hero[2] !== p.bet ||
+        node.currentBet !== g.currentBet ||
+        node.pot !== g.pot ||
+        node.toCall !== Math.max(0, g.currentBet - p.bet) ||
+        !(node.toCall > 0) ||
+        (Object.hasOwn(g, 'contestablePot') && !finiteNonnegative(g.contestablePot))
+      )
+        return unknown('original_price_geometry_unavailable');
+      const review = api.reconcileHorseJournalHand(entry.records, c.handKey);
+      budget();
+      if (
+        review.status !== 'reconciled' ||
+        !Array.isArray(review.gaps) ||
+        review.gaps.length ||
+        !(review.matchedActions > 0) ||
+        review.matchedActions !== review.acceptedHorseActions
+      )
+        return unknown('hand_not_reconciled');
+      const effectiveCall = Math.min(node.toCall, p.stack),
+        uncallableExcess = node.toCall - effectiveCall;
+      const derivedContestablePot = Object.hasOwn(g, 'contestablePot')
+        ? g.contestablePot
+        : g.pot - uncallableExcess;
+      if (!(derivedContestablePot >= 0)) return unknown('original_price_geometry_unavailable');
+      const policyReceipts = ['plo4Policy', 'omahaVariantPolicy', 'remainingVariantPolicy'].map(
+        (owner) => {
+          const receipt = capture.decision[owner];
+          return {
+            owner,
+            present: receipt != null,
+            mode: ['off', 'shadow', 'candidate'].includes(receipt?.mode) ? receipt.mode : null,
+            applied: typeof receipt?.applied === 'boolean' ? receipt.applied : null,
+            callPrice: capturedUnit(receipt?.callPrice),
+            equity: capturedUnit(receipt?.equity?.equity),
+            reason: foldReasons.has(receipt?.reason) ? receipt.reason : null,
+          };
+        }
+      );
+      return {
+        handKey: c.handKey,
+        status: 'observed',
+        observation: 'accepted_original_cash_turn_fold',
+        actionOrdinal: c.actionOrdinal,
+        decisionRecordSha256: r.sha256,
+        executionRecordSha256: e.sha256,
+        acceptedRecordSha256: accepted[0].sha256,
+        decisionKeySha256: digest(s.decisionKey),
+        recordHashesVerified: true,
+        originalHandBound: true,
+        intendedActionAccepted: true,
+        handReconciled: true,
+        variant: g.gameVariant,
+        ownCardCount:
+          Array.isArray(p.cards) && [2, 4, 5, 6].includes(p.cards.length) ? p.cards.length : null,
+        ownMadeCategory: null,
+        rawCall: node.toCall,
+        effectiveCall,
+        uncallableExcess,
+        stack: p.stack,
+        pot: g.pot,
+        capturedContestablePot: Object.hasOwn(g, 'contestablePot') ? g.contestablePot : null,
+        derivedReference: {
+          contestablePot: derivedContestablePot,
+          unrakedCallPrice: effectiveCall / (derivedContestablePot + effectiveCall),
+        },
+        policyReceipts,
+        originalReferenceEquity: null,
+        originalReferenceReason: null,
+      };
+    } catch {
+      return unknown('record_or_validator_unavailable');
+    }
+  });
+  return {
+    ...base,
+    sourceRelease: input.sourceRelease,
+    cases,
+    status: cases.every((c) => c.status === 'observed') ? 'observed' : 'unknown',
+  };
+}
+export async function loadInstalledCashTurnFoldApi() {
+  const paths = [
+    '/app/dist/services/horseDecisionJournal/record.js',
+    '/app/dist/engine/HorseDecisionHandBinding.js',
+    '/app/dist/services/horseDecisionJournal/review.js',
+  ];
+  return Object.assign(
+    {},
+    ...(await Promise.all(paths.map((path) => import(/* @vite-ignore */ path))))
+  );
+}

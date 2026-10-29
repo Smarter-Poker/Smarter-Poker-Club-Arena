@@ -105,6 +105,10 @@ export interface HandDetailModalProps {
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. */
   onShare?: (hand: HandRecord) => void;
+  /** Fetch the next canonical page when the reader reaches the oldest loaded hand. */
+  onLoadOlder?: () => Promise<string | null>;
+  hasOlderHands?: boolean;
+  olderHandsLoading?: boolean;
 }
 
 /** How many face-down cards a muck shows - the variant's own holding size. */
@@ -346,12 +350,16 @@ export function HandDetailModal({
   onShare,
   onRabbitHunt,
   rabbitUserId,
+  onLoadOlder,
+  hasOlderHands = false,
+  olderHandsLoading = false,
 }: HandDetailModalProps) {
   /* THE SUBJECT IS A HAND, NOT A POSITION. `hands` is newest-first and can be
      replaced while the modal is open (a hand finishing behind it). Holding an
      index meant the hand on screen silently became its newer neighbour. */
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [tab, setTab] = useState<'summary' | 'detail'>('summary');
+  const navigationGeneration = useRef(0);
 
   /* Drag-to-dismiss for the mobile sheet: past 100px of downward travel the
      sheet closes, anything less springs back. */
@@ -380,6 +388,7 @@ export function HandDetailModal({
 
   // Each open starts on the requested hand (or the newest), on the Summary tab.
   useEffect(() => {
+    navigationGeneration.current += 1;
     if (isOpen) {
       setSubjectId(initialHandId ?? null);
       setTab('summary');
@@ -416,6 +425,20 @@ export function HandDetailModal({
     const clamped = Math.max(0, Math.min(total - 1, i));
     const target = hands[clamped];
     if (target) setSubjectId(target.id);
+  };
+
+  const goOlder = async () => {
+    if (index < total - 1) {
+      goTo(index + 1);
+      return;
+    }
+    if (!onLoadOlder || !hasOlderHands || olderHandsLoading) return;
+    const generation = navigationGeneration.current;
+    const subject = hands[index]?.id;
+    const nextId = await onLoadOlder();
+    if (generation === navigationGeneration.current && nextId) {
+      setSubjectId((current) => (current === subject ? nextId : current));
+    }
   };
 
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -848,9 +871,10 @@ export function HandDetailModal({
             <button
               type="button"
               className="hdm-nav__arrow"
-              disabled={index >= total - 1}
-              aria-label="Older Hand"
-              onClick={() => goTo(index + 1)}
+              disabled={olderHandsLoading || (index >= total - 1 && !hasOlderHands)}
+              aria-label={index >= total - 1 && hasOlderHands ? 'Load Older Hands' : 'Older Hand'}
+              aria-busy={olderHandsLoading}
+              onClick={() => void goOlder()}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -866,8 +890,10 @@ export function HandDetailModal({
               </svg>
             </button>
             <div className="hdm-nav__track">
-              <span className="hdm-nav__label">
-                {displayPos.toLocaleString()}/{total.toLocaleString()}
+              <span className="hdm-nav__label" aria-live="polite">
+                {olderHandsLoading
+                  ? 'Loading'
+                  : `${displayPos.toLocaleString()}/${total.toLocaleString()}${hasOlderHands ? '+' : ''}`}
               </span>
               {/* The only thing drawn on this sheet: a position control the
                   master paints nowhere, cut down to an engraved track and a

@@ -20,6 +20,21 @@ const input = {
   ],
 };
 describe('committed public tendency frame', () => {
+  it('ignores an uncalled-bet return without discarding measured aggression', () => {
+    const frame = publicHandStatsFrame({
+      ...input,
+      facts: [{ ...input.facts[0], pfr: true }],
+      bigBlind: 2,
+      actions: [
+        { action: 'raise', userId: 'a', stage: 'preflop', amount: 6 },
+        { action: 'fold', userId: 'b', stage: 'preflop', amount: 0 },
+        { action: 'return', userId: 'a', stage: 'preflop', amount: 4 },
+      ],
+    })!;
+    expect(frame.players).toEqual([
+      { user_id: 'a', vpip: true, pfr: true, won: true, aggressive_actions: 1, call_actions: 0 },
+    ]);
+  });
   it('allows only public tendency booleans and counts a side-pot award as a win', () => {
     const frame = publicHandStatsFrame(input)!;
     expect(frame).toEqual({

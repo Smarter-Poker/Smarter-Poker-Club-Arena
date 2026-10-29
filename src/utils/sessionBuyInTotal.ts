@@ -15,6 +15,7 @@
 export function sessionBuyInTotal(input: {
   /** The server's baseline, or anything else when it could not be read. */
   serverBaseline: unknown;
+  carriedAdjustment?: number;
   /** The page's total when the question was asked. */
   totalAtAsk: number;
   /** The page's total now. */
@@ -24,7 +25,9 @@ export function sessionBuyInTotal(input: {
   if (input.serverBaseline === null || input.serverBaseline === undefined) return input.totalNow;
   if (!Number.isFinite(baseline) || baseline <= 0) return input.totalNow;
   const addedSinceAsk = Math.max(0, input.totalNow - input.totalAtAsk);
-  return Math.round((baseline + addedSinceAsk) * 100) / 100;
+  const adjustment = Number.isFinite(input.carriedAdjustment) ? input.carriedAdjustment! : 0;
+  const total = baseline + adjustment + addedSinceAsk;
+  return total > 0 ? Math.round(total * 100) / 100 : input.totalNow;
 }
 
 /**
@@ -48,6 +51,7 @@ export interface SessionFactsSeed {
 
 export function mergeSessionFacts(input: {
   serverFacts: unknown;
+  carried?: { handsPlayed: number; handsWon: number };
   atAsk: SessionFactsSeed;
   now: SessionFactsSeed;
 }): SessionFactsSeed {
@@ -80,8 +84,11 @@ export function mergeSessionFacts(input: {
       Number.isFinite(started) && started > 0
         ? Math.min(started, input.now.startMs)
         : input.now.startMs,
-    handsPlayed: played === null ? input.now.handsPlayed : played + playedSince,
-    handsWon: won === null ? input.now.handsWon : won + wonSince,
+    handsPlayed:
+      played === null
+        ? input.now.handsPlayed
+        : played + (input.carried?.handsPlayed ?? 0) + playedSince,
+    handsWon: won === null ? input.now.handsWon : won + (input.carried?.handsWon ?? 0) + wonSince,
     peakStack:
       Number.isFinite(peak) && peak > 0 ? Math.max(peak, input.now.peakStack) : input.now.peakStack,
   };

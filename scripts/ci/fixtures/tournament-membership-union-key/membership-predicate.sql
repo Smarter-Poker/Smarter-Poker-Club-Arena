@@ -1,0 +1,1 @@
+SELECT EXISTS(SELECT 1 FROM public.union_pnl_inventory_touches t WHERE t.source_name='tournaments'AND t.row_id=CASE WHEN $1 ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'THEN $1::uuid END AND t.row_id::text=$1 AND t.union_id=$2::text);

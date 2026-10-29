@@ -267,8 +267,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 249944,
-      "sha256": "a2761aed24c10439e325d9f435eed4b4e0f4b9dc769283d301e7561bc6b94489"
+      "bytes": 250121,
+      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4598,5 +4598,43 @@
     },
     "financial_recertification": false,
     "existing_financial_qualification_reexecuted": false
+  },
+  "playerManagementPeriodFees20261029": {
+    "reason": "Add the isolated period-fee read-contract qualification to required server shard 4; existing cash-native commands/assertions and financial qualification are unchanged. Current source binding only, not a new financial certificate.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "current": {
+      "bytes": 248781,
+      "sha256": "2d8352238689873eb21f1473bcc2df6384e86414428883e01483ec6c880cd0e2"
+    }
+  },
+  "playerManagementPeriodMainIntegration20261029": {
+    "reason": "Preserve newer protected-main workflow and every source audit while adding only the period-fee native qualification step. No financial rules, assertions or historical certificates changed. Current combined workflow source identity only.",
+    "path": ".github/workflows/ci.yml",
+    "current": {
+      "bytes": 249679,
+      "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
+    }
+  },
+  "horseTurnCensusProtectedComposition6fac20261029": {
+    "reason": "Compose the independent original-turn census with protected main 6facda55be without changing financial commands, assertions, native fixtures, or historical evidence. Preserve both parent audit histories and all non-workflow source pins. This updates only current composed workflow identity and does not certify hosted execution or live behavior.",
+    "oursRevision": "3c2bb4a2ea00c8381c67c9cc796494748924e0cf",
+    "protectedMainRevision": "6facda55be63bc2b8a52d2f3cedbd3eacc581140",
+    "branchWorkflowPin": {
+      "bytes": 249944,
+      "sha256": "a2761aed24c10439e325d9f435eed4b4e0f4b9dc769283d301e7561bc6b94489"
+    },
+    "protectedMainWorkflowPin": {
+      "bytes": 249679,
+      "sha256": "bf67c53def65e8243514697bc6978082fbd49afc9abaa2b5935dd54df4a03923"
+    },
+    "combinedWorkflowPin": {
+      "bytes": 250121,
+      "sha256": "f7f335404c1c167623435ffcf149bbfa626ac1f78b4ec824bedb8fef0e7309b0"
+    },
+    "execution_performed": false
   }
 }

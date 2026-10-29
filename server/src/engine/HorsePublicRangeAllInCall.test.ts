@@ -76,7 +76,7 @@ const action = (
   userId: string,
   kind: ActionRecord['action'],
   amount: number,
-  stage: ActionRecord['stage'],
+  stage: ActionRecord['stage']
 ): ActionRecord => ({
   seat: userId === 'a' ? 1 : 2,
   userId,
@@ -112,11 +112,14 @@ it('keeps the existing 20bb threshold and newest-street boundary', () => {
   expect(read([...pre, action('a', 'bet', 39.99, 'flop')], 'a').bigBet).not.toBe(true);
   expect(read([...pre, action('a', 'bet', 40, 'flop')], 'a').bigBet).toBe(true);
   expect(
-    read([
-      ...pre,
-      action('a', 'bet', 40, 'flop'),
-      action('b', 'call', 40, 'flop'),
-      action('a', 'check', 0, 'turn'),
-    ], 'a').bigBet,
+    read(
+      [
+        ...pre,
+        action('a', 'bet', 40, 'flop'),
+        action('b', 'call', 40, 'flop'),
+        action('a', 'check', 0, 'turn'),
+      ],
+      'a'
+    ).bigBet
   ).not.toBe(true);
 });

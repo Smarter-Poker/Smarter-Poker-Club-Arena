@@ -72,8 +72,10 @@ try:
  INSERT INTO accounting_tournament_fee_sources VALUES('{c}','{a}','2026-10-26 04:59:59.999999Z',200),('{c}','{a}','2026-10-26 05:00Z',7),('{c}','{a}','2026-10-29 12:00Z',300),('{c}','{a}','2026-10-26 05:00Z',-2);
  INSERT INTO ca_club_member_tournament_fee_daily SELECT club_id,player_id,(charged_at AT TIME ZONE 'UTC')::date,sum(rake_credit) FROM accounting_tournament_fee_sources GROUP BY 1,2,3;
  DO $$BEGIN
- IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}','2026-10-26','2026-10-29 12:00Z') WHERE user_id='{a}')<>9.01 THEN RAISE EXCEPTION 'Chicago custody donor edge/rounding/redemption failed';END IF;
- IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}','2026-10-26','2026-10-29 12:00Z') WHERE user_id='{b}')<>5.02 THEN RAISE EXCEPTION 'share recipient rounding failed';END IF;
+ IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid,'{b}'::uuid],'2026-10-26','2026-10-29 12:00Z') WHERE user_id='{a}')<>9.01 THEN RAISE EXCEPTION 'Chicago custody donor edge/rounding/redemption failed';END IF;
+ IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid,'{b}'::uuid],'2026-10-26','2026-10-29 12:00Z') WHERE user_id='{b}')<>5.02 THEN RAISE EXCEPTION 'share recipient rounding failed';END IF;
+ IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}',ARRAY['{b}'::uuid],'2026-10-26','2026-10-29 12:00Z'))<>5.02 THEN RAISE EXCEPTION 'incoming donor outside scoped IDs lost';END IF;
+ IF (SELECT count(*) FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid,'{a}'::uuid,NULL],'2026-10-26','2026-10-29 12:00Z'))<>1 OR (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid],'2026-10-26','2026-10-29 12:00Z'))<>9.01 THEN RAISE EXCEPTION 'outgoing share or array dedup leaked';END IF;
  END$$;
  -- Current wrapper exact week start, duplicate request/access and descendants.
  TRUNCATE rake_attributions,rake_records,ca_club_rake_daily_user,smarter_private.player_rake_share_rules,smarter_private.player_fee_redemptions,accounting_tournament_fee_sources,ca_club_member_tournament_fee_daily;
@@ -101,12 +103,17 @@ try:
  st:=d::timestamp AT TIME ZONE 'America/Chicago';en:=(d+1)::timestamp AT TIME ZONE 'America/Chicago';
  INSERT INTO accounting_tournament_fee_sources VALUES('{c}','{a}',st-interval '1 microsecond',100),('{c}','{a}',st,7),('{c}','{a}',en,200);
  INSERT INTO ca_club_member_tournament_fee_daily SELECT club_id,player_id,(charged_at AT TIME ZONE 'UTC')::date,sum(rake_credit) FROM accounting_tournament_fee_sources GROUP BY 1,2,3;
- SELECT total_fees INTO v FROM ca_club_member_period_fee_totals('{c}',d,en) WHERE user_id='{a}';
+ SELECT total_fees INTO v FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid,'{b}'::uuid],d,en) WHERE user_id='{a}';
  IF v<>7 THEN RAISE EXCEPTION 'DST/year edge % returned %',d,v;END IF;
  TRUNCATE accounting_tournament_fee_sources,ca_club_member_tournament_fee_daily;
  END LOOP;END$$;ROLLBACK;SELECT true;""")
+ check('period-before-counting-floor',f"""BEGIN;
+ INSERT INTO accounting_tournament_fee_sources VALUES('{c}','{a}','2026-10-11 23:59:59.999999Z',100),('{c}','{a}','2026-10-12 00:00Z',7),('{c}','{a}','2026-10-13 00:00Z',200);
+ INSERT INTO ca_club_member_tournament_fee_daily SELECT club_id,player_id,(charged_at AT TIME ZONE 'UTC')::date,sum(rake_credit) FROM accounting_tournament_fee_sources GROUP BY 1,2,3;
+ DO $$BEGIN IF (SELECT total_fees FROM ca_club_member_period_fee_totals('{c}',ARRAY['{a}'::uuid],'2026-10-01','2026-10-13 00:00Z'))<>7 THEN RAISE EXCEPTION 'month before counting floor lost UTC-floor first hours';END IF;END$$;
+ ROLLBACK;SELECT true;""")
  check('read-only-transaction',f"BEGIN READ ONLY;SET LOCAL test.actor='{owner}';SELECT count(*)=1 FROM ca_club_members_period_summary('{c}',ARRAY['{a}'::uuid],'week');ROLLBACK;")
- check('helper-private',"SELECT NOT has_function_privilege('authenticated','ca_club_member_period_fee_totals(uuid,date,timestamptz)','EXECUTE') AND NOT has_function_privilege('anon','ca_club_members_period_summary(uuid,uuid[],text)','EXECUTE')")
+ check('helper-private',"SELECT NOT has_function_privilege('authenticated','ca_club_member_period_fee_totals(uuid,uuid[],date,timestamptz)','EXECUTE') AND NOT has_function_privilege('anon','ca_club_members_period_summary(uuid,uuid[],text)','EXECUTE')")
  q(f"SELECT * FROM ca_club_members_period_summary('{c}',ARRAY[]::uuid[],'invalid')",'Invalid win loss period');checks.append('invalid-period-refused')
  q(f"SELECT * FROM ca_club_members_period_summary('{c}',array_fill('{a}'::uuid,ARRAY[101]),'week')",'At most 100');checks.append('batch-cap')
  check('empty',f"SELECT count(*)=0 FROM ca_club_members_period_summary('{c}',ARRAY[]::uuid[],'week')")
@@ -115,4 +122,4 @@ try:
 finally:
  if started:run([PG/'pg_ctl','-D',w/'d','-m','immediate','-w','stop'])
  shutil.rmtree(w)
- (out/'result.json').write_text(json.dumps({'checks':checks,'passed':len(checks)==11,'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'cluster_removed':not w.exists(),'production_calls':False},indent=2))
+ (out/'result.json').write_text(json.dumps({'checks':checks,'passed':len(checks)==12,'migration_sha256':hashlib.sha256(migration.read_bytes()).hexdigest(),'cluster_removed':not w.exists(),'production_calls':False},indent=2))

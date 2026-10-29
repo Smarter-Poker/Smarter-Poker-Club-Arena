@@ -1,3 +1,4 @@
+import type { IsolateMemorySample } from '../../observability/isolateMemory.js';
 import type {
   HorsePlanBatchBinding,
   HorsePlanContext,
@@ -521,6 +522,8 @@ export interface HorseDecisionWorkerAck extends HorseDecisionFence {
 
 export interface HorseDecisionWorkerStatusResult extends HorseDecisionFence {
   type: 'STATUS_RESULT';
+  /** Optional diagnostic, independent of readiness and policy authority. */
+  isolateMemory?: IsolateMemorySample | null;
   requestId: number;
   solverStores: HorseDecisionWorkerReady['solverStores'];
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'];

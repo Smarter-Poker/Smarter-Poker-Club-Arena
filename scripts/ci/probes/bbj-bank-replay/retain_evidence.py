@@ -8,13 +8,17 @@ import subprocess
 import shutil
 
 REPOSITORY = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+TRANSFERRED_REPOSITORY = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena'
+REPOSITORY_ID = '1132369872'
+APPROVED_REPOSITORIES = (REPOSITORY, TRANSFERRED_REPOSITORY)
 REQUIRED = ('RESULTS.json', 'funded-source-custody.json', 'funded-source-custody.log',
             'funded/RESULTS.json')
 
 
 def manifest(repository, environment, event, head):
     repository = Path(repository).resolve()
-    if (environment.get('GITHUB_REPOSITORY') != REPOSITORY or
+    full_name = environment.get('GITHUB_REPOSITORY')
+    if (full_name not in APPROVED_REPOSITORIES or environment.get('GITHUB_REPOSITORY_ID') != REPOSITORY_ID or
             environment.get('GITHUB_JOB') != 'accounting_postgres' or
             not re.fullmatch('[0-9a-f]{40}', head) or head != environment.get('GITHUB_SHA')):
         raise ValueError('Exact current accounting checkout required for evidence')
@@ -30,8 +34,8 @@ def manifest(repository, environment, event, head):
     if environment.get('GITHUB_EVENT_NAME') == 'pull_request':
         pr = event.get('pull_request', {})
         source = pr.get('head', {}).get('sha')
-        if (pr.get('head', {}).get('repo', {}).get('full_name') != REPOSITORY or
-                pr.get('base', {}).get('repo', {}).get('full_name') != REPOSITORY or
+        if (pr.get('head', {}).get('repo', {}).get('full_name') != full_name or
+                pr.get('base', {}).get('repo', {}).get('full_name') != full_name or
                 not re.fullmatch('[0-9a-f]{40}', str(source))):
             raise ValueError('Same repository PR source required')
     elif environment.get('GITHUB_EVENT_NAME') != 'schedule':
@@ -59,7 +63,7 @@ def manifest(repository, environment, event, head):
         inventory.append({'path': str(path.relative_to(output)),
                           'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})
     present = {row['path'] for row in inventory}
-    return {'repository': REPOSITORY, 'checkout_commit': head, 'source_commit': source,
+    return {'repository': full_name, 'checkout_commit': head, 'source_commit': source,
             'workflow_ref': environment.get('GITHUB_WORKFLOW_REF'),
             'run_id': environment['GITHUB_RUN_ID'], 'run_attempt': environment['GITHUB_RUN_ATTEMPT'],
             'job': 'accounting_postgres', 'bbj_step_outcome': outcome,

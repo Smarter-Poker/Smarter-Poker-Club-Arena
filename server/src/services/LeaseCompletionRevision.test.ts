@@ -23,7 +23,16 @@ function actualListener(e: any, releaseHandWait: () => void) {
   );
   const file = ts.createSourceFile('Dealing.ts', source, ts.ScriptTarget.Latest, true);
   const listeners: ts.ArrowFunction[] = [];
+  const dispatchers: ts.ArrowFunction[] = [];
   const visit = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'dispatchOriginalEvent' &&
+      node.initializer &&
+      ts.isArrowFunction(node.initializer)
+    )
+      dispatchers.push(node.initializer);
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
@@ -38,10 +47,13 @@ function actualListener(e: any, releaseHandWait: () => void) {
     ts.forEachChild(node, visit);
   };
   visit(file);
-  if (listeners.length !== 1) throw new Error('expected exactly one controllerForHand listener');
+  if (listeners.length !== 1 || dispatchers.length !== 1)
+    throw new Error('expected exactly one controllerForHand listener and original dispatcher');
   const callback = listeners[0];
   const js = ts.transpileModule(
-    'function listener(' +
+    'const dispatchOriginalEvent = ' +
+      dispatchers[0].getText(file) +
+      ';\nfunction listener(' +
       callback.parameters.map((p) => p.getText(file)).join(',') +
       ') ' +
       callback.body.getText(file),
@@ -55,8 +67,11 @@ function actualListener(e: any, releaseHandWait: () => void) {
     'reportError',
     'handStartMs',
     'releaseHandWait',
+    'original',
     js + '\nreturn listener;'
-  )([], 1, vi.fn(), Date.now(), releaseHandWait).bind(e);
+  )
+    .call(e, [], 1, vi.fn(), Date.now(), releaseHandWait, undefined)
+    .bind(e);
 }
 it.each(['idle', 'blocked_ingress'])(
   'actual listener and settlement capture final controller stacks under %s',

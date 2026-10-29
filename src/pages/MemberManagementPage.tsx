@@ -66,7 +66,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 import { toTitleCase } from '../utils/titleCase';
-import { countFigure as count, feeFigure, formatWalletChips, winLossChips } from '../utils/format';
+import { countFigure as count, formatWalletChips } from '../utils/format';
+import { playerRecordMoney } from '../utils/playerRecordMoney';
 import { memberRangeSearch } from '../utils/memberRangeLink';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -96,11 +97,8 @@ const MEMBER_CREDENTIAL_ART = `${import.meta.env.BASE_URL}images/club-members/me
    FORMATTING
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Figures use the shared Player Management formatters (utils/format), so a fee,
-   a wallet or a win / loss reads the same here as on the Players list and in
-   Player Statistics: fees feeFigure (Dan, 2026-10-14), signed winnings
-   winLossChips (Dan 2026-10-16), wallets formatWalletChips (Dan, 2026-10-18),
-   counts countFigure. */
+/* Player Record monetary stats retain full cents (owner, 2026-10-28).
+   Counts retain countFigure; wallet balances retain formatWalletChips. */
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'Never';
@@ -142,18 +140,21 @@ export default function MemberManagementPage() {
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const recordRefreshRef = useRef<() => void>(() => {});
+  const authorityRefreshRef = useRef<() => void>(() => {});
   const [recordRevision, setRecordRevision] = useState(0);
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  // A background refresh (live event, focus, back online) failed while a
+  // An authority check or explicit retry failed while a
   // record was on screen. The record stays; a banner says it is the previous
   // successful read. Only a read the viewer asked for blanks the page.
   const [refreshFailed, setRefreshFailed] = useState(false);
   // The downline is its own read: its failure only touches its own section.
   const [downlineFailed, setDownlineFailed] = useState(false);
   const recordShownRef = useRef(false);
+  const currentDetailRef = useRef(detail);
+  currentDetailRef.current = detail;
   // The club or the member does not exist. Distinct from a read that failed:
   // a mistyped slug used to reach the uuid RPC as 22P02 and be shown as
   // "The Member Ledger Did Not Respond", which reads as an outage.
@@ -239,7 +240,14 @@ export default function MemberManagementPage() {
     accessDenialRef.current = { key: walletScopeKey, revision: 0, detail: null };
   const applyAccessDenial = (value: MemberDetail, denied: MemberDetail): MemberDetail => ({
     ...value,
-    capabilities: { ...denied.capabilities },
+    capabilities: {
+      ...denied.capabilities,
+      can_view_financials:
+        value.capabilities.can_view_financials && denied.capabilities.can_view_financials,
+      can_view_notes: value.capabilities.can_view_notes && denied.capabilities.can_view_notes,
+      can_edit_notes: value.capabilities.can_edit_notes && denied.capabilities.can_edit_notes,
+      can_manage_role: value.capabilities.can_manage_role && denied.capabilities.can_manage_role,
+    },
     identity: value.identity
       ? {
           ...value.identity,
@@ -274,7 +282,6 @@ export default function MemberManagementPage() {
     walletRowsRef,
     (rows) => {
       if (detailOwnerRef.current !== walletScopeKey) return;
-      setRecordRevision((revision) => revision + 1);
       if (rows[0]?.can_view_financials === false) setDownline([]);
       setDetail((current) => (current ? applyWalletRow(current, rows[0]) : current));
     },
@@ -294,7 +301,7 @@ export default function MemberManagementPage() {
     onPayload: (value) => {
       if (value?.new) walletUpdates.membership(value.new);
       if (value?.eventType !== 'UPDATE' || value?.new?.user_id === user?.id)
-        recordRefreshRef.current();
+        authorityRefreshRef.current();
     },
     onSubscriptionStatus: (status) => {
       if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
@@ -326,27 +333,34 @@ export default function MemberManagementPage() {
         : null,
     event: 'record_changed',
     enabled: !!resolvedClubId && !!user?.id,
-    onPayload: () => recordRefreshRef.current(),
+    onPayload: () => authorityRefreshRef.current(),
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') recordRefreshRef.current();
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current();
     },
     onSubscriptionError: () => toast.error('The Live Member Connection Could Not Be Established.'),
   });
-  useMasterBusSubscriptions(
-    ['CLUB_UPDATED', 'MEMBER_ROLE_CHANGED', 'AGENT_UPDATED', 'PROFILE_UPDATED', 'BALANCE_UPDATED'],
-    (payload) => {
-      const change = payload as { clubId?: string; userId?: string } | null;
-      if (change?.clubId && change.clubId !== resolvedClubId) return;
-      if (
-        !change?.clubId &&
-        change?.userId &&
-        change.userId !== userId &&
-        change.userId !== user?.id
-      )
-        return;
-      recordRefreshRef.current();
-    }
-  );
+  useMasterBusSubscriptions(['CLUB_UPDATED', 'MEMBER_ROLE_CHANGED', 'AGENT_UPDATED'], (payload) => {
+    const change = payload as { clubId?: string; userId?: string } | null;
+    if (change?.clubId && change.clubId !== resolvedClubId) return;
+    if (!change?.clubId && change?.userId && change.userId !== userId && change.userId !== user?.id)
+      return;
+    authorityRefreshRef.current();
+  });
+
+  useMasterBusSubscriptions(['GAME_MANAGEMENT_ACCESS_CHANGED'], (payload) => {
+    const change = payload as {
+      clubId?: string;
+      userId?: string;
+      scope?: string;
+      scopeId?: string;
+    } | null;
+    // This carrier addresses the viewer whose authority changed, not the
+    // player being inspected. All-club reconnect signals omit clubId.
+    if (change?.userId && change.userId !== user?.id) return;
+    if (change?.clubId && change.clubId !== resolvedClubId) return;
+    if (change?.scope === 'club' && change.scopeId && change.scopeId !== resolvedClubId) return;
+    authorityRefreshRef.current();
+  });
 
   /* ── Load ───────────────────────────────────────────────────────────────── */
 
@@ -523,59 +537,103 @@ export default function MemberManagementPage() {
     void loadDetail(range);
   }, [loadDetail, range]);
 
-  // Coalesce invalidations behind the active read. A late event always gets a
-  // subsequent authoritative read; range/account changes retire the old owner.
-  const refreshOwnerRef = useRef<{ active: boolean; queued: boolean } | null>(null);
+  // Only explicit retries and completed writes reload the record. Ambient
+  // events can withdraw authority, but never replace the operator's workspace.
   useEffect(() => {
+    const controller = new AbortController();
     const owner = { active: false, queued: false };
-    refreshOwnerRef.current = owner;
-    const refresh = () => {
-      if (refreshOwnerRef.current !== owner) return;
-      if (rangeMode === 'week') {
-        const currentWeek = lastDaysRange(7);
-        if (currentWeek.from !== range.from || currentWeek.to !== range.to) {
-          setRange(currentWeek);
-          return;
-        }
+    const live = () => !controller.signal.aborted && isMountedRef.current;
+    recordRefreshRef.current = () => void loadDetail(range, live, true);
+    const checkAuthority = () => {
+      // Permission signals also own the pending first read. A denial must
+      // retire that read before its older allowed answer can mount privately.
+      if (!resolvedClubId || !userId || !user?.id) return;
+      const initializing = !recordShownRef.current;
+      if (initializing) {
+        // Fence the old initial answer synchronously, before validation awaits
+        // the server. It cannot become verified while a newer hint is pending.
+        detailAbortRef.current?.abort();
+        setDetail(null);
+        setDownline([]);
+        setLoading(true);
       }
       if (owner.active) {
         owner.queued = true;
         return;
       }
       owner.active = true;
-      void loadDetail(range, () => refreshOwnerRef.current === owner, true).finally(() => {
-        owner.active = false;
-        if (owner.queued && refreshOwnerRef.current === owner) {
-          owner.queued = false;
-          refresh();
+      void (async () => {
+        try {
+          const accessRevision = accessDenialRef.current.revision;
+          const authority = await ClubRosterService.getMemberDetail(
+            resolvedClubId,
+            userId,
+            undefined,
+            controller.signal
+          );
+          if (!live() || owner.queued) return;
+          if (accessDenialRef.current.revision > accessRevision) return;
+          // Record the denial epoch so an older explicit range read cannot
+          // restore permission. Do not apply this response's metrics or identity.
+          const prior = accessDenialRef.current.detail;
+          const current = currentDetailRef.current ?? prior ?? authority;
+          const restricted = {
+            ...authority,
+            capabilities: {
+              ...authority.capabilities,
+              can_view_financials:
+                current.capabilities.can_view_financials &&
+                authority.capabilities.can_view_financials,
+              can_view_notes:
+                current.capabilities.can_view_notes && authority.capabilities.can_view_notes,
+              can_edit_notes:
+                current.capabilities.can_edit_notes && authority.capabilities.can_edit_notes,
+              can_manage_role:
+                current.capabilities.can_manage_role && authority.capabilities.can_manage_role,
+            },
+          };
+          withdrawRecordAccess(restricted);
+          const mine = await supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', resolvedClubId)
+            .eq('user_id', user.id)
+            .abortSignal(controller.signal)
+            .maybeSingle();
+          if (mine.error) throw mine.error;
+          if (live() && !owner.queued) {
+            setMyRole(normaliseRole(mine.data?.role));
+            setMyRoleLoaded(true);
+            // An interrupted initial read starts once from the validated
+            // scope. Already displayed records never re-enter this full lane.
+            if (initializing) void loadDetail(range, live);
+          }
+        } catch (error) {
+          if (!live()) return;
+          if (error instanceof MemberAccessDeniedError) withdrawRecordAccess(null);
+          else {
+            reportError(error, 'MemberManagementPage.CheckAuthority');
+            if (initializing) {
+              setLoadError(true);
+              setLoading(false);
+            } else setRefreshFailed(true);
+          }
+        } finally {
+          owner.active = false;
+          if (owner.queued && live()) {
+            owner.queued = false;
+            checkAuthority();
+          }
         }
-      });
+      })();
     };
-    recordRefreshRef.current = refresh;
-    const visible = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    document.addEventListener('visibilitychange', visible);
+    authorityRefreshRef.current = checkAuthority;
     return () => {
-      refreshOwnerRef.current = null;
+      controller.abort();
       recordRefreshRef.current = () => {};
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      document.removeEventListener('visibilitychange', visible);
+      authorityRefreshRef.current = () => {};
     };
-  }, [loadDetail, range, rangeMode]);
-
-  // A visible idle ledger still advances with the UTC calendar. Custom drafts
-  // remain explicit; this one-shot boundary is cancelled when scope changes.
-  useEffect(() => {
-    if (rangeMode !== 'week') return;
-    const now = new Date();
-    const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-    const timer = window.setTimeout(() => recordRefreshRef.current(), nextDay - now.getTime() + 25);
-    return () => window.clearTimeout(timer);
-  }, [rangeMode, range.from, range.to, clubId, userId, user?.id]);
+  }, [loadDetail, range, resolvedClubId, userId, user?.id]);
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
@@ -990,18 +1048,18 @@ export default function MemberManagementPage() {
               labelled as the whole; mtt_hands was fetched and never drawn. */}
             <StatRow label="Cash Hands" value={count(stats.hands)} />
             <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
-            <StatRow label="Cash Fees" value={feeFigure(stats.total_fee)} />
-            <StatRow label="MTT Fees" value={feeFigure(stats.mtt_fee)} />
-            <StatRow label="Claimed Back" value={feeFigure(stats.claimed_back)} />
-            <StatRow label="Sent Out" value={feeFigure(stats.sent_out)} />
+            <StatRow label="Cash Fees" value={playerRecordMoney(stats.total_fee)} />
+            <StatRow label="MTT Fees" value={playerRecordMoney(stats.mtt_fee)} />
+            <StatRow label="Claimed Back" value={playerRecordMoney(stats.claimed_back)} />
+            <StatRow label="Sent Out" value={playerRecordMoney(stats.sent_out)} />
             <StatRow
               label="Total Winnings"
-              value={winLossChips(stats.total_winnings)}
+              value={playerRecordMoney(stats.total_winnings, true)}
               signed={stats.total_winnings}
             />
             <StatRow
               label="MTT Winnings"
-              value={winLossChips(stats.mtt_winnings)}
+              value={playerRecordMoney(stats.mtt_winnings, true)}
               signed={stats.mtt_winnings}
             />
           </section>
@@ -1064,7 +1122,7 @@ export default function MemberManagementPage() {
                       <span className="mm-downline__number">No. {d.player_number}</span>
                     )}
                     <span className="mm-downline__fees" title="Fees Generated">
-                      {feeFigure(d.total_fees)}
+                      {playerRecordMoney(d.total_fees)}
                     </span>
                     <span className="mm-downline__open" aria-hidden="true">
                       ›

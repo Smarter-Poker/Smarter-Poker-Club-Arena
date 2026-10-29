@@ -123,7 +123,7 @@ describe('horse decision work follows the authoritative turn boundary', () => {
     const { engine, player, performAction } = turnHarness({ preAction: { action: 'check' } });
     const pending = installPendingHorseWork(engine);
     let releaseBeat!: () => void;
-    engine.sleep = () =>
+    engine.sleepHand = () =>
       new Promise<void>((resolve) => {
         releaseBeat = resolve;
       });

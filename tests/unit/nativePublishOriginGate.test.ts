@@ -71,7 +71,7 @@ function runOriginVerification(liveSha: string) {
       encoding: 'utf8',
       // The real shell performs 120 JSON interpreter checks on mismatch.
       // Allow the measured concurrent-run cost without changing its loop or assertions.
-      timeout: 15000,
+      timeout: 15_000,
     });
     return { status: result.status, output: readFileSync(output, 'utf8'), error: result.error };
   } finally {
@@ -132,10 +132,11 @@ describe('native publishing requires the exact origin verification', () => {
     expect(mismatched.error).toBeUndefined();
     expect(mismatched.status).toBe(1);
     expect(mismatched.output).toBe('');
-    // Two real child processes each retain their 5s bound. The parent also
-    // needs assertion/cleanup time; a 5s parent can expire before either
-    // child reports its authoritative outcome under full-suite contention.
-  }, 15_000);
+    // In the 302-file hook, the wrong-SHA child timed out at 5s while
+    // completing 12 real two-origin parser attempts. Keep every refusal and
+    // production timeout unchanged; allow each isolated child 15s and the
+    // parent 45s for both authoritative outcomes plus assertion/cleanup.
+  }, 45_000);
 
   it('the local template and publisher do not accept paid error telemetry configuration', () => {
     const template = readFileSync(join(root, '.env.example'), 'utf8');

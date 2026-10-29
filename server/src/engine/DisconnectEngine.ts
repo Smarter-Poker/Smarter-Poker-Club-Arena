@@ -1,3 +1,5 @@
+import { WeeklyPauseClock } from './WeeklyPauseClock.js';
+import { CooperativeHandTimers } from './CooperativeHandTimers.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  DISCONNECT ENGINE — Player Timeout & Reconnection Management
@@ -15,7 +17,12 @@
  */
 
 import { reconnectProtectionSeconds, type ReconnectMembership } from './reconnectProtection.js';
-import { thawTableReconnectClock, thawTablePresenceClock } from '../maintenance/reconnectFreeze.js';
+import {
+  thawTableReconnectClock,
+  thawTablePresenceClock,
+  thawReconnectClock,
+  thawPresenceClock,
+} from '../maintenance/reconnectFreeze.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
@@ -213,6 +220,61 @@ export interface DisconnectEvent {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class DisconnectEngine {
+  private weeklyClock = new WeeklyPauseClock();
+  private transportCustody = new Map<string, CooperativeHandTimers>();
+
+  private transportTimers(tableId: string): CooperativeHandTimers {
+    let timers = this.transportCustody.get(tableId);
+    if (!timers) {
+      timers = new CooperativeHandTimers();
+      this.transportCustody.set(tableId, timers);
+    }
+    return timers;
+  }
+
+  pauseForWeeklyPayout(tableId: string, owner: string): void {
+    if (!this.weeklyClock.has(tableId)) {
+      for (const state of this.playerStates.values()) {
+        if (state.tableId !== tableId) continue;
+        thawTableReconnectClock(tableId, state);
+        thawTablePresenceClock(tableId, state);
+      }
+    }
+    this.weeklyClock.hold(tableId, owner);
+    this.transportTimers(tableId).hold(owner);
+    this.preciseTimer.pauseForWeeklyPayout(tableId, `${owner}:disconnect`);
+  }
+
+  resumeFromWeeklyPayout(tableId: string, owner: string): void {
+    const startedAt = this.weeklyClock.now(tableId);
+    const elapsed = this.weeklyClock.release(tableId, owner);
+    if (elapsed !== null) {
+      for (const state of this.playerStates.values()) {
+        if (state.tableId !== tableId) continue;
+        // The existing compensated-through markers prevent overlap with a completed
+        // maintenance thaw from crediting the same frozen milliseconds twice.
+        thawTableReconnectClock(tableId, state);
+        thawTablePresenceClock(tableId, state);
+        const interval = { startMs: startedAt, endMs: startedAt + elapsed };
+        thawReconnectClock(state, interval);
+        thawPresenceClock(state, interval);
+        for (const field of ['lastHeartbeat', 'reconnectedAt', 'lastTurnRenderedAt'] as const) {
+          const value = state[field];
+          if (typeof value === 'number') state[field] = value + elapsed;
+        }
+      }
+    }
+    this.transportTimers(tableId).release(owner);
+    this.preciseTimer.resumeFromWeeklyPayout(tableId, `${owner}:disconnect`);
+  }
+
+  isParkedForWeeklyPayout(tableId: string, owner: string): boolean {
+    return (
+      this.weeklyClock.has(tableId, owner) &&
+      this.preciseTimer.isParkedForWeeklyPayout(tableId, `${owner}:disconnect`)
+    );
+  }
+
   /** Sit-out eviction limits (Dan 2026-08-21): button passes, then minutes. */
   static readonly SITOUT_MAX_ORBITS = 2;
   static readonly SITOUT_MAX_MS = 5 * 60 * 1000;
@@ -336,7 +398,7 @@ export class DisconnectEngine {
       playerId,
       tableId,
       isConnected: true,
-      lastHeartbeat: Date.now(),
+      lastHeartbeat: this.weeklyClock.now(tableId),
       consecutiveTimeouts: 0,
       isSittingOut: false,
       sitOutSince: null,
@@ -416,7 +478,7 @@ export class DisconnectEngine {
 
     const wasDisconnected = !state.isConnected;
     state.isConnected = true;
-    state.lastHeartbeat = Date.now();
+    state.lastHeartbeat = this.weeklyClock.now(tableId);
     // Dan 2026-08-23: a beat is proof the page/app is back. Clear the
     // page-left flag unconditionally (not only on the wasDisconnected edge) —
     // a pagehide followed by a resume never opened a disconnect, so there is
@@ -459,7 +521,7 @@ export class DisconnectEngine {
          voluntary action proves presence. `recordPlayerActed` clears all three
          (and says why), and so does `sitBack`. Nothing here does any more. */
       // Bible V8 §6.3: Track reconnect time for grace period (5s before auto-action)
-      state.reconnectedAt = Date.now();
+      state.reconnectedAt = this.weeklyClock.now(tableId);
 
       // Cancel the disconnect timeout timer — player is back
       this.preciseTimer.cancelTimer(tableId, `disconnect:${playerId}`);
@@ -489,14 +551,18 @@ export class DisconnectEngine {
     if (!state || !state.isConnected) return;
     if (this.transportGraceTimers.has(key)) return; // window already open
 
-    const timer = setTimeout(() => {
+    const timer = this.transportTimers(tableId).set(() => {
       this.transportGraceTimers.delete(key);
       const current = this.playerStates.get(key);
       if (!current || !current.isConnected) return;
       // Defence in depth: heartbeat() cancels this timer, so reaching here with
       // a fresh beat should be impossible. Standing down is the safe way to be
       // wrong — a false disconnect is felt by the player, a late one is not.
-      if (Date.now() - current.lastHeartbeat < DisconnectEngine.TRANSPORT_GRACE_MS) return;
+      if (
+        this.weeklyClock.now(tableId) - current.lastHeartbeat <
+        DisconnectEngine.TRANSPORT_GRACE_MS
+      )
+        return;
       this.markDisconnected(tableId, playerId);
     }, DisconnectEngine.TRANSPORT_GRACE_MS);
     (timer as { unref?: () => void }).unref?.();
@@ -507,7 +573,7 @@ export class DisconnectEngine {
   private cancelTransportGrace(key: string): void {
     const timer = this.transportGraceTimers.get(key);
     if (timer === undefined) return;
-    clearTimeout(timer);
+    for (const timers of this.transportCustody.values()) timers.clear(timer);
     this.transportGraceTimers.delete(key);
   }
 
@@ -519,7 +585,7 @@ export class DisconnectEngine {
     if (!state || !state.isConnected) return;
 
     state.isConnected = false;
-    state.disconnectedAt = Date.now();
+    state.disconnectedAt = this.weeklyClock.now(tableId);
     // A heartbeat alone does not replenish the allowance. A voluntary action does.
     if (state.reconnectDeadlineMs === undefined) {
       state.reconnectGrantedAtMs = state.disconnectedAt;
@@ -537,7 +603,10 @@ export class DisconnectEngine {
   protectExpiredTurn(tableId: string, playerId: string): void {
     const state = this.playerStates.get(`${tableId}:${playerId}`);
     if (!state?.isConnected || state.isSittingOut) return;
-    if (Date.now() - state.lastHeartbeat >= DisconnectEngine.UNANSWERED_TURN_SILENCE_MS) {
+    if (
+      this.weeklyClock.now(tableId) - state.lastHeartbeat >=
+      DisconnectEngine.UNANSWERED_TURN_SILENCE_MS
+    ) {
       this.markDisconnected(tableId, playerId);
     }
   }
@@ -552,8 +621,9 @@ export class DisconnectEngine {
    * Bible V8 §6.3: "Disconnect detected: no heartbeat for disconnect_timeout_seconds"
    */
   checkStaleHeartbeats(tableId: string): void {
+    if (this.weeklyClock.has(tableId)) return;
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
-    const now = Date.now();
+    const now = this.weeklyClock.now(tableId);
     const timeoutMs = config.disconnectTimeoutSeconds * 1000;
 
     for (const [key, state] of this.playerStates) {
@@ -575,7 +645,9 @@ export class DisconnectEngine {
     const state = this.playerStates.get(key);
     if (!state || !state.reconnectedAt) return false;
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
-    return Date.now() - state.reconnectedAt < config.reconnectGraceSeconds * 1000;
+    return (
+      this.weeklyClock.now(tableId) - state.reconnectedAt < config.reconnectGraceSeconds * 1000
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -679,7 +751,7 @@ export class DisconnectEngine {
          away) carried the already-expired instant into every later hand.
 
          ServerTableEngineTurns then reads it on the reconnect path, sees
-         `protection <= Date.now()`, and force-resolves the seat the moment the
+         `protection <= this.weeklyClock.now(tableId)`, and force-resolves the seat the moment the
          socket comes back - a fold, on a hand the player is present for, with
          the full action clock unspent. The absence was over hands ago; the
          paperwork was not.
@@ -801,7 +873,7 @@ export class DisconnectEngine {
     const detail =
       `connected player never acted at this table: ` +
       `${state.turnsOffered} turn(s) offered, ${state.consecutiveTimeouts} timeout(s), ` +
-      `heartbeat ${Math.round((Date.now() - state.lastHeartbeat) / 1000)}s ago, ` +
+      `heartbeat ${Math.round((this.weeklyClock.now(tableId) - state.lastHeartbeat) / 1000)}s ago, ` +
       `no client turn-render ack`;
 
     reportError(new Error(`[silent-client] ${detail}`), 'DisconnectEngine.SuspectedSilentClient', {
@@ -837,7 +909,7 @@ export class DisconnectEngine {
   noteTurnRendered(tableId: string, playerId: string): void {
     const state = this.playerStates.get(`${tableId}:${playerId}`);
     if (!state) return;
-    state.lastTurnRenderedAt = Date.now();
+    state.lastTurnRenderedAt = this.weeklyClock.now(tableId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -856,7 +928,7 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const state = this.playerStates.get(key);
     if (!state) return;
-    state.pageLeftAt = Date.now();
+    state.pageLeftAt = this.weeklyClock.now(tableId);
     // Conclude the disconnect now rather than waiting out TRANSPORT_GRACE_MS.
     this.markDisconnected(tableId, playerId);
   }
@@ -945,7 +1017,7 @@ export class DisconnectEngine {
    */
   collectAbandonedSeatEvictions(tableId: string, playerIds: string[]): string[] {
     const evict: string[] = [];
-    const now = Date.now();
+    const now = this.weeklyClock.now(tableId);
     for (const playerId of playerIds) {
       const state = this.playerStates.get(`${tableId}:${playerId}`);
       if (!state || state.isSittingOut) continue;
@@ -1027,7 +1099,9 @@ export class DisconnectEngine {
     // Stamp the clock only on the TRANSITION into sitting out, so a repeated
     // sitOut() call cannot keep resetting the 5-minute eviction window.
     if (!state.isSittingOut) {
-      state.sitOutSince = Number.isFinite(sinceMs as number) ? (sinceMs as number) : Date.now();
+      state.sitOutSince = Number.isFinite(sinceMs as number)
+        ? (sinceMs as number)
+        : this.weeklyClock.now(tableId);
       state.sitOutOrbits = 0;
       state.sitOutReason = reason;
     } else if (Number.isFinite(sinceMs as number)) {
@@ -1139,7 +1213,7 @@ export class DisconnectEngine {
     // the half that has to work when the table has gone quiet, which is exactly
     // when a seat gets held forever.
     const evict: string[] = [];
-    const now = Date.now();
+    const now = this.weeklyClock.now(tableId);
     for (const playerId of playerIds) {
       const state = this.playerStates.get(`${tableId}:${playerId}`);
       if (!state || !state.isSittingOut) continue;
@@ -1205,7 +1279,8 @@ export class DisconnectEngine {
   }
 
   disposeAll(): void {
-    for (const timer of this.transportGraceTimers.values()) clearTimeout(timer);
+    for (const timers of this.transportCustody.values()) timers.stop();
+    this.transportCustody.clear();
     this.transportGraceTimers.clear();
     this.playerStates.clear();
     this.tableConfigs.clear();
@@ -1267,7 +1342,7 @@ export class DisconnectEngine {
     const dAt = s.disconnectedAt ?? s.lastHeartbeat;
     const graceDeadlineMs =
       s.reconnectDeadlineMs ?? dAt + reconnectProtectionSeconds(s.reconnectMembership ?? {}) * 1000;
-    if (Date.now() < graceDeadlineMs) {
+    if (this.weeklyClock.now(tableId) < graceDeadlineMs) {
       return { state: 'MISSING', sinceMs: dAt, graceDeadlineMs, ...carried };
     }
     return { state: 'DISCONNECTED', sinceMs: dAt, graceDeadlineMs, ...carried };
@@ -1334,7 +1409,7 @@ export class DisconnectEngine {
         presenceThawedAtMs: Number.isFinite(entry.presenceThawedAtMs)
           ? entry.presenceThawedAtMs
           : undefined,
-        lastHeartbeat: entry.sinceMs || Date.now(),
+        lastHeartbeat: entry.sinceMs || this.weeklyClock.now(tableId),
         // 2026-09-04 (item 2): strikes, the blind budget, the sit-out reason
         // and the /away stamp survive a restart when the snapshot carries
         // them. A restart used to be a free reset of all four.
@@ -1343,7 +1418,8 @@ export class DisconnectEngine {
         // The player's own pause survives the restart as the player's own.
         sitOutByClient: sittingOut && entry.sitOutByClient === true,
         isSittingOut: sittingOut,
-        disconnectedAt: connected || sittingOut ? undefined : entry.sinceMs || Date.now(),
+        disconnectedAt:
+          connected || sittingOut ? undefined : entry.sinceMs || this.weeklyClock.now(tableId),
         // These five were omitted, and one of them mattered. Dan's rule is "a
         // player sitting out is removed after the button passes them twice, OR
         // after 5 minutes, whichever comes first" — and the 5-minute half is
@@ -1355,7 +1431,9 @@ export class DisconnectEngine {
         // Item 4: the entry's own sitOutSinceMs when present (sinceMs is
         // now the same number for SAT_OUT, but an older snapshot's sinceMs
         // was the last heartbeat, so the dedicated field is preferred).
-        sitOutSince: sittingOut ? (entry.sitOutSinceMs ?? entry.sinceMs ?? Date.now()) : null,
+        sitOutSince: sittingOut
+          ? (entry.sitOutSinceMs ?? entry.sinceMs ?? this.weeklyClock.now(tableId))
+          : null,
         sitOutOrbits: sittingOut ? (entry.sitOutOrbits ?? 0) : 0,
         awayBlindSbCharged: entry.awayBlindSbCharged === true,
         awayBlindBbCharged: entry.awayBlindBbCharged === true,
@@ -1409,7 +1487,7 @@ export class DisconnectEngine {
     // Use PreciseActionTimer for the countdown (deadline-based, drift-immune)
     const deadline =
       state.reconnectDeadlineMs ??
-      (state.disconnectedAt ?? Date.now()) +
+      (state.disconnectedAt ?? this.weeklyClock.now(tableId)) +
         reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
     state.reconnectDeadlineMs = deadline;
     /* AN EXPIRED ALLOWANCE STILL WAITS A BEAT (2026-10-05). Once a seat's
@@ -1421,7 +1499,10 @@ export class DisconnectEngine {
        of the treatment"). The action never lands sooner than the same beat a
        sat-out seat and a horse act on. The protection deadline itself is
        unchanged; only when the auto-action fires. */
-    const armAt = Math.max(deadline, Date.now() + sitOutAutoActionDelayMs(canCheck));
+    const armAt = Math.max(
+      deadline,
+      this.weeklyClock.now(tableId) + sitOutAutoActionDelayMs(canCheck)
+    );
     this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, armAt, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;
@@ -1436,6 +1517,7 @@ export class DisconnectEngine {
     canCheck: boolean,
     reason: 'timeout' | 'sitting_out'
   ): void {
+    if (this.weeklyClock.has(tableId)) return;
     const key = `${tableId}:${playerId}`;
     const state = this.playerStates.get(key);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;

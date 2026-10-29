@@ -96,7 +96,7 @@ describe('gateway immutable activation', () => {
       builtBy: 'github-actions',
       runId: '17',
       workflowRef:
-        'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
+        'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
       workflowSha: 'c'.repeat(40),
     });
     const controller = {
@@ -126,7 +126,7 @@ describe('gateway immutable activation', () => {
 });
 
 describe('gateway activation commit and recovery', () => {
-  async function setup() {
+  async function setup(repository = 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena') {
     const { activateGateway } =
       await import('../../scripts/ci/private-record-gateway-activate.mjs');
     const { readlinkSync, existsSync } = await import('node:fs');
@@ -144,8 +144,7 @@ describe('gateway activation commit and recovery', () => {
       validationOnly: false,
       builtBy: 'github-actions',
       runId: '27',
-      workflowRef:
-        'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
+      workflowRef: `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`,
       workflowSha: 'c'.repeat(40),
     });
     const calls: string[] = [];
@@ -183,6 +182,17 @@ describe('gateway activation commit and recovery', () => {
         }),
     };
   }
+  it('refuses a foreign or former workflow signer before starting a gateway', async () => {
+    for (const repository of [
+      'foreign/Smarter-Poker-Club-Arena',
+      'Smarter-Poker/Smarter-Poker-Club-Arena',
+    ]) {
+      const f = await setup(repository);
+      await expect(f.run()).rejects.toThrow('hosted protected-main artifact provenance required');
+      expect(f.calls).toEqual([]);
+      expect(f.readlinkSync(join(f.runtime, 'active.sock'))).toBe(`${f.old}/listener.sock`);
+    }
+  });
   it('commits only after public proof and retires the predecessor', async () => {
     const f = await setup();
     await expect(f.run()).resolves.toMatchObject({

@@ -6,6 +6,7 @@ import {
   createIntake,
   acceptedReceipt,
   TARGET,
+  wakeArguments,
 } from '../tools/production-alerts-native-wakeup/core.mjs';
 const A = '00000000-0000-0000-0000-000000000001';
 const B = '00000000-0000-0000-0000-000000000002';
@@ -15,6 +16,8 @@ function fixture(seed = null) {
   let acknowledged = false;
   let calls = 0;
   let failure = false;
+  let wakes = 0;
+  let wakeFailure = false;
   const writes: any[] = [];
   const intake = createIntake({
     load: async () => state,
@@ -24,6 +27,13 @@ function fixture(seed = null) {
     },
     pending: async () => ({ version: 1, active_acknowledged: acknowledged, pending: ids }),
     id: () => B,
+    wake: async (args) => {
+      wakes++;
+      expect(state.phase).toBe('queued');
+      expect(state.wake).toBe('attempting');
+      expect(args).toEqual(wakeArguments());
+      if (wakeFailure) throw Error('open outcome unknown');
+    },
     queue: async (args) => {
       calls++;
       expect(state.phase).toBe('submitting');
@@ -40,6 +50,12 @@ function fixture(seed = null) {
     },
     get calls() {
       return calls;
+    },
+    get wakes() {
+      return wakes;
+    },
+    set wakeFailure(value) {
+      wakeFailure = value;
     },
     set ids(value) {
       ids = value;
@@ -62,7 +78,8 @@ describe('committed operational alert wakes native intake', () => {
     f.acknowledged = true;
     await f.intake.event();
     expect(f.calls).toBe(2);
-    expect(f.writes[2]).toBeNull();
+    expect(f.writes).toContain(null);
+    expect(f.wakes).toBe(2);
   });
   it('retains an uncertain native side effect without automatic retry, including restart', async () => {
     const f = fixture();
@@ -80,6 +97,41 @@ describe('committed operational alert wakes native intake', () => {
     await f.intake.event();
     expect(f.calls).toBe(0);
   });
+  it('wakes an already accepted pre-upgrade queue once without another message', async () => {
+    const f = fixture({ operationId: B, ids: [A], phase: 'queued', messageId: A });
+    await f.intake.event();
+    await f.intake.event();
+    expect(f.calls).toBe(0);
+    expect(f.wakes).toBe(1);
+    expect(f.state).toMatchObject({ operationId: B, messageId: A, wake: 'requested' });
+    const restored = fixture(f.state);
+    await restored.intake.event();
+    expect(restored.wakes).toBe(0);
+  });
+  it('retains unknown or interrupted wake attempts across events and restart', async () => {
+    const f = fixture();
+    f.wakeFailure = true;
+    await expect(f.intake.event()).rejects.toThrow('wake outcome uncertain');
+    expect(f.state.phase).toBe('queued');
+    expect(f.state.wake).toBe('uncertain');
+    await f.intake.event();
+    expect(f.calls).toBe(1);
+    expect(f.wakes).toBe(1);
+    for (const wake of ['attempting', 'uncertain', 'requested']) {
+      const restored = fixture({ ...f.state, wake });
+      await restored.intake.event();
+      expect(restored.calls).toBe(0);
+      expect(restored.wakes).toBe(0);
+    }
+  });
+  it('uses the canonical native desktop queue wake route without prompt input', () => {
+    expect(wakeArguments()).toEqual([
+      '-g',
+      '-a',
+      '/Applications/ChatGPT.app',
+      `codex://threads/wake/${TARGET}`,
+    ]);
+  });
   it('keeps empty, invalid and unavailable source results distinct', async () => {
     const f = fixture();
     f.ids = [];
@@ -96,6 +148,9 @@ describe('committed operational alert wakes native intake', () => {
       },
       queue: async () => {
         throw Error('must not queue');
+      },
+      wake: async () => {
+        throw Error('must not wake');
       },
     });
     await expect(broken.event()).rejects.toThrow('offline');
@@ -160,6 +215,7 @@ describe('committed operational alert wakes native intake', () => {
       },
       pending: async () => ({ version: 1, active_acknowledged: false, pending: [A] }),
       id: () => B,
+      wake: async () => {},
       queue: async () => {
         queued++;
         return `Queued message ${A} for thread ${TARGET}.`;

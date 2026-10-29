@@ -104,7 +104,7 @@ export function EquityBadgeLayer({
   const [placements, setPlacements] = useState<Record<string, EquityBadgePlacement>>({});
   const [measureTick, setMeasureTick] = useState(0);
   /* Position depends on WHICH seats carry a badge and where they may go, not
-     on equal-width numbers. A label length change (notably Unknown) must
+     on equal-width numbers. A label length change must
      re-measure so a wider label cannot grow over a displayed card. */
   const signature = badges
     .map(
@@ -130,13 +130,17 @@ export function EquityBadgeLayer({
     }
 
     /* A hand was tabled (or mucked): the class list of a `.seat__cards` row
-       changed. Only that - the layer's own slots and every other class on the
-       felt change constantly during a runout and move nothing. */
+       changed, or an individual winning card rose above the row. The layer's
+       own slots and unrelated classes must not trigger another layout read. */
     let mutationObserver: MutationObserver | null = null;
     if (typeof MutationObserver !== 'undefined') {
       mutationObserver = new MutationObserver((records) => {
         if (
-          records.some((r) => r.target instanceof Element && r.target.classList.contains(CARD_ROW))
+          records.some(
+            (r) =>
+              r.target instanceof Element &&
+              (r.target.classList.contains(CARD_ROW) || r.target.classList.contains('seat__card'))
+          )
         ) {
           remeasure();
         }
@@ -256,8 +260,7 @@ export function EquityBadgeLayer({
                   <span
                     className="equity-overlay__bar"
                     style={{
-                      width:
-                        label === 'Unknown' ? '0%' : `${Math.max(0, Math.min(100, badge.equity))}%`,
+                      width: `${Math.max(0, Math.min(100, badge.equity))}%`,
                     }}
                   />
                 </span>

@@ -359,6 +359,126 @@ function attachRetainedRiverHistory(f: ReturnType<typeof fixture>, count = 1, ca
   capture.observerReads.historyHands = history.hands.length;
   return history;
 }
+describe('own-turn accepted execution evidence', () => {
+  it.each(['fold', 'check'] as const)(
+    'does not credit a contradictory nonzero display amount for %s',
+    (action) => {
+      const f = fixture(action === 'check');
+      f.d.decision = { action, thinkTime: 0 };
+      const last = f.a.actions.length - 1;
+      f.a.actions[last] = { ...f.a.actions[last]!, action, amount: 0 };
+      f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      settleHorseExecutionWitness(f.w, {
+        applied: true,
+        acceptedActions: [{ record: f.a.actions[last]!, intended: true }],
+      });
+      f.w.executedAmount = 1;
+      const dir = mkdtempSync(join(tmpdir(), 'horse-contradictory-zero-chip-fleet-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const horse = readHorseJournalFleet(dir, packet()).horses.find(
+        (h) => h.horseId === f.d.snapshot.player.user_id
+      )!;
+      expect(horse.executionEvidence.selectedMatch).toBe(0);
+    }
+  );
+  it.each(['fold', 'check'] as const)(
+    'counts an intended zero-chip %s using its original controller amount',
+    (action) => {
+      const f = fixture(action === 'check');
+      f.d.decision = { action, thinkTime: 0 };
+      const last = f.a.actions.length - 1;
+      f.a.actions[last] = { ...f.a.actions[last]!, action, amount: 0 };
+      f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      settleHorseExecutionWitness(f.w, {
+        applied: true,
+        acceptedActions: [{ record: f.a.actions[last]!, intended: true }],
+      });
+      expect(f.w.executionStatus).toBe('intended');
+      expect(f.w.executedAmount).toBeNull();
+      expect(f.w.expectedExecutionAmount).toBe(0);
+      const dir = mkdtempSync(join(tmpdir(), 'horse-zero-chip-fleet-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const horse = readHorseJournalFleet(dir, packet()).horses.find(
+        (h) => h.horseId === f.d.snapshot.player.user_id
+      )!;
+      expect(horse.acceptedDecisions).toBe(1);
+      expect(horse.executionEvidence.selectedMatch).toBe(1);
+      expect(horse.executionEvidence.selectionUnknown).toBe(0);
+    }
+  );
+  it.each(['intended', 'coerced', 'rejected', 'identity_mismatch'] as const)(
+    'retains exact controller classification %s without inferring policy correctness',
+    (mode) => {
+      const f = fixture();
+      if (mode === 'coerced') f.d.decision = { action: 'raise', amount: 20, thinkTime: 0 };
+      f.w = createHorseExecutionWitness(f.d.snapshot, f.d.decision, {
+        requestId: 1,
+        lane: 'fast',
+        computeMs: 1,
+        governorScale: 1,
+      });
+      if (mode === 'rejected') retireHorseExecutionWitness(f.w, 'action_rejected');
+      else
+        settleHorseExecutionWitness(f.w, {
+          applied: true,
+          acceptedActions: [
+            {
+              record: {
+                seat: f.d.snapshot.player.seat,
+                userId: f.d.snapshot.player.user_id,
+                action: 'call',
+                amount: 1,
+                timestamp: 1001,
+                stage: 'preflop',
+              },
+              intended: true,
+            },
+          ],
+        });
+      if (mode === 'identity_mismatch') {
+        f.w = structuredClone(f.w);
+        (f.w.identity as { decisionKey: string }).decisionKey = 'a'.repeat(64);
+      }
+      const dir = mkdtempSync(join(tmpdir(), 'horse-own-turn-fleet-'));
+      dirs.push(dir);
+      const store = new HorseDecisionJournalStore(dir, {
+        archive: runtimeHorseJournalArchiveOptions(dir, {}),
+      });
+      store.appendBatch(f.rows());
+      store.close();
+      const result = readHorseJournalFleet(dir, packet());
+      const horse = result.horses.find((h) => h.horseId === f.d.snapshot.player.user_id)!;
+      const accepted = mode === 'intended' || mode === 'coerced';
+      expect(horse.acceptedDecisions).toBe(accepted ? 1 : 0);
+      expect(horse.executionEvidence.selectedMatch).toBe(mode === 'intended' ? 1 : 0);
+      expect(horse.executionEvidence.controllerCoerced).toBe(mode === 'coerced' ? 1 : 0);
+      expect(horse.executionEvidence.effectsApplied).toBe(0);
+      expect(horse.executionEvidence.effectsNotApplicable).toBe(accepted ? 1 : 0);
+      expect(result.allPhasesVerified).toBe(false);
+    }
+  );
+});
+
 describe('finite retained individual river learning evidence', () => {
   const poolIndividualRiverRead = (f: ReturnType<typeof fixture>) => {
     const capture = f.d as typeof f.d & { observerReads: any };

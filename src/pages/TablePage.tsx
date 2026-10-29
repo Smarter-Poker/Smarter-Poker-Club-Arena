@@ -1,3 +1,4 @@
+import { useGameSessionLifecycle } from '../hooks/useGameSessionLifecycle';
 import {
   allInEquityBoardKey,
   allInEquityHandMatches,
@@ -62,7 +63,7 @@ import { TournamentLateRegCallToAction } from '../components/table/TournamentLat
  * Removed: BadBeatJackpot, BBJCelebration, BombPotOverlay, ChipStack,
  * ConfettiCanvas, FinalTableOverlay, HandHistoryPanel (the default export —
  * the HandRecord type it also exports is still used), HandNotation,
- * HandReveal, HeadsUpOverlay, LeaveTableConfirm, MiniHUD, ParticleSystem,
+ * HandReveal, HeadsUpOverlay, LeaveTableConfirm, ParticleSystem,
  * PresenceIndicator, QuickActionsBar, RealTimeResults, SessionHUD,
  * SettingsPanel, SpectatorOverlay, ThrowableSelector, TimerBar,
  * TournamentAnnouncementOverlay, TournamentBreakScreen,
@@ -153,6 +154,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { customCashGameName } from '../utils/customCashGameName';
 import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
@@ -229,6 +231,7 @@ import {
 // it, so flipping the flag is a pure rollout switch.
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
+import { useSeatMoveAnnouncement } from '../hooks/useSeatMoveAnnouncement';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
 import { isLightningObserverSnapshot, mapEngineSnapshot } from '../utils/mapEngineSnapshot';
@@ -609,7 +612,6 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 // IMPROVEMENT PASS 2026-08-19: PremiumCard, PlayerCard, HoleCardReveal and
 // createChipToPotEvent imports removed — imported for years, never rendered
 // or called (dead weight in the TablePage chunk).
-import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import IdentityModal from '../components/table/IdentityModal';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -958,6 +960,7 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 import {
   sortCardsByRank,
   heroDisplayHoleCards,
+  heroWinningHoleCardIndexes,
   getGameVariantLabel,
   heroCardsCollideWithBoard,
   heroHoleCardsAreForThisHand,
@@ -2450,6 +2453,7 @@ function LiveTablePage({
     userId,
     event: engineLastEvent,
     follow: (destination) => {
+      if (tableId) sessionStatsService.moveSession(tableId, destination, userId);
       if (embeddedTableId) {
         onTableInfoUpdate?.({ movedToTableId: destination });
         return;
@@ -2703,6 +2707,10 @@ function LiveTablePage({
 
   // A roster arriving during restoration supplies a placeholder, not a top-up.
   const sessionBuyInSeedRef = useRef(0);
+  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
+   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
+   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
+  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   /* LIGHTNING TRANSITION, PHASE 3: THE FOLDED HAND LEAVES THE FELT, IT DOES
      NOT VANISH. The engine answers a Lightning fold with the fold, the table,
      then the idle snapshot one macrotask later. Applied verbatim, that took
@@ -2828,6 +2836,13 @@ function LiveTablePage({
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
         if (sp.isHero && sp.holeCards && sp.holeCards.length > 0) {
+          // A reload may recover the shown hand through this snapshot alone.
+          // Retain its dealt order before preserving/sorting the hero's row.
+          if (sp.holeCards.every((card) => card != null)) {
+            heroEngineCardOrderRef.current = sp.holeCards.map(
+              (card) => `${card!.rank}${card!.suit}`
+            );
+          }
           const prevRow = prev.players[i];
           sp = {
             ...sp,
@@ -3187,10 +3202,6 @@ function LiveTablePage({
    * variant correctly and the people never got to play it at all.
    */
   const [pineappleDeadline, setPineappleDeadline] = useState<number | null>(null);
-  /** Hero's hole cards as `${rank}${suit}` in the ENGINE's delivery order, which
-   *  cards_pre_sort re-orders for display. `submitDiscard` indexes into this
-   *  one, never into what the felt shows. Written in handleHoleCardPayload. */
-  const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
     /* ═══ A BACKGROUND TABLE MAY NOT PUT A PICKER ON YOUR SCREEN ═══════════
        MultiTablePage mounts up to four TablePages at once and only the active
@@ -5015,6 +5026,8 @@ function LiveTablePage({
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const {
     sessionStartRef,
+    sessionCarryRef,
+    vpipCountRef,
     handsPlayedRef,
     handsWonRef,
     biggestPotRef,
@@ -5026,7 +5039,7 @@ function LiveTablePage({
     heroWonCurrentHandRef,
     hadShowdownRef,
     resetSession,
-  } = useTableSession(tableId);
+  } = useTableSession(tableId, userId);
   /* A sitting-out or busted cash seat still owns a session. Restore from
      seat ownership, not from the current hand's funded-player list. */
   // Diamond's finished card reads the exact custody after leave. Restoring
@@ -5064,6 +5077,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         const merged = mergeSessionFacts({
           serverFacts: data,
+          carried: sessionCarryRef.current,
           atAsk: factsAtAsk,
           now: {
             startMs: sessionStartRef.current,
@@ -5085,6 +5099,7 @@ function LiveTablePage({
         if (error || !active || sessionBaselineTableRef.current !== askedKey) return;
         totalBuyInRef.current = sessionBuyInTotal({
           serverBaseline: data,
+          carriedAdjustment: sessionCarryRef.current.fundingAdjustment,
           totalAtAsk: totalAtAsk + sessionBuyInSeedRef.current,
           totalNow: totalBuyInRef.current,
         });
@@ -5304,7 +5319,6 @@ function LiveTablePage({
       hold.pendingExit = null;
     };
   }, []);
-  const vpipCountRef = useRef(0);
   // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
   // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
   // hand", which is what sessionStatsService.recordHand() needs. Set on the
@@ -6221,6 +6235,23 @@ function LiveTablePage({
   } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId, throwId) =>
     receiveThrowRef.current?.(fromSeat, toSeat, throwableId, throwId)
   );
+
+  useSeatMoveAnnouncement({
+    tableId,
+    event: engineLastEvent,
+    players: tableState.players,
+    announce: (message, id) => {
+      setChatMessages((previous) =>
+        previous.some((entry) => entry.id === id)
+          ? previous
+          : [
+              ...previous.slice(-49),
+              { id, type: 'SYSTEM', playerName: 'System', content: message, timestamp: new Date() },
+            ]
+      );
+      toast.info(message);
+    },
+  });
 
   // ═══════════════════════════════════════════════════════════════════════
   // Observer chat permission — Admin/Owner roles can chat even when observing
@@ -9612,8 +9643,8 @@ function LiveTablePage({
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Only committed, card-free public summaries enter the Mini-HUD.
-  const { getStats: getPlayerHUDStats, observePublicEvent } = usePlayerStats(userId);
+  // Preserve committed, card-free public hand-stat recording; opponent HUDs are retired.
+  const { observePublicEvent } = usePlayerStats(userId);
   const observePublicEventRef = useRef(observePublicEvent);
   observePublicEventRef.current = observePublicEvent;
 
@@ -17767,8 +17798,8 @@ function LiveTablePage({
       }
       /**
        * The move landed: the hero's chair, chips and clock are now at the
-       * other table. Follow them. Anyone else just sees the seat empty on the
-       * next state broadcast.
+       * other table. Follow them. useSeatMoveAnnouncement explains the move
+       * to the players watching this source table.
        */
       case 'SEAT_MOVED': {
         setClusterRefreshKey((k) => k + 1);
@@ -17863,7 +17894,16 @@ function LiveTablePage({
             }
             if (seatIdx >= 0) {
               const existing = updatedPlayers[seatIdx];
-              if (sp.user_id === userId) syncedHeroSeat = sp.seat;
+              const publicHeroCards =
+                sp.user_id === userId ? (canonicalCards(sp.cards || []) as Card[]) : [];
+              if (sp.user_id === userId) {
+                syncedHeroSeat = sp.seat;
+                if (publicHeroCards.length && publicHeroCards.length === sp.cards?.length) {
+                  heroEngineCardOrderRef.current = publicHeroCards.map(
+                    (card) => `${card.rank}${card.suit}`
+                  );
+                }
+              }
               updatedPlayers[seatIdx] = {
                 ...(existing || {}),
                 id: sp.user_id,
@@ -18447,6 +18487,7 @@ function LiveTablePage({
           });
         }
         // Reset visual state instantly so the new hand starts crisp.
+        heroEngineCardOrderRef.current = null;
         setTableState((prev) => {
           // ANIMATION AUDIT 2026-08-19: 'folded' is per-hand state. It was
           // never reset here, so DealAnimation (which mounts off this event,
@@ -19117,6 +19158,15 @@ function LiveTablePage({
                  with a Peak Stack of 0 no matter what they held. This is the
                  once-per-hand, dealt-in-guarded emit, which makes it the exact
                  point at which the hero's stack is worth sampling. */
+              if (tableId)
+                sessionStatsService.recordHand(
+                  tableId,
+                  Number(tableStateRef.current.players?.[resolveHeroSeat() - 1]?.stack) || 0,
+                  outcome.won === true,
+                  heroVpipThisHandRef.current,
+                  heroPfrThisHandRef.current,
+                  `${tableId}:${hn}`
+                );
               masterBus.emit('HAND_COMPLETED', {
                 handId: String(tableStateRef.current.handNumber ?? hn),
                 tableId: tableId || '',
@@ -21226,51 +21276,18 @@ function LiveTablePage({
   // The session belongs to the SEAT, not to a modal, so it is owned here and
   // runs for as long as hero is sitting. SessionHUD is now a pure reader.
   // ═══════════════════════════════════════════════════════════════════════
-  const sessionStartedForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!tableId || !userId || userId === 'guest') return;
-    const seated = tableState.heroSeat > 0;
-    const key = `${tableId}:${userId}`;
-
-    if (seated && tableState.arenaAsset && sessionStartedForRef.current !== key) {
-      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      // Guard against seeding the session with a 0 stack from a snapshot that
-      // has the seat but not yet the chips — buyInTotal would be wrong for the
-      // whole session and every P&L reading would be inflated by the buy-in.
-      if (heroStack > 0) {
-        sessionStatsService.startSession(
-          tableId,
-          userId,
-          heroStack,
-          safeBB(tableState.blinds),
-          tableState.arenaAsset
-        );
-        sessionStartedForRef.current = key;
-        prevHandStackRef.current = heroStack;
-      }
-    } else if (!seated && sessionStartedForRef.current === key) {
-      sessionStatsService.endSession(tableId);
-      sessionStartedForRef.current = null;
-    }
-  }, [
+  useGameSessionLifecycle({
     tableId,
     userId,
-    tableState.heroSeat,
-    tableState.players,
-    tableState.blinds,
-    tableState.arenaAsset,
-  ]);
-
-  // End the session on unmount too (navigating away, or MultiTablePage
-  // closing this tab) so the session_history row is written.
-  useEffect(() => {
-    return () => {
-      if (sessionStartedForRef.current && tableId) {
-        sessionStatsService.endSession(tableId);
-        sessionStartedForRef.current = null;
-      }
-    };
-  }, [tableId]);
+    seated: tableState.heroSeat > 0,
+    stack: tableState.players[tableState.heroSeat - 1]?.stack || 0,
+    bigBlind: safeBB(tableState.blinds),
+    arenaAsset: tableState.arenaAsset,
+    onNewSession: resetSession,
+    onStart: (stack) => {
+      prevHandStackRef.current = stack;
+    },
+  });
 
   // Track if hero folds during the current hand (status changes mid-hand)
   useEffect(() => {
@@ -21339,21 +21356,8 @@ function LiveTablePage({
            how it was caught. The VPIP pair twenty lines below - one latch,
            one reader - is the pattern this should have followed. */
 
-        // Dan 2026-08-15 — THE Session Stats fix. SessionStatsService had a
-        // complete, correct recordHand() that computed hands, VPIP%, PFR%,
-        // P&L, BB/100, hands/hr and the sparkline trajectory — and NOTHING in
-        // the entire app ever called it. Every field except the clock sat at
-        // its zeroed initial value forever, which is exactly why the panel
-        // "only recorded the time". This is that missing call.
-        if (tableId) {
-          sessionStatsService.recordHand(
-            tableId,
-            heroStack,
-            heroDidWin,
-            heroVpipThisHandRef.current,
-            heroPfrThisHandRef.current
-          );
-        }
+        // SessionStatsService is fed by the dealt-in HAND_COMPLETED path,
+        // including the last hand before a move or leave. Never count it twice here.
       }
       if (previousHandNumber > 0 && lastDealPresentationHandRef.current !== handNum) {
         // This is a real in-session hand transition, never first-load
@@ -24763,7 +24767,6 @@ function LiveTablePage({
     onAllIn: () => void handleActionPanelAction('allin'),
     onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
-    onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
       //Use tableState.pot instead of local engine state
@@ -27054,6 +27057,13 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
+                          {customCashGameName(tableState.tableName) && (
+                            <span className="table-brand__line table-brand__line--level">
+                              <MastheadGameLine className="table-brand__game">
+                                {customCashGameName(tableState.tableName)}
+                              </MastheadGameLine>
+                            </span>
+                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."
@@ -27711,26 +27721,6 @@ function LiveTablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
-            /* PERF 2026-08-25. This map body runs for every seat on every
-               render of TablePage. When it was written, TablePage re-rendered
-               once a second for the whole of anybody's turn (and, before the
-               pass that preceded it, about thirty times a second), so anything
-               computed per seat here was really being computed nine times over,
-               continuously, on a phone. The action clock no longer renders this
-               component at all — but the map body is still the hottest loop on
-               the page whenever anything else does render it, so the savings
-               below stay.
-
-               `getPlayerHUDStats(player.id)` was called TWICE per seat: once
-               for `hudStats` and again inside the `playerStyle` IIFE below.
-               Called once now and shared. Nothing about the values changes —
-               it is the same function with the same argument in the same
-               render — so the memo comparator downstream sees exactly what it
-               saw before. `bigBlind` and `holeCardCount` moved out of the map
-               entirely for the same reason (see seatBigBlind /
-               seatHoleCardCount above the return). */
-            const seatHudStats = player && !player.isHero ? getPlayerHUDStats(player.id) : null;
-
             // SPOTLIGHT (Dan 2026-08-15, verbatim: "spotlight on the player's
             // turn isn't working, even if hero folds — that functionality must
             // always be ON AT ALL TIMES").
@@ -28225,14 +28215,21 @@ function LiveTablePage({
                      the union of every board's winning hole cards. */
                   winningHoleCardIndexes={
                     winnerBandActive && player && winnerInfo.playerIds.includes(player.id)
-                      ? ritWinnerHoleIndices[player.id]
-                        ? [
-                            ...new Set([
-                              ...(winnerInfo.holeCardIndices[player.id] ?? []),
-                              ...ritWinnerHoleIndices[player.id],
-                            ]),
-                          ]
-                        : winnerInfo.holeCardIndices[player.id]
+                      ? player.isHero
+                        ? heroWinningHoleCardIndexes(
+                            winnerInfo.holeCardIndices[player.id],
+                            ritWinnerHoleIndices[player.id],
+                            player.holeCards ?? [],
+                            heroEngineCardOrderRef.current
+                          )
+                        : ritWinnerHoleIndices[player.id]
+                          ? [
+                              ...new Set([
+                                ...(winnerInfo.holeCardIndices[player.id] ?? []),
+                                ...ritWinnerHoleIndices[player.id],
+                              ]),
+                            ]
+                          : winnerInfo.holeCardIndices[player.id]
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine
@@ -28261,8 +28258,6 @@ function LiveTablePage({
                       : undefined
                   }
                   bbjCreditAmount={player ? bbjSeatCredits[player.id] : undefined}
-                  hudStats={seatHudStats}
-                  showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={activeCardBack}
                   /* Dan 2026-08-23: an opponent's hidden hand drew exactly two
@@ -28306,19 +28301,6 @@ function LiveTablePage({
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
                   gesturesEnabled={v8Settings.gestures_enabled}
-                  playerStyle={
-                    userSettings.showHUD &&
-                    seatHudStats?.aggressionMeasured &&
-                    (seatHudStats.callActions ?? 0) > 0
-                      ? playerStyleClassifier.classify({
-                          handsPlayed: seatHudStats.handsPlayed,
-                          vpipCount: seatHudStats.vpipCount,
-                          pfrCount: seatHudStats.pfrCount,
-                          aggressiveActions: seatHudStats.aggressiveActions,
-                          passiveActions: seatHudStats.callActions,
-                        })
-                      : null
-                  }
                   onSit={() => handleSeatClick(seatNumber)}
                   /* Dan 2026-08-15: "when a player is seated at the table, the
                      open seats that were a + should now say EMPTY. A user
@@ -30785,7 +30767,6 @@ function LiveTablePage({
         onCloseSessionHUD={handleCloseSessionHUD}
         // Helpers
         safeBB={safeBB}
-        getPlayerHUDStats={getPlayerHUDStats}
       />
       {/* Dan 2026-08-23: "when players are seated at the table, or are on
           break, there should be a countdown clock."

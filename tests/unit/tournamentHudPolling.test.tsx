@@ -282,6 +282,38 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('the tournament dock shows actual paid finishing places', () => {
+  const payouts = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      place: index + 1,
+      percentage: 100 / count,
+    }));
+  it('places the event-specific paid count between Left and Avg and refreshes from the event row', async () => {
+    fx.tournamentAnswer = () =>
+      ok(running({ prize_pool_finalized: true, payout_structure: JSON.stringify(payouts(11)) }));
+    await mount({ playersRemaining: 13, averageStack: 75000 });
+    const value = () =>
+      screen.getByText('Paid').parentElement?.querySelector('.tournament-dock__value')?.textContent;
+    expect(value()).toBe('11');
+    const labels = [...document.querySelectorAll('.tournament-dock__label')].map(
+      (el) => el.textContent
+    );
+    expect(labels.slice(-3)).toEqual(['Left', 'Paid', 'Avg']);
+    fx.tournamentAnswer = () =>
+      ok(running({ prize_pool_finalized: true, payout_structure: payouts(3) }));
+    await broadcast('late_reg_closed');
+    expect(value()).toBe('3');
+  });
+  it.each([null, [], 'invalid', [{ place: 1, percentage: 0 }]])(
+    'does not fabricate a Paid count from %j',
+    async (payout_structure) => {
+      fx.tournamentAnswer = () => ok(running({ prize_pool_finalized: true, payout_structure }));
+      await mount();
+      expect(screen.queryByText('Paid')).toBeNull();
+    }
+  );
+});
+
 // ─── 1. PRODUCTION-SHAPED FAILURES ──────────────────────────────────────────
 
 describe('a failed read is a real failure, and the bar survives it', () => {

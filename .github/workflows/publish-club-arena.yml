@@ -75,7 +75,7 @@ jobs:
   # A push is new work, and a recovery event carries one explicit
   # protected-main SHA to publish.
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -271,7 +271,7 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -322,7 +322,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -373,7 +373,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -685,7 +685,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -798,7 +798,7 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -878,18 +878,21 @@ jobs:
             provenance &&
             !Array.isArray(provenance) &&
             provenance.schema === 1 &&
+            (repository === 'Smarter-Poker/Smarter-Poker-Club-Arena'
+              ? (provenance.repositoryId == null || provenance.repositoryId === '1132369872')
+              : repository === 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena' && provenance.repositoryId === '1132369872') &&
             (!Object.prototype.hasOwnProperty.call(provenance, 'validationOnly') || provenance.validationOnly === false) &&
             provenance.commit === expectedSha &&
             provenance.builtBy === 'github-actions' &&
             provenance.dirty === false &&
             provenance.historyComplete === true &&
             Number.isSafeInteger(provenance.behindMain) && provenance.behindMain >= 0 &&
-            ((provenance.behindMain === 0 && provenance.publication == null) ||
+            ((repository === 'Smarter-Poker/Smarter-Poker-Club-Arena' && provenance.behindMain === 0 && provenance.publication == null) ||
              (provenance.publication && typeof provenance.publication === 'object' && !Array.isArray(provenance.publication) &&
               provenance.publication.admittedMain === expectedSha &&
               typeof provenance.publication.observedMain === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.observedMain) &&
               (provenance.behindMain === 0 ? provenance.publication.observedMain === expectedSha : provenance.publication.observedMain !== expectedSha) &&
-              provenance.publication.workflowRef === 'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main' &&
+              provenance.publication.workflowRef === `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main` &&
               typeof provenance.publication.workflowSha === 'string' && /^[0-9a-f]{40}$/.test(provenance.publication.workflowSha) &&
               provenance.publication.triggerSha === provenance.publication.workflowSha &&
               ['push','repository_dispatch'].includes(provenance.publication.eventName))) &&
@@ -1275,7 +1278,7 @@ jobs:
   build-record-gateway:
     needs: publish-needed
     if: needs.publish-needed.outputs.component == 'private-record-gateway'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1323,7 +1326,7 @@ jobs:
   publish-record-gateway:
     needs: [publish-needed, build-record-gateway]
     if: needs.publish-needed.outputs.component == 'private-record-gateway' && needs.build-record-gateway.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 25
     permissions:
       contents: read
@@ -1367,7 +1370,7 @@ jobs:
         run: |
           set -euo pipefail
           SSH=(timeout 180s ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -i "$HOME/.ssh/ca_origin" -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20)
-          gh attestation verify gateway-artifact/runtime.tar.gz --bundle gateway-artifact/attestation.jsonl --repo Smarter-Poker/Smarter-Poker-Club-Arena --signer-workflow Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml --source-ref refs/heads/main --deny-self-hosted-runners
+          gh attestation verify gateway-artifact/runtime.tar.gz --bundle gateway-artifact/attestation.jsonl --repo Smarter-Software-PIQ/Smarter-Poker-Club-Arena --signer-workflow Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml --source-ref refs/heads/main --deny-self-hosted-runners
           STAGE="$REVISION.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
           "${SSH[@]}" "ca-record-publisher@$ORIGIN_HOST" bash -s -- "$STAGE" <<'REMOTE'
           set -euo pipefail
@@ -1418,7 +1421,7 @@ jobs:
   bootstrap-record-gateway:
     needs: publish-needed
     if: needs.publish-needed.outputs.component == 'private-record-bootstrap'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1500,7 +1503,7 @@ jobs:
   install-record-gateway-credentials:
     needs: publish-needed
     if: needs.publish-needed.outputs.component == 'private-record-credentials'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -1528,7 +1531,7 @@ jobs:
   inspect-record-gateway-host:
     needs: publish-needed
     if: needs.publish-needed.outputs.component == 'private-record-inspect'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read

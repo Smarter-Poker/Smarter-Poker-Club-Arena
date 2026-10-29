@@ -250,7 +250,16 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   it('runs every release job on a fresh hosted runner', () => {
     const runners = [...publish.matchAll(/^\s+runs-on:\s*(.+)$/gm)].map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
-    expect(new Set(runners)).toEqual(new Set(['ubuntu-latest']));
+    expect(new Set(runners)).toEqual(
+      new Set(
+        ['ca-linux-4core', 'ca-linux-8core'].map(
+          (label) =>
+            "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+            label +
+            "' || 'ubuntu-latest' }}"
+        )
+      )
+    );
     expect(publish).not.toContain('vars.CI_RUNNER');
     // Attestation verification explicitly denies self-hosted provenance.
     // Runner selection itself remains strictly hosted.
@@ -336,7 +345,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).toContain("build_info.get('built_by') == 'publish-club-arena.yml'");
     expect(origin).toContain("re.fullmatch(r'[0-9]+', build_info['run_id'])");
     expect(origin).toContain(
-      'expected_run = f"https://github.com/{repository}/actions/runs/{build_info[\'run_id\']}"'
+      'expected_run = f"https://github.com/{source_repository}/actions/runs/{build_info[\'run_id\']}"'
     );
     expect(origin).toContain("provenance.get('ciRun') == expected_run");
     expect(existingRelease).toContain('rm -rf -- "$STAGE"');

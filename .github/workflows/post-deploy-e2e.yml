@@ -1426,11 +1426,13 @@ jobs:
       contents: read
     # An explicit passive observation owns a distinct serialized queue. Ordinary
     # publication jobs otherwise replace it while pending (38933600568, three
-    # zero-step attempts). Both lanes create fresh disposable Auth principals;
+    # zero-step attempts). Horse social proof has the same passive ownership:
+    # 40784165630 was replaced by a publication before any test step ran.
+    # These lanes create fresh disposable Auth principals;
     # their table cases are read-only and cleanup owns only that exact account.
     # Client browser checks retain their original shared write-serialization.
     concurrency:
-      group: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 'post-deploy-live-table-multirun-production' || 'post-deploy-live-table-production' }}
+      group: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && 'post-deploy-live-table-multirun-production' || github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.horse_social) == 'true' && toJSON(github.event.client_payload.mobile_multirun) == 'null' && 'post-deploy-live-table-horse-social-production' || 'post-deploy-live-table-production' }}
       cancel-in-progress: false
     outputs:
       client_sha: ${{ steps.live.outputs.sha }}

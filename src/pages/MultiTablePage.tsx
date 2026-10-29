@@ -1,3 +1,4 @@
+import { sessionStatsService } from '../services/SessionStatsService';
 import { setVisiblePokerTable } from '../lib/visiblePokerTable';
 import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
@@ -1406,7 +1407,7 @@ export default function MultiTablePage() {
           if (!newId || row?.left_at || seatReadScopeRef.current.userId !== user.id) return;
           voluntarilyLeftTablesRef.current.delete(newId);
           seatMembershipRevisionRef.current += 1;
-          if (tablesRef.current.some((t) => t.id === newId) || heroSeatMoveBusyRef.current) {
+          if (heroSeatMoveBusyRef.current) {
             requestSeatResync();
             return;
           }
@@ -1431,16 +1432,23 @@ export default function MultiTablePage() {
               }
               const newRow = rows?.find((r) => r.id === newId);
               const tourId = newRow?.tournament_id as string | null | undefined;
-              const oldTab = tourId
-                ? tablesRef.current.find(
+              const sameEventTabs = tourId
+                ? tablesRef.current.filter(
                     (t) =>
                       t.id !== newId &&
                       isTableTab(t) &&
                       rows?.some((r) => r.id === t.id && r.tournament_id === tourId)
                   )
-                : undefined;
+                : [];
+              // An observer of the same event is not the chair being moved.
+              const oldTab = sameEventTabs.find((t) => t.seated === true) ?? sameEventTabs[0];
               if (!newRow || !oldTab) {
                 // Not a recognisable balancer move - let the rebuild sort it out.
+                requestSeatResync();
+                return;
+              }
+              sessionStatsService.moveSession(oldTab.id, newId, user.id);
+              if (tablesRef.current.some((tab) => tab.id === newId)) {
                 requestSeatResync();
                 return;
               }

@@ -6,6 +6,7 @@ import { writeFileSync } from 'fs';
 import { viteMediaIdentity } from './scripts/optimize-dist-media.mjs';
 import { runtimeInputPlugin } from './scripts/ci/client-runtime-inputs.mjs';
 import { nativeBundleRoots } from './scripts/native/bundle-roots.mjs';
+import { cssPreloadRetryPlugin } from './scripts/vite-css-preload-retry.mjs';
 
 /**
  * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
@@ -129,6 +130,7 @@ export default defineConfig({
   plugins: [
     react({ jsxImportSource: '@arena-display' }),
     sourceMapAssetIdentity(),
+    cssPreloadRetryPlugin(),
     oneImmer(),
     mediaIdentity.plugin,
     runtimeInputPlugin(TEST_ENTRY ? 'diamond' : 'app', __dirname),

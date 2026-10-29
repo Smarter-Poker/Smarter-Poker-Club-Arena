@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { parse } from 'yaml';
 
 const root = process.cwd();
@@ -19,7 +20,7 @@ function admit(
   health: string,
   schedule = '30 8 * * *',
   createdAt = '2026-10-21T08:30:01Z',
-  owner?: { windows: string; ancestor: boolean; served?: boolean }
+  owner?: { windows: string; ancestor: boolean; served?: boolean; witness?: string }
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'daily-admission-'));
   try {
@@ -38,8 +39,24 @@ function admit(
       git() {
         if [ "$1" = merge-base ] && [ "$4" = HEAD ]; then [ "$OWNER_ANCESTOR" = 1 ]; return; fi
         if [ "$1" = merge-base ]; then [ "$OWNER_SERVED" = 1 ]; return; fi
+        if [ "$1" = rev-parse ]; then
+          [ "$WITNESS_MODE" != unreadable ] || return 128
+          if [ "$WITNESS_MODE" = shallow ]; then echo true; else echo false; fi
+          return
+        fi
+        if [ "$1" = show ]; then
+          [ "$WITNESS_MODE" != missing ] || return 128
+          if [ "$WITNESS_MODE" = mismatch ]; then printf changed; else printf 'fixture SQL\n'; fi
+          return
+        fi
+        if [ "$1" = rev-list ]; then
+          [ "$WITNESS_MODE" != unknown-serving ] || return 128
+          case "$WITNESS_MODE" in served|deleted) printf '%040d' 1 ;; esac
+          return 0
+        fi
         printf '%s' "$MESSAGE"
       }
+      timeout() { shift 3; shift 3; git "$@"; }
       date() { printf '%s' "$HOUR"; }
       gh() { printf '%s' "$RUN_CREATED_AT"; }
       curl() { printf '%s' "$HEALTH"; }
@@ -54,6 +71,7 @@ function admit(
           ...process.env,
           OWNER_ANCESTOR: owner?.ancestor ? '1' : '0',
           OWNER_SERVED: owner?.served ? '1' : '0',
+          WITNESS_MODE: owner?.witness ?? 'unserved',
           EVENT_NAME: event,
           HOUR: hour,
           SCHEDULE_EXPRESSION: schedule,
@@ -171,6 +189,88 @@ describe('daily routine admission uses the existing protected receiver only', ()
         ancestor: true,
       })
     ).toBe(false);
+  });
+  it('keeps original-hand recovery admission bound to its unserved feature within the original window', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const recovery = windows.find(
+      (entry: { id: string }) => entry.id === '2026-10-29-original-hand-and-pause-owner-recovery'
+    );
+    const path = 'supabase/migrations/20261028233353_durable_private_hand_continuation.sql';
+    expect(recovery.releaseWitness).toEqual({
+      path,
+      sha256: createHash('sha256')
+        .update(readFileSync(join(root, path)))
+        .digest('hex'),
+    });
+    expect(recovery.contains).toBe('ac6a6207042e7671a22803b6e127dbe36afd8e0e');
+    expect(recovery.notBefore).toBe('2026-10-29T01:40:00Z');
+    expect(recovery.notAfter).toBe('2026-10-29T07:40:00Z');
+    expect(recovery.announceAtChicagoMinutes).toEqual([53]);
+    expect(recovery.migrations).toEqual([]);
+  });
+  it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
+    const witness = {
+      path: 'supabase/migrations/20261028171228_fixture_rebuy.sql',
+      sha256: createHash('sha256').update('fixture SQL\n').digest('hex'),
+    };
+    const doc = (releaseWitness: unknown = witness) =>
+      JSON.stringify({
+        version: 1,
+        windows: [
+          {
+            id: 'legacy-first',
+            ownerOrder: 'Independent legacy owner order.',
+            contains: 'a'.repeat(40),
+            notBefore: new Date(Date.now() - 60_000).toISOString(),
+            notAfter: new Date(Date.now() + 60_000).toISOString(),
+          },
+          {
+            id: 'fixture',
+            ownerOrder: 'Owner order: live now.',
+            contains: 'a'.repeat(40),
+            notBefore: new Date(Date.now() - 60_000).toISOString(),
+            notAfter: new Date(Date.now() + 60_000).toISOString(),
+            releaseWitness,
+          },
+        ],
+      });
+    const check = (mode: string, windows = doc(), ancestor = true, served = true) =>
+      admit(
+        'push',
+        '14',
+        'routine',
+        `{"liveness":"ok","releaseSha":"${'e'.repeat(40)}"}`,
+        undefined,
+        undefined,
+        { windows, ancestor, served, witness: mode }
+      );
+    // The peer has our shared base, but has never contained our actual feature.
+    expect(check('unserved')).toBe(true);
+    // A consumed specific order does not revoke an independent legacy order.
+    expect(check('served', doc(), true, false)).toBe(true);
+    // Unknown selected feature authority must not fall through to that order.
+    expect(check('unreadable', doc(), true, false)).toBe(false);
+    for (const mode of [
+      'served',
+      'deleted',
+      'unreadable',
+      'shallow',
+      'missing',
+      'mismatch',
+      'unknown-serving',
+    ])
+      expect(check(mode), mode).toBe(false);
+    expect(check('unserved', doc(), false)).toBe(false);
+    for (const invalid of [
+      null,
+      {},
+      { ...witness, path: '../escape.sql' },
+      { ...witness, sha256: 'bad' },
+      { ...witness, extra: true },
+    ])
+      expect(check('unserved', doc(invalid), true, false), JSON.stringify(invalid)).toBe(false);
   });
   it('keeps tournament breaks at :55 independently of global daily maintenance', () => {
     const server = readFileSync(join(root, 'server/src/GameServer.ts'), 'utf8');

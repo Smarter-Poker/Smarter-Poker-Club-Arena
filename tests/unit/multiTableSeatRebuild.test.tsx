@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   reads: [] as SeatRead[],
   metadata: [] as string[][],
   finishRead: vi.fn(),
+  moveSession: vi.fn(),
   reportAtUnmount: new Map<string, number | null>(),
   metadataResults: [] as (QueryResult | Promise<QueryResult>)[],
   reports: new Map<string, (info: Record<string, unknown>) => void>(),
@@ -122,8 +123,13 @@ vi.mock('../../src/core/MasterBus', () => {
       },
       getOrCreateChannel() {
         const channel = {
-          on(_kind: string, _filter: unknown, callback: (payload: unknown) => void) {
-            state.inserts.push(callback);
+          on(
+            _kind: string,
+            filter: { table?: string; event?: string },
+            callback: (payload: unknown) => void
+          ) {
+            if (filter.table === 'table_seats' && filter.event === 'INSERT')
+              state.inserts.push(callback);
             return channel;
           },
           subscribe() {
@@ -186,7 +192,7 @@ vi.mock('../../src/services/SoundService', () => ({
   haptic: new Proxy({}, { get: () => vi.fn() }),
 }));
 vi.mock('../../src/services/SessionStatsService', () => ({
-  sessionStatsService: { getStats: () => null },
+  sessionStatsService: { getStats: () => null, moveSession: state.moveSession },
 }));
 vi.mock('../../src/services/GameServerAPI', () => ({
   setSitOut: vi.fn(),
@@ -274,6 +280,41 @@ afterEach(() => {
 });
 
 describe('Rendered MultiTable authoritative seat rebuild', () => {
+  it('hands the game session over before a verified tournament seat insertion replaces the felt', async () => {
+    await seatA();
+    state.metadataResults.push({
+      data: [
+        { id: 'A', name: 'Old', tournament_id: 'event', small_blind: 1, big_blind: 2 },
+        { id: 'B', name: 'New', tournament_id: 'event', small_blind: 1, big_blind: 2 },
+      ],
+      error: null,
+    });
+    expect(state.inserts.length).toBeGreaterThan(0);
+    await act(async () => state.inserts[0]({ new: { table_id: 'B', left_at: null } }));
+    await waitFor(() => expect(state.moveSession).toHaveBeenCalledWith('A', 'B', 'account-a'));
+    expect(screen.getByTestId('felt-B')).toBeTruthy();
+  });
+
+  it('moves the seated source rather than an earlier observer of the same event', async () => {
+    mount();
+    await waitFor(() => expect(state.reads).toHaveLength(1));
+    await settle(state.reads[0], ['B']);
+    expect(screen.getByTestId('felt-A')).toBeTruthy();
+    state.metadataResults.push({
+      data: ['A', 'B', 'C'].map((id) => ({
+        id,
+        name: id,
+        tournament_id: 'event',
+        small_blind: 1,
+        big_blind: 2,
+      })),
+      error: null,
+    });
+    await act(async () => state.inserts[0]({ new: { table_id: 'C', left_at: null } }));
+    await waitFor(() => expect(state.moveSession).toHaveBeenCalledWith('B', 'C', 'account-a'));
+    expect(state.moveSession).not.toHaveBeenCalledWith('A', 'C', 'account-a');
+  });
+
   it('closes the final stale seated tab after successful zero-seat truth', async () => {
     await seatA();
     const read = await reconnect();

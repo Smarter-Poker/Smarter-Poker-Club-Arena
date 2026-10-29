@@ -1,3 +1,4 @@
+import { HorseHistoryRetentionBudget, HISTORY_PACKET_MAX_BYTES } from './ownPublicHistoryBudget.js';
 import { expect, it, vi } from 'vitest';
 import {
   HorseOwnPublicHistoryCache,
@@ -448,4 +449,289 @@ it('reconstructs only this observer conditional river read after a fresh worker 
       () => expect(HorseMind.riverLastToActRead(opponentId)).toBeNull()
     );
   }
+});
+
+it('releases an acknowledged decoded graph while preserving exact original-window recovery', async () => {
+  const load = vi.fn(async () => window());
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200);
+  cache.forSnapshot(context(), 200);
+  await new Promise<void>((done) => setImmediate(done));
+  const original = cache.forSnapshot(context(), 200)!;
+  cache.acknowledge(context(), 'f'.repeat(64));
+  expect(cache.forSnapshot(context(), 200)).toEqual(original);
+  cache.acknowledge(context(), original.digest);
+  const entry = [...(cache as any).entries.values()][0];
+  expect(entry.packet).toBeUndefined();
+  expect(cache.state(context())).toBe('available');
+  cache.acknowledge(context(), original.digest);
+  expect(cache.forSnapshot(context(), 201)).toBeUndefined();
+  cache.acknowledge(context(), null);
+  expect(cache.forSnapshot(context(), 199)).toBeUndefined();
+  const replay = cache.forSnapshot(context(), 202)!;
+  expect(replay).toEqual(original);
+  replay.hands[0]!.actions[0]!.amount = 999;
+  expect(cache.forSnapshot(context(), 202)).toEqual(original);
+  cache.acknowledge(context(), 'e'.repeat(64));
+  expect(cache.forSnapshot(context(), 202)).toEqual(original);
+  cache.acknowledge(context(), original.digest);
+  expect(cache.forSnapshot(context(), 202)).toBeUndefined();
+  expect(cache.state(context())).toBe('available');
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('keeps acknowledgements independent between worker-client caches of the same public window', async () => {
+  const load = vi.fn(async () => window());
+  const left = new HorseOwnPublicHistoryCache(load, () => 200);
+  const right = new HorseOwnPublicHistoryCache(load, () => 200);
+  left.forSnapshot(context(), 200);
+  right.forSnapshot(context(), 200);
+  await new Promise<void>((done) => setImmediate(done));
+  const original = left.forSnapshot(context(), 200)!;
+  left.acknowledge(context(), original.digest);
+  expect(left.forSnapshot(context(), 201)).toBeUndefined();
+  expect(right.forSnapshot(context(), 201)).toEqual(original);
+  right.acknowledge(context(), original.digest);
+  left.acknowledge(context(), null);
+  expect(left.forSnapshot(context(), 202)).toEqual(original);
+  expect(right.forSnapshot(context(), 202)).toBeUndefined();
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+it('reports only bounded main-cache scalar counts through ACK, recovery and eviction', async () => {
+  const load = vi.fn(async (c: any) => {
+    const w = window();
+    w.context = c;
+    for (const h of w.hands) {
+      h.observerId = c.observerId;
+      h.actions[0]!.userId = c.observerId;
+      h.results[0]!.user_id = c.observerId;
+    }
+    return w;
+  });
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200, 1);
+  expect(cache.status()).toMatchObject({
+    owner: 'main',
+    entries: 0,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  cache.forSnapshot(context(), 200);
+  expect(cache.status()).toMatchObject({ entries: 1, pendingCount: 1, decodedPacketCount: 0 });
+  await new Promise<void>((done) => setImmediate(done));
+  const p = cache.forSnapshot(context(), 200)!;
+  expect(cache.status()).toMatchObject({
+    pendingCount: 0,
+    decodedPacketCount: 1,
+    serializedPacketCount: 0,
+  });
+  cache.acknowledge(context(), p.digest);
+  const expected = Buffer.byteLength(JSON.stringify(p));
+  expect(cache.status()).toMatchObject({
+    decodedPacketCount: 0,
+    serializedPacketCount: 1,
+    acknowledgedCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
+    throw Error('status must not serialize');
+  });
+  try {
+    expect(cache.status().retainedSerializedUtf8Bytes).toBe(expected);
+  } finally {
+    stringify.mockRestore();
+  }
+  cache.acknowledge(context(), null);
+  expect(cache.status()).toMatchObject({
+    acknowledgedCount: 0,
+    serializedPacketCount: 1,
+    retainedSerializedUtf8Bytes: expected,
+  });
+  cache.forSnapshot({ ...context(), observerId: opponentId }, 201);
+  expect(cache.status()).toMatchObject({
+    entries: 1,
+    pendingCount: 1,
+    retainedSerializedUtf8Bytes: 0,
+  });
+  expect(JSON.stringify(cache.status())).not.toMatch(/11111111|22222222|digest|hands|cards/);
+});
+
+const ampleHeap = () => ({
+  heap_size_limit: 1024 ** 3,
+  used_heap_size: 0,
+  total_available_size: 1024 ** 3,
+});
+it('shares the encoded reservation ceiling across independent caches and refuses late resurrection', async () => {
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES, ampleHeap);
+  let completeFirst!: (value: unknown) => void;
+  const firstLoad = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        completeFirst = resolve;
+      })
+  );
+  const secondLoad = vi.fn(async () => window());
+  const first = new HorseOwnPublicHistoryCache(firstLoad, () => 200, 2048, budget);
+  const second = new HorseOwnPublicHistoryCache(secondLoad, () => 200, 2048, budget);
+  first.forSnapshot(context(), 200);
+  first.forSnapshot(context(), 200);
+  expect(firstLoad).toHaveBeenCalledTimes(1);
+  second.forSnapshot(context(), 200);
+  expect(budget.status().encodedBytes).toBeLessThanOrEqual(HISTORY_PACKET_MAX_BYTES);
+  expect(first.status().entries).toBe(0); // legitimate aggregate FIFO eviction
+  completeFirst(window());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(first.status().entries).toBe(0);
+  const packet = second.forSnapshot(context(), 200)!;
+  expect(packet).toBeDefined();
+  second.acknowledge(context(), packet.digest);
+  const originalBytes = budget.status().encodedBytes;
+  second.acknowledge(context(), null);
+  expect(second.forSnapshot(context(), 200)).toEqual(packet);
+  second.acknowledge(context(), '0'.repeat(64));
+  expect(second.forSnapshot(context(), 200)).toEqual(packet);
+  expect(secondLoad).toHaveBeenCalledTimes(1);
+  expect(budget.status().encodedBytes).toBe(originalBytes);
+  // Another client never supplies this client's ACK.
+  first.acknowledge(context(), packet.digest);
+  expect(second.forSnapshot(context(), 200)).toEqual(packet);
+});
+it('bounds eight real cache banks by one byte envelope while retaining individual ACK replay', async () => {
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, ampleHeap);
+  const caches = Array.from(
+    { length: 8 },
+    () =>
+      new HorseOwnPublicHistoryCache(
+        async () => window(),
+        () => 200,
+        2048,
+        budget
+      )
+  );
+  for (const cache of caches) {
+    cache.forSnapshot(context(), 200);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const packet = cache.forSnapshot(context(), 200)!;
+    cache.acknowledge(context(), packet.digest);
+    expect(budget.status().encodedBytes).toBeLessThanOrEqual(HISTORY_PACKET_MAX_BYTES * 2);
+  }
+  // Force enough pending reservations to evict actual ACKed originals.
+  let finish!: (value: unknown) => void;
+  const next = new HorseOwnPublicHistoryCache(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    () => 200,
+    2048,
+    budget
+  );
+  next.forSnapshot(context(), 200);
+  let finishSecond!: (value: unknown) => void;
+  const nextSecond = new HorseOwnPublicHistoryCache(
+    () =>
+      new Promise((resolve) => {
+        finishSecond = resolve;
+      }),
+    () => 200,
+    2048,
+    budget
+  );
+  nextSecond.forSnapshot(context(), 200);
+  expect(budget.status().encodedBytes).toBeLessThanOrEqual(HISTORY_PACKET_MAX_BYTES * 2);
+  expect(caches.some((cache) => cache.status().entries === 0)).toBe(true);
+  finish(window());
+  finishSecond(window());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+});
+it('refuses admission with unavailable main heap headroom without loading or changing existing originals', async () => {
+  let available = 1024 ** 3;
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, () => ({
+    ...ampleHeap(),
+    total_available_size: available,
+  }));
+  const load = vi.fn(async () => window());
+  const cache = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  cache.forSnapshot(context(), 200);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const packet = cache.forSnapshot(context(), 200)!;
+  cache.acknowledge(context(), packet.digest);
+  available = 0;
+  const other = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  expect(other.forSnapshot(context(), 200)).toBeUndefined();
+  expect(other.status()).toMatchObject({ entries: 1, pendingCount: 0 });
+  expect(other.state(context())).toBe('unavailable');
+  expect(load).toHaveBeenCalledTimes(1);
+  cache.acknowledge(context(), null);
+  expect(cache.forSnapshot(context(), 200)).toEqual(packet);
+});
+it('releases unavailable load reservations and keeps the existing failure cooldown', async () => {
+  let now = 200;
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES, ampleHeap);
+  const load = vi.fn(async () => {
+    throw Error('unavailable');
+  });
+  const cache = new HorseOwnPublicHistoryCache(load, () => now, 2048, budget);
+  cache.forSnapshot(context(), now);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(budget.status().encodedBytes).toBe(0);
+  expect(cache.state(context())).toBe('unavailable');
+  cache.forSnapshot(context(), now);
+  expect(load).toHaveBeenCalledTimes(1);
+  now += 60_001;
+  cache.forSnapshot(context(), now);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(budget.status().encodedBytes).toBe(0);
+});
+
+it('keeps ACK authority independent when two banks retain the same original context', async () => {
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, ampleHeap);
+  const load = vi.fn(async () => window());
+  const a = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  const b = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  a.forSnapshot(context(), 200);
+  b.forSnapshot(context(), 200);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const original = a.forSnapshot(context(), 200)!;
+  a.acknowledge(context(), original.digest);
+  expect(a.forSnapshot(context(), 200)).toBeUndefined();
+  expect(b.forSnapshot(context(), 200)).toEqual(original);
+  b.acknowledge(context(), original.digest);
+  a.acknowledge(context(), null);
+  expect(a.forSnapshot(context(), 200)).toEqual(original);
+  expect(b.forSnapshot(context(), 200)).toBeUndefined();
+  expect(load).toHaveBeenCalledTimes(2);
+});
+it('releases invalid-window reservations without displacing the existing cooldown', async () => {
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES, ampleHeap);
+  const load = vi.fn(async () => ({ unavailable: true }));
+  const a = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  a.forSnapshot(context(), 200);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(budget.status()).toMatchObject({ encodedBytes: 0, reservations: 0 });
+  expect(a.state(context())).toBe('unavailable');
+  a.forSnapshot(context(), 201);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('disposes only its owned claims and never reloads a terminal cache', async () => {
+  const budget = new HorseHistoryRetentionBudget(HISTORY_PACKET_MAX_BYTES * 2, ampleHeap);
+  const load = vi.fn(async () => window());
+  const a = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  const b = new HorseOwnPublicHistoryCache(load, () => 200, 2048, budget);
+  a.forSnapshot(context(), 200);
+  b.forSnapshot(context(), 200);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const original = b.forSnapshot(context(), 200)!;
+  b.acknowledge(context(), original.digest);
+  const bytes = Buffer.byteLength(JSON.stringify(original));
+  a.dispose();
+  a.dispose();
+  expect(budget.status()).toMatchObject({ encodedBytes: bytes, reservations: 1 });
+  expect(a.state(context())).toBe('unavailable');
+  expect(a.forSnapshot(context(), 201)).toBeUndefined();
+  expect(load).toHaveBeenCalledTimes(2);
+  b.acknowledge(context(), null);
+  expect(b.forSnapshot(context(), 200)).toEqual(original);
+  b.dispose();
+  expect(budget.status()).toMatchObject({ encodedBytes: 0, reservations: 0 });
 });

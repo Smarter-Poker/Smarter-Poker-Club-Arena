@@ -1,3 +1,4 @@
+import {assertClubArenaRepository} from './repository-identity.mjs';
 import {randomUUID} from 'node:crypto';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {pathToFileURL,fileURLToPath} from 'node:url';
@@ -32,8 +33,10 @@ export async function coordinate(d,{deadlineMs=21*60*1000,pollMs=5000,maxAttempt
  throw Error('fresh proof unavailable after bounded refresh');
 }
 async function main(){
- const repo='Smarter-Poker/Smarter-Poker-Club-Arena',dir=new URL('./',import.meta.url);
+ const dir=new URL('./',import.meta.url);
  const gh=(args,input)=>execFileSync('gh',args,{input,encoding:'utf8',maxBuffer:6000000,timeout:30000});
+ const metadata=JSON.parse(gh(['api','repos/{owner}/{repo}','--jq','{nameWithOwner:.full_name,databaseId:.id}']));
+ const repo=assertClubArenaRepository(metadata.nameWithOwner,metadata.databaseId);
  const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
  await coordinate({now:Date.now,head:async()=>git('rev-parse','HEAD'),requestId:randomUUID,sleep:ms=>new Promise(r=>setTimeout(r,ms)),
   dispatch:async request=>{
@@ -41,7 +44,7 @@ async function main(){
    gh(['api',`repos/${repo}/actions/workflows/money-trigger-recovery.yml/dispatches`,'--method','POST','--input','-'],JSON.stringify({ref:'main',inputs:{candidate_bundle:bundle,request_id:request}}));
   },
   findRun:async request=>{const data=JSON.parse(gh(['api',`repos/${repo}/actions/workflows/money-trigger-recovery.yml/runs?event=workflow_dispatch&per_page=100`]));const rows=data.workflow_runs.filter(r=>r.display_title===`Money trigger proof ${request}`&&r.head_branch==='main');if(rows.length>1)throw Error('ambiguous dispatch');return rows[0]},
-  consume:async id=>spawnSync(process.execPath,[fileURLToPath(new URL('consume-money-trigger-recovery.mjs',dir))],{stdio:'inherit',env:{...process.env,MONEY_TRIGGER_RUN_ID:String(id)},timeout:30000}).status===0
+  consume:async id=>spawnSync(process.execPath,[fileURLToPath(new URL('consume-money-trigger-recovery.mjs',dir))],{stdio:'inherit',env:{...process.env,GITHUB_REPOSITORY:repo,GITHUB_REPOSITORY_ID:String(metadata.databaseId),MONEY_TRIGGER_RUN_ID:String(id)},timeout:30000}).status===0
  });
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();

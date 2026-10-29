@@ -1,4 +1,9 @@
 import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
+import type { HorseOwnPublicHistoryCacheStatus } from './ownPublicHistory.js';
+import {
   liveHorseFeatureAuthority,
   horseFeatureAcceptanceUsable,
 } from '../HorseFeatureAuthority.js';
@@ -205,6 +210,9 @@ export interface LiveHorseDecisionWorkerStatus {
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
   governor: HorseDecisionWorkerReady['governor'] | null;
   statusSampledAt: number | null;
+  isolateMemory?: IsolateMemorySample | null;
+  isolateMemoryAgeMs?: number | null;
+  mainHistoryCache?: HorseOwnPublicHistoryCacheStatus | null;
 }
 
 export class HorseDecisionAbortedError extends Error {
@@ -616,7 +624,10 @@ export class LiveHorseDecisionWorkerClient {
     { inputDigest: string; readFrameDigest: string }
   >();
 
+  private isolateMemory: IsolateMemorySample | null = null;
+  private readonly shardIndex: number | undefined;
   constructor(options: LiveHorseDecisionWorkerClientOptions = {}) {
+    this.shardIndex = options.shard?.index ?? 0;
     this.onFatal = options.onFatal;
     this.ownPublicHistory = options.ownPublicHistory
       ? new HorseOwnPublicHistoryCache(options.ownPublicHistory)
@@ -731,6 +742,11 @@ export class LiveHorseDecisionWorkerClient {
         : null,
       governor: this.governor ? { ...this.governor } : null,
       statusSampledAt: this.statusSampledAt,
+      isolateMemory: this.isolateMemory ? { ...this.isolateMemory } : null,
+      isolateMemoryAgeMs: this.isolateMemory
+        ? Math.max(0, now - this.isolateMemory.sampledAtMs)
+        : null,
+      mainHistoryCache: this.ownPublicHistory?.status() ?? null,
     };
   }
 
@@ -2087,6 +2103,11 @@ export class LiveHorseDecisionWorkerClient {
       this.lastComputeMs = message.computeMs;
       if (this.governor) this.governor = { ...this.governor, scale: message.governorScale };
     } else if (message.type === 'STATUS_RESULT') {
+      this.isolateMemory =
+        isolateMemoryIsValid(message.isolateMemory, this.shardIndex) &&
+        message.isolateMemory.sampledAtMs <= Date.now()
+          ? { ...message.isolateMemory }
+          : null;
       this.solverStores = structuredClone(message.solverStores);
       this.solverPolicyArtifact = structuredClone(message.solverPolicyArtifact);
       this.governor = { ...message.governor };
@@ -2271,6 +2292,9 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private terminateWorker(): Promise<void> {
+    // Only terminal STOPPED/startup cancellation/failure reaches this owner.
+    // Ordinary null ACK recovery keeps this same cache and exact originals.
+    this.ownPublicHistory?.dispose();
     liveHorsePhase8Authority.forgetWorker(this.phase8WorkerEpoch);
     liveHorsePhase8GuardAuthority.forgetWorker(this.phase8GuardWorkerEpoch);
     liveHorsePhase10Authority.forgetWorker(this.phase10WorkerEpoch);

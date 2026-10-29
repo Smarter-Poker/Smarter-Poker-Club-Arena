@@ -12,7 +12,7 @@ on:
         default: false
         type: boolean
       reference_cases_json:
-        description: Optional v1 refusal, v2 preflop calloff, or v3 exact actor/seat/stage postflop calloff metadata for at most six exact original cases; no private records or commands
+        description: Optional v1 refusal, v2/v3 calloff, v4 matched_risk/phase7_allocated, or v5 cash_turn_fold original action metadata; at most six cases, no private records or commands
         required: false
         type: string
       tournament_cases_json:

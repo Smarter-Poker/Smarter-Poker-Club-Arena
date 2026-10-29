@@ -26,7 +26,7 @@ import { pathToFileURL } from 'node:url';
 import { verifyGatewayArtifact } from './private-record-gateway-artifact.mjs';
 import { gatewayMachineIdSha256 } from './private-record-gateway-host-identity.mjs';
 const workflow =
-  'Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main';
+  'Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main';
 const fullSha = (value) => /^[0-9a-f]{40}$/.test(value ?? '');
 function durableJson(path, value) {
   const temporary = `${path}.${randomUUID()}`;
@@ -279,9 +279,9 @@ function verifiedTransfer(root, stageName) {
           '--custom-trusted-root',
           '/etc/club-arena/github-actions-trusted-root.jsonl',
           '--repo',
-          'Smarter-Poker/Smarter-Poker-Club-Arena',
+          'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
           '--cert-identity',
-          'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
+          'https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/.github/workflows/publish-club-arena.yml@refs/heads/main',
           '--source-ref',
           'refs/heads/main',
           '--deny-self-hosted-runners',

@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import { describe, expect, it, vi } from 'vitest';
-import { visitCspRoute } from '../e2e/support/cspRouteObservation';
+import { visitCspRoute, visitIsolatedCspRoute } from '../e2e/support/cspRouteObservation';
 
 const readyDocument = {
   ok: () => true,
@@ -109,4 +109,84 @@ describe('CSP route document observation', () => {
     expect(locator).toHaveBeenCalledWith('#__next');
     expect(page.evaluate).not.toHaveBeenCalled();
   });
+});
+
+describe('CSP route page isolation', () => {
+  function isolatedHarness(failAt?: 'collector' | 'navigation') {
+    const pages: Array<{ close: ReturnType<typeof vi.fn>; goto: ReturnType<typeof vi.fn> }> = [];
+    const events: string[] = [];
+    const context = {
+      newPage: vi.fn(async () => {
+        const id = pages.length;
+        const page = {
+          ...readyApp,
+          addInitScript: vi.fn(async () => {
+            events.push(`collector:${id}`);
+            if (failAt === 'collector') throw new Error('collector setup failed');
+          }),
+          goto: vi.fn(async () => {
+            events.push(`document:${id}`);
+            if (failAt === 'navigation') throw new Error('net::ERR_ABORTED');
+            return readyDocument;
+          }),
+          waitForTimeout: vi.fn(),
+          evaluate: vi
+            .fn()
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([
+              { directive: 'img-src', blockedURI: `route:${id}`, disposition: 'report' },
+            ]),
+          close: vi.fn(async () => {
+            events.push(`close:${id}`);
+          }),
+        };
+        pages.push(page);
+        return page;
+      }),
+    };
+    return { context: context as unknown as BrowserContext, pages, events };
+  }
+
+  it('collects each first document in a fresh page without replacing prior route evidence', async () => {
+    const h = isolatedHarness();
+    const collect = () => {};
+    const first = await visitIsolatedCspRoute(
+      h.context,
+      'https://example.invalid/first',
+      'hub:/first',
+      collect
+    );
+    const second = await visitIsolatedCspRoute(
+      h.context,
+      'https://example.invalid/second',
+      'hub:/second',
+      collect
+    );
+    expect([...first, ...second].map((v) => v.blockedURI)).toEqual(['route:0', 'route:1']);
+    expect(h.events).toEqual([
+      'collector:0',
+      'document:0',
+      'close:0',
+      'collector:1',
+      'document:1',
+      'close:1',
+    ]);
+    for (const page of h.pages) {
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.close).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each(['collector', 'navigation'] as const)(
+    'closes the owned page and rejects %s failures',
+    async (failAt) => {
+      const h = isolatedHarness(failAt);
+      await expect(
+        visitIsolatedCspRoute(h.context, 'https://example.invalid/', 'hub:/', () => {})
+      ).rejects.toThrow(failAt === 'collector' ? 'collector setup failed' : 'net::ERR_ABORTED');
+      expect(h.pages).toHaveLength(1);
+      expect(h.pages[0].goto).toHaveBeenCalledTimes(failAt === 'collector' ? 0 : 1);
+      expect(h.pages[0].close).toHaveBeenCalledTimes(1);
+    }
+  );
 });

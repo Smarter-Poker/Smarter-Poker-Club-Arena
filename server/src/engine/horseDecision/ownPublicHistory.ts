@@ -1,3 +1,10 @@
+import {
+  HISTORY_ACTIVE_LOADS,
+  HISTORY_WINDOW_MAX_BYTES,
+  HISTORY_PACKET_MAX_BYTES,
+  mainHorseHistoryRetentionBudget,
+  type HorseHistoryRetentionBudget,
+} from './ownPublicHistoryBudget.js';
 import { riverPublicNode } from '../HorseMultiwayRiverRead.js';
 import { createHash } from 'node:crypto';
 import {
@@ -13,7 +20,7 @@ import {
 } from '../HorseRiverCallEvidence.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const MAX_BYTES = 256 * 1024;
+const MAX_BYTES = HISTORY_WINDOW_MAX_BYTES;
 const MAX_HANDS = 64;
 export const HORSE_HISTORY_RETRY_COOLDOWN_MS = 60_000;
 let activeLoads = 0;
@@ -292,11 +299,24 @@ export function ownPublicHistoryIsValid(
 
 /** A finite cache loaded by actual requests. The current turn never waits for
  * I/O; a response can enter only a later original snapshot. No timer or repair. */
+export interface HorseOwnPublicHistoryCacheStatus {
+  owner: 'main';
+  entries: number;
+  maxEntries: number;
+  decodedPacketCount: number;
+  serializedPacketCount: number;
+  acknowledgedCount: number;
+  pendingCount: number;
+  retainedSerializedUtf8Bytes: number;
+}
+
 export class HorseOwnPublicHistoryCache {
+  private disposed = false;
   private readonly entries = new Map<
     string,
     {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -306,7 +326,8 @@ export class HorseOwnPublicHistoryCache {
   constructor(
     private readonly load: (context: HorseObserverReadContext) => Promise<unknown>,
     private readonly now: () => number = Date.now,
-    private readonly maxEntries = 2048
+    private readonly maxEntries = 2048,
+    private readonly retentionBudget: HorseHistoryRetentionBudget = mainHorseHistoryRetentionBudget
   ) {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 2048)
       throw Error('Invalid individual history cache bound');
@@ -315,18 +336,31 @@ export class HorseOwnPublicHistoryCache {
     context: HorseObserverReadContext,
     cutoffMs: number
   ): HorseOwnPublicHistoryPacket | undefined {
+    if (this.disposed) return undefined;
     const key = horseObserverReadContextKey(context);
     if (!key || !clock(cutoffMs)) return undefined;
     const known = this.entries.get(key);
-    if (known && (!known.settled || known.packet || cutoffMs < known.retryAfterMs))
-      return known.packet && !known.acknowledged && known.packet.availableAtMs <= cutoffMs
-        ? structuredClone(known.packet)
-        : undefined;
-    if (activeLoads >= 16) return undefined;
-    if (!known && this.entries.size >= this.maxEntries)
-      this.entries.delete(this.entries.keys().next().value!);
+    if (
+      known &&
+      (!known.settled || known.packet || known.serialized || cutoffMs < known.retryAfterMs)
+    ) {
+      if (known.acknowledged) return undefined;
+      if (known.packet && known.packet.availableAtMs <= cutoffMs)
+        return structuredClone(known.packet);
+      if (known.serialized && known.serialized.availableAtMs <= cutoffMs)
+        return JSON.parse(known.serialized.json) as HorseOwnPublicHistoryPacket;
+      return undefined;
+    }
+    if (activeLoads >= HISTORY_ACTIVE_LOADS) return undefined;
+    if (!known && this.entries.size >= this.maxEntries) {
+      const oldest = this.entries.keys().next().value!;
+      this.retentionBudget.release(this.entries.get(oldest)!);
+      this.entries.delete(oldest);
+    }
+    if (known) this.retentionBudget.release(known);
     const entry: {
       packet?: HorseOwnPublicHistoryPacket;
+      serialized?: { json: string; digest: string; availableAtMs: number; utf8Bytes: number };
       acknowledged: boolean;
       settled: boolean;
       retryAfterMs: number;
@@ -335,6 +369,17 @@ export class HorseOwnPublicHistoryCache {
       settled: false,
       retryAfterMs: cutoffMs + HORSE_HISTORY_RETRY_COOLDOWN_MS,
     };
+    const evict = () => {
+      if (this.entries.get(key) === entry) this.entries.delete(key);
+      entry.packet = undefined;
+      entry.serialized = undefined;
+    };
+    if (!this.retentionBudget.reserve(entry, HISTORY_PACKET_MAX_BYTES, evict)) {
+      entry.settled = true;
+      entry.retryAfterMs = this.now() + HORSE_HISTORY_RETRY_COOLDOWN_MS;
+      this.entries.set(key, entry);
+      return undefined;
+    }
     this.entries.set(key, entry);
     activeLoads++;
     const settle = () => {
@@ -350,28 +395,93 @@ export class HorseOwnPublicHistoryCache {
     try {
       void this.load(Object.freeze({ ...context }))
         .then((value) => {
+          if (this.entries.get(key) !== entry) return;
           const packet = makeOwnPublicHistoryPacket(value, this.now());
-          if (packet && horseObserverReadContextKey(packet.context) === key) entry.packet = packet;
+          if (packet && horseObserverReadContextKey(packet.context) === key) {
+            const bytes = Buffer.byteLength(JSON.stringify(packet));
+            if (
+              bytes <= HISTORY_PACKET_MAX_BYTES &&
+              this.retentionBudget.reserve(entry, bytes, evict)
+            )
+              entry.packet = packet;
+            else this.retentionBudget.release(entry);
+          } else this.retentionBudget.release(entry);
         })
         .catch(() => {
           // Both transport rejection and response-processing failure leave
           // this observer explicitly unavailable, never a partial history.
           entry.packet = undefined;
+          this.retentionBudget.release(entry);
         })
         .finally(settle);
     } catch {
+      this.retentionBudget.release(entry);
       settle();
     }
     return undefined;
   }
+  /** Only bounded scalar entry metadata is visited; payloads are not serialized here. */
+  status(): HorseOwnPublicHistoryCacheStatus {
+    const result: HorseOwnPublicHistoryCacheStatus = {
+      owner: 'main',
+      entries: this.entries.size,
+      maxEntries: this.maxEntries,
+      decodedPacketCount: 0,
+      serializedPacketCount: 0,
+      acknowledgedCount: 0,
+      pendingCount: 0,
+      retainedSerializedUtf8Bytes: 0,
+    };
+    for (const entry of this.entries.values()) {
+      if (entry.packet) result.decodedPacketCount++;
+      if (entry.serialized) {
+        result.serializedPacketCount++;
+        result.retainedSerializedUtf8Bytes += entry.serialized.utf8Bytes;
+      }
+      if (entry.acknowledged) result.acknowledgedCount++;
+      if (!entry.settled) result.pendingCount++;
+    }
+    return result;
+  }
+  /** Terminal client close only. A worker's null ACK is NOT cache disposal. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const entry of this.entries.values()) {
+      this.retentionBudget.release(entry);
+      entry.packet = undefined;
+      entry.serialized = undefined;
+    }
+    this.entries.clear();
+  }
   state(context: HorseObserverReadContext): 'pending' | 'available' | 'unavailable' {
+    if (this.disposed) return 'unavailable';
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    return entry?.packet ? 'available' : entry?.settled ? 'unavailable' : 'pending';
+    return entry?.packet || entry?.serialized
+      ? 'available'
+      : entry?.settled
+        ? 'unavailable'
+        : 'pending';
   }
   acknowledge(context: HorseObserverReadContext, digest: string | null): void {
     const key = horseObserverReadContextKey(context);
     const entry = key ? this.entries.get(key) : undefined;
-    if (entry) entry.acknowledged = !!entry.packet && digest === entry.packet.digest;
+    if (!entry) return;
+    entry.acknowledged =
+      digest !== null && digest === (entry.packet?.digest ?? entry.serialized?.digest);
+    if (entry.acknowledged && entry.packet) {
+      // Keep the exact original window for a worker's later null ACK (eviction
+      // or restart), but stop retaining its decoded graph after delivery.
+      // Each client owns its ACK; another worker never acknowledges this one.
+      const json = JSON.stringify(entry.packet);
+      entry.serialized = {
+        json,
+        utf8Bytes: Buffer.byteLength(json),
+        digest: entry.packet.digest,
+        availableAtMs: entry.packet.availableAtMs,
+      };
+      entry.packet = undefined;
+    }
   }
 }

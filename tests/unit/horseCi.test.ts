@@ -238,6 +238,14 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
   it.each([
     'scripts/ci/test-horse-commitment-audit.py',
     'scripts/ci/test-horse-own-public-history.py',
+    'scripts/ci/test-horse-daily-counts.py',
+    'scripts/ci/test-horse-future-purchase-budget.py',
+    'scripts/ci/test-horse-registration-timing.py',
+    'tests/sql/fixtures/horse-daily-counts/schema.sql',
+    'tests/sql/fixtures/horse-daily-counts/add.sql',
+    'tests/sql/fixtures/horse-daily-counts/projector-before.sql',
+    'tests/sql/fixtures/horse-future-purchase-lock.sql',
+    'tests/sql/fixtures/horse-future-purchase-before.sql',
     'scripts/ci/probes/horse-commitment-audit/bootstrap.sql',
     'scripts/ci/probes/horse-commitment-audit/setup.sql',
     'scripts/ci/probes/horse-commitment-audit/original-r1-function.sql',
@@ -296,7 +304,9 @@ describe('Horse commitment audit remains in the existing accounting PostgreSQL g
     expect(steps[0].env.PG_BIN).toBe('/usr/lib/postgresql/17/bin');
     expect(steps[0].run).toContain('--source-root "$GITHUB_WORKSPACE"');
     expect(steps[0].run).toContain('--allocation-parent /tmp');
-    expect(job['runs-on']).toBe('ubuntu-latest');
+    expect(job['runs-on']).toBe(
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    );
     expect(ci.jobs.server.needs).toContain('accounting_postgres');
   });
 });

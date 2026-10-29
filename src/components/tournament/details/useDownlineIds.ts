@@ -11,62 +11,23 @@
  * and the club the tournament belongs to, it returns the set of user ids that
  * sit BENEATH that person, plus whether they carry a downline at all.
  *
- * ── THE ROLE GATE, AND WHY IT IS THE FIRST QUERY ─────────────────────────────
- *
- * A plain player must never see downline UI and must never pay for the query
- * that builds it. Most viewers of a tournament lobby ARE plain players, so the
- * hook reads one row first — the viewer's own `club_members` row — and stops
- * dead unless `normaliseRole()` (src/types/clubRoles.ts, the authoritative
- * model) says they are one of:
- *
- *     owner | co_owner | admin | super_agent | agent | sub_agent
- *
- * Everyone else costs one indexed single-row read and gets an empty set.
- *
- * ── WHERE THE TREE ACTUALLY LIVES ────────────────────────────────────────────
- *
- * Verified against production on 2026-08-25 before a line was written, because
- * this repo has four tables that all look like they might hold the answer:
- *
- *     club_members.agent_id          1,160 rows  <- the live player -> agent link
- *     agents.parent_agent_id           105/113  <- the live agent -> agent link
- *     player_agent_assignments               0  <- EMPTY. Not read.
- *     sub_agents                             0  <- EMPTY. Not read.
- *
- * So the tree is two joins, not four. `club_members.agent_id` stores the
- * agent's USER id (it carries a foreign key to users, and AgentService relies
- * on the same fact in getAgentPlayers) — filter on user ids, never on
- * `agents.id`. `agents.parent_agent_id` is the opposite: it points at
- * `agents.id`. Getting those two the wrong way round returns an empty set that
- * looks like "this agent has nobody in the event", which is a lie a screen
- * cannot recover from.
- *
- * ── WHY NOT AgentService.getAgentHierarchy(clubId) ───────────────────────────
- *
- * It was read first, as instructed, and it does build the same tree — but it
- * builds it out of `getAgents()`, which hydrates every agent in the club into
- * the full `Agent` interface: three wallet balances, credit, commission rates,
- * lifetime earnings, plus a batched `profiles` fetch for display names and
- * avatars. This hook needs two columns and an id graph. Paying for a hundred
- * agents' wallets to colour some rows cyan is the wrong trade on a screen that
- * mounts on every tournament open. The traversal below is the same traversal
- * getAgentHierarchy does (parent_agent_id -> children), performed over the
- * lean projection, and the two cannot disagree because they read the same rows.
- *
- * ── TRANSITIVITY ─────────────────────────────────────────────────────────────
- *
- * A super agent sees their agents, those agents' sub agents, and every player
- * hanging off any of them. That is a breadth-first walk down `parent_agent_id`
- * from the viewer's own `agents` row, with a visited set so a cyclic or
- * self-parented row cannot spin forever. Staff (owner / co_owner / admin) who
- * hold no `agents` row still resolve their OWN directly assigned players, so
- * an owner who carries players sees them and an owner who carries none sees no
- * legend rather than the whole club lit up, which would be noise, not signal.
+ * A union tournament's club_id may be only its anchor club. Resolve the
+ * existing fn_club_scope_ids union/club scope, read the viewer's own roles in
+ * those clubs, then use authorized roster readers for eligible memberships.
+ * Staff oversee their club; agents carry their recursive membership subtree.
+ * Plain players never fetch a roster. Request only user IDs, exhaust ordered
+ * pages, deduplicate members across clubs, and never publish a partial set.
  */
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { normaliseRole, isAgentRole, isClubStaff, type ClubRole } from '../../../types/clubRoles';
+import {
+  normaliseRole,
+  isAgentRole,
+  isClubStaff,
+  ROLE_RANK,
+  type ClubRole,
+} from '../../../types/clubRoles';
 import { reportError } from '../../../utils/errorReporter';
 
 export interface DownlineResult {
@@ -82,18 +43,13 @@ export interface DownlineResult {
 
 const EMPTY_IDS: Set<string> = new Set();
 
-/** `.in()` is a URL filter. Chunk it so a big club cannot blow the query line. */
-const IN_CHUNK = 60;
-
-/** A club cannot realistically hold more agents than this; production holds 113. */
-const AGENT_SCAN_LIMIT = 2000;
-
-/** Players carried by one agent tree. Bounded so a runaway club cannot stall. */
-const MEMBER_SCAN_LIMIT = 5000;
+/** Stay below PostgREST's row cap; exhaust the authorized result. */
+const PAGE_SIZE = 500;
 
 export function useDownlineIds(
   userId: string | undefined | null,
-  clubId: string | undefined | null
+  clubId: string | undefined | null,
+  unionId?: string | null
 ): DownlineResult {
   const [downlineIds, setDownlineIds] = useState<Set<string>>(EMPTY_IDS);
   const [carriesDownline, setCarriesDownline] = useState(false);
@@ -113,121 +69,85 @@ export function useDownlineIds(
 
     let cancelled = false;
     setLoading(true);
+    setDownlineIds(EMPTY_IDS);
+    setCarriesDownline(false);
+    setViewerRole('player');
 
     (async () => {
       try {
-        // ── 1. THE ROLE GATE ────────────────────────────────────────────────
-        const { data: membership, error: memberError } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', clubId)
-          .eq('user_id', userId)
-          .maybeSingle();
-
+        // Union events have an anchor club plus linked clubs. Resolve that
+        // maintained scope, then use only memberships belonging to this viewer.
+        const { data: scope, error: scopeError } = await supabase.rpc('fn_club_scope_ids', {
+          p_club_id: unionId || clubId,
+        });
         if (cancelled) return;
-
-        if (memberError) {
-          // Not a member, or the read was refused. Either way we cannot claim
-          // a downline, and a tournament lobby is not the place to say so.
-          reportError(memberError, 'useDownlineIds.membership');
-          setDownlineIds(EMPTY_IDS);
-          setCarriesDownline(false);
-          setViewerRole('player');
-          return;
+        if (scopeError) throw scopeError;
+        if (
+          !Array.isArray(scope) ||
+          !scope.length ||
+          scope.some((id) => typeof id !== 'string' || !id)
+        ) {
+          throw new Error('The Tournament Club Scope Was Incomplete');
         }
-
-        const role = normaliseRole(membership?.role);
-        if (cancelled) return;
-        setViewerRole(role);
-
-        const eligible = isAgentRole(role) || isClubStaff(role);
-        if (!eligible) {
-          // A plain player. One row read, and we stop. No agent query, no
-          // member scan, no legend, no highlight.
-          setDownlineIds(EMPTY_IDS);
-          setCarriesDownline(false);
-          return;
-        }
-
-        // ── 2. THE AGENT GRAPH ──────────────────────────────────────────────
-        // Two columns and a parent pointer. Same edges getAgentHierarchy walks.
-        const { data: agentRows, error: agentError } = await supabase
-          .from('agents')
-          .select('id, user_id, parent_agent_id')
-          .eq('club_id', clubId)
-          .limit(AGENT_SCAN_LIMIT);
-
-        if (cancelled) return;
-        if (agentError) reportError(agentError, 'useDownlineIds.agents');
-
-        const rows = (agentRows || []) as Array<{
-          id: string;
-          user_id: string;
-          parent_agent_id: string | null;
-        }>;
-
-        // agents.id -> its direct children, so the walk is O(n) not O(n^2).
-        const childrenByParent = new Map<string, string[]>();
-        const userIdByAgentId = new Map<string, string>();
-        for (const row of rows) {
-          if (row.id && row.user_id) userIdByAgentId.set(row.id, row.user_id);
-          if (!row.parent_agent_id) continue;
-          const bucket = childrenByParent.get(row.parent_agent_id);
-          if (bucket) bucket.push(row.id);
-          else childrenByParent.set(row.parent_agent_id, [row.id]);
-        }
-
-        // The viewer's own agent record(s). Staff often have none — that is
-        // fine, they still carry whatever club_members points directly at them.
-        const rootAgentIds = rows.filter((r) => r.user_id === userId).map((r) => r.id);
-
-        // Breadth-first down parent_agent_id. `seen` makes a cycle or a
-        // self-parented row terminate instead of hanging the lobby.
-        const seen = new Set<string>(rootAgentIds);
-        const queue = [...rootAgentIds];
-        const descendantAgentUserIds = new Set<string>();
-
-        while (queue.length > 0) {
-          const current = queue.shift() as string;
-          for (const child of childrenByParent.get(current) || []) {
-            if (seen.has(child)) continue;
-            seen.add(child);
-            queue.push(child);
-            const childUserId = userIdByAgentId.get(child);
-            // A sub agent playing the event IS part of the downline.
-            if (childUserId && childUserId !== userId) descendantAgentUserIds.add(childUserId);
-          }
-        }
-
-        // ── 3. THE PLAYERS ──────────────────────────────────────────────────
-        // club_members.agent_id holds the agent's USER id, so the viewer and
-        // every agent beneath them are all valid values to filter on.
-        const carrierUserIds = [userId, ...descendantAgentUserIds];
-        const collected = new Set<string>(descendantAgentUserIds);
-
-        for (let i = 0; i < carrierUserIds.length; i += IN_CHUNK) {
-          const slice = carrierUserIds.slice(i, i + IN_CHUNK);
-          const { data: members, error: playersError } = await supabase
+        const scopeIds = [...new Set<string>(scope)];
+        const memberships = new Map<string, ClubRole>();
+        for (let offset = 0; offset < scopeIds.length; offset += 60) {
+          const { data, error } = await supabase
             .from('club_members')
-            .select('user_id')
-            .eq('club_id', clubId)
-            .in('agent_id', slice)
-            .limit(MEMBER_SCAN_LIMIT);
-
+            .select('club_id, role')
+            .eq('user_id', userId)
+            .in('club_id', scopeIds.slice(offset, offset + 60));
           if (cancelled) return;
-          if (playersError) {
-            reportError(playersError, 'useDownlineIds.players');
-            continue;
+          if (error) throw error;
+          if (!Array.isArray(data)) throw new Error('The Membership Response Was Incomplete');
+          for (const member of data) {
+            if (!scopeIds.includes(member.club_id))
+              throw new Error('The Membership Scope Was Invalid');
+            const role = normaliseRole(member.role);
+            const prior = memberships.get(member.club_id) || 'player';
+            if (ROLE_RANK[role] >= ROLE_RANK[prior]) memberships.set(member.club_id, role);
           }
-          for (const m of members || []) {
-            // The viewer's own row is the hero highlight, not a downline one.
-            if (m.user_id && m.user_id !== userId) collected.add(m.user_id);
+        }
+        const role = [...memberships.values()].reduce<ClubRole>(
+          (best, next) => (ROLE_RANK[next] > ROLE_RANK[best] ? next : best),
+          'player'
+        );
+        setViewerRole(role);
+        const eligible = [...memberships].filter(
+          ([, memberRole]) => isAgentRole(memberRole) || isClubStaff(memberRole)
+        );
+        const collected = new Set<string>();
+        for (const [memberClubId, memberRole] of eligible) {
+          // Staff oversee their club; agents see only their recursive subtree.
+          const staff = isClubStaff(memberRole);
+          const reader = staff ? 'ca_club_members_overview' : 'ca_club_member_downline';
+          const parameters: { p_club_id: string; p_user_id?: string } = staff
+            ? { p_club_id: memberClubId }
+            : { p_club_id: memberClubId, p_user_id: userId };
+          const seen = new Set<string>();
+          for (let offset = 0; ; offset += PAGE_SIZE) {
+            const { data, error } = await supabase
+              .rpc(reader, parameters)
+              .select('user_id')
+              .order('user_id', { ascending: true })
+              .range(offset, offset + PAGE_SIZE - 1);
+            if (cancelled) return;
+            if (error) throw error;
+            if (!Array.isArray(data)) throw new Error('The Downline Response Was Incomplete');
+            for (const row of data) {
+              if (typeof row.user_id !== 'string' || !row.user_id || seen.has(row.user_id)) {
+                throw new Error('The Downline Response Was Incomplete');
+              }
+              seen.add(row.user_id);
+              if (row.user_id !== userId) collected.add(row.user_id);
+            }
+            if (data.length < PAGE_SIZE) break;
           }
         }
 
         if (cancelled) return;
         setDownlineIds(collected);
-        setCarriesDownline(true);
+        setCarriesDownline(eligible.length > 0);
       } catch (err) {
         if (cancelled) return;
         reportError(err, 'useDownlineIds.resolve');
@@ -243,7 +163,7 @@ export function useDownlineIds(
     return () => {
       cancelled = true;
     };
-  }, [userId, clubId]);
+  }, [userId, clubId, unionId]);
 
   return { downlineIds, carriesDownline, viewerRole, loading };
 }

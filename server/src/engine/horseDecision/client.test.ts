@@ -1,3 +1,8 @@
+import { HorseOwnPublicHistoryCache } from './ownPublicHistory.js';
+import {
+  mainHorseHistoryRetentionBudget,
+  HISTORY_PACKET_MAX_BYTES,
+} from './ownPublicHistoryBudget.js';
 import {
   horsePlanBatchBindingFromRequest,
   horsePlanContextFromDecision,
@@ -3839,4 +3844,103 @@ it('never fetches or posts pooled opponent and donor reads for an individual hor
   expect(worker.sent[0]).not.toHaveProperty('durableOpponentDonorProfiles');
   worker.emitMessage(fastResult(1, 'packet-memory'));
   await expect(pending).resolves.toMatchObject({ fence: 'packet-memory' });
+});
+
+it.each(['missing', 'malformed', 'wrong_shard', 'future', 'extra_field'])(
+  'keeps optional isolate diagnostics %s unknown without failing the worker',
+  async (fault) => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      shard: { index: 1 },
+    });
+    worker.emitMessage(ready);
+    const sample: any = {
+      source: 'node_v8_heap_statistics',
+      threadId: 7,
+      shardIndex: 1,
+      sampledAtMs: Date.now(),
+      heapUsedBytes: 100,
+      heapTotalBytes: 200,
+      heapLimitBytes: 1000,
+    };
+    if (fault === 'malformed') sample.heapUsedBytes = NaN;
+    if (fault === 'wrong_shard') sample.shardIndex = 2;
+    if (fault === 'future') sample.sampledAtMs += 100000;
+    if (fault === 'extra_field') sample.secret = 'forbidden';
+    const pending = (client as any).enqueue(
+      { type: 'STATUS', requestId: 1, generation: 0, fence: 'worker:status' },
+      'STATUS_RESULT'
+    );
+    worker.emitMessage({
+      ...ready,
+      type: 'STATUS_RESULT',
+      requestId: 1,
+      generation: 0,
+      fence: 'worker:status',
+      ...(fault === 'missing' ? {} : { isolateMemory: sample }),
+    } as any);
+    await pending;
+    expect(client.status().isolateMemory).toBeNull();
+    expect(client.status().phase).toBe('ready');
+  }
+);
+
+it('terminal client stop releases only its cache and prevents a pending load from resurrecting it', async () => {
+  const c = {
+    version: 1 as const,
+    observerId: '11111111-1111-4111-8111-111111111111',
+    variant: 'nlh' as const,
+    format: 'cash' as const,
+    dealtCount: 2,
+  };
+  const value = {
+    version: 1,
+    source: 'original_dealt_public_v1',
+    context: c,
+    capped: false,
+    hands: [],
+  };
+  let complete!: (value: unknown) => void;
+  const wa = new FakeWorker(),
+    wb = new FakeWorker();
+  const a = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => wa,
+    ownPublicHistory: () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  });
+  const b = new LiveHorseDecisionWorkerClient({
+    workerFactory: () => wb,
+    ownPublicHistory: async () => value,
+  });
+  wa.emitMessage(ready);
+  wb.emitMessage(ready);
+  const ca = (a as unknown as { ownPublicHistory: HorseOwnPublicHistoryCache }).ownPublicHistory;
+  const cb = (b as unknown as { ownPublicHistory: HorseOwnPublicHistoryCache }).ownPublicHistory;
+  ca.forSnapshot(c, Date.now());
+  cb.forSnapshot(c, Date.now());
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const packet = cb.forSnapshot(c, Date.now())!;
+  expect(packet).toBeDefined();
+  cb.acknowledge(c, packet.digest);
+  const before = mainHorseHistoryRetentionBudget.status().encodedBytes;
+  const stopped = a.stop();
+  wa.emitMessage({ type: 'STOPPED' });
+  await stopped;
+  expect(mainHorseHistoryRetentionBudget.status().encodedBytes).toBe(
+    before - HISTORY_PACKET_MAX_BYTES
+  );
+  expect(a.status().mainHistoryCache).toMatchObject({ entries: 0 });
+  complete(value);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(ca.forSnapshot(c, Date.now())).toBeUndefined();
+  expect(ca.status().entries).toBe(0);
+  expect(cb.forSnapshot(c, Date.now())).toBeUndefined(); // its own ACK survives
+  cb.acknowledge(c, null);
+  expect(cb.forSnapshot(c, Date.now())).toEqual(packet);
+  const stopB = b.stop();
+  wb.emitMessage({ type: 'STOPPED' });
+  await stopB;
 });

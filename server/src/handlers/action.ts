@@ -24,6 +24,9 @@ import {
   isValidActionKey,
   lookupAction,
   rememberAction,
+  lookupActionFlight,
+  reserveActionFlight,
+  type ActionFlightReservation,
 } from '../http/actionIdempotency.js';
 import { reportError } from '../services/errorReporter.js';
 
@@ -46,6 +49,8 @@ export interface ActionDeps {
  * the engine's internals).
  */
 export interface ActionEngine {
+  /** Present on the ordinary dealer; existing Lightning admission is separate. */
+  awaitActionPersistence?(): Promise<void>;
   handlePlayerAction(
     userId: string,
     action: string,
@@ -60,6 +65,7 @@ export async function handleAction(
   res: ServerResponse,
   deps: ActionDeps
 ): Promise<void> {
+  let flight: ActionFlightReservation | undefined;
   try {
     // Bible V8 §1.3 Step 3: Verify JWT before processing action
     const auth = await authenticateRequest(req);
@@ -114,6 +120,16 @@ export async function handleAction(
           error: 'This action was already submitted with different details',
         });
       }
+      const active = lookupActionFlight(userId, tableId, idempotencyKey as string, fingerprint);
+      if (active.kind === 'conflict')
+        return sendJSON(res, 409, {
+          success: false,
+          error: 'This action was already submitted with different details',
+        });
+      if (active.kind === 'pending') {
+        const reply = await active.reply;
+        return sendJSON(res, reply.status, { ...(reply.body as object), replayed: true });
+      }
     }
 
     // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions.
@@ -134,24 +150,54 @@ export async function handleAction(
 
     // Bible V8 §9.1.1: Instrument action processing time (target < 50ms)
     const actionStartMs = Date.now();
-    const result = engine.handlePlayerAction(userId, action, amount, actionContext ?? null);
+    if (hasKey) {
+      const reservation = reserveActionFlight(
+        userId,
+        tableId,
+        idempotencyKey as string,
+        fingerprint
+      );
+      if (!reservation)
+        return sendJSON(res, 503, { success: false, error: 'Action persistence is busy' });
+      flight = reservation;
+    }
+    let result = engine.handlePlayerAction(userId, action, amount, actionContext ?? null);
+    let persistenceUnknown = false;
+    if (result.success && engine.awaitActionPersistence) {
+      try {
+        await engine.awaitActionPersistence();
+      } catch (error) {
+        persistenceUnknown = true;
+        result = {
+          success: false,
+          code: 'ACTION_OUTCOME_PENDING',
+          error: 'Action recovery is pending. Reconnect to read the original outcome.',
+        };
+        reportError(error, 'HTTP.action_persistence_unknown');
+      }
+    }
     const actionProcessingMs = Date.now() - actionStartMs;
     // Record to telemetry (broadcast timing tracked inside engine)
     engine.recordActionPerformance(userId, action, actionProcessingMs);
 
     // Old bundles only read JSON on HTTP 200. Deliver the reload instruction
     // in their understood envelope, always with success:false and no mutation.
-    const status = result.success || result.code === 'ACTION_CONTEXT_REQUIRED' ? 200 : 400;
+    const status = persistenceUnknown
+      ? 503
+      : result.success || result.code === 'ACTION_CONTEXT_REQUIRED'
+        ? 200
+        : 400;
     /* Remembered ONLY here, on the one path where the action actually reached
        the engine. Everything above this line - 401, 404, 429 - means "not
-       processed", and a retry of those must be free to run for real. There is
-       no await between the lookup above and this call, which is what makes
-       two simultaneous posts of one key impossible to both see 'fresh'. */
+       processed", and a retry of those must be free to run for real. The
+       original reservation survives the durability await above. */
     if (hasKey) {
       rememberAction(userId, tableId, idempotencyKey as string, fingerprint, status, result);
     }
+    flight?.complete({ status, body: result });
     return sendJSON(res, status, result);
   } catch (err: unknown) {
+    flight?.fail(err);
     reportError(err, 'HTTP.action_error');
     return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
   }

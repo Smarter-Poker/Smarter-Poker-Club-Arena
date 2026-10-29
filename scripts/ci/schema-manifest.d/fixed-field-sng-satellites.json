@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/sng-satellite-fields-01a18347",
+  "_comment": "Declared by qualified migration 20261028163610_two_seat_fixed_field_sng_satellites.sql; install from protected main before engine producer activation.",
+  "functions": ["fn_ca_is_fixed_sng_satellite", "fn_ensure_fixed_sng_satellite"]
+}

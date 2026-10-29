@@ -108,6 +108,25 @@ export interface Hold {
 export class ReplayEngine {
   /** Actions the page sent that the recorded engine would have accepted. */
   readonly accepted: AcceptedAction[] = [];
+  resyncRequests = 0;
+
+  /** Synthetic retention boundary: the visible hand has no input token yet.
+   * Keep the authoritative decision so the next explicit RESYNC returns it.
+   */
+  publishDecisionUnavailable(): void {
+    this.lastSeq++;
+    for (const socket of this.sockets) {
+      socket.send(
+        JSON.stringify({
+          type: 'SNAPSHOT',
+          tableId: this.recording.table,
+          seq: this.lastSeq,
+          state: { ...this.state, action_context: null },
+        })
+      );
+    }
+  }
+
   /** Anything the page did that the real engine would have refused. */
   readonly problems: string[] = [];
   /** Requests for a time bank; a page that is shown its turns makes none. */
@@ -199,6 +218,7 @@ export class ReplayEngine {
           this.sendSnapshotTo(ws);
         }
       } else if (msg.type === 'RESYNC') {
+        this.resyncRequests++;
         this.sendSnapshotTo(ws);
       } else if (msg.type === 'UNSUBSCRIBE') {
         this.sockets.delete(ws);

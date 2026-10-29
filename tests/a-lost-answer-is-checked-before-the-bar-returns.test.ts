@@ -62,15 +62,15 @@ describe('TablePage wiring', () => {
     expect(i).toBeGreaterThan(-1);
     const fn = TABLE_PAGE.slice(i, TABLE_PAGE.indexOf('\n  );', i));
     const wait = fn.indexOf(
-      'await awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot)'
+      'refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot)'
     );
-    expect(wait).toBeGreaterThan(fn.indexOf("res.code === 'ACTION_NOT_DELIVERED'"));
+    expect(wait).toBeGreaterThan(fn.indexOf('await submitTableDecision({'));
     expect(wait).toBeLessThan(fn.indexOf('showActionError({'));
-    // The public-observer gate precedes submission. This contract owns the
-    // failure path after a real action was sent.
-    expect(wait).toBeLessThan(
-      fn.indexOf('return false;', fn.indexOf('const res = await submitAction'))
-    );
+    const decision = readFileSync(resolve(__dirname, '../src/lib/tableActionDecision.ts'), 'utf8');
+    expect(decision).toContain("result.code === 'ACTION_NOT_DELIVERED'");
+    expect(
+      decision.indexOf('await input.refresh();', decision.indexOf('const result ='))
+    ).toBeLessThan(decision.indexOf('return result;'));
   });
 
   it('the snapshot releases the wait after the merge effect is queued', () => {

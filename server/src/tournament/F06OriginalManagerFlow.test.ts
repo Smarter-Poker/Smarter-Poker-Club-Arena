@@ -1441,7 +1441,7 @@ it.each(['accepted', 'pending', 'lost owner'])(
   }
 );
 
-it.each(['durable', 'legacy', 'changed hash', 'changed permit', 'lost owner'])(
+it.each(['durable', 'legacy', 'changed hash', 'changed permit', 'changed evidence', 'lost owner'])(
   'Manager admission preserves the original continuation: %s',
   async (mode) => {
     const f = await fixture('', 'committed');
@@ -1522,7 +1522,7 @@ it.each(['durable', 'legacy', 'changed hash', 'changed permit', 'lost owner'])(
               generation: originalGeneration,
               permit_id: mode === 'changed permit' ? id(51) : original.permit_id,
               state: 'reserved',
-              evidence_id: null,
+              evidence_id: mode === 'changed evidence' ? id(52) : null,
             },
           },
           error: null,

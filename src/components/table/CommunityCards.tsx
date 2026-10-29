@@ -59,6 +59,8 @@ export interface CommunityCardsProps {
    * prop ever animates the reference's rabbit flip.
    */
   rabbitCards?: Card[];
+  /** Keep a retained private reveal in its original slots across the next deal. */
+  rabbitStartIndex?: number;
   highlightedIndices?: number[];
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   /**
@@ -591,6 +593,7 @@ function CommunityCardsComponent({
   cards,
   stage,
   rabbitCards = NO_RABBIT_CARDS,
+  rabbitStartIndex,
   highlightedIndices: requestedHighlights = NO_HIGHLIGHTS as number[],
   winningHandName: requestedWinningHandName,
   winningHandDescription,
@@ -611,7 +614,8 @@ function CommunityCardsComponent({
   isFocused = true,
   isVisible = true,
 }: CommunityCardsProps) {
-  const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
+  const visibleCount = Math.min(getVisibleCardCount(stage), cards.length);
+  const rabbitStart = Math.max(visibleCount, Math.min(4, rabbitStartIndex ?? visibleCount));
   // RIVER SQUEEZE 2026-09-04: a board without a real table id (sim page,
   // tests) still needs a lane of its own so two boards never share keys.
   const instanceId = useId();
@@ -714,7 +718,7 @@ function CommunityCardsComponent({
    * the visible count derives from the STAGE, a preflop fold (count 0) hid the
    * entire paid reveal: the player paid and saw nothing.
    */
-  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
+  const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - rabbitStart));
   const prevStageRef = useRef(stage);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
@@ -1099,16 +1103,24 @@ function CommunityCardsComponent({
         };
       }
       // RABBIT HUNT 2026-08-26: the paid reveal fills the undealt slots.
-      if (i < visibleCount + rabbitCount && rabbitCards[i - visibleCount]) {
+      if (i >= rabbitStart && i < rabbitStart + rabbitCount && rabbitCards[i - rabbitStart]) {
         return {
           type: 'rabbit' as const,
-          card: rabbitCards[i - visibleCount],
+          card: rabbitCards[i - rabbitStart],
           isNewlyDealt: false,
         };
       }
       return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, rabbitCards, rabbitCount, highlightedIndices, newlyDealtIndices]);
+  }, [
+    cards,
+    visibleCount,
+    rabbitStart,
+    rabbitCards,
+    rabbitCount,
+    highlightedIndices,
+    newlyDealtIndices,
+  ]);
 
   return (
     <div
@@ -1154,7 +1166,10 @@ function CommunityCardsComponent({
           makes descendants presentational, so the reader says "Squeeze To
           Reveal, button" and not the card's name after it.)
           Pinned in tests/components/RiverSqueeze.test.tsx. */}
-      <div className="community-cards__container">
+      <div
+        className={`community-cards__container ${rabbitCount > 0 && visibleCount > 0 && rabbitStartIndex === undefined ? 'community-cards__container--rabbit-reveal' : ''}`}
+        style={{ '--rabbit-added-cards': rabbitCount } as React.CSSProperties}
+      >
         {slots.map((slot, i) =>
           slot.type === 'rabbit' ? (
             // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the
@@ -1162,7 +1177,7 @@ function CommunityCardsComponent({
             // cards were dealt, so the preflop placeholder suppression below
             // must not apply to it.
             <RabbitCard
-              key={`rabbit-${i}`}
+              key={`rabbit-${slot.card.rank}-${slot.card.suit}`}
               card={slot.card}
               index={i}
               deckStyle={deckStyle}
@@ -1217,10 +1232,17 @@ function CommunityCardsComponent({
               key={`reserve-${i}`}
               className="community-cards__slot-reserve"
               aria-hidden="true"
+              style={rabbitCount > 0 && i < rabbitStart ? { width: 'var(--cc-card-w)' } : undefined}
             />
           )
         )}
       </div>
+
+      {rabbitCount > 0 && (
+        <div className="community-cards__rabbit-caption" role="status">
+          {rabbitStartIndex === undefined ? 'Rabbit Hunt · Only You' : 'Previous Hand · Only You'}
+        </div>
+      )}
 
       {/* RIVER SQUEEZE 2026-09-04 (spec 111): dev-only overlay, ?rsDebug. */}
       {import.meta.env.DEV && isCardPresentationDebugRequested() && (
@@ -1281,6 +1303,7 @@ function CommunityCardsComponent({
 export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
+  if (prev.rabbitStartIndex !== next.rabbitStartIndex) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.onRiverPresented !== next.onRiverPresented) return false;
   // SHOWDOWN SYSTEM 2026-08-25: the secondary description line must re-render.

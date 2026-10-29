@@ -310,7 +310,6 @@
 .community-cards__card--rabbit {
   /* The 3D turn needs depth; the base card clips it flat. */
   overflow: visible;
-  will-change: transform;
 }
 
 /* Resting state is FACE UP (rotateY(180)) so that if the animation never runs
@@ -970,4 +969,39 @@
   margin-top: 2px;
   padding: 2px 0 6px;
   font-size: 1rem;
+}
+
+/* A private hypothetical runout stays distinct from live dealt cards. */
+.community-cards__rabbit-caption {
+  position: absolute;
+  top: calc(100% + 5px);
+  color: #9aa5b3;
+  font:
+    600 10px/1.4 Inter,
+    sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Recenter the existing board continuously as the private runout fills it.
+   The flip's existing face-down hold runs during this slide. */
+.community-cards__container--rabbit-reveal {
+  animation: ccRabbitAlign calc(0.24s * var(--animation-speed, 1)) var(--cc-ease-smooth) both;
+}
+
+@keyframes ccRabbitAlign {
+  from {
+    transform: translateX(
+      calc(var(--rabbit-added-cards) * (var(--cc-card-w) + var(--cc-card-gap)) / 2)
+    );
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .community-cards__container--rabbit-reveal {
+    animation: none;
+  }
 }

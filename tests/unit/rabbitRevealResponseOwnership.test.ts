@@ -30,6 +30,7 @@ function harness() {
   });
   const deps = {
     tableId: 'table-one',
+    rabbitViewerRef: { current: { tableId: 'table-one', userId: 'viewer-one' } as object | null },
     useCallback: (fn: unknown) => fn,
     requestRabbitHunt: vi.fn(() => response),
     rabbitHandNumberRef: { current: 40 as number | null },
@@ -41,7 +42,6 @@ function harness() {
     boardForRabbitReveal,
     canonicalCards,
     retainedRabbitTimerRef: { current: null },
-    rabbitRevealClearTimerRef: { current: null },
     RABBIT_REVEAL_MIN_VISIBLE_MS: 3000,
   };
   const reveal = new Function(...Object.keys(deps), callback + '\nreturn handleRabbitReveal;')(
@@ -74,6 +74,29 @@ describe('a delayed Rabbit Hunt response belongs to the clicked hand', () => {
     expect((await buying).success).toBe(true);
     expect(deps.setRetainedRabbitBoard).not.toHaveBeenCalled();
     expect(deps.setRabbitRevealedCards).not.toHaveBeenCalled();
+  });
+
+  it('never paints a paid response into a replacement viewer or closed table', async () => {
+    for (const replacement of [{ tableId: 'table-two', userId: 'viewer-two' }, null]) {
+      const { deps, reveal, finish } = harness();
+      const buying = reveal();
+      deps.rabbitViewerRef.current = replacement;
+      finish();
+      expect((await buying).success).toBe(false);
+      expect(deps.setRetainedRabbitBoard).not.toHaveBeenCalled();
+      expect(deps.setRabbitRevealedCards).not.toHaveBeenCalled();
+    }
+  });
+
+  it('clears the retained and live copies on the same expiry beat', async () => {
+    const { deps, reveal, finish } = harness();
+    const buying = reveal();
+    finish();
+    await buying;
+    deps.setRabbitRevealedCards.mockClear();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(deps.setRetainedRabbitBoard).toHaveBeenLastCalledWith(null);
+    expect(deps.setRabbitRevealedCards).toHaveBeenLastCalledWith([]);
   });
 
   it('does not paint late old-hand ghost cards on the new live board', () => {

@@ -29,7 +29,7 @@ export const CASH_HASH_FILE =
   '20261028184144_original_cash_proofs_select_their_union_before_the_hand_join.sql';
 export const CASH_HASH_INDEX = 'public.union_pnl_cash_links_valid_union_hash';
 export const CASH_HASH_FAILED_OID = '275975891';
-export const CASH_HASH_SHA = '3502c23afe6fe795ecff563e1e3aa7dc0b101c52237921613a59133ca7cb67f1';
+export const CASH_HASH_SHA = '15b43293a4711f3c2ff745279929d36bb31e2dadd8d443218a08cf585d7f74d9';
 export const CASH_HASH_OLD_DEFINITION =
   "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text))) WHERE (proof_md5 = md5((proof)::text))";
 export function isCashHashRecovery(request) {
@@ -40,7 +40,7 @@ export const CASH_PROOF_HAND_INDEX = 'public.union_pnl_cash_links_valid_proof_ha
 export const CASH_PROOF_HAND_DEFINITION =
   'CREATE INDEX union_pnl_cash_links_valid_proof_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (hand_id) INCLUDE (table_id, hand_number) WHERE (proof_md5 = md5((proof)::text))';
 export const CASH_HASH_NEW_DEFINITION =
-  "CREATE INDEX union_pnl_cash_links_valid_union_hash ON public.union_pnl_cash_outcome_link_resolutions USING hash (((game_scope ->> 'game_union_id'::text)))";
+  'CREATE INDEX union_pnl_cash_links_proof_gate_hand ON public.union_pnl_cash_outcome_link_resolutions USING btree (((proof_md5 = md5((proof)::text))), hand_id)';
 export function recoveryRequest(
   file,
   sql,
@@ -531,16 +531,16 @@ export function cashHashRetirementCatalog(request) {
        NOT EXISTS(SELECT 1 FROM pg_depend d WHERE d.refclassid='pg_class'::regclass AND d.refobjid=c.oid) AS no_incoming_dependencies,
        (SELECT count(*)=5 AND bool_and(d.classid='pg_class'::regclass AND d.objsubid=0 AND d.refclassid='pg_class'::regclass AND d.refobjid=t.oid AND d.deptype='a') AND array_agg(d.refobjsubid ORDER BY d.refobjsubid)=ARRAY[1,2,3,10,11]::integer[] FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid) AS exact_auto_dependencies,
        (SELECT jsonb_agg(jsonb_build_array(conname,pg_get_constraintdef(oid),convalidated) ORDER BY conname) FROM pg_constraint WHERE conrelid=t.oid) AS original_constraints,
-       (SELECT jsonb_agg(pg_get_indexdef(i2.indexrelid) ORDER BY pg_get_indexdef(i2.indexrelid)) FROM pg_index i2 WHERE i2.indrelid=t.oid AND i2.indexrelid<>to_regclass('public.union_pnl_cash_links_valid_union_hash')) AS original_indexes,
+       (SELECT jsonb_agg(pg_get_indexdef(i2.indexrelid) ORDER BY pg_get_indexdef(i2.indexrelid)) FROM pg_index i2 WHERE i2.indrelid=t.oid AND i2.indexrelid<>to_regclass('public.union_pnl_cash_links_proof_gate_hand')) AS original_indexes,
        EXISTS(SELECT 1 FROM pg_index ni JOIN pg_class nc ON nc.oid=ni.indexrelid
-        WHERE nc.oid=to_regclass('public.union_pnl_cash_links_valid_union_hash') AND ni.indrelid=t.oid
+        WHERE nc.oid=to_regclass('public.union_pnl_cash_links_proof_gate_hand') AND ni.indrelid=t.oid
         AND ni.indisvalid AND ni.indisready AND ni.indislive AND NOT ni.indisunique AND NOT ni.indisprimary AND NOT ni.indisexclusion
         AND nc.relowner='postgres'::regrole AND pg_get_indexdef(nc.oid)=` +
         "'" +
         CASH_HASH_NEW_DEFINITION.replaceAll("'", "''") +
         "'" +
         `) AS new_selector_valid,
-       (SELECT nc.oid::text FROM pg_class nc WHERE nc.oid=to_regclass('public.union_pnl_cash_links_valid_union_hash')) AS new_selector_oid,`
+       (SELECT nc.oid::text FROM pg_class nc WHERE nc.oid=to_regclass('public.union_pnl_cash_links_proof_gate_hand')) AS new_selector_oid,`
     );
 }
 export function validateCashHashRetirement(rows, request, removed = false) {
@@ -660,13 +660,13 @@ export function cashHashSelectorStateCatalog() {
   NOT EXISTS(SELECT 1 FROM pg_stat_progress_create_index WHERE relid=t.oid) AS no_builder,
   (SELECT jsonb_agg(jsonb_build_array(conname,pg_get_constraintdef(oid),convalidated) ORDER BY conname) FROM pg_constraint WHERE conrelid=t.oid) AS original_constraints,
   (SELECT jsonb_agg(pg_get_indexdef(i2.indexrelid) ORDER BY pg_get_indexdef(i2.indexrelid)) FROM pg_index i2
-   WHERE i2.indrelid=t.oid AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_union_hash'),0::oid)
+   WHERE i2.indrelid=t.oid AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_proof_gate_hand'),0::oid)
    AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_proof_hand'),0::oid)) AS remaining_indexes,
   (SELECT count(*)=2 AND bool_and(i2.indisvalid AND i2.indisready AND i2.indislive AND c2.relowner='postgres'::regrole)
    FROM pg_index i2 JOIN pg_class c2 ON c2.oid=i2.indexrelid WHERE i2.indrelid=t.oid
-   AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_union_hash'),0::oid)
+   AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_proof_gate_hand'),0::oid)
    AND i2.indexrelid<>COALESCE(to_regclass('public.union_pnl_cash_links_valid_proof_hand'),0::oid)) AS remaining_indexes_valid
- FROM pg_class t LEFT JOIN pg_index ni ON ni.indexrelid=to_regclass('public.union_pnl_cash_links_valid_union_hash')
+ FROM pg_class t LEFT JOIN pg_index ni ON ni.indexrelid=to_regclass('public.union_pnl_cash_links_proof_gate_hand')
  LEFT JOIN pg_class nc ON nc.oid=ni.indexrelid WHERE t.oid=to_regclass('public.union_pnl_cash_outcome_link_resolutions') AND t.relkind='r' AND t.relpersistence='p'`;
 }
 export function validateCashHashSelectorState(rows, request, oldMustBeAbsent = false) {

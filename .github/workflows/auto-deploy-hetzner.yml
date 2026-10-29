@@ -730,7 +730,7 @@ jobs:
 
   record-receipt:
     name: Record The Append-Only Engine Release Receipt
-    needs: [preflight, deploy]
+    needs: [preflight, engine-doors, deploy]
     if: always() && needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 4
@@ -757,10 +757,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           RUN_ACTOR: ${{ github.actor }}
           STRICT_RECEIPT: '1'
-          # Four outcomes, four reasons. This used to collapse every non-shipping
-          # path into one sentence about a production proof, which named the
-          # wrong half of the pipeline on every stand-down.
-          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || needs.deploy.outputs.release_result == 'superseded' && format('stood down before cutover; protected main had moved to {0}', needs.deploy.outputs.superseded_by) || needs.deploy.outputs.release_result == 'not completed' && 'the durable Hetzner release transaction did not complete; production still runs the previously sealed release' || 'the release sealed but production identity could not be independently proved' }}
+          # Prerequisite refusal, skipped/cancelled deployment and sealed-release
+          # proof are distinct outcomes. A job that never reached host intake
+          # cannot claim the transaction sealed or describe production identity.
+          REASON: ${{ needs['engine-doors'].result != 'success' && format('release refused before host intake; production database prerequisite job ended {0}', needs['engine-doors'].result) || needs.deploy.outputs.release_result == 'already-released' && needs.deploy.outputs.verified == 'true' && 'production already proved this exact release' || needs.deploy.outputs.release_result == 'sealed' && needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || needs.deploy.outputs.release_result == 'superseded' && format('stood down before cutover; protected main had moved to {0}', needs.deploy.outputs.superseded_by) || needs.deploy.result == 'cancelled' && 'deployment job cancelled before a sealed release was independently proved' || needs.deploy.result == 'skipped' && 'deployment job did not run; no host intake or production identity was proved' || needs.deploy.outputs.release_result == 'not completed' && 'this attempt did not prove a completed durable Hetzner release transaction; read its owning state and current production identity before retrying' || (needs.deploy.outputs.release_result == 'sealed' || needs.deploy.outputs.release_result == 'already-released') && 'the release sealed but production identity could not be independently proved' || 'release outcome unknown; no sealed production identity was established' }}
         run: |
           set -euo pipefail
           RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
@@ -820,13 +820,17 @@ jobs:
           if [ -n "$SUPERSEDED_BY" ]; then
             DETAIL="stood down before cutover; protected main had moved to $SUPERSEDED_BY"
           fi
-          echo "::warning title=NOT DEPLOYED::$TARGET_SHA did not reach production ($DETAIL). The engine still runs the previously sealed release."
+          if [ "$RELEASE_RESULT" = sealed ] || [ "$RELEASE_RESULT" = already-released ]; then
+            echo "::warning title=NOT VERIFIED::$TARGET_SHA has a sealed release outcome but no independent production proof ($DETAIL). Activation may have occurred; read current production identity before any retry."
+          else
+            echo "::warning title=NOT DEPLOYED::$TARGET_SHA was not proved shipped by this attempt ($DETAIL)."
+          fi
           {
             echo
-            echo '### NOT DEPLOYED'
-            echo "\`$TARGET_SHA\` did not reach production."
+            echo '### RELEASE NOT VERIFIED'
+            echo "\`$TARGET_SHA\` was not independently proved live by this attempt."
             echo "- Why: $DETAIL"
-            echo '- The engine still runs the previously sealed release.'
+            echo '- Read current production identity and the durable owning operation before any retry.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   certify-production:

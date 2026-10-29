@@ -212,7 +212,7 @@ describe('a run that ships nothing says so, and says which half failed', () => {
     );
   });
 
-  it('annotates NOT DEPLOYED on every non-shipping path', () => {
+  it('reports unshipped outcomes without asserting the current serving identity', () => {
     expect(engine).toContain('name: Say plainly when nothing shipped');
     expect(engineCode).toContain('::warning title=NOT DEPLOYED::');
     const step = engine.slice(engine.indexOf('name: Say plainly when nothing shipped'));

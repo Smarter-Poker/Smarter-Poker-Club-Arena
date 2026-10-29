@@ -134,13 +134,15 @@ def read_fixed_env(path: Path) -> dict[str, str]:
     return values
 
 
-def get_json(url: str, service_key: str, timeout_seconds: float) -> object:
+def get_json(url: str, service_key: str, timeout_seconds: float, payload: dict | None = None) -> object:
     request = Request(
         url,
+        data=None if payload is None else json.dumps(payload).encode("utf-8"),
         headers={
             "apikey": service_key,
             "authorization": f"Bearer {service_key}",
             "accept": "application/json",
+            "content-type": "application/json",
             "cache-control": "no-cache, no-store",
         },
     )
@@ -166,6 +168,8 @@ def get_json(url: str, service_key: str, timeout_seconds: float) -> object:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", required=True)
+    parser.add_argument("--weekly-payout-only", action="store_true",
+                        help="Read the existing weekly owner without advancing it")
     parser.add_argument("--max-age-seconds", type=int, default=DEFAULT_MAX_AGE_SECONDS)
     parser.add_argument("--timeout-seconds", type=float, default=8.0)
     args = parser.parse_args()
@@ -181,6 +185,30 @@ def main() -> None:
     parsed = urlparse(base_url)
     if parsed.scheme != "https" or parsed.hostname != PROJECT_HOST:
         unknown("the engine environment does not point at the pinned project")
+
+    if args.weekly_payout_only:
+        # This existing service-only RPC is SELECT-only. Default NULL owners
+        # discover the current unexpired, unreleased boundary using DB time.
+        # Never print its body: it contains the private ownership token.
+        state = get_json(
+            f"{base_url}/rest/v1/rpc/fn_weekly_accounting_payout_pause_state",
+            service_key, args.timeout_seconds,
+            {"p_run_id": None, "p_ownership_token": None},
+        )
+        if not isinstance(state, dict) or state.get("contract") != "weekly-payout-owned-phase-v1" or "boundary" not in state:
+            unknown("weekly payout read did not prove the maintained contract")
+        observed = state.get("observed_at")
+        try:
+            instant = datetime.fromisoformat(observed.replace("Z", "+00:00"))
+            if instant.tzinfo is None:
+                raise ValueError("timezone missing")
+        except (AttributeError, ValueError, TypeError):
+            unknown("weekly payout database time was unreadable")
+        if state["boundary"] is not None:
+            print("[engine-release-inflight-hands] weekly payout owns the boundary; refusing cutover", file=sys.stderr)
+            raise SystemExit(EXIT_HAND_IN_AIR)
+        print("[engine-release-inflight-hands] database proves no active weekly payout owner")
+        raise SystemExit(EXIT_QUIET)
 
     since = datetime.now(timezone.utc) - timedelta(seconds=args.max_age_seconds)
     query = urlencode(

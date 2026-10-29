@@ -47,6 +47,8 @@ function probe(patch: Record<string, unknown> = {}, httpStatus = 200) {
     [
       '-c',
       `set -euo pipefail
+ENV_FILE=/dev/null
+INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
 curl() { printf '%s\\n%s' "$CHECKPOINT_TEST_BODY" "$CHECKPOINT_TEST_HTTP"; }
 ${countdown}
@@ -58,7 +60,7 @@ legacy_checkpoint_countdown
       timeout: 3_000,
       env: {
         ...process.env,
-        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, maintenance }),
+        CHECKPOINT_TEST_BODY: JSON.stringify({ running: true, weeklyPayout: null, maintenance }),
         CHECKPOINT_TEST_HTTP: String(httpStatus),
       },
     }
@@ -125,6 +127,7 @@ printf '%s' inspector-boundary-reached
               PREREQUISITE_ROOT: requestRoot,
               PREREQUISITE_HEALTH: JSON.stringify({
                 running: true,
+                weeklyPayout: null,
                 version: predecessor8825.slice(0, 8),
                 releaseSha: predecessor8825,
                 instanceId: '1-3846b8bb',

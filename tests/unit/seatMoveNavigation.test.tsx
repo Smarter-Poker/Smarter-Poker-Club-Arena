@@ -1,6 +1,33 @@
-import { renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSeatMoveNavigation } from '../../src/hooks/useSeatMoveNavigation';
+
+const { seatRead, seatFilter } = vi.hoisted(() => ({ seatRead: vi.fn(), seatFilter: vi.fn() }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    from: () => {
+      const query = {
+        select: () => query,
+        eq: (key: string, value: unknown) => {
+          seatFilter(key, value);
+          return query;
+        },
+        is: (key: string, value: unknown) => {
+          seatFilter(key, value);
+          return query;
+        },
+        maybeSingle: () => seatRead(),
+      };
+      return query;
+    },
+  },
+}));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+beforeEach(() => {
+  seatRead.mockReset();
+  seatFilter.mockClear();
+});
 
 const move = (user = 'alice', from = 'source', to = 'destination') => ({
   type: 'seat_moved',
@@ -66,4 +93,91 @@ describe('a completed seat move survives identity hydration', () => {
     const h = start('alice', event);
     expect(h.follow).not.toHaveBeenCalled();
   });
+});
+
+describe('retained moves follow the current chair', () => {
+  it('does not follow the old Main 2 to Feeder move after the must-move returned the player', async () => {
+    seatRead.mockResolvedValue({ data: null, error: null });
+    const h = start('alice', { ...move(), replayed: true });
+    await act(async () => {});
+    expect(h.follow).not.toHaveBeenCalled();
+    expect(seatRead).toHaveBeenCalledTimes(1);
+    expect(seatFilter.mock.calls).toEqual([
+      ['user_id', 'alice'],
+      ['table_id', 'destination'],
+      ['left_at', null],
+    ]);
+  });
+
+  it('still follows a retained move to a confirmed live destination', async () => {
+    seatRead.mockResolvedValue({ data: { table_id: 'destination' }, error: null });
+    const h = start('alice', { ...move(), replayed: true });
+    await waitFor(() => expect(h.follow).toHaveBeenCalledExactlyOnceWith('destination'));
+  });
+
+  it.each([
+    { data: null, error: { message: 'offline' } },
+    { data: null, error: null },
+  ])('never navigates on an unknown or absent destination seat', async (result) => {
+    seatRead.mockResolvedValue(result);
+    const h = start('alice', { ...move(), replayed: true });
+    await act(async () => {});
+    expect(h.follow).not.toHaveBeenCalled();
+  });
+
+  it('does not let a slow replay override a newer live move', async () => {
+    let resolve!: (value: unknown) => void;
+    seatRead.mockReturnValue(
+      new Promise((yes) => {
+        resolve = yes;
+      })
+    );
+    const h = start('alice', { ...move(), replayed: true });
+    h.rerender({ ...h.props, event: move('alice', 'source', 'newer') });
+    await act(async () => resolve({ data: { table_id: 'destination' }, error: null }));
+    expect(h.follow).toHaveBeenCalledExactlyOnceWith('newer');
+  });
+
+  it.each(['account', 'table', 'unmount'])(
+    'drops a pending read after %s changes',
+    async (change) => {
+      let resolve!: (value: unknown) => void;
+      seatRead.mockReturnValue(
+        new Promise((yes) => {
+          resolve = yes;
+        })
+      );
+      const h = start('alice', { ...move(), replayed: true });
+      if (change === 'unmount') h.unmount();
+      else
+        h.rerender({
+          ...h.props,
+          ...(change === 'account' ? { userId: 'bob' } : { tableId: 'other' }),
+        });
+      await act(async () => resolve({ data: { table_id: 'destination' }, error: null }));
+      expect(h.follow).not.toHaveBeenCalled();
+    }
+  );
+});
+
+it('retained navigation survives StrictMode effect replay', async () => {
+  seatRead.mockResolvedValue({ data: { table_id: 'destination' }, error: null });
+  const follow = vi.fn();
+  renderHook(useSeatMoveNavigation, {
+    initialProps: {
+      tableId: 'source',
+      userId: 'alice',
+      event: { ...move(), replayed: true },
+      follow,
+    },
+    wrapper: StrictMode,
+  });
+  await waitFor(() => expect(follow).toHaveBeenCalledExactlyOnceWith('destination'));
+});
+
+it('reports a rejected seat read without following an unverified move', async () => {
+  seatRead.mockRejectedValue(new Error('transport'));
+  const h = start('alice', { ...move(), replayed: true });
+  await act(async () => {});
+  expect(h.follow).not.toHaveBeenCalled();
 });

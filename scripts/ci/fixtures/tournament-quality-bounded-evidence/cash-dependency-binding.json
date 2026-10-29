@@ -1,0 +1,7 @@
+{
+  "status": "DRAFT_NATIVE_GUARDS_PENDING",
+  "body_migration": "20261029212431_cash_refusal_queries_scope_before_walking_blocked_receipts.sql",
+  "body_sha256": "3673119ecd69a69e10860612d602860dd1bd7a0fa28327c3af94f2a504c9246a",
+  "TQ_source_sha256": "6f7f6ea4ac02965d0e614357a3500a42e42d106a8621d16c9c836ba15b41b66d",
+  "dependency": "exact protected causal CCI+body histories, full actual schema/index/function metadata; capacity not asserted"
+}

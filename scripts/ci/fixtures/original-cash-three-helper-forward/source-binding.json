@@ -1,0 +1,9 @@
+{
+  "version": "20261029212616",
+  "migration": "20261029212616_original_cash_reads_keep_their_complete_proof_without_changi.sql",
+  "sha256": "396938541be95a54d6264edb50c604f31d6ac65e3bc3a53b85e0e1ea67505205",
+  "unallocated_source_sha256": "a8a952c308aac1d66dd4d472c9c04a76dba6c8f1c9b3cfca105efa491a80ae7c",
+  "inverse": "restore ONE allocator version placeholder and original firstline \u2192 exact retained unallocated source",
+  "held": "PUBLIC install only after actual current-public-linked+three TEMP original report capacity PASS; TQba40 must be installed first",
+  "generation": "GEN72 unchanged; no sealed owner body change"
+}

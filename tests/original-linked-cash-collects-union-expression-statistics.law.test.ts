@@ -15,9 +15,9 @@ describe('original linked cash collects genuine union expression statistics', ()
     expect(sql).toContain(
       "ON ((game_scope->>'game_union_id')) FROM public.union_pnl_cash_outcome_link_resolutions"
     );
-    expect(sql.match(/^ANALYZE public\.union_pnl_cash_outcome_link_resolutions;/gm)).toHaveLength(
-      1
-    );
+    expect(
+      sql.match(/^ANALYZE public\.union_pnl_cash_outcome_link_resolutions \(game_scope\);/gm)
+    ).toHaveLength(1);
     expect(sql).toContain("statement_timeout='15s'");
     expect(sql).toContain("transaction_timeout='60s'");
     expect(sql).toContain("lock_timeout='1s'");

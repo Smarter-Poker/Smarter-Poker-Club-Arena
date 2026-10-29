@@ -1,0 +1,58 @@
+{
+  "qualification": "passed_private_final_stats_dependency_guard_ABI_atomicity_permissions",
+  "migration": "supabase/migrations/20261029212530_tournament_quality_reads_bounded_rake_evidence.sql",
+  "candidate_canonical_full_md5": "ba40f5f1f0aedf382134f246e8297e26",
+  "candidate_canonical_prosrc_md5": "6830362a7dc8bb5354dc6113a2fed4b1",
+  "actual_physical_catalog_observed_at": "2026-10-29T20:25:17.240115+00:00",
+  "actual_physical_catalog_sha256": "e974a192ac6584f21b7e76842fce09146bc9c9dd5535a3be3cb613be2d2c933f",
+  "actual_history_columns": [
+    "created_by",
+    "idempotency_key",
+    "name",
+    "rollback",
+    "statements",
+    "version"
+  ],
+  "reused_unchanged_semantics": [
+    "receipt16_bag_and_error_parity",
+    "bounded_partition12000_all17_FP_inputs",
+    "actual_public_before_to_TEMP995a_business_modulo_one_removed_diagnostic_NOTICE"
+  ],
+  "production_whole_capacity": "root60404_ANY_fourTEMP_FAILED_original225_scope_deadline; no COMMIT; public source HOLD",
+  "limits": "Native41 catalog OIDs and physical catalog expected payload explicitly adapted; source65/window/watchlist inert collaborators. No business function invocation, paid rows, production installation or whole-week capacity evidence.",
+  "retained_guard_lifecycle_migration_sha256": "9a0ef1b4cf086230a7dd4a15613bfc9ae7b128c99272384c05dfb2da2f2a355c",
+  "retained_guard_lifecycle_cases": [
+    "exact_public_TQ_original_and_candidate_compile_ABI_ACL_security_metadata_preserved",
+    "whole_exact_migration_atomic_commit_changes_only_one_prosrc_native_catalog",
+    "exact_before_after_readers_execute_full_guards_and_capture_applier_exact_history",
+    "installed_owner_replay_refuses_without_second_effect",
+    "nonowner_role_and_JWT_migration_attempts_refused_before_replacement",
+    "source_generation_window_helper_fullmetadata_and_protected_history_fail_closed_rollback",
+    "postguard_failure_restores_original_owner_and_all41_metadata",
+    "all_three_nonowner_roles_still_refused_without_business_execution"
+  ],
+  "migration_sha256": "6f7f6ea4ac02965d0e614357a3500a42e42d106a8621d16c9c836ba15b41b66d",
+  "new_body_controls": [
+    "PG17 canonical full/body hash observed",
+    "all original raw metadata except prosrc preserved",
+    "exact target full definition/rawmetadata source pin positive",
+    "old-source negative and subtransaction rollback restore",
+    "whole source inverse to prior9a changes only two memberships and target postimage",
+    "exact TEMPb22 business minus one diagnostic NOTICE"
+  ],
+  "unchanged_guard_lifecycle_cases_repeated_locally": false,
+  "required_hosted_eight_guard_cases": "existing directly invoked runner remains unconditional",
+  "source_delivery": "One bundle authorized for qualified causal cash+TQ+targeted stats; production public TQ install still HOLD until causal access installed/readback and original225 whole capacity PASS",
+  "new_cash_dependency": "Current actual2table/5triggerowners+bounded selector+newrefusal+twoexact histories; native guard adaptation pending",
+  "allocated_order": "211338 index \u2192212243 expressionstats \u2192212431 refusal \u2192212530 TQ \u2192212616 three helpers",
+  "final_native_cases": [
+    "exact_public_TQ_original_and_candidate_compile_ABI_ACL_security_metadata_preserved",
+    "whole_exact_migration_atomic_commit_changes_only_one_prosrc_native_catalog",
+    "exact_before_after_readers_execute_full_guards_and_capture_applier_exact_history",
+    "installed_owner_replay_refuses_without_second_effect",
+    "nonowner_role_and_JWT_migration_attempts_refused_before_replacement",
+    "source_generation_window_helper_fullmetadata_and_protected_history_fail_closed_rollback",
+    "postguard_failure_restores_original_owner_and_all41_metadata",
+    "all_three_nonowner_roles_still_refused_without_business_execution"
+  ]
+}

@@ -10942,9 +10942,12 @@ export class GameServer {
 
   /** One bounded, keyset-paged snapshot of durable manager wake receipts. */
   private async drainTournamentManagerWakePages(tournamentId?: string): Promise<boolean> {
+    const lifecycle = this.lifecycleGeneration;
+    const ownsRead = () => this.running && this.lifecycleGeneration === lifecycle;
     const pageSize = tournamentId ? 50 : 200;
     let afterId = 0;
     for (;;) {
+      if (!ownsRead()) return true;
       let query = supabase
         .from('tournament_manager_wakes')
         .select('id,tournament_id,reason,generation,created_at,consumed_at')
@@ -10961,15 +10964,23 @@ export class GameServer {
           return null;
         }
       })();
+      if (!ownsRead()) return true;
       if (!response) return false;
       const { data, error } = response;
       if (error) {
         reportError(error, 'GameServer.tournament_manager_wake_drain_read_failed');
         return false;
       }
-      const rows = data || [];
+      if (!Array.isArray(data)) {
+        reportError(
+          new Error('Tournament wake inbox returned no readable page'),
+          'GameServer.tournament_manager_wake_drain_read_failed'
+        );
+        return false;
+      }
+      const rows = data;
       for (const row of rows) {
-        if (!this.running) return true;
+        if (!ownsRead()) return true;
         await this.admitTournamentManagerWake(row as Record<string, unknown>);
       }
       if (rows.length < pageSize) return true;

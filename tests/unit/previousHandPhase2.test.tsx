@@ -55,8 +55,8 @@ describe('computeEquity', () => {
     expect(r.exact).toBe(true);
     expect(r.runouts).toBe(44);
     // A jack or a six pairs b below a's kings. Hearts only.
-    expect(r.equities.find((e) => e.userId === 'b')!.pct).toBe(18.2);
-    expect(r.equities.find((e) => e.userId === 'a')!.pct).toBe(81.8);
+    expect(r.equities.find((e) => e.userId === 'b')!.pct).toBeCloseTo((8 / 44) * 100, 12);
+    expect(r.equities.find((e) => e.userId === 'a')!.pct).toBeCloseTo((36 / 44) * 100, 12);
   });
 
   it('a flop is enumerated exactly over 990 runouts', () => {
@@ -122,6 +122,32 @@ describe('computeEquity', () => {
         variant: 'nlh',
       })
     ).toBeNull();
+  });
+
+  it('does not price incomplete opponents or an unresolved Pineapple discard', () => {
+    const players = [
+      { userId: 'a', hole: cards('Ah Kh') },
+      { userId: 'b', hole: cards('Qc Qd') },
+    ];
+    expect(
+      computeEquity({
+        players: [...players, { userId: 'c', hole: cards('2c') }],
+        board: cards('3c 4d 8s'),
+        variant: 'nlh',
+      })
+    ).toBeNull();
+    expect(computeEquity({ players, board: [], variant: 'pineapple' })).toBeNull();
+    expect(
+      computeEquity({
+        players: [{ userId: 'a', hole: cards('Ah Kh Jh') }, players[1]],
+        board: cards('3c 4d 8s'),
+        variant: 'pineapple',
+      })
+    ).toBeNull();
+    expect(computeEquity({ players, board: cards('3c 4d 8s'), variant: 'plo4' })).toBeNull();
+    expect(computeEquity({ players, board: cards('3c 4d 8s'), variant: 'pineapple' })?.exact).toBe(
+      true
+    );
   });
 
   it('needs two known hands', () => {
@@ -237,6 +263,36 @@ describe('the rundown', () => {
     );
   });
 
+  it.each([
+    [0.00001, '<0.1%'],
+    [0.99999, '>99.9%'],
+  ])('never rounds the persisted fraction %f into a false endpoint', (fraction, label) => {
+    const m = buildReplay(HAND as never);
+    render(
+      <HandDetailView
+        model={m}
+        currentUserId="h"
+        viewerFacts={{ ...FACTS, all_in_equity: fraction }}
+      />
+    );
+    expect(document.querySelector('.hdv__allin-value')?.textContent).toBe(label);
+  });
+
+  it.each([0, 1])('omits unproven equity %f while preserving result facts', (fraction) => {
+    render(
+      <HandDetailView
+        model={buildReplay(HAND as never)}
+        currentUserId="h"
+        viewerFacts={{ ...FACTS, all_in_equity: fraction }}
+      />
+    );
+    const block = document.querySelector('.hdv__allin')!;
+    expect(block.textContent).not.toContain('Your Equity');
+    expect(block.textContent).not.toContain('Unknown');
+    expect(block.textContent).toContain('At Risk');
+    expect(block.textContent).toContain('Got Back');
+  });
+
   it('shows no all-in block when the hand had none', () => {
     const m = buildReplay(HAND as never);
     render(
@@ -266,6 +322,18 @@ describe('the rundown', () => {
       (s) => s.querySelector('.hdv__street-name')?.textContent === 'PreFlop'
     )!;
     expect(pre.querySelector('.hdv__fact-eq')).toBeNull();
+  });
+
+  it('does not present board-one equity as a multiboard hand percentage', () => {
+    const m = buildReplay(HAND as never);
+    for (const street of m.streets) {
+      if (street.board.length > 0)
+        street.extraBoards = [cards('2h 3h 4h 5h 6h').slice(0, street.board.length)];
+    }
+    render(<HandDetailView model={m} currentUserId="h" />);
+    expect(document.querySelector('.hdv__street-run')).not.toBeNull();
+    expect(document.querySelector('.hdv__fact-eq')).toBeNull();
+    expect(document.querySelector('.hdv__fact-hand')).not.toBeNull();
   });
 
   it('prices nothing when a contender is unknown', () => {

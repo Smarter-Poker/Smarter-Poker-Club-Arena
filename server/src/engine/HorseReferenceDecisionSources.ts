@@ -19,6 +19,14 @@
  */
 export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
+    'src/engine/HorseFeatureAuthority.ts':
+      'boundary: exact qualified feature composition and live economic domain derive reference options; missing selection never activates a candidate',
+    'src/engine/HorseMultiwayRiverRead.ts':
+      'bounded exact-context public river checkraise observations with canonical chip conservation for originally multiway hands',
+    'src/engine/horseDecision/riverNodeSidecar.ts':
+      'exact source and action-bound public node sidecar, preserving the original history on unavailable evidence',
+    'src/engine/HorseNearNutRiverValue.ts':
+      'default-off small-pot near-nut value gate with physical blockers and settlement-owned unmatched contribution checks',
     'src/engine/HorseBoardContact.ts':
       'physical private river value consumed by board-conditioned equity and sampled continuation strength',
     'src/services/horseCorrectiveReview/liveKernel.ts':
@@ -37,6 +45,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the authoritative whole-Diamond rake arithmetic used for projected call pricing',
     'src/domain/diamondCashJackpotSchedule.ts':
       'the authoritative whole-Diamond jackpot collection used for projected call pricing',
+    'src/engine/HorseOmahaTournamentPressure.ts':
+      'the default-off Omaha tournament preflop action-risk ICM pricing candidate consumed by reference preflop bars',
     'src/engine/HorsePreflop.ts':
       'every preflop bar of the reference (open, 3-bet, 4-bet, call, isolation, push/fold) and the opponent-exploit preflop read',
     'src/engine/HorseTournamentPreflop.ts':
@@ -52,6 +62,8 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the tournament short all-in call floor (under 3BB shove, 20BB+ horse calls), the last action rule after every other layer (Dan 2026-10-26)',
     'src/engine/HorseOmahaImpliedDraw.ts':
       'physical Omaha draw eligibility for the implied-equity allowance consumed by reference call pricing',
+    'src/engine/HorseHeadsUpCommitment.ts':
+      'qualified cash NLH and high-only PLO heads-up matchable exposure and bounded canonical commitment intent consumed by reference SPR and retained raise-plan pricing',
     'src/engine/HorseContinuation.ts':
       'premium identities, stack commitments and funded future-street pricing',
     'src/engine/HorseEvEngine.ts': 'the solverless EV engine (bets, calls, river verdict)',
@@ -89,12 +101,16 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the original public observation time windows that qualify individual read history and cutoff coverage',
     'src/engine/HorseMind.ts':
       'the individual public opponent, self-image, pair and plan reads consumed by every reference decision',
+    'src/engine/HorseRiverPositionRead.ts':
+      'the original public-action last-to-act river opportunity, check-back and confidence evidence consumed by conditional river defense',
     'src/engine/HorseRiverCallEvidence.ts':
       'the public river-call category eligibility and confidence boundary used by the reference opponent read',
     'src/engine/HorseObserverReadContext.ts':
       'the exact individual, variant, explicit format and dealt-size partition for public observation history',
     'src/engine/horseDecision/ownPublicHistory.ts':
       'the closed individual public-history schema, original availability cutoff, bounded cache and payload acknowledgement',
+    'src/engine/horseDecision/ownPublicHistoryBudget.ts':
+      'the shared main-isolate byte reservations and heap-headroom admission that determine individual public-history availability',
     'src/engine/horseDecision/observerParticipants.ts':
       'the original validated FAST participant registry and exact same-observer cross-shard completion admission',
     'src/engine/horseDecision/completedHandActions.ts':
@@ -135,6 +151,7 @@ export const HORSE_REFERENCE_DECISION_SOURCE_FILES: readonly string[] = Object.f
 
 /** Hashed, imports not followed (the reasons above say why). */
 export const HORSE_REFERENCE_DECISION_BOUNDARY: readonly string[] = Object.freeze([
+  'src/engine/HorseFeatureAuthority.ts',
   'src/services/horseCorrectiveReview/liveKernel.ts',
   'src/engine/HorseTournamentPostflop.ts',
   'src/engine/HorseTournamentUtility.ts',

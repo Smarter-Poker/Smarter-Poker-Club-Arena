@@ -141,6 +141,37 @@ export function heroDisplayHoleCards<T extends Card | null | undefined>(
   return sortCardsByRank(incoming as unknown as Card[]) as unknown as T[];
 }
 
+/** The server numbers hole cards before the hero sorts them. RIT award
+ * highlights already use the displayed row and must not be remapped again. */
+export function heroWinningHoleCardIndexes(
+  dealtIndexes: readonly number[] | undefined,
+  awardDisplayIndexes: readonly number[] | undefined,
+  displayedCards: ReadonlyArray<Card | null | undefined>,
+  dealtOrder: readonly string[] | null | undefined
+): number[] | undefined {
+  if (dealtIndexes === undefined && awardDisplayIndexes === undefined) return undefined;
+  const indexes = new Set<number>();
+  for (const index of dealtIndexes ?? []) {
+    if (!Number.isSafeInteger(index) || index < 0) continue;
+    const raw = dealtOrder?.[index];
+    const parts = raw?.match(/^(10|[2-9TJQKA])(hearts|diamonds|clubs|spades|[hdcs])$/i);
+    const key = parts ? cardKey({ rank: parts[1], suit: parts[2] }) : null;
+    if (!key) continue;
+    const displayedIndex = displayedCards.findIndex((card) => cardKey(card) === key);
+    if (displayedIndex >= 0) indexes.add(displayedIndex);
+  }
+  for (const index of awardDisplayIndexes ?? []) {
+    if (
+      Number.isSafeInteger(index) &&
+      index >= 0 &&
+      index < displayedCards.length &&
+      displayedCards[index]
+    )
+      indexes.add(index);
+  }
+  return [...indexes].sort((a, b) => a - b);
+}
+
 export const GAME_VARIANT_LABELS: Record<string, string> = {
   NLH: "NO LIMIT HOLD'EM",
   nlh: "NO LIMIT HOLD'EM",

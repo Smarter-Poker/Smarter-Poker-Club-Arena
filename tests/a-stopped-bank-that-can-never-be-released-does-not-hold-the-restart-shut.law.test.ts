@@ -81,7 +81,7 @@ function inflightHelper(rc: number): string {
   // a certificate that leaks it into the captured figure fails here.
   writeFileSync(
     path,
-    `#!/bin/sh\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
+    `#!/bin/sh\nif [ "\${3:-}" = --weekly-payout-only ]; then echo database-proves-no-weekly-owner; exit 0; fi\necho '[engine-release-inflight-hands] answer ${rc}'\nexit ${rc}\n`
   );
   chmodSync(path, 0o755);
   return path;
@@ -108,6 +108,7 @@ function certificate({
   );
   const body = JSON.stringify({
     running: true,
+    weeklyPayout: null,
     ...(releaseSha === undefined ? {} : { releaseSha }),
     ...(hands === 'absent' ? {} : { handsInFlightTotal: hands }),
     maintenance: {
@@ -279,7 +280,7 @@ describe('5. stdout is the verdict and nothing else', () => {
 
 describe('4. the shape of the gate is unchanged', () => {
   it('keeps the allow-list an allow-list and admits only through the database branch', () => {
-    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file');
+    const from = TRANSACTION.indexOf('"$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2\n');
     const admission = TRANSACTION.slice(from, TRANSACTION.indexOf('\n}', from));
     expect(admission.match(/return 0/g)).toHaveLength(1);
     expect(admission).not.toMatch(/FORCE|SKIP|BYPASS|OVERRIDE/);

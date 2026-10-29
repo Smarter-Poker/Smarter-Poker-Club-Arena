@@ -145,6 +145,10 @@ node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
 node --test "$CA_TREE_TOP/tests/explicit-table-access.test.mjs"
 node "$CA_TREE_TOP/scripts/ci/check-explicit-table-access.mjs"
 
+# Source pins are cheap prerequisites. Reject inconsistent current inputs
+# before installing/running their expensive qualification suites.
+python3 "$CA_TREE_TOP/scripts/ci/verify-source-bindings.py"
+
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local
 if [ -f "$CA_TREE_TOP/server/package.json" ]; then
@@ -766,7 +770,9 @@ CASH_INPUT_CHANGED=$(node --input-type=module -e '
 if [ "$CASH_INPUT_CHANGED" = yes ]; then
   if ! python3 -m unittest discover -s scripts/ci -p test_cash_native_pgcron.py; then
     echo "[club-arena pre-push] BLOCKED: cash qualification input checks failed."
-    FAIL=1
+    # An invalid input manifest cannot qualify this candidate. Stop before
+    # the expensive suites so repairing its pins does not run them twice.
+    exit 1
   fi
 fi
 
@@ -793,6 +799,10 @@ done
 # contract depends on the basename, so search each distinct name exactly once.
 # Keep deleted paths in this set: their consumers still need verification.
 CONTRACT_BASENAMES=$(printf '%s\n' $FILES | sed 's#.*/##' | sort -u)
+# Directory-scanning workflow contracts do not name an individual YAML file.
+if printf '%s\n' $FILES | grep -qE '^\.github/workflows/'; then
+  CONTRACT_BASENAMES="$CONTRACT_BASENAMES .github/workflows"
+fi
 for base in $CONTRACT_BASENAMES; do
   for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
     case " $CHANGED_TESTS " in *" $t "*) ;; *) CHANGED_TESTS="$CHANGED_TESTS $t" ;; esac
@@ -826,7 +836,16 @@ if [ -n "$CHANGED_TESTS$CHANGED_SRC$NODE_TESTS" ]; then
       fi
       if [ -n "$CHANGED_SRC" ]; then
         echo "[club-arena pre-push] running tests importing the changed source..."
-        if ! "$VITEST" related --run $CHANGED_SRC; then
+        # Source-contract tests above can also import changed source. They
+        # already ran against these exact clean HEAD bytes; exclude only those
+        # exact files from the related invocation, never a directory or family.
+        RELATED_TEST_ARGS=()
+        for tested_file in $CHANGED_TESTS; do
+          RELATED_TEST_ARGS+=(--exclude "$tested_file")
+        done
+        # An empty remainder is valid only after a nonempty direct pass.
+        if [ -n "$CHANGED_TESTS" ]; then RELATED_TEST_ARGS+=(--passWithNoTests); fi
+        if ! "$VITEST" related --run $CHANGED_SRC "${RELATED_TEST_ARGS[@]}"; then
           echo "[club-arena pre-push] BLOCKED: a related local test failed."
           FAIL=1
         fi
@@ -889,6 +908,19 @@ if [ -f server/package.json ]; then
     esac
   done
 
+  # Workflow readers live in the server Vitest project too. A CI-only edit
+  # must exercise their literal contracts before hosted qualification starts.
+  SERVER_WORKFLOW_BASENAMES=$(printf '%s\n' $FILES | sed -n '/^\.github\/workflows\//s#.*/##p' | sort -u)
+  if [ -n "$SERVER_WORKFLOW_BASENAMES" ]; then
+    SERVER_WORKFLOW_BASENAMES="$SERVER_WORKFLOW_BASENAMES .github/workflows"
+  fi
+  for base in $SERVER_WORKFLOW_BASENAMES; do
+    for t in $(grep -rl --include='*.test.ts' --include='*.test.mjs' -F -- "$base" server/src/ 2>/dev/null); do
+      SRV_TESTS="$SRV_TESTS ${t#server/}"
+    done
+  done
+  SRV_TESTS=$(printf '%s\n' $SRV_TESTS | sort -u)
+
   if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" != local ]; then
     echo "[club-arena pre-push] BLOCKED: required local server dependencies are incomplete."
     FAIL=1
@@ -923,7 +955,11 @@ if [ -f server/package.json ]; then
   for rel in $SRV_SRC; do
     # Horse telemetry: every fired key must be registered in the Horse data ledger.
     if grep -q "noteFire(" "$CA_TREE_TOP/server/$rel" 2>/dev/null; then
-      SRV_CONTRACTS="src/engine/HorseDataLedger.test.ts"
+      # A changed contract has already run in SRV_TESTS above.
+      case " $SRV_TESTS " in
+        *" src/engine/HorseDataLedger.test.ts "*) ;;
+        *) SRV_CONTRACTS="src/engine/HorseDataLedger.test.ts" ;;
+      esac
       break
     fi
   done
@@ -938,7 +974,12 @@ if [ -f server/package.json ]; then
 
   if [ "$SERVER_DEPENDENCY_MODE" = local ] && [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
     echo "[club-arena pre-push] running the server tests that cover your changes..."
-    if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then
+    SERVER_RELATED_ARGS=()
+    for tested_file in $SRV_TESTS $SRV_CONTRACTS; do
+      SERVER_RELATED_ARGS+=(--exclude "$tested_file")
+    done
+    if [ -n "$SRV_TESTS$SRV_CONTRACTS" ]; then SERVER_RELATED_ARGS+=(--passWithNoTests); fi
+    if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC "${SERVER_RELATED_ARGS[@]}" ); then
       echo ""
       echo "[club-arena pre-push] BLOCKED: your engine change breaks a test that covers it."
       echo "                      If the test pins behaviour you deliberately replaced,"

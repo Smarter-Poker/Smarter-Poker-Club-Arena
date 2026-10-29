@@ -335,20 +335,19 @@ describe('the sizing panel is attached to the footer', () => {
     expect(margin![1].trim()).toBe('0 auto');
   });
 
-  it('allows the home-indicator strip and not one pixel more, at every width', () => {
+  it('clears the home indicator and preserves the requested phone breathing band', () => {
     // The base rule and both phone breakpoints restate this, because a
     // `padding` shorthand inside a media query silently puts the old gap back.
-    // Dan 2026-10-22: "lower and center the fold call raise buttons" - on a
-    // phone the bar reads --sp-bar-inset, which is the home-indicator strip
-    // less 18px (the buttons may sit over the empty top of that strip, never
-    // below it), and the full strip everywhere else.
+    // Owner October 27: buttons were too low. Ordinary phones clear the
+    // whole home-indicator strip and retain at least 12px below the buttons.
+    // The 320px boundary keeps the full reported inset and 48px controls.
     const flush = ACTION_CSS.match(
       /padding-bottom:\s*var\(--sp-bar-inset,\s*env\(safe-area-inset-bottom,\s*0px\)\);/g
     );
     expect(flush?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(ACTION_CSS).toMatch(/--sp-bar-inset:\s*env\(safe-area-inset-bottom,\s*0px\);/);
     expect(ACTION_CSS).toMatch(
-      /--sp-bar-inset:\s*max\(0px,\s*calc\(env\(safe-area-inset-bottom,\s*0px\) - 18px\)\);/
+      /--sp-bar-inset:\s*max\(12px,\s*env\(safe-area-inset-bottom,\s*0px\)\);/
     );
     // Nothing may add fixed padding on top of the inset on this bar.
     expect(ACTION_CSS).not.toMatch(/padding-bottom:\s*calc\(\s*\d+px\s*\+\s*env\(safe-area/);

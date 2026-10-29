@@ -7,6 +7,7 @@
  * ~4.5 s wait for the next admission. While the break holds the tables, the
  * remaining field is offered in one pass through a bounded pool instead.
  */
+import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
@@ -62,11 +63,22 @@ afterEach(() => {
   setMaintenanceFrozen(false);
 });
 
-function field(count: number, rpcMs = 300, readMs = 0, serialized = false) {
-  const ids = Array.from(
-    { length: count },
-    (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+function selected(id: string): boolean {
+  return (
+    createHash('sha256').update(`${id}|${eventId}|addon-participation`).digest().readUInt32BE(0) %
+      1000 <
+    740
   );
+}
+
+function field(count: number, rpcMs = 300, readMs = 0, serialized = false, selectedOnly = true) {
+  // Keep the original throughput load: count means this many willing horses,
+  // independent of the participation rate. The mixed-field test covers declines.
+  const ids: string[] = [];
+  for (let i = 0; ids.length < count; i++) {
+    const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    if (!selectedOnly || selected(id)) ids.push(id);
+  }
   const receipts = new Set<string>();
   const load = { inFlight: 0, max: 0, calls: 0, reads: 0 };
   let databaseTail = Promise.resolve();
@@ -323,4 +335,21 @@ it('reuses an ambiguous purchase identity without duplicating its committed rece
   expect(keys).toHaveLength(2);
   expect(new Set(keys).size).toBe(1);
   expect(f.load.reads).toBe(8);
+});
+
+it('only purchases the selected 74% cohort and never rerolls the rest on another offer', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-27T02:30:42.886Z'));
+  const f = field(500, 10, 0, false, false);
+  const expected = f.ids.filter(selected).sort();
+  expect(expected.length).toBeGreaterThan(350);
+  expect(expected.length).toBeLessThan(390);
+  const m = new Harness(60_000, 'addon_break');
+  for (let offer = 0; offer < 2; offer++) {
+    const pass = m.offer();
+    await vi.runAllTimersAsync();
+    await pass;
+    expect([...f.receipts].sort()).toEqual(expected);
+    expect(f.load.calls).toBe(expected.length);
+  }
 });

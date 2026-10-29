@@ -1,0 +1,32 @@
+{
+  "kind": "immutable_original_and_exact_candidate_readonly_runtime_inputs",
+  "files": [
+    {
+      "name": "/Volumes/SmarterWork/agent-work/rb-recovery-01a17898/calculation-agent/midway-missing-cash-scope/membership-set-based/original-query.sql",
+      "sha256": "74f6951af4b3673ce4be8cf6a0f2d98834f2c184da35a9cf114809bb5c2bd9ab",
+      "bytes": 1965
+    },
+    {
+      "name": "/Volumes/SmarterWork/agent-work/rb-recovery-01a17898/calculation-agent/midway-missing-cash-scope/membership-set-based/candidate-query.sql",
+      "sha256": "a7ac69eaec3ba15b74e64395c88e64c971cafea7204bd5d84d0a63f0c1ae2767",
+      "bytes": 2568
+    },
+    {
+      "name": "/Volumes/SmarterWork/agent-work/rb-recovery-01a17898/calculation-agent/midway-missing-cash-scope/membership-set-based/whole-membership-candidate180-readonly.sql",
+      "sha256": "0da94579b889f0742c1fb67f1fec77978c5790aed44af9f4fbbb6d9945f3bbdf",
+      "bytes": 9743
+    },
+    {
+      "name": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/midway-whole-original-touched-branch-AUTO180-root.log",
+      "sha256": "70d0b0832ab9b557595557cef735ac5983ec8876699dee0db639f2566733c91e",
+      "bytes": 4606
+    },
+    {
+      "name": "/Volumes/SmarterWork/agent-work/rakeback-payout-20261026/work/midway-whole-membership-candidate-AUTO180-root.log",
+      "sha256": "5cea153e74d6bcf8dc7ce6fc1b9a163737bbd1b94164d0e9b340cb6e83dfa482",
+      "bytes": 4292
+    }
+  ],
+  "mode": "auto",
+  "scope": "same original GEN2a/opening, no public mutation, full branch bad0 vs bad0; root executed"
+}

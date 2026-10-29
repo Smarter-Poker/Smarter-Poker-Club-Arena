@@ -900,9 +900,19 @@ describe('durable opponent memory with real PostgreSQL', () => {
     expect(HorseMind.importDurableOpponentProfiles([p])).toBe(0);
     expect(HorseMind.importDurableOpponentProfiles([{ ...p, observed_hands: 0 }])).toBe(0);
     HorseMind.setDecisionScope('omaha:short', 'plo5');
-    expect(HorseMind.opponentRead(uid)?.stats.pfr.engaged).toBe('high');
+    const observed = HorseMind.opponentRead(uid);
+    expect(observed?.stats.pfr.engaged).toBe('high');
+    expect(observed?.stats.pfr.n).toBeGreaterThan(0);
     HorseMind.setDecisionScope('omaha:short', 'plo4');
-    expect(HorseMind.opponentRead(uid)).toBeNull();
+    // An unseen Omaha variant receives the common prior, not observations
+    // imported for a different variant. Switching back retains the real read.
+    const unseen = HorseMind.opponentRead(uid);
+    expect(unseen?.presumed).toBe(true);
+    expect(unseen?.stats.pfr.engaged).toBe('high');
+    expect(unseen?.stats.pfr.mean).toBe(0.35);
+    expect(Object.values(unseen!.stats).every((stat) => stat.n === 0)).toBe(true);
+    HorseMind.setDecisionScope('omaha:short', 'plo5');
+    expect(HorseMind.opponentRead(uid)).toEqual(observed);
     HorseMind.setDecisionScope(null);
   });
 });

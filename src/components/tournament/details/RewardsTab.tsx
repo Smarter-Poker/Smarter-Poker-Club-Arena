@@ -435,6 +435,25 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
     return byPlace;
   }, [entries]);
 
+  // A bounty can be earned while still playing or outside the place ladder.
+  // The settled counter also includes PKO champion/residual awards, which a
+  // knockout-only ledger would omit. Never count current_bounty as received.
+  const bountyOnlyRecipients = useMemo(
+    () =>
+      entries
+        .filter(
+          (e) =>
+            num(e.bounty_winnings) > 0 &&
+            !parsedPlaces?.some((p) => finisherByPlace.get(p.place)?.id === e.id)
+        )
+        .sort(
+          (a, b) =>
+            (a.position || Infinity) - (b.position || Infinity) ||
+            a.username.localeCompare(b.username)
+        ),
+    [entries, parsedPlaces, finisherByPlace]
+  );
+
   /* A band of places sharing one percentage reads as "4-6" until somebody in
      it finishes; then it opens into its single places so every name sits on
      its own prize. */
@@ -881,7 +900,7 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
         {provisionalReason && <p className="rw-provisional">{provisionalReason}</p>}
       </section>
 
-      {/* ── THE PAYOUTS, IN FINISHING ORDER, AND NOTHING ELSE ─────────────── */}
+      {/* Place prizes and every recorded bounty award. */}
       <section className="tl-panel rw-payouts">
         <div className="tl-section-head">
           <h3>{isSatellite ? 'Seat Awards' : 'Payouts'}</h3>
@@ -1016,13 +1035,55 @@ export default function RewardsTab({ tournament, entries, currentUserId }: Tourn
                     )}
                   </span>
 
-                  <span className="tl-num tl-num--accent rw-prize">
-                    {recordedPrize > 0 ? unitMoney(recordedPrize) : prize > 0 ? chips(prize) : '-'}
-                  </span>
+                  {finisher && isBountyEvent ? (
+                    <span className="rw-award" aria-label="Winnings Breakdown">
+                      <span className="rw-pct">Place Prize {unitMoney(recordedPrize)}</span>
+                      <span className="rw-pct">
+                        Bounties {unitMoney(num(finisher.bounty_winnings))}
+                      </span>
+                      <span className="tl-num tl-num--accent rw-prize">
+                        Total {unitMoney(cents(recordedPrize + num(finisher.bounty_winnings)))}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="tl-num tl-num--accent rw-prize">
+                      {recordedPrize > 0
+                        ? unitMoney(recordedPrize)
+                        : prize > 0
+                          ? chips(prize)
+                          : '-'}
+                    </span>
+                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+        {isBountyEvent && bountyOnlyRecipients.length > 0 && (
+          <>
+            <p className="rw-rule">Bounty Winnings Outside The Place Payouts</p>
+            <ul className="tl-list rw-list">
+              {bountyOnlyRecipients.map((e) => (
+                <li
+                  key={e.id}
+                  className={`tl-row rw-row ${e.user_id === currentUserId ? 'tl-row--hero' : ''}`}
+                >
+                  <span className="tl-rank rw-rank">
+                    {e.position ? ordinal(e.position) : 'In Play'}
+                  </span>
+                  <span className="rw-row__mid">
+                    <span className="tl-name rw-who__name">{e.username}</span>
+                  </span>
+                  <span className="rw-award" aria-label="Winnings Breakdown">
+                    <span className="rw-pct">Bounties {unitMoney(e.bounty_winnings)}</span>
+                    <span className="tl-num tl-num--accent rw-prize">
+                      Total {unitMoney(e.bounty_winnings)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 

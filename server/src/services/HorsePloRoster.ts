@@ -1,6 +1,7 @@
-/** Owner October 26: only the top half of measured cash performers plays cash.
- * PLO uses this same cash roster plus ordinary bankroll admission. */
+/** Owner October 27: the selected half plays Club Arena cash; all registered
+ * horses remain candidates for Diamond cash and tournaments. */
 
+import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import type { PloPerformance } from './HorseMadnessSelection.js';
@@ -8,7 +9,7 @@ import type { PloPerformance } from './HorseMadnessSelection.js';
 export const PLO_ROSTER_TTL_MS = 60_000;
 
 let roster: Set<string> | null = null;
-/** ca_horse_active_roster: the only horses that sit at CASH (Dan 2026-10-23). */
+/** ca_horse_active_roster selects Club Arena cash candidates only. */
 let cashRoster: Set<string> | null = null;
 /**
  * ca_horse_roster_exempt_clubs: clubs whose cash tables are outside both
@@ -137,11 +138,24 @@ export function ploRosterAllows(_horseId: string, _variant: unknown, _bigBlind?:
 }
 
 /** Unknown membership blocks new admission in callers but does not evict existing seats. */
-export function cashRosterAllows(horseId: string): boolean | undefined {
+export function cashRosterAllows(
+  horseId: string,
+  table?: { club_id?: unknown; union_id?: unknown; arena?: unknown }
+): boolean | undefined {
+  // This is only the roster verdict. Identity/status, schedule, capacity and
+  // the ordinary funded Diamond buy-in door still decide actual admission.
+  if (table) {
+    try {
+      if (parseTableArenaIdentity(table).kind === 'diamond_arena') return true;
+    } catch {
+      // Missing or malformed arena evidence cannot widen Club Arena eligibility.
+    }
+  }
   return cashRoster === null ? undefined : cashRoster.has(horseId);
 }
 
-/** Owner October 26 applies the cash selection to the entire cash floor. */
+/** Legacy club-id exemptions cannot widen Club Arena selection. Diamond scope
+ * requires the authoritative table arena identity in cashRosterAllows. */
 export function rosterExemptClub(_clubId: unknown): boolean {
   return false;
 }

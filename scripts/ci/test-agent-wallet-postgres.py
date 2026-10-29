@@ -52,6 +52,24 @@ try:
     result = query((ROOT/'scripts/ci/fixtures/agent-wallet/cases.sql').read_text())
     if 'agent-wallet-acceptance-passed' not in result:
         raise RuntimeError('Acceptance marker missing')
+    if not args.baseline:
+        query("""
+          ALTER TABLE public.agents ADD COLUMN is_prepaid boolean NOT NULL DEFAULT true,
+            ADD COLUMN credit_limit numeric NOT NULL DEFAULT 0,
+            ADD COLUMN credit_used numeric NOT NULL DEFAULT 0;
+          CREATE FUNCTION public.fn_agent_default_prepaid() RETURNS trigger LANGUAGE plpgsql
+            AS $$ BEGIN RETURN NEW; END $$;
+          CREATE TRIGGER trg_agent_default_prepaid BEFORE INSERT OR UPDATE OF is_prepaid,credit_limit
+            ON public.agents FOR EACH ROW EXECUTE FUNCTION public.fn_agent_default_prepaid();
+        """)
+        query((ROOT/'supabase/migrations/20261016001952_agents_are_prepaid_and_carry_no_credit_line.sql').read_text())
+        query("""DO $$ BEGIN
+          BEGIN UPDATE agents SET is_prepaid=false,credit_limit=1000 WHERE id=1;
+            RAISE EXCEPTION 'Pre-fix credit was unexpectedly allowed';
+          EXCEPTION WHEN check_violation THEN NULL; END;
+        END $$;""")
+        query((ROOT/'supabase/migrations/20261028034523_restore_role_credit_line_choice.sql').read_text())
+        print(query((ROOT/'scripts/ci/fixtures/agent-wallet/credit-terms.sql').read_text()))
     print(result)
 finally:
     # pg_ctl may time out after starting our private server. Never delete a
@@ -73,4 +91,9 @@ if not args.baseline:
 # pagination and minimum tournament clocks run with the existing native gate.
 if not args.baseline:
     subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-hand-wallet-requests-postgres.py')],
+                   env=choice_env, check=True, timeout=60)
+
+# Selected reclaim destinations and promo confinement use the same native gate.
+if not args.baseline:
+    subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-cashier-reclaim-destinations-postgres.py')],
                    env=choice_env, check=True, timeout=60)

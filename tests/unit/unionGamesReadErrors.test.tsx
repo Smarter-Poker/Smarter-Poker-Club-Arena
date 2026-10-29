@@ -12,13 +12,33 @@ const mocks = vi.hoisted(() => ({
 }));
 
 function queryFor(key: ReadKey): any {
+  let historical = false;
   const chain: any = new Proxy(
     {},
     {
       get: (_target, property) => {
+        if (property === 'in' && key === 'tournaments') {
+          return () => {
+            historical = true;
+            return chain;
+          };
+        }
+        if (property === 'range') {
+          return (from: number, to: number) =>
+            Promise.resolve({
+              ...mocks.results[key],
+              data: Array.isArray(mocks.results[key].data)
+                ? (mocks.results[key].data as unknown[]).slice(from, to + 1)
+                : mocks.results[key].data,
+            });
+        }
         if (property === 'then') {
           return (resolve: (value: ReadResult) => unknown) =>
-            Promise.resolve(mocks.results[key]).then(resolve);
+            Promise.resolve(
+              historical && !mocks.results[key].error
+                ? { data: [], error: null }
+                : mocks.results[key]
+            ).then(resolve);
         }
         if (property === 'maybeSingle' || property === 'single') {
           return () => Promise.resolve(mocks.results[key]);
@@ -116,10 +136,64 @@ describe.each<ReadKey>(['unions', 'union_clubs', 'tournaments', 'tables', 'bbj']
       expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
       await waitFor(() =>
         expect(mocks.reportError).toHaveBeenCalledWith(
-          mocks.results[failedRead].error,
+          failedRead === 'tournaments'
+            ? expect.objectContaining({
+                message: expect.stringContaining('tournaments unavailable'),
+              })
+            : mocks.results[failedRead].error,
           'UnionGamesPage.load'
         )
       );
     });
   }
 );
+
+describe('Union Games complete tournament board', () => {
+  it('renders tomorrow beyond the former 50-row cap, every page and truthful entry details', async () => {
+    vi.clearAllMocks();
+    mocks.results = goodResults();
+    const rows = Array.from({ length: 1001 }, (_, i) => ({
+      id: `event-${i}`,
+      name: `Future Event ${i}`,
+      status: 'REGISTERING',
+      start_time: '2026-10-30T17:00:00Z',
+      buy_in_amount: 9,
+      buy_in_fee: 1,
+      current_players: 0,
+      max_players: null,
+    }));
+    mocks.results.tournaments.data = [
+      ...rows,
+      {
+        id: 'tomorrow',
+        name: 'Tomorrow Bounty Freezeout',
+        status: 'REGISTERING',
+        start_time: '2026-10-29T01:00:00Z',
+        buy_in_amount: 36,
+        buy_in_fee: 4,
+        guaranteed_prize: 5000,
+        starting_chips: 20000,
+        is_bounty: true,
+        bounty_amount: 10,
+        is_rebuy: false,
+        is_reentry: false,
+        add_on_available: false,
+        current_players: 7,
+        max_players: null,
+      },
+    ];
+    render(
+      <MemoryRouter>
+        <UnionGamesPage />
+      </MemoryRouter>
+    );
+    const event = await screen.findByText('Tomorrow Bounty Freezeout', {}, { timeout: 5000 });
+    const card = event.parentElement!.parentElement!.parentElement!;
+    expect(card).toHaveTextContent('40');
+    expect(card).toHaveTextContent('5.0K GTD');
+    expect(card).toHaveTextContent('20.0K Starting Stack');
+    expect(card).toHaveTextContent('10 Bounty');
+    expect(card).toHaveTextContent('Freezeout');
+    expect(screen.getByText('Future Event 1000')).toBeInTheDocument();
+  });
+});

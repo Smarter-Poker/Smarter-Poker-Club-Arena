@@ -3,7 +3,7 @@ import { runJournalLoop } from './loop.js';
 import type { ObservationCaptureResult } from '../HorseObservationCapture.js';
 const empty = () => ({ status: 'pruned' as const, completedWork: 0, batches: 0, observations: 0 });
 describe('isolated acquisition scheduling', () => {
-  it.each(['idle', 'deferred'] as const)(
+  it.each(['idle', 'deferred', 'gap'] as const)(
     'a fair %s acquisition preserves journal progress and bounded waits',
     async (status) => {
       const stop = new AbortController(),
@@ -89,6 +89,43 @@ describe('isolated acquisition scheduling', () => {
       expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: status });
     }
   );
+  it('settles consecutive expired-source gaps without delaying the next readable capture', async () => {
+    const stop = new AbortController();
+    const captures: number[] = [];
+    const acquisitions: string[] = [];
+    let now = 0,
+      journals = 0,
+      healthReads = 0;
+    await runJournalLoop(stop.signal, {
+      processWork: async () => {
+        journals++;
+        return { status: 'idle' };
+      },
+      processCapture: async () => {
+        captures.push(now);
+        return { status: captures.length <= 8 ? 'gap' : 'admitted', requestKey: 'b'.repeat(64) };
+      },
+      prune: async () => empty(),
+      readQueueHealth: async () => {
+        healthReads++;
+        return { status: 'unknown' };
+      },
+      now: () => now,
+      started: vi.fn(),
+      completed: (cycle) => {
+        if (cycle.acquisition) acquisitions.push(cycle.acquisition);
+      },
+      wait: async (ms) => {
+        now += ms;
+        if (captures.length >= 9 || now >= 30000) stop.abort();
+      },
+    });
+    expect(acquisitions).toEqual([...Array(8).fill('gap'), 'admitted']);
+    expect(captures[8]).toBeLessThanOrEqual(17000);
+    expect(journals).toBeGreaterThanOrEqual(captures.length);
+    expect(healthReads).toBeGreaterThan(0);
+  });
+
   it('prioritizes journal work between idle acquisitions and never combines source I/O with maintenance', async () => {
     const stop = new AbortController(),
       events: string[] = [],
@@ -138,7 +175,7 @@ describe('isolated acquisition scheduling', () => {
     expect(cycles[4]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: 'gap' });
     // The admitted batch is recorded by the very next journal turn with no
     // pause (journal idle, so capture runs back to back); the gap keeps its
-    // capture retry deadline without sleeping the journal.
+    // bounded next-claim cadence without sleeping the journal.
     expect(delays).toEqual([1000, 0, 0, 0, 1000]);
   });
   it.each(['deferred', 'unknown', 'throw'] as const)(

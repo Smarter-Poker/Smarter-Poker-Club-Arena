@@ -1,3 +1,4 @@
+import { mergeMultiwayRiverStates } from '../HorseMultiwayRiverRead.js';
 /**
  * ONE FLOOR, ONE READ (2026-10-16).
  *
@@ -89,7 +90,12 @@ export function addHandContribution(
     for (const field of RECENCY_FIELDS)
       merged[field] = (base[field] ?? 0) / 2 + (delta[field] ?? 0);
   }
-  return { ...(merged as Partial<OpponentStats>), sourceWindow: hand.sourceWindow };
+  const hu = mergeMultiwayRiverStates(live?.riverHu, hand.riverHu);
+  return {
+    ...(merged as Partial<OpponentStats>),
+    ...(hu ? { riverHu: hu } : {}),
+    sourceWindow: hand.sourceWindow,
+  };
 }
 
 function splitKey(key: string): [string, string] | null {
@@ -106,6 +112,7 @@ function updateLiveRow(live: OpponentStats, hand: OpponentStats): void {
   const row = live as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(merged))
     if (key !== 'sourceWindow' && typeof value === 'number') row[key] = value;
+  if (merged.riverHu) live.riverHu = merged.riverHu;
   live.sourceWindow = hadContributions
     ? mergeHorseObservationWindows(live.sourceWindow, hand.sourceWindow)
     : normalizeHorseObservationWindow(hand.sourceWindow);

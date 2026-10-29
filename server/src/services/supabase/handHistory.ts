@@ -1,3 +1,4 @@
+import { publicHandStatsFrame } from '../../engine/presentation/publicHandStats.js';
 import { horseOpponentMemorySchema, readHorseOpponentProfiles } from '../HorseOpponentMemory.js';
 import { memoryVariant, type DurableOpponentProfile } from '../../engine/HorseOpponentMemory.js';
 /**
@@ -685,6 +686,7 @@ export async function logHandHistory(params: {
   handId: string;
   settlementCommitted: boolean;
   stackResult?: Record<string, unknown>;
+  publicStatsFrame?: Record<string, unknown>;
 }> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
@@ -1032,7 +1034,19 @@ export async function logHandHistory(params: {
       });
   }
 
+  const publicFrame = inserted.settlementCommitted
+    ? publicHandStatsFrame({
+        tableId: params.tableId,
+        handNumber: params.handNumber,
+        handId,
+        facts: params.atomicCommit.acceptedPostCommitFacts?.stats_facts?.facts,
+        timestamp: Date.now(),
+        actions: acceptedActions,
+        bigBlind: params.bigBlind,
+      })
+    : null;
   return {
+    ...(publicFrame ? { publicStatsFrame: publicFrame } : {}),
     handId,
     settlementCommitted: inserted.settlementCommitted,
     stackResult: inserted.stackResult,

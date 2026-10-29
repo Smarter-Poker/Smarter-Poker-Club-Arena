@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  A MIGRATION THIS BRANCH ADDS MUST ALREADY EXIST IN THE LIVE SCHEMA
+ *  MIGRATION SUBMISSION AND INSTALLED SCHEMA ARE SEPARATE RESULTS
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * WHY THIS EXISTS (2026-08-22)
@@ -17,18 +17,18 @@
  * checked the MIGRATIONS against it. This does.
  *
  * SCOPE: only migrations this branch ADDS or MODIFIES. The 432 files already in
- * the directory are intentionally stale — CLAUDE.md is explicit that schema is
- * applied straight to production via the Supabase MCP and the older files are
- * history, not truth (68 functions and 80 tables in them no longer exist).
+ * the directory are historical snapshots; older objects can legitimately
+ * have been retired (68 functions and 80 tables in them no longer existed
+ * when this guard was introduced).
  * Auditing those is a separate archaeology project; letting a NEW one slip is a
  * bug that ships today.
  *
  * HOW IT DECIDES: `scripts/ci/supabase-schema-manifest.json` is a snapshot of
- * the live public schema, regenerated with `gen-schema-manifest.mjs`. If a new
- * migration declares an object that is not in it, either the migration was
- * never applied (apply it with the Supabase MCP `apply_migration`) or the
- * manifest is stale (regenerate it in the same PR). Both are things the author
- * must do; neither is something to discover a day later.
+ * the live public schema, regenerated with `gen-schema-manifest.mjs`. If an
+ * existing migration version declares a new object absent from it, investigate
+ * installation or stale evidence. A genuinely new ordinary version submitted
+ * after the October 25 policy instead reports pending protected-main
+ * installation; submission never certifies production state.
  *
  * A FRAGMENT IS A PROMISE, NOT AN OBSERVATION (2026-09-22).
  *
@@ -71,6 +71,11 @@
  * the live catalog and an absent one is a hard failure with the true reason. A
  * URL that is set but unreadable is exit 2, COULD NOT TELL - never green. This
  * script never contains, derives or writes a credential (CLAUDE.md 10.84).
+ *
+ * October 25 owner policy (PUBLISHING.md) supersedes historical apply-first
+ * instructions: new ordinary migration versions are PENDING, NOT INSTALLED
+ * until protected merge -> Apply Merged Migration -> installed/live readback.
+ * Existing versions, fragment claims and unknown evidence stay strict.
  *
  * Usage:  node scripts/ci/check-migrations-applied.mjs [baseRef]
  * Exit:   0 clean · 1 an unapplied object · 2 script error or could-not-tell
@@ -216,6 +221,37 @@ function migrationFileFor(version) {
   } catch {
     return null;
   }
+}
+
+/** New, ordinary migration files wait for protected-main installation. A rename
+ * of an existing version is still historical work, and unreadable Git state
+ * throws instead of turning an unknown base into permission to defer. */
+export function pendingProtectedMainMigration(base, file, repo = REPO) {
+  const names = execFileSync(
+    "git",
+    ["ls-tree", "-r", "--name-only", base, "--", DIR],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  const version = file
+    .slice(DIR.length)
+    .match(/^(\d{14})_[a-z0-9_]+\.sql$/)?.[1];
+  if (!version || version < "20261025000000") return false;
+  if (
+    names.includes(file) ||
+    names.some((name) => name.startsWith(`${DIR}${version}_`))
+  )
+    return false;
+  const recording = classifyMigration(file, { repo });
+  return (
+    recording.state === "new" && recording.reason === "no recording claimed"
+  );
 }
 
 /** Objects a migration CREATES or ADDS. Drops and alters of existing objects
@@ -597,6 +633,10 @@ function main() {
 
   const base = baseRef();
   const files = changedMigrations(base);
+  // Match the triple-dot diff's actual ancestor; unknown Git state stays fatal.
+  let comparisonBase;
+  try { comparisonBase = git(["merge-base", base, "HEAD"]); }
+  catch { comparisonBase = git(["rev-parse", "--verify", `${base}^{commit}`]); }
   if (files.length === 0) {
     console.log(
       `[check-migrations-applied] no new migrations against ${base} — nothing to check.`,
@@ -609,6 +649,7 @@ function main() {
   const problems = [];
   const promises = [];
   let queued = 0;
+  let pending = 0;
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
     const sql = readFileSync(join(REPO, file), "utf8");
@@ -621,6 +662,21 @@ function main() {
       validateWindowMigration(file, sql, { preamble: [] });
       queued++;
       console.log(`[check-migrations-applied] QUEUED, NOT INSTALLED: ${file}; requires the existing daily-maintenance installer and installed/live verification.`);
+      continue;
+    }
+
+    // October 25 owner policy forbids applying unmerged SQL. This is a
+    // submission result only; Apply Merged Migration and installed/live
+    // readback remain separate, required delivery evidence.
+    if (
+      pendingProtectedMainMigration(comparisonBase, file) &&
+      !now.fns.some((fn) => promisedFns.has(fn)) &&
+      !now.tables.some((table) => promisedTables.has(table))
+    ) {
+      pending++;
+      console.log(
+        `[check-migrations-applied] PENDING PROTECTED-MAIN INSTALLATION, NOT INSTALLED: ${file}; merge through required checks, then dispatch apply-merged-migration and verify installed/live state.`
+      );
       continue;
     }
 
@@ -644,7 +700,7 @@ function main() {
      * are that commit's business, not this branch's; only what this branch
      * newly declares gets checked. Appending a CREATE is still caught — that
      * is a new declaration — and a comment is correctly a no-op. */
-    const before = declaredAtBase(base, file);
+    const before = declaredAtBase(comparisonBase, file);
     const isNew = (kind, key) => !before || !before[kind].has(key);
 
     for (const fn of now.fns) {
@@ -686,7 +742,7 @@ function main() {
 
   console.log(
     `[check-migrations-applied] ${files.length} changed migration(s) vs ${base}; ` +
-      `${problems.length} unapplied object(s); ${promises.length} declared by a fragment only.`,
+      `${problems.length} missing installed declaration(s); ${promises.length} declared by a fragment only; ${pending} pending protected-main installation; ${queued} daily-maintenance queued.`,
   );
 
   /* A promise this branch made about its own new objects. Ask production if we
@@ -702,8 +758,8 @@ function main() {
       console.error(
         "\nA fragment in scripts/ci/schema-manifest.d/ is a note that an object is" +
           "\nalready applied and the nightly base has not caught up yet. It is not a" +
-          "\nway to declare one that has never run. Apply the migration with the" +
-          "\nSupabase MCP `apply_migration`, which is the only sanctioned path.",
+          "\nway to declare one that has never run. Merge the reviewed migration first," +
+          "\nthen use Apply Merged Migration and verify installed/live state.",
       );
       process.exit(1);
     }
@@ -722,7 +778,7 @@ function main() {
       console.warn(
         "\nIf you have already applied the migration, this is the expected note and" +
           "\nthe nightly schema-manifest refresh will absorb the fragment. If you have" +
-          "\nnot, apply it now with the Supabase MCP `apply_migration`: a merged" +
+          "\nnot, merge first and use Apply Merged Migration: a merged" +
           "\nmigration that never ran strands every engine release that calls it.",
       );
     }
@@ -730,7 +786,9 @@ function main() {
 
   if (problems.length === 0) {
     console.log(
-      queued
+      pending
+        ? `OK — ${pending} new migration(s) pending protected-main installation; remaining declarations checked separately. No installation inferred.`
+        : queued
         ? `OK — ${queued} validated daily-maintenance migration(s) queued; remaining declarations checked separately. No installation inferred.`
         : promises.length
         ? "OK — nothing this branch declares is missing from the manifest."
@@ -745,8 +803,8 @@ function main() {
   for (const [file, kind, name] of problems)
     console.error(`  ${file}\n    ${kind} ${name}`);
   console.error(
-    "\nEither the migration was never applied — apply it with the Supabase MCP" +
-      "\n`apply_migration`, which is the only sanctioned path — or the manifest is" +
+    "\nEither installed historical work is missing — investigate its exact merged" +
+      "\nbytes through Apply Merged Migration and installed/live readback — or the manifest is" +
       "\nstale: regenerate it with scripts/ci/gen-schema-manifest.mjs in this same PR." +
       "\nA migration file that never ran is a feature the code believes in and the" +
       "\ndatabase has never heard of.",

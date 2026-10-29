@@ -123,7 +123,8 @@ export function selectNaturalMultiRunSubject(
       return (
         eligibleNaturalMultiRunTable(table) &&
         mode !== 'mandatory_twice' &&
-        (targetThree || mode !== 'mandatory_three')
+        (targetThree || mode !== 'mandatory_three') &&
+        (!targetThree || (counts.get(table.id)?.[1] ?? 0) > 0)
       );
     })
     .map((table) => {
@@ -139,11 +140,16 @@ export function selectNaturalMultiRunSubject(
       (a.table.id < b.table.id ? -1 : a.table.id > b.table.id ? 1 : 0)
   );
   const selected = ranked[0]?.table;
-  if (!selected) throw new Error('Natural multirun observation requires one eligible cash table');
+  if (!selected)
+    throw new Error(
+      targetThree
+        ? 'Natural multirun observation requires one eligible cash table with positive three-run history'
+        : 'Natural multirun observation requires one eligible cash table'
+    );
   return selected;
 }
 
-/** Use the existing (table_id, created_at, id) index, never global history. */
+/** Keep natural opportunities through provider queue time using the existing table/created index. */
 export async function readNaturalMultiRunHistory(
   tableIds: string[],
   readRows: (query: URLSearchParams) => Promise<NaturalMultiRunHistoryRow[]>,
@@ -164,7 +170,7 @@ export async function readNaturalMultiRunHistory(
           new URLSearchParams({
             select: 'table_id,rit_boards',
             table_id: `eq.${id}`,
-            created_at: `gte.${new Date(now - 30 * 60_000).toISOString()}`,
+            created_at: `gte.${new Date(now - 2 * 60 * 60_000).toISOString()}`,
             rit_boards: 'not.is.null',
             order: 'created_at.desc',
             limit: '500',
@@ -271,12 +277,39 @@ export async function installNaturalMultiRunWitness(page: Page) {
       );
       const lanes = Array.from(table?.querySelectorAll('.community-area__run') ?? []);
       const now = Date.now();
-      // Measure the actual rendered confirmation, including removal and any
-      // repeat. The observer never drives a consent response or a hand.
+      // October 28: any settled-choice strip is a regression. The observer
+      // never drives consent or a hand; it measures the real pending strip.
       const banner = table?.querySelector('.rit-felt-banner') ?? null;
       const bannerText = banner?.textContent?.trim() ?? '';
       const isFinal =
-        /^(?:Players Have Accepted Running It|Mandatory Run It) (?:Twice|3 Times)/.test(bannerText);
+        /^(?:(?:Players Have Accepted Running It|Mandatory Run It) (?:Twice|3 Times)|Running It Once\.)/.test(
+          bannerText
+        );
+      if (banner && (isFinal || lanes.length >= 2))
+        violations.add(`${hand}: Settled Run Choice Still Covers The Table`);
+      if (banner) {
+        const strip = banner.getBoundingClientRect();
+        const board = table?.querySelector('.community-area')?.getBoundingClientRect();
+        const pot = table?.querySelector('.pot-display')?.getBoundingClientRect();
+        if (strip.width > 0 && strip.height > 0) {
+          if (board?.height && strip.bottom > board.top + 0.5)
+            violations.add(`${hand}: Run Choice Covers Board Cards`);
+          if (pot?.height && strip.top < pot.bottom - 0.5)
+            violations.add(`${hand}: Run Choice Is Not Below Pot`);
+          for (const card of table?.querySelectorAll('.seat__cards img') ?? []) {
+            const box = card.getBoundingClientRect();
+            if (
+              box.width > 0 &&
+              box.height > 0 &&
+              strip.left < box.right &&
+              strip.right > box.left &&
+              strip.top < box.bottom &&
+              strip.bottom > box.top
+            )
+              violations.add(`${hand}: Run Choice Covers Player Cards`);
+          }
+        }
+      }
       if (
         finalBanner &&
         (finalBanner.node !== banner ||
@@ -435,20 +468,21 @@ export function completedNaturalRuns(packets: NaturalRunPacket[], witness: any) 
   });
 }
 
-/** Foreground, default-speed natural proof of the two requested timing changes. */
+/** No settled-choice overlay; retain the full default-speed winning-card reads. */
 export function naturalMultiRunTiming(packet: NaturalRunPacket, witness: any) {
   const hand = witness.hands.find(
     (item: any) => item.hand === packet.hand && item.runs === packet.runs
   );
   const confirmations = witness.confirmations?.[String(packet.hand)] ?? [];
   const violations: string[] = [];
+  if (confirmations.length) violations.push('Settled Run Choice Still Covers The Table');
   if (confirmations.length > 1) violations.push('Run Confirmation Repeated');
   const confirmation = confirmations[0];
-  const confirmationMs =
-    confirmation?.hiddenAt == null ? null : confirmation.hiddenAt - confirmation.shownAt;
-  if (confirmationMs !== null && (confirmationMs < 1400 || confirmationMs > 1900)) {
-    violations.push('Run Confirmation Did Not Clear At 1500ms');
-  }
+  const confirmationMs = !confirmation
+    ? 0
+    : confirmation.hiddenAt == null
+      ? null
+      : confirmation.hiddenAt - confirmation.shownAt;
   const winnerAt = (hand?.lanes ?? []).map((lane: any) => lane.winnerAt);
   const complete =
     winnerAt.length === packet.runs && winnerAt.every((at: any) => typeof at === 'number');
@@ -465,8 +499,7 @@ export function naturalMultiRunTiming(packet: NaturalRunPacket, witness: any) {
   if (lastResultMs !== null && lastResultMs < 4000)
     violations.push('Final Winning Cards Cleared Early');
   return {
-    ready:
-      confirmations.length === 1 && confirmationMs !== null && complete && lastResultMs !== null,
+    ready: confirmations.length === 0 && complete && lastResultMs !== null,
     violations,
     confirmationMs,
     resultGapsMs,

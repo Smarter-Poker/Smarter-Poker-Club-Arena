@@ -81,8 +81,11 @@ export function ConfettiCanvas({
 
   const createParticles = useCallback(
     (width: number, height: number): Particle[] => {
+      // Mobile thermal & battery optimization: cap particle count on narrow screens
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 480;
+      const targetCount = isMobile ? Math.min(count, 28) : count;
       const particles: Particle[] = [];
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < targetCount; i++) {
         particles.push({
           x: width * 0.3 + Math.random() * width * 0.4, // Cluster in center
           y: height * 0.2 + Math.random() * height * 0.1, // Start near top-center
@@ -162,6 +165,13 @@ export function ConfettiCanvas({
 
     const animate = (now: number) => {
       if (completed) return;
+
+      // Mobile thermal & battery optimization: pause drawing loop while tab is hidden
+      if (typeof document !== 'undefined' && document.hidden) {
+        animFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
       const elapsed = now - startTimeRef.current;
       const fadeProgress = Math.max(0, (elapsed - duration * 0.6) / (duration * 0.4));
 

@@ -1,3 +1,5 @@
+import { registerCssPreloadRetryCase } from './css/vite-css-preload-retry.fixture';
+import { tournamentScrollFeedbackFixture } from './helpers/tournament-scroll-feedback.mjs';
 import { registerInitialTableReadinessCases } from './support/initialTableReadinessCases';
 registerInitialTableReadinessCases();
 
@@ -60,6 +62,47 @@ test.describe('tournament scroll gestures', () => {
   // input in both engines at the same narrow/wide responsive viewport sizes.
   // This override is scoped here; existing iPhone chrome tests keep touch mode.
   test.use({ isMobile: false, hasTouch: false });
+  test('a continued bottom-edge flick cannot cycle the tournament footer', async ({ page }) => {
+    await page.setViewportSize({ width: 393, height: 760 });
+    const fixture = await tournamentScrollFeedbackFixture();
+    await page.setContent(`<style>html,body{margin:0}${fixture.css}</style><div id="root"></div>`);
+    await page.addScriptTag({ content: fixture.javascript });
+    const panel = page.locator('.details-content');
+    const nav = page.getByRole('navigation', { name: 'Global Footer' });
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+    const box = await panel.boundingBox();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.wheel(0, 130);
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+    // One sustained downward gesture, including events after the end reveals
+    // the footer and reduces the panel. Before the fix this flips 20+ times.
+    for (let i = 0; i < 20; i++) {
+      await page.mouse.wheel(0, 40);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          )
+      );
+    }
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+    const flips = () =>
+      page.evaluate(() => (window as unknown as { footerFlips: boolean[] }).footerFlips);
+    expect(await flips()).toEqual([false, true, false]);
+    await expect
+      .poll(() =>
+        panel.evaluate((el) => Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop))
+      )
+      .toBeLessThanOrEqual(1);
+    const footer = await page.locator('.details-footer').boundingBox();
+    const globalFooter = await nav.boundingBox();
+    expect(Math.abs(footer!.y + footer!.height - globalFooter!.y)).toBeLessThanOrEqual(1);
+    // Moving away from the end restores ordinary direction detection.
+    await page.mouse.wheel(0, -180);
+    await expect.poll(() => panel.evaluate((el) => el.scrollTop)).toBeLessThan(200);
+    await page.mouse.wheel(0, 50);
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+  });
   for (const width of [375, 1518]) {
     test(`tournament tabs scroll from centre and sides at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
@@ -994,3 +1037,5 @@ async function documentFontsReady(page: Page) {
 
 import { registerMobileActionStripCases } from './support/mobileActionStripCases';
 registerMobileActionStripCases();
+
+registerCssPreloadRetryCase();

@@ -580,3 +580,30 @@ describe('Agent Own Player Funding With Full Browser Storage', () => {
     }
   });
 });
+
+it.each(
+  ['super_agent', 'agent', 'sub_agent'].flatMap((role) =>
+    ['0.01', '1.13'].map((amount) => [role, amount])
+  )
+)('%s moves %s own agent chips to their player wallet without rounding', async (role, amount) => {
+  fx.agentRow = { agent_wallet_balance: 1000, is_prepaid: true, credit_used: 0 };
+  fx.members = [
+    { data: [{ ...kingfish, user_id: '11111111-1111-4111-8111-111111111111', role }], error: null },
+  ];
+  openCashier({ role, walletType: 'agent_wallet' });
+  const ownEntry = await screen.findByRole('button', { name: 'To My Player Wallet' });
+  await waitFor(() => expect(ownEntry).toBeEnabled());
+  fireEvent.click(ownEntry);
+  typeAmount(amount);
+  await waitFor(() => expect(plate('Send Chips')).toBeEnabled());
+  fireEvent.click(plate('Send Chips'));
+  await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
+  expect(sends('fn_agent_wallet_send')[0].args).toMatchObject({
+    p_amount: Number(amount),
+    p_destination: 'player_wallet',
+    p_to_user_id: '11111111-1111-4111-8111-111111111111',
+  });
+  await waitFor(() =>
+    expect(fx.toast.success.mock.calls.at(-1)?.[0]).toContain(`Sent ${amount} Chips`)
+  );
+});

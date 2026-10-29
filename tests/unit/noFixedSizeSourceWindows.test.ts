@@ -110,11 +110,16 @@ describe('this guard cannot be hidden behind the changed-files gate', () => {
     const ci = fs.readFileSync(path.resolve(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
     expect(ci).toContain('noFixedSizeSourceWindows.test.ts');
 
-    // The job that runs it must not be conditioned on anything - not on the
-    // event, and not on the `changes` job whose whole purpose is to skip work.
-    const job = sliceYamlBlock(ci, 'source_windows:');
+    // Both event routes must execute it without depending on classification.
+    // PRs share the compiler install; schedules keep their independent job.
+    const job = sliceYamlBlock(ci, 'typecheck_compile:');
     expect(job).toContain('noFixedSizeSourceWindows.test.ts');
-    expect(job, 'the source-window guard must not be gated').not.toMatch(/^\s{4}if:/m);
+    expect(job).toContain("if: github.event_name == 'pull_request'");
+    const scheduled = sliceYamlBlock(ci, 'source_windows:');
+    expect(scheduled).toContain("if: github.event_name == 'schedule'");
+    expect(scheduled).toContain('noFixedSizeSourceWindows.test.ts');
+    expect(job).not.toContain('head_current');
+    expect(job).not.toContain('needs.changes');
     expect(job, 'and must not wait on the changed-files job').not.toContain('needs: changes');
   });
 });

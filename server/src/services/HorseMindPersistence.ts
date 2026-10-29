@@ -160,6 +160,12 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   // hydrate can only add information.
   riverBetOpps: r.river_bet_opps ?? 0,
   riverBetFolds: r.river_bet_folds ?? 0,
+  // Conditional counts rebuild from this horse own accepted public window.
+  // Legacy pooled persistence is not authority for an individual read.
+  riverLastToActOpps: 0,
+  riverLastToActBets: 0,
+  riverTripleCheckRaiseOpps: 0,
+  riverTripleCheckRaiseFolds: 0,
   snapBetSD: r.snap_bet_sd ?? 0,
   snapBetSDStrong: r.snap_bet_sd_strong ?? 0,
   tankBetSD: r.tank_bet_sd ?? 0,

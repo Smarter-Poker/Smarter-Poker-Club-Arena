@@ -5,7 +5,11 @@ import {
 } from '../../engine/HorseObserverReadEvidence.js';
 import { horseJournalArchiveDirectoryNames, readonlyHorseJournalStoreOptions } from './config.js';
 import { HorseDecisionJournalStore } from './store.js';
-import { reconcileHorseJournalHand, reviewHorsePlanEffects } from './review.js';
+import {
+  reconcileHorseJournalHand,
+  reviewHorsePlanEffects,
+  reviewHorseOwnTurnEffects,
+} from './review.js';
 import {
   HorseFleetPhaseInterpreter,
   HORSE_PHASE_KEYS,
@@ -176,7 +180,10 @@ function riverReadEvidence(capture: HorsePhaseCapture & { observerReads?: unknow
       // accumulate repeated decision snapshots into invented observations.
       samples = Math.max(samples, row.riverCallSD);
     }
-    if (!eligible || capture.readFrame.version !== 'horse-decision-reads-v6') samples = 0;
+    // The validated codec supplies zero for pre-v6 frames and preserves these
+    // counters in every additive successor. Never inspect an unvalidated body
+    // or discard a valid successor solely because its version advanced.
+    if (!eligible) samples = 0;
     let retainedHistorySamples = 0;
     let retainedHistoryReason = 'history_packet_not_captured';
     const packet = request.type === 'DECIDE_FAST' ? request.ownPublicHistory : undefined;
@@ -249,6 +256,16 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
       {
         horseId,
         acceptedDecisions: 0,
+        executionEvidence: {
+          version: 'horse-own-turn-execution-v1' as const,
+          selectedMatch: 0,
+          controllerCoerced: 0,
+          selectionUnknown: 0,
+          effectsNotApplicable: 0,
+          effectsApplied: 0,
+          effectsFailed: 0,
+          effectsUnknown: 0,
+        },
         applicability: 'unobserved' as 'unobserved' | 'accepted_decision_observed',
         // Receipt presence is not qualification of a phase, strategy or source gate.
         phaseCoverage: 'unknown' as const,
@@ -467,6 +484,32 @@ export function readHorseJournalFleet(directory: string, input: unknown) {
             aggregate[axis][proof[axis]] = (aggregate[axis][proof[axis]] ?? 0) + 1;
           aggregate.reasons[proof.reason] = (aggregate.reasons[proof.reason] ?? 0) + 1;
         }
+        // The original controller/committed-hand binding above is required
+        // before either selection or own-turn effect evidence is counted.
+        const ownExecution = horse.executionEvidence;
+        // Controller records use zero for fold/check; the witness deliberately
+        // exposes a null display amount for those same no-chip actions. Keep
+        // both original representations and require their exact agreement.
+        const zeroChipAction =
+          witness.executedAction === 'fold' || witness.executedAction === 'check';
+        const amountMatches = zeroChipAction
+          ? witness.executedAmount === null &&
+            witness.expectedExecutionAmount === 0 &&
+            witness.acceptedActions[0]?.record.amount === 0
+          : witness.executedAmount === witness.expectedExecutionAmount;
+        if (
+          witness.executionStatus === 'intended' &&
+          witness.executedAction === witness.selected.action &&
+          amountMatches
+        )
+          ownExecution.selectedMatch++;
+        else if (witness.executionStatus === 'coerced') ownExecution.controllerCoerced++;
+        else ownExecution.selectionUnknown++;
+        const ownEffects = reviewHorseOwnTurnEffects(records, handKey, record);
+        if (ownEffects === 'not_applicable') ownExecution.effectsNotApplicable++;
+        else if (ownEffects === 'applied') ownExecution.effectsApplied++;
+        else if (ownEffects === 'failed') ownExecution.effectsFailed++;
+        else ownExecution.effectsUnknown++;
         horse.acceptedDecisions++;
         horse.applicability = 'accepted_decision_observed';
         acceptedDecisions++;

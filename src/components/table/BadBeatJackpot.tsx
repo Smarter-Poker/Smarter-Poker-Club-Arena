@@ -71,6 +71,12 @@ export function BadBeatJackpot({
   useEffect(() => {
     if (amount === displayAmount) return;
 
+    // Mobile energy: if document is hidden, snap immediately without ticking in background
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      setDisplayAmount(amount);
+      return;
+    }
+
     // Simple lerp for visual effect (or direct set if preferring instant)
     const diff = amount - displayAmount;
     const step = diff / 20; // 20 frames to reach target

@@ -1101,6 +1101,7 @@ export default function ActionPanel({
   }, []);
 
   // Slider change with snap-to-preset haptic feedback
+  const lastSliderHapticTimeRef = useRef<number>(0);
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = Number(e.target.value);
@@ -1111,11 +1112,17 @@ export default function ActionPanel({
       const val = raw >= sliderGridMax ? maxRaise : snapToSliderGrid(raw);
       setRaiseAmount(val);
 
-      // Snap feedback — trigger haptic when crossing a BB boundary
+      const now = Date.now();
+      const canHaptic = now - lastSliderHapticTimeRef.current >= 45;
+
+      // Snap feedback — trigger haptic when crossing a BB boundary (throttled to avoid motor heating/drain)
       const currentBB = Math.round(val / (bigBlind || 1));
       const lastBB = Math.round(lastSnapRef.current / (bigBlind || 1));
       if (currentBB !== lastBB) {
-        haptic.light();
+        if (canHaptic) {
+          haptic.light();
+          lastSliderHapticTimeRef.current = now;
+        }
         lastSnapRef.current = val;
       }
 
@@ -1126,7 +1133,10 @@ export default function ActionPanel({
           Math.abs(val - p.value) <= tolerance &&
           Math.abs(lastSnapRef.current - p.value) > tolerance
         ) {
-          haptic.medium();
+          if (canHaptic) {
+            haptic.medium();
+            lastSliderHapticTimeRef.current = now;
+          }
           break;
         }
       }

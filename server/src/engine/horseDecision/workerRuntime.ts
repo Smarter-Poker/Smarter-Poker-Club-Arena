@@ -1,4 +1,15 @@
 import {
+  isolateMemoryIsValid,
+  type IsolateMemorySample,
+} from '../../observability/isolateMemory.js';
+import {
+  HORSE_FEATURE_AUTHORITY_VERSION,
+  HORSE_FEATURE_FLAGS,
+  admitHorseFeatureReleaseAuthority,
+  admittedHorseFeatureFlags,
+  type HorseFeatureFlags,
+} from '../HorseFeatureAuthority.js';
+import {
   readHorsePooledPublicBootstrap,
   type HorsePooledPublicBootstrap,
 } from '../../services/HorsePooledPublicBootstrap.js';
@@ -237,13 +248,25 @@ import {
 
 /** Trusted in-process construction seam; never part of the live wire protocol. */
 export type HorseDecisionWorkerAuthorityHolderFactory = (
-  owner: 'phase8_guard' | 'phase8' | 'phase10' | 'phase11' | 'phase12' | 'phase13' | 'phase14',
+  owner:
+    | 'phase8_guard'
+    | 'phase8'
+    | 'phase10'
+    | 'phase11'
+    | 'phase12'
+    | 'phase13'
+    | 'phase14'
+    | 'features',
   variant: string | null,
   runningVersion: string,
   freshEpoch: string
 ) => HorseQualifiedAuthorityHolder;
 
 export interface HorseDecisionWorkerDependencies {
+  isolateMemory?(): IsolateMemorySample | null;
+  admitFeatureAuthority?(): HorseAuthorityAdmission;
+  /** Trusted isolated benchmark construction only; never accepted from IPC. */
+  offlineFeatureFlags?: boolean;
   journalEnabled?: () => boolean;
   journalDecision?: typeof journalHorseDecision;
   journalExecution?: typeof journalHorseExecution;
@@ -528,6 +551,7 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   admitPhase8GuardAuthority: () => admitHorsePhase8GuardAuthority(),
   phase8SafetyDisabledReason: () => liveHorsePhase8Safety.disabledReason,
   admitPhase10Authority: () => admitHorsePhase10LiveAuthority(),
+  admitFeatureAuthority: () => admitHorseFeatureReleaseAuthority(),
   admitPhase11Authority: (variant) => admitHorsePhase11LiveAuthority(variant),
   admitPhase12Authority: (variant) => admitHorsePhase12LiveAuthority(variant),
   admitPhase13Authority: (variant) => admitHorsePhase13LiveAuthority(variant),
@@ -747,6 +771,59 @@ export class HorseDecisionWorkerRuntime {
   private readonly phase8GuardAuthority: HorseQualifiedAuthorityHolder;
   private phase8GuardAuthorityAdmitted = false;
   private phase8AuthorityAdmitted = false;
+  private readonly featureAuthority: HorseQualifiedAuthorityHolder;
+  private featureAuthorityAdmitted = false;
+  private featureAdmission(request: FastHorseDecisionRequest | DeepHorseDecisionRequest): {
+    flags: HorseFeatureFlags;
+    receipt: HorseDecision['featureAuthority'];
+  } {
+    if (!this.featureAuthorityAdmitted) {
+      this.featureAuthorityAdmitted = true;
+      try {
+        this.featureAuthority.apply(
+          this.deps.admitFeatureAuthority?.() ?? {
+            status: 'refused',
+            reason: 'unselected',
+            transient: false,
+          }
+        );
+      } catch {
+        this.featureAuthority.apply({
+          status: 'refused',
+          reason: 'unreadable_evidence',
+          transient: true,
+        });
+      }
+    }
+    if (this.deps.offlineFeatureFlags === true)
+      return {
+        flags: Object.fromEntries(
+          HORSE_FEATURE_FLAGS.map((k) => [k, request.opts?.[k] === true])
+        ) as HorseFeatureFlags,
+        receipt: undefined,
+      };
+    const a = this.featureAuthority.current(),
+      receipt = this.featureAuthority.receipt();
+    const flags = admittedHorseFeatureFlags(
+      a,
+      this.featureAuthority.verdict(receipt, Date.now()) === 'usable',
+      request.gameState,
+      request.opts
+    );
+    return {
+      flags,
+      receipt:
+        Object.values(flags).some(Boolean) && a?.featureDomain && a.featureCompositionDigest
+          ? {
+              version: 'horse-feature-decision-v1',
+              authority: receipt,
+              flags,
+              domain: a.featureDomain,
+              compositionDigest: a.featureCompositionDigest,
+            }
+          : undefined,
+    };
+  }
   private readonly phase10Authority: HorseQualifiedAuthorityHolder;
   private phase10AuthorityAdmitted = false;
   private readonly phase11Authority: Readonly<
@@ -778,6 +855,12 @@ export class HorseDecisionWorkerRuntime {
       epoch
     ) => new HorseQualifiedAuthorityHolder(epoch, version)
   ) {
+    this.featureAuthority = authorityHolder(
+      'features',
+      null,
+      HORSE_FEATURE_AUTHORITY_VERSION,
+      randomUUID()
+    );
     this.phase8Authority = authorityHolder('phase8', null, PHASE8_POLICY.version, randomUUID());
     this.phase8GuardAuthority = authorityHolder(
       'phase8_guard',
@@ -1382,6 +1465,16 @@ export class HorseDecisionWorkerRuntime {
       knownDead.length !== (pineapplePostDiscard ? 1 : 0)
     ) {
       throw new Error('horse state known discard or physical cards are invalid');
+    }
+    // Every currently registered betting policy is a community-board game.
+    // Pineapple discard has its separate three-card request validator above;
+    // unsupported draw/stud variants are refused by the registry before here.
+    const publicBoardLength = { preflop: 0, flop: 3, turn: 4, river: 5 };
+    if (
+      !Object.hasOwn(publicBoardLength, gs.stage) ||
+      gs.communityCards.length !== publicBoardLength[gs.stage as keyof typeof publicBoardLength]
+    ) {
+      throw new Error('horse state board does not match betting street');
     }
     const physicalKnown = [...request.player.cards, ...knownDead, ...gs.communityCards];
     if (
@@ -2468,6 +2561,7 @@ export class HorseDecisionWorkerRuntime {
     const phase8 = this.phase8Admission(request);
     const phase8Guard = this.phase8GuardAdmission(request);
     const phase10 = this.phase10Admission(request);
+    const features = this.featureAdmission(request);
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
@@ -2504,6 +2598,8 @@ export class HorseDecisionWorkerRuntime {
           request.gameState,
           {
             ...request.opts,
+            ...features.flags,
+            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
             observeMind: true,
             mindObservationHand: horseMindHandFromDecision(request),
           }
@@ -2527,6 +2623,8 @@ export class HorseDecisionWorkerRuntime {
         this.deps.captureDecisionEffects(() =>
           this.deps.decide(player, gameState, request.style, request.mods, {
             ...request.opts,
+            ...features.flags,
+            multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
             phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
             phase8PolicyFamily: phase8Guard.selected ? 'catastrophe_guard_v1' : 'continuation_v2',
             phase10Plo4: phase10.mode,
@@ -2551,6 +2649,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase8Authority(captured.value, phase8.receipt);
     this.bindPhase8GuardAuthority(captured.value, phase8Guard.receipt);
     this.bindPhase10Authority(captured.value, phase10.receipt);
+    if (features.receipt) captured.value.featureAuthority = features.receipt;
     this.bindPhase11Authority(captured.value, phase11.receipt);
     this.bindPhase12Authority(captured.value, phase12.receipt);
     this.bindPhase13Authority(captured.value, phase13.receipt);
@@ -2688,6 +2787,7 @@ export class HorseDecisionWorkerRuntime {
         phase8Authority: this.phase8Authority.receipt(),
         phase8GuardAuthority: this.phase8GuardAuthority.receipt(),
         phase10Authority: this.phase10Authority.receipt(),
+        featureAuthority: this.featureAuthority.receipt(),
         phase11Authority: this.phase11AuthorityReceipts(),
         phase12Authority: this.phase12AuthorityReceipts(),
         phase13Authority: this.phase13AuthorityReceipts(),
@@ -2766,6 +2866,7 @@ export class HorseDecisionWorkerRuntime {
     const phase8 = this.phase8Admission(request);
     const phase8Guard = this.phase8GuardAdmission(request);
     const phase10 = this.phase10Admission(request);
+    const features = this.featureAdmission(request);
     const phase11 = this.phase11Admission(request);
     const phase12 = this.phase12Admission(request);
     const phase13 = this.phase13Admission(request);
@@ -2804,6 +2905,8 @@ export class HorseDecisionWorkerRuntime {
             this.deps.captureDecisionEffects(() =>
               this.deps.decide(player, gameState, request.style, request.mods, {
                 ...request.opts,
+                ...features.flags,
+                multiwayRiverBluffCheckRaise: features.flags.multiwayRiverBluffCheckRaise,
                 phase8Postflop: phase8Guard.selected ? phase8Guard.mode : phase8.mode,
                 phase8PolicyFamily: phase8Guard.selected
                   ? 'catastrophe_guard_v1'
@@ -2831,6 +2934,7 @@ export class HorseDecisionWorkerRuntime {
     this.bindPhase8Authority(decision, phase8.receipt);
     this.bindPhase8GuardAuthority(decision, phase8Guard.receipt);
     this.bindPhase10Authority(decision, phase10.receipt);
+    if (features.receipt) decision.featureAuthority = features.receipt;
     this.bindPhase11Authority(decision, phase11.receipt);
     this.bindPhase12Authority(decision, phase12.receipt);
     this.bindPhase13Authority(decision, phase13.receipt);
@@ -2893,6 +2997,7 @@ export class HorseDecisionWorkerRuntime {
       phase8Authority: this.phase8Authority.receipt(),
       phase8GuardAuthority: this.phase8GuardAuthority.receipt(),
       phase10Authority: this.phase10Authority.receipt(),
+      featureAuthority: this.featureAuthority.receipt(),
       phase11Authority: this.phase11AuthorityReceipts(),
       phase12Authority: this.phase12AuthorityReceipts(),
       phase13Authority: this.phase13AuthorityReceipts(),
@@ -2964,6 +3069,14 @@ export class HorseDecisionWorkerRuntime {
                   : null;
     if (refusal || !issued) {
       this.refusePlan(request, refusal ?? 'issue_absent');
+      return;
+    }
+    if (
+      issued.state !== 'applied' &&
+      issued.policy.candidates.some((a) => a.owner === 'features' && !this.planPolicyUsable(a))
+    ) {
+      issued.state = 'retired';
+      this.refusePlan(request, 'issue_retired');
       return;
     }
     const alreadyApplied = issued.state === 'applied';
@@ -3116,15 +3229,17 @@ export class HorseDecisionWorkerRuntime {
     const pack = (holders: Readonly<Record<string, HorseQualifiedAuthorityHolder>>) =>
       Object.hasOwn(holders, variant) ? holders[variant] : undefined;
     const holder =
-      authority.owner === 'phase8'
-        ? this.phase8Authority
-        : authority.owner === 'phase10'
-          ? this.phase10Authority
-          : authority.owner === 'phase11'
-            ? pack(this.phase11Authority)
-            : authority.owner === 'phase12'
-              ? pack(this.phase12Authority)
-              : pack(this.phase13Authority);
+      authority.owner === 'features'
+        ? this.featureAuthority
+        : authority.owner === 'phase8'
+          ? this.phase8Authority
+          : authority.owner === 'phase10'
+            ? this.phase10Authority
+            : authority.owner === 'phase11'
+              ? pack(this.phase11Authority)
+              : authority.owner === 'phase12'
+                ? pack(this.phase12Authority)
+                : pack(this.phase13Authority);
     if (!holder) return false;
     const current = holder.receipt();
     return (
@@ -3263,8 +3378,17 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeStatus(request: HorseDecisionStatusRequest): void {
+    let isolateMemory: IsolateMemorySample | null = null;
+    try {
+      const sample = this.deps.isolateMemory?.();
+      if (isolateMemoryIsValid(sample)) isolateMemory = sample;
+    } catch {
+      /* diagnostic unavailable must never fail a worker */
+    }
+
     this.send({
       type: 'STATUS_RESULT',
+      isolateMemory,
       requestId: request.requestId,
       generation: request.generation,
       fence: request.fence,

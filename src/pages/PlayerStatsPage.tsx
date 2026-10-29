@@ -95,7 +95,8 @@ import {
   buildStatsCashEvidencePath,
   restoreStatsEvidenceScroll,
 } from '../lib/statsEvidenceNavigation';
-import SharedClubStatsView from './stats/SharedClubStatsView';
+// The shared-profile branch is not part of the owner's overview route.
+const SharedClubStatsView = lazy(() => import('./stats/SharedClubStatsView'));
 import ClubScopeConsole from './stats/ClubScopeConsole';
 import StatsHeadlineDeck from './stats/StatsHeadlineDeck';
 import {
@@ -1361,10 +1362,13 @@ export default function PlayerStatsPage() {
   );
   // Style label for the share card. Shared with TrophyRoom so the two can
   // never disagree about what style a player is - see playerStyleFromStats.
-  const shareStyle = useMemo(
-    () => playerStyleFromStats(allTimeStats?.overall ?? full?.overall),
-    [allTimeStats?.overall, full?.overall]
-  );
+  const shareStyle = useMemo(() => {
+    const source = allTimeStats ?? full;
+    return playerStyleFromStats(
+      source?.overall,
+      source?.contract.quality.metric_availability.aggression_factor === true
+    );
+  }, [allTimeStats?.overall, full?.overall]);
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
@@ -1375,7 +1379,9 @@ export default function PlayerStatsPage() {
       statsWorkspaceService.evaluateAlerts({
         vpip: overall.vpip * 100,
         pfr: overall.pfr * 100,
-        three_bet_percent: overall.three_bet_percent * 100,
+        ...(statsContract.quality.metric_availability.three_bet_percent
+          ? { three_bet_percent: overall.three_bet_percent * 100 }
+          : {}),
         bb_per_100: overall.bb_per_100,
         total_profit: overall.total_profit,
         rake_paid: rakeStats?.rake_paid ?? 0,
@@ -1421,6 +1427,8 @@ export default function PlayerStatsPage() {
   const advancedInitialData = useMemo(
     () => ({
       total_hands: overall.total_hands,
+      cash_hands: overall.cash_hands,
+      metric_availability: statsContract.quality.metric_availability,
       total_profit: overall.total_profit,
       hours_played: overall.hours_played,
       showdowns_won: overall.showdowns_won,
@@ -1434,7 +1442,7 @@ export default function PlayerStatsPage() {
       bb_per_100: overall.bb_per_100,
       total_winnings: overall.total_winnings,
     }),
-    [overall]
+    [overall, statsContract.quality.metric_availability]
   );
   // Memoised: this array is the `initialSessions` prop for both SessionHistory
   // and BankrollTracker, whose effects key on prop identity. A fresh [] every
@@ -1475,16 +1483,18 @@ export default function PlayerStatsPage() {
     ) : null;
   if (!isOwnProfile) {
     return (
-      <SharedClubStatsView
-        targetUserId={targetUserId!}
-        asset={statsScope}
-        timezone={statsTimezone}
-        rangeKey={rangeKey}
-        windowDays={windowDays}
-        initialClubId={searchParams.get('statsClub')}
-        onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
-        onRangeChange={changeRange}
-      />
+      <Suspense fallback={<PageSkeleton variant="stats" />}>
+        <SharedClubStatsView
+          targetUserId={targetUserId!}
+          asset={statsScope}
+          timezone={statsTimezone}
+          rangeKey={rangeKey}
+          windowDays={windowDays}
+          initialClubId={searchParams.get('statsClub')}
+          onClubChange={(clubId, replace) => updateStatsUrl({ statsClub: clubId }, replace)}
+          onRangeChange={changeRange}
+        />
+      </Suspense>
     );
   }
   if (loading) {

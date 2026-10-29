@@ -139,6 +139,8 @@
   -webkit-touch-callout: none;
   user-select: none;
   overscroll-behavior: none;
+  /* Thermal & battery: isolate table page layout/paint recalculations from global DOM tree */
+  contain: layout paint;
 }
 
 /* ─── STATIC RESERVES / HISTORICAL ONE-SIZE PRESENTATION (2026-08-28) ─────
@@ -877,16 +879,22 @@
    today's dvh behaviour instead of losing the table. */
 @supports (height: 100svh) {
   .table-container {
-    --sp-page-h: 100svh;
+    --sp-page-h: var(--sp-table-stable-viewport-h, 100svh);
   }
 
   .table-page--embedded .table-container {
-    --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px))));
+    --sp-page-h: calc(
+      var(--sp-table-stable-viewport-h, 100svh) -
+        var(--sp-tabbar-h, calc(49px + env(safe-area-inset-top, 0px)))
+    );
   }
 
   @media (max-width: 480px) {
     .table-page--embedded .table-container {
-      --sp-page-h: calc(100svh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+      --sp-page-h: calc(
+        var(--sp-table-stable-viewport-h, 100svh) -
+          var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px)))
+      );
     }
   }
 }
@@ -3074,6 +3082,33 @@
   transition: width 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+/* Mobile all-in percentages: half the badge's desktop dimensions, including
+   the track and spacing. Real layout dimensions keep card avoidance accurate. */
+@media (max-width: 768px) {
+  .equity-layer .equity-overlay {
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    gap: 2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+  .equity-overlay__track {
+    width: 44px;
+    height: 3px;
+    border-radius: 1.5px;
+  }
+  .equity-overlay__bar {
+    border-radius: 1.5px;
+    box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+  }
+  .equity-overlay--ahead {
+    box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+  }
+  .equity-overlay--behind {
+    box-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN BANNER — COMPETITOR-PARITY 2026-08-19
    Table-level splash the moment the runout locks in (first equity broadcast).
@@ -3704,6 +3739,21 @@
 .table-page--backgrounded *::after {
   animation-play-state: paused !important;
   transition: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   UNDER-MODAL ANIMATION SUSPENSION — Freeze felt & background loops when
+   a modal/overlay covers the table, eliminating GPU shader load & heat.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--modal-active .table-art,
+.table-page--modal-active .table-surface,
+.table-page--modal-active .table-brand,
+.table-page--modal-active .pot-area,
+.table-page--modal-active .pot-area *,
+.table-page--modal-active .dealer-button,
+.table-page--modal-active .table-page__stars {
+  animation-play-state: paused !important;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -4826,23 +4876,23 @@ button.post-bb-overlay-button {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RIT STATUS STRIP (2026-08-26, parity pass)
-   A wide dark strip across the felt while a Run It Multiple Times question
-   is open, and for the accepted/rejected outcome. Not a toast: it rides the
-   table like the ALL IN banner, visible to players AND spectators.
+   Only while the run choice is unanswered. Anchor to the board's top edge,
+   below the pot, so its height cannot cover board or player cards.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .rit-felt-banner {
   position: absolute;
-  top: 58%;
+  top: auto;
+  bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(92%, 420px);
+  width: min(100%, 280px);
   z-index: 58;
   pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 14px;
+  padding: 6px 8px;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(28, 33, 40, 0.92), rgba(22, 27, 34, 0.92));
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -4857,6 +4907,7 @@ button.post-bb-overlay-button {
   color: #e4e6eb;
   text-align: center;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 @keyframes ritFeltBannerIn {
@@ -5048,9 +5099,7 @@ button.post-bb-overlay-button {
     --sp-page-h: 100dvh;
     --sp-hero-clear: clamp(60px, calc(12vw + 8px), 68px);
     /* Compact upper pods use the empty rail band below the jackpot. */
-    --sp-table-top: calc(
-      var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top) + var(--sp-bar-drop, 0px)
-    );
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
   .table-page--embedded .table-container {
     /* Reserve the ticker's maximum band even when it is absent. A promotion
@@ -5087,13 +5136,13 @@ button.post-bb-overlay-button {
 }
 @media (max-width: 480px) {
   .table-page {
-    --sp-game-tool-size: 34px;
+    --sp-game-tool-size: 48px;
   }
 }
 /* Compact viewports still reserve the top pod below the jackpot. */
 @media (max-width: 480px) and (max-height: 650px) and (orientation: portrait) {
   .table-container {
-    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 32px + var(--sp-page-inset-top));
   }
 }
 
@@ -5153,7 +5202,8 @@ button.post-bb-overlay-button {
     /* Small rings retain their declared downward offset; it cannot also
        consume the bottom observer seat's clearance. */
     height: calc(
-      var(--sp-phone-box-h) + var(--sp-hero-clear) - 34px - var(--sp-short-table-drop, 0px)
+      var(--sp-phone-box-h) + var(--sp-hero-clear) - var(--sp-observer-clear, 42px) -
+        var(--sp-short-table-drop, 0px)
     );
     max-height: none;
     flex-shrink: 0;
@@ -5181,5 +5231,48 @@ button.post-bb-overlay-button {
   .table-page[data-seats='6'] .table-scaler {
     --sp-seat-h-scale: 0.96;
     margin-top: calc(var(--sp-table-h, 100svh) * 0.02);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREFERS-REDUCED-TRANSPARENCY — Low-power fallback for heavy glassmorphism blur
+   Replaces expensive 20px real-time backdrop blur filters with opaque dark glass
+   when requested by the OS, cutting GPU composition heat and conserving battery.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-transparency: reduce) {
+  .spectator-footer-bar,
+  .footer-action-bar,
+  .header-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(12, 15, 22, 0.98) !important;
+  }
+}
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 4px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-container {
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+    --sp-hero-clear: clamp(52px, calc(10vw + 24px), 56px);
+  }
+}
+@media (max-width: 380px) and (orientation: portrait) {
+  .table-page .table-brand {
+    margin-top: 2px;
+  }
+}
+
+/* Short notched phones lift the cards three pixels inside the existing hero lane. */
+@media (min-width: 341px) and (max-width: 480px) and (max-height: 700px) and (orientation: portrait) {
+  .seat .seat__cards--hero {
+    translate: 0 -3px;
+  }
+}
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page[data-hero='false'] .table-scaler {
+    --sp-observer-clear: 38px;
   }
 }

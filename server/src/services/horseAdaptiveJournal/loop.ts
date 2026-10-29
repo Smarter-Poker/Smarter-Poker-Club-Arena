@@ -246,7 +246,11 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       d.completed(
         Object.freeze({ work: 'skipped', retention: 'skipped', acquisition: capture.status })
       );
-      const healthy = ['idle', 'admitted', 'continued', 'captured', 'refined'].includes(
+      // A terminal source gap durably retires one request. It is not a
+      // transport failure: backing off each expired request for a minute
+      // lets readable requests behind it expire too. Preserve its gap receipt
+      // and ordinary fairness pause, but reset only the capture error backoff.
+      const healthy = ['idle', 'admitted', 'continued', 'captured', 'refined', 'gap'].includes(
         capture.status
       );
       captureFailures = healthy ? 0 : Math.min(captureFailures + 1, 6);
@@ -343,8 +347,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
     const journalIdle = result.status === 'idle';
     captureFromBacklog = !journalIdle && !ownBatch;
     captureNext =
-      Boolean(d.processCapture) &&
-      (journalIdle || journalTurns >= CAPTURE_FAIRNESS_JOURNAL_TURNS);
+      Boolean(d.processCapture) && (journalIdle || journalTurns >= CAPTURE_FAIRNESS_JOURNAL_TURNS);
     const healthy = result.status === 'completed' || result.status === 'idle';
     failures = healthy ? 0 : Math.min(failures + 1, 6);
     const delay = healthy

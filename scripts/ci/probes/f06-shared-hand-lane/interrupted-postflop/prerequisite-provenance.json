@@ -1,0 +1,27 @@
+{
+  "floor": {
+    "version": "20261029004521",
+    "sourceSha256": "58f6688dfacc08377c539c66f9adcab48f194d780ddb6173fee17b62fea4747d",
+    "fullDefinitionPostMD5": "52e7b71547751e500fa10b59185bd456",
+    "protectedAndInstalled": "UNKNOWN; owned prerequisite, not installed by this qualification",
+    "fixtureKind": "Captured composed function definition only, not the owning migration installer; exact full definition MD5 is checked by the candidate"
+  },
+  "capsuleContract": {
+    "version": "20261028233353",
+    "sourceSha256": "ea8d6ecf47f9dadc90a700727e449a2d538ed9f5b1ce0940bbe8a37df8aeacec",
+    "scope": "Exact private tables and disposition assertion/guards only; not full controller qualification",
+    "requiredAssertionSignature": "smarter_private.assert_hand_continuation_disposition(uuid,bigint)",
+    "requiredBodyMD5": {
+      "assert_hand_continuation_disposition": "f2e3f2fafc943a88344a328fb98c0d69",
+      "f06_retained_submission_guard": "fa19e52c7125723d01af8f5cf5244d68",
+      "hand_submission_snapshot_guard": "9fa0857dd8cbfb3b27bc0e1951bdb1c7"
+    },
+    "productionPrerequisite": "All three exact private functions and both original enabled trigger bindings are required before the structural patch can install"
+  },
+  "emergency": {
+    "version": "20261029003622",
+    "bodyMD5": "77229fac8eeddbd8ea42a7fd703621ff",
+    "fullDefinitionMD5": "8fb3869ea1cac37357e482a0bb0f661c",
+    "scope": "Captured installed function preimage only; never reapply emergency transaction"
+  }
+}

@@ -87,8 +87,135 @@ describe('LAW - the merged-branch guard is wired into the push path', () => {
   it('checks the repository receiving this push, not remote.origin by habit', () => {
     const guard = read(GUARD_PATH);
     expect(guard).toContain('REMOTE_URL="${3:-}"');
-    expect(guard).toContain('REPO="${REMOTE_URL##*Smarter-Poker/}"');
+    expect(guard).toContain('SLUG="$OWNER/$REPO"');
+    expect(guard).toContain('head=$HEAD_OWNER:$BRANCH');
     expect(guard).not.toMatch(/remote\.origin\.url/);
+  });
+
+  function runDestinationGuard(
+    owner: string,
+    identity: unknown,
+    prs: unknown,
+    repository = 'Smarter-Poker-Club-Arena',
+    hostname = 'github.com'
+  ) {
+    const dir = mkdtempSync(join(tmpdir(), 'merged-transfer-'));
+    try {
+      const trace = join(dir, 'trace');
+      writeFileSync(
+        join(dir, 'gh'),
+        `#!/bin/bash
+printf '%s\\n' "$*" >> "$GUARD_TRACE"
+case "$*" in
+  *'/pulls'*) printf '%s' "$GUARD_PRS" ;;
+  *) printf '%s' "$GUARD_IDENTITY" ;;
+esac
+`,
+        { mode: 0o755 }
+      );
+      const result = spawnSync(
+        'bash',
+        [
+          resolve(root, GUARD_PATH),
+          'fix/timing',
+          'origin',
+          `git@${hostname}:${owner}/${repository}.git`,
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          timeout: 5000,
+          env: {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH}`,
+            GUARD_TRACE: trace,
+            GUARD_IDENTITY: JSON.stringify(identity),
+            GUARD_PRS: JSON.stringify(prs),
+          },
+        }
+      );
+      return {
+        status: result.status,
+        output: result.stdout + result.stderr,
+        trace: existsSync(trace) ? readFileSync(trace, 'utf8') : '',
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  const transferredIdentity = {
+    id: 1132369872,
+    full_name: 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena',
+    owner: { login: 'Smarter-Software-PIQ' },
+  };
+
+  it.each(['Smarter-Poker', 'Smarter-Software-PIQ'])(
+    'resolves the approved transfer before filtering %s heads',
+    (owner) => {
+      const result = runDestinationGuard(owner, transferredIdentity, [
+        { number: 8479, state: 'open' },
+      ]);
+      expect(result.status).toBe(0);
+      expect(result.trace).toContain('repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/pulls');
+      expect(result.trace).toContain('head=Smarter-Software-PIQ:fix/timing');
+      expect(result.trace).not.toContain('head=Smarter-Poker:');
+    }
+  );
+  it.each([
+    { ...transferredIdentity, id: 42 },
+    {
+      ...transferredIdentity,
+      full_name: 'Stranger/Smarter-Poker-Club-Arena',
+      owner: { login: 'Stranger' },
+    },
+    {},
+  ])('refuses an unproved transfer before querying PRs', (identity) => {
+    const result = runDestinationGuard('Smarter-Poker', identity, []);
+    expect(result.status).toBe(1);
+    expect(result.trace).not.toContain('/pulls');
+  });
+  it.each([
+    { prs: [{ number: 8479, state: 'closed' }], refusal: 'CLOSED pull request #8479' },
+    {
+      prs: [{ number: 8479, state: 'closed', merged_at: '2026-10-28T22:00:00Z' }],
+      refusal: 'MERGED pull request #8479',
+    },
+    { prs: { message: 'Bad credentials' }, refusal: 'unreadable branch verdict' },
+  ])(
+    'still blocks closed, merged or unreadable transferred branch verdicts',
+    ({ prs, refusal }) => {
+      const result = runDestinationGuard('Smarter-Software-PIQ', transferredIdentity, prs);
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(refusal);
+    }
+  );
+
+  it('keeps legacy destinations and refuses unapproved repositories or lookalike hosts', () => {
+    const old = runDestinationGuard(
+      'Smarter-Poker',
+      { full_name: 'Smarter-Poker/Smarter-Poker-World-Hub', owner: { login: 'Smarter-Poker' } },
+      [],
+      'Smarter-Poker-World-Hub'
+    );
+    expect(old.status).toBe(0);
+    expect(old.trace).toContain('head=Smarter-Poker:fix/timing');
+    expect(
+      runDestinationGuard(
+        'Smarter-Software-PIQ',
+        { full_name: 'Smarter-Software-PIQ/Other', owner: { login: 'Smarter-Software-PIQ' } },
+        [],
+        'Other'
+      ).status
+    ).toBe(1);
+    const lookalike = runDestinationGuard(
+      'Smarter-Software-PIQ',
+      transferredIdentity,
+      [],
+      'Smarter-Poker-Club-Arena',
+      'githubXcom'
+    );
+    expect(lookalike.status).toBe(1);
+    expect(lookalike.trace).toBe('');
   });
 
   it('an auth failure is loud and blocks the orphaning push', () => {

@@ -799,6 +799,10 @@ done
 # contract depends on the basename, so search each distinct name exactly once.
 # Keep deleted paths in this set: their consumers still need verification.
 CONTRACT_BASENAMES=$(printf '%s\n' $FILES | sed 's#.*/##' | sort -u)
+# Directory-scanning workflow contracts do not name an individual YAML file.
+if printf '%s\n' $FILES | grep -qE '^\.github/workflows/'; then
+  CONTRACT_BASENAMES="$CONTRACT_BASENAMES .github/workflows"
+fi
 for base in $CONTRACT_BASENAMES; do
   for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
     case " $CHANGED_TESTS " in *" $t "*) ;; *) CHANGED_TESTS="$CHANGED_TESTS $t" ;; esac
@@ -903,6 +907,19 @@ if [ -f server/package.json ]; then
         esac ;;
     esac
   done
+
+  # Workflow readers live in the server Vitest project too. A CI-only edit
+  # must exercise their literal contracts before hosted qualification starts.
+  SERVER_WORKFLOW_BASENAMES=$(printf '%s\n' $FILES | sed -n '/^\.github\/workflows\//s#.*/##p' | sort -u)
+  if [ -n "$SERVER_WORKFLOW_BASENAMES" ]; then
+    SERVER_WORKFLOW_BASENAMES="$SERVER_WORKFLOW_BASENAMES .github/workflows"
+  fi
+  for base in $SERVER_WORKFLOW_BASENAMES; do
+    for t in $(grep -rl --include='*.test.ts' --include='*.test.mjs' -F -- "$base" server/src/ 2>/dev/null); do
+      SRV_TESTS="$SRV_TESTS ${t#server/}"
+    done
+  done
+  SRV_TESTS=$(printf '%s\n' $SRV_TESTS | sort -u)
 
   if [ -n "$SRV_TESTS$SRV_SRC" ] && [ "$SERVER_DEPENDENCY_MODE" != local ]; then
     echo "[club-arena pre-push] BLOCKED: required local server dependencies are incomplete."

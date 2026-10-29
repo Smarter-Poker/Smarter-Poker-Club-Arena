@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {assertClubArenaRepository} from './ci/repository-identity.mjs';
 /**
  * stamp-build-provenance.mjs — LAYER 1 of the anti-regression system
  * ═══════════════════════════════════════════════════════════════════════════
@@ -88,7 +89,7 @@ function isPullRequestValidation() {
   if (process.env.CA_BUILD_PURPOSE !== 'ci-validation') return false;
   if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'pull_request')
     throw new Error('Invalid PR build validation identity');
-  const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const repository = assertClubArenaRepository(process.env.GITHUB_REPOSITORY, process.env.GITHUB_REPOSITORY_ID);
   const ref = process.env.GITHUB_REF || '';
   const match = /^refs\/pull\/([1-9][0-9]*)\/merge$/.exec(ref);
   const eventPath = process.env.GITHUB_EVENT_PATH || '';
@@ -156,7 +157,7 @@ let publication = null;
 let publicationIdentityError = null;
 try {
   if (process.env.CA_BUILD_PURPOSE === 'production-publish') {
-    const repository = 'Smarter-Poker/Smarter-Poker-Club-Arena';
+    const repository = assertClubArenaRepository(process.env.GITHUB_REPOSITORY, process.env.GITHUB_REPOSITORY_ID);
     const workflowRef = `${repository}/.github/workflows/publish-club-arena.yml@refs/heads/main`;
     const eventName = process.env.GITHUB_EVENT_NAME;
     const triggerSha = process.env.GITHUB_SHA || '';
@@ -214,6 +215,7 @@ try {
 
 const info = {
   schema: 1,
+  repositoryId: process.env.GITHUB_REPOSITORY_ID || null,
   validationOnly,
   pullRequest,
   publication,

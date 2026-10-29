@@ -157,6 +157,7 @@ function pullRequestBuild() {
     GITHUB_EVENT_NAME: 'pull_request',
     GITHUB_EVENT_PATH: eventPath,
     GITHUB_REPOSITORY: repositoryName,
+    GITHUB_REPOSITORY_ID: '1132369872',
     GITHUB_REF: 'refs/pull/4788/merge',
     GITHUB_SHA: merge,
     GITHUB_RUN_ID: '12345',
@@ -436,7 +437,7 @@ describe('actual client publisher provenance admission', () => {
     expect(envelope.status, envelope.stderr).toBe(expected);
     const retained = spawnSync(
       'python3',
-      ['-', provenancePath, buildInfoPath, sha, repositoryName],
+      ['-', provenancePath, buildInfoPath, sha, repositoryName, 'candidate'],
       {
         cwd: dir,
         env: fixtureEnv,

@@ -7,8 +7,8 @@
     "docs/laws.d/tournament-source-identities-keep-narrow-physical-coverage.md": "35e2fed8e6d6de6270568bc1fbe040c285f104400d960fa5ac82d6ccd56b60ae",
     "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
     "scripts/ci/fixtures/tournament-source-identity-cover/README.md": "89dc10fefef96166eb18655572004cde2f1ffcb1b9c7e1e32855af745273b9ce",
-    "scripts/ci/fixtures/tournament-source-identity-cover/actual-table-authority.json": "ab610c16fe3ba4968531d0c703f9926d9dab3c01f9071f15132019305bb53fb2",
-    "scripts/ci/fixtures/tournament-source-identity-cover/meaningful-table-contract.json": "f41261cff645b6556cb10db34a54b8a43101920204c59346a81b2ed4dd52f1cb",
+    "scripts/ci/fixtures/tournament-source-identity-cover/actual-table-authority.json": "49ec49708441d27f3d37467659953464890439b0d508d04f5280ae35ab1dc648",
+    "scripts/ci/fixtures/tournament-source-identity-cover/meaningful-table-contract.json": "62c3fe9a746c851433e3b5c70089448f634e9433326250a21ef569eb6e511f86",
     "scripts/ci/fixtures/tournament-source-identity-cover/qualification-evidence.json": "4d7d82b5770be253fa84bbd64360245e8e457b68ae47ffe46b54c759bde20b21",
     "scripts/ci/fixtures/tournament-source-identity-cover/quality-541b.sql": "f44fe0b0a684af7977b0fb15cf57e9531491c8caef183b3a4b3f5310d3ff888f",
     "scripts/ci/fixtures/tournament-source-identity-cover/quality-current.sql": "44f1e35c0e465170799b8d24c500f840c1448fba4c1698228ba6a3358a1759cd",
@@ -21,5 +21,18 @@
     "scripts/ci/test-tournament-source-identity-cover-postgres.py": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
     "supabase/migrations/20261029020140_weekly_fee_source_identities_retain_their_tournament_and_rak.sql": "e8d5dd8d5254b16259f8884d04427848dc4c14bb94af0071f5c92bc8ad56adba",
     "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "dda20e320e583bd323b72a2cc9c992287e735f5ea95512babaa2351d0e5fbf8a"
+  },
+  "normalPrecommitFormattingAudit": {
+    "review": "Normal pre-commit Prettier reformatted only JSON object layout; complete parsed authority and meaningful contract values are unchanged from native33 inputs. No migration/runner/query/workflow change.",
+    "changed": {
+      "scripts/ci/fixtures/tournament-source-identity-cover/actual-table-authority.json": {
+        "before": "ab610c16fe3ba4968531d0c703f9926d9dab3c01f9071f15132019305bb53fb2",
+        "after": "49ec49708441d27f3d37467659953464890439b0d508d04f5280ae35ab1dc648"
+      },
+      "scripts/ci/fixtures/tournament-source-identity-cover/meaningful-table-contract.json": {
+        "before": "f41261cff645b6556cb10db34a54b8a43101920204c59346a81b2ed4dd52f1cb",
+        "after": "62c3fe9a746c851433e3b5c70089448f634e9433326250a21ef569eb6e511f86"
+      }
+    }
   }
 }

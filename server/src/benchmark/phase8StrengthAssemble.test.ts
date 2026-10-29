@@ -247,7 +247,22 @@ describe('phase8-strength-assemble', () => {
       );
       expect(digest.runtimeFiles).toContain('server/src/engine/HorseTournamentCatastropheGuard.ts');
       expect(digest.runtimeFiles.length).toBeGreaterThanOrEqual(70);
-      expect(digest.runtimeFiles.every((p: string) => p.startsWith('server/src/'))).toBe(true);
+      expect(digest.runtimeFiles).toEqual(
+        expect.arrayContaining([
+          'server/native/public_hist215_wtl.cc',
+          'server/scripts/build-public-hist215-native.mjs',
+        ])
+      );
+      expect(
+        digest.runtimeFiles.every(
+          (p: string) =>
+            p.startsWith('server/src/') ||
+            [
+              'server/native/public_hist215_wtl.cc',
+              'server/scripts/build-public-hist215-native.mjs',
+            ].includes(p)
+        )
+      ).toBe(true);
       expect(digest.qualificationFiles).toEqual(expect.arrayContaining(digest.runtimeFiles));
       expect(digest.qualificationFiles).toContain('server/scripts/phase8-strength-assemble.mjs');
       expect(digest.qualificationFiles).toContain(

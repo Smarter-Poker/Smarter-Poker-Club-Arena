@@ -92,3 +92,25 @@ it('enabling sound after an already-visible muted reveal does not replay its cue
   });
   expect(sound.playCommunityCard).not.toHaveBeenCalled();
 });
+
+it('cancels a queued cue on hide even when the browser delays its timer until after resume', async () => {
+  vi.useFakeTimers();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  render(
+    <CommunityCards cards={[]} stage="preflop" rabbitCards={cards} rabbitHandId={41} playSounds />
+  );
+  hidden.mockReturnValue(true);
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  // Frozen background timers have not run when the page becomes visible again.
+  hidden.mockReturnValue(false);
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  expect(sound.playCommunityCard).not.toHaveBeenCalled();
+  expect(haptics.light).not.toHaveBeenCalled();
+});

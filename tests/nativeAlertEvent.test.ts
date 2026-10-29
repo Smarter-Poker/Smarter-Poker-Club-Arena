@@ -70,6 +70,24 @@ function fixture(seed = null) {
   };
 }
 describe('committed operational alert wakes native intake', () => {
+  it('carries the explicit tournament investigation mandate while retaining transaction and release safeguards', () => {
+    const message = intakeMessage([A], B);
+    expect(message).toContain('Standing owner mandate of October 29, 2026');
+    expect(message).toContain('investigate and repair their root causes automatically');
+    expect(message).toContain(
+      'After intake, investigate each distinct actionable tournament failure'
+    );
+    expect(message).toContain(
+      'protected merge, approved publication and affected live verification'
+    );
+    expect(message).toContain('never directly overwrite balances, replay payouts');
+    expect(message).toContain('do not compete with an active source or engine release owner');
+    expect(message).toContain('an unread or deferred record never authorizes a repair');
+    expect(message).toContain('Never accumulate a batch acknowledgement');
+    expect(message).not.toContain('Then stop.');
+    expect(message).not.toContain('No source edits');
+  });
+
   it('separates source excerpts from response truncation and finishes failed individual reads explicitly', () => {
     const message = intakeMessage([A, B], B);
     expect(message).toContain('stored_inbox_characters');

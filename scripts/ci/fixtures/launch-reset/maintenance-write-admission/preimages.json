@@ -1,0 +1,82 @@
+[
+  {
+    "signature": "fn_active_maintenance_release_boundary()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary()\n RETURNS timestamp with time zone\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'auth', 'pg_temp'\nAS $function$\nDECLARE\n  c_required_steps CONSTANT text[] := ARRAY[\n    'sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until',\n    'reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at',\n    'cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at',\n    'cluster_break_eligible_since','cluster_move_expires_at',\n    'reconnect_presence','reconnect_snapshots'\n  ];\n  v_request_role text := NULLIF(btrim(COALESCE(auth.role(), '')), '');\n  v_trusted_database_actor boolean;\n  v_release_target timestamptz;\nBEGIN\n  -- supabase_auth_admin added 2026-09-10: it is GoTrue's own database role\n  -- (the signup triggers run as it), never a browser. Without it every signup\n  -- wallet trigger raised 42501 here (signup_errors id 9318).\n  SELECT session_user IN ('postgres', 'supabase_admin', 'service_role', 'supabase_auth_admin')\n         OR COALESCE(r.rolsuper, false)\n         -- Supabase CLI session roles may SET ROLE postgres. Trust that\n         -- catalog privilege, never a login-name prefix or a JWT workaround.\n         OR pg_catalog.pg_has_role(session_user, 'postgres', 'SET')\n    INTO v_trusted_database_actor\n    FROM (SELECT session_user AS role_name) s\n    LEFT JOIN pg_catalog.pg_roles r ON r.rolname = s.role_name;\n\n  IF v_request_role IS NOT NULL\n     AND v_request_role NOT IN ('anon', 'authenticated', 'service_role') THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REFUSED'\n      USING ERRCODE = '42501';\n  END IF;\n  IF v_request_role IS NULL AND NOT COALESCE(v_trusted_database_actor, false) THEN\n    RAISE EXCEPTION 'MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REQUIRED'\n      USING ERRCODE = '42501';\n  END IF;\n\n  -- PERF (2026-09-10, swarm A): OFFSET 0 is an optimisation fence. Without it\n  -- the planner evaluated `shifted ?& c_required_steps` first on every row of\n  -- engine_maintenance_thaws (167 rows, 0 of them contract_version 3) on every\n  -- money write that reaches fn_platform_frozen: 229 us -> 32 us per call.\n  -- Same four quals, same max(); the jsonb quals now only see rows that already\n  -- passed contract_version = 3 AND release_target_at > clock_timestamp().\n  SELECT max(t.release_target_at) INTO v_release_target\n    FROM (SELECT t.release_target_at, t.shifted\n            FROM public.engine_maintenance_thaws t\n           WHERE t.contract_version = 3\n             AND t.release_target_at > clock_timestamp()\n          OFFSET 0) t\n   WHERE COALESCE((t.shifted->>'complete')::boolean, false)\n     AND t.shifted ?& c_required_steps;\n  RETURN v_release_target;\nEND;\n$function$\n",
+    "full_md5": "05b537b57c9f51a5164e20a1cd0e67e0",
+    "body_md5": "3d9e02539fdcc6aca9a8a3769ed32521",
+    "owner": "postgres",
+    "prosecdef": true,
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "config": ["search_path=public, auth, pg_temp"]
+  },
+  {
+    "signature": "fn_claim_engine_maintenance_break(uuid,uuid,text)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_claim_engine_maintenance_break(p_expected_ownership_token uuid, p_new_ownership_token uuid, p_declared_by text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '35s'\n SET lock_timeout TO '32s'\nAS $function$\nDECLARE\n  v_row public.engine_maintenance_break%ROWTYPE;\nBEGIN\n  IF p_expected_ownership_token IS NULL OR p_new_ownership_token IS NULL THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'ownership_token_required');\n  END IF;\n  PERFORM pg_advisory_xact_lock(530090, 1);\n  SELECT * INTO v_row\n    FROM public.engine_maintenance_break b\n   WHERE b.id = true\n   FOR UPDATE;\n  IF NOT FOUND OR v_row.ownership_token <> p_expected_ownership_token THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'ownership_changed');\n  END IF;\n  UPDATE public.engine_maintenance_break\n     SET ownership_token = p_new_ownership_token,\n         declared_by = p_declared_by,\n         updated_at = clock_timestamp()\n   WHERE id = true\n     AND ownership_token = p_expected_ownership_token\n  RETURNING * INTO v_row;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok', false, 'reason', 'ownership_changed');\n  END IF;\n  RETURN jsonb_build_object(\n    'ok', true,\n    'phase', v_row.phase,\n    'announced_at', v_row.announced_at,\n    'break_started_at', v_row.break_started_at,\n    'break_ends_at', v_row.break_ends_at,\n    'reason', v_row.reason,\n    'ownership_token', v_row.ownership_token\n  );\nEND;\n$function$\n",
+    "full_md5": "f131c5e7fcddd19a584d043b0994d47a",
+    "body_md5": "cbe93f09bb0a5c5e815ca8faaa0cbb44",
+    "owner": "postgres",
+    "prosecdef": true,
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "config": ["search_path=public, pg_temp", "statement_timeout=35s", "lock_timeout=32s"]
+  },
+  {
+    "signature": "fn_clear_engine_maintenance_break(text,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_clear_engine_maintenance_break(p_phase text, p_announced_at timestamp with time zone, p_break_started_at timestamp with time zone, p_break_ends_at timestamp with time zone, p_reason text, p_ownership_token uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '35s'\n SET lock_timeout TO '32s'\nAS $function$\nDECLARE\n  v_deleted integer;\nBEGIN\n  IF p_ownership_token IS NULL THEN\n    RAISE EXCEPTION 'MAINTENANCE_OWNERSHIP_REQUIRED: a break may only clear its own generation'\n      USING ERRCODE = '22023';\n  END IF;\n  PERFORM pg_advisory_xact_lock(530090, 1);\n  DELETE FROM public.engine_maintenance_break b\n   WHERE b.id = true\n     AND b.phase IS NOT DISTINCT FROM p_phase\n     AND b.announced_at IS NOT DISTINCT FROM p_announced_at\n     AND b.break_started_at IS NOT DISTINCT FROM p_break_started_at\n     AND b.break_ends_at IS NOT DISTINCT FROM p_break_ends_at\n     AND b.reason IS NOT DISTINCT FROM p_reason\n     AND b.ownership_token = p_ownership_token;\n  GET DIAGNOSTICS v_deleted = ROW_COUNT;\n  RETURN v_deleted = 1;\nEND;\n$function$\n",
+    "full_md5": "24fc97591f5eb361d39f540857791e10",
+    "body_md5": "88d87f45e2adfc1e2c7ca5dfb71b9f77",
+    "owner": "postgres",
+    "prosecdef": true,
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "config": ["search_path=public, pg_temp", "statement_timeout=35s", "lock_timeout=32s"]
+  },
+  {
+    "signature": "fn_platform_frozen()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_platform_frozen()\n RETURNS boolean\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n           SELECT 1\n             FROM public.engine_maintenance_break b\n            WHERE b.enforce_freeze\n              AND b.announced_at < clock_timestamp() + INTERVAL '30 seconds'\n              AND (\n                (\n                  b.phase = 'last_hand'\n                  AND b.break_started_at IS NULL\n                  AND b.break_ends_at IS NULL\n                  AND b.announced_at + INTERVAL '2 minutes' <= clock_timestamp()\n                )\n                OR (\n                  b.phase = 'counting_down'\n                  AND b.break_started_at IS NOT NULL\n                  AND b.break_ends_at IS NOT NULL\n                  AND b.break_started_at >= b.announced_at\n                  AND b.break_ends_at > b.break_started_at\n                  AND b.break_ends_at < b.announced_at + INTERVAL '15 minutes'\n                )\n              )\n         )\n         OR COALESCE(\n           public.fn_active_maintenance_release_boundary() > clock_timestamp(),\n           false\n         );\n$function$\n",
+    "full_md5": "ec683805e052fceeae74789e82dce4cc",
+    "body_md5": "112b1265824ee082b8adc67ea367d826",
+    "owner": "postgres",
+    "prosecdef": false,
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "config": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_save_engine_maintenance_break(text,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,text,uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_save_engine_maintenance_break(p_phase text, p_announced_at timestamp with time zone, p_break_started_at timestamp with time zone, p_break_ends_at timestamp with time zone, p_reason text, p_declared_by text, p_ownership_token uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '35s'\n SET lock_timeout TO '32s'\nAS $function$\nDECLARE\n  v_rows integer;\n  v_now timestamptz;\nBEGIN\n  IF p_ownership_token IS NULL THEN\n    RAISE EXCEPTION 'MAINTENANCE_OWNERSHIP_TOKEN_REQUIRED'\n      USING ERRCODE = '22004';\n  END IF;\n\n  -- This is also the serialization point for admission. Sample time only after\n  -- acquiring it, so a request queued behind an admitted purchase cannot commit\n  -- a last-hand row after the fixed boundary and surface a break nobody honors.\n  PERFORM pg_advisory_xact_lock(530090, 1);\n  v_now := clock_timestamp();\n\n  IF p_phase = 'last_hand' AND (\n    p_break_started_at IS NOT NULL\n    OR p_break_ends_at IS NOT NULL\n    OR p_announced_at > v_now + INTERVAL '5 seconds'\n    OR v_now >= p_announced_at + INTERVAL '2 minutes'\n  ) THEN\n    RAISE EXCEPTION 'MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED'\n      USING ERRCODE = '57014';\n  END IF;\n\n  IF p_phase = 'counting_down' AND (\n    p_break_started_at IS NULL\n    OR p_break_ends_at IS NULL\n    OR v_now >= p_break_ends_at\n  ) THEN\n    RAISE EXCEPTION 'MAINTENANCE_COUNTDOWN_BOUNDARY_EXPIRED'\n      USING ERRCODE = '57014';\n  END IF;\n\n  INSERT INTO public.engine_maintenance_break (\n    id, phase, announced_at, break_started_at, enforce_freeze,\n    break_ends_at, reason, declared_by, ownership_token, updated_at\n  ) VALUES (\n    true, p_phase, p_announced_at, p_break_started_at, true,\n    p_break_ends_at, p_reason, p_declared_by, p_ownership_token, v_now\n  )\n  ON CONFLICT (id) DO UPDATE SET\n    phase = EXCLUDED.phase,\n    announced_at = EXCLUDED.announced_at,\n    break_started_at = EXCLUDED.break_started_at,\n    enforce_freeze = EXCLUDED.enforce_freeze,\n    break_ends_at = EXCLUDED.break_ends_at,\n    reason = EXCLUDED.reason,\n    declared_by = EXCLUDED.declared_by,\n    ownership_token = EXCLUDED.ownership_token,\n    updated_at = EXCLUDED.updated_at\n  WHERE public.engine_maintenance_break.ownership_token = EXCLUDED.ownership_token;\n\n  GET DIAGNOSTICS v_rows = ROW_COUNT;\n  IF v_rows <> 1 THEN\n    RAISE EXCEPTION 'MAINTENANCE_OWNERSHIP_LOST: save refused'\n      USING ERRCODE = '55000';\n  END IF;\nEND;\n$function$\n",
+    "full_md5": "68c3aed2a9601f3d7e05d8331bc8b25e",
+    "body_md5": "6356f53526aef40fc31c406da63ea4e1",
+    "owner": "postgres",
+    "prosecdef": true,
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "config": ["search_path=public, pg_temp", "statement_timeout=35s", "lock_timeout=32s"]
+  },
+  {
+    "signature": "fn_serialize_engine_maintenance_break_write()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_serialize_engine_maintenance_break_write()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  /* PostgreSQL takes ACCESS EXCLUSIVE before firing a TRUNCATE trigger. Waiting\n     for the advisory boundary from there would invert the canonical order\n     against an admitted entry that next reads this table. This singleton has\n     no legitimate truncate path, so refuse immediately instead of deadlocking. */\n  IF TG_OP = 'TRUNCATE' THEN\n    RAISE EXCEPTION 'engine_maintenance_break may not be truncated'\n      USING ERRCODE = '0A000';\n  END IF;\n  /* One exclusive writer boundary. The matching entry paths take this key in\n     shared mode, so purchases stay concurrent with each other but can never\n     straddle a maintenance-row commit. Transaction scope prevents a pooled\n     connection from retaining the lock. */\n  PERFORM pg_advisory_xact_lock(530090, 1);\n  RETURN NULL;\nEND;\n$function$\n",
+    "full_md5": "6d62a5f9ad5e8fa615e3eac9396266a3",
+    "body_md5": "084ed24f99e9d08765bd86ff8b920284",
+    "owner": "postgres",
+    "prosecdef": false,
+    "acl": "{postgres=X/postgres}",
+    "config": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "smarter_private.certification_retention_admission()",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.certification_retention_admission()\n RETURNS void\n LANGUAGE sql\n SET search_path TO 'pg_catalog', 'pg_temp'\n SET lock_timeout TO '32s'\nAS $function$\n  SELECT pg_catalog.pg_advisory_xact_lock(530090,2);\n$function$\n",
+    "full_md5": "ec27e0ea979243c112522e208cbfde5e",
+    "body_md5": "d857d51d698d9f635d62795f60d537ea",
+    "owner": "postgres",
+    "prosecdef": false,
+    "acl": "{postgres=X/postgres}",
+    "config": ["search_path=pg_catalog, pg_temp", "lock_timeout=32s"]
+  },
+  {
+    "signature": "smarter_private.lock_hand_continuation_maintenance_lane()",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.lock_hand_continuation_maintenance_lane()\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\n SET lock_timeout TO '1s'\nAS $function$\nBEGIN\n PERFORM pg_advisory_xact_lock_shared(530090,1);\nEND $function$\n",
+    "full_md5": "60116a44e2044188759e8002b3c80470",
+    "body_md5": "5af6b5404cdf1a2306e4a0dfd3eb418a",
+    "owner": "postgres",
+    "prosecdef": false,
+    "acl": "{postgres=X/postgres}",
+    "config": ["search_path=pg_catalog", "lock_timeout=1s"]
+  }
+]

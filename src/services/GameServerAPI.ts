@@ -1657,8 +1657,9 @@ export async function readRabbitHuntReceipt(
   tableId: string,
   handNumber: number
 ): Promise<RabbitHuntResult | null> {
-  const { readRabbitReceipt } = await rabbitReceiptModule();
   const owner = storedLoginIdentity();
+  const { readRabbitReceipt } = await rabbitReceiptModule();
+  if (storedLoginIdentity() !== owner) return null;
   const result = await readRabbitReceipt(owner, tableId, handNumber);
   return storedLoginIdentity() === owner ? result : null;
 }

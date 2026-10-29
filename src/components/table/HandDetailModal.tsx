@@ -233,11 +233,12 @@ function RabbitHuntReplayBlock({
     onReveal: (n) => onRabbitHunt(n ?? hand.handNumber),
     userId,
     onRestore: restore,
+    disabled: !offer.show,
   });
 
   // Nothing left to sell, a re-run, or past the engine's window - and nothing
   // already bought that we should keep showing.
-  if (!offer.show && !hasRevealed) return null;
+  if (!offer.show && !hasRevealed && !isRevealing) return null;
 
   return (
     <section className="hdm-rabbit" aria-label="Rabbit Hunt">

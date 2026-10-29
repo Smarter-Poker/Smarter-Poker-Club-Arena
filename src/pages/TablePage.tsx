@@ -601,6 +601,10 @@ import {
 } from '../lib/heartbeatTarget';
 import RabbitHunt from '../components/table/RabbitHunt';
 import type { RabbitHuntRevealResult } from '../components/table/RabbitHunt';
+import {
+  rememberRabbitVipRemaining,
+  rabbitVipUsageMonth,
+} from '../components/table/rabbitEntitlement';
 //monteCarloEquity import removed — server-authoritative
 import '../components/table/ControlThemeTokens.css';
 import '../styles/table-design-tokens.css';
@@ -9320,6 +9324,8 @@ function LiveTablePage({
   const rabbitHandNumberRef = useRef<number | null>(null);
   /** P4 2026-09-05: the tile's reveal handler while an offer is up; B runs it. */
   const rabbitHotkeyRef = useRef<(() => void) | null>(null);
+  // Only the latest live purchase may replace the felt; every receipt still reaches review.
+  const rabbitLiveRequestRef = useRef(0);
   const registerRabbitHotkey = useCallback((handler: (() => void) | null) => {
     rabbitHotkeyRef.current = handler;
   }, []);
@@ -9408,7 +9414,16 @@ function LiveTablePage({
         handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
       const boardAtRequest = lastBoardOfHandRef.current;
       const requestedViewer = rabbitViewerRef.current;
+      const liveRequest = handNumber === undefined ? ++rabbitLiveRequestRef.current : null;
+      const requestedUsageMonth = rabbitVipUsageMonth();
       const result = await requestRabbitHunt(tableId, requestedHandNumber);
+      // A response crossing a UTC monthly reset has an ambiguous quota bucket.
+      // Keep the cards/charge receipt, and let a fresh lookup resolve the count.
+      const vipRemaining =
+        requestedUsageMonth === rabbitVipUsageMonth() ? (result.vip_remaining ?? null) : null;
+      // Billing owns the count even if the initiating tile has closed.
+      if (result.success && requestedViewer?.userId)
+        rememberRabbitVipRemaining(requestedViewer.userId, vipRemaining);
       if (rabbitViewerRef.current !== requestedViewer) {
         return { success: false, error: 'Rabbit Hunt View Changed' };
       }
@@ -9422,7 +9437,7 @@ function LiveTablePage({
       const parsedCards = canonicalCards(result.cards) as Card[];
       // Explicit hand requests belong to the replayer, which renders its own
       // result. A replayer purchase must never replace the live felt.
-      if (handNumber === undefined) {
+      if (handNumber === undefined && liveRequest === rabbitLiveRequestRef.current) {
         setRabbitRevealedCards(parsedCards);
         setRabbitRevealedHandNumber(requestedHandNumber);
         // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
@@ -9449,7 +9464,7 @@ function LiveTablePage({
         // always returned it. It used to be dropped here, one line from the UI,
         // which is why the button could say FREE on the 101st hunt and then
         // silently charge five diamonds.
-        vipRemaining: result.vip_remaining,
+        vipRemaining,
         // Uses left on a purchased pack. Without it a pack reveal spent neither
         // diamonds nor a VIP use, so the player burned one of something they had
         // paid for and nothing on screen acknowledged it.

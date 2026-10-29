@@ -10,6 +10,7 @@ import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
  */
 
 import { supabase } from '../services/supabase.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -92,11 +93,25 @@ async function readRecoveryField(
   tournamentId: string
 ): Promise<{ rows: RecoveryPlayer[] | null; error: unknown }> {
   try {
-    const { data, error } = await supabase
-      .from('tournament_players')
-      .select('id, user_id, status, position, chips, eliminated_at, elimination_sequence')
-      .eq('tournament_id', tournamentId);
-    return { rows: !error && Array.isArray(data) ? (data as RecoveryPlayer[]) : null, error };
+    const result = await fetchAllRows<RecoveryPlayer & Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_players')
+          .select('id, user_id, status, position, chips, eliminated_at, elimination_sequence')
+          .eq('tournament_id', tournamentId)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor !== null) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecovery.field',
+        shouldContinue: () => !isMaintenanceFrozen(),
+      }
+    );
+    return result.complete
+      ? { rows: result.rows, error: null }
+      : { rows: null, error: new Error('recovery field read incomplete') };
   } catch (error) {
     return { rows: null, error };
   }

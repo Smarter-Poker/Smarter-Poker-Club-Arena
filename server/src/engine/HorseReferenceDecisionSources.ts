@@ -72,6 +72,20 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
     'src/engine/GtoCharts.ts': 'the open-jam and big-blind-versus-small-blind jam charts',
     'src/engine/GtoPostflop.ts': 'the heads-up NLH postflop solver consult',
     'src/engine/GtoPostflopV31.ts': 'the V31 solver consult',
+    'src/engine/GtoPublicHist215BuildReceipt.ts':
+      'the immutable all-head Linux execution receipt required before a public215 solver program can answer',
+    'src/engine/GtoPublicHist215Features.ts':
+      'exact public ROOT range physics and chronological actor-card feature encoding consumed by the V31 model',
+    'src/engine/GtoPublicHist215FeatureSchema.ts':
+      'the frozen categorical and numeric feature ordering consumed by public215 inference',
+    'src/engine/GtoPublicHist215FeatureDescriptor.json':
+      'the full immutable public215 feature contract and predecessor graph identity',
+    'src/engine/GtoPublicHist215Model.ts':
+      'bounded numeric tree inference and whole-variant frequency/value normalization used by public215 decisions',
+    'native/public_hist215_wtl.cc':
+      'the receiving-platform exact integer ROOT opponent win/tie/loss kernel used by public215 features',
+    'scripts/build-public-hist215-native.mjs':
+      'the maintained receiving-platform native compilation flags for the public215 decision kernel',
     'src/engine/GtoDecisionContext.ts': 'the solver spot context the consults read',
     'src/engine/GtoFacingDefenseV32.ts': 'the facing-bet defense and realization factors',
     'src/engine/GtoBoardRelativeFeaturesV2.ts': 'the board features the V31 consult keys on',

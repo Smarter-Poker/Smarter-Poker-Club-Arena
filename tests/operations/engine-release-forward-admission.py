@@ -39,7 +39,7 @@ def step_code(name, following):
 PREFLIGHT = step_code('Prove the request is current protected-main engine code',
                       'Use the production Node major')
 QUEUED = step_code('Recheck freshness after the FIFO wait',
-                   'Establish pinned ephemeral SSH transport')
+                   "Admit only the immutable target's preparation window")
 stage = WORKFLOW[WORKFLOW.index('name: Stage exact control bytes'):
                  WORKFLOW.index('name: Dispatch the staged SHA through the durable Hetzner intake')]
 # Execute the existing host fetch/object/ancestry/admission block. Prerequisite

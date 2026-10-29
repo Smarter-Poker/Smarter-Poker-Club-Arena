@@ -166,6 +166,10 @@ mapfile() {
       chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
       writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
       writeFileSync(
+        join(generation, 'engine-release-activation-floor.py'),
+        readFileSync(resolve(root, 'server/scripts/engine-release-activation-floor.py'))
+      );
+      writeFileSync(
         join(requestRoot, `${runKey}.request`),
         `${[
           targetSha,
@@ -298,6 +302,7 @@ set -euo pipefail
 case "$*" in
   *' fetch --no-tags '*) exit 0 ;;
   *" rev-parse --verify origin/main^{commit}") printf '%s\\n' '${targetSha}' ;;
+  *' ls-tree '*' -- server/release/activation-floor.json') exit 0 ;;
   *' cat-file -e '*) exit 0 ;;
   *' merge-base --is-ancestor '*) exit 0 ;;
   *' log '*' -1 --format=%H -- '*) printf '%s\\n' '${targetSha}' ;;

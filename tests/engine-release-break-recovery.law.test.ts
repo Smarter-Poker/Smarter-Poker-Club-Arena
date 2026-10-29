@@ -1,3 +1,4 @@
+import { enteredFloorFixture, portableFloorReader } from './helpers/engineActivationFloorFixture';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -303,8 +304,20 @@ printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","i
       mkdirSync(requests);
       mkdirSync(pins);
       mkdirSync(leases);
-      writeFileSync(join(requests, '77-1.request'), 'must remain on uncertain abort\n');
-      writeFileSync(join(control, 'engine-release-recover.sh'), recovery);
+      writeFileSync(
+        join(requests, '77-1.request'),
+        [
+          'a'.repeat(40),
+          'https://example.invalid/run/77',
+          'must remain on uncertain abort',
+          control,
+          'b'.repeat(40),
+          String(Math.floor(Date.now() / 1000) + 1200),
+          '',
+        ].join('\n')
+      );
+      enteredFloorFixture(control, requests, '77-1', 'a'.repeat(40), 'b'.repeat(40));
+      writeFileSync(join(control, 'engine-release-recover.sh'), portableFloorReader(recovery));
       chmodSync(join(control, 'engine-release-recover.sh'), 0o755);
       writeFileSync(
         join(control, 'engine-release-seal.py'),

@@ -750,7 +750,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -764,6 +764,12 @@ daily=(local.hour==4 and local.minute<5)
 emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
+floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if floor_end:
+    import time
+    now=time.time()
+    if not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+        raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
 window=(d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
 if not window: raise SystemExit(1)
@@ -928,7 +934,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     0|2) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -942,6 +948,12 @@ daily=(local.hour==4 and local.minute<5)
 emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
+floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if floor_end:
+    import time
+    now=time.time()
+    if not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+        raise SystemExit(1)
 
 remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
 valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
@@ -1233,6 +1245,8 @@ request_recovery_window() {
   local health minute now stamp outcome reason cause_key newer stuck cause_required
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
+  # This immutable one-time target may use only its daily certificate.
+  [ "${ACTIVATION_FLOOR_END_EPOCH:-0}" = 0 ] || return 0
   # A drill is planned work: it waits for a scheduled break and never spends
   # the hour's one off-cycle window that a real emergency may need.
   [ -z "${DRILL_MODE:-}" ] || return 0
@@ -1918,12 +1932,34 @@ recover_pending_owner() {
     || die "pending release $owner was recovered but its abort audit failed"
 }
 
-# A duplicate dispatch is certified immediately. It cannot wait for a later
-# maintenance break, and HTTP identity alone is not enough: the exact process
-# must also be the fresh elected database leader.
+# A floor-aware fresh request has no authority to restore a live predecessor.
+# Classify it from exact immutable capability before taking an engine lock.
+FLOOR_DISPOSITION="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" entry-check \
+  --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+  --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID")" \
+  || die 'immutable activation floor refused runtime admission'
+ACTIVATION_FLOOR_END_EPOCH=0
+if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+  ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
+    --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+    --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
+  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
+fi
+
+record_floor_runtime_entry() {
+  python3 "$CONTROL_DIR/engine-release-activation-floor.py" entry \
+    --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+    --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID" \
+    >/dev/null || die 'immutable activation floor refused actual runtime entry'
+}
+
+# Duplicate certification and interrupted recovery retain their original owner.
 acquire_engine_lock 'duplicate certification'
 while :; do
   read_pending_owner
+  if [ "$FLOOR_DISPOSITION" = never-entered ] && [ "$PENDING_STATE" != none ]; then
+    die 'fresh scheduled release cannot take over an existing runtime recovery owner'
+  fi
   # A boot-resumed unit owns its exact interrupted receipt. Expired receipts
   # and this run's interrupted receipt are recovered before Git/network work.
   if [ "$PENDING_STATE" = expired ] \
@@ -1954,6 +1990,12 @@ done
 # pending candidate, repair the sealed desired runtime immediately under the
 # mutation lock—never build or wait for another hourly break while service is
 # absent merely because a prior response was lost.
+if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+  # No runtime restoration for a fresh scheduled request. The existing locked
+  # proof below verifies sealed/local/public/DB identity immediately before
+  # checkpoint or prepare, once, under the actual daily certificate budget.
+  :
+else
 MUTATION_STARTED=1
 PREWORK_RECOVERY_REMAINING="$(remaining_seconds)" \
   || die 'deadline expired before sealed desired runtime recovery'
@@ -1968,6 +2010,7 @@ timeout --signal=TERM --kill-after=1s "${PREWORK_RECOVERY_REMAINING}s" env \
   "$CONTROL_DIR/engine-supervisor.sh" \
   || die 'sealed desired runtime could not be restored before release work'
 MUTATION_STARTED=0
+fi
 # Once this exact run crossed the fsynced commit boundary, mutable protected
 # main can no longer decide whether its missing result receipt is recoverable.
 # Certify the restored exact runtime and elected-leader identity first. This is
@@ -2012,6 +2055,16 @@ timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
 prewarm_candidate_image
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
+# The receiver/intake already enforced the no-write floor. Rebind it here
+# before checkpoint/certificate work; existing interrupted-owner recovery above
+# retains its original authority and is never blocked by a later expiry.
+ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
+  --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+  --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
+ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch",0))')"
+if [ "$ACTIVATION_FLOOR_END_EPOCH" -gt 0 ] && [ "$CERTIFICATE_DEADLINE" -gt "$ACTIVATION_FLOOR_END_EPOCH" ]; then
+  CERTIFICATE_DEADLINE="$ACTIVATION_FLOOR_END_EPOCH"
+fi
 # This is a compatibility operation for three pinned immutable predecessors, not a
 # general checkpoint API. The helper rebinds the seal/image/process under the
 # engine lock immediately before its one durable intent and checkpoint.
@@ -2184,6 +2237,7 @@ while :; do
     [ "$BREAK_ENTRY_BUDGET_MS" -ge 0 ] || BREAK_ENTRY_BUDGET_MS=0
     [ "$BREAK_ENTRY_BUDGET_MS" -le "$BREAK_ENTRY_BUDGET_CEILING_MS" ] \
       || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
+    record_floor_runtime_entry
     LEGACY_CHECKPOINT_ATTEMPTED=1
     set +e
     "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"
@@ -2200,7 +2254,21 @@ while :; do
       # and then a retry stays forbidden however the helper exited. Anything
       # other than a clean, absent intent is a die, so this fails closed.
       [ ! -e "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
+        && [ ! -L "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
         || die 'legacy checkpoint deferred but its durable intent exists; refusing a retry'
+      if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+        # Exit75 plus the absent one-shot intent proves this fresh checkpoint
+        # never acted. Retire only this entry marker while the owned lock is
+        # held; an interrupted/uncertain checkpoint keeps its recovery owner.
+        python3 - "$REQUEST_ROOT" "$RUN_ID" <<'FLOOR_NO_ACTION'
+import os, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+(root / (sys.argv[2] + ".activation-entry")).unlink()
+fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try: os.fsync(fd)
+finally: os.close(fd)
+FLOOR_NO_ACTION
+      fi
       LEGACY_CHECKPOINT_ATTEMPTED=0
       BREAK_END_EPOCH=0
       release_engine_lock
@@ -2264,6 +2332,7 @@ while :; do
     | grep -v "^$CONTAINER$" || true)"
   [ -z "$STRANGERS" ] || die 'an unmanaged engine container is running on this host'
 
+  record_floor_runtime_entry
   set +e
   PREPARE_OUTPUT="$(bounded_break_command 10 "$RELEASE_SEAL" prepare \
     --sha "$SHA" --image "$TARGET_IMAGE_ID" --mode "$SEAL_MODE" --repo "$REPO_DIR" \

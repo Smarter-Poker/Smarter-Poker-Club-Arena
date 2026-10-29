@@ -263,7 +263,9 @@ describe('the release enters the break with time to finish', () => {
     );
     const clamp = transaction.slice(
       transaction.indexOf('    BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))'),
-      transaction.indexOf('    LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e')
+      transaction.indexOf(
+        '    record_floor_runtime_entry\n    LEGACY_CHECKPOINT_ATTEMPTED=1\n    set +e'
+      )
     );
     const result = spawnSync(
       'bash',

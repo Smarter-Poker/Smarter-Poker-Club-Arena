@@ -8,12 +8,17 @@ const files = manifest.migrations.map((p: string) => read(p));
 describe('bounded tournament rake physical evidence', () => {
   it('retains the full actual authority and original source generation', () => {
     const authority = JSON.parse(read(fixture + 'authority.json'));
-    expect([authority.columns.length, authority.constraints.length, authority.indexes.length,
-      authority.triggers.length, authority.owners.length]).toEqual([20, 8, 19, 39, 34]);
+    expect([
+      authority.columns.length,
+      authority.constraints.length,
+      authority.indexes.length,
+      authority.triggers.length,
+      authority.owners.length,
+    ]).toEqual([20, 8, 19, 39, 34]);
     for (const sql of files) {
       expect(sql.split(read(fixture + 'guard.sql')).length).toBe(3);
       expect(sql).toContain('platform.max_index_columns<>32');
-      expect(sql).toContain("original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20");
+      expect(sql).toContain('original-inventory-245-v1:72b51e4349fc9cd371bfb7f771b7ae20');
       const executable = sql.replaceAll(read(fixture + 'guard.sql'), '');
       expect(executable).not.toMatch(/(?:UPDATE|DELETE FROM|INSERT INTO) public\./i);
       expect(executable).not.toContain('CREATE OR REPLACE FUNCTION public.');

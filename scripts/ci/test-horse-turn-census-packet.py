@@ -9,10 +9,33 @@ START='2026-10-28T01:00:00.000Z';END='2026-10-28T01:00:40.000Z';SHA='a'*40
 IDS=[f'00000000-0000-4000-8000-{i:012x}' for i in range(1000)]
 def fixture():
     return {'timeIndexValid':True,'snapshot':'1:2:','readAt':END,'horseIds':IDS[::-1],
-      'hands':[{'id':'10000000-0000-4000-8000-000000000001','table_id':'20000000-0000-4000-8000-000000000001','lease_generation':'30000000-0000-4000-8000-000000000001','hand_number':'1000001','source_owner':'classic','accepted':True,'actions_valid':True,'original_actions_match':True,'non_decision_diagnostics':{'forcedPosts':0,'uncalledReturns':0,'unknownNonDecision':0},'committed_at_ms':1793149201000,
+      'hands':[{'id':'10000000-0000-4000-8000-000000000001','table_id':'20000000-0000-4000-8000-000000000001','lease_generation':'30000000-0000-4000-8000-000000000001','hand_number':'1000001','source_owner':'classic','accepted':True,'actions_valid':True,'original_actions_match':True,'non_decision_diagnostics':{'forcedPosts':0,'uncalledReturns':0,'unknownNonDecision':0},'committed_at_ms':1793149201000,'original_context_match':True,'original_context':{'variant':'nlh','format':'cash','provenance':'retained_submission_and_committed_history'},
        'actions':[{'actorId':IDS[1],'actionOrdinal':3,'stage':'preflop','action':'check','origin':'horse_policy','amount':0,'seat':1,'timestamp':1793149199000}]}]}
 def make(v=None):return c.packet_from_rows(v or fixture(),SHA,START,END)
 class CensusTests(unittest.TestCase):
+    def test_context_all_supported_variants_and_original_match(self):
+        for variant in sorted(c.VARIANTS):
+            v=fixture();v['hands'][0]['original_context']['variant']=variant
+            p,a=make(v);self.assertEqual(p['version'],3);self.assertEqual(p['hands'][0]['context']['variant'],variant)
+            self.assertEqual(a['handDomains'][0]['context'],p['hands'][0]['context'])
+        for value in ('plo', 'plo_hilo', 'eight_cards', None):
+            v=fixture();v['hands'][0]['original_context']['variant']=value
+            with self.assertRaises(ValueError):make(v)
+        v=fixture();v['hands'][0]['original_context_match']=False
+        with self.assertRaisesRegex(ValueError,'original_context_mismatch'):make(v)
+    def test_legacy_ledger_remains_unknown_and_mixed_union_refused(self):
+        p,a=make();new=c.summarize(p,a,[])['turnCensusLedger'];old=copy.deepcopy(new)
+        old['schema']='horse-turn-census-ledger-v1'
+        for o in old['observations']:
+            for h in o['handDomains']:h.pop('context')
+        for r in old['turns']:r.pop('contextBinding');r.pop('historyReason')
+        before=copy.deepcopy(old)
+        self.assertEqual(c.ledger_summary(c.validate_ledger(old))['contextEvidence']['unknown:unknown']['matchedContextTurns'],0)
+        self.assertEqual(old,before)
+        with self.assertRaisesRegex(ValueError,'census_union_mismatch'):c.union_ledgers([old,new])
+    def test_context_attestation_tampering_refuses(self):
+        p,a=make();a['handDomains'][0]['context']={**a['handDomains'][0]['context'],'variant':'plo8'}
+        with self.assertRaisesRegex(ValueError,'census_domain'):c.summarize(p,a,[])
     def test_boundary_commit_owns_earlier_decision(self):
         p,a=make();self.assertEqual(p['hands'][0]['actions'][0]['timestamp'],1793149199000);self.assertEqual(a['expectedActions'],1)
     def test_full_original_ordinal_and_sorted_cohort(self):
@@ -89,7 +112,8 @@ class CensusTests(unittest.TestCase):
         self.assertEqual(run.stdout,c.transport_digest(p))
     def test_observed_row_omission_rejected(self):
         p,a=make();part=c.partition_packets(p)[0];row=c.missing_row(c.expected_rows(part)[0]);row['actionOrdinal']=4
-        observation={'version':2,'scope':'supplied_committed_turn_census','status':'unknown','rawRecordsExported':False,'replayVerified':False,'completePopulation':False,'strategyCorrectnessVerified':False,'activationAllowed':False,'sourceSha':SHA,'packetDigest':c.transport_digest(part),'expectedTurns':1,'validatedBytes':0,'boundReached':False,'missingTurns':1,'contradictoryTurns':0,'extraneousCaptures':0,'unboundCaptures':0,'inspectedHands':1,'remainingHands':0,'turns':[row]}
+        row['contextBinding']='unknown';row['historyReason']='unknown'
+        observation={'version':3,'scope':'supplied_committed_turn_census','status':'unknown','rawRecordsExported':False,'replayVerified':False,'completePopulation':False,'strategyCorrectnessVerified':False,'activationAllowed':False,'sourceSha':SHA,'packetDigest':c.transport_digest(part),'expectedTurns':1,'validatedBytes':0,'boundReached':False,'missingTurns':1,'contradictoryTurns':0,'extraneousCaptures':0,'unboundCaptures':0,'inspectedHands':1,'remainingHands':0,'turns':[row]}
         result={'qualifiedExecution':True,'sourceSha':SHA,'packetDigest':observation['packetDigest'],'execution':{'observation':observation,'release':SHA,'exitCode':0,'containerExitCode':0,'sameServingIdentityAfter':True,'observerRemoved':True,'cleanupExitCode':0,'oomKilled':False,'readOnly':True,'network':'none','horseJournalMountVerified':True,'servingContainer':'a'*64,'imageId':'sha256:'+'b'*64,'servingStartedAt':START}}
         with self.assertRaisesRegex(ValueError,'census_expected_omission'):c.summarize(p,a,[result])
     def test_discard_binding_cannot_label_betting_input(self):

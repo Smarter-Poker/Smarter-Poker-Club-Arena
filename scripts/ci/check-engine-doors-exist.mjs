@@ -31,7 +31,8 @@
  * intake. The build is not safe to ship until its migration is applied; it
  * can be dispatched again after the database has caught up.
  *
- * Deliberately NOT a blocker:
+ * For targets without the continuation prerequisites below, deliberately
+ * NOT a blocker:
  *   - an unreadable database (no DATABASE_URL, pg missing, network): a
  *     warning. This guard exists for one class of defect; it must never be
  *     the reason an urgent fix cannot ship because a connection blinked.
@@ -39,10 +40,17 @@
  *     build production already ran, and an emergency must not wait on this.
  *   - a name in scripts/ci/engine-doors.allowlist.json, each with a reason.
  *
+ * A target calling a continuation RPC must additionally prove both exact
+ * installed migration histories. Its new changed-function prerequisite cannot
+ * be inferred from pg_proc name presence, and unknown history is a refusal.
+ * This is a read-only gate in this existing job, before durable host intake.
+ *
  * Usage:  node scripts/ci/check-engine-doors-exist.mjs
- * Exit:   0 all present / unreadable / rollback,  1 a door is missing
+ * Exit:   0 proved / generic unreadable / generic rollback;
+ *         1 missing door or unproved continuation prerequisite
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, relative } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -140,11 +148,44 @@ export function engineDoors(root = SCAN_ROOT) {
   return doors;
 }
 
-async function liveFunctions(names) {
+// The original-controller runtime also depends on a changed EXISTING clock
+// function. Name presence cannot prove that installation. Read the exact
+// target files, then require both ordinary applier history rows byte-for-byte
+// by their single-statement text digest. No body pin forbids a later compatible
+// owner from legitimately extending the installed abort function.
+const CONTINUATION_DOORS = new Set([
+  'fn_f06_retain_hand_continuation',
+  'fn_f06_claim_hand_continuation',
+  'fn_f06_claim_legacy_river_continuation',
+]);
+const CONTINUATION_MIGRATIONS = [
+  '20261028233353_durable_private_hand_continuation.sql',
+  '20261029004521_keep_generation_recovery_at_the_highest_genuinely_played_lev.sql',
+];
+let continuationTarget = false;
+
+function continuationRequirements() {
+  if (!continuationTarget) return [];
+  return CONTINUATION_MIGRATIONS.map((file) => ({
+    version: file.slice(0, 14),
+    name: file.slice(15, -4),
+    sql_md5: createHash('md5')
+      .update(readFileSync(join(ROOT, 'supabase', 'migrations', file)))
+      .digest('hex'),
+  }));
+}
+
+async function liveFunctions(names, requirements) {
   // Test seam: a JSON array of the function names "production" has, so the
   // law test can run the real script end to end without a database.
   const fixture = process.env.ENGINE_DOORS_LIVE_FIXTURE;
-  if (fixture) return { found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))) };
+  if (fixture) {
+    const migrationFixture = process.env.ENGINE_DOORS_MIGRATIONS_FIXTURE;
+    return {
+      found: new Set(JSON.parse(readFileSync(fixture, 'utf8'))),
+      migrations: migrationFixture ? JSON.parse(readFileSync(migrationFixture, 'utf8')) : [],
+    };
+  }
   const url = process.env.DATABASE_URL;
   if (!url) return { unreadable: 'DATABASE_URL is not set' };
   let Client;
@@ -167,7 +208,17 @@ async function liveFunctions(names) {
         WHERE n.nspname = 'public' AND p.proname = ANY($1::text[])`,
       [names]
     );
-    return { found: new Set(rows.map((r) => r.proname)) };
+    let migrations = [];
+    if (requirements.length) {
+      ({ rows: migrations } = await client.query(
+        `SELECT version, name, cardinality(statements)::integer AS statement_count,
+                md5(statements[1]) AS sql_md5
+           FROM supabase_migrations.schema_migrations
+          WHERE version = ANY($1::text[])`,
+        [requirements.map((r) => r.version)]
+      ));
+    }
+    return { found: new Set(rows.map((r) => r.proname)), migrations };
   } catch (err) {
     return { unreadable: `production could not be asked: ${err?.message || err}` };
   } finally {
@@ -178,9 +229,17 @@ async function liveFunctions(names) {
 async function main() {
   const doors = engineDoors();
   const names = [...doors.keys()].sort();
+  continuationTarget = names.some((name) => CONTINUATION_DOORS.has(name));
+  const requirements = continuationRequirements();
   const allow = existsSync(ALLOWLIST) ? JSON.parse(readFileSync(ALLOWLIST, 'utf8')) : {};
   const rollback = process.env.ROLLBACK_REQUESTED === 'true';
-  const live = await liveFunctions(names);
+  const live = await liveFunctions(names, requirements);
+  if (live.unreadable && continuationTarget) {
+    console.log(
+      `::error title=CONTINUATION PREREQUISITES UNCHECKED::${live.unreadable}. Both exact continuation migration histories must be proved before this target enters Hetzner.`
+    );
+    return 1;
+  }
   if (live.unreadable) {
     console.log(
       `::warning title=DATABASE DOORS UNCHECKED::${live.unreadable}. The ${names.length} functions this build calls were not verified against production.`
@@ -188,8 +247,29 @@ async function main() {
     return 0;
   }
   const missing = names.filter((n) => !live.found.has(n) && !allow[n]);
+  let prerequisitesProved = true;
+  for (const expected of requirements) {
+    const rows = live.migrations.filter((row) => row.version === expected.version);
+    const row = rows[0];
+    if (
+      rows.length !== 1 ||
+      row.name !== expected.name ||
+      row.statement_count !== 1 ||
+      row.sql_md5 !== expected.sql_md5
+    ) {
+      prerequisitesProved = false;
+      console.log(
+        `::error title=CONTINUATION MIGRATION UNPROVED::${expected.version} must have exactly the target migration name and single-statement SQL MD5 ${expected.sql_md5}. Apply and verify the protected migration before this target enters Hetzner.`
+      );
+    }
+  }
+  if (!prerequisitesProved) return 1;
+  if (requirements.length)
+    console.log('OK - both exact continuation migration histories are installed.');
   if (missing.length === 0) {
-    console.log(`OK - all ${names.length} database functions this build calls exist in production.`);
+    console.log(
+      `OK - all ${names.length} database functions this build calls exist in production.`
+    );
     return 0;
   }
   const level = rollback ? 'warning' : 'error';
@@ -199,7 +279,9 @@ async function main() {
     );
   }
   if (rollback) {
-    console.log('Rollback: reported, not blocked. A rollback restores a build production already ran.');
+    console.log(
+      'Rollback: reported, not blocked. A rollback restores a build production already ran.'
+    );
     return 0;
   }
   console.log(
@@ -212,6 +294,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().then(
     (code) => process.exit(code),
     (err) => {
+      if (continuationTarget) {
+        console.log(`::error title=CONTINUATION PREREQUISITES UNCHECKED::${err?.message || err}`);
+        process.exit(1);
+      }
       console.log(`::warning title=DATABASE DOORS UNCHECKED::${err?.message || err}`);
       process.exit(0);
     }

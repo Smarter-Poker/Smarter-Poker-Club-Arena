@@ -92,7 +92,13 @@ describe('LAW - the merged-branch guard is wired into the push path', () => {
     expect(guard).not.toMatch(/remote\.origin\.url/);
   });
 
-  function runDestinationGuard(owner: string, identity: unknown, prs: unknown) {
+  function runDestinationGuard(
+    owner: string,
+    identity: unknown,
+    prs: unknown,
+    repository = 'Smarter-Poker-Club-Arena',
+    hostname = 'github.com'
+  ) {
     const dir = mkdtempSync(join(tmpdir(), 'merged-transfer-'));
     try {
       const trace = join(dir, 'trace');
@@ -113,7 +119,7 @@ esac
           resolve(root, GUARD_PATH),
           'fix/timing',
           'origin',
-          `git@github.com:${owner}/Smarter-Poker-Club-Arena.git`,
+          `git@${hostname}:${owner}/${repository}.git`,
         ],
         {
           cwd: root,
@@ -183,6 +189,34 @@ esac
       expect(result.output).toContain(refusal);
     }
   );
+
+  it('keeps legacy destinations and refuses unapproved repositories or lookalike hosts', () => {
+    const old = runDestinationGuard(
+      'Smarter-Poker',
+      { full_name: 'Smarter-Poker/Smarter-Poker-World-Hub', owner: { login: 'Smarter-Poker' } },
+      [],
+      'Smarter-Poker-World-Hub'
+    );
+    expect(old.status).toBe(0);
+    expect(old.trace).toContain('head=Smarter-Poker:fix/timing');
+    expect(
+      runDestinationGuard(
+        'Smarter-Software-PIQ',
+        { full_name: 'Smarter-Software-PIQ/Other', owner: { login: 'Smarter-Software-PIQ' } },
+        [],
+        'Other'
+      ).status
+    ).toBe(1);
+    const lookalike = runDestinationGuard(
+      'Smarter-Software-PIQ',
+      transferredIdentity,
+      [],
+      'Smarter-Poker-Club-Arena',
+      'githubXcom'
+    );
+    expect(lookalike.status).toBe(1);
+    expect(lookalike.trace).toBe('');
+  });
 
   it('an auth failure is loud and blocks the orphaning push', () => {
     const guard = read(GUARD_PATH);

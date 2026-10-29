@@ -1059,7 +1059,7 @@ print(",".join(signs))
 # certificate, rollback reserve and thaw.
 # Prints "owner-ordered <id>" or nothing; never fails the caller.
 owner_window_reason() {
-  local windows now picked id contains serving
+  local windows now picked id contains serving witness_path witness_sha target_witness served_witness
   windows="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" show "$SHA:server/release/owner-maintenance-windows.json" 2>/dev/null)" || return 0
   now="$(date +%s)"
@@ -1071,7 +1071,11 @@ now = datetime.fromtimestamp(int(sys.argv[1]), timezone.utc)
 local = now.astimezone(ZoneInfo("America/Chicago"))
 doc = json.load(sys.stdin)
 if not isinstance(doc, dict) or doc.get("version") != 1: raise SystemExit(0)
-for w in doc.get("windows") or []:
+entries = [w for w in doc.get("windows") or [] if isinstance(w, dict)]
+# Prefer specific feature orders, preserving order within each class. Known
+# consumed witnesses may fall back to the original first legacy window.
+entries = [w for w in entries if "releaseWitness" in w] + [w for w in entries if "releaseWitness" not in w]
+for w in entries:
     try:
         wid, contains, order = str(w["id"]), str(w["contains"]), str(w["ownerOrder"])
         nb = datetime.fromisoformat(str(w["notBefore"]).replace("Z", "+00:00"))
@@ -1084,12 +1088,19 @@ for w in doc.get("windows") or []:
     if nb.tzinfo is None or na.tzinfo is None: continue
     if not (0 < (na - nb).total_seconds() <= 6 * 3600) or not (nb <= now <= na): continue
     if minutes is not None and (not isinstance(minutes, list) or local.minute not in minutes): continue
-    print(wid, contains)
-    break
+    witness = w.get("releaseWitness")
+    path, digest = "-", "-"
+    if "releaseWitness" in w:
+        valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
+        if valid: path, digest = witness["path"], witness["sha256"]
+        if not (valid and isinstance(path, str) and re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path)
+                and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+            print("invalid - - -")
+            break
+    print(wid, contains, path, digest)
 ' "$now" 2>/dev/null)" || return 0
   [ -n "$picked" ] || return 0
-  id="${picked%% *}"
-  contains="${picked#* }"
+  while read -r id contains witness_path witness_sha; do
   timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$SHA" 2>/dev/null || return 0
   # ONCE (2026-10-23): the order is "make this commit live". When the serving
@@ -1102,11 +1113,25 @@ v = json.load(sys.stdin).get("releaseSha")
 print(v if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) else "")
 ' 2>/dev/null)" || return 0
   [ -n "$serving" ] || return 0
-  if timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+  if [ "$witness_path" != '-' ]; then
+    # An immutable feature witness cannot be consumed by an unrelated release
+    # of the shared base. Full serving history prevents replay after deletion.
+    [ "$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = false ] || return 0
+    target_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" show "$SHA:$witness_path" 2>/dev/null \
+      | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')" || return 0
+    [ "$target_witness" = "$witness_sha" ] || return 0
+    served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+      git -C "$REPO_DIR" rev-list -1 "$serving" -- "$witness_path" 2>/dev/null)" || return 0
+    [ -z "$served_witness" ] || continue
+  elif timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$serving" 2>/dev/null; then
     return 0
   fi
   echo "owner-ordered $id"
+  return 0
+  done <<< "$picked"
 }
 
 # The seal and the serving engine already know one explicit owner cause,

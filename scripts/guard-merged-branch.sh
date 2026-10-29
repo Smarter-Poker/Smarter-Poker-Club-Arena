@@ -18,7 +18,7 @@ if ! git check-ref-format "refs/heads/$BRANCH" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$REMOTE_URL" =~ ^(git@github.com:|https://github.com/|ssh://git@github.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
+if [[ "$REMOTE_URL" =~ ^(git@github\.com:|https://github\.com/|ssh://git@github\.com/)(Smarter-Poker|Smarter-Software-PIQ)/([A-Za-z0-9._-]+)(/)?$ ]]; then
   OWNER="${BASH_REMATCH[2]}"
   REPO="${BASH_REMATCH[3]}"
   REPO="${REPO%.git}"

@@ -487,7 +487,14 @@ describe('a pause a tournament manager armed is a pause it gives back', () => {
   it('drops the untilResumed claim on the deferral path, not only on the way to the gate', () => {
     const resumeDealing = sliceMethod(ENGINE_SRC, 'resumeDealing(): void {');
     const surrender = resumeDealing.indexOf('this.pauseRequiresExplicitResume = false');
-    const deferral = resumeDealing.indexOf('this.terminalCloseoutPaused');
+    const deferral = resumeDealing.indexOf('this.isHandForHandReleaseBlocked()');
+    const independent = sliceMethod(ENGINE_SRC, 'isHandForHandReleaseBlocked(): boolean {');
+    expect(independent).toContain('this.terminalCloseoutPaused');
+    expect(independent).toContain('this.maintenancePaused');
+    expect(independent).toContain('this.weeklyPayoutPauseOwners.size > 0');
+    expect(independent).toContain('this.tournamentMovePauseOwners.size > 0');
+    expect(independent).toContain('this.finalTableDealPaused');
+    expect(independent).not.toContain('&&');
     const gate = resumeDealing.indexOf('this.releasePauseGate()');
     expect(surrender).toBeGreaterThan(-1);
     expect(deferral).toBeGreaterThan(surrender);

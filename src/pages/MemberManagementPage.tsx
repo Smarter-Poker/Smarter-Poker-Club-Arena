@@ -66,7 +66,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 import { toTitleCase } from '../utils/titleCase';
-import { countFigure as count, feeFigure, formatWalletChips, winLossChips } from '../utils/format';
+import { countFigure as count, formatWalletChips } from '../utils/format';
+import { playerRecordMoney } from '../utils/playerRecordMoney';
 import { memberRangeSearch } from '../utils/memberRangeLink';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
@@ -96,11 +97,8 @@ const MEMBER_CREDENTIAL_ART = `${import.meta.env.BASE_URL}images/club-members/me
    FORMATTING
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Figures use the shared Player Management formatters (utils/format), so a fee,
-   a wallet or a win / loss reads the same here as on the Players list and in
-   Player Statistics: fees feeFigure (Dan, 2026-10-14), signed winnings
-   winLossChips (Dan 2026-10-16), wallets formatWalletChips (Dan, 2026-10-18),
-   counts countFigure. */
+/* Player Record monetary stats retain full cents (owner, 2026-10-28).
+   Counts retain countFigure; wallet balances retain formatWalletChips. */
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'Never';
@@ -990,18 +988,18 @@ export default function MemberManagementPage() {
               labelled as the whole; mtt_hands was fetched and never drawn. */}
             <StatRow label="Cash Hands" value={count(stats.hands)} />
             <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
-            <StatRow label="Cash Fees" value={feeFigure(stats.total_fee)} />
-            <StatRow label="MTT Fees" value={feeFigure(stats.mtt_fee)} />
-            <StatRow label="Claimed Back" value={feeFigure(stats.claimed_back)} />
-            <StatRow label="Sent Out" value={feeFigure(stats.sent_out)} />
+            <StatRow label="Cash Fees" value={playerRecordMoney(stats.total_fee)} />
+            <StatRow label="MTT Fees" value={playerRecordMoney(stats.mtt_fee)} />
+            <StatRow label="Claimed Back" value={playerRecordMoney(stats.claimed_back)} />
+            <StatRow label="Sent Out" value={playerRecordMoney(stats.sent_out)} />
             <StatRow
               label="Total Winnings"
-              value={winLossChips(stats.total_winnings)}
+              value={playerRecordMoney(stats.total_winnings, true)}
               signed={stats.total_winnings}
             />
             <StatRow
               label="MTT Winnings"
-              value={winLossChips(stats.mtt_winnings)}
+              value={playerRecordMoney(stats.mtt_winnings, true)}
               signed={stats.mtt_winnings}
             />
           </section>
@@ -1064,7 +1062,7 @@ export default function MemberManagementPage() {
                       <span className="mm-downline__number">No. {d.player_number}</span>
                     )}
                     <span className="mm-downline__fees" title="Fees Generated">
-                      {feeFigure(d.total_fees)}
+                      {playerRecordMoney(d.total_fees)}
                     </span>
                     <span className="mm-downline__open" aria-hidden="true">
                       ›

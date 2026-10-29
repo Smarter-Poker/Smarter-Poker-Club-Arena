@@ -526,7 +526,7 @@ it('updates every record section on a source event while preserving an unsaved n
   expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
   expect(screen.getByText('Last Active')).toBeInTheDocument();
   expect(screen.getByText('321')).toBeInTheDocument();
-  expect(screen.getByText('-44')).toBeInTheDocument();
+  expect(screen.getByText('-44.00')).toBeInTheDocument();
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 

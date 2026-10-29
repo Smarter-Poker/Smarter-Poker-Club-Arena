@@ -83,6 +83,8 @@ test('immutable safe configuration focuses consumers but financial and unknown i
     git('config', 'user.name', 'Selection Test');
     git('config', 'user.email', 'selection@example.invalid');
     const p = 'src/config/cashGames.ts';
+    const other = 'src/config/runtime.ts';
+    write(root, other, 'export const amount = 10;\n');
     write(root, p, 'export type Interval = 9 | 15;\nexport const enabled = true;\n');
     git('add', '.');
     git('commit', '-qm', 'base');
@@ -94,6 +96,16 @@ test('immutable safe configuration focuses consumers but financial and unknown i
     const proof = selectionInputs(root, base, head);
     assert.equal(proof.focused, true);
     assert.deepEqual(proof.changed, [p]);
+    write(root, other, 'export const amount = 20;\n');
+    assert.equal(selectionInputs(root, base, head).focused, false);
+    git('add', other);
+    assert.equal(selectionInputs(root, base, head).focused, false);
+    write(root, other, 'export const amount = 10;\n');
+    git('add', other);
+    assert.equal(selectionInputs(root, base, head).focused, true);
+    write(root, 'src/config/untracked.ts', 'export const amount = 20;\n');
+    assert.equal(selectionInputs(root, base, head).focused, false);
+    rmSync(join(root, 'src/config/untracked.ts'));
     const output = join(root, 'compiler-scope');
     runSelection(root, ['scope'], {
       ...process.env,

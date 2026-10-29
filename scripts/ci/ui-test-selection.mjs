@@ -187,6 +187,11 @@ export function selectionInputs(root, base, head) {
       if (parents.length !== 2 || !parents.includes(base) || !parents.includes(head))
         throw Error('Wrong checkout');
     }
+    // Tests consume the whole checkout, including tracked files absent from
+    // this PR's diff. An unrelated dirty file invalidates the positive proof.
+    git('diff', '--quiet', 'HEAD', '--');
+    if (git('ls-files', '--others', '--exclude-standard', '--', 'src', 'server', 'supabase').trim())
+      throw Error('Untracked runtime input');
     const ancestor = git('merge-base', '--all', base, head).trim();
     if (!/^[0-9a-f]{40}$/.test(ancestor)) throw Error('Ambiguous ancestry');
     const names = git('diff', '--name-status', '--no-renames', '-z', ancestor, head).split('\0');

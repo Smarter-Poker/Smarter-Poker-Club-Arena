@@ -10,38 +10,34 @@ vi.hoisted(() => {
 });
 
 afterAll(() => vi.unstubAllEnvs());
-import * as recordsApi from '../../server/src/services/horseDecisionJournal/record';
-import * as bindingApi from '../../server/src/engine/HorseDecisionHandBinding';
-import * as reviewApi from '../../server/src/services/horseDecisionJournal/review';
-import * as effectsApi from '../../server/src/services/horseDecisionJournal/effects';
-import * as planApi from '../../server/src/engine/HorseDecisionEffects';
-import { headsUpCashCommitment } from '../../server/src/engine/HorseHeadsUpCommitment';
-import { HorseFleetPhaseInterpreter } from '../../server/src/services/horseDecisionJournal/phaseProof';
-import { decisionRequest } from '../../server/src/testing/horseRegression/plan/fixture';
-import { jointPolicyFixture } from '../../server/src/engine/multiway/JointRangeFixture.test-support';
-import { HorseLogic } from '../../server/src/engine/HorseLogic';
-import { HorseMind } from '../../server/src/engine/HorseMind';
-import {
-  seedFastRandom,
-  saveFastRandom,
-  restoreFastRandom,
-} from '../../server/src/engine/HorseEval';
-import { encodeHorseDecisionReads } from '../../server/src/engine/HorseDecisionReadFrame';
+import * as recordsApi from './record.js';
+import * as bindingApi from '../../engine/HorseDecisionHandBinding.js';
+import * as reviewApi from './review.js';
+import * as effectsApi from './effects.js';
+import * as planApi from '../../engine/HorseDecisionEffects.js';
+import { headsUpCashCommitment } from '../../engine/HorseHeadsUpCommitment.js';
+import { HorseFleetPhaseInterpreter } from './phaseProof.js';
+import { decisionRequest } from '../../testing/horseRegression/plan/fixture.js';
+import { jointPolicyFixture } from '../../engine/multiway/JointRangeFixture.test-support.js';
+import { HorseLogic } from '../../engine/HorseLogic.js';
+import { HorseMind } from '../../engine/HorseMind.js';
+import { seedFastRandom, saveFastRandom, restoreFastRandom } from '../../engine/HorseEval.js';
+import { encodeHorseDecisionReads } from '../../engine/HorseDecisionReadFrame.js';
 import {
   horsePlanContextFromDecision,
   horsePlanBatchBindingFromRequest,
-} from '../../server/src/engine/HorsePlanHandIdentity';
+} from '../../engine/HorsePlanHandIdentity.js';
 import {
   createHorseExecutionWitness,
   settleHorseExecutionWitness,
   expectedHorseExecutionAmount,
-} from '../../server/src/engine/HorseExecutionWitness';
-import { buildHorseDecisionKey } from '../../server/src/engine/horseDecision/protocol';
+} from '../../engine/HorseExecutionWitness.js';
+import { buildHorseDecisionKey } from '../../engine/horseDecision/protocol.js';
 // Fixed control helper is JavaScript because the host executes these exact bytes.
 // @ts-expect-error This maintained .mjs has no generated declaration.
-import { inspectDecision8464Records } from '../../scripts/ci/horse-tournament-predicate-proof.mjs';
+import { inspectDecision8464Records } from '../../../../scripts/ci/horse-tournament-predicate-proof.mjs';
 
-const script = resolve(__dirname, '../../scripts/ci/inspect-tournament-refill.py');
+const script = resolve(__dirname, '../../../../scripts/ci/inspect-tournament-refill.py');
 const api = {
   ...recordsApi,
   ...bindingApi,
@@ -135,16 +131,15 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
     ...a,
     origin: 'player' as const,
   }));
-  snapshot.opts = {
-    telemetry: false,
+  const opts: NonNullable<typeof snapshot.opts> = {
     mind: false,
     v7AdaptiveMC: false,
     v27GtoCharts: false,
     phase8Postflop: 'off',
     phase13Joint: 'off',
-    decisionTimeMs: 1000,
   };
-  if (probe === 'phase7_allocated') delete snapshot.opts.v7AdaptiveMC;
+  if (probe === 'phase7_allocated') delete opts.v7AdaptiveMC;
+  snapshot.opts = opts;
   snapshot.handJournalContext = bindingApi.captureHorseHandJournalContext(
     snapshot.gameState.actionHistory!
   );
@@ -158,7 +153,7 @@ function fixture(probe: 'matched_risk' | 'phase7_allocated' = 'matched_risk') {
       snapshot.gameState,
       'balanced',
       {},
-      snapshot.opts
+      { ...opts, telemetry: false, decisionTimeMs: snapshot.decisionTimeMs }
     );
   } finally {
     restoreFastRandom(before);
@@ -494,7 +489,7 @@ it('checks generated child syntax and observes no agreement for a replaced final
       '-c',
       "import runpy,sys; m=runpy.run_path(sys.argv[1]); print(open(sys.argv[2]).read()+'\\n'+m['DECISION_8464_ADAPTER'])",
       script,
-      resolve(__dirname, '../../scripts/ci/horse-tournament-predicate-proof.mjs'),
+      resolve(__dirname, '../../../../scripts/ci/horse-tournament-predicate-proof.mjs'),
     ],
     { encoding: 'utf8', timeout: 5000 }
   );

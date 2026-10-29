@@ -11,28 +11,23 @@
  * and the club the tournament belongs to, it returns the set of user ids that
  * sit BENEATH that person, plus whether they carry a downline at all.
  *
- * ── THE ROLE GATE, AND WHY IT IS THE FIRST QUERY ─────────────────────────────
- *
- * A plain player must never see downline UI and must never pay for the query
- * that builds it. Most viewers of a tournament lobby ARE plain players, so the
- * hook reads one row first — the viewer's own `club_members` row — and stops
- * dead unless `normaliseRole()` (src/types/clubRoles.ts, the authoritative
- * model) says they are one of:
- *
- *     owner | co_owner | admin | super_agent | agent | sub_agent
- *
- * Everyone else costs one indexed single-row read and gets an empty set.
- *
- * The roster owns the hierarchy: ca_club_member_downline follows every
- * club_members.agent_id edge under ca_club_roster_access. The separate agents
- * parent graph can disagree with that live assignment tree, so do not rebuild
- * it here. Read only user ids, page past the API row cap, and never publish a
- * partial set after an error. Ranking and Entries share this same result.
+ * A union tournament's club_id may be only its anchor club. Resolve the
+ * existing fn_club_scope_ids union/club scope, read the viewer's own roles in
+ * those clubs, then use authorized roster readers for eligible memberships.
+ * Staff oversee their club; agents carry their recursive membership subtree.
+ * Plain players never fetch a roster. Request only user IDs, exhaust ordered
+ * pages, deduplicate members across clubs, and never publish a partial set.
  */
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { normaliseRole, isAgentRole, isClubStaff, type ClubRole } from '../../../types/clubRoles';
+import {
+  normaliseRole,
+  isAgentRole,
+  isClubStaff,
+  ROLE_RANK,
+  type ClubRole,
+} from '../../../types/clubRoles';
 import { reportError } from '../../../utils/errorReporter';
 
 export interface DownlineResult {
@@ -53,7 +48,8 @@ const PAGE_SIZE = 500;
 
 export function useDownlineIds(
   userId: string | undefined | null,
-  clubId: string | undefined | null
+  clubId: string | undefined | null,
+  unionId?: string | null
 ): DownlineResult {
   const [downlineIds, setDownlineIds] = useState<Set<string>>(EMPTY_IDS);
   const [carriesDownline, setCarriesDownline] = useState(false);
@@ -79,64 +75,79 @@ export function useDownlineIds(
 
     (async () => {
       try {
-        // ── 1. THE ROLE GATE ────────────────────────────────────────────────
-        const { data: membership, error: memberError } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', clubId)
-          .eq('user_id', userId)
-          .maybeSingle();
-
+        // Union events have an anchor club plus linked clubs. Resolve that
+        // maintained scope, then use only memberships belonging to this viewer.
+        const { data: scope, error: scopeError } = await supabase.rpc('fn_club_scope_ids', {
+          p_club_id: unionId || clubId,
+        });
         if (cancelled) return;
-
-        if (memberError) {
-          // Not a member, or the read was refused. Either way we cannot claim
-          // a downline, and a tournament lobby is not the place to say so.
-          reportError(memberError, 'useDownlineIds.membership');
-          setDownlineIds(EMPTY_IDS);
-          setCarriesDownline(false);
-          setViewerRole('player');
-          return;
+        if (scopeError) throw scopeError;
+        if (
+          !Array.isArray(scope) ||
+          !scope.length ||
+          scope.some((id) => typeof id !== 'string' || !id)
+        ) {
+          throw new Error('The Tournament Club Scope Was Incomplete');
         }
-
-        const role = normaliseRole(membership?.role);
-        if (cancelled) return;
-        setViewerRole(role);
-
-        const eligible = isAgentRole(role) || isClubStaff(role);
-        if (!eligible) {
-          // A plain player. One row read, and we stop. No agent query, no
-          // member scan, no legend, no highlight.
-          setDownlineIds(EMPTY_IDS);
-          setCarriesDownline(false);
-          return;
-        }
-
-        const collected = new Set<string>();
-        const seen = new Set<string>();
-        for (let offset = 0; ; offset += PAGE_SIZE) {
+        const scopeIds = [...new Set<string>(scope)];
+        const memberships = new Map<string, ClubRole>();
+        for (let offset = 0; offset < scopeIds.length; offset += 60) {
           const { data, error } = await supabase
-            .rpc('ca_club_member_downline', { p_club_id: clubId, p_user_id: userId })
-            .select('user_id')
-            .order('user_id', { ascending: true })
-            .range(offset, offset + PAGE_SIZE - 1);
-
+            .from('club_members')
+            .select('club_id, role')
+            .eq('user_id', userId)
+            .in('club_id', scopeIds.slice(offset, offset + 60));
           if (cancelled) return;
           if (error) throw error;
-          if (!Array.isArray(data)) throw new Error('The Downline Response Was Incomplete');
-          for (const row of data) {
-            if (typeof row.user_id !== 'string' || !row.user_id || seen.has(row.user_id)) {
-              throw new Error('The Downline Response Was Incomplete');
-            }
-            seen.add(row.user_id);
-            if (row.user_id !== userId) collected.add(row.user_id);
+          if (!Array.isArray(data)) throw new Error('The Membership Response Was Incomplete');
+          for (const member of data) {
+            if (!scopeIds.includes(member.club_id))
+              throw new Error('The Membership Scope Was Invalid');
+            const role = normaliseRole(member.role);
+            const prior = memberships.get(member.club_id) || 'player';
+            if (ROLE_RANK[role] >= ROLE_RANK[prior]) memberships.set(member.club_id, role);
           }
-          if (data.length < PAGE_SIZE) break;
+        }
+        const role = [...memberships.values()].reduce<ClubRole>(
+          (best, next) => (ROLE_RANK[next] > ROLE_RANK[best] ? next : best),
+          'player'
+        );
+        setViewerRole(role);
+        const eligible = [...memberships].filter(
+          ([, memberRole]) => isAgentRole(memberRole) || isClubStaff(memberRole)
+        );
+        const collected = new Set<string>();
+        for (const [memberClubId, memberRole] of eligible) {
+          // Staff oversee their club; agents see only their recursive subtree.
+          const staff = isClubStaff(memberRole);
+          const reader = staff ? 'ca_club_members_overview' : 'ca_club_member_downline';
+          const parameters: { p_club_id: string; p_user_id?: string } = staff
+            ? { p_club_id: memberClubId }
+            : { p_club_id: memberClubId, p_user_id: userId };
+          const seen = new Set<string>();
+          for (let offset = 0; ; offset += PAGE_SIZE) {
+            const { data, error } = await supabase
+              .rpc(reader, parameters)
+              .select('user_id')
+              .order('user_id', { ascending: true })
+              .range(offset, offset + PAGE_SIZE - 1);
+            if (cancelled) return;
+            if (error) throw error;
+            if (!Array.isArray(data)) throw new Error('The Downline Response Was Incomplete');
+            for (const row of data) {
+              if (typeof row.user_id !== 'string' || !row.user_id || seen.has(row.user_id)) {
+                throw new Error('The Downline Response Was Incomplete');
+              }
+              seen.add(row.user_id);
+              if (row.user_id !== userId) collected.add(row.user_id);
+            }
+            if (data.length < PAGE_SIZE) break;
+          }
         }
 
         if (cancelled) return;
         setDownlineIds(collected);
-        setCarriesDownline(true);
+        setCarriesDownline(eligible.length > 0);
       } catch (err) {
         if (cancelled) return;
         reportError(err, 'useDownlineIds.resolve');
@@ -152,7 +163,7 @@ export function useDownlineIds(
     return () => {
       cancelled = true;
     };
-  }, [userId, clubId]);
+  }, [userId, clubId, unionId]);
 
   return { downlineIds, carriesDownline, viewerRole, loading };
 }

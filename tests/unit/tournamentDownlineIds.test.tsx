@@ -10,7 +10,11 @@ function membership(role = 'super_agent') {
   const query = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: { role }, error: null }),
+    in: vi
+      .fn()
+      .mockImplementation((_column, clubs) =>
+        Promise.resolve({ data: clubs.map((club_id: string) => ({ club_id, role })), error: null })
+      ),
   };
   api.from.mockReturnValue(query);
 }
@@ -18,11 +22,15 @@ function membership(role = 'super_agent') {
 beforeEach(() => {
   vi.resetAllMocks();
   membership();
-  api.rpc.mockImplementation(() => ({
-    select: vi.fn().mockReturnThis(),
-    order: vi.fn().mockReturnThis(),
-    range: api.page,
-  }));
+  api.rpc.mockImplementation((name, parameters) =>
+    name === 'fn_club_scope_ids'
+      ? Promise.resolve({ data: [parameters.p_club_id], error: null })
+      : {
+          select: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          range: api.page,
+        }
+  );
   api.page.mockResolvedValue({ data: [], error: null });
 });
 afterEach(cleanup);
@@ -42,10 +50,68 @@ describe('tournament Mine Only uses the authorized complete roster downline', ()
       p_user_id: 'viewer',
     });
     expect(api.from.mock.calls).toEqual([['club_members']]);
-    expect(api.rpc.mock.results[0].value.select).toHaveBeenCalledWith('user_id');
-    expect(api.rpc.mock.results[0].value.order).toHaveBeenCalledWith('user_id', {
+    expect(api.rpc.mock.results[1].value.select).toHaveBeenCalledWith('user_id');
+    expect(api.rpc.mock.results[1].value.order).toHaveBeenCalledWith('user_id', {
       ascending: true,
     });
+  });
+
+  it.each(['owner', 'co_owner', 'admin'])(
+    'includes the whole authorized club for %s, beyond directly assigned players',
+    async (role) => {
+      membership(role);
+      api.page.mockResolvedValue({
+        data: ['direct-player', 'other-agent', 'other-agent-player', 'viewer'].map((user_id) => ({
+          user_id,
+        })),
+        error: null,
+      });
+      const { result } = renderHook(() => useDownlineIds('viewer', 'club'));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect([...result.current.downlineIds]).toEqual([
+        'direct-player',
+        'other-agent',
+        'other-agent-player',
+      ]);
+      expect(api.rpc).toHaveBeenCalledWith('ca_club_members_overview', { p_club_id: 'club' });
+    }
+  );
+
+  it('resolves linked union clubs, applies each club role, and deduplicates shared members', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockResolvedValue({
+        data: [
+          { club_id: 'anchor', role: 'owner' },
+          { club_id: 'nested', role: 'agent' },
+          { club_id: 'unrelated', role: 'player' },
+        ],
+        error: null,
+      }),
+    };
+    api.from.mockReturnValue(query);
+    api.rpc.mockImplementation((name, parameters) => {
+      if (name === 'fn_club_scope_ids')
+        return Promise.resolve({ data: ['anchor', 'nested', 'unrelated'], error: null });
+      const page =
+        parameters.p_club_id === 'anchor' ? ['direct', 'shared'] : ['nested-player', 'shared'];
+      return {
+        select: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        range: vi
+          .fn()
+          .mockResolvedValue({ data: page.map((user_id) => ({ user_id })), error: null }),
+      };
+    });
+    const { result } = renderHook(() => useDownlineIds('viewer', 'anchor', 'union'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect([...result.current.downlineIds]).toEqual(['direct', 'shared', 'nested-player']);
+    expect(api.rpc.mock.calls).toEqual([
+      ['fn_club_scope_ids', { p_club_id: 'union' }],
+      ['ca_club_members_overview', { p_club_id: 'anchor' }],
+      ['ca_club_member_downline', { p_club_id: 'nested', p_user_id: 'viewer' }],
+    ]);
   });
 
   it('exhausts pages instead of dropping players beyond the API row cap', async () => {
@@ -69,7 +135,7 @@ describe('tournament Mine Only uses the authorized complete roster downline', ()
     const { result } = renderHook(() => useDownlineIds('viewer', 'club'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.carriesDownline).toBe(false);
-    expect(api.rpc).not.toHaveBeenCalled();
+    expect(api.rpc.mock.calls.map(([name]) => name)).toEqual(['fn_club_scope_ids']);
   });
 
   it('does not publish a partial downline when a later page fails', async () => {

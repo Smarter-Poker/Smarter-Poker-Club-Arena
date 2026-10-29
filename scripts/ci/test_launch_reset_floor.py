@@ -227,3 +227,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original Boolean index statistics are collected by the guarded owning migration.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-shaped-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-shaped-cash-statistics.json'))], text=True))
+
+# Original linked cash uses a lossless long-text partial proof selector.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-linked-cash-spgist-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-linked-cash-spgist.json'))], text=True))

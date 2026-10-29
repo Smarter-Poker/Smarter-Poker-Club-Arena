@@ -77,4 +77,23 @@ describe('durable original continuation qualification remains connected', () => 
       "Path('supabase/migrations/20261029093051_attest_frozen_original_hand_continuation_custody.sql')"
     );
   });
+  it('qualifies exact authorized chairs through the existing real funding owner', () => {
+    const runner = read('scripts/ci/test-hand-continuation.py');
+    const funding = read(
+      'scripts/ci/fixtures/hand-continuation/chip_funded_addon_qualification.py'
+    );
+    const chairs = read('scripts/ci/fixtures/hand-continuation/chair_admission_qualification.py');
+    expect(runner).toContain(
+      "Path('supabase/migrations/20261029170914_original_claim_attests_exact_authorized_chairs.sql')"
+    );
+    expect(funding).toContain(
+      "module(root/'scripts/ci/fixtures/hand-continuation/chair_admission_qualification.py','chair_admission').qualify("
+    );
+    expect(chairs).toContain('chair-old-response-regression');
+    expect(chairs).toContain('chair-reverse-exact-owner');
+    expect(chairs).toContain('chair-identity');
+    expect(chairs).toContain('stale-generation');
+    expect(chairs).toContain('duplicate-roster');
+    expect(chairs).toContain('terminal+final');
+  });
 });

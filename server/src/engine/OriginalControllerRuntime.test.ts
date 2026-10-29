@@ -29,6 +29,8 @@ import type { GameServer } from '../GameServer.js';
 import { handleAction } from '../handlers/action.js';
 import { __resetRateLimiterForTests } from '../http/rateLimit.js';
 import { playerActionContext } from './PlayerActionContext.js';
+import { encodePrivateHandContinuation } from './PrivateHandContinuation.js';
+import { claimHandContinuation } from '../services/supabase/handContinuation.js';
 import * as freezeState from '../maintenance/freezeState.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 const config: HandConfig = {
@@ -1158,4 +1160,280 @@ it('replays the captured terminal bank after an applied debit loses its answer w
   });
   expect(successor.e.unresolvedTimeBankDebits.size).toBe(0);
   expect(successor.e.killForRestart).not.toHaveBeenCalled();
+});
+
+it('resumes a receipt-admitted funded chair with the original deck and delta baseline', async () => {
+  const { e, emitted, roster } = fixture();
+  const saved = e.handController.serializeRecoveryState();
+  const expected = HandController.fromRecoveryState(saved, config.tableId, 42);
+  expected.start();
+  const encoded = encodePrivateHandContinuation({
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: p.stack,
+    })),
+    batch: { version: 1, sequence: 0, controller: saved, events: [], engine: { fields: {} } },
+  });
+  const writer = 'bbbbbbbb-0000-4000-8000-0000000000a2';
+  roster[0].stack += 10_000;
+  const claimed = await claimHandContinuation(
+    binding.tournament_id,
+    writer,
+    config.tableId,
+    () => true,
+    async () => ({
+      error: null,
+      data: {
+        ok: true,
+        table_id: config.tableId,
+        writer_generation: writer,
+        continuation: {
+          payload: encoded.payload,
+          sha256: encoded.sha256,
+          hand_number: binding.hand_number,
+          sequence: '0',
+        },
+        chair_admission: {
+          version: 1,
+          tournament_id: binding.tournament_id,
+          table_id: config.tableId,
+          writer_generation: writer,
+          original_generation: binding.lease_generation,
+          hand_number: binding.hand_number,
+          sequence: '0',
+          payload_sha256: encoded.sha256,
+          seats: roster.map((p) => ({
+            user_id: p.user_id,
+            seat_id: p.seat_id,
+            seat_joined_at: p.seat_joined_at,
+            stack_before: 1000,
+            authorized_stack: p.stack,
+          })),
+        },
+      },
+    })
+  );
+  expect(encodePrivateHandContinuation(claimed!)).toEqual(encoded);
+  e.pendingOriginalContinuation = claimed;
+  const retained: any[] = [];
+  e.retainOriginalBatch = async (_o: unknown, seats: unknown, batch: any) => {
+    retained.push({ seats: structuredClone(seats), batch: structuredClone(batch) });
+  };
+  let recoveryFailure: unknown;
+  const resumed = e.resumeOriginalController();
+  void resumed.catch((error: unknown) => {
+    recoveryFailure = error;
+  });
+  await vi.waitFor(() => {
+    if (recoveryFailure) throw recoveryFailure;
+    expect(e.pendingOriginalContinuation).toBeNull();
+  });
+  await e.handContinuation.join();
+  expect(roster[0].stack).toBe(11_000);
+  expect(e.handController.getRemainingDeck()).toEqual(expected.getRemainingDeck());
+  expect(e.handController.getState().players.map((p: SeatPlayer) => p.cards)).toEqual(
+    expected.getState().players.map((p: SeatPlayer) => p.cards)
+  );
+  expect(e.atomicStackService.getStackWithVersion(config.tableId, 'u1').stack).toBe(1000);
+  expect(
+    e.handController.getState().players.map((p: SeatPlayer) => p.stack + p.totalInvested)
+  ).toEqual([1000, 1000]);
+  expect(retained.every((x) => x.seats.every((seat: any) => seat.stack_before === 1000))).toBe(
+    true
+  );
+  expect(
+    e.handController.performAction(e.handController.getState().currentPlayerSeat, 'fold')
+  ).toBe(true);
+  await resumed;
+  await e.handContinuation.join();
+  expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+  expect(encodePrivateHandContinuation(claimed!)).toEqual(encoded);
+  expect(e.killForRestart).not.toHaveBeenCalled();
+});
+
+it('does not authorize a larger chair from a copied or serialized admission', async () => {
+  const { e, roster } = fixture();
+  const original = {
+    version: 1,
+    original: binding,
+    seats: roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: p.stack,
+    })),
+    batch: {
+      version: 1,
+      sequence: 0,
+      controller: e.handController.serializeRecoveryState(),
+      events: [],
+      engine: { fields: {} },
+    },
+    chair_admission: { seats: [{ user_id: 'u1', authorized_stack: 11000 }] },
+  };
+  roster[0].stack += 10000;
+  e.pendingOriginalContinuation = original;
+  await expect(e.resumeOriginalController()).rejects.toThrow('Original Hand Chair Changed');
+  expect(e.handContinuation).toBeNull();
+  expect(roster[0].stack).toBe(11000);
+});
+
+async function delayedFundedChairFixture() {
+  const state = fixture();
+  const saved = state.e.handController.serializeRecoveryState();
+  const encoded = encodePrivateHandContinuation({
+    version: 1,
+    original: binding,
+    seats: state.roster.map((p) => ({
+      user_id: p.user_id,
+      seat_id: p.seat_id,
+      seat_joined_at: p.seat_joined_at,
+      stack_before: p.stack,
+    })),
+    batch: { version: 1, sequence: 0, controller: saved, events: [], engine: { fields: {} } },
+  });
+  const writer = 'bbbbbbbb-0000-4000-8000-0000000000a2';
+  const response = () => ({
+    ok: true,
+    table_id: config.tableId,
+    writer_generation: writer,
+    continuation: {
+      payload: encoded.payload,
+      sha256: encoded.sha256,
+      hand_number: binding.hand_number,
+      sequence: '0',
+    },
+    chair_admission: {
+      version: 1,
+      tournament_id: binding.tournament_id,
+      table_id: config.tableId,
+      writer_generation: writer,
+      original_generation: binding.lease_generation,
+      hand_number: binding.hand_number,
+      sequence: '0',
+      payload_sha256: encoded.sha256,
+      seats: state.roster.map((p) => ({
+        user_id: p.user_id,
+        seat_id: p.seat_id,
+        seat_joined_at: p.seat_joined_at,
+        stack_before: 1000,
+        authorized_stack: p.stack,
+      })),
+    },
+  });
+  const claimed = (await claimHandContinuation(
+    binding.tournament_id,
+    writer,
+    config.tableId,
+    () => true,
+    async () => ({ data: response(), error: null })
+  ))!;
+  state.e.pendingOriginalContinuation = claimed;
+  return { ...state, saved, encoded, claimed, writer, response };
+}
+
+it('reclaims a funded add-on arriving after initial claim before actuating the exact original', async () => {
+  const { e, roster, emitted, saved, encoded, claimed, writer, response } =
+    await delayedFundedChairFixture();
+  const before = e.handController;
+  const expected = HandController.fromRecoveryState(saved, config.tableId, 42);
+  expected.start();
+  // Initial SQL claim authorized 1000; the separate later purchase credits the chair.
+  roster[0].stack += 10_000;
+  let acknowledge!: (value: unknown) => void;
+  const answer = new Promise((resolve) => {
+    acknowledge = resolve;
+  });
+  timeBankRpc.mockImplementation(((name: string, input: Record<string, unknown>) => {
+    expect(name).toBe('fn_f06_claim_hand_continuation');
+    expect(input).toEqual({
+      p_tournament_id: binding.tournament_id,
+      p_lease_generation: writer,
+      p_table_id: config.tableId,
+    });
+    return { abortSignal: () => answer };
+  }) as any);
+  const retained: any[] = [];
+  e.retainOriginalBatch = async (_identity: unknown, seats: unknown, batch: unknown) => {
+    retained.push({ seats: structuredClone(seats), batch: structuredClone(batch) });
+  };
+  let failure: unknown;
+  const resumed = e.resumeOriginalController();
+  void resumed.catch((error: unknown) => {
+    failure = error;
+  });
+  try {
+    await vi.waitFor(() => expect(timeBankRpc).toHaveBeenCalledOnce());
+    expect(e.handController).toBe(before);
+    expect(before.serializeRecoveryState()).toBe(saved);
+    expect(e.handContinuation).toBeNull();
+    expect(emitted).toEqual([]);
+    expect(retained).toEqual([]);
+    expect(encodePrivateHandContinuation(claimed)).toEqual(encoded);
+    acknowledge({ data: response(), error: null });
+    await vi.waitFor(() => {
+      if (failure) throw failure;
+      expect(e.pendingOriginalContinuation).toBeNull();
+    });
+    await e.handContinuation.join();
+    expect(timeBankRpc).toHaveBeenCalledOnce();
+    expect(roster[0].stack).toBe(11000);
+    expect(e.handController.getRemainingDeck()).toEqual(expected.getRemainingDeck());
+    expect(e.handController.getState().players.map((p: SeatPlayer) => p.cards)).toEqual(
+      expected.getState().players.map((p: SeatPlayer) => p.cards)
+    );
+    expect(e.atomicStackService.getStackWithVersion(config.tableId, 'u1').stack).toBe(1000);
+    expect(
+      e.handController.getState().players.map((p: SeatPlayer) => p.stack + p.totalInvested)
+    ).toEqual([1000, 1000]);
+    expect(retained.length).toBeGreaterThan(0);
+    expect(retained.every((x) => x.seats.every((seat: any) => seat.stack_before === 1000))).toBe(
+      true
+    );
+    expect(
+      e.handController.performAction(e.handController.getState().currentPlayerSeat, 'fold')
+    ).toBe(true);
+    await resumed;
+    await e.handContinuation.join();
+    expect(emitted.filter((x) => x.type === 'HAND_COMPLETE')).toHaveLength(1);
+    expect(encodePrivateHandContinuation(claimed)).toEqual(encoded);
+    expect(e.killForRestart).not.toHaveBeenCalled();
+  } finally {
+    acknowledge?.({ data: null, error: { message: 'fixture cleanup' } });
+    e.running = false;
+    e.activeHandWaitRelease?.release('test_cleanup');
+    e.releasePendingPauseWait();
+    await resumed.catch(() => undefined);
+  }
+});
+
+it('refuses an unfunded post-claim stack change before original controller mutation', async () => {
+  const { e, roster, emitted, saved, encoded, claimed } = await delayedFundedChairFixture();
+  const before = e.handController;
+  roster[0].stack += 10_000;
+  timeBankRpc.mockImplementation(((name: string) => {
+    expect(name).toBe('fn_f06_claim_hand_continuation');
+    return {
+      abortSignal: async () => ({
+        data: null,
+        error: { message: 'HAND_CONTINUATION_ROSTER_CHANGED' },
+      }),
+    };
+  }) as any);
+  const capture = vi.spyOn(e, 'captureContinuationEngine');
+  await expect(e.resumeOriginalController()).rejects.toThrow('Hand Continuation Claim Is Unproven');
+  expect(timeBankRpc).toHaveBeenCalledOnce();
+  expect(e.handController).toBe(before);
+  expect(before.serializeRecoveryState()).toBe(saved);
+  expect(e.pendingOriginalContinuation).toBe(claimed);
+  expect(e.handContinuation).toBeNull();
+  expect(capture).not.toHaveBeenCalled();
+  expect(emitted).toEqual([]);
+  expect(roster[0].stack).toBe(11000);
+  expect(encodePrivateHandContinuation(claimed)).toEqual(encoded);
+  expect(e.killForRestart).not.toHaveBeenCalled();
 });

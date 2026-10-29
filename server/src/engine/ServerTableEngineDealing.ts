@@ -17,6 +17,10 @@ import {
   type ContinuationEventIdentity,
 } from './HandContinuationLane.js';
 import { continuationEventId } from './PrivateHandContinuation.js';
+import {
+  claimedContinuationChair,
+  refreshClaimedContinuationChairs,
+} from '../services/supabase/handContinuation.js';
 import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
 import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import {
@@ -3670,6 +3674,31 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async resumeOriginalController(): Promise<void> {
     const original = this.pendingOriginalContinuation;
     if (!original) return;
+    // A legitimate add-on can commit after initial admission while a pause
+    // holds this original. Revalidate that exact tuple through its SQL owner;
+    // an arbitrary larger stack is never accepted from the live row alone.
+    if (
+      original.seats.some((seat) => {
+        const admitted = claimedContinuationChair(original, seat.user_id);
+        const chair = this.seatedPlayers.find((p) => p.user_id === seat.user_id);
+        return (
+          admitted &&
+          chair &&
+          chair.seat_id === seat.seat_id &&
+          chair.seat_joined_at === seat.seat_joined_at &&
+          Number(chair.stack) !== admitted.authorized_stack
+        );
+      })
+    ) {
+      await refreshClaimedContinuationChairs(
+        original,
+        () =>
+          this.pendingOriginalContinuation === original &&
+          this.running &&
+          this.isCurrentEngine() &&
+          this.lifecycleCanMutate()
+      );
+    }
     const fields = original.batch.engine.fields;
     if (!fields || typeof fields !== 'object' || Array.isArray(fields))
       throw new Error('Original Hand Engine Capture Is Unproven');
@@ -3741,14 +3770,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const baselines = statePlayers.map((p) => {
       const seat = original.seats.find((s) => s.user_id === p.user_id)!;
       const chair = players.find((s) => s.user_id === p.user_id)!;
+      const admission = claimedContinuationChair(original, p.user_id);
       if (
         !seat ||
         !chair ||
         chair.seat_id !== seat.seat_id ||
         chair.seat_joined_at !== seat.seat_joined_at ||
-        Number(chair.stack) !== seat.stack_before
+        Number(chair.stack) !== (admission?.authorized_stack ?? seat.stack_before)
       )
         throw new Error('Original Hand Chair Changed');
+      // A funded post-anchor add-on stays outside this original hand. Keep
+      // its old controller, prehand total and delta-settlement baseline intact.
       return { ...p, stack: seat.stack_before };
     });
     this.stateVerifier.recordInitialChipTotal(this.tableId, baselines);

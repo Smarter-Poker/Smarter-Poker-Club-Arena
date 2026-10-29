@@ -26,6 +26,7 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 import GameLobbyPanel from '../../src/components/lobby/GameLobbyPanel';
+import { tournamentService } from '../../src/services/TournamentService';
 import {
   cashEntry,
   tournamentEntry,
@@ -189,4 +190,26 @@ it('preserves tournament Details navigation while an unrelated action is busy', 
   mountDrawer(undefined, entry, undefined, true);
   fireEvent.click(screen.getByRole('button', { name: 'Details', exact: true }));
   expect(screen.getByTestId('route')).toHaveTextContent('/tournaments/event-a?club=club-a');
+});
+
+it('shows ticket prizes rather than the placeholder percentage ladder for a satellite', async () => {
+  vi.mocked(tournamentService.getTournament).mockResolvedValueOnce({
+    id: 'event-a',
+    name: 'Satellite',
+    variant: 'satellite',
+    tournament_type: 'MTT',
+    satellite_seats: 1,
+    payout_structure: JSON.stringify([
+      { place: 1, percentage: 40 },
+      { place: 2, percentage: 25 },
+    ]),
+    prize_pool: 100,
+    buy_in_amount: 4.5,
+    buy_in_fee: 0.5,
+  } as never);
+  mountDrawer();
+  fireEvent.click(screen.getByRole('tab', { name: 'Payouts' }));
+  expect(await screen.findByText('1 Ticket Guaranteed')).toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'Share' })).not.toBeInTheDocument();
+  expect(screen.queryByText('40%')).not.toBeInTheDocument();
 });

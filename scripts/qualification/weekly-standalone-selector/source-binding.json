@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 252744,
-      "sha256": "2284721a2fa4de0c60069fe78931d9ad722c8d8c95d75d4777ac8d6b495a7db1"
+      "bytes": 252759,
+      "sha256": "4a88087ec965e6c945aa66a3af2ee9843d498d4ac807f34fcd43e8c1f812c40a"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1103,8 +1103,8 @@
       "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
     },
     "currentCiPin": {
-      "bytes": 252744,
-      "sha256": "2284721a2fa4de0c60069fe78931d9ad722c8d8c95d75d4777ac8d6b495a7db1"
+      "bytes": 252759,
+      "sha256": "4a88087ec965e6c945aa66a3af2ee9843d498d4ac807f34fcd43e8c1f812c40a"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
   }

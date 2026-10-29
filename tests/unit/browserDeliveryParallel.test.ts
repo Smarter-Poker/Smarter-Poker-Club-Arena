@@ -12,6 +12,36 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
+  it('isolates the exact client delivery jobs without moving accounting or server qualification', () => {
+    const paid = (label: string) =>
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+      label +
+      "' || 'ubuntu-latest' }}";
+    const publishing = YAML.parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+    const transaction = YAML.parse(
+      readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
+    );
+    for (const key of [
+      'typecheck_compile',
+      'unit_shards',
+      'build',
+      'css-beats-e2e',
+      'diamond-playfield-e2e',
+    ])
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+    for (const key of ['accounting_postgres', 'server_shards'])
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
+    for (const key of ['client-tests', 'build-and-store'])
+      expect(publishing.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+    expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
+    for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
+      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+    expect(publishing.jobs.production.concurrency).toEqual({
+      group: 'publish-club-arena-production',
+      'cancel-in-progress': false,
+    });
+  });
+
   it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {
     expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5] } });
     expect(browser['timeout-minutes']).toBe(30);

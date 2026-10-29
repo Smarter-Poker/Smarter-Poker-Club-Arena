@@ -260,6 +260,7 @@ export function qualifyStatsJourneyPin({
     'scripts/ci/client-runtime-retention.mjs',
     'scripts/ci/client-runtime-inputs.mjs',
     'scripts/ci/client-runtime-font-inputs.mjs',
+    'scripts/ci/publisher-job-identity.mjs',
   ];
   for (const path of controlInputs) {
     const full = resolve(root, path);

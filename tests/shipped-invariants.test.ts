@@ -212,7 +212,10 @@ describe('shipped functionality is still here', () => {
      three are the ones that answer "did it ship", and each pins a setting whose
      removal is invisible until production has been stale for hours. */
   describe('the publish path cannot be quietly disarmed', () => {
-    const publisher = () => readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8');
+    const publisher = () =>
+      readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8') +
+      '\n' +
+      readFileSync(root('.github/workflows/publish-club-arena-transaction.yml'), 'utf8');
 
     it('the publisher does not cancel a run that is already publishing', () => {
       /* cancel-in-progress: true killed every build before its sync step. With

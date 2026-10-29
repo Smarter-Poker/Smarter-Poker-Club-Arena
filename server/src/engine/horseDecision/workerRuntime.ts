@@ -1,3 +1,4 @@
+import { HorsePlanReadCapture } from '../HorsePlanReadReceipt.js';
 import { HorseRangeConsumptionCapture } from '../HorseRangeConsumptionReceipt.js';
 import { horseHistoryReadProvenanceIsValid } from './ownPublicHistoryProvenance.js';
 import {
@@ -2554,9 +2555,12 @@ export class HorseDecisionWorkerRuntime {
 
   private executeFast(request: FastHorseDecisionRequest): HorseLifecycleOutcome {
     let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    let planReadCapture: HorsePlanReadCapture | undefined;
     try {
-      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true))
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true)) {
         rangeCapture = new HorseRangeConsumptionCapture(request);
+        planReadCapture = new HorsePlanReadCapture(request);
+      }
     } catch {
       /* diagnostic capture cannot change admission or selection */
     }
@@ -2668,7 +2672,8 @@ export class HorseDecisionWorkerRuntime {
               mindObservationHand: horseMindHandFromDecision(request),
               mindPlanContext: planContext,
             },
-            rangeCapture
+            rangeCapture,
+            planReadCapture
           )
         )
       );
@@ -2778,6 +2783,7 @@ export class HorseDecisionWorkerRuntime {
           observerReads: this.observerReads.receipt(request),
           readFrame,
           rangeConsumption: rangeCapture?.finish(readFrame?.sha256 ?? null),
+          planReads: planReadCapture?.finish(readFrame?.sha256 ?? null),
           planContext,
           planBinding,
           decision: captured.value,
@@ -2851,9 +2857,12 @@ export class HorseDecisionWorkerRuntime {
 
   private executeDeep(request: DeepHorseDecisionRequest): HorseLifecycleOutcome {
     let rangeCapture: HorseRangeConsumptionCapture | undefined;
+    let planReadCapture: HorsePlanReadCapture | undefined;
     try {
-      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true))
+      if (this.deps.journalDecision && (this.deps.journalEnabled?.() ?? true)) {
         rangeCapture = new HorseRangeConsumptionCapture(request);
+        planReadCapture = new HorsePlanReadCapture(request);
+      }
     } catch {
       /* diagnostic capture cannot change admission or selection */
     }
@@ -2967,7 +2976,8 @@ export class HorseDecisionWorkerRuntime {
                   observeMind: false,
                   mindPlanContext: planContext,
                 },
-                rangeCapture
+                rangeCapture,
+                planReadCapture
               )
             ).value
         )
@@ -3010,6 +3020,7 @@ export class HorseDecisionWorkerRuntime {
           snapshot: request,
           readFrame: retained.frame,
           rangeConsumption: rangeCapture?.finish(retained.frame.sha256),
+          planReads: planReadCapture?.finish(retained.frame.sha256),
           observerReads: retained.observerReads ?? null,
           planContext,
           decision,

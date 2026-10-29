@@ -141,8 +141,15 @@ test('protected publisher selects bootstrap explicitly and uses distinct credent
     new URL('../../.github/workflows/publish-club-arena.yml', import.meta.url),
     'utf8'
   );
-  const bootstrap = workflow.slice(workflow.indexOf('  bootstrap-record-gateway:'));
-  assert.match(bootstrap, /outputs.component == 'private-record-bootstrap'/);
+  const transaction = readFileSync(
+    new URL('../../.github/workflows/publish-club-arena-transaction.yml', import.meta.url),
+    'utf8'
+  );
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/publish-club-arena-transaction\.yml/);
+  assert.match(workflow, /component: \$\{\{ needs\.publish-needed\.outputs\.component \}\}/);
+  assert.ok(transaction.includes('  bootstrap-record-gateway:'));
+  const bootstrap = transaction.slice(transaction.indexOf('  bootstrap-record-gateway:'));
+  assert.match(bootstrap, /inputs.component == 'private-record-bootstrap'/);
   assert.match(bootstrap, /secrets.CA_RECORD_GATEWAY_SSH_KEY/);
   assert.match(bootstrap, /secrets.PRIVATE_RECORD_GATEWAY_DB_PASSWORD/);
   assert.ok(

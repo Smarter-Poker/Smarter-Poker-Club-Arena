@@ -102,7 +102,9 @@ describe('original publisher verdict receipt', () => {
   ])('executes the maintained %s %s producer shell with actual bound outputs', (job, verdict) => {
     const dir = mkdtempSync(join(tmpdir(), 'publisher-verdict-wiring-'));
     try {
-      const workflow = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+      const workflow = parse(
+        readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
+      );
       const writer = workflow.jobs[job].steps.find(
         (s: any) =>
           s.name ===
@@ -117,7 +119,7 @@ describe('original publisher verdict receipt', () => {
           ? ['retained_verified', 'retained_recorded']
           : ['verdict', 'immutable_publish', 'verified'];
       const bindings: Record<string, string> = {
-        'needs.publish-needed.outputs.target_sha': selected,
+        'inputs.target_sha': selected,
         'steps.verdict.outputs.verdict': verdict,
         'steps.verified.outputs.sha': e.RECEIPT_VERIFIED_SHA,
         'steps.verdict.outputs.theirs': sha,
@@ -322,7 +324,7 @@ describe('original publisher verdict receipt', () => {
     expect(() => validateReceipt(r)).toThrow();
   });
   it('captures original outcomes and genuine verification output in the existing producer', () => {
-    const source = readFileSync('.github/workflows/publish-club-arena.yml', 'utf8');
+    const source = readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8');
     expect(source).toContain(
       'steps.verdict.conclusion, steps.immutable_publish.conclusion, steps.verified.conclusion'
     );
@@ -350,4 +352,17 @@ it('accepts approved organization name only with the original immutable reposito
   expect(() =>
     createReceipt({ ...e, GITHUB_REPOSITORY: 'evil/Smarter-Poker-Club-Arena' })
   ).toThrow();
+});
+
+it('binds the exact transaction display name while keeping logical receipt identity', () => {
+  for (const key of ['publish-to-origin', 'retain-runtime']) {
+    const t = trusted(key);
+    const r = createReceipt(env(key, key === 'retain-runtime' ? 'retained' : 'publish'));
+    t.job.name = `production / ${key}`;
+    expect(mergePublisherReceipt(r, t).steps).toEqual(r.steps);
+    for (const bad of [`other / ${key}`, `production / nested / ${key}`]) {
+      t.job.name = bad;
+      expect(() => mergePublisherReceipt(r, t)).toThrow();
+    }
+  }
 });

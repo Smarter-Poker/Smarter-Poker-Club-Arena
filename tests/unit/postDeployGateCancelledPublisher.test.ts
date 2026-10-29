@@ -35,7 +35,7 @@ const job = (name: string, conclusion: string, steps = 0): Job => ({
   })),
 });
 
-function runGate(jobs: Job[]): { output: string; error: string | null } {
+function runGate(jobs: Job[], conclusion = ''): { output: string; error: string | null } {
   const dir = mkdtempSync(join(tmpdir(), 'post-deploy-gate-'));
   try {
     const payload = join(dir, 'jobs.json');
@@ -43,7 +43,11 @@ function runGate(jobs: Job[]): { output: string; error: string | null } {
     writeFileSync(payload, JSON.stringify({ total_count: jobs.length, jobs }));
     writeFileSync(output, '');
     try {
-      execFileSync(process.execPath, ['-', payload, output], { input: program, stdio: 'pipe' });
+      execFileSync(process.execPath, ['-', payload, output], {
+        input: program,
+        stdio: 'pipe',
+        env: { ...process.env, SOURCE_CONCLUSION: conclusion },
+      });
       return { output: readFileSync(output, 'utf8'), error: null };
     } catch (error) {
       return { output: readFileSync(output, 'utf8'), error: String((error as any).stderr) };
@@ -209,5 +213,64 @@ describe('gateway certification requires its real consumer proof and cleanup', (
     ]);
     expect(result.error).not.toBeNull();
     expect(result.output).not.toContain('should_run=true');
+  });
+});
+
+describe('exact protected transaction publisher display names', () => {
+  const published = (name: string) => ({
+    ...job(name, 'success'),
+    steps: [
+      'Stand down if the origin already serves a newer bundle',
+      'Publish through the host-owned immutable transaction',
+      'Verify the origin serves this bundle',
+    ].map((name) => ({ name, status: 'completed', conclusion: 'success' })),
+  });
+  it('accepts the real transaction origin proof', () => {
+    const r = runGate([published('production / publish-to-origin')]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true');
+  });
+  it.each(['cancelled', 'failure', 'success', 'unknown'])(
+    'keeps proven web publication independent of the %s run summary',
+    (conclusion) => {
+      const r = runGate([published('production / publish-to-origin')], conclusion);
+      expect(r.error).toBeNull();
+      expect(r.output).toContain('should_run=true');
+    }
+  );
+  it('refuses foreign prefixes and ambiguous logical origin proofs', () => {
+    for (const jobs of [
+      [published('foreign / publish-to-origin')],
+      [published('production / publish-to-origin'), published('publish-to-origin')],
+    ])
+      expect(runGate(jobs).error).not.toBeNull();
+  });
+});
+
+describe('superseded preparation never certifies a release', () => {
+  const prepared = () => [
+    job('publish-needed', 'success'),
+    ...tests(),
+    job('build-and-store', 'success'),
+    job('build-record-gateway', 'skipped'),
+  ];
+  it('stands down only for cancelled, complete read-only preparation with no transaction child', () => {
+    for (const list of [prepared(), [...prepared(), job('production', 'cancelled')]]) {
+      const r = runGate(list, 'cancelled');
+      expect(r.error).toBeNull();
+      expect(r.output).not.toContain('should_run=true');
+    }
+  });
+  it('refuses failed preparation, unknown jobs, duplicate roles and started or renamed transaction children', () => {
+    for (const list of [
+      [...prepared(), job('renamed-origin', 'success')],
+      [...prepared(), job('production / renamed-origin', 'success')],
+      [...prepared(), job('production', 'cancelled', 1)],
+      [...prepared(), job('publish-needed', 'success')],
+      [...prepared(), job('client-tests (1)', 'failure')],
+    ])
+      expect(runGate(list, 'cancelled').error).not.toBeNull();
+    for (const conclusion of ['', 'success', 'failure', 'unknown'])
+      expect(runGate(prepared(), conclusion).error).not.toBeNull();
   });
 });

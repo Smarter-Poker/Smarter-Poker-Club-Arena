@@ -121,14 +121,17 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshSequenceRef = useRef(0);
+  const deferredRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshPendingRef = useRef(false); // guard against multiple 0-hit refreshes
   const [isFullscreen, setIsFullscreen] = useState(fullscreen);
 
   // ── Load tournament data and start clock tick ──
   const refreshState = useCallback(async () => {
+    const sequence = ++refreshSequenceRef.current;
     try {
       const tournament = await tournamentService.getTournament(tournamentId);
-      if (!tournament) return;
+      if (!tournament || sequence !== refreshSequenceRef.current) return;
 
       const levelState = tournamentService.getCurrentLevelState(tournament);
       const timerState = tournamentTimerService.getTimerState(tournamentId);
@@ -174,6 +177,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         .from('tournament_players')
         .select('chips, status')
         .eq('tournament_id', tournamentId);
+
+      if (sequence !== refreshSequenceRef.current) return;
 
       if (seatErr) {
         // Fall back to the (stale) tournament row rather than showing zeros.
@@ -273,7 +278,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         if (next === 0 && prev.timeRemaining > 0 && !refreshPendingRef.current) {
           refreshPendingRef.current = true;
           // Small delay to let the server state settle (blind check is 30s granularity)
-          setTimeout(() => {
+          deferredRefreshRef.current = setTimeout(() => {
+            deferredRefreshRef.current = null;
             refreshState();
             refreshPendingRef.current = false;
           }, 1500);
@@ -328,6 +334,10 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       });
 
     return () => {
+      ++refreshSequenceRef.current;
+      if (deferredRefreshRef.current) clearTimeout(deferredRefreshRef.current);
+      deferredRefreshRef.current = null;
+      refreshPendingRef.current = false;
       if (tickRef.current) clearInterval(tickRef.current);
       clearInterval(refreshInterval);
       masterBus.removeRegisteredChannel(channelKey);
@@ -382,6 +392,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   const handleBreakStart = useCallback(
     (payload: any) => {
       if (payload?.tournamentId !== tournamentId) return;
+      // A read begun before this event cannot replace its newer break state.
+      ++refreshSequenceRef.current;
       /**
        * ABSOLUTE FIRST, DURATION ONLY AS A LAST RESORT.
        *

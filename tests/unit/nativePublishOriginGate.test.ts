@@ -9,25 +9,32 @@ const root = resolve(__dirname, '../..');
 const workflow = parse(
   readFileSync(join(root, '.github/workflows/publish-club-arena.yml'), 'utf8')
 );
+const transaction = parse(
+  readFileSync(join(root, '.github/workflows/publish-club-arena-transaction.yml'), 'utf8')
+);
 const target = '1'.repeat(40);
 const other = '2'.repeat(40);
 
 function eligible(verifiedSha: string, overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     'vars.CAPGO_OTA_ENABLED': 'true',
-    'needs.publish-needed.outputs.target_sha': target,
-    'needs.build-and-store.result': 'success',
+    'inputs.target_sha': target,
+    'inputs.build_result': 'success',
     'needs.publish-to-origin.result': 'success',
     'needs.publish-to-origin.outputs.verified_sha': verifiedSha,
-    'needs.client-tests.result': 'success',
-    'needs.publish-needed.outputs.tests_proven': 'false',
+    'inputs.client_result': 'success',
+    'inputs.tests_proven': 'false',
     ...overrides,
   };
   // Evaluate the actual job predicate, with only this documented expression
   // subset accepted. A new operator/context needs an explicit test review.
-  const expression = workflow.jobs['publish-to-app'].if
+  const expression = transaction.jobs['publish-to-app'].if
+    .replace(
+      /github\.repository_id == '1132369872' && github\.ref == 'refs\/heads\/main' && github\.workflow_ref == format\('\{0\}\/\.github\/workflows\/publish-club-arena\.yml@refs\/heads\/main', github\.repository\) && \(github\.event_name == 'push' \|\| github\.event_name == 'repository_dispatch'\)/,
+      'true'
+    )
     .replace(/always\(\)/g, 'true')
-    .replace(/(?:vars|needs)\.[a-zA-Z0-9_.-]+/g, (name: string) => {
+    .replace(/(?:vars|needs|inputs)\.[a-zA-Z0-9_.-]+/g, (name: string) => {
       if (!(name in values)) throw new Error('Unreviewed workflow context: ' + name);
       return JSON.stringify(values[name]);
     });
@@ -38,12 +45,12 @@ function eligible(verifiedSha: string, overrides: Record<string, unknown> = {}) 
 function runOriginVerification(liveSha: string) {
   const dir = mkdtempSync(join(tmpdir(), 'native-publish-origin-'));
   try {
-    const step = workflow.jobs['publish-to-origin'].steps.find(
+    const step = transaction.jobs['publish-to-origin'].steps.find(
       (item: { name: string }) => item.name === 'Verify the origin serves this bundle'
     );
     expect(step.id).toBe('verified');
     expect(step.if).toBe("steps.verdict.outputs.verdict == 'publish'");
-    expect(workflow.jobs['publish-to-origin'].outputs.verified_sha).toBe(
+    expect(transaction.jobs['publish-to-origin'].outputs.verified_sha).toBe(
       '${{ steps.verified.outputs.sha }}'
     );
     const command = step.run.replace('${{ steps.verdict.outputs.ours }}', target);
@@ -82,7 +89,7 @@ function runOriginVerification(liveSha: string) {
 describe('native publishing requires the exact origin verification', () => {
   it('rejects a successful stand-down that never verified the old target', () => {
     expect(eligible('')).toBe(false);
-    expect(eligible('', { 'needs.publish-needed.outputs.target_sha': '' })).toBe(false);
+    expect(eligible('', { 'inputs.target_sha': '' })).toBe(false);
   });
 
   it('accepts the exact verified target and rejects a different one', () => {
@@ -120,7 +127,7 @@ describe('native publishing requires the exact origin verification', () => {
       "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}";
     expect(client.env.VITEST_MAX_THREADS).toBe(workers);
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
-    expect(workflow.concurrency).toEqual({
+    expect(workflow.jobs.production.concurrency).toEqual({
       group: 'publish-club-arena-production',
       'cancel-in-progress': false,
     });
@@ -137,24 +144,24 @@ describe('native publishing requires the exact origin verification', () => {
     });
     expect(
       eligible(target, {
-        'needs.client-tests.result': 'skipped',
-        'needs.publish-needed.outputs.tests_proven': 'true',
+        'inputs.client_result': 'skipped',
+        'inputs.tests_proven': 'true',
       })
     ).toBe(true);
     expect(
       eligible('', {
-        'needs.client-tests.result': 'skipped',
-        'needs.publish-needed.outputs.tests_proven': 'true',
+        'inputs.client_result': 'skipped',
+        'inputs.tests_proven': 'true',
       })
     ).toBe(false);
   });
 
   it.each([
     ['disabled account', { 'vars.CAPGO_OTA_ENABLED': '' }],
-    ['failed build', { 'needs.build-and-store.result': 'failure' }],
+    ['failed build', { 'inputs.build_result': 'failure' }],
     ['failed origin', { 'needs.publish-to-origin.result': 'failure' }],
-    ['failed tests', { 'needs.client-tests.result': 'failure' }],
-    ['unproved skipped tests', { 'needs.client-tests.result': 'skipped' }],
+    ['failed tests', { 'inputs.client_result': 'failure' }],
+    ['unproved skipped tests', { 'inputs.client_result': 'skipped' }],
   ])('still refuses %s', (_label, overrides) => {
     expect(eligible(target, overrides)).toBe(false);
   });

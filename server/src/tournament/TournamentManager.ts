@@ -2363,9 +2363,10 @@ export class TournamentManager extends TournamentManagerEliminations {
       const destination = destinations.find(
         (table) => table.tableId === member.destination_table_id
       );
-      const occupied = destination?.players.some(
-        (player) => player.seat === member.destination_seat_number
-      );
+      const occupied =
+        destination?.players.some((player) => player.seat === member.destination_seat_number) ||
+        (member.destination_seat_number !== null &&
+          destination?.reservedSeats?.includes(member.destination_seat_number));
       if (
         destination &&
         !occupied &&
@@ -2809,11 +2810,17 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (!base) return null;
     const byId = new Map(expected);
     const source = (id: string, engine: ServerTableEngine): boolean => byId.get(id) === engine;
-    for (const [id, engine] of this.stoppedOriginalBreaks) if (!source(id, engine)) return null;
-    for (const map of [this.retainedTournamentBreakSources, this.pendingNoStartContinuations])
-      for (const [id, value] of map) if (!source(id, value.engine)) return null;
-    for (const [id, wakes] of this.tournamentBreakArrivalWakes)
-      for (const engine of wakes.values()) if (!source(id, engine)) return null;
+    // These registries use break/request IDs, not table IDs. The base has
+    // already proved every expected engine's exact table and physical release.
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return null;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (!source(id, value.engine)) return null;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (!source(value.binding.tableId, value.engine)) return null;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return null;
     if (
       this.pendingTableBreakRetirement &&
       !source(this.pendingTableBreakRetirement.tableId, this.pendingTableBreakRetirement.engine)

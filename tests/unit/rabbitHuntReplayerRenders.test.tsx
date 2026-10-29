@@ -163,3 +163,30 @@ describe('the replayer offers the hunt on a hand that still qualifies', () => {
     expect(queryByRole('button', { name: /Show What Would Have Come/i })).toBeNull();
   });
 });
+
+it('restores a previously purchased expired hand without invoking billing', async () => {
+  const onRabbitHunt = vi.fn();
+  const onRabbitHuntReceipt = vi.fn().mockResolvedValue({
+    success: true,
+    source: 'already_revealed',
+    cards: [
+      { rank: 'K', suit: 'd' },
+      { rank: '4', suit: 's' },
+    ],
+  });
+  const view = render(
+    <HandDetailModal
+      isOpen
+      onClose={() => {}}
+      hands={[record({ played_at: new Date(Date.now() - 180000).toISOString() })]}
+      heroId={HERO}
+      onRabbitHunt={onRabbitHunt}
+      onRabbitHuntReceipt={onRabbitHuntReceipt}
+      rabbitUserId={HERO}
+    />
+  );
+  await waitFor(() => expect(view.container.querySelectorAll('.hdm-card--rabbit')).toHaveLength(2));
+  expect(onRabbitHuntReceipt).toHaveBeenCalledWith(3046089);
+  expect(onRabbitHunt).not.toHaveBeenCalled();
+  expect(view.getByText(/Hand 3,046,089 · Only You/)).toBeTruthy();
+});

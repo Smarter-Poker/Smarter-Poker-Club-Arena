@@ -103,6 +103,12 @@ export const HORSE_REFERENCE_DECISION_SOURCE_REASONS: Readonly<Record<string, st
       'the original public observation time windows that qualify individual read history and cutoff coverage',
     'src/services/horseDecisionJournal/record.ts':
       'the bounded canonical original-request encoding and digest bound into producer-time range consumption evidence',
+    'src/engine/horseDecision/protocol.ts':
+      'the canonical original-request decision-key projection checked before plan getter evidence can be credited',
+    'src/engine/HorseDecisionReadFrame.ts':
+      'the bounded original read-frame codec and plan projection used to validate producer-time getter evidence',
+    'src/engine/HorsePlanReadReceipt.ts':
+      'bounded original plan getter consultations and exact returned values bound to the original request and read frame, without policy replay or causal claims',
     'src/engine/HorseRangeConsumptionReceipt.ts':
       'bounded producer-time public range inputs and actual sampler consumption masks bound to the original decision and read frame',
     'src/engine/HorseMind.ts':

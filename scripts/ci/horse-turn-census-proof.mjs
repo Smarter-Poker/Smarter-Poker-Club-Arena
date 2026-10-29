@@ -151,6 +151,35 @@ function originalLargeAllInCall(snapshot, index) {
     return 'unknown';
   return a.amount <= n.currentBet + 1e-8;
 }
+export function horseTurnPlanEvidence(c, api) {
+  const unknown = { planStatus: 'unknown', planUse: null };
+  try {
+    if (
+      typeof api?.horsePlanReadsAreValid !== 'function' ||
+      !api.horsePlanReadsAreValid(c?.planReads, c?.snapshot, c?.readFrame ?? null)
+    )
+      return unknown;
+    const r = c.planReads;
+    const summary = {
+      planStatus: r.status,
+      planUse: r.status === 'observed' ? [...r.lookups] : null,
+    };
+    return validPlanSummary(summary) ? summary : unknown;
+  } catch {
+    return unknown;
+  }
+}
+function validPlanSummary(t) {
+  if (!['unknown', 'observed', 'not_reached', 'outside_domain', 'refused'].includes(t.planStatus))
+    return false;
+  if (t.planStatus !== 'observed') return t.planUse === null;
+  return (
+    Array.isArray(t.planUse) &&
+    t.planUse.length === 3 &&
+    t.planUse.every((n, i) => Number.isInteger(n) && n >= -1 && n <= (i === 0 ? 2 : 3)) &&
+    t.planUse.some((n) => n >= 0)
+  );
+}
 export function horseTurnRangeEvidence(c, api) {
   const unknown = { rangeStatus: 'unknown', rangeUse: null };
   try {
@@ -235,7 +264,7 @@ const utc = (x) =>
 export function validateHorseTurnCensusPacket(p, expectedSource = p?.sourceSha) {
   if (
     !exact(p, ['version', 'sourceSha', 'window', 'horseIds', 'hands']) ||
-    ![2, 3, 4].includes(p.version) ||
+    ![2, 3, 4, 5].includes(p.version) ||
     !hex(expectedSource, 40) ||
     p.sourceSha !== expectedSource ||
     !exact(p.window, ['startUtc', 'endUtc']) ||
@@ -393,7 +422,7 @@ const equalAction = (a, expected, ids) =>
 /** Batch is a private installed-store result. Only closed fields are returned. Missing domains survive every refusal. */
 export function inspectHorseTurnCensus(packet, batch, api, clock = () => performance.now()) {
   const base = {
-    version: [3, 4].includes(packet?.version) ? packet.version : 2,
+    version: [3, 4, 5].includes(packet?.version) ? packet.version : 2,
     scope: 'supplied_committed_turn_census',
     status: 'unknown',
     rawRecordsExported: false,
@@ -410,7 +439,8 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
   const turns = packet.hands.flatMap((h) =>
     h.actions.map((a) => ({
       ...emptyTurn(h, a),
-      ...(packet.version === 4 ? { rangeStatus: 'unknown', rangeUse: null } : {}),
+      ...(packet.version >= 4 ? { rangeStatus: 'unknown', rangeUse: null } : {}),
+      ...(packet.version === 5 ? { planStatus: 'unknown', planUse: null } : {}),
     }))
   );
   const result = {
@@ -713,8 +743,10 @@ export function inspectHorseTurnCensus(packet, batch, api, clock = () => perform
         }
         out.inputBinding = 'canonical_digest_and_read_frame';
         if (packet.version >= 3) out.historyReason = horseTurnHistoryReason(s, api);
-        if (packet.version === 4 && out.execution === 'intended' && out.selection === 'matched')
+        if (packet.version >= 4 && out.execution === 'intended' && out.selection === 'matched')
           Object.assign(out, horseTurnRangeEvidence(c, api));
+        if (packet.version === 5 && out.execution === 'intended' && out.selection === 'matched')
+          Object.assign(out, horseTurnPlanEvidence(c, api));
         out.publicRead = api.horseObserverReadsUsedPublicPool(c.observerReads, s)
           ? 'pooled_public'
           : api.horseObserverReadsWereIndependent(c.observerReads, s)
@@ -816,6 +848,9 @@ export async function loadInstalledTurnCensusApis() {
       api,
       await import(/* @vite-ignore */ '/app/dist/engine/HorseRangeConsumptionReceipt.js')
     );
+  } catch {}
+  try {
+    Object.assign(api, await import(/* @vite-ignore */ '/app/dist/engine/HorsePlanReadReceipt.js'));
   } catch {}
   return api;
 }
@@ -920,7 +955,7 @@ export function sanitizeHorseTurnCensusResult(v) {
   ];
   if (
     !exact(v, root) ||
-    ![2, 3, 4].includes(v.version) ||
+    ![2, 3, 4, 5].includes(v.version) ||
     v.scope !== 'supplied_committed_turn_census' ||
     !['observed', 'unknown'].includes(v.status) ||
     !hex(v.sourceSha, 40) ||
@@ -983,20 +1018,31 @@ export function sanitizeHorseTurnCensusResult(v) {
         ...Object.keys(states),
         'phases',
         ...(v.version >= 3 ? ['contextBinding', 'historyReason'] : []),
-        ...(v.version === 4 ? ['rangeStatus', 'rangeUse'] : []),
+        ...(v.version >= 4 ? ['rangeStatus', 'rangeUse'] : []),
+        ...(v.version === 5 ? ['planStatus', 'planUse'] : []),
       ]) ||
       (v.version >= 3 &&
         (!['unknown', 'matched', 'contradictory'].includes(t.contextBinding) ||
           !['unknown', ...Object.values(historyReasons).flat()].includes(t.historyReason) ||
           (t.historyReason !== 'unknown' &&
             t.inputBinding !== 'canonical_digest_and_read_frame'))) ||
-      (v.version === 4 &&
+      (v.version >= 4 &&
         (!validRangeSummary(t) ||
           (t.rangeStatus !== 'unknown' &&
             (t.inputBinding !== 'canonical_digest_and_read_frame' ||
               t.contextBinding !== 'matched' ||
               t.execution !== 'intended' ||
               t.selection !== 'matched')))) ||
+      (v.version === 5 &&
+        (!validPlanSummary(t) ||
+          (t.planStatus !== 'unknown' &&
+            (t.inputBinding !== 'canonical_digest_and_read_frame' ||
+              t.contextBinding !== 'matched' ||
+              t.execution !== 'intended' ||
+              t.selection !== 'matched' ||
+              t.handReconciliation !== 'reconciled' ||
+              t.capture !== 'present' ||
+              t.expectedBinding !== 'matched')))) ||
       !Number.isSafeInteger(t.actorIndex) ||
       t.actorIndex < 0 ||
       t.actorIndex >= 1000 ||

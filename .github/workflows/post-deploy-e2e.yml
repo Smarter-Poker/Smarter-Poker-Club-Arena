@@ -195,6 +195,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
           REPOSITORY_ID: ${{ github.repository_id }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
           ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
@@ -253,8 +254,9 @@ jobs:
           const fs = require('node:fs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const publisherJob = (entry, key) => entry?.name === key || entry?.name === `production / ${key}`;
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
-          const jobs = payload.jobs.filter((entry) => entry?.name === 'publish-to-origin');
+          const jobs = payload.jobs.filter((entry) => publisherJob(entry, 'publish-to-origin'));
           // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
           //
           // publish-club-arena cancels in progress when a newer merge arrives,
@@ -275,34 +277,35 @@ jobs:
           // This deliberately cannot hide a real publish. A source run holding
           // any job that actually ran, with no publish-to-origin among them,
           // is the renamed-or-missing-job hole and still throws below. The
-          // source run's own top-level conclusion is still never consulted -
+          // source conclusion never qualifies or suppresses proven web publication.
+          // Only cancelled read-only preparation with no writer can stand down;
           // an optional Capgo failure must not suppress web E2E.
           if (payload.total_count !== payload.jobs.length) throw new Error('Source job metadata is incomplete.');
-          const inspection = payload.jobs.filter(entry => entry?.name === 'inspect-record-gateway-host');
+          const inspection = payload.jobs.filter(entry => publisherJob(entry, 'inspect-record-gateway-host'));
           if (inspection.length === 1 && inspection[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
             const read = (inspection[0].steps ?? []).filter(entry => entry.name === 'Read fixed gateway host metadata without changing host state');
             if (inspection[0].status !== 'completed' || inspection[0].conclusion !== 'success' || read.length !== 1 || read[0].conclusion !== 'success') throw new Error('Gateway host inspection is incomplete; no installation or publication certified.');
             console.log('Read-only host inspection; no installation or publication certified.');
             process.exit(0);
           }
-          const credential = payload.jobs.filter(entry => entry?.name === 'install-record-gateway-credentials');
+          const credential = payload.jobs.filter(entry => publisherJob(entry, 'install-record-gateway-credentials'));
           if (credential.length === 1 && credential[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
             const install = (credential[0].steps ?? []).filter(entry => entry.name === 'Install only the dedicated listener credential');
             if (credential[0].status !== 'completed' || credential[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Dedicated listener credential is incomplete; no gateway activation or client publication certified.');
             console.log('Dedicated listener credential only; no gateway activation or client publication certified.');
             process.exit(0);
           }
-          const bootstrap = payload.jobs.filter(entry => entry?.name === 'bootstrap-record-gateway');
+          const bootstrap = payload.jobs.filter(entry => publisherJob(entry, 'bootstrap-record-gateway'));
           if (bootstrap.length === 1 && bootstrap[0].conclusion !== 'skipped' && jobs.length === 1 && jobs[0].conclusion === 'skipped') {
             const install = (bootstrap[0].steps ?? []).filter(entry => entry.name === 'Install inert prerequisites through the existing protected provider');
             if (bootstrap[0].status !== 'completed' || bootstrap[0].conclusion !== 'success' || install.length !== 1 || install[0].conclusion !== 'success') throw new Error('Gateway bootstrap is incomplete; no activation or client publication is certified.');
             console.log('Gateway bootstrap only; no gateway activation or client publication certified.');
             process.exit(0);
           }
-          const gateway = payload.jobs.filter((entry) => entry?.name === 'publish-record-gateway');
+          const gateway = payload.jobs.filter((entry) => publisherJob(entry, 'publish-record-gateway'));
           const gatewayOnly = gateway.length === 1 && gateway[0].conclusion !== 'skipped' &&
             jobs.length === 1 && jobs[0].conclusion === 'skipped' &&
-            payload.jobs.filter(entry => entry?.name === 'retain-runtime').every(entry => entry.conclusion === 'skipped');
+            payload.jobs.filter(entry => publisherJob(entry, 'retain-runtime')).every(entry => entry.conclusion === 'skipped');
           if (gatewayOnly) {
             const builds = payload.jobs.filter(entry => entry?.name === 'build-record-gateway');
             const proofNames = ['Activate only the prepared independent service', 'Verify authenticated gateway record delivery', 'Ensure the reserved gateway canary account is retired'];
@@ -314,7 +317,7 @@ jobs:
             console.log('Gateway component only; client publication and client E2E remain unclaimed.');
             process.exit(0);
           }
-          const retained = payload.jobs.filter((entry) => entry?.name === 'retain-runtime');
+          const retained = payload.jobs.filter((entry) => publisherJob(entry, 'retain-runtime'));
           const retentionSucceeded = retained.length === 1 && retained[0].status === 'completed' && retained[0].conclusion === 'success' &&
             ['Verify both origins still serve the qualified immutable runtime', 'Record qualified retained runtime'].every((name) =>
               (retained[0].steps ?? []).filter((entry) => entry.name === name && entry.status === 'completed' && entry.conclusion === 'success').length === 1);
@@ -339,12 +342,23 @@ jobs:
             entry?.conclusion === 'skipped' ||
             (entry?.conclusion === 'cancelled' && (entry.steps ?? []).length === 0);
           const cancelledBeforeOrigin =
-            jobs.every(neverOpened) &&
+            jobs.length === 1 && jobs.every(neverOpened) &&
             retained.every(inconclusive) &&
             payload.jobs.some((entry) => entry?.conclusion === 'cancelled') &&
             payload.jobs.every((entry) => entry?.conclusion === 'success' || inconclusive(entry));
+          // Preparation now precedes the production caller's lock. A pending
+          // caller can be superseded after all read-only preparation succeeded,
+          // before GitHub creates any nested writer job. This is not a publish
+          // verdict: unknown/renamed jobs, failures or any child execution refuse.
+          const preparationNames = new Set(['publish-needed', 'build-and-store', 'build-record-gateway', ...[1,2,3,4].map(n => `client-tests (${n})`)]);
+          const cancelledBeforeTransaction = process.env.SOURCE_CONCLUSION === 'cancelled' &&
+            jobs.length === 0 && retained.length === 0 && payload.jobs.length > 0 &&
+            new Set(payload.jobs.map(entry => entry.name)).size === payload.jobs.length &&
+            payload.jobs.every(entry => entry.status === 'completed' &&
+              ((preparationNames.has(entry.name) && (entry.conclusion === 'success' || inconclusive(entry))) ||
+               (entry.name === 'production' && entry.conclusion === 'cancelled' && (entry.steps ?? []).length === 0)));
           const superseded =
-            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin;
+            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin || cancelledBeforeTransaction;
           if (superseded) {
             console.log(
               'The source publisher was superseded before it reached the origin; ' +

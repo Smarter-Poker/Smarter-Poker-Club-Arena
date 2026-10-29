@@ -72,6 +72,7 @@ import {
 } from '../config/spinSpec.js';
 import { describeError, reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
+import { fetchAllRows } from '../services/supabase/pagination.js';
 /**
  * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
  *
@@ -1223,6 +1224,7 @@ export abstract class TournamentManagerBase {
    * Set with breakCountdownStarted, cleared with it.
    */
   protected synchronizedBreakEndsAtMs = 0;
+  private synchronizedBreakStartGeneration = 0;
   private breakResumePersisting = false;
   /** Retain the exact proposal if its database acknowledgement is lost. */
   private pendingBreakResumeClock: {
@@ -3939,10 +3941,22 @@ export abstract class TournamentManagerBase {
      * in between `this.running = true` at the top of start() and the row
      * landing a query later.
      */
+    const breakStartGeneration = this.synchronizedBreakStartGeneration;
     const applies = await this.breakApplies();
     // breakApplies may be waiting on the tournament row while shutdown fences
     // this manager. Never let that retired continuation begin a new break.
     if (!this.lifecycleIsCurrent(lifecycle)) return;
+    // Eligibility can await the database while another request starts and
+    // even finishes this break. The old request must not clear its countdown
+    // or park the field again after release. onBreak alone misses that latter
+    // case, so retain the accepted start generation across the release.
+    if (
+      this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakStartGeneration ||
+      this.stageEndPause ||
+      this.stageResumeInProgress
+    )
+      return;
     if (!applies) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
@@ -3954,6 +3968,7 @@ export abstract class TournamentManagerBase {
     // remaining time instead of measuring a null timer as a fresh full level;
     // the synchronized break becomes the pause owner until one of them ends.
     const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock;
+    const acceptedBreakGeneration = ++this.synchronizedBreakStartGeneration;
     this.onBreak = true;
     if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
@@ -4022,7 +4037,12 @@ export abstract class TournamentManagerBase {
     // Persistence was admitted by this generation, but its response may return
     // after the generation was fenced. The retired manager must not publish or
     // pause table engines behind shutdown's final ownership snapshot.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
     // Derived past the end of the structure. The clamped index used to show the
@@ -4060,7 +4080,12 @@ export abstract class TournamentManagerBase {
           }
         : null,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     // 2026-08-18: the break screen is a full-screen opaque overlay
     // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and
@@ -4159,6 +4184,7 @@ export abstract class TournamentManagerBase {
      * already been shown.
      */
     if (this.breakCountdownStarted) return;
+    const breakGeneration = this.synchronizedBreakStartGeneration;
     this.breakCountdownStarted = true;
     this.synchronizedBreakEndsAtMs = deadlineMs;
     const endsAt = new Date(deadlineMs).toISOString();
@@ -4173,7 +4199,12 @@ export abstract class TournamentManagerBase {
     // The database write began while this manager owned the generation. If its
     // response crosses the stop fence, do not announce a countdown from a
     // manager that no longer owns the tournament.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     await this.broadcast('tournament_break_started', {
       level: this.currentLevel,
       phase: 'counting_down',
@@ -4183,7 +4214,12 @@ export abstract class TournamentManagerBase {
       breakEndsAt: endsAt,
       synchronized: true,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     // An add-on that came due during the last hand of this break opens now,
     // inside the break, and runs to its end (see synchronizedBreakEndsAtMs).
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
@@ -6001,13 +6037,28 @@ export abstract class TournamentManagerBase {
       return refuse('the tournament start timestamp disagrees with the launch receipt');
     }
 
-    const { data: rosterRows, error: rosterErr } = await supabase
-      .from('tournament_players')
-      .select('id, user_id, status, table_id, seat_number, chips')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['registered', 'playing']);
+    // A complete launch proof must see every entrant, including fields larger
+    // than PostgREST's per-response cap. A partial read cannot certify launch.
+    const pageOptions = (label: string) => ({
+      label,
+      shouldContinue: () => {
+        this.assertLifecycleCurrent(lifecycle);
+        return true;
+      },
+    });
+    const { rows: rosterRows, complete: rosterComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('tournament_players')
+        .select('id, user_id, status, table_id, seat_number, chips')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['registered', 'playing'])
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, pageOptions('Tournament.launch_roster'));
     this.assertLifecycleCurrent(lifecycle);
-    if (rosterErr) return refuse(`the active roster could not be read: ${rosterErr.message}`);
+    if (!rosterComplete) return refuse('the active roster could not be read completely');
 
     const activeRoster = (rosterRows ?? []) as Array<{
       id?: string | null;
@@ -6142,17 +6193,23 @@ export abstract class TournamentManagerBase {
       return refuse('the active roster changed after launch migration began');
     }
 
-    const { data: durableTableRows, error: durableTablesErr } = await supabase
-      .from('tables')
-      .select('id, status, current_players, max_players')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting']);
+    const { rows: durableTableRows, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, status, current_players, max_players')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['running', 'waiting'])
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      pageOptions('Tournament.launch_tables')
+    );
     this.assertLifecycleCurrent(lifecycle);
-    if (durableTablesErr) {
-      return refuse(
-        `the tournament table inventory could not be read: ${durableTablesErr.message}`
-      );
-    }
+    if (!tablesComplete)
+      return refuse('the tournament table inventory could not be read completely');
     const durableTables = (durableTableRows ?? []) as Array<{
       id?: string | null;
       status?: string | null;
@@ -6170,15 +6227,21 @@ export abstract class TournamentManagerBase {
       return refuse('the durable open tables and inert engine inventory do not match exactly');
     }
 
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select(
-        'user_id, table_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(id, tournament_id, status, current_players)'
-      )
-      .is('left_at', null)
-      .eq('tables.tournament_id', this.tournamentId);
+    const { rows: seatRows, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select(
+          'id, user_id, table_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(id, tournament_id, status, current_players)'
+        )
+        .is('left_at', null)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, pageOptions('Tournament.launch_seats'));
     this.assertLifecycleCurrent(lifecycle);
-    if (seatErr) return refuse(`the live seats could not be read: ${seatErr.message}`);
+    if (!seatsComplete) return refuse('the live seats could not be read completely');
 
     const seats = (seatRows ?? []) as Array<{
       user_id?: string | null;
@@ -7216,16 +7279,31 @@ export abstract class TournamentManagerBase {
       // commits registered -> playing with its seat and coordinates.
       let expectedLaunchPlayerIds: string[] = [];
       {
-        const { data: regRows, error: regRowsErr } = await supabase
-          .from('tournament_players')
-          .select('user_id, chips, status')
-          .eq('tournament_id', this.tournamentId)
-          .in('status', ['registered', 'playing']);
+        const { rows: regRows, complete: regRowsComplete } = await fetchAllRows(
+          (cursor, limit) => {
+            let query = supabase
+              .from('tournament_players')
+              .select('id, user_id, chips, status')
+              .eq('tournament_id', this.tournamentId)
+              .in('status', ['registered', 'playing'])
+              .order('id', { ascending: true })
+              .limit(limit);
+            if (cursor) query = query.gt('id', cursor);
+            return query;
+          },
+          {
+            label: 'Tournament.launch_expected_roster',
+            shouldContinue: () => {
+              this.assertLifecycleCurrent(lifecycle);
+              return true;
+            },
+          }
+        );
         this.assertLifecycleCurrent(lifecycle);
-        if (regRowsErr) {
+        if (!regRowsComplete) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Registration migration roster was unreadable (${regRowsErr.message}) - standing down before table construction`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Registration migration roster was incomplete - standing down before table construction`
             ),
             'Tournament.launch_roster_migration_read_failed'
           );
@@ -9852,41 +9930,66 @@ export abstract class TournamentManagerBase {
   }
 
   protected async createTablesAndSeatPlayers(tournament: any): Promise<void> {
-    const { data: players, error: playersErr } = await supabase
-      .from('tournament_players')
-      .select('user_id, chips, status')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['registered', 'playing']);
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle) throw new Error('Tournament seating has no active lifecycle');
+    const options = (label: string) => ({
+      label,
+      shouldContinue: () => {
+        this.assertLifecycleCurrent(lifecycle);
+        return true;
+      },
+    });
+    const { rows: players, complete: playersComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('tournament_players')
+        .select('id, user_id, chips, status')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['registered', 'playing'])
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.seating_roster'));
+    if (!playersComplete) throw new Error('Tournament roster read incomplete');
+    if (players.length === 0) throw new Error('No players');
 
-    if (playersErr) throw new Error(`Tournament roster read failed: ${playersErr.message}`);
-    if (!players || players.length === 0) throw new Error('No players');
+    // Page by immutable identity, then preserve oldest-table-first adoption.
+    // Each adopted table keeps its own capacity, including the deck ceiling.
+    const { rows: existingTables, complete: tablesComplete } = await fetchAllRows(
+      (cursor, limit) => {
+        let query = supabase
+          .from('tables')
+          .select('id, max_players, created_at')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['running', 'waiting'])
+          .order('id', { ascending: true })
+          .limit(limit);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      options('Tournament.seating_tables')
+    );
+    if (!tablesComplete) throw new Error('Tournament table inventory read incomplete');
+    existingTables.sort(
+      (a, b) =>
+        String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) ||
+        a.id.localeCompare(b.id)
+    );
 
-    // What this tournament ALREADY has.
-    // max_players is read too: an ADOPTED table keeps the capacity it was
-    // built with, which need not match the maxPerTable computed below (the
-    // config may have changed, or the deck clamp may have lowered it). The
-    // seating loop honours each table's own ceiling — see the capacity note
-    // there.
-    const { data: existingTables, error: existingTablesErr } = await supabase
-      .from('tables')
-      .select('id, max_players')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting'])
-      .order('created_at', { ascending: true });
-    if (existingTablesErr) {
-      throw new Error(`Tournament table inventory read failed: ${existingTablesErr.message}`);
-    }
-
-    const { data: liveSeatRows, error: liveSeatRowsErr } = await supabase
-      .from('table_seats')
-      .select(
-        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
-      )
-      .is('left_at', null)
-      .eq('tables.tournament_id', this.tournamentId);
-    if (liveSeatRowsErr) {
-      throw new Error(`Tournament live-seat inventory read failed: ${liveSeatRowsErr.message}`);
-    }
+    const { rows: liveSeatRows, complete: seatsComplete } = await fetchAllRows((cursor, limit) => {
+      let query = supabase
+        .from('table_seats')
+        .select(
+          'id, user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+        )
+        .is('left_at', null)
+        .eq('tables.tournament_id', this.tournamentId)
+        .order('id', { ascending: true })
+        .limit(limit);
+      if (cursor) query = query.gt('id', cursor);
+      return query;
+    }, options('Tournament.seating_seats'));
+    if (!seatsComplete) throw new Error('Tournament live-seat inventory read incomplete');
 
     const alreadySeated = new Set((liveSeatRows ?? []).map((r: any) => r.user_id));
     const occupiedSeats = new Map<string, Set<number>>();

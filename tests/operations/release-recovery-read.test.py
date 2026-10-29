@@ -625,6 +625,49 @@ class InspectorTests(unittest.TestCase):
             with patch.object(R,'inspector_command',return_value=json.dumps(row).encode()),self.subTest(row=row),self.assertRaises(ValueError):R.inspector_probe('c'*64,123)
 
 
+    def test_inspector_known_boundaries_roundtrip_remote_refusal_without_private_text(self):
+        # Exercise the actual remote selection and final refusal validator;
+        # only maintained literal boundary messages may acquire typed codes.
+        known = {message: code for message, (phase, code) in R.REFUSALS.items()
+                 if phase == 'inspector'}
+        self.assertEqual(len(known), 27)
+        for message, code in known.items():
+            with self.subTest(code=code), patch.object(R, 'inspector_remote', side_effect=ValueError(message)):
+                with self.assertRaises(ValueError) as caught:
+                    R.remote(self.request)
+                exported = R.refusal(self.request, caught.exception)
+                validated = R.validate_refusal(exported, self.request)
+                self.assertEqual((validated.phase, validated.code), ('inspector', code))
+                self.assertNotIn(message, json.dumps(exported))
+                self.assertEqual(set(exported), {'schema','readOnly','runKey','releaseSha','mode','phase','code'})
+        with patch.object(R, 'inspector_remote', side_effect=ValueError('/private/raw stderr secret')):
+            with self.assertRaises(ValueError) as caught:
+                R.remote(self.request)
+            exported = R.refusal(self.request, caught.exception)
+            self.assertEqual(R.validate_refusal(exported,self.request).code, 'evidence_refused')
+            self.assertNotIn('secret', json.dumps(exported))
+
+    def test_native_child_idle_poll_is_not_the_absolute_deadline(self):
+        # A real child stays silent past the old three-second polling slice.
+        started = R.time.monotonic()
+        raw = R.inspector_command([R.sys.executable, '-c',
+            'import time;time.sleep(3.1);print("bounded reply")'], started + 6)
+        self.assertEqual(raw, b'bounded reply\n')
+        self.assertGreaterEqual(R.time.monotonic() - started, 3.1)
+        self.assertLess(R.time.monotonic() - started, 6)
+
+    def test_native_command_refusals_roundtrip_deadline_size_and_nonzero(self):
+        for code, command, seconds, limit in [
+            ('command_deadline', 'import time;time.sleep(2)', .05, 100),
+            ('command_size', 'print("x"*1000)', 2, 100),
+            ('command_nonzero', 'import sys;sys.stderr.write("private secret");sys.exit(7)', 2, 100),
+        ]:
+            with self.subTest(code=code), self.assertRaises(ValueError) as caught:
+                R.inspector_command([R.sys.executable, '-c', command], R.time.monotonic()+seconds, limit=limit)
+            exported = R.refusal(self.request, caught.exception)
+            self.assertEqual(R.validate_refusal(exported,self.request).code, code)
+            self.assertNotIn('private',json.dumps(exported))
+
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local

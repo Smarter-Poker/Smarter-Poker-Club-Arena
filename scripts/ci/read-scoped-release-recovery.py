@@ -40,6 +40,33 @@ REFUSALS = {
     'Recovery witness cause differs': ('journal', 'cause_refused'),
     'Recovery witness sign refused': ('journal', 'sign_refused'),
     'Duplicate recovery witness sign': ('journal', 'sign_refused'),
+    'Inspector read deadline': ('inspector', 'command_deadline'),
+    'Inspector read size': ('inspector', 'command_size'),
+    'Inspector native unavailable': ('inspector', 'command_nonzero'),
+    'Inspector container unknown': ('inspector', 'container_unproved'),
+    'Inspector healthy predecessor unknown': ('inspector', 'health_unproved'),
+    'Inspector intent unknown': ('inspector', 'intent_unavailable'),
+    'Inspector partial request records': ('inspector', 'request_partial'),
+    'Inspector control differs': ('inspector', 'control_changed'),
+    'Inspector retired failure receipt unknown': ('inspector', 'failure_receipt_unproved'),
+    'Inspector log bound': ('inspector', 'history_size'),
+    'Inspector historical endpoint unknown': ('inspector', 'history_endpoint_unproved'),
+    'Inspector historical time differs': ('inspector', 'history_time_changed'),
+    'Inspector historical endpoint ambiguous': ('inspector', 'history_ambiguous'),
+    'Inspector probe unknown': ('inspector', 'probe_unproved'),
+    'Inspector probe fields': ('inspector', 'probe_fields'),
+    'Inspector probe identity': ('inspector', 'probe_identity'),
+    'Inspector scalar identity': ('inspector', 'scalar_identity'),
+    'Inspector scalar unavailable': ('inspector', 'native_scalar_unavailable'),
+    'Inspector scalar overflow': ('inspector', 'scalar_overflow'),
+    'Inspector export refused': ('inspector', 'export_fields'),
+    'Inspector exported source': ('inspector', 'export_source'),
+    'Inspector exported instance': ('inspector', 'export_instance'),
+    'Inspector exported endpoint': ('inspector', 'export_endpoint'),
+    'Inspector owned export refused': ('inspector', 'export_owned'),
+    'Inspector unknown scalar export': ('inspector', 'export_unknown_scalar'),
+    'Inspector outcome export': ('inspector', 'export_outcome'),
+    'Inspector absence identity export': ('inspector', 'export_absence_identity'),
 }
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
 
@@ -552,9 +579,12 @@ def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=6
             selector.register(child.stderr, selectors.EVENT_READ, True)
             while selector.get_map():
                 left = deadline - time.monotonic()
-                if left <= 0 or not selector.select(min(left, 3)):
+                if left <= 0:
                     raise ValueError('Inspector read deadline')
-                for key, _ in selector.select(0):
+                ready = selector.select(min(left, 3))
+                if not ready:
+                    continue
+                for key, _ in ready:
                     part = os.read(key.fileobj.fileno(), 4096)
                     if not part:
                         selector.unregister(key.fileobj)

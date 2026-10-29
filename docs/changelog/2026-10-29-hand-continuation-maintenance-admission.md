@@ -8,4 +8,6 @@ Native PostgreSQL 17.11 qualification passed: ten before/after admission checks,
 
 The earlier generic resets on table 77885e29 remain a separate historical observation; their precise cause is not established by this lock evidence.
 
-Expected installed function-definition MD5 readback: retain `12e99125964489c51d9c7bb29e915750`, claim `1ae0c66875b9a8b72c85e12d052ce1f1`, legacy claim `edafd51e3e4502cb009ec3158c8f2bc2`. Native evidence result SHA256: `5a60ea624673b5b3f7008d52b6ff86693527e586064f4351237f84d2129f148d`.
+Expected installed function-definition MD5 readback: retain `12e99125964489c51d9c7bb29e915750`, claim `1ae0c66875b9a8b72c85e12d052ce1f1`, legacy claim `edafd51e3e4502cb009ec3158c8f2bc2`. Native evidence result SHA256: `967fca9f1bc1c1ce0fc250ec7ffda8d0b1efbc3ba9a60e6a523784f8448b293d`.
+
+The function-only patch declares a machine-readable live proof of all three exact postimages and their restricted execution privileges. Native qualification checks this proof is false before the patch and true afterward; the migration-presence law validates the maintained expression.

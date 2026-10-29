@@ -1,3 +1,4 @@
+-- @live-proof: (SELECT count(*)=3 FROM pg_proc p WHERE p.oid IN (to_regprocedure('public.fn_f06_retain_hand_continuation(uuid,uuid,uuid,bigint,bigint,text,text)'),to_regprocedure('public.fn_f06_claim_hand_continuation(uuid,uuid,uuid)'),to_regprocedure('public.fn_f06_claim_legacy_river_continuation(uuid,uuid,uuid,bigint,timestamp with time zone,text,text)')) AND md5(pg_get_functiondef(p.oid)) IN ('12e99125964489c51d9c7bb29e915750','1ae0c66875b9a8b72c85e12d052ce1f1','edafd51e3e4502cb009ec3158c8f2bc2') AND p.prosecdef AND NOT has_function_privilege('anon',p.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',p.oid,'EXECUTE') AND has_function_privilege('service_role',p.oid,'EXECUTE'))
 -- Reserved with scripts/reserve-migration-version.sh; production preimages
 -- read independently 2026-10-29. Welcome fixture retirement legitimately owns
 -- the exclusive platform gate while a different table retains its original.

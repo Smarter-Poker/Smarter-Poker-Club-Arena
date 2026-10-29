@@ -73,6 +73,18 @@ def qualify_fences(e, db, native):
 
 
 
+
+def qualify_admission_live_proof(e, db, installed):
+    declarations=re.findall(r'^-- @live-proof: (.+)$',(ROOT/ADMISSION).read_text(),re.M)
+    if len(declarations)!=1:
+        raise RuntimeError('continuation admission requires exactly one declared live proof')
+    code,stdout,stderr=e.sql(db,'SELECT ('+declarations[0]+');',
+        label='admission-live-proof-'+('after' if installed else 'before'),check=False)
+    if code or stderr.strip() or stdout.strip()!=('t' if installed else 'f'):
+        raise RuntimeError('declared continuation admission live proof differs from actual catalog')
+    e.report.setdefault('admission_live_proof',[]).append({'installed':installed,'value':installed,'actual_catalog':True})
+
+
 def qualify_admission(e, db, native, before=False):
     """Two real backend connections prove gate ordering, not synthetic waits."""
     binary = native.stock_isolationtester(e.pg)
@@ -160,8 +172,10 @@ def main():
         e.sql(db,retention,label='production-retention-preimage')
         qualify_installation(e,hand,db)
         e.sql(db,file=ROOT/MIGRATION,label='continuation-candidate')
+        qualify_admission_live_proof(e,db,False)
         qualify_admission(e,db,native,before=True)
         e.sql(db,file=ROOT/ADMISSION,label='continuation-admission-candidate')
+        qualify_admission_live_proof(e,db,True)
         qualify_admission(e,db,native)
         before=(e.snapshot(db,'before-data'),e.catalog_snapshot(db,'before-catalog'),hand.private_snapshot(e,db,'before-private'))
         probe='BEGIN;\n'+(out/'opening.sql').read_text()+'\n'+(ROOT/PROBE).read_text()+'\nROLLBACK;'

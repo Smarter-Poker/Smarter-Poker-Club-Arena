@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261025025922: never installed; refused twice after ~8.1 s when fn_cash_game_switch_off's replay lookup read 1.2 M cluster events.
 -- @live-proof: (SELECT count(*) = 2 FROM public.cash_games g WHERE g.id IN ('56d5d6f0-23e9-41b0-b407-852aa1026c2a', '681eb9e8-e9fd-4026-8ec6-64075b911d33') AND NOT g.enabled AND NOT g.lightning_enabled) AND (SELECT count(*) = 2 FROM public.cash_cluster_events e WHERE e.kind = 'game_switched_off_by_owner' AND e.request_id IN ('5b0f8f3e-6a7c-4a9e-9d51-2c4b7e1f0a11', 'c3e2d7a9-1f84-4b6d-8a2e-9b7c5d0e4f22'))
 -- 20261024213143_lightning_pilot_games_switch_off_so_the_horses_stand_up.sql
 --

@@ -1,5 +1,7 @@
 import { projectTournamentAdmission } from '../tournament/tournamentAdmission.js';
+import { fixedSngHorseCount } from './FixedSngHorsePlan.js';
 import {
+  isFixedSngSatellite,
   isPersistedUnlimitedMtt,
   isPersistedSeatFirst,
   readPersistedTournamentFormatContract,
@@ -3871,7 +3873,49 @@ export class TournamentRecurringService {
       for (const owner of owners) {
         await this.ensureSatelliteHeadsUps(owner, satelliteShare);
       }
+      await this.fillFixedSngSatellites();
     });
+  }
+
+  /** Existing SNG tick, bounded paid attempts; the database owns union/day admission. */
+  private async fillFixedSngSatellites(): Promise<void> {
+    if (isMaintenanceFrozen() || this.stopOperation) return;
+    const result = await fetchAllRows<Record<string, unknown>>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournaments')
+          .select(
+            'id, union_id, format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target'
+          )
+          .eq('status', 'REGISTERING')
+          .eq('format_contract', 'sng-v1')
+          .eq('tournament_type', 'SNG')
+          .in('max_players', [6, 9])
+          .not('union_id', 'is', null)
+          .or('satellite_target_id.not.is.null,satellite_target.not.is.null')
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      {
+        label: 'TournamentRecurring.fixed_sng_fill_read',
+        maxRows: 50_000,
+        shouldContinue: () => !isMaintenanceFrozen() && !this.stopOperation,
+      }
+    );
+    if (!result.complete) return;
+    const boards = result.rows.filter(
+      (row) => row.union_id && row.format_contract === 'sng-v1' && isFixedSngSatellite(row)
+    );
+    for (let i = boards.length - 1; i > 0; i--) {
+      const j = secureRandomInt(i + 1);
+      [boards[i], boards[j]] = [boards[j], boards[i]];
+    }
+    for (const board of boards.slice(0, 12)) {
+      if (isMaintenanceFrozen() || this.stopOperation) return;
+      await this.topUpWithHorses(String(board.id), Number(board.max_players));
+    }
   }
 
   /**
@@ -7077,7 +7121,7 @@ export class TournamentRecurringService {
       const { data: entryEvent, error: entryEventError } = await supabase
         .from('tournaments')
         .select(
-          'format_contract, variant, max_players, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount'
+          'format_contract, tournament_type, variant, max_players, min_players, table_size, satellite_seats, satellite_target_id, satellite_target, status, start_time, current_players, guaranteed_prize, prize_pool, buy_in_amount'
         )
         .eq('id', tournamentId)
         .maybeSingle();
@@ -7087,6 +7131,23 @@ export class TournamentRecurringService {
           'TournamentRecurring.horse_entry_clock_unreadable'
         );
         return 0;
+      }
+      if (entryEvent.format_contract === 'sng-v1' && isFixedSngSatellite(entryEvent)) {
+        const { data: plan, error: planError } = await supabase.rpc(
+          'fn_sng_satellite_horse_fill_plan',
+          { p_tournament_id: tournamentId }
+        );
+        if (planError) {
+          reportError(planError, 'TournamentRecurring.fixed_sng_fill_plan');
+          return 0;
+        }
+        count = fixedSngHorseCount(
+          plan,
+          Number(entryEvent.max_players),
+          Number(entryEvent.current_players),
+          count
+        );
+        if (count <= 0 || isMaintenanceFrozen() || this.stopOperation) return 0;
       }
       if (
         isPersistedUnlimitedMtt(entryEvent) &&

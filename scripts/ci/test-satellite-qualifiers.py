@@ -235,6 +235,8 @@ def main():
         qualify_readers(e,root,native,db,output,qualifier_probe)
         from fixed_sng_satellite_financial import qualify as qualify_fixed_sng
         manifest['source_sha256'].update(qualify_fixed_sng(e,root,db,output))
+        from fixed_sng_horse_plan_native import qualify as qualify_horse_plan
+        manifest['source_sha256'].update(qualify_horse_plan(e,root,db,output))
         (output/'source-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
         for path,digest in manifest['source_sha256'].items():
             if sha(root/path)!=digest:

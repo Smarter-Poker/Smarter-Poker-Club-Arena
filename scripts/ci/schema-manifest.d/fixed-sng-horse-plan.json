@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/sng-satellite-horse-wait-01a18347",
+  "_comment": "Service-only advisory plan; actual admission claimed by atomic paid-roster trigger.",
+  "functions": ["fn_sng_satellite_horse_fill_plan", "fn_ca_fixed_sng_horse_paid_admission"]
+}

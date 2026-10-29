@@ -6,7 +6,7 @@
     "docs/changelog/2026-10-29-tournament-source-identity-cover.md": "c0971dd60d1e06674dd14e87f59430786e61533eba681cd078cc5687c9eae033",
     "docs/laws.d/tournament-source-identities-keep-narrow-physical-coverage.md": "35e2fed8e6d6de6270568bc1fbe040c285f104400d960fa5ac82d6ccd56b60ae",
     "scripts/ci/apply-recorded-migration.mjs": "9f8decd52f72c8894baf565f3aa150397cc10bca2489f3b1b0812d2f91caf307",
-    "scripts/ci/fixtures/tournament-source-identity-cover/README.md": "89dc10fefef96166eb18655572004cde2f1ffcb1b9c7e1e32855af745273b9ce",
+    "scripts/ci/fixtures/tournament-source-identity-cover/README.md": "ddaa6193c0580072b30ba0e7dfb783110333618a1e4d771465773b26ff57f273",
     "scripts/ci/fixtures/tournament-source-identity-cover/actual-table-authority.json": "49ec49708441d27f3d37467659953464890439b0d508d04f5280ae35ab1dc648",
     "scripts/ci/fixtures/tournament-source-identity-cover/meaningful-table-contract.json": "62c3fe9a746c851433e3b5c70089448f634e9433326250a21ef569eb6e511f86",
     "scripts/ci/fixtures/tournament-source-identity-cover/qualification-evidence.json": "4d7d82b5770be253fa84bbd64360245e8e457b68ae47ffe46b54c759bde20b21",
@@ -20,7 +20,8 @@
     "scripts/ci/migration-concurrent-preamble.mjs": "c50bc71b5c1234a6d505e9125de5744d04a3f97113025550f9eeb53f8b9bd8d6",
     "scripts/ci/test-tournament-source-identity-cover-postgres.py": "8e26f6c6bbd36a77d7f743e696358d9dcd616eaf41ef564b64ac716c67cb6d01",
     "supabase/migrations/20261029020140_weekly_fee_source_identities_retain_their_tournament_and_rak.sql": "e8d5dd8d5254b16259f8884d04427848dc4c14bb94af0071f5c92bc8ad56adba",
-    "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "dda20e320e583bd323b72a2cc9c992287e735f5ea95512babaa2351d0e5fbf8a"
+    "tests/tournament-source-identities-keep-narrow-physical-coverage.law.test.ts": "dda20e320e583bd323b72a2cc9c992287e735f5ea95512babaa2351d0e5fbf8a",
+    "scripts/qualification/cash-native-hosted.manifest.json": "6e006ee944e4ef5c4a7a5978c98d8dba204ad0817df523016cd3a23852602703"
   },
   "normalPrecommitFormattingAudit": {
     "review": "Normal pre-commit Prettier reformatted only JSON object layout; complete parsed authority and meaningful contract values are unchanged from native33 inputs. No migration/runner/query/workflow change.",

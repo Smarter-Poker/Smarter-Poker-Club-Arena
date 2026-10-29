@@ -2,7 +2,7 @@
 
 The sole production change adds `(id) INCLUDE(tournament_id,rake_record_id)` to the existing fee source table. The fixed UUID keys avoid reading the wide contract just to establish source/event identity. No source data, quality function, financial helper, existing index, trigger, generation or planner setting changes.
 
-`actual-table-authority.json` freezes the root's production read-only catalog at 02:04 UTC October 29. The migration requires its full 15-column/default, five-constraint, 14-index, owner/ACL/RLS/policy and eight-trigger contract. Only generated RI trigger names and OID identities normalize for reproducible qualification. Complete raw trigger metadata and definitions remain byte-equal across the actual transaction. Source65 and the original generation and seal definitions remain unchanged.
+`actual-table-authority.json` freezes the root's production read-only catalog at 02:03:53.104214 UTC October 29. The migration requires its full 15-column/default, five-constraint, 14-index, owner/ACL/RLS/policy and eight-trigger contract. Only generated RI trigger names and OID identities normalize for reproducible qualification. Complete raw trigger metadata and definitions remain byte-equal across the actual transaction. Source65 and the original generation and seal definitions remain unchanged.
 
 Run the maintained private PostgreSQL 17 qualification:
 

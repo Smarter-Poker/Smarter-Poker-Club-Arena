@@ -1,0 +1,124 @@
+{
+  "sourcePath": "supabase/migrations/20260831233537_ca_alert_audit_round3_contained.sql",
+  "sourceSHA256": "6c29728d5cb5cacfb6bec6ced7e65c3d2fe6a26616ade322753976ea0ec33fec",
+  "observedReadOnly": "2026-10-22 before23:42:39UTC; exact public.ca_money_rpc_registry target triple SELECT only",
+  "row": {
+    "proname": "fn_complete_club_opening_setup",
+    "status": "approved",
+    "notes": "Audited 2026-08-31 (alert audit round 3): owner/admin-gated, definer, single-transaction club opening funding (spin seed via fn_spin_activate, bbj seed, promo budget, leaderboard budget). Declares category club_opening_allocation / counterparty opening_setup - vocabulary added same day. Leaderboard budget is held as club_opening_setups.leaderboard_seed_remaining and counted in the supply snapshot as leaderboard_liability."
+  },
+  "guardRoutines": [
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_money_rpc_balance_columns",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "text[]",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "sql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "53e86c9945bde2a5830232f59a365fdd"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_money_rpc_registry_guard",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "event_trigger",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "03928ac3da782be33306c2e07b0b8977"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_src text",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_money_rpc_writes_balances",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "boolean",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "sql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "1b13d12e02c7f7b719fcfae4153dcb1f"
+    }
+  ],
+  "eventTriggers": [
+    {
+      "name": "ab_ca_money_rpc_registered",
+      "tags": ["CREATE FUNCTION"],
+      "event": "ddl_command_end",
+      "owner": "postgres",
+      "enabled": "O",
+      "function": "public.fn_ca_money_rpc_registry_guard()"
+    }
+  ]
+}

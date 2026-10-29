@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "sourceProject": "kuklfnapbkmacvwxktbh",
+  "schemaFile": "pokeriq-20261020.sql",
+  "schemaSHA256": "e5bd68c3832542691ad0dfd7da61ba736d58bf9967c90a9b74478fe1257744c5",
+  "bytes": 29337029,
+  "allSchemas": true,
+  "dataIncluded": false,
+  "sourceRevisionHub": "d318a16c9fbdd8d71e68d0d9fcfc30acdd17e00d",
+  "scope": "Observed schema/ACL fidelity baseline, not permission intent inferred from broad ACL. Fresh caller intent is separately checked against maintained reviewed manifests. No production installation or historical financial data replay.",
+  "extensions": [
+    {
+      "name": "dblink",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.2"
+    },
+    {
+      "name": "http",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.6"
+    },
+    {
+      "name": "pg_cron",
+      "owner": "supabase_admin",
+      "schema": "pg_catalog",
+      "version": "1.6.4"
+    },
+    {
+      "name": "pg_net",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "0.19.5"
+    },
+    {
+      "name": "pg_stat_statements",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.11"
+    },
+    {
+      "name": "pg_trgm",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "1.6"
+    },
+    {
+      "name": "pgcrypto",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.3"
+    },
+    {
+      "name": "pgstattuple",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.5"
+    },
+    {
+      "name": "plpgsql",
+      "owner": "supabase_admin",
+      "schema": "pg_catalog",
+      "version": "1.0"
+    },
+    {
+      "name": "plpgsql_check",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "2.7"
+    },
+    {
+      "name": "postgis",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "3.3.7"
+    },
+    {
+      "name": "supabase_vault",
+      "owner": "supabase_admin",
+      "schema": "vault",
+      "version": "0.3.1"
+    },
+    {
+      "name": "uuid-ossp",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.1"
+    },
+    {
+      "name": "vector",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "0.8.0"
+    }
+  ],
+  "sameExportedSnapshot": true,
+  "catalogSHA256": "447fb08f07daa4d0f0f34b8e9af55cd3e28c1c43a3e52e2fbc28b40989a5bd5f",
+  "captureCompletedAt": "2026-10-22T20:08:31.099472+00:00",
+  "captureTimingSource": "private capture receipt filesystem completion timestamp",
+  "catalogQuerySHA256": "3a9bc044cd645bfc10fc2281dd6eb016b9824e32d2c2bbc7f1960a53018e9eea",
+  "sourceHistorySHA256": "5f4a07b5470472206d1f497c105208916503b26afaa5bd63b2afcade3cd43236",
+  "platformContractSHA256": "b58f710b8881acb8ed7f8985aa94be1ffd5acfc04ceb11d92fa5bd5d07708bd3",
+  "extensionRuntimeSHA256": "3dffab9312555e8256fb2ef7b60b47b4157a3901ba9492a71d81ac7a670843b4",
+  "sourceRevisionArena": "ffa19fa61761da13c73b4442558a477704cbccca",
+  "pendingSchemaVersions": ["20261022162545", "20261022223439"],
+  "installedNewVersions": ["20261020182843", "20261020184651"],
+  "rawCapturedCatalogSHA256": "0730c9e8b2460f5289677b319ab7343dfacf3730529d97ed3ddf0ff8a1c06d80",
+  "catalogRepresentation": "Ordinary repository formatter indentation only; parsed JSON verified equal to raw same-snapshot capture.",
+  "catalogSemanticSHA256": "1caaef056934116fd1a5b23e7711465f75ec8c8cdca53ee34327a62f23817278",
+  "historicalSourceScope": "Immutable source bytes at the named revisions, not a claim every historical file was installed byte-identically or a financial-data replay. The independent current-snapshot native schema is authoritative reconstruction input; historical ledger discrepancies are preserved separately.",
+  "roleContractSHA256": "b081c51fe9597f8d825437f036cdd7360fa9c87f712f844fe1860dc5074ca2e8",
+  "historicalLedgerReconciliationSHA256": "dde671b46b850359cce34d96acc23d37d25d1f277fcbd9e8150936a93e844176",
+  "sourceHistoryReconciledAt": "2026-10-23T00:22:05.955431+00:00",
+  "sourceHistoryRevisionScope": "Frozen ffa19fa61761da13c73b4442558a477704cbccca source audit. Four exact hash-bound DDL inputs (162545pending,201306installed-after-capture,223439pending-after-capture,223610installed-after-capture) are excluded from immutable history inventory and applied only in order after independent baseline equality. Independent20:08snapshot bytes unchanged; historical source/ledger mismatches disclosed; no business-data replay or production index installation claim.",
+  "pendingCatalogSHA256": "1073170e13e3966564d60ad63d861fa87793ddeca588daa7d39af531f8fafacb",
+  "forwardSchemaSHA256": "a3feeb575fc9a784e6e9cf13bf9eb33127bc59d11696d2c20fa0dca848bd2260",
+  "postCaptureInstalledSchemaVersions": ["20261022201306", "20261022223610"],
+  "openingCatalogSHA256": "5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff88d4",
+  "openingGovernanceSHA256": "702886e7df8b14465714321ffdb8ab5b93cf9f72e85610da484674e98914c834",
+  "journalIndexCatalogSHA256": "eae9ee3e9dcc55b84fbb36dadc6175edfc9ab6e2b184da948ce906773b99275f",
+  "pickCatalogSHA256": "54b4585fcf3443abb6d1b3d76f36170d8ee9a4720fb8a4c5815edb5b05a44bac",
+  "auditedSourceRevision": "ffa19fa61761da13c73b4442558a477704cbccca",
+  "qualificationScope": "fixed audit schema-only baseline plus four declared transitions; later migrations excluded",
+  "laterMigrationsExcluded": true
+}

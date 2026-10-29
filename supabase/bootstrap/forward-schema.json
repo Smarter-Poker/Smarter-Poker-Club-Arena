@@ -1,0 +1,25 @@
+{
+  "arena": [
+    {
+      "path": "supabase/migrations/20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql",
+      "sha256": "79dd6ab3923df1c5a85825c4153385a0a79b66235efdacdf61264784fe3da3d3",
+      "state": "pending-at-capture"
+    },
+    {
+      "path": "supabase/migrations/20261022201306_restore_welcome_reserve_reuse_for_quick_club_opening.sql",
+      "sha256": "c3be2d8375c2aa0c2c20718e4a9a01361b09635c63546b73ef20bfd9a2832a67",
+      "state": "installed-after-capture"
+    },
+    {
+      "path": "supabase/migrations/20261022223439_adaptive_journal_metadata_cover.sql",
+      "sha256": "1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696",
+      "state": "pending-after-capture"
+    },
+    {
+      "path": "supabase/migrations/20261022223610_mystery_bounty_pick_refuses_after_the_reveal.sql",
+      "sha256": "93e0b63ef3e7196ac09e41456bc2ce2cd851cd6648d52ec9d318d14425b5238d",
+      "state": "installed-after-capture"
+    }
+  ],
+  "hub": []
+}

@@ -1,0 +1,17 @@
+{
+  "sourceProject": "kuklfnapbkmacvwxktbh",
+  "source": "Same exported read-only snapshot as the schema/catalog capture",
+  "database": {
+    "ctype": "en_US.UTF-8",
+    "owner": "postgres",
+    "locale": "en-US",
+    "collate": "en_US.UTF-8",
+    "encoding": "UTF8",
+    "provider": "i",
+    "icu_rules": null,
+    "bootstrap_role": "supabase_admin",
+    "collation_version": "153.120"
+  },
+  "businessRowsRead": false,
+  "productionWrites": false
+}

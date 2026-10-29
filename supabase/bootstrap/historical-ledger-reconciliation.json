@@ -1,0 +1,1887 @@
+{
+  "scope": "Historical source/ledger hash reconciliation, not an installation or replay claim. Snapshot schema is authoritative.",
+  "arenaAddedFiles": [
+    {
+      "path": "supabase/migrations/20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe.sql",
+      "sourceMD5": "8ca8a563cfd903eb9d62cbab88041220",
+      "sourceStripMD5": "705303dde78e7093669f6663f908e195",
+      "candidates": [
+        {
+          "version": "20261020145408",
+          "name": "resolved_financial_alert_storms_close_with_their_exact_membe",
+          "sqlMD5": "8ca8a563cfd903eb9d62cbab88041220",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020194921_midway_non_freezeouts_allow_rebuys_and_addons.sql",
+      "sourceMD5": "bdbe8d2fda28e5ca43a33ee5955e44d4",
+      "sourceStripMD5": "5a7592b1cf1e267433a9be089498ee27",
+      "candidates": [
+        {
+          "version": "20261020194921",
+          "name": "midway_non_freezeouts_allow_rebuys_and_addons",
+          "sqlMD5": "bdbe8d2fda28e5ca43a33ee5955e44d4",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020201931_unattended_cash_game_offers.sql",
+      "sourceMD5": "2c4c8da7dbac1dffc82f3476ea6175a5",
+      "sourceStripMD5": "406751e8e1aa03f08b8890f4f7ce13e6",
+      "candidates": [
+        {
+          "version": "20261020201931",
+          "name": "unattended_cash_game_offers",
+          "sqlMD5": "2c4c8da7dbac1dffc82f3476ea6175a5",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020201951_fee_detector_uses_original_close_plan.sql",
+      "sourceMD5": "fd2c97984cdf5a1adec12da45b53280f",
+      "sourceStripMD5": "125a909b4dfb67f4bec22d4239244316",
+      "candidates": [
+        {
+          "version": "20261020201951",
+          "name": "fee_detector_uses_original_close_plan",
+          "sqlMD5": "fd2c97984cdf5a1adec12da45b53280f",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020203346_historical_rakeback_preserves_departed_financial_wallets.sql",
+      "sourceMD5": "9cd968f2a4be99e409fc3b695826b049",
+      "sourceStripMD5": "ec27a52ca02b5249d9447ca0d38da44d",
+      "candidates": [
+        {
+          "version": "20261020203346",
+          "name": "historical_rakeback_preserves_departed_financial_wallets",
+          "sqlMD5": "9cd968f2a4be99e409fc3b695826b049",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020203733_add_agent_assignment_transaction_before_client_publication.sql",
+      "sourceMD5": "6e50fc551b976bac9210eff38315855e",
+      "sourceStripMD5": "60c961484063ec63d2404870b3cb1673",
+      "candidates": [
+        {
+          "version": "20261020203834",
+          "name": "20261020203733_add_agent_assignment_transaction_before_client_publication",
+          "sqlMD5": "6e50fc551b976bac9210eff38315855e",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020204148_midway_half_one_cash_games.sql",
+      "sourceMD5": "65271f48efac3465ee191b845c12338d",
+      "sourceStripMD5": "451a11bfe1a7f637b2c57613b7515c14",
+      "candidates": [
+        {
+          "version": "20261020204501",
+          "name": "midway_half_one_cash_games",
+          "sqlMD5": "65271f48efac3465ee191b845c12338d",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql",
+      "sourceMD5": "a0ff8030653d8aaa18b26a3d507efa5f",
+      "sourceStripMD5": "695d1d8e8fb853f1c251ebf343532847",
+      "candidates": [
+        {
+          "version": "20261021174527",
+          "name": "20261020210238_restrict_agent_banks_and_authorize_downline_reassignment",
+          "sqlMD5": "a0ff8030653d8aaa18b26a3d507efa5f",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261020210313_daily_chicago_maintenance_observation.sql",
+      "sourceMD5": "964973b5275fc8fd3740ffc5b8abe7e1",
+      "sourceStripMD5": "f8da2bda1a29daf56eb332eff33fd42c",
+      "candidates": [
+        {
+          "version": "20261020210313",
+          "name": "daily_chicago_maintenance_observation",
+          "sqlMD5": "964973b5275fc8fd3740ffc5b8abe7e1",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021172727_union_wallet_intents_survive_unavailable_browser_storage.sql",
+      "sourceMD5": "184afefd14459ac68248481b30c2284f",
+      "sourceStripMD5": "9fc9c882f13937439ebe39995f316158",
+      "candidates": [
+        {
+          "version": "20261021172727",
+          "name": "union_wallet_intents_survive_unavailable_browser_storage",
+          "sqlMD5": "184afefd14459ac68248481b30c2284f",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021172828_agent_wallet_can_fund_own_player_wallet.sql",
+      "sourceMD5": "2d832d600e492a40ae1d093bef6271fb",
+      "sourceStripMD5": "6328a57d6d37d06836fbcd187dd82e19",
+      "candidates": [
+        {
+          "version": "20261021172828",
+          "name": "agent_wallet_can_fund_own_player_wallet",
+          "sqlMD5": "2d832d600e492a40ae1d093bef6271fb",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021172832_never_dealt_arrivals_keep_their_committed_move.sql",
+      "sourceMD5": "7b024d8ca7c7738fd96b5efee785c8da",
+      "sourceStripMD5": "4c15469e5b8b0f6958376b679afa7f9b",
+      "candidates": [
+        {
+          "version": "20261021220403",
+          "name": "20261021172832_never_dealt_arrivals_keep_their_committed_move",
+          "sqlMD5": "7b024d8ca7c7738fd96b5efee785c8da",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021172837_weekly_hand_witnesses_follow_original_window_sources.sql",
+      "sourceMD5": "3fab6f5c4237425b48767ff52cf925fe",
+      "sourceStripMD5": "f97b88288558887453aee191d9bb63f1",
+      "candidates": [
+        {
+          "version": "20261021172837",
+          "name": "weekly_hand_witnesses_follow_original_window_sources",
+          "sqlMD5": "3fab6f5c4237425b48767ff52cf925fe",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
+      "sourceMD5": "86d77679ca1631dfc5c8163b50fd07f8",
+      "sourceStripMD5": "289eb570f2a289ae73e1f4280440172e",
+      "candidates": [
+        {
+          "version": "20261021173101",
+          "name": "tournament_levels_have_a_five_minute_floor",
+          "sqlMD5": "5246a6a7547168ec1e9b520258ae9efe",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql",
+      "sourceMD5": "7d2b759f79a32652b31b43854a74bb03",
+      "sourceStripMD5": "b52b2682a7679f8b16decb5d4edc1e7d",
+      "candidates": [
+        {
+          "version": "20261021174337",
+          "name": "member_role_panel_edits_individual_rakeback_agreements",
+          "sqlMD5": "364374fe1750abb9e0208b586f6ebb16",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021173509_late_seat_preserves_callers_money_path.sql",
+      "sourceMD5": "3c6a96cdd7cc50ed4c6fd8b264617ed2",
+      "sourceStripMD5": "7e4243f2da07fef319dfcda006f7a902",
+      "candidates": [
+        {
+          "version": "20261021173509",
+          "name": "late_seat_preserves_callers_money_path",
+          "sqlMD5": "3c6a96cdd7cc50ed4c6fd8b264617ed2",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021173708_standalone_rakeback_only_admits_its_original_coordinator_obl.sql",
+      "sourceMD5": "7d63a0164a82550ab4570638d98a8089",
+      "sourceStripMD5": "be212ce094fb6edae091516738d637ae",
+      "candidates": [
+        {
+          "version": "20261021173708",
+          "name": "standalone_rakeback_only_admits_its_original_coordinator_obl",
+          "sqlMD5": "7d63a0164a82550ab4570638d98a8089",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021173713_daily_metrics_health_materializes_original_human_classifier.sql",
+      "sourceMD5": "9055e84d60e1785e25363fd317e13e26",
+      "sourceStripMD5": "7157e367c3823d727141d647858b4a3a",
+      "candidates": [
+        {
+          "version": "20261021173713",
+          "name": "daily_metrics_health_materializes_original_human_classifier",
+          "sqlMD5": "9055e84d60e1785e25363fd317e13e26",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021174252_daily_maintenance_circulation_marks_follow_chicago_boundarie.sql",
+      "sourceMD5": "f1b8c0d37b98f985e151d1c9c1131d85",
+      "sourceStripMD5": "8ead0f694df6bee32ecaabbeeaf23e2a",
+      "candidates": [
+        {
+          "version": "20261021174252",
+          "name": "daily_maintenance_circulation_marks_follow_chicago_boundarie",
+          "sqlMD5": "f1b8c0d37b98f985e151d1c9c1131d85",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021174448_midway_cash_rake_policy_two_point_five_bb.sql",
+      "sourceMD5": "b32ddbf8b7000ec8025574bf9af9e21e",
+      "sourceStripMD5": "9a275380ff90ab01730b47d44e59b875",
+      "candidates": [
+        {
+          "version": "20261021174448",
+          "name": "midway_cash_rake_policy_two_point_five_bb",
+          "sqlMD5": "b32ddbf8b7000ec8025574bf9af9e21e",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021174637_roster_club_join_date_sorting.sql",
+      "sourceMD5": "a54353737266058e7e96353b247e5eb6",
+      "sourceStripMD5": "d9d1bf6e043e6f09b3edfe278ae2870d",
+      "candidates": [
+        {
+          "version": "20261021220341",
+          "name": "roster_club_join_date_sorting",
+          "sqlMD5": "a54353737266058e7e96353b247e5eb6",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021175019_individual_player_rates_cannot_bypass_agreement_authorizatio.sql",
+      "sourceMD5": "c3e4c744e4ade28b64feec6c8866dff4",
+      "sourceStripMD5": "5ab3217934e95b574917cc20d7903d1a",
+      "candidates": [
+        {
+          "version": "20261021180334",
+          "name": "individual_player_rates_cannot_bypass_agreement_authorizatio",
+          "sqlMD5": "c3e4c744e4ade28b64feec6c8866dff4",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021180032_agent_transfer_review_history_and_scope_events.sql",
+      "sourceMD5": "274d312792131d0cd8650d128e470661",
+      "sourceStripMD5": "2e8db1f2b425ea64d140ada56bd59c7e",
+      "candidates": [
+        {
+          "version": "20261021182211",
+          "name": "20261021180032_agent_transfer_review_history_and_scope_events",
+          "sqlMD5": "274d312792131d0cd8650d128e470661",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021180210_rename_shark_club_to_kings_club.sql",
+      "sourceMD5": "59d982eb0257863a139e5f8fd7206b3a",
+      "sourceStripMD5": "93097d7281f70c470e8d23d7f5192ae0",
+      "candidates": [
+        {
+          "version": "20261021180210",
+          "name": "rename_shark_club_to_kings_club",
+          "sqlMD5": "59d982eb0257863a139e5f8fd7206b3a",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021180854_club_entry_news_automatically_shown_once.sql",
+      "sourceMD5": "be0958b73c6f4592d4e6cd649fe8a358",
+      "sourceStripMD5": "dcfad53b909b68c7d45ee9682e3d0ba0",
+      "candidates": [
+        {
+          "version": "20261021180854",
+          "name": "club_entry_news_automatically_shown_once",
+          "sqlMD5": "382725b73c1e5cc79b0546739ea14cb8",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021181050_club_entry_news_explicit_service_access.sql",
+      "sourceMD5": "d7a1cafb3411c4450dab4c1e228d1dbe",
+      "sourceStripMD5": "607eb95cea2a9b36abdfed65575f8d77",
+      "candidates": [
+        {
+          "version": "20261021181050",
+          "name": "club_entry_news_explicit_service_access",
+          "sqlMD5": "d6b8eb50935646259e6b27804486043a",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021182053_serialize_club_news_claims_across_edits.sql",
+      "sourceMD5": "0e4d42b7522c1587eab4ec73446b239c",
+      "sourceStripMD5": "0872f46eddf36e88dd44c0a61e084685",
+      "candidates": [
+        {
+          "version": "20261021182053",
+          "name": "serialize_club_news_claims_across_edits",
+          "sqlMD5": "0e4d42b7522c1587eab4ec73446b239c",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021182432_cashier_recovery_survives_unavailable_browser_storage.sql",
+      "sourceMD5": "0635dc553908889d2bdad5a0ba0908e1",
+      "sourceStripMD5": "e4f3b1f737203c105f7650b85b3c6173",
+      "candidates": [
+        {
+          "version": "20261021182432",
+          "name": "cashier_recovery_survives_unavailable_browser_storage",
+          "sqlMD5": "0635dc553908889d2bdad5a0ba0908e1",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021183705_bind_private_club_helper_reads_to_the_caller.sql",
+      "sourceMD5": "a4e0e85c11cdd5b006cf57495c9cea96",
+      "sourceStripMD5": "d201dbb70229777648ece608579e3115",
+      "candidates": [
+        {
+          "version": "20261021184621",
+          "name": "20261021183705_bind_private_club_helper_reads_to_the_caller",
+          "sqlMD5": "a4e0e85c11cdd5b006cf57495c9cea96",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021193318_confirmed_rakeback_certificates_retain_historical_payer_rece.sql",
+      "sourceMD5": "d6212e8a3dd2ed85eb2b811504dc9822",
+      "sourceStripMD5": "f040db76c152069e1ff5f710bdada98d",
+      "candidates": [
+        {
+          "version": "20261021193318",
+          "name": "confirmed_rakeback_certificates_retain_historical_payer_rece",
+          "sqlMD5": "d6212e8a3dd2ed85eb2b811504dc9822",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021202610_club_data_totals_use_exact_game_types_and_union_scope.sql",
+      "sourceMD5": "0ba198730ce8cba4f9dcf1d0fb1ec980",
+      "sourceStripMD5": "80ed4c39eeeaaaa63adafd42e2efb785",
+      "candidates": [
+        {
+          "version": "20261021202610",
+          "name": "club_data_totals_use_exact_game_types_and_union_scope",
+          "sqlMD5": "0ba198730ce8cba4f9dcf1d0fb1ec980",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021204534_mutual_friends_are_unique_players.sql",
+      "sourceMD5": "962b28a21ee6a2e07387b7d22e7d66cf",
+      "sourceStripMD5": "bb28d4f313fbc49643b60d6a6e9f733b",
+      "candidates": [
+        {
+          "version": "20261021204534",
+          "name": "mutual_friends_are_unique_players",
+          "sqlMD5": "962b28a21ee6a2e07387b7d22e7d66cf",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021222049_lock_tournament_level_clocks.sql",
+      "sourceMD5": "cdf37cae555cea6896e877a4b278653c",
+      "sourceStripMD5": "cdf37cae555cea6896e877a4b278653c",
+      "candidates": [
+        {
+          "version": "20261021222049",
+          "name": "lock_tournament_level_clocks",
+          "sqlMD5": "cdf37cae555cea6896e877a4b278653c",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021222550_the_arena_active_count_reads_only_public_club_columns.sql",
+      "sourceMD5": "e767739596828538526de635c98e30e4",
+      "sourceStripMD5": "6a5b09233f9918efe7d6df0a0d4d7720",
+      "candidates": [
+        {
+          "version": "20261021222550",
+          "name": "the_arena_active_count_reads_only_public_club_columns",
+          "sqlMD5": "6a5b09233f9918efe7d6df0a0d4d7720",
+          "statementCount": 1,
+          "match": "strip"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021223220_the_locked_level_clock_trigger_is_declared.sql",
+      "sourceMD5": "d336ae2a7bbc36ba218cb3a03f7d0432",
+      "sourceStripMD5": "4526397e28fcedb4aa0bed72fe0477ba",
+      "candidates": [
+        {
+          "version": "20261021223220",
+          "name": "the_locked_level_clock_trigger_is_declared",
+          "sqlMD5": "d336ae2a7bbc36ba218cb3a03f7d0432",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021224043_an_alert_recovery_is_found_by_its_fingerprint.sql",
+      "sourceMD5": "25b47b809c00ffd4265742f88819c452",
+      "sourceStripMD5": "17b58fb3dd16a1a1cca87b4bdb034978",
+      "candidates": [
+        {
+          "version": "20261021224043",
+          "name": "an_alert_recovery_is_found_by_its_fingerprint",
+          "sqlMD5": "25b47b809c00ffd4265742f88819c452",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021231028_tournament_close_custody_locks_owners_in_id_order.sql",
+      "sourceMD5": "5d9e0add2cfad9298a678d528efa099c",
+      "sourceStripMD5": "e3d7327bad8db859ebe20f953cf9cf11",
+      "candidates": [
+        {
+          "version": "20261022001656",
+          "name": "20261021231028_tournament_close_custody_locks_owners_in_id_order",
+          "sqlMD5": "5d9e0add2cfad9298a678d528efa099c",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261021234526_tournament_finishers_are_paid_the_moment_they_bust.sql",
+      "sourceMD5": "91e6170421d7a532a2258ac7fc9bcba6",
+      "sourceStripMD5": "4009c6af3a78eb4b51870ee4e077976f",
+      "candidates": [
+        {
+          "version": "20261021234526",
+          "name": "tournament_finishers_are_paid_the_moment_they_bust",
+          "sqlMD5": "d35f900640c3ff476fc334976f6d1cf9",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022000330_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql",
+      "sourceMD5": "af0c11ce191a95100e0484a91db9362b",
+      "sourceStripMD5": "61bec6a44ab7cdcfed23f0f3b1d9e32f",
+      "candidates": [
+        {
+          "version": "20261022000330",
+          "name": "a_diamond_wallet_lock_never_blocks_a_foreign_key_check",
+          "sqlMD5": "af0c11ce191a95100e0484a91db9362b",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022000503_free_buy_hour_on_locked_clock.sql",
+      "sourceMD5": "bffb7654c5adfe032785434d32a03436",
+      "sourceStripMD5": "e3add07187babb8abcb114f4beccf683",
+      "candidates": [
+        {
+          "version": "20261022000503",
+          "name": "free_buy_hour_on_locked_clock",
+          "sqlMD5": "bffb7654c5adfe032785434d32a03436",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022010444_a_dealing_tournament_is_never_dark.sql",
+      "sourceMD5": "769d825b23539d36809e28814ff5bd3d",
+      "sourceStripMD5": "311fe665b9959b0e7845ab2f24bce22b",
+      "candidates": [
+        {
+          "version": "20261022010444",
+          "name": "a_dealing_tournament_is_never_dark",
+          "sqlMD5": "311fe665b9959b0e7845ab2f24bce22b",
+          "statementCount": 1,
+          "match": "strip"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022010659_an_agent_row_deletes_without_scanning_every_rake_attribution.sql",
+      "sourceMD5": "9b530a8b4e36b8df673e85dac437186c",
+      "sourceStripMD5": "0c66c0361d704dff7effa19722ec4967",
+      "candidates": [
+        {
+          "version": "20261022010724",
+          "name": "an_agent_row_deletes_without_scanning_every_rake_attribution",
+          "sqlMD5": "6a6d9e772e955f8a604e30a800577bfe",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022013120_tournament_places_are_true_from_the_first_bust_and_cashing_p.sql",
+      "sourceMD5": "9a3b0c835bcd7d2374093be8461efe2a",
+      "sourceStripMD5": "88ef608c3cab83b125727ae84565e9de",
+      "candidates": [
+        {
+          "version": "20261022013120",
+          "name": "tournament_places_are_true_from_the_first_bust_and_cashing_p",
+          "sqlMD5": "8747264c536b517f0c4f12a6965cb94f",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022014607_every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel.sql",
+      "sourceMD5": "882c744c221ee21b233e361aaf3dc7f0",
+      "sourceStripMD5": "882c744c221ee21b233e361aaf3dc7f0",
+      "candidates": [
+        {
+          "version": "20261022014607",
+          "name": "every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel",
+          "sqlMD5": "882c744c221ee21b233e361aaf3dc7f0",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022014651_live_mtts_move_to_the_twelve_point_five_percent_depth.sql",
+      "sourceMD5": "e67840b992143e90da94f68d73376f7f",
+      "sourceStripMD5": "e67840b992143e90da94f68d73376f7f",
+      "candidates": [
+        {
+          "version": "20261022014651",
+          "name": "live_mtts_move_to_the_twelve_point_five_percent_depth",
+          "sqlMD5": "e67840b992143e90da94f68d73376f7f",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022014819_ca_orphaned_certification_account_sweep.sql",
+      "sourceMD5": "b1b97841ab9537535a4e02427c24d73a",
+      "sourceStripMD5": "b1b97841ab9537535a4e02427c24d73a",
+      "candidates": [
+        {
+          "version": "20261022014819",
+          "name": "ca_orphaned_certification_account_sweep",
+          "sqlMD5": "b1b97841ab9537535a4e02427c24d73a",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022020721_the_provisional_payout_ladder_follows_the_field_during_late_.sql",
+      "sourceMD5": "09878f3226b79779e9714aac351957b6",
+      "sourceStripMD5": "c89277c950656eaf254209655754bf6d",
+      "candidates": [
+        {
+          "version": "20261022020721",
+          "name": "the_provisional_payout_ladder_follows_the_field_during_late_",
+          "sqlMD5": "1a6fc2c556f2705e922116bd5e091a24",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022021302_remove_ca_orphaned_certification_account_sweep.sql",
+      "sourceMD5": "5de5faf1737e132bdcf7791101a9f6c5",
+      "sourceStripMD5": "5de5faf1737e132bdcf7791101a9f6c5",
+      "candidates": [
+        {
+          "version": "20261022021302",
+          "name": "remove_ca_orphaned_certification_account_sweep",
+          "sqlMD5": "5de5faf1737e132bdcf7791101a9f6c5",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022021443_declare_the_mtt_payout_depth_guard.sql",
+      "sourceMD5": "ab8bd900867869469ea999e9f8e0f07a",
+      "sourceStripMD5": "ab8bd900867869469ea999e9f8e0f07a",
+      "candidates": [
+        {
+          "version": "20261022021443",
+          "name": "declare_the_mtt_payout_depth_guard",
+          "sqlMD5": "ab8bd900867869469ea999e9f8e0f07a",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022025039_standalone_foreign_certificates_are_read_once_per_close.sql",
+      "sourceMD5": "9bcc82b56da50fdb729ed62179893017",
+      "sourceStripMD5": "22402f7d9972021dbfef87db95dabc95",
+      "candidates": [
+        {
+          "version": "20261022025039",
+          "name": "standalone_foreign_certificates_are_read_once_per_close",
+          "sqlMD5": "9bcc82b56da50fdb729ed62179893017",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022030326_a_migration_never_holds_the_live_tables_hostage.sql",
+      "sourceMD5": "2cf0abfdf6e8c0c9139a389eb370841a",
+      "sourceStripMD5": "ceec9165d950e153abe5a4d0058ae6a0",
+      "candidates": [
+        {
+          "version": "20261022030326",
+          "name": "a_migration_never_holds_the_live_tables_hostage",
+          "sqlMD5": "1d90f0614279fcc298fd7b6e20b72f2d",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022030638_a_registering_player_refreshes_the_provisional_ladder_and_a_.sql",
+      "sourceMD5": "f0c623b39b15a03124709d28fff717ee",
+      "sourceStripMD5": "a4728f9e8e840299e2bae97fa3a77b97",
+      "candidates": [
+        {
+          "version": "20261022030638",
+          "name": "a_registering_player_refreshes_the_provisional_ladder_and_a_",
+          "sqlMD5": "5107a45bc33728c3a4b781cdc3f3569f",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022031908_fn_ca_payout_structure_has_one_door.sql",
+      "sourceMD5": "4931ee3280e619832f8943e37d5fbcdb",
+      "sourceStripMD5": "4931ee3280e619832f8943e37d5fbcdb",
+      "candidates": [
+        {
+          "version": "20261022031908",
+          "name": "fn_ca_payout_structure_has_one_door",
+          "sqlMD5": "4931ee3280e619832f8943e37d5fbcdb",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql",
+      "sourceMD5": "864662584228c78db00d2e071296c55f",
+      "sourceStripMD5": "38725cd612e90597a64eec1f6fc579f3",
+      "candidates": [
+        {
+          "version": "20261022032302",
+          "name": "a_settled_finishing_place_is_not_a_changed_elimination",
+          "sqlMD5": "7a502497bdbb4ba1841bfb6c6eee8f84",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022032422_union_bank_reads_its_club_balances.sql",
+      "sourceMD5": "a544b5244e2db238c1ea455d79065616",
+      "sourceStripMD5": "546f5acc1ed469f6dbb3aba8d782fc71",
+      "candidates": [
+        {
+          "version": "20261022032422",
+          "name": "union_bank_reads_its_club_balances",
+          "sqlMD5": "a544b5244e2db238c1ea455d79065616",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql",
+      "sourceMD5": "0d615d46c0ac497ed566dd1b4f02f0ef",
+      "sourceStripMD5": "7c1aaf287a6f7e4f25f49d58b2fd15d3",
+      "candidates": [
+        {
+          "version": "20261022034135",
+          "name": "horse_observation_snapshot_finds_hands_through_the_player_in",
+          "sqlMD5": "0d615d46c0ac497ed566dd1b4f02f0ef",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022041710_the_mini_jackpot_operator_rates_read_contributions_by_pool_i.sql",
+      "sourceMD5": "0c1c9ffb2c7b22b761ae0a735221d617",
+      "sourceStripMD5": "aca12220479eb04ddbda89f23050aec2",
+      "candidates": [
+        {
+          "version": "20261022041710",
+          "name": "the_mini_jackpot_operator_rates_read_contributions_by_pool_i",
+          "sqlMD5": "0c1c9ffb2c7b22b761ae0a735221d617",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022042102_lightning_timing_correlation_scores_its_confidence_bound.sql",
+      "sourceMD5": "ca547cf81d60f94e5d03e56747891bce",
+      "sourceStripMD5": "a1377b74a1e92448ebad84ea14fa3022",
+      "candidates": [
+        {
+          "version": "20261022042102",
+          "name": "lightning_timing_correlation_scores_its_confidence_bound",
+          "sqlMD5": "ca547cf81d60f94e5d03e56747891bce",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022044423_bounty_mtts_rebuy_until_registration_closes.sql",
+      "sourceMD5": "6b568ff24ed18862913e5e12594c52a1",
+      "sourceStripMD5": "470f0c5a3314d954f06b77c108bdc18b",
+      "candidates": [
+        {
+          "version": "20261022044423",
+          "name": "bounty_mtts_rebuy_until_registration_closes",
+          "sqlMD5": "d5320a75580de6b5d51f7aba08501004",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022044452_player_record_shows_the_full_upline_agent_chain.sql",
+      "sourceMD5": "61daec75f5c583cb3fe3e6c20fd6c9f7",
+      "sourceStripMD5": "9cb60fc33e331800a99b2acd92173f01",
+      "candidates": [
+        {
+          "version": "20261022044452",
+          "name": "player_record_shows_the_full_upline_agent_chain",
+          "sqlMD5": "c4c226712ed8c68bef32b071601b9b5a",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022050713_horse_table_talk_and_gestures_on.sql",
+      "sourceMD5": "818e6dcb3f5330b5a2866cff9cbbac97",
+      "sourceStripMD5": "274d42efcea916f863c9e900e4fa2f30",
+      "candidates": [
+        {
+          "version": "20261022050713",
+          "name": "horse_table_talk_and_gestures_on",
+          "sqlMD5": "95680571471d4010aa6517fe96be4172",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022052324_lightning_pilots_switch_at_six_seat_pool_math.sql",
+      "sourceMD5": "4cf66ae2a18de97710d2e5dbc1aa996a",
+      "sourceStripMD5": "2bcbef8f870e24f0f006e13e61775034",
+      "candidates": [
+        {
+          "version": "20261022052324",
+          "name": "lightning_pilots_switch_at_six_seat_pool_math",
+          "sqlMD5": "4cf66ae2a18de97710d2e5dbc1aa996a",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022054023_horse_observation_snapshot_refuses_an_overflowing_window_fro.sql",
+      "sourceMD5": "43634713381df76e58ba60c0d64a618c",
+      "sourceStripMD5": "ae0bdaaf8d773237a65df40ce7bd0243",
+      "candidates": [
+        {
+          "version": "20261022054023",
+          "name": "horse_observation_snapshot_refuses_an_overflowing_window_fro",
+          "sqlMD5": "43634713381df76e58ba60c0d64a618c",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022061048_the_club_game_page_counts_cash_players_for_visible_rows_only.sql",
+      "sourceMD5": "6c2fbde7b4a1da4d9ed058ad1b78c730",
+      "sourceStripMD5": "b7f4ef5df666378d8924b8477f925ce2",
+      "candidates": [
+        {
+          "version": "20261022061149",
+          "name": "the_club_game_page_counts_cash_players_for_visible_rows_only",
+          "sqlMD5": "4e225aac790c17e1396e2f0e400a3961",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022061936_club_data_export_counts_cash_players_in_one_grouped_pass.sql",
+      "sourceMD5": "2e631cfdd319e90312d763d8904ae4f0",
+      "sourceStripMD5": "74d1d8126fe5aa17c908f000c62692b5",
+      "candidates": [
+        {
+          "version": "20261022061936",
+          "name": "club_data_export_counts_cash_players_in_one_grouped_pass",
+          "sqlMD5": "2e631cfdd319e90312d763d8904ae4f0",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022062934_the_hourly_audits_read_only_what_changed_since_they_last_loo.sql",
+      "sourceMD5": "8d7555eb096b3beabb95e8d6957c3e3c",
+      "sourceStripMD5": "0598050cf0822f865d32e4d1f9cfe9ab",
+      "candidates": [
+        {
+          "version": "20261022062934",
+          "name": "the_hourly_audits_read_only_what_changed_since_they_last_loo",
+          "sqlMD5": "8d7555eb096b3beabb95e8d6957c3e3c",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022063749_a_bounty_bust_waits_for_its_tournament_lane.sql",
+      "sourceMD5": "d9fe73b2cdb0000739211587bcc1d7ff",
+      "sourceStripMD5": "f15cc6c1cfc33f9267828e97abfb6587",
+      "candidates": [
+        {
+          "version": "20261022063749",
+          "name": "a_bounty_bust_waits_for_its_tournament_lane",
+          "sqlMD5": "1cc38cf2823e293d09f186341278ae2f",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022091134_a_deadlocked_bust_payment_yields_to_its_partner_instead_of_r.sql",
+      "sourceMD5": "ec0c39439e0773ba2025565b96161e06",
+      "sourceStripMD5": "cd954e2e1041d8bdf6f8759850ef79c7",
+      "candidates": [
+        {
+          "version": "20261022091134",
+          "name": "a_deadlocked_bust_payment_yields_to_its_partner_instead_of_r",
+          "sqlMD5": "c9972e8cfd1c4dd677095bfcd120c884",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022103651_club_data_chicago_day_facts_and_writer.sql",
+      "sourceMD5": "258c55c2b1b1b2a3550f8e7c179c41c6",
+      "sourceStripMD5": "f240aa8a2640a1186449a84fc296375f",
+      "candidates": [
+        {
+          "version": "20261022103651",
+          "name": "club_data_chicago_day_facts_and_writer",
+          "sqlMD5": "258c55c2b1b1b2a3550f8e7c179c41c6",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022120109_club_data_chicago_days_load_september.sql",
+      "sourceMD5": "e7e5a39c8fc0f561789403e5e25ff343",
+      "sourceStripMD5": "7d38ddd62f642418365718c98be3cd52",
+      "candidates": [
+        {
+          "version": "20261022120109",
+          "name": "club_data_chicago_days_load_september",
+          "sqlMD5": "e7e5a39c8fc0f561789403e5e25ff343",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022120113_club_data_chicago_days_load_early_october.sql",
+      "sourceMD5": "b4728ba649b6dd3d8c26bdbd22cd4250",
+      "sourceStripMD5": "a72790768f05bb70ce0274f00f44e8d9",
+      "candidates": [
+        {
+          "version": "20261022120113",
+          "name": "club_data_chicago_days_load_early_october",
+          "sqlMD5": "b4728ba649b6dd3d8c26bdbd22cd4250",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022120117_club_data_chicago_days_load_through_the_cutover.sql",
+      "sourceMD5": "8f90960cbc573848322d5c1ee28f8749",
+      "sourceStripMD5": "c042addd792ea549700c29eea1adcbbf",
+      "candidates": [
+        {
+          "version": "20261022120117",
+          "name": "club_data_chicago_days_load_through_the_cutover",
+          "sqlMD5": "8f90960cbc573848322d5c1ee28f8749",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022120121_club_data_reads_chicago_days_and_separates_running_mtts.sql",
+      "sourceMD5": "21472108758525efe56830738a3ba354",
+      "sourceStripMD5": "a736e70f57b2524a2167b808b66c7202",
+      "candidates": [
+        {
+          "version": "20261022120121",
+          "name": "club_data_reads_chicago_days_and_separates_running_mtts",
+          "sqlMD5": "21472108758525efe56830738a3ba354",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022134523_club_data_union_reads_count_once.sql",
+      "sourceMD5": "2deb79a33a1efec9fc270f3a7b8b3d15",
+      "sourceStripMD5": "f01676cde47f3caa3cc9548e37497bee",
+      "candidates": [
+        {
+          "version": "20261022134523",
+          "name": "club_data_union_reads_count_once",
+          "sqlMD5": "2deb79a33a1efec9fc270f3a7b8b3d15",
+          "statementCount": 1,
+          "match": "exact"
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022145452_a_diamond_bounty_paid_during_a_rebuy_reaches_the_winner_s_wa.sql",
+      "sourceMD5": "4fbfb393373279de650cd12efaea2231",
+      "sourceStripMD5": "88e7211d2d6f5c49e40b6c96bd1a19d6",
+      "candidates": [
+        {
+          "version": "20261022145452",
+          "name": "a_diamond_bounty_paid_during_a_rebuy_reaches_the_winner_s_wa",
+          "sqlMD5": "1305fb98a257035ade98486c2f5dfdcc",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    },
+    {
+      "path": "supabase/migrations/20261022150614_the_weekly_scheduler_scan_reads_standalone_tournament_earnin.sql",
+      "sourceMD5": "76100e8f06079e917cddca023009634f",
+      "sourceStripMD5": "e2e8781415dd238709ec5d3483a69f8c",
+      "candidates": [
+        {
+          "version": "20261022150614",
+          "name": "the_weekly_scheduler_scan_reads_standalone_tournament_earnin",
+          "sqlMD5": "30a54f7925dea82a73d35098abf8637b",
+          "statementCount": 1,
+          "match": null
+        }
+      ]
+    }
+  ],
+  "arenaDifferences": [
+    {
+      "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
+      "sourceMD5": "86d77679ca1631dfc5c8163b50fd07f8",
+      "sourceStripMD5": "289eb570f2a289ae73e1f4280440172e",
+      "candidates": [
+        {
+          "version": "20261021173101",
+          "name": "tournament_levels_have_a_five_minute_floor",
+          "sqlMD5": "5246a6a7547168ec1e9b520258ae9efe",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "non-SQL-ledger-receipt",
+      "description": "Ledger stores applied receipt instead of executable source; source includes functions triggers ACL and data updates."
+    },
+    {
+      "path": "supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql",
+      "sourceMD5": "7d2b759f79a32652b31b43854a74bb03",
+      "sourceStripMD5": "b52b2682a7679f8b16decb5d4edc1e7d",
+      "candidates": [
+        {
+          "version": "20261021174337",
+          "name": "member_role_panel_edits_individual_rakeback_agreements",
+          "sqlMD5": "364374fe1750abb9e0208b586f6ebb16",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "One source comment omitted from ledger."
+    },
+    {
+      "path": "supabase/migrations/20261021180854_club_entry_news_automatically_shown_once.sql",
+      "sourceMD5": "be0958b73c6f4592d4e6cd649fe8a358",
+      "sourceStripMD5": "dcfad53b909b68c7d45ee9682e3d0ba0",
+      "candidates": [
+        {
+          "version": "20261021180854",
+          "name": "club_entry_news_automatically_shown_once",
+          "sqlMD5": "382725b73c1e5cc79b0546739ea14cb8",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-ACL",
+      "description": "Source additionally revokes service_role ALL on club_entry_news_receipts; later grants must be independently checked."
+    },
+    {
+      "path": "supabase/migrations/20261021181050_club_entry_news_explicit_service_access.sql",
+      "sourceMD5": "d7a1cafb3411c4450dab4c1e228d1dbe",
+      "sourceStripMD5": "607eb95cea2a9b36abdfed65575f8d77",
+      "candidates": [
+        {
+          "version": "20261021181050",
+          "name": "club_entry_news_explicit_service_access",
+          "sqlMD5": "d6b8eb50935646259e6b27804486043a",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "Four source comments omitted."
+    },
+    {
+      "path": "supabase/migrations/20261021234526_tournament_finishers_are_paid_the_moment_they_bust.sql",
+      "sourceMD5": "91e6170421d7a532a2258ac7fc9bcba6",
+      "sourceStripMD5": "4009c6af3a78eb4b51870ee4e077976f",
+      "candidates": [
+        {
+          "version": "20261021234526",
+          "name": "tournament_finishers_are_paid_the_moment_they_bust",
+          "sqlMD5": "d35f900640c3ff476fc334976f6d1cf9",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-registry-data",
+      "description": "Source additionally inserts declared money-trigger registry rows."
+    },
+    {
+      "path": "supabase/migrations/20261022010659_an_agent_row_deletes_without_scanning_every_rake_attribution.sql",
+      "sourceMD5": "9b530a8b4e36b8df673e85dac437186c",
+      "sourceStripMD5": "0c66c0361d704dff7effa19722ec4967",
+      "candidates": [
+        {
+          "version": "20261022010724",
+          "name": "an_agent_row_deletes_without_scanning_every_rake_attribution",
+          "sqlMD5": "6a6d9e772e955f8a604e30a800577bfe",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-index",
+      "description": "Source additionally creates rake_attributions index."
+    },
+    {
+      "path": "supabase/migrations/20261022013120_tournament_places_are_true_from_the_first_bust_and_cashing_p.sql",
+      "sourceMD5": "9a3b0c835bcd7d2374093be8461efe2a",
+      "sourceStripMD5": "88ef608c3cab83b125727ae84565e9de",
+      "candidates": [
+        {
+          "version": "20261022013120",
+          "name": "tournament_places_are_true_from_the_first_bust_and_cashing_p",
+          "sqlMD5": "8747264c536b517f0c4f12a6965cb94f",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-ACL",
+      "description": "Source additionally revokes/grants fn_ca_pay_tournament_finishers_now execution."
+    },
+    {
+      "path": "supabase/migrations/20261022020721_the_provisional_payout_ladder_follows_the_field_during_late_.sql",
+      "sourceMD5": "09878f3226b79779e9714aac351957b6",
+      "sourceStripMD5": "c89277c950656eaf254209655754bf6d",
+      "candidates": [
+        {
+          "version": "20261022020721",
+          "name": "the_provisional_payout_ladder_follows_the_field_during_late_",
+          "sqlMD5": "1a6fc2c556f2705e922116bd5e091a24",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-registry-data",
+      "description": "Source additionally inserts declared money-trigger registry row."
+    },
+    {
+      "path": "supabase/migrations/20261022030326_a_migration_never_holds_the_live_tables_hostage.sql",
+      "sourceMD5": "2cf0abfdf6e8c0c9139a389eb370841a",
+      "sourceStripMD5": "ceec9165d950e153abe5a4d0058ae6a0",
+      "candidates": [
+        {
+          "version": "20261022030326",
+          "name": "a_migration_never_holds_the_live_tables_hostage",
+          "sqlMD5": "1d90f0614279fcc298fd7b6e20b72f2d",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-ACL",
+      "description": "Source additionally revokes table rights on ca_writer_lock_sentinel_cancels."
+    },
+    {
+      "path": "supabase/migrations/20261022030638_a_registering_player_refreshes_the_provisional_ladder_and_a_.sql",
+      "sourceMD5": "f0c623b39b15a03124709d28fff717ee",
+      "sourceStripMD5": "a4728f9e8e840299e2bae97fa3a77b97",
+      "candidates": [
+        {
+          "version": "20261022030638",
+          "name": "a_registering_player_refreshes_the_provisional_ladder_and_a_",
+          "sqlMD5": "5107a45bc33728c3a4b781cdc3f3569f",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "Header comments and blank line omitted."
+    },
+    {
+      "path": "supabase/migrations/20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql",
+      "sourceMD5": "864662584228c78db00d2e071296c55f",
+      "sourceStripMD5": "38725cd612e90597a64eec1f6fc579f3",
+      "candidates": [
+        {
+          "version": "20261022032302",
+          "name": "a_settled_finishing_place_is_not_a_changed_elimination",
+          "sqlMD5": "7a502497bdbb4ba1841bfb6c6eee8f84",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-ACL",
+      "description": "Source additionally revokes f06_assert_movement execution."
+    },
+    {
+      "path": "supabase/migrations/20261022044423_bounty_mtts_rebuy_until_registration_closes.sql",
+      "sourceMD5": "6b568ff24ed18862913e5e12594c52a1",
+      "sourceStripMD5": "470f0c5a3314d954f06b77c108bdc18b",
+      "candidates": [
+        {
+          "version": "20261022044423",
+          "name": "bounty_mtts_rebuy_until_registration_closes",
+          "sqlMD5": "d5320a75580de6b5d51f7aba08501004",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-registry-data",
+      "description": "Source additionally inserts declared money-trigger registry row."
+    },
+    {
+      "path": "supabase/migrations/20261022044452_player_record_shows_the_full_upline_agent_chain.sql",
+      "sourceMD5": "61daec75f5c583cb3fe3e6c20fd6c9f7",
+      "sourceStripMD5": "9cb60fc33e331800a99b2acd92173f01",
+      "candidates": [
+        {
+          "version": "20261022044452",
+          "name": "player_record_shows_the_full_upline_agent_chain",
+          "sqlMD5": "c4c226712ed8c68bef32b071601b9b5a",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "Header comments and blank line omitted."
+    },
+    {
+      "path": "supabase/migrations/20261022050713_horse_table_talk_and_gestures_on.sql",
+      "sourceMD5": "818e6dcb3f5330b5a2866cff9cbbac97",
+      "sourceStripMD5": "274d42efcea916f863c9e900e4fa2f30",
+      "candidates": [
+        {
+          "version": "20261022050713",
+          "name": "horse_table_talk_and_gestures_on",
+          "sqlMD5": "95680571471d4010aa6517fe96be4172",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "equivalent-split-REVOKE",
+      "description": "Same function ALL revocation for PUBLIC anon authenticated; ledger splits into two statements within one stored text."
+    },
+    {
+      "path": "supabase/migrations/20261022061048_the_club_game_page_counts_cash_players_for_visible_rows_only.sql",
+      "sourceMD5": "6c2fbde7b4a1da4d9ed058ad1b78c730",
+      "sourceStripMD5": "b7f4ef5df666378d8924b8477f925ce2",
+      "candidates": [
+        {
+          "version": "20261022061149",
+          "name": "the_club_game_page_counts_cash_players_for_visible_rows_only",
+          "sqlMD5": "4e225aac790c17e1396e2f0e400a3961",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "Twelve header comments omitted."
+    },
+    {
+      "path": "supabase/migrations/20261022063749_a_bounty_bust_waits_for_its_tournament_lane.sql",
+      "sourceMD5": "d9fe73b2cdb0000739211587bcc1d7ff",
+      "sourceStripMD5": "f15cc6c1cfc33f9267828e97abfb6587",
+      "candidates": [
+        {
+          "version": "20261022063749",
+          "name": "a_bounty_bust_waits_for_its_tournament_lane",
+          "sqlMD5": "1cc38cf2823e293d09f186341278ae2f",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "substantive-ACL",
+      "description": "Source additionally revokes/grants fn_claim_tournament_bounty_elimination execution."
+    },
+    {
+      "path": "supabase/migrations/20261022091134_a_deadlocked_bust_payment_yields_to_its_partner_instead_of_r.sql",
+      "sourceMD5": "ec0c39439e0773ba2025565b96161e06",
+      "sourceStripMD5": "cd954e2e1041d8bdf6f8759850ef79c7",
+      "candidates": [
+        {
+          "version": "20261022091134",
+          "name": "a_deadlocked_bust_payment_yields_to_its_partner_instead_of_r",
+          "sqlMD5": "c9972e8cfd1c4dd677095bfcd120c884",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comments-only",
+      "description": "Header comments and blank line omitted."
+    },
+    {
+      "path": "supabase/migrations/20261022145452_a_diamond_bounty_paid_during_a_rebuy_reaches_the_winner_s_wa.sql",
+      "sourceMD5": "4fbfb393373279de650cd12efaea2231",
+      "sourceStripMD5": "88e7211d2d6f5c49e40b6c96bd1a19d6",
+      "candidates": [
+        {
+          "version": "20261022145452",
+          "name": "a_diamond_bounty_paid_during_a_rebuy_reaches_the_winner_s_wa",
+          "sqlMD5": "1305fb98a257035ade98486c2f5dfdcc",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comment-only-ledger-receipt",
+      "description": "Source additionally DO-patches fn_guard_profile_privileged_columns; ledger contains comment receipt."
+    },
+    {
+      "path": "supabase/migrations/20261022150614_the_weekly_scheduler_scan_reads_standalone_tournament_earnin.sql",
+      "sourceMD5": "76100e8f06079e917cddca023009634f",
+      "sourceStripMD5": "e2e8781415dd238709ec5d3483a69f8c",
+      "candidates": [
+        {
+          "version": "20261022150614",
+          "name": "the_weekly_scheduler_scan_reads_standalone_tournament_earnin",
+          "sqlMD5": "30a54f7925dea82a73d35098abf8637b",
+          "statementCount": 1,
+          "match": null
+        }
+      ],
+      "classification": "comment-only-ledger-receipt",
+      "description": "Source additionally creates standalone-club index and DO-patches weekly scope function; ledger comment receipt."
+    }
+  ],
+  "postSnapshotSourceReconciliation": {
+    "revision": "3900433d0b90cc9bfa0f87f4f040108a737f5c91",
+    "schemaRecaptureRequired": false,
+    "files": [
+      {
+        "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
+        "classification": "comment-only supersession annotation; executable SQL unchanged; historical ledger installation-byte claim remains unproven"
+      },
+      {
+        "path": "supabase/migrations/20261022172522_a_bust_backlog_pages_within_four_minutes.sql",
+        "classification": "already present in independent same-snapshot schema; ledger SQL bytes differ; cron schedule rows intentionally excluded from schema-only reconstruction",
+        "sourceMD5": "cfa062f6e3d0d4dd0eca4021c92cde4e",
+        "ledgerSQLMD5": "b95dbe637fbd2ff33c0f6b45959eeb19",
+        "sourceAndSnapshotBodyMD5": "3e48626f43beb09603f7d389494397e0",
+        "independentFunctionDefinitionMD5": "cc53fb1b3aa6b7f10d8b1c02f72e5764",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "settings": ["search_path=public, pg_temp"],
+        "executeGrantees": ["postgres", "service_role"],
+        "defaultMinutes": 4,
+        "topLevelBusinessWritesReplayed": false
+      }
+    ]
+  },
+  "frozenMysterySevenReconciliation": {
+    "revision": "c149fd531d5f84e6a391dff5043061e255aa21c8",
+    "files": [
+      {
+        "path": "supabase/migrations/20261022162651_mystery_bounty_chests_only_functions_and_offers.sql",
+        "sourceMD5": "b019380de5e81cb89a98dfa862043e95",
+        "ledgerMD5": "381b38b67421c8a6de411a66edc070bb",
+        "sameSnapshotLedgerHash": true,
+        "classification": "substantive historical offer selection+ACL difference; final offer superseded by180857 captured deterministic readonly; captured table owner-only ACL"
+      },
+      {
+        "path": "supabase/migrations/20261022162714_mystery_bounty_chests_only_triggers.sql",
+        "sourceMD5": "21176da613efad7afab7c0674f3cae64",
+        "ledgerMD5": "533a73ac39c102e8d7078fc099638fb8",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022162733_mystery_bounty_chests_only_board_and_schedules.sql",
+        "sourceMD5": "4565c0f0b406978f0d299504e37054eb",
+        "ledgerMD5": "b9d32dced71784b2dabbd66d0d19ace1",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022170421_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql",
+        "sourceMD5": "60e5c657892aab76465c7c84f86c93b3",
+        "ledgerMD5": "083cfae535e1e4962c0b7986361a7bb5",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022170611_mystery_bounty_seed_reports_the_whole_chip_pool_it_sealed.sql",
+        "sourceMD5": "54b2758e8814b2c4d38fb369e9645339",
+        "ledgerMD5": "c5e1dd4a742bbe9abc6aee2185074555",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022173156_mystery_bounty_definer_grants_restated.sql",
+        "sourceMD5": "8294015f9910a3a29d39cbad37f0261c",
+        "ledgerMD5": "5027b7a24b83c25a1f9ccec32125d58d",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022180857_mystery_bounty_offer_reads_without_writing.sql",
+        "sourceMD5": "4979058250b8d48b883f1358ca049474",
+        "ledgerMD5": "e9511ccd7f85c8c73c3b89a6295a876b",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      }
+    ],
+    "scope": "All7 same-snapshot ledger records proven;6comments-only, first historical offer/ACL differs but final180857 readonly deterministic postimage and owner-onlytableACL captured. No replay or installation-byte identity claim."
+  },
+  "frozenFourReconciliation": {
+    "revision": "d8f05943096cf0ad62a54ef75d43bfd295eca848",
+    "independentSnapshot": "consistent-20261022-owner-deps (20:08 UTC)",
+    "schemaRecaptureRequired": false,
+    "reviewerProof": [
+      {
+        "version": "20261022145803",
+        "sourceMD5": "5d542cc95e784a49138132a3a4f3fdc0",
+        "ledgerMD5": "41d80a3fae8c1a6ab20dab7e5e4613e6",
+        "ledgerKind": "132character nonexecutable applied receipt",
+        "routine": "public.fn_ca_resolve_landed_unreachable_hand_alerts()",
+        "sourceAndNativeBodyMD5": "3ad1f6f45fe7c69ce13acb9cd89c3376",
+        "nativeDefinitionMD5": "17a8c8394a603699ee6b9353b2daf347",
+        "owner": "postgres",
+        "executeRoles": ["postgres", "service_role"],
+        "securityDefiner": true,
+        "searchPath": "public, pg_temp",
+        "limits": "Routine intent captured exactly; cron.job command/data and historical one-shot alert resolution are not included in schema-only snapshot and are not claimed verified or replayed."
+      },
+      {
+        "version": "20261022150431",
+        "sourceMD5": "ec312df8847fcd25aa2b47ac6a513213",
+        "ledgerMD5": null,
+        "ledgerKind": "NULLstatements",
+        "routine": "public.ca_club_member_upline_chain(uuid,uuid)",
+        "sourceAndNativeBodyMD5": "3e4f23a4f134430a05addc0ee6241cb9",
+        "nativeDefinitionMD5": "a4f5a9300a997fda7f61605a648659e0",
+        "owner": "postgres",
+        "executeRoles": ["authenticated", "postgres", "service_role"],
+        "securityDefiner": true,
+        "stable": true,
+        "searchPath": "public, pg_temp",
+        "limits": "Whole historical source-byte identity unproven; exact current routine business body and metadata independently captured."
+      }
+    ],
+    "sourceCatalogProof": [
+      {
+        "path": "supabase/migrations/20261022164439_weekly_commission_lands_in_agent_wallets_and_the_owner_share.sql",
+        "sourceSHA256": "efedba2f988b597363d096e24df64efb6922edc1c2e296a5ad824ca740fdfa96",
+        "sourceMD5": "ccf3c1645e383531a5565bb371358069",
+        "sameSnapshotLedger": {
+          "name": "weekly_commission_lands_in_agent_wallets_and_the_owner_share",
+          "sqlMD5": null,
+          "version": "20261022164439",
+          "statementCount": null
+        },
+        "classification": "All source routine bodies exactly equal independent native snapshot; owner/SECDEF/settings/ACL preserved. Historical ledger bytes not claimed identical. Business/registry data SQL never replayed.",
+        "routines": [
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_payout uuid, p_calculation bigint",
+            "cost": 100,
+            "kind": "f",
+            "name": "split_rakeback_payout_complete",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "boolean",
+            "schema": "smarter_private",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=pg_catalog, public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "s",
+            "definition_md5": "501d4a3187573289db69d6d7ec286406",
+            "sourceAndSnapshotBodyMD5": "2440b414772d2902d738f884bfcc1178"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_club uuid, p_user uuid, p_source text",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_deleted_wallet_bank_return",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp", "lock_timeout=4s"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "b1938403621af2397590c6ce004faf3b",
+            "sourceAndSnapshotBodyMD5": "ddf28f3a8358d1c0d1a32a7b41953da6"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_deleted_wallet_credit",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "38381e35aa9804fb1e109c20855e4854",
+            "sourceAndSnapshotBodyMD5": "e71ccd5e2c465b0b41aa887ad28da9dd"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_commission_stage_v3",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "76807aa6c2534cc5a89b1af136039838",
+            "sourceAndSnapshotBodyMD5": "79bf83d2bd1b35561e071eb1640c8c2c"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_commission_stage",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "c9a28a0a12e117fd7a8539e5aca54e82",
+            "sourceAndSnapshotBodyMD5": "002acd618ad4cb6f71e3ec58857abc24"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_rakeback_stage",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "f1dc7ad2a540edc392cf2e5fcbc1378c",
+            "sourceAndSnapshotBodyMD5": "325b078e74e8d1537d0d20d4509138f2"
+          }
+        ]
+      },
+      {
+        "path": "supabase/migrations/20261022195542_a_club_joining_a_union_stops_every_club_game_first.sql",
+        "sourceSHA256": "ebc500b35b2cf6508019f0825fddf689340baffbfc59f51e7e46260eda4f092a",
+        "sourceMD5": "c97e4b1ad94c895d2479578feb33da1f",
+        "sameSnapshotLedger": {
+          "name": "a_club_joining_a_union_stops_every_club_game_first",
+          "sqlMD5": "d97a1efad2c6294ec6718934390fb384",
+          "version": "20261022195542",
+          "statementCount": 1
+        },
+        "classification": "All source routine bodies exactly equal independent native snapshot; owner/SECDEF/settings/ACL preserved. Historical ledger bytes not claimed identical. Business/registry data SQL never replayed.",
+        "routines": [
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_member_schedule_cannot_spawn",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "3aa3bf02e7e3029aa84defd44541e72c",
+            "sourceAndSnapshotBodyMD5": "14c9950af053796978e4aa46a6f635e5"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_member_schedule_stays_off",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "a81048d5f0e4f0bce8b5970f83a75b1a",
+            "sourceAndSnapshotBodyMD5": "1e8013b61950342f91a67d024cdb3bcd"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_join_removes_club_games",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "854e044e7726e9009b5115254bfce9e2",
+            "sourceAndSnapshotBodyMD5": "bb07b1c70a2950d4168cc3630b52ba3d"
+          }
+        ]
+      }
+    ],
+    "scope": "All four source schema postimages already independently captured. Receipt-only/NULL/different ledger source bytes are explicitly not installed-byte identity proof. No business, registry, cron or historical SQL replay; no new forward entry."
+  },
+  "frozenDailySlotReconciliation": {
+    "revision": "a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb",
+    "path": "supabase/migrations/20261022173330_hourly_slots_after_the_daily_reset_are_not_breaks.sql",
+    "sourceSHA256": "56afec70901f1a93f8f501a8396fb725ad6247e9cb5bde82bcdb29dfddafbfd8",
+    "sourceMD5": "9f1c293370fb112c82ab1dafb6f487ba",
+    "sameSnapshotLedger": {
+      "name": "hourly_slots_after_the_daily_reset_are_not_breaks",
+      "sqlMD5": "62f0eb88491311606a3940ff9ef374b7",
+      "version": "20261022173330",
+      "statementCount": 1
+    },
+    "schemaPostimageCount": 1,
+    "oldExpressionCount": 0,
+    "snapshotRoutine": {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_day date",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_sp_daily_metrics_compute",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "c645ef360362af071301561e9bfd753b"
+    },
+    "classification": "Exact unique source replacement postimage exists in independent same-snapshot function; migration idempotent catalog-DDL branch would CONTINUE. Historical sourcebyte identity not claimed. Both data UPDATE statements are excluded from schema reconstruction and never replayed or certified."
+  },
+  "postCaptureOpeningScope": {
+    "revision": "a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb",
+    "path": "supabase/migrations/20261022201306_restore_welcome_reserve_reuse_for_quick_club_opening.sql",
+    "sourceSHA256": "c3be2d8375c2aa0c2c20718e4a9a01361b09635c63546b73ef20bfd9a2832a67",
+    "installedAfterSnapshot": true,
+    "independentCatalogContract": "post-capture-opening-catalog.json",
+    "scope": "Exact source function-only DDL installed after20:08snapshot; applied only in isolated reconstruction after hourly-sweep delta. No business functions/data/cron invoked."
+  },
+  "postCaptureJournalIndexScope": {
+    "revision": "a3bf961d0a9f142ea2be79b4133f8068fe8034e7",
+    "path": "supabase/migrations/20261022223439_adaptive_journal_metadata_cover.sql",
+    "sourceSHA256": "1922ecbde6a5cfa600e21d0e48aae8941036bcc08db12af5b263710dee3c6696",
+    "snapshotIndexAbsent": true,
+    "currentReadOnlyIndexAndLedgerAbsent": true,
+    "scope": "Exact original concurrent index and read-only shape guard run only on isolated empty reconstruction after the first two transitions. Independent one-index descriptor/full parent preimage and all other catalog/role checks required. No production installation/build/performance claim."
+  },
+  "postCaptureMysteryPickScope": {
+    "revision": "ffa19fa61761da13c73b4442558a477704cbccca",
+    "path": "supabase/migrations/20261022223610_mystery_bounty_pick_refuses_after_the_reveal.sql",
+    "sourceSHA256": "93e0b63ef3e7196ac09e41456bc2ce2cd851cd6648d52ec9d318d14425b5238d",
+    "installedAfterSnapshot": true,
+    "sourceSQLMD5": "624f94bd290d4ba1e10ef639b31498af",
+    "ledgerSQLMD5": "a28112ac25e4f5f892231f5067dbe9aa",
+    "sourceAndInstalledBodyMD5": "d7e21f5ea886dce238a905ff9fd7f3f2",
+    "scope": "Current full routine body/security metadata independently match exact source intent despite historical ledger/source byte mismatch. Exact source function-only DDL runs locally as fourth transition; no routine/business call, application data or production write."
+  }
+}

@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 250982,
-      "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+      "bytes": 251892,
+      "sha256": "357032b42e80424b3c5431f5b70a2b3ea6940f7bcceaec4e223ced7e4b67bf63"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4715,6 +4715,37 @@
     "current": {
       "bytes": 250982,
       "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+    },
+    "execution_performed": false
+  },
+  "browserDeliveryParallelSourceAudit20261029": {
+    "scope": "Source identity refresh only for disjoint CSS Beat browser shards and capacity-proven SDK cleanup.",
+    "previousCiPin": {
+      "bytes": 250400,
+      "sha256": "100693b02ecb0d8e63695946426597d1e68c6c7e7a2705d0d6aa5b0fac252599"
+    },
+    "currentCiPin": {
+      "bytes": 251615,
+      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+    },
+    "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
+  },
+  "v31Public215ProtectedMainComposition20261029": {
+    "reason": "Compose protected main browser-check sharding with the additive V31 controller check. Preserve both audit histories and every non-CI input, financial command, fixture, assertion and qualification status. Current merged CI byte identity only; not financial recertification or live proof.",
+    "file": ".github/workflows/ci.yml",
+    "parents": [
+      {
+        "bytes": 250982,
+        "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
+      },
+      {
+        "bytes": 251615,
+        "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+      }
+    ],
+    "current": {
+      "bytes": 251892,
+      "sha256": "357032b42e80424b3c5431f5b70a2b3ea6940f7bcceaec4e223ced7e4b67bf63"
     },
     "execution_performed": false
   }

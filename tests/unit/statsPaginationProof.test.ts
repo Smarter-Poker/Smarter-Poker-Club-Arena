@@ -33,10 +33,9 @@ const evidence = () => ({
     { limit: 1001, search: null },
     { limit: 501, search: 'river' },
   ],
-  bracket: [
-    { point: 'before', sha, reason: null },
-    { point: 'after', sha, reason: null },
-  ],
+  bracket: ['before', 'after'].flatMap((point) =>
+    urls.map((url) => ({ point, origin: url.replace('/build-info.json', ''), sha, reason: null }))
+  ),
 });
 const attachment = (body = evidence()) => ({
   name: 'published-downline-pagination',
@@ -132,6 +131,70 @@ describe('closed exact published Stats pagination proof', () => {
       retries: 0,
       cleanupVerified: true,
     });
+  });
+  it('accepts the actual four-origin receipt from run 40901033498 without rewriting its observations', () => {
+    const receipt = JSON.parse(
+      readFileSync(resolve(__dirname, '../fixtures/stats-pagination-40901033498.json'), 'utf8')
+    );
+    expect(
+      assertStatsPaginationProof(receipt.report, receipt.before, receipt.after, receipt.cleanup)
+    ).toEqual({
+      clientSha: '7447d54c943b1aa6ac20ab5cf679f4afaf2d9873',
+      executed: 1,
+      passed: 1,
+      skipped: 0,
+      failed: 0,
+      retries: 0,
+      cleanupVerified: true,
+    });
+  });
+  it('requires all four unique allowed phase/origin pairs and refuses legacy originless receipts', () => {
+    for (const change of [
+      (e: any) => {
+        e.bracket.pop();
+      },
+      (e: any) => {
+        e.bracket.push({ ...e.bracket[0] });
+      },
+      (e: any) => {
+        e.bracket[1] = { ...e.bracket[0] };
+      },
+      (e: any) => {
+        e.bracket[0].origin = 'https://untrusted.example';
+      },
+      (e: any) => {
+        delete e.bracket[0].origin;
+      },
+      (e: any) => {
+        e.bracket[0].point = 'after';
+      },
+      (e: any) => {
+        e.bracket[3].sha = 'b'.repeat(40);
+      },
+      (e: any) => {
+        e.bracket[3].reason = 'build_info_unreadable';
+      },
+      (e: any) => {
+        e.bracket[0] = null;
+      },
+      (e: any) => {
+        e.bracket = [
+          { point: 'before', sha, reason: null },
+          { point: 'after', sha, reason: null },
+        ];
+      },
+    ]) {
+      const body = evidence();
+      change(body);
+      const r = report();
+      r.suites[0].specs[0].tests[0].results[0].attachments = [attachment(body)];
+      expect(() => verify(r)).toThrow();
+    }
+    const body = evidence();
+    body.bracket.reverse();
+    const r = report();
+    r.suites[0].specs[0].tests[0].results[0].attachments = [attachment(body)];
+    expect(verify(r).passed).toBe(1);
   });
   it('rejects skipped, failed, retried, duplicated, missing and differently selected cases', () => {
     const mutations = [
@@ -244,8 +307,10 @@ describe('closed exact published Stats pagination proof', () => {
     expect(proof.run).toContain('--project=chromium --workers=1 --retries=0');
     expect(proof.env.E2E_STATS_PAGINATION_PROOF).toBe('1');
     const before = job.steps.findIndex((s: any) => s.id === 'pin');
-    expect(job.steps[before + 1]).toBe(proof);
-    expect(job.steps[before + 2].id).toBe('after_pin');
+    expect(job.steps[before + 1].id).toBe('journey_pin');
+    expect(job.steps[before + 1].run).toContain('node scripts/ci/downline-journey-pin.mjs');
+    expect(job.steps[before + 2]).toBe(proof);
+    expect(job.steps[before + 3].id).toBe('after_pin');
     const cleanup = job.steps.find((s: any) => s.id === 'cleanup');
     expect(cleanup.if).toContain('always()');
     expect(cleanup.run).toContain('await cleanupProductionE2EAccount() !== true');

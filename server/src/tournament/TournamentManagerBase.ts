@@ -426,6 +426,53 @@ export abstract class TournamentManagerBase {
     return originals;
   }
 
+  /** Detach only an exact, physically drained terminal original. This reads
+   * the same ownership maps the native absence guard requires in full. */
+  protected captureCompletedF06CustodyBaseIdentity(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ) {
+    const originals = this.captureDrainedF06Originals();
+    if (
+      !originals ||
+      originals.length !== expected.length ||
+      !originals.every(([id, engine], i) => expected[i]?.[0] === id && expected[i]?.[1] === engine)
+    )
+      return null;
+    const generation = this.getTournamentLeaseGeneration();
+    if (!generation) return null;
+    const byId = new Map(originals);
+    const sourceIds = new Set<string>();
+    const source = (id: string, engine: ServerTableEngine): boolean => {
+      if (byId.get(id) !== engine) return false;
+      sourceIds.add(id);
+      return true;
+    };
+    for (const map of [
+      this.tableEngines,
+      this.stoppedDiagnosticOriginals,
+      this.satelliteQualifierEngines,
+    ])
+      for (const [id, engine] of map) if (!source(id, engine)) return null;
+    for (const [id, engine] of originals) if (!source(id, engine)) return null;
+    const identities = [];
+    for (const [tableId, engine] of originals) {
+      const physical = engine.captureDrainedF06Identity(tableId, this.tournamentId, generation);
+      if (!physical) return null;
+      identities.push({
+        tableId,
+        engineId: physical.engine_id,
+        lifecycle: physical.lifecycle,
+        allocationEpoch: physical.allocation_epoch,
+        diagnostic: engine.getLifecycleDiagnosticSnapshot(),
+      });
+    }
+    return {
+      sourceTableIds: [...sourceIds].sort(),
+      originals: identities,
+      managerDiagnostic: this.getLifecycleDiagnosticSnapshot(),
+    };
+  }
+
   /** Manager callbacks are stopped while its lease remains live for hand drain. */
   private shutdownDrainFenceApplied = false;
   private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();

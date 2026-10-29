@@ -5245,6 +5245,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     });
   }
 
+  private retireCompletedCustodyAfterTerminalCleanup(receiptTournamentId: string): void {
+    if (receiptTournamentId !== this.tournamentId) return;
+    try {
+      this.gameServer.retireCompletedF06CustodyMetadata(
+        this.tournamentId,
+        this,
+        receiptTournamentId
+      );
+    } catch (error) {
+      // Historical metadata cannot unwind a committed terminal receipt or its
+      // successful physical cleanup. Unknown retirement keeps its custody.
+      try {
+        reportError(error, 'Tournament.completed_custody_metadata_retirement_failed', {
+          tournamentId: this.tournamentId,
+        });
+      } catch {
+        /* diagnostic failure cannot repeat terminal presentation */
+      }
+    }
+  }
+
   /** Announce and close a normal place settlement, without moving money. */
   private async cleanupCommittedTournament(
     receipt: VerifiedTournamentCompletionReceipt
@@ -5264,7 +5285,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.tableClosure.closedTableIds
     );
-    if (cleaned) this.committedFinishReceipt = null;
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedFinishReceipt = null;
+    }
     return cleaned;
   }
 
@@ -5284,7 +5308,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.sourceCloseout.sourceTableIds
     );
-    if (cleaned) this.committedSatelliteReceipt = null;
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedSatelliteReceipt = null;
+    }
     return cleaned;
   }
 
@@ -5305,8 +5332,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.sourceCloseout.sourceTableIds
     );
-    if (cleaned) this.committedSatelliteQualifierReceipt = null;
-    else if (this.running)
+    if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
+      this.committedSatelliteQualifierReceipt = null;
+    } else if (this.running)
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
     return cleaned;
   }
@@ -6442,6 +6471,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       receipt.tableClosure.closedTableIds
     );
     if (cleaned) {
+      this.retireCompletedCustodyAfterTerminalCleanup(receipt.tournamentId);
       this.committedFinalTableDealCleanupPending = false;
       this.committedFinalTableDealReceipt = null;
     }

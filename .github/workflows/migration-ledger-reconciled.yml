@@ -71,7 +71,8 @@ jobs:
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          # Club Arena transferred organizations; the sibling ledger did not.
+          owner: Smarter-Poker
           repositories: Smarter-Poker-World-Hub
           permission-contents: read
 

@@ -55,12 +55,27 @@ describe('the shared migration ledger is never graded from one repository', () =
     ).rejects.toThrow(/UNKNOWN: no estate read token/);
   });
 
+  it('the PR ledger token targets the actual sibling owner independently of the caller', () => {
+    const workflow = readFileSync(
+      resolve(__dirname, '..', '.github/workflows/migration-ledger-reconciled.yml'),
+      'utf8'
+    );
+    const tokenStep = workflow.split('id: estate-token')[1].split('      - name:')[0];
+    expect(tokenStep).toContain('owner: Smarter-Poker');
+    expect(tokenStep).not.toContain('github.repository_owner');
+    expect(tokenStep).toContain('repositories: Smarter-Poker-World-Hub');
+    expect(tokenStep).toContain('permission-contents: read');
+  });
+
   it('the scheduled workflow mints a short-lived read-only sibling token', () => {
     const workflow = readFileSync(
       resolve(__dirname, '..', '.github/workflows/applied-migrations-recorded.yml'),
       'utf8'
     );
     expect(workflow).toContain('actions/create-github-app-token@v3');
+    const tokenStep = workflow.split('id: estate-token')[1].split('      - name:')[0];
+    expect(tokenStep).toContain('owner: Smarter-Poker');
+    expect(tokenStep).not.toContain('github.repository_owner');
     expect(workflow).toContain('repositories: Smarter-Poker-World-Hub');
     expect(workflow).toContain('permission-contents: read');
     expect(workflow).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');

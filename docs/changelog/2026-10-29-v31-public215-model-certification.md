@@ -36,3 +36,11 @@ requests and partial/mismatched acknowledgments. Required directly triggered CI
 runs the retained checks. Synthetic fixtures do not establish production model
 quality or actual loading. Certification, protected delivery, installation,
 promotion and affected live proof remain separate acceptance requirements.
+
+Reference and feature qualification digests now bind the maintained native kernel
+and build script alongside the TypeScript closure. The former src-only path
+assumptions refused that genuine closure. Non-src admission is restricted to
+exact registered decision-source entries, with the existing byte hashes, full
+source census and traversal checks retained. Regression coverage rejects an
+unregistered native path and proves every registered runtime dependency changes
+the corresponding digest. No evidence or prior qualification was restamped.

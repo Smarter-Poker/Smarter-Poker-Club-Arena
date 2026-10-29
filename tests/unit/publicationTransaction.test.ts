@@ -108,6 +108,23 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
+      // Only these client jobs move to the isolated paid pool. Preserve the
+      // complete original command/permission/secret snapshot after that route.
+      if (
+        [
+          'client-tests',
+          'build-and-store',
+          'retain-runtime',
+          'publish-to-app',
+          'publish-to-origin',
+        ].includes(key)
+      ) {
+        const route =
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
+        expect(body['runs-on']).toBe(route);
+        body['runs-on'] = route.replace('ca-linux-delivery', 'ca-linux-8core');
+      }
+
       expect(createHash('sha256').update(normalizeSteps(body)).digest('hex')).toBe(
         golden[key].bodySHA256
       );

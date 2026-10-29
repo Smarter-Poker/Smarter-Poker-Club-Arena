@@ -253,7 +253,13 @@ test('approved transferred repository reports the same protected App check',()=>
 for(const repo of ['Smarter-Poker/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/Smarter-Poker-Club-Arena'])test('approved repository requires its immutable ID '+repo,()=>{assert.equal(isClubArenaRepository(repo,'1132369872'),true);for(const id of [undefined,'','1','11323698720'])assert.equal(isClubArenaRepository(repo,id),false)});
 for(const repo of ['evil/Smarter-Poker-Club-Arena','Smarter-Software-PIQ/evil','smarter-software-piq/Smarter-Poker-Club-Arena'])test('same ID cannot authorize an unapproved full name '+repo,()=>assert.equal(isClubArenaRepository(repo,'1132369872'),false));
 
-test('paid runners are limited to the transferred immutable repository and preserve hosted fallback',()=>{for(const file of ['ci.yml','publish-club-arena.yml','component-fixture-native-smoke.yml']){const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');const routes=[...text.matchAll(/^    runs-on: (.+)$/gm)].map(x=>x[1]);assert.ok(routes.length);for(const route of routes)assert.match(route,/^\$\{\{ github\.repository_owner == 'Smarter-Software-PIQ' && github\.repository_id == '1132369872' && 'ca-linux-[48]core' \|\| 'ubuntu-(?:latest|24\.04)' \}\}$/)}});
+const approvedPaidRoute = /^\$\{\{ github\.repository_owner == 'Smarter-Software-PIQ' && github\.repository_id == '1132369872' && 'ca-linux-(?:[48]core|delivery)' \|\| 'ubuntu-(?:latest|24\.04)' \}\}$/;
+test('paid runners are limited to the transferred immutable repository and preserve hosted fallback',()=>{for(const file of ['ci.yml','publish-club-arena.yml','component-fixture-native-smoke.yml']){const text=fs.readFileSync(new URL('../.github/workflows/'+file,import.meta.url),'utf8');const routes=[...text.matchAll(/^    runs-on: (.+)$/gm)].map(x=>x[1]);assert.ok(routes.length);for(const route of routes)assert.match(route,approvedPaidRoute)}});
+test('delivery pool admission rejects foreign owners, IDs and arbitrary runner labels',()=>{
+  const route="${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
+  assert.match(route,approvedPaidRoute);
+  for(const bad of [route.replace('Smarter-Software-PIQ','foreign'),route.replace('1132369872','42'),route.replace('ca-linux-delivery','ca-linux-untrusted'),route.replace(" && github.repository_id == '1132369872'",'')])assert.doesNotMatch(bad,approvedPaidRoute);
+});
 
 test('local coordinator reads supported REST metadata and refuses another repository before dispatch',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'transfer-coordinator-'));

@@ -1,3 +1,4 @@
+import { satelliteEntryValue } from './satelliteEntryValue.js';
 import {
   isUnlimitedMtt,
   isPersistedUnlimitedMtt,
@@ -50,6 +51,7 @@ import {
   DIAMOND_HOUSE_AVAILABLE_RPC,
   DIAMOND_SPAWN_RPC,
   diamondSpawnConfig,
+  DIAMOND_ARENA_DIAMONDS_PER_CHIP,
   isDiamondArenaClubRow,
   readDiamondSpawnAnswer,
 } from './diamondScheduledSpawn.js';
@@ -1337,7 +1339,13 @@ export class ScheduledTournamentService {
     if (arena === null) return;
     let diamondConfig: Record<string, unknown> | null = null;
     if (arena) {
-      const mapped = diamondSpawnConfig(row, cfg, startTime);
+      const mapped = diamondSpawnConfig(
+        row,
+        row.satellite_target_id
+          ? { ...cfg, buyIn: Number(row.buy_in_amount) + Number(row.buy_in_fee) }
+          : cfg,
+        startTime
+      );
       if (!mapped.ok) {
         reportError(
           new Error(
@@ -2009,7 +2017,7 @@ export class ScheduledTournamentService {
       return null;
     }
     const requestedMinPlayers = Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2);
-    const minPlayers =
+    let minPlayers =
       isSng || isSpin
         ? Math.min(requestedMinPlayers, maxPlayers)
         : Math.max(3, requestedMinPlayers);
@@ -2050,8 +2058,8 @@ export class ScheduledTournamentService {
     // reaching buy_in_amount (rather than a snapped `split.prize`) is a Spin
     // invariant the tournaments_spin_no_extra_rake constraint enforces, and it
     // should not depend on a helper somewhere else staying correct.
-    const buyInAmount = isSpin ? buyIn : split.prize;
-    const buyInFee = isSpin ? 0 : split.fee;
+    let buyInAmount = isSpin ? buyIn : split.prize;
+    let buyInFee = isSpin ? 0 : split.fee;
 
     // All engine creators use the same cent allocation and entry-fee cap.
     let bountyAmount = 0;
@@ -2083,6 +2091,7 @@ export class ScheduledTournamentService {
     // no spawn — never create a broken satellite.
     let satelliteTargetId: string | null = null;
     let satelliteSeats: number | null = null;
+    let eventName = String(cfg.name ?? schedule.name);
     if (isSatellite) {
       const targetName = String(cfg.satelliteTargetName ?? '').trim();
       const targetObject = cfg.satelliteTarget ?? cfg.satellite_target;
@@ -2136,7 +2145,15 @@ export class ScheduledTournamentService {
         this.waitingForSatelliteTarget.add(occurrenceKey(schedule.id, startTime));
         return null;
       }
-      satelliteTargetId = target;
+      satelliteTargetId = target.id;
+      if (buyIn > 0) {
+        const entry = satelliteEntryValue(target.entryValue, buyIn);
+        const satelliteSplit = buyInFor(entry, rakeRate);
+        buyInAmount = satelliteSplit.prize;
+        buyInFee = satelliteSplit.fee;
+        minPlayers = Math.max(minPlayers, Math.ceil(target.entryValue / buyInAmount));
+        eventName = eventName.replace(/(Satellite)\s+\d+(?:\.\d+)?$/i, `$1 ${entry}`);
+      }
       const seats = clampInt(cfg.satelliteSeats ?? targetRecord.seatsAwarded, 1, 10000, 0);
       satelliteSeats = seats > 0 ? seats : null;
     }
@@ -2165,7 +2182,7 @@ export class ScheduledTournamentService {
       union_id: schedule.union_id ?? null,
       is_xmtt: !!schedule.union_id,
       schedule_id: schedule.id,
-      name: String(cfg.name ?? schedule.name),
+      name: eventName,
       game_type: dbGameType,
       variant: type,
       // Scheduled satellites retain the existing MTT writer shape in both ABIs.
@@ -2203,7 +2220,12 @@ export class ScheduledTournamentService {
       // starting stack, matching what process_tournament_rebuy computes.
       is_rebuy: isRebuy,
       is_reentry: isReentry,
-      rebuy_cost: isRebuy || isReentry ? wholeChips(cfg.rebuyCost) || split.total : null,
+      rebuy_cost:
+        isRebuy || isReentry
+          ? isSatellite
+            ? buyInAmount + buyInFee
+            : wholeChips(cfg.rebuyCost) || split.total
+          : null,
       rebuy_chips:
         isRebuy || isReentry
           ? clampInt(cfg.rebuyChips, 1, 100_000_000, 0) ||
@@ -2221,7 +2243,11 @@ export class ScheduledTournamentService {
        * add-on chips became the 5,000 starting stack. Read both keys; the
        * camel-cased one wins when both are present.
        */
-      addon_cost: addOn ? wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total : null,
+      addon_cost: addOn
+        ? isSatellite
+          ? buyInAmount + buyInFee
+          : wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total
+        : null,
       addon_chips: addOn
         ? clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0) ||
           clampInt(cfg.startingStack, 1, 100_000_000, 10000)
@@ -2325,7 +2351,7 @@ export class ScheduledTournamentService {
     namePrefix: string,
     targetId?: string,
     feederStartTime?: Date
-  ): Promise<string | null> {
+  ): Promise<{ id: string; entryValue: number; nativeEntryValue: number } | null> {
     let query = supabase
       .from('tournaments')
       .select(
@@ -2347,11 +2373,10 @@ export class ScheduledTournamentService {
     const { data, error } = await query.maybeSingle();
     if (error || !data) return null;
     // A union event is never a Diamond event; a club schedule's target is in
-    // the schedule's own club. Read only for a bounty target, which is the one
-    // the Diamond Arena refuses (null on an unread club refuses it too).
-    const bountyTarget = Boolean(data.is_bounty || data.is_pko || data.is_mystery_bounty);
-    const diamondHost =
-      bountyTarget && !schedule.union_id ? await this.scheduleIsDiamondArena(schedule) : false;
+    // the schedule's own club. Read its currency before comparing prices;
+    // an unread club cannot supply a denomination.
+    const diamondHost = !schedule.union_id ? await this.scheduleIsDiamondArena(schedule) : false;
+    if (diamondHost === null) return null;
     if (
       !isPersistedUnlimitedMtt(data) ||
       data.satellite_target_id ||
@@ -2359,7 +2384,13 @@ export class ScheduledTournamentService {
       !satelliteTargetIsDeliverable({ ...(data as SatelliteTargetRow), diamond_host: diamondHost })
     )
       return null;
-    return data.id as string;
+    return {
+      id: data.id as string,
+      nativeEntryValue: Number(data.buy_in_amount) + Number(data.buy_in_fee),
+      entryValue:
+        (Number(data.buy_in_amount) + Number(data.buy_in_fee)) /
+        (diamondHost ? DIAMOND_ARENA_DIAMONDS_PER_CHIP : 1),
+    };
   }
 
   /**
@@ -2595,7 +2626,29 @@ export class ScheduledTournamentService {
         startTime
       );
       if (!target) return;
-      row.satellite_target_id = target;
+      row.satellite_target_id = target.id;
+      if (isPersistedUnlimitedMtt(old) && Number(row.buy_in_amount) + Number(row.buy_in_fee) > 0) {
+        const entry = satelliteEntryValue(
+          target.nativeEntryValue,
+          Number(row.buy_in_amount) + Number(row.buy_in_fee)
+        );
+        const currentEntry = Number(row.buy_in_amount) + Number(row.buy_in_fee);
+        const priced =
+          entry === currentEntry
+            ? { total: currentEntry, prize: Number(row.buy_in_amount), fee: Number(row.buy_in_fee) }
+            : buyInFor(entry, 0.1);
+        row.buy_in_amount = priced.prize;
+        row.buy_in_fee = priced.fee;
+        if (entry !== currentEntry) {
+          if (row.is_rebuy || row.is_reentry) row.rebuy_cost = entry;
+          if (row.add_on_available) row.addon_cost = entry;
+        }
+        row.min_players = Math.max(
+          Number(row.min_players) || 3,
+          Math.ceil(target.nativeEntryValue / priced.prize)
+        );
+        row.name = String(row.name).replace(/(Satellite)\s+\d+(?:\.\d+)?$/i, `$1 ${entry}`);
+      }
     } else if (
       String(row.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
       String(row.variant ?? '').toLowerCase() === 'satellite'

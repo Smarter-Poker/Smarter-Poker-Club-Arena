@@ -643,10 +643,15 @@ test.describe('Production Kings Club Players', () => {
     await page.locator('.mm-back').click();
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(search).toHaveValue(alias);
-    await expect(sort).toHaveValue('name');
+    await expect(sort).toHaveValue('search');
+    await expect(sort).toBeDisabled();
+    await expect(sort.locator('option:checked')).toHaveText('Player Name Matches');
     await expect(directory.getByRole('listitem').first().locator('.member-alias')).toContainText(
       alias
     );
+    await completeNextPageRead(probe, () => search.fill(''), 'workspace clear saved search');
+    await expect(sort).toHaveValue('name');
+    await expect(sort).toBeEnabled();
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
     expect(probe.pageErrorCount).toBe(0);

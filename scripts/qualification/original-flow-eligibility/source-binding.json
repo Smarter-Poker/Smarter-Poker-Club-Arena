@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 248604,
-      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -842,6 +842,26 @@
     "reason": "Preserve all protected-main and weekly pause audit records. Only merged current workflow/classifier identity refresh; financial owners, fixtures, assertions, result states and historical qualification remain unchanged.",
     "main": "a082ae56f63d37e22125c4e5ddefa456c302294a",
     "candidateBeforeMerge": "d4d6c577a3a2fce5b8ea028aeb5fe4b23d0c2209",
+    "financial_recertification": false
+  },
+  "horseTurnCensusEnforcement20261029": {
+    "reason": "Reviewed exact eight-line additive Accounting PostgreSQL shard3 census step. PostgreSQL17 installation, signed setup, existing qualification commands, financial sources, fixtures, assertions, budgets, historical audit records and result states remain unchanged. Refresh only current workflow identity; no financial recertification, installation or live behavior claim.",
+    "previousWorkflowPin": {
+      "bytes": 248604,
+      "sha256": "50b5c1a53784f384839fa573d54924cb6f97efc387d21b42093c2bc47434c48c"
+    },
+    "currentWorkflowPin": {
+      "bytes": 249046,
+      "sha256": "73753d7857163bede05c9a11c3f14454b4449335faf63dfee1558d431c15e3bc"
+    },
+    "new_census_checks": {
+      "pure_python_tests": 26,
+      "transport_tests": 10,
+      "native_postgres_assertions": 22
+    },
+    "local_results_authority": "Current exact-candidate local qualification reported by coordinating root; native PostgreSQL census independently executed in owned SSD socket-only cluster.",
+    "existing_financial_qualification_reexecuted": false,
+    "hosted_execution_performed": false,
     "financial_recertification": false
   }
 }

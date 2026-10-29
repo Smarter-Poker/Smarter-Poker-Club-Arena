@@ -37,6 +37,7 @@ jobs:
       FLEET_SOURCE_SHA: ${{ github.event.client_payload.source_sha }}
       FLEET_FROM_UTC: ${{ github.event.client_payload.from_utc }}
       FLEET_TO_UTC: ${{ github.event.client_payload.to_utc }}
+      FLEET_TURN_CENSUS_JSON: ${{ toJSON(github.event.client_payload.turn_census) }}
     steps:
       - name: Checkout protected observer control
         uses: actions/checkout@v4
@@ -47,12 +48,19 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /scripts/ci/horse-fleet-packet.py
+            /scripts/ci/horse-turn-census-packet.py
+            /scripts/ci/horse-turn-census-proof.mjs
+            /server/scripts/phase6d-turn-census.mjs
             /scripts/ci/horse-public-bootstrap-witness.py
             /server/scripts/phase6d-population.mjs
           persist-credentials: false
       - name: Refuse unprotected source and unavailable local clients
         run: |
           set -euo pipefail
+          case "$FLEET_TURN_CENSUS_JSON" in
+            true|false|null) ;;
+            *) echo 'Private census mode must be a JSON boolean or absent'; exit 2 ;;
+          esac
           [[ "$FLEET_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$FLEET_SOURCE_SHA" origin/main
           git ls-tree "$FLEET_SOURCE_SHA" -- server/src/services/horseDecisionJournal/fleet.ts \
@@ -67,8 +75,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py \
-            "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json"
+          packet_args=("$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json")
+          if [ "$FLEET_TURN_CENSUS_JSON" = true ]; then packet_args=(--turn-census "${packet_args[@]}"); fi
+          timeout --signal=TERM --kill-after=2s 20s python3 -B scripts/ci/horse-fleet-packet.py "${packet_args[@]}"
       - name: Establish existing pinned SSH service identity
         env:
           SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
@@ -97,7 +106,9 @@ jobs:
       - name: Observe the installed CLI without release or maintenance actions
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=5s 1900s python3 -B scripts/ci/horse-fleet-packet.py --observe-bounded \
+          observer_mode=--observe-bounded
+          if [ "$FLEET_TURN_CENSUS_JSON" = true ]; then observer_mode=--observe-turn-census; fi
+          timeout --signal=TERM --kill-after=5s 1900s python3 -B scripts/ci/horse-fleet-packet.py "$observer_mode" \
             "$PRIVATE_DIR/packet.json" "$PRIVATE_DIR/attestation.json" "$HSSH" "$PRIVATE_DIR/result.json"
       - name: Remove private packet and exact ephemeral transport
         if: always()

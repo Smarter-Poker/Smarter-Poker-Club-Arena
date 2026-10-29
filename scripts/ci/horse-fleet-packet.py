@@ -682,4 +682,11 @@ def main():
         print(json.dumps({'canonicalRosterVerified':False,'status':'unavailable','gap':reason,'counts':error.counts if isinstance(error,PacketGap) else {},'completePopulation':False,'allPhasesVerified':False}))
         return 3
     return 0
-if __name__=='__main__':sys.exit(main())
+if __name__=='__main__':
+    modes={'--turn-census':'packet','--observe-turn-census':'observe','--union-turn-census':'union'}
+    if len(sys.argv)>1 and sys.argv[1] in modes:
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('horse_turn_census_packet',Path(__file__).with_name('horse-turn-census-packet.py'))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        sys.exit(module.main([modes[sys.argv[1]],*sys.argv[2:]]))
+    sys.exit(main())

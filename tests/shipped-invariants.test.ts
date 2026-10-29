@@ -232,7 +232,11 @@ describe('shipped functionality is still here', () => {
       // ci.yml's unit job never completes on main - pushes land faster than CI
       // and cancel it - so the suite runs HERE, inside the workflow that
       // publishes. Losing this line means a red suite ships to users.
-      expect(publisher().includes('npx vitest run tests/')).toBe(true);
+      expect(publisher()).toContain('node scripts/ci/ui-test-selection.mjs unit --shard=');
+      const selector = readFileSync(root('scripts/ci/ui-test-selection.mjs'), 'utf8');
+      expect(selector).toContain(
+        "if (!proof.focused) return invoke('vitest', ['run', 'tests/', ...args])"
+      );
     });
 
     it('an older build cannot overwrite a newer one — ancestry, not wall clock', () => {

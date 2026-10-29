@@ -88,6 +88,35 @@ describe('native publishing requires the exact origin verification', () => {
     expect(eligible(other)).toBe(false);
   });
 
+  it('uses the same conservative selector on the immutable merged delta', () => {
+    const client = workflow.jobs['client-tests'];
+    const checkout = client.steps.find(
+      (step: { uses?: string }) => step.uses === 'actions/checkout@v4'
+    );
+    expect(checkout.with.ref).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(checkout.with['fetch-depth']).toBe(2);
+    const tests = client.steps.find((step: { name?: string }) =>
+      step.name?.startsWith('Client tests must pass')
+    );
+    expect(tests.env.CI_HEAD_SHA).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(tests.run).toContain(
+      'export CI_BASE_SHA="$(git rev-parse "$CI_HEAD_SHA^" 2>/dev/null || true)"'
+    );
+    expect(tests.run).toContain(
+      'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4'
+    );
+    expect(tests.run).not.toMatch(/origin\/main|github\.event\.before|continue-on-error/);
+    const ci = parse(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
+    const workers =
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}";
+    expect(client.env.VITEST_MAX_THREADS).toBe(workers);
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
+    expect(workflow.concurrency).toEqual({
+      group: 'publish-club-arena-production',
+      'cancel-in-progress': false,
+    });
+  });
+
   it('preserves the proved-tree client-test fast path', () => {
     // The proof reads the source PR and its checks with this job's token.
     // Missing read permissions returns 403 and repeats the already-passed suite.

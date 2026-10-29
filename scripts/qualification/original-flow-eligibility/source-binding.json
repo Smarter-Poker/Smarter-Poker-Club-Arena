@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 249502,
-      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+      "bytes": 249727,
+      "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -901,6 +901,23 @@
         "current": {
           "bytes": 249502,
           "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        }
+      }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "hostedClientWorkerIdentity20261029": {
+    "review": "Reviewed the exact three-line client unit-shard worker override. Four Vitest workers are selected only by the existing approved repository identity on its dedicated 8-core hosted VM; fallback remains two. Existing tests, four shards, assertions, deadlines, accounting/server/native commands, financial fixtures, historical evidence and qualification states remain unchanged. Current source identity only, not renewed financial execution or certification.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 249502,
+          "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+        },
+        "current": {
+          "bytes": 249727,
+          "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
         }
       }
     },

@@ -270,11 +270,14 @@ jobs:
         shard: [1, 2, 3, 4]
     env:
       HUSKY: '0'
+      VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
     steps:
       - name: Checkout Club Arena at the publish target
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # The immutable first parent is the merged delta, not a moving main.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -297,7 +300,12 @@ jobs:
         run: npm ci
 
       - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
-        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
+        env:
+          CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+        run: |
+          # A missing parent is uncertainty: the maintained selector runs all tests.
+          export CI_BASE_SHA="$(git rev-parse "$CI_HEAD_SHA^" 2>/dev/null || true)"
+          node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
 
   # Retention qualifies the CURRENT source tests and preserves the already
   # published immutable bytes. It never writes the origin or fabricates dist.

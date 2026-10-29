@@ -209,8 +209,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 249502,
-      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+      "bytes": 249727,
+      "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -4562,6 +4562,19 @@
           "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
         }
       }
+    },
+    "financial_recertification": false,
+    "execution_performed": false
+  },
+  "hostedClientWorkerIdentity20261029": {
+    "review": "Only the three-line client-shard worker override changes: exact approved dedicated hosted VM uses four workers and fallback two. Every accounting/native command, assertion, fixture, scheduler input, timeout, historical receipt and qualification state remains unchanged. Current source identity only, not financial execution or certification.",
+    "previous": {
+      "bytes": 249502,
+      "sha256": "8d023bb9aa44d83a66c329fb4ef679dd7e45b7e58c802b37db3e9ed9529a605c"
+    },
+    "current": {
+      "bytes": 249727,
+      "sha256": "de7f0701cf0ce5cc5c0f658d7100b4bbebeddc170e95218fdebc8c86f0c5b094"
     },
     "financial_recertification": false,
     "execution_performed": false

@@ -1,0 +1,7 @@
+# Use qualified UI selection in the existing publisher
+
+The protected UI selector already runs in pull-request CI, but the publisher still ran all four full client shards whenever main moved and exact-tree reuse refused. A recent publisher waited over ten minutes behind the previous release and its slowest shard then waited six more minutes for a VM. Each dedicated 8-core VM also inherited the retired shared-runner two-worker cap.
+
+Publisher shards now use the same maintained selector against the selected protected commit and its immutable first parent. Only positively proved presentation/configuration deltas select affected imports and conservative source contracts. Financial, executable, mixed, malformed or unknown deltas retain the full suite. Missing parent history fails open to the full suite. Both PR and publisher shards use four workers only on the exact approved paid repository route, retaining two on the fallback.
+
+The test matrix, failures, required aggregates, exact-tree reuse, production concurrency, isolated release secrets, forward ancestry, host lock, compare-and-swap, rollback and both live-origin checks remain unchanged. No SQL or engine replacement is part of this change.

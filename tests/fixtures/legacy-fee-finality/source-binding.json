@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab",
+    "scripts/ci/classify-ci-changes.mjs": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1251,5 +1251,14 @@
   },
   "clubPromoProtectedMainIntegration20261029": {
     "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
+  },
+  "retentionPageAdmissionSourceAudit20261029": {
+    "reason": "Reviewed additive required native one-page retention step and exact fixture classification. Current source identities and reviewed nested binding audit only; preserve financial assertions, historical qualification states, receipts and ledger installation. No financial or live certificate restamp.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "f26a2ab9913bdaf7f13f58b27c0d1919438c037eaca33b7d6e273aca455e8dab",
+        "current": "af90c26e1b483422ea3a6f043afdee9e5738b76574661744297be3c14157fc66"
+      }
+    }
   }
 }

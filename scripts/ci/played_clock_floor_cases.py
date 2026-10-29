@@ -65,7 +65,14 @@ END $$;ROLLBACK;"""
 def qualify(e,root,hand):
  # A separate real F06 database leaves the continuation fixture untouched.
  db=e.database()
- e.sql(db,file=e.output/'foundation.sql',label='foundation',seconds=180)
+ foundation=(e.output/'foundation.sql').read_text()
+ roles='CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;CREATE ROLE supabase_auth_admin;'
+ if foundation.count(roles)!=1:raise RuntimeError('foundation role declaration changed')
+ # The combined lane has already created these cluster-wide roles in its
+ # first database. Reuse only the exact original attributes, never another
+ # role identity or application owner. Standalone qualification creates them.
+ declarations="DO $clock_roles$ DECLARE n text; BEGIN FOREACH n IN ARRAY ARRAY['anon','authenticated','service_role','supabase_auth_admin'] LOOP IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=n) THEN EXECUTE 'CREATE ROLE '||quote_ident(n)||CASE WHEN n='service_role' THEN ' BYPASSRLS' ELSE '' END; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=n AND NOT rolsuper AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolcanlogin AND NOT rolreplication AND rolinherit AND rolbypassrls=(n='service_role')) THEN RAISE EXCEPTION 'CLOCK_NATIVE_ROLE_CHANGED:%',n; END IF; END LOOP; END $clock_roles$;"
+ e.sql(db,foundation.replace(roles,declarations),label='foundation',seconds=180)
  e.sql(db,file=e.output/'current-authorities.sql',label='f06')
  e.sql(db,file=root/'scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql',label='opening-template')
  e.sql(db,file=root/hand.MIGRATION,label='real-retained-submission-owner')

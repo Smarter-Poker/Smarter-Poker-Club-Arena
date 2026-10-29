@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from 'yaml';
+import { MaintenanceBreak } from '../../server/src/maintenance/MaintenanceBreak';
 import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const root = resolve(__dirname, '../..');
@@ -37,6 +38,22 @@ describe('maintenance admission stays in the existing required installer qualifi
     expect(steps[0].if).toBe('matrix.shard == 1');
     expect(steps[0]['continue-on-error']).toBeUndefined();
     expect(steps[0].run).toContain('set -euo pipefail');
+  });
+
+  it('routes a nonqueued admission refusal through the existing bounded persistence contract', () => {
+    const sql = read(migration);
+    const message = 'maintenance writer lane lock_not_available';
+    expect(sql).toContain("RAISE EXCEPTION '" + message + "' USING ERRCODE='55P03'");
+    expect(MaintenanceBreak.isRetryablePersistenceError(new Error(message))).toBe(true);
+    expect(MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS).toBe(90_000);
+    expect(
+      MaintenanceBreak.isRetryablePersistenceError(new Error('MAINTENANCE_OWNERSHIP_LOST'))
+    ).toBe(false);
+    expect(
+      MaintenanceBreak.isRetryablePersistenceError(
+        new Error('MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED')
+      )
+    ).toBe(false);
   });
 
   it('declares the private helper without exposing a new public RPC', () => {

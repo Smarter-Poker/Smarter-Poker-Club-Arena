@@ -114,6 +114,17 @@ with tempfile.TemporaryDirectory(prefix='ma-',dir=a.scratch) as temp:
   release(h2);case('reentrant_global_owner_never_inverts_into_key2')
   assert scalar("BEGIN;SET LOCAL lock_timeout='87ms';SELECT smarter_private.maintenance_write_admission();SELECT current_setting('lock_timeout');ROLLBACK;")=='87ms'
   case('caller_lock_timeout_restored_after_success')
+  # Ordinary entry transactions hold shared global1 without retention2.
+  seed();entry=held('BEGIN;SELECT pg_advisory_xact_lock_shared(530090,1)',15)
+  old_token=scalar('SELECT ownership_token::text FROM engine_maintenance_break;')
+  bad=sql("SET ROLE service_role;SELECT fn_claim_engine_maintenance_break('"+token+"','"+nexttoken+"','native');",False)
+  assert bad.returncode and 'maintenance writer lane lock_not_available' in bad.stderr
+  assert scalar('SELECT ownership_token::text FROM engine_maintenance_break;')==old_token
+  assert scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=530090 AND objid=1 AND mode='ExclusiveLock' AND NOT granted);")=='f'
+  assert scalar('SELECT smarter_private.lock_hand_continuation_maintenance_lane();SELECT true;')=='t'
+  release(entry)
+  assert '"ok": true' in scalar("SET ROLE service_role;SELECT fn_claim_engine_maintenance_break('"+token+"','"+nexttoken+"','native');")
+  case('ordinary_entry_refuses_without_global_queue_then_same_owner_admits')
   sql("UPDATE engine_maintenance_break SET phase='counting_down',announced_at=now()-interval '8 minutes',break_started_at=now()-interval '6 minutes',break_ends_at=now()-interval '1 minute';")
   assert scalar('SELECT fn_platform_frozen();')=='t'
   steps=['sit_out_at','hold_expires_at','addon_period_ends_at','reversible_until','reveal_deadline_at','rebuy_prompt_until','bomb_pot_next_due_at','cash_stay_last_tick_at','cash_rejoin_expires_at','level_started_at','cluster_break_eligible_since','cluster_move_expires_at','reconnect_presence','reconnect_snapshots']
@@ -121,15 +132,14 @@ with tempfile.TemporaryDirectory(prefix='ma-',dir=a.scratch) as temp:
   sql("DELETE FROM engine_maintenance_break;INSERT INTO engine_maintenance_thaws VALUES(3,now()+interval '1 minute','"+shifted+"'::jsonb);")
   assert scalar('SELECT fn_platform_frozen();')=='t';sql('TRUNCATE engine_maintenance_thaws;')
   case('actual_expired_countdown_and_completed_future_release_boundary_stay_frozen')
-  # Two real waits share the existing32s budget, not32s for each lock.
+  # Only the existing retention reservation blocks; the global lane never queues.
   h2=held('BEGIN;SELECT pg_advisory_xact_lock(530090,2)',20)
-  h1=held('BEGIN;SELECT pg_advisory_xact_lock_shared(530090,1)',21)
   began=time.monotonic();pending=launch("SET application_name='ma_budget';SELECT smarter_private.maintenance_write_admission();")
-  wait_for(observe('ma_budget',2,False),'budget reservation wait');sql('SELECT pg_sleep(1.25);');release(h2)
-  wait_for(observe('ma_budget',1,False),'budget remaining global wait')
+  wait_for(observe('ma_budget',2,False),'bounded reservation wait')
   code,out,err=finish(pending,False,36);elapsed=time.monotonic()-began
   assert code and 'lock timeout' in err and 31<elapsed<34,(elapsed,err)
-  release(h1);report['total_admission_seconds']=elapsed;case('two_real_waits_share_one32second_budget')
+  assert scalar('SELECT '+observe('ma_budget',1,False)+';')=='f'
+  release(h2);report['total_admission_seconds']=elapsed;case('retention_reservation_keeps_existing32second_budget_without_global_queue')
   post=json.loads((here/'postimages.json').read_text())
   for x in post['changes']:assert scalar("SELECT md5(pg_get_functiondef('public."+x['signature']+"'::regprocedure));")==x['post_full_md5']
   for x in rows:

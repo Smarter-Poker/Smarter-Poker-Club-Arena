@@ -4,7 +4,7 @@
 -- Decode six grouped result maps by tournament instead of multiplying join estimates.
 -- Every original count, sum, fingerprint, refusal, full event row and caller snapshot is retained.
 -- No source65/generation owner, grant, raw financial record or money changes.
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))='f78bb6693535f595d21018c4bb7edff2')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))='26f117e26132013bf54c68e225544bc3')
 BEGIN;
 SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='15s';
 -- Original financial-source witnesses are read-only qualification. They do not
@@ -415,17 +415,25 @@ BEGIN
     FROM selected_event_sources s
     LEFT JOIN rr ON rr.id=s.rake_record_id AND rr.tournament_id=s.tournament_id AND rr.rake_amount>0
     WHERE rr.id IS NULL GROUP BY s.tournament_id
+  ), survivor_receipt_clock_groups AS NOT MATERIALIZED (
+   SELECT tournament_id,array_agg(recognized_at) AS recognized_ats
+    FROM survivors GROUP BY tournament_id
   ), receipt_access AS MATERIALIZED (
    -- Physical access only: one random source-key fetch per selected row versus
    -- one sequential visit per heap block. Both branches return the same bag.
    SELECT (SELECT count(*) FROM selected_event_sources)>=GREATEST(
     pg_relation_size('public.accounting_tournament_fee_sources'::regclass)/current_setting('block_size')::bigint,1) AS stream
   ), receipt_source_rows AS NOT MATERIALIZED (
-   (SELECT s.*,k.recognized_at AS receipt_recognized_at
-    FROM receipt_access access CROSS JOIN
-     (SELECT raw.* FROM public.accounting_tournament_fee_sources raw OFFSET 0) s
-    JOIN survivors k ON k.tournament_id=s.tournament_id
-    WHERE access.stream OFFSET 0)
+   (SELECT qualified.* FROM receipt_access access
+    CROSS JOIN LATERAL (
+     SELECT (matched.source_row).*,clocks.recognized_at AS receipt_recognized_at
+      FROM (
+       SELECT s AS source_row,g.recognized_ats
+        FROM (SELECT raw.* FROM public.accounting_tournament_fee_sources raw OFFSET 0) s
+        JOIN survivor_receipt_clock_groups g ON g.tournament_id=s.tournament_id OFFSET 0
+      ) matched CROSS JOIN LATERAL unnest(matched.recognized_ats) clocks(recognized_at)
+      WHERE access.stream OFFSET 0
+    ) qualified OFFSET 0)
    UNION ALL
    (SELECT s.*,k.recognized_at AS receipt_recognized_at
     FROM receipt_access access CROSS JOIN survivors k
@@ -588,10 +596,10 @@ BEGIN
  THEN RAISE EXCEPTION 'weekly_quality_bags_exact_preimage_required';END IF;
  IF NULLIF(current_setting('ca.weekly_quality_source_qualification',true),'')IS NULL THEN RAISE EXCEPTION 'weekly_quality_bags_source_qualification_required';END IF;
  patched:=replace(d,old_query,new_query);
- IF md5(patched)<>'f78bb6693535f595d21018c4bb7edff2'THEN RAISE EXCEPTION 'weekly_quality_bags_exact_patch_required';END IF;
+ IF md5(patched)<>'26f117e26132013bf54c68e225544bc3'THEN RAISE EXCEPTION 'weekly_quality_bags_exact_patch_required';END IF;
  EXECUTE patched;
- IF md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))<>'f78bb6693535f595d21018c4bb7edff2'
-  OR(SELECT md5(prosrc)FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)<>'26e315061420adfd6dedfbd969347a3a'
+ IF md5(pg_get_functiondef('public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure))<>'26f117e26132013bf54c68e225544bc3'
+  OR(SELECT md5(prosrc)FROM pg_proc WHERE oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)<>'4dd6df42d6241f911a60c67269ab251f'
   OR(SELECT to_jsonb(p)-'prosrc'FROM pg_proc p WHERE p.oid='public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz)'::regprocedure)IS DISTINCT FROM metadata
  THEN RAISE EXCEPTION 'weekly_quality_bags_postimage_required';END IF;
 END$original_quality_bags$;

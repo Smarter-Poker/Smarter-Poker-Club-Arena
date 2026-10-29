@@ -123,17 +123,25 @@ BEGIN
     FROM selected_event_sources s
     LEFT JOIN rr ON rr.id=s.rake_record_id AND rr.tournament_id=s.tournament_id AND rr.rake_amount>0
     WHERE rr.id IS NULL GROUP BY s.tournament_id
+  ), survivor_receipt_clock_groups AS NOT MATERIALIZED (
+   SELECT tournament_id,array_agg(recognized_at) AS recognized_ats
+    FROM survivors GROUP BY tournament_id
   ), receipt_access AS MATERIALIZED (
    -- Physical access only: one random source-key fetch per selected row versus
    -- one sequential visit per heap block. Both branches return the same bag.
    SELECT (SELECT count(*) FROM selected_event_sources)>=GREATEST(
     pg_relation_size('public.accounting_tournament_fee_sources'::regclass)/current_setting('block_size')::bigint,1) AS stream
   ), receipt_source_rows AS NOT MATERIALIZED (
-   (SELECT s.*,k.recognized_at AS receipt_recognized_at
-    FROM receipt_access access CROSS JOIN
-     (SELECT raw.* FROM public.accounting_tournament_fee_sources raw OFFSET 0) s
-    JOIN survivors k ON k.tournament_id=s.tournament_id
-    WHERE access.stream OFFSET 0)
+   (SELECT qualified.* FROM receipt_access access
+    CROSS JOIN LATERAL (
+     SELECT (matched.source_row).*,clocks.recognized_at AS receipt_recognized_at
+      FROM (
+       SELECT s AS source_row,g.recognized_ats
+        FROM (SELECT raw.* FROM public.accounting_tournament_fee_sources raw OFFSET 0) s
+        JOIN survivor_receipt_clock_groups g ON g.tournament_id=s.tournament_id OFFSET 0
+      ) matched CROSS JOIN LATERAL unnest(matched.recognized_ats) clocks(recognized_at)
+      WHERE access.stream OFFSET 0
+    ) qualified OFFSET 0)
    UNION ALL
    (SELECT s.*,k.recognized_at AS receipt_recognized_at
     FROM receipt_access access CROSS JOIN survivors k

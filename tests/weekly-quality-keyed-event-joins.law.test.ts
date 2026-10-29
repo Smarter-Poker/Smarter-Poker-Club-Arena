@@ -6,13 +6,13 @@ const read = (p: string) => readFileSync(p, 'utf8');
 const digest = (algorithm: string, value: string | Buffer) =>
   createHash(algorithm).update(value).digest('hex');
 describe('Weekly quality preserves source bags while avoiding redundant intermediate work', () => {
-  it('changes only the seven exact source and receipt transformations and preserves full original function authority', () => {
+  it('changes only the nine exact source and receipt transformations and preserves full original function authority', () => {
     const receipt = JSON.parse(read(base + 'source-receipt.json'));
     const before = read(base + 'quality-before.sql');
     const after = read(base + 'quality-after.sql');
     expect(before.split(receipt.replacement.old)).toHaveLength(2);
     expect(before.replace(receipt.replacement.old, receipt.replacement.new)).toBe(after);
-    expect(receipt.exact_replacements).toHaveLength(7);
+    expect(receipt.exact_replacements).toHaveLength(9);
     let transformed = before;
     for (const delta of receipt.exact_replacements) {
       expect(transformed.split(delta.old)).toHaveLength(2);
@@ -56,10 +56,12 @@ describe('Weekly quality preserves source bags while avoiding redundant intermed
     const receipt = JSON.parse(read(base + 'source-receipt.json'));
     const evidence = JSON.parse(read(base + 'qualification-evidence.json'));
     expect(evidence.qualification).toBe('passed');
-    expect(evidence.case_count).toBe(147);
+    expect(evidence.case_count).toBe(149);
     expect(evidence.migration_sha256).toBe(digest('sha256', readFileSync(receipt.migration_file)));
     expect(evidence.actual_after_full_md5).toBe(receipt.expected_after_full_md5);
     for (const name of [
+      'adaptive_receipt_full_join_bag_clock_NULL_distinct_duplicate_stream',
+      'adaptive_receipt_full_join_bag_clock_NULL_distinct_duplicate_keyed',
       'adaptive_receipt_full_join_bag_NULL_stream',
       'adaptive_receipt_full_join_bag_duplicate_keyed',
       'adaptive_receipt_full_join_bag_missing_stream',
@@ -82,7 +84,7 @@ describe('Weekly quality preserves source bags while avoiding redundant intermed
   it('keeps excluded malformed contract casts outside all three actual plan domains', () => {
     const extra = JSON.parse(read(base + 'qualification-evidence.json'));
     expect(extra.qualification).toBe('passed');
-    expect(extra.case_count).toBe(147);
+    expect(extra.case_count).toBe(149);
     expect(extra.actual_after_full_md5).toBe(
       JSON.parse(read(base + 'source-receipt.json')).expected_after_full_md5
     );

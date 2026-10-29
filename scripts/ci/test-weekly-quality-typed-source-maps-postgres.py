@@ -285,20 +285,21 @@ def qualify_keyed_event_bags(q,before,after,rec):
  def joins(source):
   start=source.index('    FROM ',source.index('receipt_bad AS ('));end=source.index('    WHERE (rs.source_id',start)
   return source[start:end].replace('public.accounting_tournament_recognized_sources','fixture.membership_receipts').replace('public.accounting_tournament_fee_sources','fixture.membership_sources')
- for name,ids,want in [('empty',[],0),('NULL',['NULL::uuid'],0),('duplicate',['fixture.u(100)','fixture.u(100)'],12),('missing',['fixture.u(777)'],0),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(101)','fixture.u(100)'],13)]:
+ for name,ids,want in [('empty',[],0),('NULL',['NULL::uuid'],0),('duplicate',['fixture.u(100)','fixture.u(100)'],12),('missing',['fixture.u(777)'],0),('mixed',['NULL::uuid','fixture.u(100)','fixture.u(101)','fixture.u(100)'],13),('clock_NULL_distinct_duplicate',['fixture.u(100)']*4,24)]:
   members='SELECT NULL::uuid tournament_id,NULL::timestamptz recognized_at WHERE false'if not ids else"SELECT tournament_id,'2026-10-20'::timestamptz recognized_at FROM(VALUES"+','.join('('+v+')'for v in ids)+')m(tournament_id)'
+  if name=='clock_NULL_distinct_duplicate':members="SELECT *FROM(VALUES(fixture.u(100),'2026-10-20'::timestamptz),(fixture.u(100),'2026-10-21'::timestamptz),(fixture.u(100),NULL::timestamptz),(fixture.u(100),'2026-10-20'::timestamptz))v(tournament_id,recognized_at)"
   variants=[('original',before)]+([(label,adaptive_mode(after,stream))for label,stream in [('stream',True),('keyed',False)]]if'receipt_access AS MATERIALIZED'in after else[('candidate',after)])
   bags=[]
   for label,source in variants:
    adaptive='receipt_access AS MATERIALIZED'in source;extra=''
    if adaptive:
-    a=source.index('receipt_access AS MATERIALIZED');z=source.index('), receipt_bad AS',a)
+    a=source.index('survivor_receipt_clock_groups AS NOT MATERIALIZED')if'survivor_receipt_clock_groups AS NOT MATERIALIZED'in source else source.index('receipt_access AS MATERIALIZED');z=source.index('), receipt_bad AS',a)
     extra=','+(source[a:z]+')').replace('public.accounting_tournament_fee_sources','fixture.membership_sources')
    projection="jsonb_build_object('source',to_jsonb(s)-'receipt_recognized_at','receipt',to_jsonb(rs),'survivor',jsonb_build_object('tournament_id',s.tournament_id,'recognized_at',s.receipt_recognized_at))"if adaptive else"jsonb_build_object('source',to_jsonb(s),'receipt',to_jsonb(rs),'survivor',to_jsonb(k))"
    sql='WITH survivors AS MATERIALIZED('+members+'),'+selected(source)+extra+",actual AS(SELECT "+projection+' row'+joins(source)+")SELECT COALESCE(jsonb_agg(row ORDER BY row::text),'[]')FROM actual"
    bags.append(json.loads(q(sql)))
   need(all(b==bags[0]and len(b)==want for b in bags),'adaptive original full source/receipt/survivor bag differs:'+name)
-  if name in('duplicate','mixed'):need(sum(1 for row in bags[-1]if row['receipt']is not None and row['receipt']['tournament_id']!=row['source']['tournament_id'])==8,'wrong-event receipt multiplicity changed:'+name)
+  if name in('duplicate','mixed','clock_NULL_distinct_duplicate'):need(sum(1 for row in bags[-1]if row['receipt']is not None and row['receipt']['tournament_id']!=row['source']['tournament_id'])==(16 if name=='clock_NULL_distinct_duplicate'else 8),'wrong-event receipt multiplicity changed:'+name)
   for label,_ in variants[1:]:rec('adaptive_receipt_full_join_bag_'+name+'_'+label)
 
 def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
@@ -347,6 +348,9 @@ def qualify_plan(q,before,after,rec,bank_changed=True,keyed_event=False):
    if 'receipt_access AS MATERIALIZED'in after:
     raw=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw'];keyed=[n for n in nodes(plan['Plan'])if n.get('Relation Name')=='accounting_tournament_fee_sources'and n.get('Alias')=='raw_1']
     need(raw and raw[0]['Node Type']=='Seq Scan'and raw[0]['Actual Loops']==1 and keyed and keyed[0]['Actual Loops']==0,'dense receipt branch did not stream exclusively:'+mode)
+    append=[n for n in nodes(plan['Plan'])if n['Node Type']=='Append'and any(x.get('Alias')=='raw'for x in nodes(n))and any(x.get('Alias')=='raw_1'for x in nodes(n))]
+    hashes=[x for n in append for x in nodes(n)if x['Node Type']=='Hash']
+    need(hashes and all(x['Plan Width']<=48 for x in hashes),'dense receipt join hashes wide physical contracts:'+mode)
    rec('actual_full_FOR_adaptive_dense_stream_receipt_'+mode)
   if 'receipt_access AS MATERIALIZED'in after:
    q("UPDATE public.accounting_tournament_fee_recognitions SET recognized_at='2026-09-01'WHERE tournament_id>fixture.u(1050);UPDATE public.tournament_rake_settlements SET settled_at='2026-09-01'WHERE tournament_id>fixture.u(1050);ANALYZE;")

@@ -321,6 +321,19 @@ it('uses real helper and real original hand reconciliation for a bounded coverin
     ],
   });
   expect(python('sanitize_decision_8464_result', [result, f.input]).status).toBe(0);
+  // Exercise the actual host boundary with closed metadata; this does not
+  // manufacture an original PLO8 policy or helper-invocation witness.
+  const plo8 = structuredClone(result);
+  plo8.cases[0].variant = 'plo8';
+  const admittedPlo8 = python('sanitize_decision_8464_result', [plo8, f.input]);
+  expect(admittedPlo8.status, admittedPlo8.stderr).toBe(0);
+  expect(JSON.parse(admittedPlo8.stdout)).toEqual(plo8);
+  for (const variant of ['plo7', 'plo9', 'flo8', 'private_variant']) {
+    const unsupported = structuredClone(result);
+    unsupported.cases[0].variant = variant;
+    expect(python('sanitize_decision_8464_result', [unsupported, f.input]).status).not.toBe(0);
+  }
+
   const dispatch = (value: unknown) =>
     spawnSync(
       'python3',

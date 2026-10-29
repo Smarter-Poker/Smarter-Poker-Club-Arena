@@ -655,6 +655,7 @@ export abstract class TournamentManagerBase {
     const selected = tableIds.map((tableId) => {
       const engine = originals.get(tableId);
       let snapshot: ReturnType<ServerTableEngine['getLifecycleDiagnosticSnapshot']> | null = null;
+      let physicalIdentityRefusal: string | null = 'unavailable';
       let claimedBoundary: boolean | null = null;
       let retainedPermit: Readonly<{
         status: 'retained' | 'none' | 'unavailable';
@@ -665,6 +666,14 @@ export abstract class TournamentManagerBase {
           snapshot = engine.getLifecycleDiagnosticSnapshot();
         } catch {
           /* unknown */
+        }
+        try {
+          const generation = this.tournamentLeaseGeneration;
+          physicalIdentityRefusal = generation
+            ? engine.drainedF06IdentityRefusal(tableId, this.tournamentId, generation)
+            : 'lease_generation_unknown';
+        } catch {
+          /* unknown remains unavailable; no physical proof is synthesized */
         }
         // These existing getters inspect only this exact local original.
         // Never invoke an authority check, RPC, recovery or release here.
@@ -696,6 +705,7 @@ export abstract class TournamentManagerBase {
         tableId,
         availability: snapshot ? ('observed' as const) : ('unavailable' as const),
         engine: snapshot,
+        physicalIdentityRefusal,
         movement: Object.freeze({ claimedBoundary, retainedPermit }),
         session: null,
         sessionCoverage: 'unavailable_on_selected_base' as const,
@@ -1213,6 +1223,7 @@ export abstract class TournamentManagerBase {
    * Set with breakCountdownStarted, cleared with it.
    */
   protected synchronizedBreakEndsAtMs = 0;
+  private synchronizedBreakStartGeneration = 0;
   private breakResumePersisting = false;
   /** Retain the exact proposal if its database acknowledgement is lost. */
   private pendingBreakResumeClock: {
@@ -3929,10 +3940,22 @@ export abstract class TournamentManagerBase {
      * in between `this.running = true` at the top of start() and the row
      * landing a query later.
      */
+    const breakStartGeneration = this.synchronizedBreakStartGeneration;
     const applies = await this.breakApplies();
     // breakApplies may be waiting on the tournament row while shutdown fences
     // this manager. Never let that retired continuation begin a new break.
     if (!this.lifecycleIsCurrent(lifecycle)) return;
+    // Eligibility can await the database while another request starts and
+    // even finishes this break. The old request must not clear its countdown
+    // or park the field again after release. onBreak alone misses that latter
+    // case, so retain the accepted start generation across the release.
+    if (
+      this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakStartGeneration ||
+      this.stageEndPause ||
+      this.stageResumeInProgress
+    )
+      return;
     if (!applies) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
@@ -3944,6 +3967,7 @@ export abstract class TournamentManagerBase {
     // remaining time instead of measuring a null timer as a fresh full level;
     // the synchronized break becomes the pause owner until one of them ends.
     const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock;
+    const acceptedBreakGeneration = ++this.synchronizedBreakStartGeneration;
     this.onBreak = true;
     if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
@@ -4012,7 +4036,12 @@ export abstract class TournamentManagerBase {
     // Persistence was admitted by this generation, but its response may return
     // after the generation was fenced. The retired manager must not publish or
     // pause table engines behind shutdown's final ownership snapshot.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
     // Derived past the end of the structure. The clamped index used to show the
@@ -4050,7 +4079,12 @@ export abstract class TournamentManagerBase {
           }
         : null,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== acceptedBreakGeneration
+    )
+      return;
 
     // 2026-08-18: the break screen is a full-screen opaque overlay
     // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and
@@ -4149,6 +4183,7 @@ export abstract class TournamentManagerBase {
      * already been shown.
      */
     if (this.breakCountdownStarted) return;
+    const breakGeneration = this.synchronizedBreakStartGeneration;
     this.breakCountdownStarted = true;
     this.synchronizedBreakEndsAtMs = deadlineMs;
     const endsAt = new Date(deadlineMs).toISOString();
@@ -4163,7 +4198,12 @@ export abstract class TournamentManagerBase {
     // The database write began while this manager owned the generation. If its
     // response crosses the stop fence, do not announce a countdown from a
     // manager that no longer owns the tournament.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     await this.broadcast('tournament_break_started', {
       level: this.currentLevel,
       phase: 'counting_down',
@@ -4173,7 +4213,12 @@ export abstract class TournamentManagerBase {
       breakEndsAt: endsAt,
       synchronized: true,
     });
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      !this.onBreak ||
+      this.synchronizedBreakStartGeneration !== breakGeneration
+    )
+      return;
     // An add-on that came due during the last hand of this break opens now,
     // inside the break, and runs to its end (see synchronizedBreakEndsAtMs).
     if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {

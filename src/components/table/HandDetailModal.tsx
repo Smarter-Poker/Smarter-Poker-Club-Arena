@@ -57,7 +57,7 @@ import type { HandRecord, HandHistoryLoadState } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
 import RecordedPotAwards from '../handdetail/RecordedPotAwards';
 import CardImage, { CardBack } from './CardImage';
-import { replayRabbitOffer } from './replayRabbitOffer';
+import { replayRabbitOffer, RABBIT_HUNT_OFFER_TTL_MS } from './replayRabbitOffer';
 import { useRabbitHuntReveal } from './useRabbitHuntReveal';
 import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
@@ -99,6 +99,7 @@ export interface HandDetailModalProps {
    * block never renders - there is no table to ask.
    */
   onRabbitHunt?: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  onRabbitHuntReceipt?: (handNumber: number) => Promise<RabbitHuntRevealResult | null>;
   /** The signed-in player; without one there is nobody to bill. */
   rabbitUserId?: string | null;
   /** Open the full animated replay of THE HAND PASSED IN, not "the last hand". */
@@ -194,21 +195,44 @@ function RabbitHuntReplayBlock({
   hand,
   model,
   onRabbitHunt,
+  onRabbitHuntReceipt,
   userId,
 }: {
   hand: HandRecord;
   model: ReplayModel;
   onRabbitHunt: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  onRabbitHuntReceipt?: (handNumber: number) => Promise<RabbitHuntRevealResult | null>;
   userId: string | null | undefined;
 }) {
-  const offer = replayRabbitOffer({
-    handNumber: hand.handNumber,
-    timestamp: hand.timestamp,
-    boards: model.boards,
-  });
-  const { reveal, isRevealing, hasRevealed, cards } = useRabbitHuntReveal({
+  const [offerNow, setOfferNow] = useState(Date.now);
+  useEffect(() => {
+    const refresh = () => setOfferNow(Date.now());
+    const timer = setTimeout(
+      refresh,
+      Math.max(1, hand.timestamp + RABBIT_HUNT_OFFER_TTL_MS - Date.now() + 1)
+    );
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [hand.timestamp]);
+  const offer = replayRabbitOffer(
+    {
+      handNumber: hand.handNumber,
+      timestamp: hand.timestamp,
+      boards: model.boards,
+    },
+    offerNow
+  );
+  const restore = useCallback(
+    () => onRabbitHuntReceipt?.(hand.handNumber) ?? Promise.resolve(null),
+    [onRabbitHuntReceipt, hand.handNumber]
+  );
+  const { reveal, isRevealing, isSlow, recoveryNeeded, hasRevealed, cards } = useRabbitHuntReveal({
     onReveal: (n) => onRabbitHunt(n ?? hand.handNumber),
     userId,
+    onRestore: restore,
   });
 
   // Nothing left to sell, a re-run, or past the engine's window - and nothing
@@ -225,6 +249,7 @@ function RabbitHuntReplayBlock({
           </span>
         )}
       </header>
+      <div className="hdm-section-count">Hand {hand.handNumber.toLocaleString()} · Only You</div>
       {hasRevealed ? (
         <div className="hdm-board hdm-rabbit__cards">
           <span className="hdm-board__badge">Would Have Come</span>
@@ -250,8 +275,15 @@ function RabbitHuntReplayBlock({
           className="hdm-rabbit__btn"
           onClick={() => void reveal(hand.handNumber)}
           disabled={isRevealing}
+          aria-busy={isRevealing}
         >
-          {isRevealing ? 'Revealing...' : 'Show What Would Have Come'}
+          {isRevealing
+            ? isSlow
+              ? 'Still Connecting...'
+              : 'Revealing...'
+            : recoveryNeeded
+              ? 'Recover This Hand'
+              : 'Show What Would Have Come'}
         </button>
       )}
     </section>
@@ -349,6 +381,7 @@ export function HandDetailModal({
   onReplay,
   onShare,
   onRabbitHunt,
+  onRabbitHuntReceipt,
   rabbitUserId,
   onLoadOlder,
   hasOlderHands = false,
@@ -836,6 +869,7 @@ export function HandDetailModal({
                     hand={hand}
                     model={model}
                     onRabbitHunt={onRabbitHunt}
+                    onRabbitHuntReceipt={onRabbitHuntReceipt}
                     userId={rabbitUserId}
                   />
                 ) : null}

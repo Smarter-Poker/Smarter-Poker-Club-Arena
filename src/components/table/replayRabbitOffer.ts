@@ -63,7 +63,7 @@ export function replayRabbitOffer(
   // either - on a multi-run hand the shared prefix reads as a short board and
   // the "unseen" cards would be deck noise.
   const dealt = hand.boards.filter((b) => b.length > 0);
-  if (dealt.length > 1) return none;
+  if (hand.boards.length > 1) return none;
 
   const boardLength = dealt[0]?.length ?? 0;
   const cardsUnseen = Math.max(0, 5 - boardLength);

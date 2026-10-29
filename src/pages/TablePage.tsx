@@ -589,6 +589,7 @@ import GameServerAPI, {
   // once more. It was dropped on 2026-08-25 when entry briefly became free.
   postBBToEnter as serverPostBBToEnter,
   requestRabbitHunt,
+  readRabbitHuntReceipt,
 } from '../services/GameServerAPI';
 import { HEARTBEAT_NOT_DELIVERED, HEARTBEAT_TABLE_NOT_RUNNING } from '../services/heartbeatCodes';
 import {
@@ -641,6 +642,7 @@ import {
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
 import { reportError } from '../utils/errorReporter';
+import { submitTableDecision } from '../lib/tableActionDecision';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 import { visibleTimeBankAllowance } from '../utils/timeBankAllowanceView';
@@ -2450,6 +2452,8 @@ function LiveTablePage({
   } | null>(null);
   /* LIGHTNING PHASE 6: the snapshot for handlers that run after their render
      (the pre-action arm names the hand it belongs to). */
+  const actionUserRef = useRef(userId);
+  actionUserRef.current = userId;
   const engineSnapshotRef = useRef(engineSnapshot);
   engineSnapshotRef.current = engineSnapshot;
   const engineLastEvent = rawEngineLastEvent;
@@ -9245,6 +9249,7 @@ function LiveTablePage({
    */
   const [retainedRabbitBoard, setRetainedRabbitBoard] = useState<RetainedRabbitBoard | null>(null);
   const retainedRabbitTimerRef = useRef<number | null>(null);
+  const retainedRabbitExpiresAtRef = useRef(0);
   /** The last non-empty board the felt showed, and whose hand it belonged to. */
   const lastBoardOfHandRef = useRef<{
     handNumber: number;
@@ -9410,7 +9415,7 @@ function LiveTablePage({
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
-        return { success: false, error: result.error };
+        return { success: false, error: result.error, retryable: result.retryable };
       }
 
       // Server card format -> the one client spelling (2026-10-25).
@@ -9428,6 +9433,7 @@ function LiveTablePage({
         );
         // One expiry owns both copies, including an idle table with no next deal.
         if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+        retainedRabbitExpiresAtRef.current = Date.now() + RABBIT_REVEAL_MIN_VISIBLE_MS;
         retainedRabbitTimerRef.current = window.setTimeout(() => {
           retainedRabbitTimerRef.current = null;
           setRetainedRabbitBoard(null);
@@ -9449,6 +9455,45 @@ function LiveTablePage({
         // paid for and nothing on screen acknowledged it.
         usesRemaining: result.uses_remaining,
       };
+    },
+    [tableId]
+  );
+
+  // Mobile browsers throttle timers in the background. Resume against the
+  // original wall-clock expiry so an old hand cannot flash back onto the felt.
+  useEffect(() => {
+    const expireOnResume = () => {
+      if (
+        document.hidden ||
+        !retainedRabbitExpiresAtRef.current ||
+        Date.now() < retainedRabbitExpiresAtRef.current
+      )
+        return;
+      retainedRabbitExpiresAtRef.current = 0;
+      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+      retainedRabbitTimerRef.current = null;
+      setRetainedRabbitBoard(null);
+      setRabbitRevealedCards([]);
+    };
+    document.addEventListener('visibilitychange', expireOnResume);
+    window.addEventListener('pageshow', expireOnResume);
+    return () => {
+      document.removeEventListener('visibilitychange', expireOnResume);
+      window.removeEventListener('pageshow', expireOnResume);
+    };
+  }, []);
+
+  const handleRabbitReceipt = useCallback(
+    async (handNumber: number): Promise<RabbitHuntRevealResult | null> => {
+      if (!tableId) return null;
+      const result = await readRabbitHuntReceipt(tableId, handNumber);
+      return result?.success && result.cards?.length
+        ? {
+            success: true,
+            cards: canonicalCards(result.cards) as Card[],
+            source: 'already_revealed',
+          }
+        : null;
     },
     [tableId]
   );
@@ -23666,11 +23711,17 @@ function LiveTablePage({
     ): Promise<boolean> => {
       try {
         if (isLightningObserverSnapshot(engineSnapshotRef.current)) return false;
-        const res = await submitAction(tid, uid, action, amount, tableState.actionContext);
+        // Read at the tap: a retained callback must not send a token from an
+        // earlier render. A missing decision is refreshed, never sent unbound.
+        const res = await submitTableDecision({
+          actionContext: tableStateRef.current.actionContext,
+          allowContextless: Boolean(lightningRoomRef.current),
+          send: async (context) => await submitAction(tid, uid, action, amount, context),
+          refresh: () => awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot),
+        });
+        // A response from the old table/account cannot put a popup on a new one.
+        if (tableStateRef.current.tableId !== tid || actionUserRef.current !== uid) return false;
         if (!res.success) {
-          if (res.code === 'ACTION_NOT_DELIVERED') {
-            await awaitEngineState(snapshotWaitersRef.current, requestEngineSnapshot);
-          }
           showActionError({
             error: safeErrorMessage(res.error, 'Action rejected'),
             code: res.code,
@@ -23686,7 +23737,7 @@ function LiveTablePage({
         return false;
       }
     },
-    [tableState.actionContext, showActionError, requestEngineSnapshot]
+    [showActionError, requestEngineSnapshot]
   );
 
   /**
@@ -24588,18 +24639,32 @@ function LiveTablePage({
   const handleActionPanelAction = useCallback(
     async (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => {
       if (actionLockRef.current) return; // Debounce guard
-      // Set lock immediately to prevent rapid double-taps — matches standalone handler pattern.
-      // Even if validate rejects, the 300ms lockout prevents action spam.
+      // Serialize state recovery; ordinary action sends retain their 300ms debounce.
       actionLockRef.current = true;
-      setTimeout(() => {
-        actionLockRef.current = false;
-      }, 300);
       // 2026-08-15: every read below comes from tableStateRef, never from the
       // `tableState` this callback closed over. The dep array does not include
       // players/boardStage/currentBet, so the captured snapshot can lag a
       // stack update or a street change — which silently mis-clamped raises to
       // a stale stack and mis-attributed VPIP.
       const live = tableStateRef.current;
+      // Input readiness is checked BEFORE optimistic paint. Otherwise the
+      // missing-token fold arms a fence for no decision, and the refreshed
+      // turn can remain hidden behind that fence even though nothing was sent.
+      if (!lightningRoomRef.current && !live.actionContext) {
+        try {
+          if (tableId) {
+            await submitActionWithToast(tableId, userId, action, amount, 'panel-missing-decision');
+          }
+        } finally {
+          // Nothing was sent. The next explicit choice is ready immediately
+          // after the state request, without inheriting a tap debounce.
+          actionLockRef.current = false;
+        }
+        return;
+      }
+      setTimeout(() => {
+        actionLockRef.current = false;
+      }, 300);
       const heroSeat = live.heroSeat;
       const hero = live.players[heroSeat - 1] ?? null;
       const heroStack = hero?.stack || 0;
@@ -29972,6 +30037,7 @@ function LiveTablePage({
            shows the offer for ~2.5s; a player who missed it can buy the same
            reveal here, through the same charging call. */
         onRabbitHunt={handleRabbitReveal}
+        onRabbitHuntReceipt={handleRabbitReceipt}
         rabbitUserId={userId === 'guest' ? null : userId}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from

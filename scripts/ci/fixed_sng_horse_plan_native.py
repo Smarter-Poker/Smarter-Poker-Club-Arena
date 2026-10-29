@@ -5,10 +5,19 @@ import re
 
 MIGRATION='supabase/migrations/20261029032444_fixed_sng_satellite_horse_daily_plan.sql'
 ACTIVATION='supabase/migrations/20261029034842_activate_fixed_sng_satellite_horse_paid_guard.sql'
+LEGACY_PATCH='supabase/migrations/20261029153746_bound_fixed_sng_horse_legacy_import.sql'
 
 def qualify(e,root,db,output):
     candidate=root/MIGRATION
     e.sql(db,file=candidate,label='sng-horse-exact-migration',seconds=60)
+    legacy_patch=root/LEGACY_PATCH
+    _,before_acl,_=e.sql(db,"SELECT jsonb_build_object('acl',proacl,'owner',proowner,'config',proconfig,'security_definer',prosecdef) FROM pg_proc WHERE oid='smarter_private.sng_horse_plan(uuid,boolean)'::regprocedure;",label='sng-legacy-before-owner')
+    e.sql(db,file=legacy_patch,label='sng-legacy-exact-patch',seconds=60)
+    _,after_acl,_=e.sql(db,"SELECT jsonb_build_object('acl',proacl,'owner',proowner,'config',proconfig,'security_definer',prosecdef) FROM pg_proc WHERE oid='smarter_private.sng_horse_plan(uuid,boolean)'::regprocedure;",label='sng-legacy-after-owner')
+    if before_acl!=after_acl: raise RuntimeError('legacy patch changed planner owner/ACL/config')
+    replay,_,replay_error=e.sql(db,file=legacy_patch,label='sng-legacy-replay-refused',check=False)
+    if replay==0 or 'SNG horse legacy import preimage changed' not in replay_error:
+        raise RuntimeError('legacy patch replay did not fail at its preimage')
     activation=root/ACTIVATION
     _,prefix,_=e.sql(db,"SET request.jwt.claims='{\"role\":\"service_role\"}'; SELECT public.fn_sng_satellite_horse_fill_plan(gen_random_uuid());",label='sng-horse-preparation-fails-closed')
     if json.loads(prefix)['reason']!='guard_not_installed':
@@ -159,6 +168,67 @@ def qualify(e,root,db,output):
  r:=public.fn_sng_satellite_horse_fill_plan(source_id);
  PERFORM pg_temp.qualifier_assert((r->>'ok')::boolean AND r->>'target_players'='6','existing paid board finishes independently of exhausted daily budget');
  PERFORM pg_temp.qualifier_assert(has_function_privilege('service_role','public.fn_sng_satellite_horse_fill_plan(uuid)','EXECUTE') AND NOT has_function_privilege('authenticated','public.fn_sng_satellite_horse_fill_plan(uuid)','EXECUTE') AND NOT has_function_privilege('anon','public.fn_sng_satellite_horse_fill_plan(uuid)','EXECUTE'),'plan RPC is service only');
+
+ -- Import is history, including eliminated/completed boards. The first horse's
+ -- day is determined before filtering, never by just today's latest entry.
+ PERFORM set_config('session_replication_role','replica',true);
+ FOR i IN 7..9 LOOP
+  INSERT INTO public.tournaments SELECT (jsonb_populate_record(NULL::public.tournaments,
+   to_jsonb(t)||jsonb_build_object('id',md5('horse:legacy:'||i)::uuid,
+    'name','Native Legacy Edge '||i,'status','COMPLETED','current_players',0))).*
+  FROM public.tournaments t WHERE id=source_id;
+ END LOOP;
+ INSERT INTO public.tournament_players SELECT (jsonb_populate_record(NULL::public.tournament_players,
+  to_jsonb(tp)||jsonb_build_object('id',md5('horse:legacy:prior-first')::uuid,
+   'tournament_id',md5('horse:legacy:7')::uuid,'status','eliminated',
+   'registered_at',(date_trunc('day',now() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago')-interval '1 microsecond'))).*
+ FROM public.tournament_players tp WHERE tournament_id=source_id AND user_id=md5('l04:'||case_name||':user:1')::uuid;
+ INSERT INTO public.tournament_players SELECT (jsonb_populate_record(NULL::public.tournament_players,
+  to_jsonb(tp)||jsonb_build_object('id',md5('horse:legacy:later-today')::uuid,
+   'tournament_id',md5('horse:legacy:7')::uuid,'status','eliminated','registered_at',now()))).*
+ FROM public.tournament_players tp WHERE tournament_id=source_id AND user_id=md5('l04:'||case_name||':user:2')::uuid;
+ INSERT INTO public.tournament_players SELECT (jsonb_populate_record(NULL::public.tournament_players,
+  to_jsonb(tp)||jsonb_build_object('id',md5('horse:legacy:null-date')::uuid,
+   'tournament_id',md5('horse:legacy:8')::uuid,'status','eliminated','registered_at',NULL))).*
+ FROM public.tournament_players tp WHERE tournament_id=source_id AND user_id=md5('l04:'||case_name||':user:1')::uuid;
+ INSERT INTO public.tournament_players SELECT (jsonb_populate_record(NULL::public.tournament_players,
+  to_jsonb(tp)||jsonb_build_object('id',md5('horse:legacy:human-only')::uuid,
+   'tournament_id',md5('horse:legacy:9')::uuid,'status','eliminated','registered_at',now()))).*
+ FROM public.tournament_players tp WHERE tournament_id=source_id AND user_id=md5('l04:'||case_name||':user:7')::uuid;
+ PERFORM set_config('session_replication_role','origin',true);
+ DELETE FROM smarter_private.sng_horse_claims WHERE union_id=club;
+ DELETE FROM smarter_private.sng_horse_days WHERE union_id=club;
+ r:=public.fn_sng_satellite_horse_fill_plan(md5('horse:legacy:6')::uuid);
+ PERFORM pg_temp.qualifier_assert(r->>'reason'='daily_budget' AND
+  (SELECT count(*)=7 FROM smarter_private.sng_horse_claims WHERE union_id=club) AND
+  EXISTS(SELECT 1 FROM smarter_private.sng_horse_days WHERE union_id=club),
+  'bounded legacy import persists day and counts completed null-date horse once');
+ PERFORM pg_temp.qualifier_assert(NOT EXISTS(SELECT 1 FROM smarter_private.sng_horse_claims
+  WHERE tournament_id IN(md5('horse:legacy:7')::uuid,md5('horse:legacy:9')::uuid)),
+  'legacy earliest prior-day horse and human-only history do not consume today');
+ PERFORM pg_temp.qualifier_assert(NOT EXISTS(WITH original(id,union_id,local_day,first_paid_at,wait_seconds,legacy) AS MATERIALIZED(SELECT old.id,club,(now() AT TIME ZONE 'America/Chicago')::date,min(coalesce(tp.registered_at,now())),0,true
+       FROM public.tournaments old JOIN public.tournament_players tp ON tp.tournament_id=old.id
+       JOIN public.profiles h ON h.id=tp.user_id AND h.is_horse IS TRUE
+       WHERE old.union_id=club AND old.format_contract='sng-v1'
+         AND public.fn_ca_is_fixed_sng_satellite(to_jsonb(old))
+       GROUP BY old.id HAVING (min(coalesce(tp.registered_at,now())) AT TIME ZONE 'America/Chicago')::date=(now() AT TIME ZONE 'America/Chicago')::date), bounded(id,union_id,local_day,first_paid_at,wait_seconds,legacy) AS MATERIALIZED(WITH fixed AS MATERIALIZED (
+         SELECT old.* FROM public.tournaments old
+         WHERE old.union_id=club AND old.format_contract='sng-v1'
+           AND upper(old.tournament_type)='SNG' AND lower(old.variant)='sng'
+           AND old.max_players IN(6,9) AND old.min_players=old.max_players
+           AND old.table_size=old.max_players AND old.satellite_seats=2
+           AND coalesce(old.satellite_target_id,old.satellite_target) IS NOT NULL
+       )
+       SELECT old.id,club,(now() AT TIME ZONE 'America/Chicago')::date,paid.first_at,0,true
+       FROM fixed old CROSS JOIN LATERAL (
+         SELECT min(coalesce(tp.registered_at,now())) first_at
+         FROM public.tournament_players tp
+         JOIN public.profiles h ON h.id=tp.user_id AND h.is_horse IS TRUE
+         WHERE tp.tournament_id=old.id
+       ) paid
+       WHERE public.fn_ca_is_fixed_sng_satellite(to_jsonb(old))
+         AND (paid.first_at AT TIME ZONE 'America/Chicago')::date=(now() AT TIME ZONE 'America/Chicago')::date) (SELECT * FROM original EXCEPT SELECT * FROM bounded) UNION ALL (SELECT * FROM bounded EXCEPT SELECT * FROM original)),
+  'bounded legacy import equals exact installed preimage SELECT on edge histories');
  RETURN jsonb_build_object('source',source_id,'club',club);
 END $case$;
 CREATE FUNCTION pg_temp.horse_after_claim_fault() RETURNS trigger LANGUAGE plpgsql AS $fault$
@@ -200,4 +270,4 @@ ROLLBACK;
       'assertions':len(re.findall('NOTICE:  QUALIFIER PASS:',err)),'data_catalog_rollback':True}
     from fixed_sng_horse_plan_race import qualify_race
     e.report['fixed_sng_horse_plan']['race']=qualify_race(e,root,db,output,header,setup)
-    return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [candidate,activation,root/'scripts/ci/fixed_sng_horse_plan_native.py',root/'scripts/ci/fixed_sng_horse_plan_race.py',capture_path,pilot_path,funding_path,receipts_path,cashier_path,timing_path]}
+    return {str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [candidate,activation,legacy_patch,root/'scripts/ci/fixed_sng_horse_plan_native.py',root/'scripts/ci/fixed_sng_horse_plan_race.py',capture_path,pilot_path,funding_path,receipts_path,cashier_path,timing_path]}

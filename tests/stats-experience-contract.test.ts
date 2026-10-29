@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parse } from 'yaml';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/PlayerStatsPage.tsx'), 'utf8');
 const HEADLINE_DECK = readFileSync(
@@ -113,10 +114,15 @@ describe('Stats evidence links to real hand history', () => {
 
 describe('Stats production certification', () => {
   it('runs the deep, mobile, and accessibility suite after every successful deploy', () => {
-    const statsGate = POST_DEPLOY_WORKFLOW.indexOf('tests/e2e/stats-deep.spec.ts');
-    const broadSweep = POST_DEPLOY_WORKFLOW.indexOf('tests/e2e/smoke.spec.ts');
+    // The separate fixed one-case recovery must not replace the full deployed-page lane.
+    const production = parse(POST_DEPLOY_WORKFLOW).jobs['production-e2e'];
+    const commands = production.steps.map((step: { run?: string }) => step.run ?? '').join('\n');
+    expect(production.needs).toBe('publication-gate');
+    expect(production.if).toContain("needs.publication-gate.outputs.should_run == 'true'");
+    const statsGate = commands.indexOf('tests/e2e/stats-deep.spec.ts');
+    const broadSweep = commands.indexOf('tests/e2e/smoke.spec.ts');
     expect(statsGate).toBeGreaterThan(-1);
     expect(broadSweep).toBeGreaterThan(statsGate);
-    expect(POST_DEPLOY_WORKFLOW.match(/tests\/e2e\/stats-deep\.spec\.ts/g)).toHaveLength(1);
+    expect(commands.match(/tests\/e2e\/stats-deep\.spec\.ts/g)).toHaveLength(1);
   });
 });

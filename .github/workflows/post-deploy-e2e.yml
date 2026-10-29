@@ -2424,6 +2424,7 @@ jobs:
   stood-down-is-not-green:
     name: A stood-down run is marked superseded, not passed
     needs:
+      - stats-pagination-proof
       - publication-gate
       - post-deploy-verdict
       - club-channel-lifecycle-e2e

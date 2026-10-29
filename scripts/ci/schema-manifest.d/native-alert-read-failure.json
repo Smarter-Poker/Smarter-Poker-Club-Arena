@@ -1,0 +1,6 @@
+{
+  "_owner": "codex/alert-intake-orphan-roots-1029",
+  "_comment": "SOURCE DECLARATION ONLY, NOT INSTALLED. Migration20261029153652 requires protected main and Apply Merged Migration followed by catalog/history/ACL readback. This fragment is not installation or live delivery proof.",
+  "tables": ["smarter_private.ca_native_alert_read_failures"],
+  "functions": ["fn_ca_defer_native_alert"]
+}

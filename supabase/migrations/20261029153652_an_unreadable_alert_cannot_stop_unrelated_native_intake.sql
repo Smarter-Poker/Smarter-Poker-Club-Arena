@@ -71,6 +71,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
  FROM smarter_private.ca_native_alert_deliveries d
  JOIN public.operational_alert_events e ON e.id=d.inbox_event_id WHERE d.wake_id=p_wake_id
 $$;
+REVOKE ALL ON FUNCTION public.fn_ca_read_native_alert(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_read_native_alert(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_native_alert_pending(text,uuid[]) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_native_alert_pending(text,uuid[]) TO anon,authenticated,service_role;
 -- Existing reader-silence counts all read_at=NULL rows, including failures.
 -- Full read and ACK remain service-only. No existing grants are broadened.
 COMMIT;

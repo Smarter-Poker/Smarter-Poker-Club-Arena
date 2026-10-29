@@ -374,16 +374,12 @@
     },
     {
       "id": "2026-10-29-mtt-registration-half-before-start",
-      "ownerOrder": "Dan directly in chat 01a18977 ordered: figure out whats going on and fix it asap; get horses registered and playing the tournaments now. The 5K began with eight entrants and mystery with zero. This bounded urgent activation delivers only the qualified 50-percent prestart and paced late-arrival repair through protected PR 8670. The immediate normal entry transactions recovered both running fields; they do not install the source repair. The exact new mttHorseArrivalPlan.ts witness binds this previously unserved feature; shared base ancestry alone never proves inclusion. Require protected squash inclusion and all required checks before immutable staging. Preserve the existing stage/receiver operation owner and concurrency; never cancel another release, restart directly, force a certificate or manufacture degraded health. Only Chicago minute53 notice and minute55 cutover at tournament breaks, full two-minute notice, hand-boundary drain, confirmed database freeze, five-minute pause, full285-second proof/rollback reserve, rolling-hour seal and completed v3 thaw. One activation only within fixed bounds; no automatic extension, watcher, timer or repair loop. No migrations or unrelated financial changes.",
+      "ownerOrder": "Dan directly in chat 01a18977 ordered: figure out whats going on and fix it asap; get horses registered and playing the tournaments now. The 5K began with eight entrants and mystery with zero. This bounded urgent activation delivers only the qualified 50-percent prestart and paced late-arrival repair through protected PR 8670. The immediate normal entry transactions recovered both running fields; they do not install the source repair. The existing supported protected-anchor admission binds base c76abbb7f497bf6e0539d0d54abf638e5cfa52f3, freshly absent from serving EED when prepared. Shared base ancestry alone never proves the repair: independently require actual protected PR8670 squash inclusion and exact qualified mttHorseArrivalPlan.ts contents before activation. If another release serves this anchor first, this entry grants nothing; recover actual serving and operation state before any further admission. An arbitrary runtime-source witness is unsupported by the installed stage/receiver and must not be used. Require protected squash inclusion and all required checks before immutable staging. Preserve the existing stage/receiver operation owner and concurrency; never cancel another release, restart directly, force a certificate or manufacture degraded health. Only Chicago minute53 notice and minute55 cutover at tournament breaks, full two-minute notice, hand-boundary drain, confirmed database freeze, five-minute pause, full285-second proof/rollback reserve, rolling-hour seal and completed v3 thaw. One activation only within fixed bounds; no automatic extension, watcher, timer or repair loop. No migrations or unrelated financial changes.",
       "contains": "c76abbb7f497bf6e0539d0d54abf638e5cfa52f3",
       "notBefore": "2026-10-29T21:25:00Z",
       "notAfter": "2026-10-30T03:25:00Z",
       "announceAtChicagoMinutes": [53],
-      "migrations": [],
-      "releaseWitness": {
-        "path": "server/src/services/mttHorseArrivalPlan.ts",
-        "sha256": "78f38da39c504079369e795790d972135c6dbfbe19ec8dd143d8421acd34b211"
-      }
+      "migrations": []
     }
   ],
   "databaseWindows": [

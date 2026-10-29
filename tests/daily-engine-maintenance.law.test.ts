@@ -507,3 +507,17 @@ ${liveProof}
   expect(result.status, result.stdout + result.stderr).toBe(0);
   expect(result.stdout).toContain('refuses legacy urgency against live healthy play');
 });
+
+it('every declared source witness is supported by the installed stage and host admission', () => {
+  const document = JSON.parse(
+    readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+  );
+  for (const window of document.windows) {
+    if (!Object.hasOwn(window, 'releaseWitness')) continue;
+    expect(Object.keys(window.releaseWitness).sort(), window.id).toEqual(['path', 'sha256']);
+    expect(window.releaseWitness.path, window.id).toMatch(
+      /^(?:supabase\/migrations\/[0-9]{14}_[a-z0-9_]+\.sql|server\/scripts\/retained-original-checkpoint-guard\.mjs)$/
+    );
+    expect(window.releaseWitness.sha256, window.id).toMatch(/^[0-9a-f]{64}$/);
+  }
+});

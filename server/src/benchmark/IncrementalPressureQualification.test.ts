@@ -281,10 +281,11 @@ test('workflow admission requires the canonical built-in repository identity bef
     }
     vi.stubEnv('GITHUB_REPOSITORY', 'Smarter-Software-PIQ/Smarter-Poker-Club-Arena');
     // Matching provider metadata reaches the real independent source/plan
-    // gates: an unmerged branch, dirty source or empty registry still refuses it.
+    // gates: shallow CI history, an unmerged branch, dirty source or empty
+    // registry still refuses it. The provider-only gate has already passed.
     await assert.rejects(
       authenticateIncrementalPlan(fixture('pressure_package')),
-      /Incremental (source dirty|plan bytes changed)|Command failed: git merge-base --is-ancestor [0-9a-f]{40} origin\/main/
+      /Incremental (family history is shallow|source dirty|plan bytes changed)|Command failed: git merge-base --is-ancestor [0-9a-f]{40} origin\/main/
     );
   } finally {
     vi.unstubAllEnvs();

@@ -176,8 +176,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 255032,
-      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
+      "bytes": 255312,
+      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1345,5 +1345,17 @@
       "bytes": 253759,
       "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
     }
+  },
+  "downlineRakeLiveCiSourceAudit20261030": {
+    "reason": "Reviewed only the additive six-line CI diff: required accounting shard 3 now executes the current whole downline-rake reader regression after the existing authorization fixture. No existing step, condition, shard, assertion, timeout or financial source was removed or relaxed. Local PG17 reports 9 passing checks; matching workflow bytes are not financial, installed or production proof. Hosted qualification remains required.",
+    "before": {
+      "bytes": 255032,
+      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
+    },
+    "after": {
+      "bytes": 255312,
+      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
+    },
+    "changedPath": ".github/workflows/ci.yml"
   }
 }

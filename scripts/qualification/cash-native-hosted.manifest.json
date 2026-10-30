@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256618,
-      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -326,7 +326,7 @@
     },
     "tests/unit/fixtureNativeCi.test.ts": {
       "bytes": 117348,
-      "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
     }
   },
   "nativePgCron": {
@@ -5192,5 +5192,30 @@
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical receipt restamp. Actual paid admission improvement is unproven; protected hosted qualification remains mandatory.",
     "integration": "Protected main 6b4b49e216ae78d07348661f7c296242732e16e9 retained, including native profile controls and all financial qualification history. This audit changes source identity only."
+  },
+  "browserSdkDiagnosticSourceAudit20261030": {
+    "scope": "Current source identity only: omit redundant SDK sizing; partition the unchanged client test inventory across eight paid four-core shards; omit unchanged bitmap scanning and offline monitoring-rule evaluation only after the existing immutable presentation/configuration proof succeeds. Preserve default full checks for missing, mixed, financial and unknown inputs; matte baseline law, all browser cases, compiler/native/financial checks, profile controls, deadlines, permissions and publisher matrices remain unchanged.",
+    "previousCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+    },
+    "currentCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
+  },
+  "clientEightShardFixtureNativeActivePinAudit20261030": {
+    "scope": "Current active fixtureNativeCi source pin only: exactly three client unit command denominators change from four to eight; all financial assertions and every other source byte remain identical.",
+    "previousActivePin": {
+      "bytes": 117348,
+      "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+    },
+    "currentActivePin": {
+      "bytes": 117348,
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+    },
+    "exactPreviousBytesProvedByRevertingThreeUnitDenominators": true,
+    "qualification": "SOURCE_ONLY_UNRUN. No native SQL result, production installation or historical financial receipt is restamped. Required local and protected hosted qualification remain enforced."
   }
 }

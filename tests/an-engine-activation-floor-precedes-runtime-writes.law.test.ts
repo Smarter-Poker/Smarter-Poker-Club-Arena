@@ -7,8 +7,8 @@ it('qualifies immutable preparation and pre-install admission without runtime wr
     cwd: resolve(import.meta.dirname, '..'),
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     encoding: 'utf8',
-    timeout: 30000,
+    timeout: 90000,
   });
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 14 tests');
-}, 35000);
+  expect(result.stderr).toContain('Ran 20 tests');
+}, 95000);

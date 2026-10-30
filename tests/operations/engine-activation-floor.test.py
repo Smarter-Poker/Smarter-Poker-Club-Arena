@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASH = '/opt/homebrew/bin/bash' if Path('/opt/homebrew/bin/bash').exists() else 'bash'
 HELPER = 'server/scripts/engine-release-activation-floor.py'
 MANIFEST = 'server/release/activation-floor.json'
+DAILY = {'schema': 'engine-release-activation-floor/v1', 'preparationAt': '2026-10-30T08:30:00Z', 'activationAt': '2026-10-30T09:00:00Z', 'expiresAt': '2026-10-30T09:05:00Z', 'timeZone': 'America/Chicago'}
 INTAKE = 'server/scripts/engine-release-intake.sh'
 spec = importlib.util.spec_from_file_location('floor', ROOT / HELPER)
 floor = importlib.util.module_from_spec(spec)
@@ -39,6 +40,7 @@ class ActivationFloor(unittest.TestCase):
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes((ROOT / name).read_bytes())
+        (self.repo / MANIFEST).write_text(json.dumps(DAILY))
         installer = self.repo / 'server/scripts/install-engine-supervisor.sh'
         installer.write_text('#!/usr/bin/env bash\nprintf installed > "$FIXTURE_MARKER"\n')
         installer.chmod(0o755)
@@ -55,6 +57,131 @@ class ActivationFloor(unittest.TestCase):
         self.git('update-ref', 'refs/remotes/origin/main', sha)
         return sha
 
+    def owner_record(self):
+        source = json.loads((ROOT / MANIFEST).read_text())
+        windows = json.loads((ROOT / 'server/release/owner-maintenance-windows.json').read_text())
+        window = next(w for w in windows['windows'] if w['id'] == source['ownerWindowId'])
+        window['contains'] = self.sha
+        (self.repo / MANIFEST).write_bytes((ROOT / MANIFEST).read_bytes())
+        (self.repo / 'server/release/owner-maintenance-windows.json').write_text(json.dumps({'version': 1, 'windows': [window]}))
+        self.sha = self.commit()
+        return floor.policy(str(self.repo), self.sha, self.sha)
+
+    def test_owner_window_is_exact_bounded_and_needs_full_lead(self):
+        r = self.owner_record()
+        self.assertEqual(r['schema'], floor.OWNER_CAPABILITY)
+        with self.assertRaises(ValueError): floor.check_window(r, r['activationEpoch'], r['expiresEpoch']+1, 'publish')
+        floor.check_window(r, r['clientPublicationEpoch'], r['clientPublicationEpoch']+120, 'publish')
+        floor.check_window(r, r['activationEpoch'], r['activationEpoch'] + 8400, 'admit')
+        for now, deadline in [(r['activationEpoch']-1,r['expiresEpoch']+1), (r['expiresEpoch']-419,r['expiresEpoch']+1), (r['activationEpoch'],r['activationEpoch']+419)]:
+            with self.assertRaises(ValueError): floor.check_window(r, now, deadline, 'admit')
+        path = self.repo / 'server/release/owner-maintenance-windows.json'
+        doc = json.loads(path.read_text()); doc['windows'][0]['id'] = 'foreign'
+        path.write_text(json.dumps(doc)); sha = self.commit()
+        with self.assertRaises(ValueError): floor.policy(str(self.repo), sha, sha)
+
+    def test_owner_reservation_binds_run_target_cause_and_full_window(self):
+        r = self.owner_record(); root = self.repo / 'state'; root.mkdir()
+        path = root / 'engine-recovery-window-123-1.json'
+        value = {'sha':self.sha,'runId':'123-1','cause':'urgent','announcedAt':r['activationEpoch']*1000}
+        path.write_text(json.dumps(value)); path.chmod(0o600)
+        self.assertEqual(floor.reservation(r,str(root),'123-1'),value['announcedAt'])
+        for changed in [{'sha':'a'*40},{'runId':'124-1'},{'cause':'engine-degraded'},{'announcedAt':(r['expiresEpoch']-419)*1000}]:
+            path.write_text(json.dumps({**value,**changed}))
+            with self.assertRaises(ValueError): floor.reservation(r,str(root),'123-1')
+
+    def test_actual_owner_certificate_binds_existing_window_and_refuses_shortcut(self):
+        import datetime
+        r = self.owner_record(); stamp = r['activationEpoch']*1000
+        source = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+        guard = source[source.index('import os\nfrom datetime import datetime'):source.index('remaining=int(m.get')]
+        now = r['activationEpoch']+120
+        class Clock(datetime.datetime):
+            @classmethod
+            def now(cls,tz=None): return datetime.datetime.fromtimestamp(now,tz)
+        with patch('datetime.datetime',Clock), patch('time.time',return_value=now), patch.dict(os.environ,{'ACTIVATION_FLOOR_END_EPOCH':str(r['expiresEpoch']),'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId'],'FLOOR_ANNOUNCED_AT':str(stamp)}):
+            exec(guard,{'m':{'reason':'Deployment Recovery','breakEndsAt':stamp+420000}})
+            for m in [{'reason':'Scheduled Engine Maintenance','breakEndsAt':stamp+420000},{'reason':'Deployment Recovery','breakEndsAt':stamp+420001}]:
+                with self.assertRaises(SystemExit): exec(guard,{'m':m})
+            # The former daily-only guard refused this same owner window.
+            before = guard[:guard.index('    if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW")')] + '    if not daily: raise SystemExit(1)\n'
+            with self.assertRaises(SystemExit): exec(before,{'m':{'reason':'Deployment Recovery','breakEndsAt':stamp+420000}})
+
+    def test_actual_reservation_entry_survives_unknown_ack_and_checkpoint_no_action(self):
+        r = self.owner_record(); root=self.repo/'requests';root.mkdir()
+        source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
+        start=source.index('  FLOOR_RESERVATION_FRESH=0\n  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then')
+        end=source.index('  reserve_args=',start)
+        body=source[start:end]
+        import shlex
+        command=' '.join(shlex.quote(x) for x in ['python3',str(self.repo/HELPER),'announcement-entry','--repo',str(self.repo),'--target',self.sha,'--control',self.sha,'--deadline',str(r['expiresEpoch']+100),'--request-root',str(root),'--run-id','123-1'])
+        # Actual durable helper is exercised with an explicit injected clock;
+        # shell ordering exercises the actual reservation entry fragment.
+        floor.entry_state(r,str(root),'123-1',True,r['activationEpoch'],r['expiresEpoch']+100,True)
+        result=subprocess.run([BASH,'-c','set -eu\nACTIVATION_FLOOR_OWNER_WINDOW=fixture\nFLOOR_DISPOSITION=never-entered\nrecord_floor_runtime_entry() { '+command+'; }\n'+body+'[ "$FLOOR_DISPOSITION" = announced ]\n'],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.git('update-ref','-d','refs/remotes/origin/main')
+        result=subprocess.run(['python3',str(self.repo/HELPER),'disposition','--repo',str(self.repo),'--target',self.sha,'--control',self.sha,'--deadline','1','--request-root',str(root),'--run-id','123-1'],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),'announced')
+        self.assertLess(source.index('    record_floor_runtime_entry',start),source.index('reserve-recovery-window',start))
+        self.git('update-ref','refs/remotes/origin/main',self.sha)
+        floor.entry_state(r,str(root),'123-1',True,r['activationEpoch']+120,r['expiresEpoch']+100)
+        state=self.repo/'state';state.mkdir()
+        receipt=state/'engine-recovery-window-123-1.json'
+        receipt.write_text(json.dumps({'runId':'123-1','sha':self.sha,'cause':'urgent','announcedAt':r['activationEpoch']*1000}));receipt.chmod(0o600)
+        intent=root/'123-1.legacy-checkpoint-intent';intent.write_text('uncertain')
+        with self.assertRaises(ValueError): floor.checkpoint_no_action(r,str(root),str(state),'123-1')
+        self.assertEqual(floor.entry_state(r,str(root),'123-1',False,0,0),'entered')
+        intent.unlink()
+        self.assertEqual(floor.checkpoint_no_action(r,str(root),str(state),'123-1'),'announced')
+        self.assertEqual(floor.entry_state(r,str(root),'123-1',False,0,0),'announced')
+
+
+    def test_known_no_reservation_retires_only_new_intent_and_foreign_owner_refuses(self):
+        r=self.owner_record();root=self.repo/'requests';root.mkdir();state=self.repo/'state';state.mkdir()
+        floor.entry_state(r,str(root),'123-1',True,r['activationEpoch'],r['expiresEpoch']+100,True)
+        source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
+        start=source.index('retire_unannounced_floor_entry() {');end=source.index('\n# THE NEWEST WAITING RELEASE',start)
+        body=source[start:end]
+        env={**os.environ,'REQUEST_ROOT':str(root),'ENGINE_RELEASE_STATE_DIR':str(state),'RUN_ID':'123-1','FLOOR_RESERVATION_FRESH':'1','FLOOR_DISPOSITION':'announced'}
+        reservation=state/'engine-recovery-window-123-1.json';reservation.write_text('{}')
+        result=subprocess.run([BASH,'-c','set -eu\n'+body+'\nretire_unannounced_floor_entry'],env=env,capture_output=True,text=True)
+        self.assertNotEqual(result.returncode,0);self.assertTrue((root/'123-1.activation-entry').exists())
+        reservation.unlink()
+        result=subprocess.run([BASH,'-c','set -eu\n'+body+'\nretire_unannounced_floor_entry\n[ "$FLOOR_DISPOSITION" = never-entered ]'],env=env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr);self.assertFalse((root/'123-1.activation-entry').exists())
+        start=source.index('refuse_foreign_floor_owner() {');end=source.index('\nretire_unannounced_floor_entry()',start)
+        body=source[start:end]
+        for status in (0,2):
+            prefix='set -eu\nFLOOR_DISPOSITION=never-entered\ndie() { exit 71; }\nnewer_release_in_flight() { return '+str(status)+'; }\n'
+            result=subprocess.run([BASH,'-c',prefix+body+'\nrefuse_foreign_floor_owner'],capture_output=True,text=True)
+            self.assertEqual(result.returncode,71)
+
+
+    def test_exact_feature_witness_survives_squash_and_shared_base_release(self):
+        base=self.sha
+        r=self.owner_record()
+        source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
+        start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
+        body=source[start:end]
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(r['activationEpoch']+30)+'; }\n'
+        env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
+        import shlex
+        def reason(serving):
+            result=subprocess.run([BASH,'-c',prefix+body+'\nowner_window_reason '+shlex.quote(json.dumps({'releaseSha':serving}))],env=env,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            return result.stdout.strip()
+        # The protected base already served, including the old daily manifest;
+        # only this exact v2 blob consumes its new authorization.
+        self.assertEqual(reason(base),'owner-ordered '+r['ownerWindowId'])
+        self.assertEqual(reason(self.sha),'')
+        (self.repo/MANIFEST).unlink();removed=self.commit()
+        self.assertEqual(reason(removed),'')
+        # An unrelated named order cannot substitute for the selected one.
+        env['ACTIVATION_FLOOR_OWNER_WINDOW']='foreign'
+        self.assertEqual(reason(base),'')
+
+
     def test_preparation_and_admission_boundaries(self):
         r = self.record
         deadline = r['expiresEpoch'] + 10
@@ -69,7 +196,7 @@ class ActivationFloor(unittest.TestCase):
             floor.check_window(r, r['preparationEpoch'], r['expiresEpoch'] - 1, 'prepare')
 
     def test_malformed_unknown_and_duplicate_metadata_refuse(self):
-        source = json.loads((ROOT / MANIFEST).read_text())
+        source = DAILY
         for change in [{'schema': 'unknown'}, {'timeZone': 'UTC'}, {'unexpected': True},
                        {'activationAt': None}, {'expiresAt': '2026-10-30T10:00:00Z'}]:
             with self.subTest(change=change):
@@ -294,11 +421,22 @@ docker() { echo docker >> "$FIXTURE_EVENTS"; }
         result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(events.exists())
+        # A durable announcement is ownership, not permission to restore an
+        # untouched predecessor. Exercise the actual recovery branch.
+        r = self.owner_record()
+        (root / '123-1.activation-entry').unlink()
+        (control / 'control-sha').write_text(self.sha + '\n')
+        request.write_text('\n'.join([self.sha, 'url', 'actor', str(control), self.sha, str(r['expiresEpoch']+100)])+'\n')
+        floor.entry_state(r,str(root),'123-1',True,r['activationEpoch'],r['expiresEpoch']+100,True)
+        result = subprocess.run([BASH, '-c', prefix + fragment], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode,75,result.stderr)
+        self.assertFalse(events.exists())
+        self.assertTrue(request.exists())
 
 
     def test_fresh_prework_cannot_restore_live_engine_and_entry_is_after_certificate(self):
         source = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
-        start = source.index('if [ "$FLOOR_DISPOSITION" = never-entered ]; then\n  # No runtime restoration')
+        start = source.index('if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; then\n  # No runtime restoration')
         end = source.index('# Once this exact run crossed', start)
         body = source[start:end]
         result = subprocess.run([BASH, '-c', 'set -eu\nFLOOR_DISPOSITION=never-entered\nACTIVATION_FLOOR_END_EPOCH=9999999999\nprove_rollback_readiness() { echo read-only; }\n' + body], capture_output=True, text=True)

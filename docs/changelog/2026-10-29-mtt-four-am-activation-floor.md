@@ -21,3 +21,11 @@ The existing bounded candidate filesystem/bridge warmup is shared by the receive
 ## Protected main integration before final qualification
 
 Composed protected main `23a8c4dc1b9e78b319b4693c3e414c95f993572b` with the MTT bundle. Preserved its warm hosted runner admission, MTT prize-share/arrival changes and concurrent source, together with the immutable overnight floor, passive prewarm, cleanup barrier and both recorded SQL installations. Six current CI fingerprints were refreshed to the merged workflow while retaining both parents' complete historical audit objects and all other pins. This is source integration, not new financial qualification or production activation.
+
+## Owner-selected earlier safe hand-drain window
+
+The owner's later direction, “Use the next safe hand-drain window,” supersedes the engine's one-time 04:00-only admission. The v2 immutable manifest names one existing owner-window authorization, bounded to October 30 00:00–06:00 UTC, without extending the existing six-hour limit. It permits preparation now and only the existing certified recovery-window route: fixed two-minute last-hand announcement, five-minute window, exact reservation-bound certificate, unchanged full cutover and rollback budgets, and completed thaw. Generic degradation cannot substitute for this named authorization. Expiry has no automatic daily fallback.
+
+Fresh requests refuse pending or active foreign runtime ownership. Announcement custody and actual checkpoint/cutover custody are distinct durable phases: an unknown announcement acknowledgment preserves the exact request without restoring or restarting an untouched predecessor; actual runtime entry retains existing recovery. A positively unattempted checkpoint returns only to announcement custody, never erasing that owner. Known no-reservation outcomes retire only their newly created marker under the owned lock and a proven absent reservation.
+
+Client publication retains its explicit October 30 09:00 UTC (04:00 Chicago) boundary; it does not block the earlier engine preparation. Both SQL repairs remain installed and recorded, never replayed. This source change is not a dispatch, activation, publication, cancellation of tournaments, or live continuity proof.

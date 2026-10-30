@@ -334,6 +334,36 @@ PREPARED=0
 MUTATION_STARTED=0
 LEGACY_CHECKPOINT_INTENT_FILE="$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
 LEGACY_CHECKPOINT_ATTEMPTED=0
+refuse_foreign_floor_owner() {
+  [ "${FLOOR_DISPOSITION:-legacy}" = never-entered ] || [ "${FLOOR_DISPOSITION:-legacy}" = announced ] || return 0
+  local foreign rc
+  if foreign="$(newer_release_in_flight any)"; then
+    die "fresh scheduled release cannot compete with active runtime owner ${foreign%% *}"
+  else
+    rc=$?
+    [ "$rc" = 1 ] || die 'foreign runtime ownership is unreadable'
+  fi
+}
+
+retire_unannounced_floor_entry() {
+  [ "${FLOOR_RESERVATION_FRESH:-0}" = 1 ] || return 0
+  # Only a definitive no-reservation answer, while holding the engine lock,
+  # can retire this invocation's new intent. Unknown outcomes retain recovery.
+  python3 - "$REQUEST_ROOT" "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}" "$RUN_ID" <<'FLOOR_NO_ACTION'
+import os, sys
+from pathlib import Path
+root, state, run = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+reservation = state / ('engine-recovery-window-' + run + '.json')
+if os.path.lexists(reservation): raise SystemExit('reservation exists; entry remains owned')
+(root / (run + '.activation-entry')).unlink()
+fd = os.open(root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+try: os.fsync(fd)
+finally: os.close(fd)
+FLOOR_NO_ACTION
+  FLOOR_DISPOSITION=never-entered
+  FLOOR_RESERVATION_FRESH=0
+}
+
 # THE NEWEST WAITING RELEASE TAKES THE BREAK (2026-09-27). This run's marker
 # says "my immutable image is built and I am waiting at the certificate". It is
 # never left over from an earlier invocation of the same run key (a systemd
@@ -711,12 +741,21 @@ health_instance() {
 # No bank or custody reason, and no serving-release identity, may widen what
 # this certificate admits (pinned by
 # noServingReleaseBuysACustodyException.law.test.ts).
+floor_reservation_stamp() {
+  if [ -z "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then printf '0\n'; return 0; fi
+  python3 "$CONTROL_DIR/engine-release-activation-floor.py" reservation     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"     --deadline "$MUTATION_DEADLINE_EPOCH" --run-id "$RUN_ID"     --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"
+}
+
 maintenance_certificate() {
   # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
   # caller names another; the only caller that does is the read straight after
   # a legacy checkpoint, which passes LEGACY_MIN_BREAK_REMAINING_MS.
   local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"
-  local response http_code body verdict status
+  local response http_code body verdict status floor_stamp
+  floor_stamp=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    floor_stamp="$(floor_reservation_stamp)" || return 1
+  fi
   # A degraded optional subsystem can correctly make /health return 503 while
   # the engine is still running and has durably parked every table for this
   # certified break. Preserve that JSON so the certificate predicates below,
@@ -750,7 +789,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -768,7 +807,12 @@ floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
 if floor_end:
     import time
     now=time.time()
-    if not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+    if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+        stamp=int(os.environ.get("FLOOR_ANNOUNCED_AT", "0"))
+        if not (stamp > 0 and stamp/1000+120 <= now < stamp/1000+420 <= floor_end
+                and emergency and m.get("breakEndsAt")==stamp+420000):
+            raise SystemExit(1)
+    elif not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
         raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
 window=(d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
@@ -904,7 +948,11 @@ raise SystemExit(4)
 # The helper independently checks every physical table before writing. Only
 # the unchanged maintenance_certificate below can admit a replacement.
 legacy_checkpoint_countdown() {
-  local response http_code body headroom
+  local response http_code body headroom floor_stamp
+  floor_stamp=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    floor_stamp="$(floor_reservation_stamp)" || return 1
+  fi
   # Required headroom for the entry work that still has to happen AFTER this
   # admission and BEFORE the guard reads the same reserve. Defaulting to 0
   # keeps the historical contract for callers that have nothing left to do.
@@ -934,7 +982,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     0|2) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -952,7 +1000,12 @@ floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
 if floor_end:
     import time
     now=time.time()
-    if not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+    if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+        stamp=int(os.environ.get("FLOOR_ANNOUNCED_AT", "0"))
+        if not (stamp > 0 and stamp/1000+120 <= now < stamp/1000+420 <= floor_end
+                and emergency and m.get("breakEndsAt")==stamp+420000):
+            raise SystemExit(1)
+    elif not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
         raise SystemExit(1)
 
 remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
@@ -1092,6 +1145,9 @@ entries = [w for w in doc.get("windows") or [] if isinstance(w, dict)]
 # Prefer specific feature orders, preserving order within each class. Known
 # consumed witnesses may fall back to the original first legacy window.
 entries = [w for w in entries if "releaseWitness" in w] + [w for w in entries if "releaseWitness" not in w]
+import os
+selected = os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW", "")
+if selected: entries = [w for w in entries if w.get("id") == selected]
 for w in entries:
     try:
         wid, contains, order = str(w["id"]), str(w["contains"]), str(w["ownerOrder"])
@@ -1110,7 +1166,7 @@ for w in entries:
     if "releaseWitness" in w:
         valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
         if valid: path, digest = witness["path"], witness["sha256"]
-        if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs")
+        if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs" or (selected == wid and path == "server/release/activation-floor.json"))
                 and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
             print("invalid - - -")
             break
@@ -1139,8 +1195,13 @@ print(v if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) else "")
       git -C "$REPO_DIR" show "$SHA:$witness_path" 2>/dev/null \
       | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')" || return 0
     [ "$target_witness" = "$witness_sha" ] || return 0
-    served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-      git -C "$REPO_DIR" rev-list -1 "$serving" -- "$witness_path" 2>/dev/null)" || return 0
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] && [ "$witness_path" = server/release/activation-floor.json ]; then
+      local witness_blob
+      witness_blob="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse "$SHA:$witness_path")" || return 0
+      served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" log -1 --format=%H --find-object="$witness_blob" "$serving" -- "$witness_path")" || return 0
+    else
+      served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-list -1 "$serving" -- "$witness_path" 2>/dev/null)" || return 0
+    fi
     [ -z "$served_witness" ] || continue
   elif timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$serving" 2>/dev/null; then
@@ -1164,19 +1225,29 @@ recovery_cause() {
 # running on this host, if there is one. Only a durable request whose unit is
 # still live counts; a finished or failed one owns nothing.
 newer_release_in_flight() {
-  local request run other state
+  local request run other state mode="${1:-newer}"
   for request in "$REQUEST_ROOT"/*.request; do
     [ -f "$request" ] || continue
     run="${request##*/}"
     run="${run%.request}"
     [ "$run" != "$RUN_ID" ] || continue
     other="$(head -n 1 -- "$request" 2>/dev/null)" || continue
-    [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    if [ "$mode" = any ]; then
+      [[ "$other" =~ ^[0-9a-f]{40}$ ]] || return 2
+    else
+      [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    fi
     state="$(systemctl show "club-arena-engine-release-v1@$run.service" \
       -p ActiveState --value 2>/dev/null || true)"
-    case "$state" in active|activating|reloading) ;; *) continue ;; esac
+    case "$state" in active|activating|reloading) ;;
+      deactivating) [ "$mode" = any ] || continue ;;
+      inactive|failed) continue ;;
+      *) [ "$mode" != any ] || return 2; continue ;;
+    esac
+    if [ "$mode" != any ]; then
     timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
       git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$other" 2>/dev/null || continue
+    fi
     printf '%s %s\n' "$run" "$other"
     return 0
   done
@@ -1246,7 +1317,7 @@ request_recovery_window() {
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
   # This immutable one-time target may use only its daily certificate.
-  [ "${ACTIVATION_FLOOR_END_EPOCH:-0}" = 0 ] || return 0
+  [ "${ACTIVATION_FLOOR_END_EPOCH:-0}" = 0 ] || [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] || return 0
   # A drill is planned work: it waits for a scheduled break and never spends
   # the hour's one off-cycle window that a real emergency may need.
   [ -z "${DRILL_MODE:-}" ] || return 0
@@ -1283,8 +1354,13 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     fi
     return 0
   fi
-  reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    reason="$(owner_window_reason "$health")"
+    [ "$reason" = "owner-ordered $ACTIVATION_FLOOR_OWNER_WINDOW" ] || reason=''
+  else
+    reason="$(recovery_window_reason "$health")"
+    [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  fi
   # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
   # to every reservation that names no cause, so a routine release (no
   # reason, or only a scheduled break it waited through) has nothing to ask.
@@ -1318,8 +1394,13 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     release_engine_lock
     return 0
   }
-  reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    reason="$(owner_window_reason "$health")"
+    [ "$reason" = "owner-ordered $ACTIVATION_FLOOR_OWNER_WINDOW" ] || reason=''
+  else
+    reason="$(recovery_window_reason "$health")"
+    [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  fi
   case "${reason%% *}" in
     engine-degraded|owner-ordered) ;;
     *)
@@ -1332,6 +1413,15 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
     echo '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched'
     return 0
+  fi
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then refuse_foreign_floor_owner; fi
+  FLOOR_RESERVATION_FRESH=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    [ "$FLOOR_DISPOSITION" != never-entered ] || FLOOR_RESERVATION_FRESH=1
+    # The existing reservation/announcement is this fresh request's first
+    # runtime-capable action. Persist ownership before any unknown outcome.
+    record_floor_runtime_entry announcement-entry
+    FLOOR_DISPOSITION=announced
   fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
   reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
@@ -1347,6 +1437,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   if [ "$stamp" = rate-limited ]; then
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
     release_engine_lock
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
     echo "[engine-release-transaction] off-cycle window wanted ($reason) but one was already announced in the last hour; waiting for the scheduled break"
@@ -1354,10 +1445,14 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   fi
   RECOVERY_CHECKED_CAUSE="$cause_key"
   if [ "$stamp" = unavailable ]; then
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
     release_engine_lock
     return 0
   fi
   [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    [ "$(floor_reservation_stamp)" = "$stamp" ] || die 'recovery reservation differs from immutable owner window'
+  fi
   cause_required="$(printf '%s' "$health" | python3 -c '
 import json,sys
 print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCauseRequired") is True else 0)
@@ -1881,15 +1976,17 @@ FLOOR_DISPOSITION="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" e
   --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID")" \
   || die 'immutable activation floor refused runtime admission'
 ACTIVATION_FLOOR_END_EPOCH=0
-if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+export ACTIVATION_FLOOR_OWNER_WINDOW=
+if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; then
   ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
   ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
+  ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
 fi
 
 record_floor_runtime_entry() {
-  python3 "$CONTROL_DIR/engine-release-activation-floor.py" entry \
+  python3 "$CONTROL_DIR/engine-release-activation-floor.py" "${1:-entry}" \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID" \
     >/dev/null || die 'immutable activation floor refused actual runtime entry'
@@ -1897,9 +1994,10 @@ record_floor_runtime_entry() {
 
 # Duplicate certification and interrupted recovery retain their original owner.
 acquire_engine_lock 'duplicate certification'
+refuse_foreign_floor_owner
 while :; do
   read_pending_owner
-  if [ "$FLOOR_DISPOSITION" = never-entered ] && [ "$PENDING_STATE" != none ]; then
+  if { [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; } && [ "$PENDING_STATE" != none ]; then
     die 'fresh scheduled release cannot take over an existing runtime recovery owner'
   fi
   # A boot-resumed unit owns its exact interrupted receipt. Expired receipts
@@ -1932,7 +2030,7 @@ done
 # pending candidate, repair the sealed desired runtime immediately under the
 # mutation lock—never build or wait for another hourly break while service is
 # absent merely because a prior response was lost.
-if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; then
   # No runtime restoration for a fresh scheduled request. The existing locked
   # proof below verifies sealed/local/public/DB identity immediately before
   # checkpoint or prepare, once, under the actual daily certificate budget.
@@ -2004,6 +2102,7 @@ ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.p
   --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
   --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
 ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch",0))')"
+ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
 if [ "$ACTIVATION_FLOOR_END_EPOCH" -gt 0 ] && [ "$CERTIFICATE_DEADLINE" -gt "$ACTIVATION_FLOOR_END_EPOCH" ]; then
   CERTIFICATE_DEADLINE="$ACTIVATION_FLOOR_END_EPOCH"
 fi
@@ -2210,6 +2309,8 @@ fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
 try: os.fsync(fd)
 finally: os.close(fd)
 FLOOR_NO_ACTION
+      elif [ "$FLOOR_DISPOSITION" = announced ]; then
+        python3 "$CONTROL_DIR/engine-release-activation-floor.py" checkpoint-no-action           --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"           --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID"           --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"           >/dev/null || die 'checkpoint no-action could not retain announcement ownership'
       fi
       LEGACY_CHECKPOINT_ATTEMPTED=0
       BREAK_END_EPOCH=0

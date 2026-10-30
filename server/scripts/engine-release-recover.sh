@@ -89,6 +89,13 @@ FLOOR_DISPOSITION="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" d
   || { echo '[engine-release-recover] runtime entry disposition unknown; preserving state' >&2; exit 1; }
 case "$FLOOR_DISPOSITION" in
   never-entered) ABORT_RC=0 ;;
+  announced)
+    # No checkpoint/prepare was entered. Preserve this exact request and fixed
+    # announcement after an unknown acknowledgment; never restart healthy play
+    # or certify completion from an announcement-only failure.
+    echo '[engine-release-recover] announcement-only owner retained; no runtime restoration or terminal certification' >&2
+    exit 75
+    ;;
   entered|legacy)
 exec 9>"$ENGINE_LOCK"
 LOCK_WAIT="$(recovery_remaining)" \

@@ -258,7 +258,8 @@ const approvedNativeProfileRoute = "${{ github.repository_owner == 'Smarter-Soft
 test('paid client routes are exact while financial runners keep the immutable repository guard',()=>{
   const warm={
     'ci.yml':new Set(['changes','source_windows','stub_gate','typecheck','typecheck_compile','unit_shards','unit','server','verdict','build','css-beats-e2e','diamond-playfield-e2e','css-beats-gate']),
-    'publish-club-arena.yml':new Set(['publish-needed','client-tests','build-and-store']),
+    'publish-club-arena.yml':new Set(['publish-needed']),
+    'publish-club-arena-client.yml':new Set(['admit','client-tests','build-and-store','publication-floor']),
     'component-fixture-native-smoke.yml':new Set(),
   };
   for(const [file,expected] of Object.entries(warm)){

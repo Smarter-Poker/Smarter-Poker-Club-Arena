@@ -184,7 +184,7 @@ describe('Every persisted tournament format shares the terminal celebration', ()
     expect([...formats].sort()).toEqual(declared.sort());
     for (const workflow of [
       '.github/workflows/ci.yml',
-      '.github/workflows/publish-club-arena.yml',
+      '.github/workflows/publish-club-arena-client.yml',
     ]) {
       expect(readFileSync(workflow, 'utf8')).toMatch(
         /node scripts\/ci\/ui-test-selection\.mjs unit --shard=/

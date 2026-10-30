@@ -55,6 +55,7 @@ import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const PUBLISHER = '.github/workflows/publish-club-arena.yml';
+const CLIENT = '.github/workflows/publish-club-arena-client.yml';
 const TRANSACTION = '.github/workflows/publish-club-arena-transaction.yml';
 const ACTIVATION = '.github/scripts/publish-origin-activate.sh';
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
@@ -158,6 +159,7 @@ describe('the publisher says what it refused', () => {
   it('has no guard that can stop the release without printing anything', () => {
     const found = [
       ...silentGuards(logicalShellLines(read(PUBLISHER))).map((g) => ({ ...g, file: PUBLISHER })),
+      ...silentGuards(logicalShellLines(read(CLIENT))).map((g) => ({ ...g, file: CLIENT })),
       ...silentGuards(logicalShellLines(read(TRANSACTION))).map((g) => ({
         ...g,
         file: TRANSACTION,
@@ -189,7 +191,11 @@ describe('the publisher says what it refused', () => {
 
   it('keeps every run step far below the size that stopped the workflow parsing', () => {
     const workflow = {
-      jobs: { ...(load(read(PUBLISHER)) as any).jobs, ...(load(read(TRANSACTION)) as any).jobs },
+      jobs: {
+        ...(load(read(PUBLISHER)) as any).jobs,
+        ...(load(read(CLIENT)) as any).jobs,
+        ...(load(read(TRANSACTION)) as any).jobs,
+      },
     } as {
       jobs: Record<string, { steps?: Array<{ name?: string; run?: string }> }>;
     };
@@ -261,7 +267,7 @@ describe('the publisher says what it refused', () => {
 
   it('refuses a bundle the origin could never accept in the job that built it', () => {
     const step = sliceBetween(
-      read(PUBLISHER),
+      read(CLIENT),
       '- name: Verify dist is complete',
       '- name: Build summary'
     );

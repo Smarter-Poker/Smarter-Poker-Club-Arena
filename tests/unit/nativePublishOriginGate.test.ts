@@ -9,6 +9,9 @@ const root = resolve(__dirname, '../..');
 const workflow = parse(
   readFileSync(join(root, '.github/workflows/publish-club-arena.yml'), 'utf8')
 );
+const preparation = parse(
+  readFileSync(join(root, '.github/workflows/publish-club-arena-client.yml'), 'utf8')
+);
 const transaction = parse(
   readFileSync(join(root, '.github/workflows/publish-club-arena-transaction.yml'), 'utf8')
 );
@@ -98,18 +101,21 @@ describe('native publishing requires the exact origin verification', () => {
   });
 
   it('uses the same conservative selector on the entire verified published backlog', () => {
-    const client = workflow.jobs['client-tests'];
+    const client = preparation.jobs['client-tests'];
     const checkout = client.steps.find(
       (step: { uses?: string }) => step.uses === 'actions/checkout@v4'
     );
-    expect(checkout.with.ref).toBe('${{ needs.publish-needed.outputs.target_sha }}');
+    expect(checkout.with.ref).toBe('${{ inputs.target_sha }}');
     expect(checkout.with['fetch-depth']).toBe(0);
     expect(checkout.with.filter).toBe('blob:none');
     const tests = client.steps.find((step: { name?: string }) =>
       step.name?.startsWith('Client tests must pass')
     );
-    expect(tests.env.CI_HEAD_SHA).toBe('${{ needs.publish-needed.outputs.target_sha }}');
-    expect(tests.env.CI_BASE_SHA).toBe('${{ needs.publish-needed.outputs.selection_base }}');
+    expect(tests.env.CI_HEAD_SHA).toBe('${{ inputs.target_sha }}');
+    expect(tests.env.CI_BASE_SHA).toBe('${{ inputs.selection_base }}');
+    expect(workflow.jobs['client-publication'].with.selection_base).toBe(
+      '${{ needs.publish-needed.outputs.selection_base }}'
+    );
     expect(workflow.jobs['publish-needed'].outputs.selection_base).toBe(
       '${{ steps.selection-base.outputs.base_sha }}'
     );
@@ -131,7 +137,7 @@ describe('native publishing requires the exact origin verification', () => {
     const workers = 4;
     expect(client.env.VITEST_MAX_THREADS).toBe(workers);
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);
-    expect(workflow.jobs.production.concurrency).toEqual({
+    expect(preparation.jobs.production.concurrency).toEqual({
       group: 'publish-club-arena-production',
       'cancel-in-progress': false,
     });
@@ -187,7 +193,7 @@ describe('native publishing requires the exact origin verification', () => {
 
   it('the local template and publisher do not accept paid error telemetry configuration', () => {
     const template = readFileSync(join(root, '.env.example'), 'utf8');
-    const build = workflow.jobs['build-and-store'].steps.find(
+    const build = preparation.jobs['build-and-store'].steps.find(
       (item: { name: string }) => item.name === 'Build Club Arena'
     );
     expect(template).not.toMatch(

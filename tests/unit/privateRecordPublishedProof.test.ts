@@ -326,7 +326,7 @@ describe('finite published record client proof admission and verdict', () => {
 it('selects the verified independent fallback in both actual client build inputs', async () => {
   const { parse } = await import('yaml');
   for (const file of [
-    '.github/workflows/publish-club-arena.yml',
+    '.github/workflows/publish-club-arena-client.yml',
     '.github/workflows/publish-club-arena-transaction.yml',
   ]) {
     const workflow = parse(readFileSync(file, 'utf8'));

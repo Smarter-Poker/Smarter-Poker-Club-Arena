@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { gitEnvironmentForCwd } from './classify-ci-changes.mjs';
 
 const workflowPath = '.github/workflows/publish-club-arena.yml';
+const clientWorkflowPath = '.github/workflows/publish-club-arena-client.yml';
 const unsupported = () => {
   throw Error('Publisher client shard source is unreadable or unsupported');
 };
@@ -77,5 +78,30 @@ export function readImmutablePublisherClientShards(cwd, sha, timeout = 5000) {
     `100644 blob ${git('rev-parse', `${sha}:${workflowPath}`).trim()}\t${workflowPath}\n`
   )
     unsupported();
-  return publisherClientShardPlan(git('show', `${sha}:${workflowPath}`));
+  const source = git('show', `${sha}:${workflowPath}`);
+  if (/^  client-tests:\s*$/m.test(source)) return publisherClientShardPlan(source);
+  // Only the one maintained same-repository caller may move the matrix.
+  // Never follow an arbitrary uses path or infer its plan from today's checkout.
+  const caller = source
+    .slice(source.indexOf('\n  client-publication:') + 1)
+    .split(/\n(?=  [A-Za-z0-9_-]+:)/)[0];
+  if (
+    (source.match(/^  client-publication:\s*$/gm) || []).length !== 1 ||
+    !/^    uses: \.\/\.github\/workflows\/publish-club-arena-client\.yml$/m.test(caller) ||
+    (caller.match(/^    uses:/gm) || []).length !== 1 ||
+    !/^    needs: publish-needed$/m.test(caller)
+  )
+    unsupported();
+  if (
+    git('ls-tree', sha, '--', clientWorkflowPath) !==
+    `100644 blob ${git('rev-parse', `${sha}:${clientWorkflowPath}`).trim()}\t${clientWorkflowPath}\n`
+  )
+    unsupported();
+  const clientSource = git('show', `${sha}:${clientWorkflowPath}`);
+  if (
+    !/^  workflow_call:\s*$/m.test(clientSource) ||
+    /^  (?:push|pull_request|repository_dispatch|workflow_dispatch|schedule):/m.test(clientSource)
+  )
+    unsupported();
+  return { ...publisherClientShardPlan(clientSource), jobPrefix: 'client-publication / ' };
 }

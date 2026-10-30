@@ -1,0 +1,23 @@
+{
+  "scope": "Original paid standalone replay regression only; no production capacity or installer claim",
+  "files": {
+    "actual-coordinator-owner.json": "1b873c2a615f59db3fc7bbb32458271d5a5dc99c78b0bd6ca29a0e0368ad1efc",
+    "actual-before-owner.json": "09b18b1af6d167b5f9356c118e32b9ea424ed9123dd84f4c073e4428f803e161",
+    "installer_regression.py": "c5c2a7e5e56d7da7d2f15f504d89c785a7731ae3a5aec475b74f752e9f766fa5",
+    "native_regression.py": "e62659aafc66e0ee8c33d2875bdb175a52bbe954e3bcfe517330cbfadb8a96bf",
+    "generation-owner-authority.json": "bc1c76368ef22515ee571f6a0767427cf19800494fdcee6505cfab7a9f8af629",
+    "dependency_setup.py": "d571d68e123e14b0557d2ce2084c1448f807b31df028902e032a533d7d71c605",
+    "before.sql": "20092eec7558309d0f92797451e53ad400885e31d8a1730ba8e76a670c270bf2",
+    "actual-coordinator.sql": "fe13d93d77fe7142ed0efdc815619a1b26e766c82e1172382fcec93806417706",
+    "captured-original-owners.json": "233112ee939952aad43504b63c12ace6430fc20df7a8c14dcee7eaf2f3fb4645"
+  },
+  "candidate_sha256": "592c0f790bfce904bf1508a8f64ae0222d59dd5ea2a490a08c4b15bf9f221e27",
+  "authority_capture": "STATS90331-edbd-fresh-before-0004-root.log",
+  "authority_capture_sha256": "53f1ba3ca8de33b671bc1a2f85f09f19d4ca7228442c653c4b541a6ab59d3d9b",
+  "allocated_installer_sha256": "612b8bae47b7d24ee63afb2de7033ec72346c33c28153daf42dd14f43e0bd7ff",
+  "candidate_path": "supabase/accounting/standalone-paid-replay/fn_prepare_accounting_week.sql",
+  "source_sha256": {
+    "supabase/accounting/standalone-paid-replay/fn_prepare_accounting_week.sql": "592c0f790bfce904bf1508a8f64ae0222d59dd5ea2a490a08c4b15bf9f221e27",
+    "supabase/migrations/20261030051108_standalone_paid_rakeback_preparation_reuses_its_completed_or.sql": "612b8bae47b7d24ee63afb2de7033ec72346c33c28153daf42dd14f43e0bd7ff"
+  }
+}

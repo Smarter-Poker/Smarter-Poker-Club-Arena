@@ -257,7 +257,7 @@ const approvedPaidRoute = /^\$\{\{ github\.repository_owner == 'Smarter-Software
 const approvedNativeProfileRoute = "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}";
 test('paid client routes are exact while financial runners keep the immutable repository guard',()=>{
   const warm={
-    'ci.yml':new Set(['changes','source_windows','stub_gate','typecheck','typecheck_compile','unit_shards','unit','server','verdict','build','css-beats-e2e','diamond-playfield-e2e','css-beats-gate']),
+    'ci.yml':new Set(['changes','source_windows','stub_gate','typecheck_compile','unit_shards','build']),
     'publish-club-arena.yml':new Set(['publish-needed']),
     'publish-club-arena-client.yml':new Set(['admit','client-tests','build-and-store','publication-floor']),
     'component-fixture-native-smoke.yml':new Set(),
@@ -268,6 +268,8 @@ test('paid client routes are exact while financial runners keep the immutable re
       const key=/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/.exec(line);if(key)job=key[1];
       const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
       if(expected.has(job)){assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}",job);seen.add(job)}
+      else if(file==='ci.yml' && ['typecheck','unit','server','verdict','css-beats-gate'].includes(job))assert.equal(route[1],'ubuntu-latest',job);
+      else if(file==='ci.yml' && ['css-beats-e2e','diamond-playfield-e2e'].includes(job))assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}",job);
       else if(file==='ci.yml' && ['accounting_postgres','server_shards'].includes(job))assert.equal(route[1],approvedNativeProfileRoute,job);
       else if(file==='component-fixture-native-smoke.yml' && job==='native-smoke')assert.equal(route[1],approvedNativeProfileRoute.replace('ubuntu-latest','ubuntu-24.04'),job);
       else assert.match(route[1],approvedPaidRoute,job);

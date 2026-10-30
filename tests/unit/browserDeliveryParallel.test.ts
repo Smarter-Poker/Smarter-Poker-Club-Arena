@@ -29,18 +29,28 @@ describe('browser qualification parallel delivery', () => {
       'changes',
       'source_windows',
       'stub_gate',
-      'typecheck',
-      'unit',
-      'server',
-      'verdict',
-      'css-beats-gate',
       'typecheck_compile',
       'unit_shards',
       'build',
-      'css-beats-e2e',
-      'diamond-playfield-e2e',
     ])
       expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
+    for (const key of ['typecheck', 'unit', 'server', 'css-beats-gate', 'verdict'])
+      expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
+    for (const key of ['css-beats-e2e', 'diamond-playfield-e2e']) {
+      const expression = ci.jobs[key]['runs-on'];
+      expect(expression).toBe(paid('ca-linux-delivery'));
+      const select = (owner: string, id: string) =>
+        runInNewContext(
+          expression.slice(3, -2),
+          {
+            github: { repository_owner: owner, repository_id: id },
+          },
+          { timeout: 1000 }
+        );
+      expect(select('Smarter-Software-PIQ', '1132369872')).toBe('ca-linux-delivery');
+      expect(select('foreign', '1132369872')).toBe('ubuntu-latest');
+      expect(select('Smarter-Software-PIQ', '42')).toBe('ubuntu-latest');
+    }
     for (const key of ['accounting_postgres', 'server_shards'])
       expect(ci.jobs[key]['runs-on']).toBe(
         "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"

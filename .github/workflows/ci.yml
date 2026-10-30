@@ -341,7 +341,7 @@ jobs:
     name: TypeScript Check
     needs: [typecheck_compile, changes, fixture_native]
     if: always() && github.event_name == 'pull_request'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
       contents: read
@@ -1357,7 +1357,7 @@ jobs:
     needs: unit_shards
     if: always()
     name: Client Unit Tests (vitest)
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every shard passed
@@ -3541,7 +3541,7 @@ jobs:
     needs: [changes, server_shards, accounting_postgres]
     if: always()
     name: Server Engine (typecheck + tests)
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Every shard and real PostgreSQL accounting passed
@@ -3596,7 +3596,7 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, typecheck_compile, fixture_native, unit, server]
@@ -4169,7 +4169,9 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
         partition: [general, portrait]
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    # Dedicated 8-core/300-GB hosted pool keeps browser setup off the shared
+    # 4-core queue. The same image, tests and disk-capacity guard remain.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # Run35289214041 needed 9.6m for beats, 7m for Studio, plus 3.3m
     # to build/install; 20m killed the final financial-decision suite.
     # Preserve every suite and its own deadlines, with room for cleanup.
@@ -4538,7 +4540,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
     # 7.1 minutes measured inside the old job; room for a slow browser install.
     timeout-minutes: 25
 
@@ -4629,7 +4631,7 @@ jobs:
       needs.changes.outputs.head_current != 'false' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Both halves passed

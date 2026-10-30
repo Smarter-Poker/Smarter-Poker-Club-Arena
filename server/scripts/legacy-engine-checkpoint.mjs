@@ -1106,7 +1106,9 @@ export async function runLegacyEngineCheckpoint({
 // before the CLI exits, including under pipe backpressure, inside its reserved
 // second and original absolute deadline. A lost receipt never authorizes retry.
 export function publishLegacyCheckpointReceipt(result, deadlineMs) {
-  const expiresAt = Math.min(deadlineMs, Date.now() + 1000);
+  // Keep 100ms of the reserved second for CLI exit and outer forwarding even
+  // when publication itself times out. Never wait at the shell kill boundary.
+  const expiresAt = Math.min(deadlineMs - 100, Date.now() + 900);
   if (!Number.isSafeInteger(deadlineMs) || expiresAt <= Date.now()) return Promise.resolve(false);
   return new Promise((resolve) => {
     const stream = result.ok ? process.stdout : process.stderr;

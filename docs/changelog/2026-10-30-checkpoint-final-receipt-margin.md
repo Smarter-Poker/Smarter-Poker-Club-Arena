@@ -60,3 +60,10 @@ its one-shot error listener on failed or timed-out writes until the event or CLI
 exit, without logging the native error or sending a second receipt. The prior
 ordering failed the owned subprocess regression; the corrected26.3.0 and22.23.3
 runs preserve normal exit1 on closed-reader failure.
+
+The publication wait itself stops at the earlier of900ms or100ms before the
+original deadline. That leaves exit/forwarding headroom even for a blocked pipe.
+An owned child enforces the actual original deadline with SIGKILL: the previous
+publication wait was killed there; the split returns a bounded failure with
+positive remaining time and exits1 normally before that same guard. No overall
+budget increases, receipt replacement or additional engine operation is added.

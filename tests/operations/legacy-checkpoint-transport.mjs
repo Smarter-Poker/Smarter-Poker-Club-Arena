@@ -31,9 +31,10 @@ if (scenario === 'receipt_publication') {
       const result=JSON.parse(process.argv[2]);
       await new Promise(resolve=>process.stdin.once('data',resolve));
       process.stderr.write('x'.repeat(1048576));
-      const started=Date.now();
-      const published=await publishLegacyCheckpointReceipt(result,started+800);
-      process.stdout.write(JSON.stringify({published,elapsedMs:Date.now()-started})+'\\n',()=>process.exit(1));
+      const started=Date.now(),deadline=started+800;
+      setTimeout(()=>process.kill(process.pid,'SIGKILL'),800);
+      const published=await publishLegacyCheckpointReceipt(result,deadline);
+      process.stdout.write(JSON.stringify({published,elapsedMs:Date.now()-started,remainingMs:deadline-Date.now()})+'\\n',()=>process.exit(1));
     `,
         process.argv[3],
         JSON.stringify(result),
@@ -63,12 +64,16 @@ if (scenario === 'receipt_publication') {
     assert.deepEqual(exited, { code: 1, signal: null });
     const receipt = JSON.parse(output);
     assert.equal(receipt.published, drain);
+    assert.ok(
+      receipt.remainingMs >= 50,
+      'publication must retain exit/transport headroom before the real hard kill'
+    );
     if (drain) assert.equal(errors, 'x'.repeat(1048576) + payload);
     else if (mode === 'closed') {
       assert.ok(receipt.elapsedMs < 1500);
       assert.equal(errors, '');
     } else {
-      assert.ok(receipt.elapsedMs >= 800 && receipt.elapsedMs < 1500);
+      assert.ok(receipt.elapsedMs >= 700 && receipt.elapsedMs < 800);
       assert.ok(!errors.endsWith(payload));
     }
   }

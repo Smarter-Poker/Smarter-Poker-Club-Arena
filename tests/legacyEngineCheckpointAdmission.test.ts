@@ -142,6 +142,7 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     );
     expect(checkpointTransport).toContain('if (!receiptPublished) process.exit(1)');
     expect(checkpointTransport).toContain('stream.write(JSON.stringify(result)');
+    expect(checkpointTransport).toContain('Math.min(deadlineMs - 100, Date.now() + 900)');
   });
 
   it('checks the installed custody contract before saving intent or opening inspector access', () => {

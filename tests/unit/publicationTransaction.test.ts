@@ -136,6 +136,23 @@ describe('one publication transaction follows parallel preparation', () => {
         }
       }
 
+      // The qualified gateway URL is the only intentionally changed build input.
+      // Assert its exact value, then compare every other byte with the retained baseline.
+      if (key === 'build-and-store' || key === 'publish-to-app') {
+        const builds = body.steps.filter((step: any) =>
+          Object.hasOwn(step.env ?? {}, 'VITE_PRIVATE_RECORD_FALLBACK_URL')
+        );
+        expect(builds).toHaveLength(1);
+        expect(builds[0].env.VITE_PRIVATE_RECORD_FALLBACK_URL).toBe(
+          'https://ca-static.smarter.poker/private-record'
+        );
+        body.steps = body.steps.map((step: any) =>
+          step === builds[0]
+            ? { ...step, env: { ...step.env, VITE_PRIVATE_RECORD_FALLBACK_URL: '' } }
+            : step
+        );
+      }
+
       expect(createHash('sha256').update(normalizeSteps(body)).digest('hex')).toBe(
         golden[key].bodySHA256
       );

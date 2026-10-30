@@ -434,9 +434,19 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      # These guards are deliberately independent of changed-file classification.
-      # Share the compiler's checkout/install instead of allocating another
-      # runner and installing the same lockfile on every pull request.
+      - name: Classify the actual checked compiler tree
+        id: compile_scope
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.sha }}
+        run: |
+          node scripts/ci/classify-ci-changes.mjs
+          node scripts/ci/ui-test-selection.mjs scope
+
+      # Share the compiler's checkout/install for repository-wide guards.
+      # Structural source-pin and matte-baseline laws remain independent of
+      # classification. Only the expensive bitmap scan may omit unchanged art
+      # after the positive immutable presentation proof succeeds.
       - name: Every source pin is bounded by a structure
         run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
 
@@ -457,6 +467,7 @@ jobs:
       # build fails when a reading RISES above what is recorded. See
       # docs/laws.d/an-asset-never-ships-a-white-matte.md.
       - name: No asset ships a white matte
+        if: steps.compile_scope.outputs.presentation_only != 'true'
         run: npm run art:matte
 
       # The gate above judges the pixels. This judges the baseline: that every
@@ -474,15 +485,6 @@ jobs:
       - name: Record Start Time
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
-
-      - name: Classify the actual checked compiler tree
-        id: compile_scope
-        env:
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CI_HEAD_SHA: ${{ github.sha }}
-        run: |
-          node scripts/ci/classify-ci-changes.mjs
-          node scripts/ci/ui-test-selection.mjs scope
 
       # Only exact policy prose or proved presentation-only UI can omit this
       # unchanged SQL fixture. Financial/executable/shared inputs still run it.
@@ -696,6 +698,7 @@ jobs:
       - name: Evaluate real SLO alert durations, thresholds and recovery
         run: bash scripts/ci/test-slo-stall-duration.sh
       - name: Evaluate fleet throughput against live dealing capacity
+        if: steps.compile_scope.outputs.presentation_only != 'true'
         run: bash scripts/ci/test-fleet-throughput.sh
       - name: Report Typecheck Time
         if: always()
@@ -1280,13 +1283,15 @@ jobs:
     # next longest job. The publisher has run the same suite four ways since
     # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
     # one step earlier so the pull request feels it too.
+    # Current October 30: CI partitions the same inventory eight ways.
+    # The publisher retains its separate four/sixteen-shard proof profiles.
     #
     # fail-fast cancels the siblings the moment one shard fails, which is what
     # a gate wants: the answer is already known.
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
 
     steps:
       - name: Checkout
@@ -1321,12 +1326,12 @@ jobs:
         env:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8
 
       - name: Report
         if: always()
         run: |
-          echo "## Client Unit Tests - shard ${{ matrix.shard }}/4" >> $GITHUB_STEP_SUMMARY
+          echo "## Client Unit Tests - shard ${{ matrix.shard }}/8" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
           echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
@@ -1360,16 +1365,16 @@ jobs:
           RESULT="${{ needs.unit_shards.result }}"
           echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Four shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
+          echo "Eight shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
           case "$RESULT" in
             success)
-              echo "All four shards passed." >> $GITHUB_STEP_SUMMARY ;;
+              echo "All eight shards passed." >> $GITHUB_STEP_SUMMARY ;;
             skipped)
               # Not a failure: the diff touched neither src/ nor tests/.
               echo "Skipped - the diff touched neither \`src/\` nor \`tests/\`." >> $GITHUB_STEP_SUMMARY ;;
             *)
               echo "A shard did not pass. Open the shard job for the failing test." >> $GITHUB_STEP_SUMMARY
-              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the four vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
+              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the eight vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
               exit 1 ;;
           esac
 
@@ -4200,7 +4205,6 @@ jobs:
             echo 'At least 100 GiB is free; browser checks need no SDK cleanup.'
           else
             if [ -d /usr/local/lib/android/sdk ]; then
-              sudo du -sh /usr/local/lib/android/sdk
               sudo rm -rf -- /usr/local/lib/android/sdk
             fi
           fi

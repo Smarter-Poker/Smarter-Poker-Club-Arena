@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+      "bytes": 257402,
+      "sha256": "8edbac7595046d6c736c130fc3f86a10009ae5a73212ca40e4fd675a29269974"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1392,5 +1392,17 @@
       "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
+  },
+  "weeklyLinkedWindowNativeEnforcement20261030": {
+    "scope": "Current CI source identity only: add native linked-window installation, canonical proof, restart and strict verifier checks to the existing accounting shard 2. No prior workflow command removed or altered.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257402,
+      "sha256": "8edbac7595046d6c736c130fc3f86a10009ae5a73212ca40e4fd675a29269974"
+    },
+    "qualification": "No historical financial qualification or production installation is restamped. Required exact-head hosted checks and actual installation readback remain necessary."
   }
 }

@@ -1,0 +1,23 @@
+{
+  "scope": "bounded canonical units and unchanged84witness assembly; NOT full book completion",
+  "worst_unit": {
+    "root_raw_name": "Midway-CHANGED-b6dc-WORST31762-2H-READONLY-ACTUAL-root.log",
+    "sql_sha256": "b6dc211ea1697d679e4bf63d9f0da25c4aef7cb0918dbc33c9066777eb258f69",
+    "rows": 31762,
+    "bad": 0,
+    "resolved": 31762,
+    "unknown": 0,
+    "elapsed_ms": 12376.578,
+    "all_postguards_pass": true
+  },
+  "all84_witness": {
+    "root_raw_name": "Midway-ORIGINAL-ALL84-WITNESSES-UNFROZEN-ACTUAL-root.log",
+    "sql_sha256": "cce334c3d8c962aeb26047d2a0cd206bdfefb3f51b7ea2f3a54b8c55ee8b1efa",
+    "windows": 84,
+    "zero_link_windows": 55,
+    "elapsed_ms": 7911.5,
+    "all_postguards_pass": true
+  },
+  "paid_and_original759_untouched_by_installer": true,
+  "postGEN_original_producers_required": true
+}

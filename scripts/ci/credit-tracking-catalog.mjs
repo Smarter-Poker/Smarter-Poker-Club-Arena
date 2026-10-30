@@ -15,7 +15,8 @@ try {
     WHERE n.nspname IN ('public','smarter_private') AND p.prokind='f' AND
     (p.proname IN ('fn_agent_wallet_send_core_20260830','transfer_chips_agent_to_player',
      'fn_generate_credit_invoice','fn_generate_all_credit_invoices','fn_generate_scope_credit_invoices',
-     'fn_process_weekly_accounting','fn_union_settlement_cascade','fn_run_weekly_settlement',
+     'fn_process_weekly_accounting','fn_process_weekly_accounting_scope','fn_union_settlement_cascade','fn_union_settlement_cascade_due','fn_run_weekly_settlement',
+     'fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage',
      'fn_apply_credit_payment','fn_process_credit_invoice_payment','fn_pay_credit_invoice_from_wallet')
      OR p.proname LIKE '%weekly%rakeback%' OR p.proname LIKE '%weekly%commission%')
     ORDER BY n.nspname,p.proname,p.oid`);

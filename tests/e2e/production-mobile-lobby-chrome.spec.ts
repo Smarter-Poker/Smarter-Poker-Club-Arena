@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 import { createClient } from '@supabase/supabase-js';
 import {
   acknowledgePreferenceWelcome,
@@ -82,7 +83,7 @@ test.afterEach(async ({ page }, testInfo) => {
 // than relying on on-first-retry, which never records these failures.
 test.use({ ...devices['iPhone 13'], trace: 'retain-on-failure' });
 
-async function openLobby(page: Page) {
+async function openLobby(page: Page, openSection = true) {
   // The Diamond Spins offer opens on the answer to this read. Listen before
   // navigating: it leaves as soon as the club resolves.
   const offer = diamondEntryRead(page);
@@ -103,6 +104,7 @@ async function openLobby(page: Page) {
   // budget, before a 5-second assertion or a scroll measurement can meet it
   // (support/diamondInvitationOffer.ts has the four runs it failed).
   await settleDiamondSpinsOffer(page, offer);
+  if (openSection) await openLobbyGameSection(page, 'ALL');
 }
 
 test.describe('the mobile lobby chrome on production', () => {
@@ -129,11 +131,12 @@ test.describe('the mobile lobby chrome on production', () => {
       const proof = observeLobbyPreferenceProof(document, CLUB_ID);
       proofs.set(document, proof);
       proof.phase(phase);
-      await openLobby(document);
+      await openLobby(document, false);
       const documentOwner = await readLobbyPreferenceOwner(document);
       if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
       ownerId = documentOwner;
       const saved = await proof.ready(ownerId);
+      await openLobbyGameSection(document, saved ? lobbyTabLabel(saved) : 'ALL');
       if (saved) {
         await expect(
           document
@@ -268,6 +271,7 @@ test.describe('the mobile lobby chrome on production', () => {
     page,
   }) => {
     await openLobby(page);
+    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     await allGames.click();
     await expect(allGames).toHaveAttribute('aria-selected', 'true');
@@ -351,6 +355,7 @@ test.describe('the mobile lobby chrome on production', () => {
     };
     try {
       await openLobby(page);
+      await openLobbyGameSection(page, 'ALL');
       await page.getByRole('tab', { name: 'ALL', exact: true }).click();
       const cash = page.locator(`${CASH_TABLE_CARD_SELECTOR}:visible`).first();
       await expect(cash, 'the certificate club has a live cash game to view').toBeVisible({
@@ -372,6 +377,7 @@ test.describe('the mobile lobby chrome on production', () => {
         .click();
       const lobby = page.locator('.multi-table-page__lobby-tab .club-home:visible');
       await expect(lobby).toBeVisible({ timeout: 30_000 });
+      await openLobbyGameSection(lobby, 'MTT');
       await lobby.getByRole('tab', { name: 'MTT', exact: true }).click();
       const tournament = lobby
         .locator('[data-testid="lobby-game-row"][data-kind="mtt"]:visible')
@@ -779,6 +785,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
       await ensureClubMembership(page, testInfo.project.use.baseURL!, CLUB_ID);
       await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
       await prepareCashLobbyActions(page);
+      await openLobbyGameSection(page, 'NLH');
       const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
       await tabs.getByRole('tab', { name: 'NLH', exact: true }).click();
       await expect(tabs.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
@@ -855,6 +862,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
         await acknowledgePreferenceWelcome(fresh.page);
         await prepareCashLobbyActions(fresh.page);
         await expect(fresh.page).toHaveURL(exactUrl);
+        await openLobbyGameSection(fresh.page, 'NLH');
         await expect(fresh.page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
           'aria-selected',
           'true',

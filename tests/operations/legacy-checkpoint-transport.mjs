@@ -9,6 +9,81 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 const { runLegacyEngineCheckpoint } = await import(process.argv[3]);
 const scenario = process.argv[2];
+// No engine profile is substituted: exercise only the maintained receipt
+// publisher in an owned subprocess with real pipe backpressure and exit.
+if (scenario === 'receipt_publication') {
+  const result = {
+    ok: false,
+    reason: 'inspector cleanup not verified',
+    transportDetail: 'op=guardAwait,cause=request_timeout',
+    retryAllowed: false,
+  };
+  const payload = JSON.stringify(result) + '\n';
+  for (const mode of ['drain', 'blocked', 'closed']) {
+    const drain = mode === 'drain';
+    const child = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      const {publishLegacyCheckpointReceipt}=await import(process.argv[1]);
+      const result=JSON.parse(process.argv[2]);
+      await new Promise(resolve=>process.stdin.once('data',resolve));
+      process.stderr.write('x'.repeat(1048576));
+      const started=Date.now();
+      const published=await publishLegacyCheckpointReceipt(result,started+800);
+      process.stdout.write(JSON.stringify({published,elapsedMs:Date.now()-started})+'\\n',()=>process.exit(1));
+    `,
+        process.argv[3],
+        JSON.stringify(result),
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    let output = '',
+      errors = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => (errors += chunk));
+    child.stderr.pause();
+    if (mode === 'closed') child.stderr.destroy();
+    child.stdin.end('go');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 2500);
+    const resume = drain ? setTimeout(() => child.stderr.resume(), 200) : null;
+    const closed = new Promise((resolve) => child.once('close', resolve));
+    const exited = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+    child.stderr.resume();
+    await closed;
+    clearTimeout(kill);
+    clearTimeout(resume);
+    assert.deepEqual(exited, { code: 1, signal: null });
+    const receipt = JSON.parse(output);
+    assert.equal(receipt.published, drain);
+    if (drain) assert.equal(errors, 'x'.repeat(1048576) + payload);
+    else if (mode === 'closed') {
+      assert.ok(receipt.elapsedMs < 1500);
+      assert.equal(errors, '');
+    } else {
+      assert.ok(receipt.elapsedMs >= 800 && receipt.elapsedMs < 1500);
+      assert.ok(!errors.endsWith(payload));
+    }
+  }
+  console.log(
+    JSON.stringify({
+      ok: true,
+      scenario,
+      node: process.version,
+      backpressureFlushed: true,
+      blockedPublicationBounded: true,
+      closedReaderRefused: true,
+    })
+  );
+  process.exit(0);
+}
 // A real timer may wake before its requested wall-clock deadline. Exercise
 // that boundary deterministically while retaining the actual inspector/target.
 const originalSetTimeout = globalThis.setTimeout;
@@ -60,7 +135,13 @@ const bounded = (promise, ms = 2500, stage = 'fixture') => {
   ]).finally(() => clearTimeout(timer));
 };
 try {
-  const mode = ['timeout', 'early_timeout', 'disconnect', 'promise_gc'].includes(scenario)
+  const mode = [
+    'timeout',
+    'early_timeout',
+    'disconnect',
+    'promise_gc',
+    'receipt_deadline',
+  ].includes(scenario)
     ? 'hang'
     : scenario === 'exception'
       ? 'throw'
@@ -92,6 +173,7 @@ try {
       // A value the inspector cannot return by value (a BigInt): the CDP
       // answer is an error object, not a result, and the client must say so.
       "  if(process.argv[2]==='protocol_error')return {ok:true,completedCalls:1,unreturnable:1n};",
+      "  if(process.argv[3]==='receipt_deadline')setImmediate(()=>{const until=Date.now()+9000;while(Date.now()<until)Math.sqrt(Date.now());setImmediate(()=>process.stdout.write(JSON.stringify({type:'busy_done'})+'\\n'));});",
       "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',detail:'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
       "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
@@ -151,7 +233,10 @@ try {
       stdio: ['pipe', 'pipe', 'pipe'],
     }
   );
-  hardStop = setTimeout(() => child.kill('SIGKILL'), scenario === 'shared_deadline' ? 35000 : 8000);
+  hardStop = setTimeout(
+    () => child.kill('SIGKILL'),
+    scenario === 'shared_deadline' ? 35000 : scenario === 'receipt_deadline' ? 14000 : 8000
+  );
   const waiting = new Map(),
     queued = new Map();
   let channelFailure;
@@ -194,6 +279,7 @@ try {
           'guard_started',
           'gc_complete',
           'settlement_resolved',
+          'busy_done',
         ].includes(value.type)
       );
       mark('received_' + value.type);
@@ -273,9 +359,12 @@ try {
     guardAwaitRequests = 0;
   const nativeProtocolErrors = [];
   const sharedDeadline = Date.now() + 30000;
+  const receiptDeadline = Date.now() + 8000;
+  let receiptRemainingMs = null,
+    nativeShutdownRequests = 0;
   const observedWebSocket = (endpoint) => {
     const socket = new WebSocket(endpoint);
-    if (['promise_gc', 'promise_gc_settle'].includes(scenario)) {
+    if (['promise_gc', 'promise_gc_settle', 'receipt_deadline'].includes(scenario)) {
       const nativeSend = socket.send.bind(socket);
       socket.send = (raw) => {
         const request = JSON.parse(raw);
@@ -287,6 +376,11 @@ try {
         )
           guardRequests++;
         if (request.method === 'Runtime.awaitPromise') guardAwaitRequests++;
+        if (
+          request.method === 'Runtime.evaluate' &&
+          request.params.expression.includes("getBuiltinModule('node:inspector').close()")
+        )
+          nativeShutdownRequests++;
         return nativeSend(raw);
       };
       socket.addEventListener('message', ({ data }) => {
@@ -332,7 +426,7 @@ try {
                   ['shared_deadline', 'shared_deadline_exhausted'].includes(scenario) &&
                   JSON.parse(event.data).id === firstCensusId
                 )
-                  setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 700);
+                  setTimeout(() => listener(event), scenario === 'shared_deadline' ? 21000 : 1700);
                 else listener(event);
               }
             : listener,
@@ -362,11 +456,16 @@ try {
   };
   let expectedCalls = 1,
     result;
-  if (['deadline_expired', 'deadline_future'].includes(scenario)) {
+  if (['deadline_expired', 'deadline_future', 'deadline_receipt_exhausted'].includes(scenario)) {
     await assert.rejects(
       runLegacyEngineCheckpoint({
         ...options,
-        checkpointDeadlineMs: scenario === 'deadline_expired' ? Date.now() - 1 : Date.now() + 41000,
+        checkpointDeadlineMs:
+          scenario === 'deadline_expired'
+            ? Date.now() - 1
+            : scenario === 'deadline_receipt_exhausted'
+              ? Date.now() + options.cleanupBudgetMs + 1000
+              : Date.now() + 41000,
       }),
       /legacy checkpoint invocation identity refused/
     );
@@ -487,11 +586,14 @@ try {
     result = await runLegacyEngineCheckpoint({
       ...options,
       ...(['timeout', 'early_timeout'].includes(scenario) ? { workBudgetMs: 500 } : {}),
+      ...(scenario === 'receipt_deadline'
+        ? { checkpointDeadlineMs: receiptDeadline, createWebSocket: observedWebSocket }
+        : {}),
       ...(scenario === 'shared_deadline'
         ? { workBudgetMs: 20000, checkpointDeadlineMs: sharedDeadline }
         : {}),
       ...(scenario === 'shared_deadline_exhausted'
-        ? { workBudgetMs: 20000, cleanupBudgetMs: 200, checkpointDeadlineMs: Date.now() + 800 }
+        ? { workBudgetMs: 20000, cleanupBudgetMs: 200, checkpointDeadlineMs: Date.now() + 1800 }
         : {}),
       ...([
         'success',
@@ -508,6 +610,29 @@ try {
         ? { cleanupBudgetMs: 200 }
         : {}),
     });
+    if (scenario === 'receipt_deadline') {
+      // Native V8 still ACKs Inspector interrupts during this owned target's
+      // busy JS, but its fixed setImmediate(close) cannot run yet. Work and
+      // cleanup therefore exhaust their slices without any synthetic reply.
+      receiptRemainingMs = receiptDeadline - Date.now();
+      assert.ok(
+        receiptRemainingMs >= 500,
+        `final receipt has no outer transport margin: ${receiptRemainingMs}`
+      );
+      assert.equal(result.reason, 'inspector cleanup not verified');
+      assert.equal(result.inspectorClosed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.cleanupConnections, 0);
+      assert.match(
+        result.transportDetail,
+        /^op=guardAwait,cause=request_timeout,method=Runtime.awaitPromise,/
+      );
+      assert.equal(guardRequests, 1);
+      assert.equal(guardAwaitRequests, 1);
+      assert.equal(nativeShutdownRequests, 1);
+      assert.equal(clientCloseCalls, 0, 'no competing close after the native request');
+      assert.deepEqual(nativeProtocolErrors, []);
+    }
     if (scenario === 'success')
       assert.deepEqual(result, {
         ok: true,
@@ -654,8 +779,16 @@ try {
   mark('driver_returned');
   assert.equal(result.retryAllowed, false);
   assert.ok(!JSON.stringify(result).includes('synthetic-secret'));
-  if (!['preexisting', 'cleanup_close_timeout', 'refusal_cleanup_timeout'].includes(scenario))
+  if (
+    ![
+      'preexisting',
+      'cleanup_close_timeout',
+      'refusal_cleanup_timeout',
+      'receipt_deadline',
+    ].includes(scenario)
+  )
     assert.equal(result.inspectorClosed, true);
+  if (scenario === 'receipt_deadline') await next('busy_done');
   send('state');
   assert.deepEqual(await next('state'), {
     type: 'state',
@@ -700,6 +833,16 @@ try {
         ? { gcCalls: 1, guardRequests, guardAwaitRequests, nativeProtocolErrors }
         : {}),
       ...(scenario.includes('refusal') ? { checkpointResult: result } : {}),
+      ...(scenario === 'receipt_deadline'
+        ? {
+            receiptRemainingMs,
+            checkpointResult: result,
+            guardRequests,
+            guardAwaitRequests,
+            nativeShutdownRequests,
+            clientCloseCalls,
+          }
+        : {}),
     })
   );
 } catch (error) {

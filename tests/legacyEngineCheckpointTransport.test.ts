@@ -25,6 +25,14 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['timeout', 'unknown nonretryable outcome for a never-settling guarded call'],
     ['promise_gc', 'native GC preserves the owned guard Promise and its nonretryable deadline'],
     ['promise_gc_settle', 'a GC-surviving guard settles once through its original Promise handle'],
+    [
+      'receipt_publication',
+      'actual receipt pipe drains before exit and blocked publication stays bounded',
+    ],
+    [
+      'receipt_deadline',
+      'pending guard and blocked native close retain an UNKNOWN receipt before the outer kill',
+    ],
     ['early_timeout', 'an early native timer cannot report an unspent request slice as exhausted'],
     ['disconnect', 'unknown outcome and cleanup-only reconnect after in-flight disconnect'],
     ['zero', 'zero instances refuse checkpoint invocation'],
@@ -40,6 +48,7 @@ describe('actual isolated legacy checkpoint transport', () => {
     ],
     ['deadline_expired', 'an expired absolute entry deadline opens no inspector'],
     ['deadline_future', 'a caller cannot supply more than the absolute forty seconds'],
+    ['deadline_receipt_exhausted', 'cleanup plus receipt reserve cannot admit zero native work'],
     [
       'shared_deadline_exhausted',
       'census exhaustion preserves cleanup and never invokes the guard',
@@ -69,6 +78,16 @@ describe('actual isolated legacy checkpoint transport', () => {
       );
       expect(result.error?.message ?? null, result.stderr).toBeNull();
       expect(result.status, result.stderr).toBe(0);
+      if (scenario === 'receipt_publication') {
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          ok: true,
+          scenario,
+          backpressureFlushed: true,
+          blockedPublicationBounded: true,
+          closedReaderRefused: true,
+        });
+        return;
+      }
       expect(JSON.parse(result.stdout)).toMatchObject({
         ok: true,
         scenario,

@@ -626,6 +626,10 @@ export async function runLegacyEngineCheckpoint({
   createWebSocket = (endpoint) => new WebSocket(endpoint),
 }) {
   const startedAt = Date.now();
+  // The outer client is killed at the supplied absolute deadline. Reserve
+  // one second INSIDE it to serialize/flush its bounded receipt and exit;
+  // cleanup may still use at most its original five-second ceiling.
+  const receiptReserveMs = checkpointDeadlineMs === null ? 0 : 1000;
   if (
     !Number.isSafeInteger(pid) ||
     pid < 1 ||
@@ -647,7 +651,7 @@ export async function runLegacyEngineCheckpoint({
     cleanupBudgetMs > 5000 ||
     (checkpointDeadlineMs !== null &&
       (!Number.isSafeInteger(checkpointDeadlineMs) ||
-        checkpointDeadlineMs <= startedAt + cleanupBudgetMs ||
+        checkpointDeadlineMs <= startedAt + cleanupBudgetMs + receiptReserveMs ||
         checkpointDeadlineMs > startedAt + 40000))
   )
     throw refused('legacy checkpoint invocation identity refused');
@@ -657,7 +661,7 @@ export async function runLegacyEngineCheckpoint({
   const deadline =
     checkpointDeadlineMs === null
       ? startedAt + workBudgetMs
-      : checkpointDeadlineMs - cleanupBudgetMs;
+      : checkpointDeadlineMs - cleanupBudgetMs - receiptReserveMs;
   const effectiveWorkBudgetMs = deadline - startedAt;
   let signalled = false,
     endpoint,
@@ -956,7 +960,7 @@ export async function runLegacyEngineCheckpoint({
     if (signalled) {
       const cleanupDeadline = Math.min(
         Date.now() + cleanupBudgetMs,
-        checkpointDeadlineMs ?? Infinity
+        checkpointDeadlineMs === null ? Infinity : checkpointDeadlineMs - receiptReserveMs
       );
       let shutdownRequested = false;
       try {
@@ -1098,6 +1102,44 @@ export async function runLegacyEngineCheckpoint({
   };
 }
 
+// Publish only the existing validated summary. Await the actual stream callback
+// before the CLI exits, including under pipe backpressure, inside its reserved
+// second and original absolute deadline. A lost receipt never authorizes retry.
+export function publishLegacyCheckpointReceipt(result, deadlineMs) {
+  const expiresAt = Math.min(deadlineMs, Date.now() + 1000);
+  if (!Number.isSafeInteger(deadlineMs) || expiresAt <= Date.now()) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const stream = result.ok ? process.stdout : process.stderr;
+    let timer,
+      ended = false;
+    const finish = (ok) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      // A failed write callback can precede its stream error event. Keep our
+      // one-shot listener for that pending error until it fires or this CLI
+      // exits; never let a late EPIPE print an uncaught native exception.
+      if (ok) stream.removeListener('error', failed);
+      resolve(ok);
+    };
+    const failed = () => finish(false);
+    const expire = () => {
+      const left = expiresAt - Date.now();
+      if (left > 0) timer = setTimeout(expire, left);
+      else finish(false);
+    };
+    stream.once('error', failed);
+    timer = setTimeout(expire, Math.max(1, expiresAt - Date.now()));
+    try {
+      stream.write(JSON.stringify(result) + '\n', (error) =>
+        finish(!error && Date.now() <= expiresAt)
+      );
+    } catch {
+      finish(false);
+    }
+  });
+}
+
 if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eval1]')) {
   // Immutable production coordinates; no environment/argv source override.
   const checkpointRelease = process.argv[3];
@@ -1137,7 +1179,11 @@ if (process.argv[1] === '-' && new URL(import.meta.url).pathname.endsWith('/[eva
     reason: 'legacy checkpoint invocation refused',
     retryAllowed: false,
   }));
-  (checkpointResult.ok ? console.log : console.error)(JSON.stringify(checkpointResult));
+  const receiptPublished = await publishLegacyCheckpointReceipt(
+    checkpointResult,
+    Number(process.argv[5])
+  );
+  if (!receiptPublished) process.exit(1);
   // A failed cleanup may retain a client socket. End this helper after its
   // bounded attempt without sending another WebSocket close to the engine.
   // 75 is `legacy-engine-checkpoint.sh`'s deferral, and it is reachable here

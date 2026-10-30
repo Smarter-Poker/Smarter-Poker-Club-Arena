@@ -35,8 +35,8 @@ it('qualifies the exact deployed EED owners before admitting the retained-origin
     readOnlyProduction: true,
     historicalRevision: 'eed06fe51dea622069c661a6213d5b031ff3a9e3',
     status: 'passed',
-    actualTests: 29,
-    passedTests: 29,
+    actualTests: 33,
+    passedTests: 33,
   });
   expect(receipt.pins).toHaveLength(29);
   expect(new Set(receipt.pins.map((row: { path: string }) => row.path)).size).toBe(29);

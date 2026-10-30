@@ -21,6 +21,23 @@ def main():
   _,live_proof,_=e.sql(db,'SELECT '+proof+';',label='exact-started-abort-source-live-proof')
   assert live_proof.strip()=='t'
   assert e.report['migration_install_seconds']<5
+  sql_file(e,db,'receipt-version-strict-mode-constraint',"""BEGIN;
+-- Qualify the exact installed CHECK expression independently of unrelated header fields.
+CREATE TEMP TABLE receipt_version_contract(receipt_version integer NOT NULL,receipt jsonb NOT NULL) ON COMMIT DROP;
+DO $$DECLARE definition text;bad jsonb;refused boolean;BEGIN
+ SELECT pg_get_constraintdef(oid) INTO STRICT definition FROM pg_constraint
+ WHERE conrelid='public.tournament_cancellation_receipts'::regclass
+ AND conname='tournament_cancellation_receipts_receipt_version_check';
+ EXECUTE 'ALTER TABLE receipt_version_contract ADD CONSTRAINT actual_installed_version_check '||definition;
+ INSERT INTO receipt_version_contract VALUES(2,'{}'),(3,'{"mode":"started_operator_abort","operation_id":"ac000000-0000-4000-8000-000000000001"}');
+ FOR bad IN SELECT value FROM jsonb_array_elements('[{"mode":null,"operation_id":"ac000000-0000-4000-8000-000000000001"},{"operation_id":"ac000000-0000-4000-8000-000000000001"},{"mode":"wrong","operation_id":"ac000000-0000-4000-8000-000000000001"},{"mode":"started_operator_abort"}]') LOOP
+  refused:=false;
+  BEGIN INSERT INTO receipt_version_contract VALUES(3,bad);
+  EXCEPTION WHEN check_violation THEN refused:=true;END;
+  IF NOT refused THEN RAISE EXCEPTION 'v3 receipt constraint accepted invalid mode or missing operation:%',bad;END IF;
+ END LOOP;
+ IF (SELECT count(*) FROM receipt_version_contract)<>2 THEN RAISE EXCEPTION 'valid v2/v3 version contract changed';END IF;
+END$$;ROLLBACK;""")
   seed=(ROOT/'scripts/ci/probes/satellite-cancel-current-native.sql').read_text().split('-- Fund the source through')[0]
   seed=seed.replace('ON COMMIT DROP;','ON COMMIT PRESERVE ROWS;')
   sql_file(e,db,'real-chip-registration','BEGIN;'+seed+'COMMIT;')
@@ -63,7 +80,7 @@ END$$;ROLLBACK;""")
  OR NOT EXISTS(SELECT 1 FROM public.tournaments WHERE id='"""+event+"""' AND status='CANCELLED' AND started_at IS NOT NULL)
  OR (SELECT count(*) FROM public.tournament_refund_tranches WHERE tournament_id='"""+event+"""')<>1 THEN RAISE EXCEPTION 'independent original charge readback failed';END IF;
 END$$;""")
-  e.report['cases']=['exact-install','browser-refused','review-hash-refused','accepted-original-restorable-no-new-hand-no-refund','concurrent-original-lane-refused','paid-100-fee10-real-charge','failure-after-real-refund-fully-rolled-back','same-operation-replay-no-duplicate','canonical-v3-exact-terminal-receipt']
+  e.report['cases']=['strict-v3-null-mode-refused','strict-v3-missing-mode-refused','strict-v3-wrong-mode-refused','strict-v3-missing-operation-refused','valid-v2-version-retained','valid-v3-version-retained','exact-install','browser-refused','review-hash-refused','accepted-original-restorable-no-new-hand-no-refund','concurrent-original-lane-refused','paid-100-fee10-real-charge','failure-after-real-refund-fully-rolled-back','same-operation-replay-no-duplicate','canonical-v3-exact-terminal-receipt']
   chip_overlay=module(ROOT/'scripts/ci/chip_abort_overlay_native.py','abort_chip_overlay');chip_overlay.run_chip_overlay(e,db,ROOT)
   diamond.seed(e,db);diamond.run_diamond_cases(e,db,ROOT)
   names=set(re.findall(r'CREATE(?: OR REPLACE)? FUNCTION (?:public|smarter_private)\.(\w+)',MIGRATION.read_text()))

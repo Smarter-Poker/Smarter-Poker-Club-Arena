@@ -55,6 +55,9 @@ import {
   recordHorsePhase8GuardVerdict,
 } from '../HorseExecutionWitness.js';
 
+// V61 (2026-10-29) shades hold'em one-pair river calls by default; these
+// captured replays keep the explicit off arm so the recorded receipts and
+// admissions still mean what they meant when they were captured.
 export const GUARD_LIVE_TEST_SOURCE = '5'.repeat(40);
 export const GUARD_LIVE_TEST_TABLE = '10000000-0000-4000-8000-000000000001';
 export const GUARD_LIVE_TEST_HAND = '30000000-0000-4000-8000-000000000001';
@@ -174,7 +177,7 @@ export function guardLiveRequest(): FastHorseDecisionRequest {
     gameState: gs,
     style: 'balanced',
     mods: {},
-    opts: { mind: false },
+    opts: { mind: false, v61RiverOnePairShade: false },
     handJournalContext: captureHorseHandJournalContext(gs.actionHistory),
   };
   request = withPhase6Provenance(request);

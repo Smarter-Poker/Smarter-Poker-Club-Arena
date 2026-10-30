@@ -2064,6 +2064,8 @@ export interface HorseDecideOpts {
   /** Dan 2026-10-25 NLH tournament aggression (wider opens/3-bets/defence,
    *  more turn barrels). Default on; false is the historical arm. */
   v57TournamentAggression?: boolean;
+  /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
+  v60CashPressure?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -6042,6 +6044,8 @@ export class HorseLogic {
       omahaSuitedPremium: suitedPremium,
       holdemPremiumPair,
       tournamentAggression: (opts.v57TournamentAggression ?? true) !== false,
+      cashAggression: (opts.v60CashPressure ?? true) !== false,
+      isShortDeck: vi.isShortDeck === true,
       effectiveStackBB: (() => {
         let cover = 0;
         for (const p of gs.players) {

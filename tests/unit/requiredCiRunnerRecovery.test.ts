@@ -53,7 +53,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     for (const key of ['accounting_postgres', 'server_shards'])
       normalized.jobs[key]['runs-on'] = expression('ubuntu-latest', false);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      'e9fed96150250d02894abfdd79efe214a67b982a7f9b77727f2deced7d0d4885'
+      '939e60b61c3b8fe7d4ac6c49b0c44a2052527042b0050ddd2313fa538dbf1808'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253386,
-      "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+      "bytes": 253859,
+      "sha256": "bef775286d7da17f0b32dc0567e5916e8688c253e1b3e07eb1b9954aca07e8b6"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1250,5 +1250,45 @@
         }
       }
     ]
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "mergedUnionAndClientCiSourceAudit20261030": {
+    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
+    "currentCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    }
+  },
+  "requiredCiProtectedMainIntegration20261030": {
+    "review": "Compose only the closed three-runner selection with protected main current typed Union qualification. Preserve both prior audit histories and all other metadata; update active source identity only, not financial or live qualification.",
+    "changes": [],
+    "workflowComposition": {
+      "path": ".github/workflows/ci.yml",
+      "candidatePrevious": {
+        "bytes": 253386,
+        "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+      },
+      "protectedMainPrevious": {
+        "bytes": 253759,
+        "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+      },
+      "current": {
+        "bytes": 253859,
+        "sha256": "bef775286d7da17f0b32dc0567e5916e8688c253e1b3e07eb1b9954aca07e8b6"
+      }
+    }
   }
 }

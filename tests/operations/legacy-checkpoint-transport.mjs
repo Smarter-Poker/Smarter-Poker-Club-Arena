@@ -60,19 +60,21 @@ const bounded = (promise, ms = 2500, stage = 'fixture') => {
   ]).finally(() => clearTimeout(timer));
 };
 try {
-  const mode = ['timeout', 'early_timeout', 'disconnect', 'promise_gc'].includes(scenario)
-    ? 'hang'
-    : scenario === 'exception'
-      ? 'throw'
-      : scenario === 'protocol_error'
-        ? 'protocol_error'
-        : scenario === 'promise_gc_settle'
-          ? 'gc_settle'
-          : scenario.startsWith('refusal')
-            ? 'refusal'
-            : scenario === 'malformed_refusal'
-              ? 'malformed_refusal'
-              : 'success';
+  const mode = scenario.startsWith('census_counts')
+    ? 'census_refusal'
+    : ['timeout', 'early_timeout', 'disconnect', 'promise_gc'].includes(scenario)
+      ? 'hang'
+      : scenario === 'exception'
+        ? 'throw'
+        : scenario === 'protocol_error'
+          ? 'protocol_error'
+          : scenario === 'promise_gc_settle'
+            ? 'gc_settle'
+            : scenario.startsWith('refusal')
+              ? 'refusal'
+              : scenario === 'malformed_refusal'
+                ? 'malformed_refusal'
+                : 'success';
   const count = scenario === 'zero' ? 0 : scenario === 'two' ? 2 : 1;
   writeFileSync(
     join(directory, 'owner.mjs'),
@@ -81,10 +83,10 @@ try {
       ' calls=0;',
       ' checkpoint(options,objects,modules,engines,managers,workers,hosts){',
       '  this.calls++;',
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
-      "  if(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3]) && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(hosts)||hosts.length!==2||!hosts.every(h=>Object.getPrototypeOf(h)===modules.lightningHost.LightningHandHost.prototype)))throw Error('lightning host census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(workers)||workers.length!==2||!workers.every(w=>Object.getPrototypeOf(w)===modules.lightningWorker.LightningClusterWorker.prototype)||new Set(workers.map(w=>w.kind)).size!==2))throw Error('lightning census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(engines)||engines.length!==2||!engines.every(e=>Object.getPrototypeOf(e)===modules.engine.ServerTableEngine.prototype)||new Set(engines.map(e=>e.kind)).size!==2))throw Error('engine census refused');",
+      "  if(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3]) && (!Array.isArray(managers)||managers.length!==2||!managers.every(m=>Object.getPrototypeOf(m)===modules.manager.TournamentManager.prototype)||new Set(managers.map(m=>m.kind)).size!==2))throw Error('manager census refused');",
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
@@ -93,7 +95,7 @@ try {
       // answer is an error object, not a result, and the client must say so.
       "  if(process.argv[2]==='protocol_error')return {ok:true,completedCalls:1,unreturnable:1n};",
       "  if(process.argv[2]==='hang'){globalThis.__legacyEngineCheckpointProgress={schema:'legacy-engine-checkpoint-progress/v1',elapsedMs:123,stage:'preflight',note:'joinPreviousWork',detail:'rpc=fn_f06_prepare_mixed_manager_custody,phase=commit',attemptedTables:0,completedCalls:0,verifiedTables:0,reason:null,privatePayload:'synthetic-secret-must-not-export'};return new Promise(()=>{});}",
-      "  if(process.argv[2]==='refusal')return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
+      "  if(['refusal','census_refusal'].includes(process.argv[2]))return {schema:'legacy-engine-checkpoint/v1',ok:false,reason:process.argv[2]==='census_refusal'?'retained_lightning_host_census_unproven':'mixed_bank_not_restorable',stage:'preflight',attemptedTables:0,completedCalls:0,verifiedTables:0,bankCount:0,uninitializedSeats:0,remainingMs:null,readyForRestart:false,checkpointOutcome:'not_started',paidAccountingQualification:'native_pending_registry_unqualified',restartAuthorized:false,privatePayload:'synthetic-secret-must-not-export',holeCards:['As','Kd'],credentials:'synthetic-secret-credential'};",
       "  if(process.argv[2]==='malformed_refusal')return {schema:'synthetic-secret-schema',ok:false,reason:'synthetic-secret-refusal',stage:'synthetic-secret-stage',attemptedTables:'synthetic-secret-count',completedCalls:-1,verifiedTables:0.5,bankCount:Infinity,uninitializedSeats:true,remainingMs:-1,readyForRestart:'synthetic-secret-ready',checkpointOutcome:'synthetic-secret-outcome',paidAccountingQualification:'synthetic-secret-accounting',restartAuthorized:true};",
       "  return {ok:true,completedCalls:1,privatePayload:'synthetic-secret-must-not-export'};",
       ' }',
@@ -113,18 +115,18 @@ try {
       'const instances=Array.from({length:' + count + '},()=>new GameServer());',
       "const engineInstances=[new ServerTableEngine('registered'),new ServerTableEngine('detached')];",
       "const managerInstances=[new TournamentManager('registered'),new TournamentManager('detached')];",
-      "const lightningWorkerInstances=[new LightningClusterWorker('registered'),new LightningClusterWorker('detached')];",
-      "const lightningHostInstances=[new LightningHandHost('registered'),new LightningHandHost('detached')];",
+      "const lightningWorkerInstances=process.argv[3]==='census_counts_zero'?[]:[new LightningClusterWorker('registered'),new LightningClusterWorker('detached')];",
+      "const lightningHostInstances=process.argv[3]==='census_counts_zero'?[]:[new LightningHandHost('registered'),new LightningHandHost('detached')];",
       "const inspector=process.getBuiltinModule('node:inspector');",
       "const lines=createInterface({input:process.stdin});const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');",
       "lines.on('line',line=>{const {type}=JSON.parse(line);",
-      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['promise_gc','promise_gc_settle'].includes(process.argv[3])?{gcCalls:nativeGcCalls,...(process.argv[3]==='promise_gc_settle'?{resolvedAfterGc}:{})}:{}),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['promise_gc','promise_gc_settle'].includes(process.argv[3])?{gcCalls:nativeGcCalls,...(process.argv[3]==='promise_gc_settle'?{resolvedAfterGc}:{})}:{}),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
       " if(type==='gc'){globalThis.gc();nativeGcCalls++;send({type:'gc_complete',gcCalls:nativeGcCalls});}",
       " if(type==='resolve'){if(nativeGcCalls!==1||typeof globalThis.__fixtureResolve!=='function')throw Error('fixture settlement before GC');const finish=globalThis.__fixtureResolve;delete globalThis.__fixtureResolve;resolvedAfterGc=true;finish();send({type:'settlement_resolved',gcCalls:nativeGcCalls,resolvedAfterGc});}",
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
-      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      "globalThis.gc();send({type:'ready',pid:process.pid,node:process.version,inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
     ].join('\n')
   );
   const allocation = createServer();
@@ -260,6 +262,9 @@ try {
       'shared_deadline',
       'shared_deadline_exhausted',
       'memory_refusal',
+      'census_counts',
+      'census_counts_unknown',
+      'census_counts_zero',
     ].includes(scenario),
     workBudgetMs: 3000,
     cleanupBudgetMs: 2000,
@@ -295,14 +300,27 @@ try {
       });
     }
     if (
-      ['engine_census', 'shared_deadline', 'shared_deadline_exhausted', 'memory_refusal'].includes(
-        scenario
-      )
+      [
+        'engine_census',
+        'shared_deadline',
+        'shared_deadline_exhausted',
+        'memory_refusal',
+        'census_counts',
+        'census_counts_unknown',
+        'census_counts_zero',
+      ].includes(scenario)
     ) {
       let firstCensusId = null;
+      const groupReplyIndices = new Map();
       const send = socket.send.bind(socket);
       socket.send = (raw) => {
         const message = JSON.parse(raw);
+        if (message.method === 'Runtime.callFunctionOn') {
+          const group = /^function\(\) \{ return this\[([0-4])\]; \}$/.exec(
+            message.params.functionDeclaration
+          );
+          if (group) groupReplyIndices.set(message.id, Number(group[1]));
+        }
         if (message.method === 'Runtime.queryObjects') {
           nativeCensusRequests++;
           nativeOrder.push('census');
@@ -328,6 +346,24 @@ try {
           type,
           type === 'message'
             ? (event) => {
+                if (scenario === 'census_counts_unknown') {
+                  const message = JSON.parse(event.data);
+                  const index = groupReplyIndices.get(message.id);
+                  if (index !== undefined) {
+                    // Keep the actual native handle and array. Only metadata
+                    // is malformed: it must never fabricate physical absence.
+                    const descriptor = message.result.result;
+                    if (index === 0) descriptor.type = 'number';
+                    if (index === 1) descriptor.description = 'Array(0002)';
+                    if (index === 2) descriptor.description = 'Array(2001)';
+                    if (index === 3) descriptor.className = 'synthetic-secret-census-class';
+                    if (index === 4) {
+                      descriptor.subtype = 'object';
+                      descriptor.description = 'synthetic-secret-census-description';
+                    }
+                    return listener({ data: JSON.stringify(message) });
+                  }
+                }
                 if (
                   ['shared_deadline', 'shared_deadline_exhausted'].includes(scenario) &&
                   JSON.parse(event.data).id === firstCensusId
@@ -499,6 +535,9 @@ try {
         'shared_deadline',
         'shared_deadline_exhausted',
         'memory_refusal',
+        'census_counts',
+        'census_counts_unknown',
+        'census_counts_zero',
         'cleanup_close_timeout',
         'refusal_cleanup_timeout',
       ].includes(scenario)
@@ -508,6 +547,30 @@ try {
         ? { cleanupBudgetMs: 200 }
         : {}),
     });
+    if (scenario.startsWith('census_counts')) {
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'retained_lightning_host_census_unproven');
+      assert.equal(result.retryAllowed, false);
+      assert.equal(result.checkpointInvoked, true);
+      assert.equal(result.inspectorClosed, true);
+      assert.equal(result.checkpoint.attemptedTables, 0);
+      assert.equal(result.checkpoint.completedCalls, 0);
+      assert.deepEqual(result.nativeCensusCounts, {
+        schema: 'legacy-native-census-counts/v1',
+        gameServers: scenario === 'census_counts_unknown' ? null : 1,
+        tableEngines: scenario === 'census_counts_unknown' ? null : 2,
+        tournamentManagers: scenario === 'census_counts_unknown' ? null : 2,
+        lightningWorkers:
+          scenario === 'census_counts_unknown' ? null : scenario === 'census_counts_zero' ? 0 : 2,
+        lightningHosts:
+          scenario === 'census_counts_unknown' ? null : scenario === 'census_counts_zero' ? 0 : 2,
+      });
+      assert.equal(nativeCensusRequests, 1);
+      assert.deepEqual(nativeOrder, ['census', 'broadReleased', 'guard', 'broadReleased']);
+      assert.equal(JSON.stringify(result).includes('synthetic-secret'), false);
+      assert.ok(JSON.stringify(result.nativeCensusCounts).length < 220);
+    }
+    if (scenario === 'engine_census') assert.equal(result.nativeCensusCounts, undefined);
     if (scenario === 'success')
       assert.deepEqual(result, {
         ok: true,
@@ -665,7 +728,13 @@ try {
     ...(['promise_gc', 'promise_gc_settle'].includes(scenario)
       ? { gcCalls: 1, ...(scenario === 'promise_gc_settle' ? { resolvedAfterGc: true } : {}) }
       : {}),
-    ...(['engine_census', 'shared_deadline', 'shared_deadline_exhausted'].includes(scenario)
+    ...([
+      'engine_census',
+      'shared_deadline',
+      'shared_deadline_exhausted',
+      'census_counts',
+      'census_counts_unknown',
+    ].includes(scenario)
       ? { engineCount: 2, managerCount: 2, lightningWorkerCount: 2, lightningHostCount: 2 }
       : {}),
   });

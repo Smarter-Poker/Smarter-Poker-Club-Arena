@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 257143,
-      "sha256": "97ca85489aeb09297577ae2679a0576fb5c53b859b4a18b672012a3297ee1445"
+      "bytes": 257906,
+      "sha256": "4b687eccc9a2add97ed7ad924358e27d16f316f1a4c9194415aa744ac8d8877e"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1408,19 +1408,6 @@
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
   },
-  "browserDeliveryPoolSourceAudit20261030": {
-    "scope": "Source identity only: route the unchanged CSS and Diamond browser jobs to the existing dedicated GitHub-hosted delivery pool and unchanged verdict aggregates to standard GitHub-hosted runners. No financial/native profile, assertion, deadline, dependency, browser inventory, worker count, production artifact, SDK-capacity predicate or publish transaction changes.",
-    "previousCiPin": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
-    },
-    "currentCiPin": {
-      "bytes": 256475,
-      "sha256": "c3c9e44e73bc32a6e66ad133b3185edaf1526d93c694b30f25b5f010058d52ca"
-    },
-    "execution_performed": false,
-    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks and hosted timing remain necessary."
-  },
   "rosterFeeWindowIndexSourceAudit20261030": {
     "scope": "Add the private PG17 100-member tournament-fee physical-index qualification and report to required accounting shard4. Existing financial assertions, matrices, deadlines and historical evidence remain unchanged.",
     "previousCiPin": {
@@ -1449,6 +1436,19 @@
     },
     "qualification": "Source binding only; protected hosted checks required for integrated head. Roster migration and native seven-case fixture unchanged."
   },
+  "browserDeliveryPoolSourceAudit20261030": {
+    "scope": "Source identity only: route the unchanged CSS and Diamond browser jobs to the existing dedicated GitHub-hosted delivery pool and unchanged verdict aggregates to standard GitHub-hosted runners. No financial/native profile, assertion, deadline, dependency, browser inventory, worker count, production artifact, SDK-capacity predicate or publish transaction changes.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 256475,
+      "sha256": "c3c9e44e73bc32a6e66ad133b3185edaf1526d93c694b30f25b5f010058d52ca"
+    },
+    "execution_performed": false,
+    "qualification": "Current source binding only; no historical financial/native/live receipt is restamped. Required final-head checks and hosted timing remain necessary."
+  },
   "browserRosterIntegrationSourceAudit20261030": {
     "scope": "Current source identity after integrating protected roster-fee qualification with seven browser/aggregate runner routes. Preserve all native commands, financial assertions, budgets and historical evidence.",
     "currentCiPin": {
@@ -1457,5 +1457,41 @@
     },
     "execution_performed": false,
     "qualification": "Source binding only. Required final-head protected checks remain necessary; no historical native or production receipt restamped."
+  },
+  "rosterCashBatchSourceAudit20261030": {
+    "scope": "Add directly enforced roster cash native source/equivalence/index proof to required accounting shard4. Current CI identity only; preserve all historical financial inputs, assertions and qualification verdicts. No live or financial recertification inferred.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    }
+  },
+  "rosterFeeCashProtectedComposition20261030": {
+    "scope": "Compose protected-main tournament-fee proof with roster cash proof in required accounting shard4. Keep both native commands and every historical qualification/audit. Current CI source identity only; retained unchanged cash native7 proof is not production installation or a new financial certificate.",
+    "protectedMain": "ec783a2a91ef1778680e276b4616a6e85815d844",
+    "cashBranchCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    },
+    "protectedMainCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "composedCiPin": {
+      "bytes": 258359,
+      "sha256": "344509d091bb5af7c81fa1777dbfd41c2a4cb2de06c5f2d9b30b04762098b31f"
+    }
+  },
+  "browserRosterCashIntegrationSourceAudit20261030": {
+    "scope": "Current source identity after integrating protected funded roster cash qualification with seven nonfinancial runner routes. All financial steps, historical records and native evidence preserved.",
+    "currentCiPin": {
+      "bytes": 257906,
+      "sha256": "4b687eccc9a2add97ed7ad924358e27d16f316f1a4c9194415aa744ac8d8877e"
+    },
+    "execution_performed": false,
+    "qualification": "Source identity only; no historical qualification or production receipt restamped. Final-head required checks remain enforced."
   }
 }

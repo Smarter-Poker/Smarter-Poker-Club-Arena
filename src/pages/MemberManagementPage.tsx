@@ -611,7 +611,7 @@ export default function MemberManagementPage() {
           if (!live() || owner.queued) return;
           if (accessDenialRef.current.revision > accessRevision) return;
           // Record the denial epoch so an older explicit range read cannot
-          // restore permission. Identity and editor inputs remain locally owned.
+          // restore permission. Editable identity and editor inputs remain locally owned.
           const prior = accessDenialRef.current.detail;
           const current = currentDetailRef.current ?? prior ?? authority;
           const restricted = {
@@ -639,18 +639,21 @@ export default function MemberManagementPage() {
             authority.range.from === range.from &&
             authority.range.to === range.to
           ) {
-            setDetail((previous) =>
-              previous
-                ? {
-                    ...applyAccessDenial(previous, restricted),
-                    stats: restricted.capabilities.can_view_financials ? authority.stats : null,
-                    downline: restricted.capabilities.can_view_financials
-                      ? authority.downline
-                      : null,
-                    range: authority.range,
-                  }
-                : previous
-            );
+            const avatarUrl = authority.identity.avatar_url;
+            setDetail((previous) => {
+              if (!previous) return previous;
+              const refreshed = applyAccessDenial(previous, restricted);
+              return {
+                ...refreshed,
+                // The read-only portrait follows the verified record; notes retain their owner.
+                identity: refreshed.identity
+                  ? { ...refreshed.identity, avatar_url: avatarUrl }
+                  : refreshed.identity,
+                stats: restricted.capabilities.can_view_financials ? authority.stats : null,
+                downline: restricted.capabilities.can_view_financials ? authority.downline : null,
+                range: authority.range,
+              };
+            });
             setRefreshFailed(false);
             setRecordRevision((revision) => revision + 1);
           }

@@ -27,7 +27,9 @@ describe('create controls fail closed on union scope', () => {
     const control = PAGE.indexOf('<GameCreationActions');
     expect(gate).toBeGreaterThan(-1);
     expect(control).toBeGreaterThan(gate);
-    expect(PAGE.slice(gate, control).trim()).toBe('{canCreateClubGames && (');
+    expect(PAGE.slice(gate, control).trim()).toBe(
+      '{canCreateClubGames && (\n                    <div className="lobby-controls__operator-actions">'
+    );
     /* One mount, so there is no second, ungated control. */
     expect(PAGE.split('<GameCreationActions').length - 1).toBe(1);
   });
@@ -85,7 +87,7 @@ describe('create control per category', () => {
     expect(ACTIONS).toContain("action.target === 'table' && tableGame");
     expect(ACTIONS).toContain('`${path}&game=${encodeURIComponent(tableGame)}`');
     /* Dan 2026-09-02: desktop only. Unchanged by this work. */
-    expect(PAGE).toMatch(/<GameCreationActions[\s\S]{0,260}desktopOnly\s/);
+    expect(PAGE).toMatch(/<GameCreationActions[^>]*desktopOnly\s/);
     expect(ACTIONS_CSS).toMatch(
       /@media \(max-width: 900px\) \{\s*\.desktopOnly \{\s*display: none;/
     );

@@ -177,7 +177,7 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
 
   it('is wired into the live lobby before any measurement', () => {
     const spec = source('tests/e2e/production-mobile-lobby-chrome.spec.ts');
-    const openLobby = sliceMethod(spec, 'async function openLobby(page: Page)');
+    const openLobby = sliceMethod(spec, 'async function openLobby(page: Page, openSection = true)');
     const order = [
       'const offer = diamondEntryRead(page);',
       'await page.goto(',

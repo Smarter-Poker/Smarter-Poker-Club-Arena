@@ -160,13 +160,18 @@ echo CHECKPOINT_MUST_NOT_RUN
         previous = floor.policy(str(self.repo), old_sha, old_sha)
         current = self.owner_record()
         self.assertNotEqual(current['ownerWindowId'], previous['ownerWindowId'])
-        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+19800)
-        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
+        from datetime import datetime
+        self.assertEqual(current['activationEpoch'], int(datetime.fromisoformat('2026-10-30T13:30:00+00:00').timestamp()))
+        self.assertEqual(current['expiresEpoch'], int(datetime.fromisoformat('2026-10-30T19:00:00+00:00').timestamp()))
+        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 19800)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
         now = previous['expiresEpoch']+1
         with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
-        floor.check_window(current, now, now+8400, 'admit')
-        floor.check_window(current, current['activationEpoch'], now+8400, 'publish')
+        # The distinct later continuation does not fill or extend the gap
+        # after the historical request expires.
+        with self.assertRaises(ValueError): floor.check_window(current, now, now+8400, 'admit')
+        floor.check_window(current, current['activationEpoch'], current['activationEpoch']+8400, 'admit')
+        floor.check_window(current, current['activationEpoch'], current['activationEpoch']+8400, 'publish')
         with self.assertRaises(ValueError): floor.policy(str(self.repo), self.sha, old_sha)
         with self.assertRaises(ValueError): floor.policy(str(self.repo), old_sha, self.sha)
         # Pinned old source is unchanged by the newer authorization.
@@ -259,7 +264,12 @@ echo CHECKPOINT_MUST_NOT_RUN
         source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
         start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
         body=source[start:end]
-        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(r['activationEpoch']+30)+'; }\n'
+        # This carrier retains the owner's :53 notice restriction. Its
+        # activation floor opens at :30; that does not authorize a :30 notice.
+        notice = (r['activationEpoch']//3600)*3600 + 53*60
+        self.assertGreaterEqual(notice, r['activationEpoch'])
+        self.assertLess(notice, r['expiresEpoch'])
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(notice)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex
         def reason(serving):

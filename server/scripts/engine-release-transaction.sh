@@ -1460,6 +1460,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       return 0
       ;;
   esac
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then refuse_foreign_floor_owner; fi
   # A closed listener does not resolve a prior unknown native close. On a
   # resumed invocation, require this run's durable completed receipt before
   # either announcing or considering a fresh attachment.
@@ -1486,7 +1487,6 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       return 0
     fi
   fi
-  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then refuse_foreign_floor_owner; fi
   FLOOR_RESERVATION_FRESH=0
   if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
     [ "$FLOOR_DISPOSITION" != never-entered ] || FLOOR_RESERVATION_FRESH=1

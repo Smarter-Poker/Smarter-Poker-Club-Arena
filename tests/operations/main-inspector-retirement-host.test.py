@@ -370,6 +370,19 @@ class HostTests(unittest.TestCase):
         self.assertIn('|| die', gate_context)
         self.assertNotIn('"$RUN_ID" "$INVOCATION_ID"', gate_context)
 
+    def test_current_operation_rechecks_foreign_owner_before_inspector_action(self):
+        source = (REPO / 'server/scripts/engine-release-transaction.sh').read_text()
+        body = source.split('request_recovery_window() {', 1)[1]
+        lock = body.index("acquire_engine_lock 'one recovery announcement'")
+        owner = body.index('then refuse_foreign_floor_owner; fi', lock)
+        history = body.index('--entry-state "$RUN_ID"', lock)
+        action = body.index('"$RUN_ID" "$INVOCATION_ID"', lock)
+        announcement = body.index('record_floor_runtime_entry announcement-entry', lock)
+        self.assertLess(lock, owner)
+        self.assertLess(owner, history)
+        self.assertLess(history, action)
+        self.assertLess(action, announcement)
+
 
 if __name__ == '__main__':
     unittest.main()

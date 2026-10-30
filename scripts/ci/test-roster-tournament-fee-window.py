@@ -136,10 +136,21 @@ def main():
         q(body)
         q("BEGIN;SET LOCAL native.frozen='on';" + body, 'window_refused')
         q(body)
+        changed_reader = reader.replace('p_from IS NULL', 'p_from IS NOT NULL')
+        assert changed_reader != reader
+        q('BEGIN;SET LOCAL check_function_bodies=off;' + changed_reader + ';' + body, 'reader_changed')
+        q(body)
+        q('DROP INDEX ' + INDEX + ';CREATE INDEX ' + INDEX +
+          ' ON accounting_tournament_fee_sources(club_id,player_id) INCLUDE(charged_at,rake_credit);')
+        q(body, 'exact_catalog_required')
+        q('DROP INDEX ' + INDEX + ';')
+        q(preamble)
+        q(body)
         for role in ['anon', 'authenticated']:
             q('SET ROLE ' + role + ';SELECT count(*) FROM accounting_tournament_fee_sources;', 'permission denied')
         assert q('SET ROLE service_role;SELECT count(*) FROM accounting_tournament_fee_sources') == '100008'
-        cases += ['valid_prefix_resume_preserves_oid', 'invalid_prefix_and_freeze_refuse', 'existing_private_read_permissions_preserved']
+        cases += ['valid_prefix_resume_preserves_oid', 'invalid_prefix_and_freeze_refuse',
+                  'changed_reader_and_valid_wrong_key_refuse', 'existing_private_read_permissions_preserved']
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps({'cases': cases, 'plans': plans,
                                          'limitations': __doc__}, indent=2) + '\n')

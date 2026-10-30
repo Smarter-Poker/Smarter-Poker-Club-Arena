@@ -15,7 +15,14 @@ Private PostgreSQL 17 qualification executes the retained reader's exact edge
 query over 100 members with long histories and interval boundary cases. It
 checks identical totals and source rows, a natural index-only time-bounded scan,
 unchanged permissions, valid-prefix resume and invalid-index/freeze refusals.
+Changed reader definitions and a valid index with the wrong key also refuse.
 The required fourth accounting shard runs this proof and retains its report.
+
+The normal push hit the existing audit fixture's 20-second load-sensitive
+deadline. Reuse the already tested fixture correction from PR #8754: bound
+children at 45 seconds, retain 60 seconds for reporting/cleanup, and fail on
+process errors or signals before inspecting a partial report. Assertions and
+production deadlines are unchanged.
 
 This repairs one demonstrated physical read bottleneck. The cash reader and
 whole-response runtime still require separate qualification. Protected merge,

@@ -2083,6 +2083,9 @@ export interface HorseDecideOpts {
    *  on. Re-enable by default only after a recalibrated stratum resolves
    *  significant positive in the mirror and the human-field twin. */
   v62RiverBettorPolarity?: boolean;
+  /** League calibration arm (2026-10-30): tournament call bar facing a
+   *  single open is raised by this amount (0 < x <= 0.2); inert otherwise. */
+  tournamentFlatBump?: number;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -6076,6 +6079,9 @@ export class HorseLogic {
       tournamentAggression: (opts.v57TournamentAggression ?? true) !== false,
       cashAggression: (opts.v60CashPressure ?? true) !== false,
       isShortDeck: vi.isShortDeck === true,
+      ...(typeof opts.tournamentFlatBump === 'number'
+        ? { tournamentFlatBump: opts.tournamentFlatBump }
+        : {}),
       effectiveStackBB: (() => {
         let cover = 0;
         for (const p of gs.players) {

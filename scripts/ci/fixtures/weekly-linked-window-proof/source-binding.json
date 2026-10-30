@@ -39,15 +39,15 @@
     "5-seal.sql": "06ff51e8276387ccbb88b4ac5169b9e97780790ff3cd153f26af8245a1ed54a9",
     "linked84-boundary-bag-cases.sql": "b60d135b6609c75651a70067b382ae12ec240ba23ff1e35d11426c4f7d6933ce",
     "producer-control-cases.sql": "7814cfba8c412c948a06b8fbf46ea61fc77351e8494d1b6ee0399cab1bb0a109",
-    "generation-inputs.json": "51c5092a8295e6c000a3aeaaf8bab7dc0cc96b37744562d9bf2db122f32f2c3c",
-    "actual-partial-table-catalog.json": "48095523d02598745705c6b32cef6d01449c9aae4135f347054879cdf0c41b40",
+    "generation-inputs.json": "9e94cae7c24696951bc43e724ed4237c65b069296052e67c98c70a8521614136",
+    "actual-partial-table-catalog.json": "7f04c4b8034c69245c10bba6d7b3c845bd51dfc94b1ceaf2ba871fa67c82298b",
     "retained-logical-proof.json": "5f905d2f174d24896a2480e50f405348dc3c982e3de6d5743af1e4dbc6cb40e2",
     "assembler-cases.sql": "ce5c189c035d130427b8f8de4c7bc2c89cf634591670ee6380387b3effd6c361",
     "kind-before.txt": "4f665356be822173f192fdda222196e936fd785cbb650f729544c02ae5e0038f",
-    "admission-before.json": "d9e77e8e9ac00397c9b42f87b5005f8700953101b6e91a14b7913a9925f3576a",
+    "admission-before.json": "6387df9cd45d8fae8bb76faad256d0a0b17981642188a6169615eaf57adf22e0",
     "expected-footprints.json": "dfaec7f2219e1e78a6cb3e69cfde1dfa9319ff6ce350a3f71564d4cfa6147ffc",
     "kind-extension-cases.sql": "7186d0d9999aad0c5f1d0d059302f76a4713d14f9b3ff16322b293284b30596a",
-    "admission-after.json": "03427e34028699e3612f4ffcb2d3c82984bdeb73dfee8d405b2536fa9b7f0fcd",
+    "admission-after.json": "7faf25f7bb1df2420e777e6d68786a690fd7e457fdc91049f9ee4d655f0161e4",
     "strict-pre-READONLY15-ROLLBACK180.sql.in": "cad1d8494718785cd7df79f852ca2bc641f5884956eab7da736710febfcf8cb1",
     "README.md": "ad1fca14e5d38904369c71665478d640555ab5a74c4869da76d98961621b16dc",
     "validator-cases.sql": "7ec7b31ec7e08850ba30b73666e640d2bbe32c6d39947857b686ea3ee8272b4d",
@@ -74,5 +74,30 @@
     "observed_at": "2026-10-30T15:06:36.703113+00:00",
     "raw_sha256": "b040dc1b34690091da8371872507c62f8489924816571116af93a2ac9e0a1366"
   },
-  "book_complete": false
+  "book_complete": false,
+  "precommitFormattingSourceAudit20261030": {
+    "changes": {
+      "actual-partial-table-catalog.json": {
+        "before": "48095523d02598745705c6b32cef6d01449c9aae4135f347054879cdf0c41b40",
+        "after": "7f04c4b8034c69245c10bba6d7b3c845bd51dfc94b1ceaf2ba871fa67c82298b",
+        "parsed_values_and_SQL_strings_exactly_equal": true
+      },
+      "admission-after.json": {
+        "before": "03427e34028699e3612f4ffcb2d3c82984bdeb73dfee8d405b2536fa9b7f0fcd",
+        "after": "7faf25f7bb1df2420e777e6d68786a690fd7e457fdc91049f9ee4d655f0161e4",
+        "parsed_values_and_SQL_strings_exactly_equal": true
+      },
+      "admission-before.json": {
+        "before": "d9e77e8e9ac00397c9b42f87b5005f8700953101b6e91a14b7913a9925f3576a",
+        "after": "6387df9cd45d8fae8bb76faad256d0a0b17981642188a6169615eaf57adf22e0",
+        "parsed_values_and_SQL_strings_exactly_equal": true
+      },
+      "generation-inputs.json": {
+        "before": "51c5092a8295e6c000a3aeaaf8bab7dc0cc96b37744562d9bf2db122f32f2c3c",
+        "after": "9e94cae7c24696951bc43e724ed4237c65b069296052e67c98c70a8521614136",
+        "parsed_values_and_SQL_strings_exactly_equal": true
+      }
+    },
+    "reason": "Normal commit hook formatted four new JSON fixtures. Parsed values, embedded SQL strings, all source bodies and every qualification outcome remain byte-identical at their semantic string boundaries. No historical evidence restamped."
+  }
 }

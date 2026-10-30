@@ -2416,6 +2416,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * due moment does not spend one of the sixteen retry passes.
    */
   private horseRebuyInputInFlight = false;
+  protected override tournamentAbortBusinessTailsDrained(): boolean {
+    if (!super.tournamentAbortBusinessTailsDrained() || this.horseRebuyInputInFlight) return false;
+    if (this.horseRebuyPending !== undefined && this.horseRebuyPending.size !== 0) return false;
+    for (const queue of this.bountyRevealQueues.values())
+      if (queue.active !== null || queue.waiting.length !== 0 || queue.coalesceTimer !== null)
+        return false;
+    return true;
+  }
   /** Retain physical purchases until their responses settle; never cancel an unknown money outcome. */
   private horseRebuyPending?: Map<string, Promise<void>>;
   private horseRebuyInputAgain = false;

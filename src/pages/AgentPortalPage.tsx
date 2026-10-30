@@ -548,32 +548,24 @@ export default function AgentPortalPage() {
             >
               <h2 className={styles.glassHeading}>Credit Line</h2>
               <div className={styles.moneyRow}>
-                <span>Limit</span>
+                <span>Tracking Amount</span>
                 <b className="sc-ink--silver">
                   {wallet.isPrepaid ? 'Prepaid' : formatWalletChips(wallet.creditLimit)}
                 </b>
               </div>
               <div className={styles.moneyRow}>
-                <span>Used</span>
+                <span>Wallet Shortfall</span>
                 <b className="sc-ink--red">
                   {formatWalletChips(wallet.isPrepaid ? 0 : wallet.debt)}
-                </b>
-              </div>
-              <div className={styles.moneyRow}>
-                <span>Available</span>
-                <b className="sc-ink--green">
-                  {wallet.isPrepaid
-                    ? 'Not Applicable'
-                    : formatWalletChips(Math.max(0, wallet.creditLimit - wallet.debt))}
                 </b>
               </div>
               {!wallet.isPrepaid && wallet.debt > 0 && (
                 <div className={styles.debtRow} role="status">
                   <span>
-                    <strong className="sc-ink--red">Drawn Credit</strong>
+                    <strong className="sc-ink--red">Top-Up Before Rakeback</strong>
                     <small>
-                      {formatWalletChips(wallet.debt)} Chips Currently Used. Payable Invoices Appear
-                      Below.
+                      {formatWalletChips(wallet.debt)} Chips Needed To Restore The Agent Wallet.
+                      Weekly Invoices Exclude Rakeback And Appear Below.
                     </small>
                   </span>
                 </div>

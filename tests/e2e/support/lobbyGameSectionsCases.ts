@@ -5,11 +5,14 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
   for (const width of [375, 393, 1280]) {
     test(`Find Your Game separates two large doors at ${width}px`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 850 });
+      // ClubHomePage imports LobbyGameSections before its own stylesheets.
+      // The component's CSS must precede the page, command top and mobile pass,
+      // as it does in the production bundle; loading it last hides overrides.
       const css = [
+        'src/components/lobby/LobbyGameSections.css',
         'src/pages/ClubHomePage.css',
         'src/components/lobby/ClubLobbyCommandTop.css',
         'src/pages/ClubHomeMobilePremium.css',
-        'src/components/lobby/LobbyGameSections.css',
       ]
         .map((p) => readFileSync(p, 'utf8'))
         .join('\n');

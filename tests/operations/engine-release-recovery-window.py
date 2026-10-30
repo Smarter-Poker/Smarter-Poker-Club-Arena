@@ -258,17 +258,17 @@ class RecoveryWindowTests(unittest.TestCase):
     def test_eligible_release_reserves_and_requests_once_inside_lock(self):
         result, events = invoke(health_extra={'liveness': 'dead'})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'REQUEST', 'UNLOCK'])
 
     def test_unchanged_transaction_can_request_after_prior_resume_finishes(self):
         result, events = invoke(health_extra={'liveness': 'dead'}, ready=False, becomes_ready=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'REQUEST', 'UNLOCK'])
 
     def test_unknown_response_keeps_one_reservation_and_never_blind_retries(self):
         result, events = invoke(health_extra={'liveness': 'dead'}, unknown=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events.count('RESERVE:--cause engine-degraded'), 1)
+        self.assertEqual(events.count('RESERVE:--cause engine-degraded --include-eligibility'), 1)
         self.assertEqual(events.count('REQUEST'), 1)
         self.assertIn(': unknown;', result.stdout)
 
@@ -276,7 +276,7 @@ class RecoveryWindowTests(unittest.TestCase):
         result, events = invoke(health_extra={'liveness': 'dead'}, eligible=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         # Asked once; `unavailable` is remembered for this cause, not re-asked.
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'UNLOCK'])
 
     def test_already_serving_target_finishes_without_another_pause(self):
         result, events = invoke(health_extra={'liveness': 'dead'}, live=True)
@@ -315,7 +315,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
             with self.subTest(sign=sign):
                 result, events = invoke(health_extra=extra, maintenance_extra=maintenance)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility',
                                           'REQUEST', 'UNLOCK'])
                 self.assertIn('reason: engine-degraded ' + sign, result.stdout)
         result, events = invoke(health_extra={'liveness': 'dead'}, recovers_on_lock=True)
@@ -379,7 +379,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         # The emergency cause is the whole reservation; no --missed-window.
         result, events = invoke(missed=True, health_extra={'liveness': 'dead'})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'REQUEST', 'UNLOCK'])
 
     def test_the_newest_release_owns_the_window(self):
         requests = [('901-1', NEWER, 'activating', True)]
@@ -410,7 +410,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
             with self.subTest(requests=requests):
                 result, events = invoke(health_extra={'liveness': 'dead'}, superseded=NEWER, requests=requests)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility',
                                           'REQUEST', 'UNLOCK'])
 
     def test_a_spent_hour_waits_and_asks_again_later_without_announcing(self):
@@ -418,8 +418,8 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                                 calls=3, advance=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         # 0s asks, 30s is inside the deferral, 60s asks again.
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'UNLOCK',
-                                  'LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'UNLOCK',
+                                  'LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility', 'UNLOCK'])
         self.assertNotIn('REQUEST', events)
         self.assertIn('off-cycle window wanted (engine-degraded liveness=dead) but one was already announced in the last hour', result.stdout)
         result, events = invoke(health_extra={'liveness': 'dead'}, seal_answers=['rate-limited', '1800000000000'],
@@ -430,7 +430,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
     def test_one_window_per_release_whatever_its_reasons(self):
         result, events = invoke(health_extra={'liveness': 'dead'}, missed=True, calls=3, advance=120)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events.count('RESERVE:--cause engine-degraded'), 1)
+        self.assertEqual(events.count('RESERVE:--cause engine-degraded --include-eligibility'), 1)
         self.assertEqual(sum(e.startswith('RESERVE') for e in events), 1)
         self.assertEqual(events.count('REQUEST'), 1)
 
@@ -469,7 +469,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                             {'breaksSinceRestartCertified': 1}):
             with self.subTest(maintenance=maintenance):
                 result, events = invoke(health_extra={'liveness': 'dead'}, maintenance_extra=maintenance)
-                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
+                self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded --include-eligibility',
                                           'REQUEST', 'UNLOCK'])
 
 
@@ -499,13 +499,13 @@ class OwnerOrderedWindow(unittest.TestCase):
     def test_a_valid_owner_window_reserves_once_as_the_owner_cause(self):
         result, events = self.healthy(minute=53, owner_windows=owner_doc())
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent --include-eligibility', 'REQUEST', 'UNLOCK'])
         self.assertIn('reason: owner-ordered 2027-01-15-fixture', result.stdout)
 
     def test_an_immediate_owner_order_without_minute_restrictions_keeps_the_certified_path(self):
         result, events = self.healthy(minute=17, owner_windows=owner_doc(minutes=None))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'REQUEST', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent --include-eligibility', 'REQUEST', 'UNLOCK'])
         self.assertIn('reason: owner-ordered 2027-01-15-fixture', result.stdout)
 
     def test_it_waits_for_the_named_chicago_minute(self):
@@ -545,7 +545,7 @@ class OwnerOrderedWindow(unittest.TestCase):
     def test_a_spent_hour_still_waits_without_announcing(self):
         result, events = self.healthy(minute=53, owner_windows=owner_doc(), seal_answers=['rate-limited'])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK'])
+        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent --include-eligibility', 'UNLOCK'])
         self.assertNotIn('REQUEST', events)
 
     def test_once_the_named_commit_is_serving_the_window_grants_nothing(self):
@@ -596,7 +596,7 @@ class OwnerOrderedWindow(unittest.TestCase):
                                       requests=[('900-3', NEWER, 'active', True)])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('REQUEST', events)
-        self.assertNotIn('RESERVE:--cause urgent', events)
+        self.assertNotIn('RESERVE:--cause urgent --include-eligibility', events)
 
 class OwnerWitnessRealHistory(unittest.TestCase):
     def test_both_actual_selectors_remember_a_deleted_witness(self):

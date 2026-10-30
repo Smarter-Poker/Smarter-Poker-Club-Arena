@@ -1,36 +1,15 @@
 {
-  "retainedCheckpointMain35e20Composition20261029": {
-    "review": "Ordinary protected-main35e20c94f1 composition preserves its additive shard4 one-page retention fixture and server/tests classifier routing, together with this branch full-history server checkout. Both parents financial inputs, historical audit records, assertions, limits and qualification states are retained. Only the active current CI identity is composed here; existing financial commands are unchanged and no financial/native/live recertification is inferred from this pin update.",
-    "previousBranchWorkflow": {
-      "bytes": 251812,
-      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+  "clientExecutionBudgetSourceAudit20261029": {
+    "scope": "Source identity only: ten general and ten disjoint occupied-portrait CSS shards preserve the complete case inventory, plus requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
+    "previousCiPin": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     },
-    "protectedMainWorkflow": {
-      "bytes": 252075,
-      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    "currentCiPin": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
     },
-    "combinedWorkflow": {
-      "bytes": 252272,
-      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
-    },
-    "financial_qualification_performed_by_this_pin_refresh": false
-  },
-  "historicalRuntimeCheckoutAvailability20261029": {
-    "review": "Exact historical runtime qualification needs the fixed deployed EED Git object and its old source blobs before its existing bounded native run. Only server_shards Checkout gains fetch-depth 0; the immutable auto-deploy preflight retains depth 0 and removes blob:none plus its obsolete no-historical-reads comment. Parsed workflow comparison proves all other jobs, test selection, financial owner commands, budgets, matrices, assertions and joins unchanged. Refresh only this current CI input identity; preserve every historical audit and qualification state. This is not native financial requalification, installation or live certification.",
-    "changes": {
-      ".github/workflows/ci.yml": {
-        "previous": {
-          "bytes": 251615,
-          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
-        },
-        "current": {
-          "bytes": 251812,
-          "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
-        }
-      }
-    },
-    "all_other_parsed_workflow_fields_identical": true,
-    "financial_qualification_performed_by_this_pin_refresh": false
+    "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
   },
   "uiPresentationSelection20261028": {
     "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
@@ -1063,6 +1042,44 @@
   "clubPromoProtectedMainIntegration20261029": {
     "reason": "Preserve protected #8541 publisher/UI selection and current-main private-record/retention classifier additions together with the additive club promo journal regression. Current input identities only; all financial source pins, assertions, qualification states and historical audits are retained. Native financial/runtime source unchanged."
   },
+  "browserDeliveryParallelSourceAudit20261029": {
+    "scope": "Source identity refresh only for disjoint CSS Beat browser shards and capacity-proven SDK cleanup.",
+    "previousCiPin": {
+      "bytes": 250400,
+      "sha256": "100693b02ecb0d8e63695946426597d1e68c6c7e7a2705d0d6aa5b0fac252599"
+    },
+    "currentCiPin": {
+      "bytes": 251615,
+      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+    },
+    "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
+  },
+  "retentionPageAdmissionSourceAudit20261029": {
+    "reason": "Reviewed additive required native one-page retention step and exact fixture classification. Current source identities and reviewed nested binding audit only; preserve financial assertions, historical qualification states, receipts and ledger installation. No financial or live certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 251615,
+          "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
+        },
+        "current": {
+          "bytes": 252075,
+          "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+        }
+      }
+    }
+  },
+  "privateGatewaySafetySourceAudit20261029": {
+    "review": "Reviewed additive exact gateway native runners/SQL fixture classification and Accounting shard2 private PostgreSQL/pg_net build prerequisites. Existing financial source, fixture amounts, assertions, qualification commands, matrix and deadlines remain unchanged. Current input identity only; not a financial, installed or live recertification.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "previous": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac",
+        "current": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
+      }
+    ],
+    "financial_recertification": false
+  },
   "v31ControllerContractEnforcement20261029": {
     "reason": "Adds one directly triggered shard-1 Python controller test step for V31 public feature and final model/index/input-draft contracts. Existing accounting/native/financial test commands, assertions, deadlines, joins and historical evidence are unchanged. This updates current workflow byte identity only and is not a financial or live certificate.",
     "file": ".github/workflows/ci.yml",
@@ -1075,18 +1092,6 @@
       "sha256": "25abae3ed5587e648f5c6be9a148cb1cb5c6aa145da9733570c5720d1e62fb8e"
     },
     "execution_performed": false
-  },
-  "browserDeliveryParallelSourceAudit20261029": {
-    "scope": "Source identity refresh only for disjoint CSS Beat browser shards and capacity-proven SDK cleanup.",
-    "previousCiPin": {
-      "bytes": 250400,
-      "sha256": "100693b02ecb0d8e63695946426597d1e68c6c7e7a2705d0d6aa5b0fac252599"
-    },
-    "currentCiPin": {
-      "bytes": 251615,
-      "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
-    },
-    "qualification": "Not financial recertification. Existing financial inputs, commands, assertions, historical audits, qualification states and verdicts are preserved."
   },
   "v31Public215ProtectedMainComposition20261029": {
     "reason": "Compose protected main browser-check sharding with the additive V31 controller check. Preserve both audit histories and every non-CI input, financial command, fixture, assertion and qualification status. Current merged CI byte identity only; not financial recertification or live proof.",
@@ -1107,8 +1112,40 @@
     },
     "execution_performed": false
   },
-  "retentionPageAdmissionSourceAudit20261029": {
-    "reason": "Reviewed additive required native one-page retention step and exact fixture classification. Current source identities and reviewed nested binding audit only; preserve financial assertions, historical qualification states, receipts and ledger installation. No financial or live certificate restamp.",
+  "v31Public215RetentionPageComposition20261029": {
+    "reason": "Compose the existing R7 controller qualification step with protected-main retention one-page native fixture. Preserve both parent audit records and all non-CI file pins. Current workflow fingerprint only; not financial or production qualification.",
+    "currentWorkflow": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    }
+  },
+  "privateGatewayProtectedMainComposition20261029": {
+    "reason": "Preserve both parent source-audit records and compose protected-main V31 public215 qualification with isolated gateway PostgreSQL prerequisites. Only the current shared CI fingerprint changes; no financial SQL, fixture, assertions or historical qualification is restamped.",
+    "protectedMain": "3252cbaba3dfea79bf9f43e7890d299db36664fb",
+    "currentWorkflow": {
+      "bytes": 252926,
+      "sha256": "eaafaa33a7c201c8a0d4bf3fbbb0b3325e92970bbb6eced5a7790fdcbd078c85"
+    },
+    "financial_recertification": false
+  },
+  "retainedCheckpointMain35e20Composition20261029": {
+    "review": "Ordinary protected-main35e20c94f1 composition preserves its additive shard4 one-page retention fixture and server/tests classifier routing, together with this branch full-history server checkout. Both parents financial inputs, historical audit records, assertions, limits and qualification states are retained. Only the active current CI identity is composed here; existing financial commands are unchanged and no financial/native/live recertification is inferred from this pin update.",
+    "previousBranchWorkflow": {
+      "bytes": 251812,
+      "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
+    },
+    "protectedMainWorkflow": {
+      "bytes": 252075,
+      "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+    },
+    "combinedWorkflow": {
+      "bytes": 252272,
+      "sha256": "9e50dac1bb0b809e90e787032b3b3f8aef2d90cf41a0d2810a550047b95ea4be"
+    },
+    "financial_qualification_performed_by_this_pin_refresh": false
+  },
+  "historicalRuntimeCheckoutAvailability20261029": {
+    "review": "Exact historical runtime qualification needs the fixed deployed EED Git object and its old source blobs before its existing bounded native run. Only server_shards Checkout gains fetch-depth 0; the immutable auto-deploy preflight retains depth 0 and removes blob:none plus its obsolete no-historical-reads comment. Parsed workflow comparison proves all other jobs, test selection, financial owner commands, budgets, matrices, assertions and joins unchanged. Refresh only this current CI input identity; preserve every historical audit and qualification state. This is not native financial requalification, installation or live certification.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
@@ -1116,18 +1153,13 @@
           "sha256": "3d754fdc3aac8fe503e89ed3a1064055f0fe1ba508083b8f1281e913d3019d3f"
         },
         "current": {
-          "bytes": 252075,
-          "sha256": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac"
+          "bytes": 251812,
+          "sha256": "b036cfcbbb225d30b8348cb6e58e190748fe1235b1fbc71d35eff8a7b82ea3ae"
         }
       }
-    }
-  },
-  "v31Public215RetentionPageComposition20261029": {
-    "reason": "Compose the existing R7 controller qualification step with protected-main retention one-page native fixture. Preserve both parent audit records and all non-CI file pins. Current workflow fingerprint only; not financial or production qualification.",
-    "currentWorkflow": {
-      "bytes": 252352,
-      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
-    }
+    },
+    "all_other_parsed_workflow_fields_identical": true,
+    "financial_qualification_performed_by_this_pin_refresh": false
   },
   "retainedCheckpointV31MainComposition20261029": {
     "review": "Ordinary protected-main f8fbd791a1 composition preserves its additive V31 public feature/model-index controller contract step alongside the recovery full-history server checkout. Both parents financial source inputs, historical audits, assertions, deadlines and qualification states remain exact. Only active current CI identity is composed; no financial, native or live recertification is inferred from this pin update.",
@@ -1157,44 +1189,6 @@
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states and verdicts are preserved."
   },
-  "certificationClubScope20261029": {
-    "reason": "Add exact catalog lock-concurrency regression and full welcome cleanup qualification to accounting shard 4. Existing financial commands, assertions, budgets and historical qualification remain unchanged. This records current workflow bytes, not a financial or live certificate.",
-    "previous": {
-      "bytes": 252352,
-      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
-    },
-    "current": {
-      "bytes": 253174,
-      "sha256": "539969e6656725b957758955f6bc568ebe9cfd55b35a553676b6996b6e488c3d"
-    }
-  },
-  "certificationClubScopeMainComposition20261029": {
-    "reason": "Compose scoped certification cleanup Accounting4 regression with protected-main CSS5, Diamond3, ca-linux-delivery and retained-checkpoint full-history gates. Preserve both parent audit histories, financial sources, assertions and qualification verdicts. Current workflow source identity only; not execution, installation or financial recertification.",
-    "currentWorkflow": {
-      "bytes": 253778,
-      "sha256": "c0afa4bade258b3241bbbd8713bf8ccfdccf9e2d0b5874e5969873130ad91e8f"
-    }
-  },
-  "privateGatewaySafetySourceAudit20261029": {
-    "review": "Reviewed additive exact gateway native runners/SQL fixture classification and Accounting shard2 private PostgreSQL/pg_net build prerequisites. Existing financial source, fixture amounts, assertions, qualification commands, matrix and deadlines remain unchanged. Current input identity only; not a financial, installed or live recertification.",
-    "changes": [
-      {
-        "file": ".github/workflows/ci.yml",
-        "previous": "9015b217751436d5a10544f1c932817cba60de1c0a7df586ef30084d943da3ac",
-        "current": "6ee450dd928ec40a041d6e7539aa39f2cbbf571c2b858913e23560786789999b"
-      }
-    ],
-    "financial_recertification": false
-  },
-  "privateGatewayProtectedMainComposition20261029": {
-    "reason": "Preserve both parent source-audit records and compose protected-main V31 public215 qualification with isolated gateway PostgreSQL prerequisites. Only the current shared CI fingerprint changes; no financial SQL, fixture, assertions or historical qualification is restamped.",
-    "protectedMain": "3252cbaba3dfea79bf9f43e7890d299db36664fb",
-    "currentWorkflow": {
-      "bytes": 252926,
-      "sha256": "eaafaa33a7c201c8a0d4bf3fbbb0b3325e92970bbb6eced5a7790fdcbd078c85"
-    },
-    "financial_recertification": false
-  },
   "privateGatewayShardRouteComposition20261029": {
     "reason": "Preserve both parent audit histories while composing protected-main CSS five-shard and Diamond three-shard required joins, delivery runner routes and native qualification inputs. Only current workflow or derived binding identity changes. Financial SQL, assertions and historical qualification states are unchanged.",
     "protectedMain": "4aaa198afcb605700201ebffa92e45cf7ae13132",
@@ -1214,14 +1208,6 @@
     ],
     "financial_recertification": false
   },
-  "mttFinalMainComposition20261029": {
-    "reason": "Compose protected main private-gateway build prerequisites with MTT certification regression qualification. Preserve both parent audit histories, financial sources, assertions and verdicts. Current workflow source identity only, not execution or financial recertification.",
-    "protectedMain": "ea9c894938e383c4b08b3f4fae965e93e8fde87d",
-    "currentWorkflow": {
-      "bytes": 254352,
-      "sha256": "0658909d1ece50746c39aa2085de886dd29f21b6386ef3ea06723a7a5183b95a"
-    }
-  },
   "warmClientRunnerAdmissionSourceAudit20261029": {
     "scope": "Source identity only: client CI and publication preparation use standard warm GitHub-hosted runner admission; bounded Vitest workers preserve existing test and financial requirements.",
     "previousCiPin": {
@@ -1234,14 +1220,6 @@
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
   },
-  "mttWarmRunnerMainComposition20261029": {
-    "reason": "Compose protected main warm hosted runner admission with the MTT qualification and overnight floor. Preserve both parent audit histories and every financial assertion and qualification state. Current source identity only, not financial recertification.",
-    "protectedMain": "23a8c4dc1b9e78b319b4693c3e414c95f993572b",
-    "currentWorkflow": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
-    }
-  },
   "installedTournamentSqlRecording20261030": {
     "reason": "Add existing qualified certification club-scope concurrency and business regressions to accounting shard4 while recording two already-installed outage migrations. All existing financial commands, assertions, budgets, matrices, historical audits and qualification states remain unchanged. Current workflow source identity only; no financial recertification or production installation.",
     "previous": {
@@ -1251,50 +1229,6 @@
     "current": {
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
-    }
-  },
-  "clientExecutionBudgetSourceAudit20261029": {
-    "scope": "Source identity only: ten general and ten disjoint occupied-portrait CSS shards preserve the complete case inventory, plus requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
-    "previousCiPin": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
-    },
-    "currentCiPin": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
-    },
-    "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
-  },
-  "cancellationAdmissionSourceAudit20261030": {
-    "scope": "Adds private PostgreSQL cancellation admission/refund qualification to existing accounting shard4; no existing financial assertion, job selector, or result changed.",
-    "file": ".github/workflows/ci.yml",
-    "bindings": [
-      {
-        "section": "files",
-        "previous": {
-          "bytes": 251814,
-          "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
-        },
-        "current": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
-      }
-    ]
-  },
-  "cancellationProtectedMainComposition20261030": {
-    "scope": "Combine existing installed-SQL qualification with cancellation admission in accounting shard4; preserve all financial assertions and both source histories.",
-    "candidate": "414aa72ca953ca40d7138a67b3dc366cf73bcd86",
-    "main": "e8202fac9603a28e340c1f6def8c097785278cf7",
-    "workflow": {
-      "bytes": 253449,
-      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
-    }
-  },
-  "cancellationQualifiedMainComposition20261030": {
-    "scope": "Preserve protected current-main worker and CSS partition changes, installed player-lock source, and cancellation native enforcement; active workflow identity only, both prior histories retained.",
-    "candidate": "88c3a7bff0be570e975095b68a2ab2bd2f055955",
-    "main": "09b2550c1777da01e54e6b91dfe538c055936f56",
-    "workflow": {
-      "bytes": 254099,
-      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
     }
   },
   "requiredNativeRunnerProfile20261030": {
@@ -1344,6 +1278,94 @@
     "currentCiPin": {
       "bytes": 253759,
       "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    }
+  },
+  "restoredRecoveryAndProtectedMainSourceAudit20261030": {
+    "scope": "Source identity only after ordinary integration of protected3f2f6014bb50e3f660afd3b91aed18e40415b395. Preserve Union payer defaults, current Union regression, publisher16-shard qualification, reader v5, cash behavior and required native runner profiles. No historical financial or live recertification.",
+    "protectedMain": "3f2f6014bb50e3f660afd3b91aed18e40415b395",
+    "qualifiedRecoveryParent": "7e7cc7e520f559e474312acc870258ed297132ce",
+    "composedCi": {
+      "bytes": 254219,
+      "sha256": "f81151e8ea0a01cdda1e2f46acf95719e4701fdf9358ecf96c125960d4fb4050"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "certificationClubScope20261029": {
+    "reason": "Add exact catalog lock-concurrency regression and full welcome cleanup qualification to accounting shard 4. Existing financial commands, assertions, budgets and historical qualification remain unchanged. This records current workflow bytes, not a financial or live certificate.",
+    "previous": {
+      "bytes": 252352,
+      "sha256": "5a819e1fc8653c1dc0c3f70c8d29816738b23e0f69eec6d3268b4055b1e8bd3e"
+    },
+    "current": {
+      "bytes": 253174,
+      "sha256": "539969e6656725b957758955f6bc568ebe9cfd55b35a553676b6996b6e488c3d"
+    }
+  },
+  "certificationClubScopeMainComposition20261029": {
+    "reason": "Compose scoped certification cleanup Accounting4 regression with protected-main CSS5, Diamond3, ca-linux-delivery and retained-checkpoint full-history gates. Preserve both parent audit histories, financial sources, assertions and qualification verdicts. Current workflow source identity only; not execution, installation or financial recertification.",
+    "currentWorkflow": {
+      "bytes": 253778,
+      "sha256": "c0afa4bade258b3241bbbd8713bf8ccfdccf9e2d0b5874e5969873130ad91e8f"
+    }
+  },
+  "mttFinalMainComposition20261029": {
+    "reason": "Compose protected main private-gateway build prerequisites with MTT certification regression qualification. Preserve both parent audit histories, financial sources, assertions and verdicts. Current workflow source identity only, not execution or financial recertification.",
+    "protectedMain": "ea9c894938e383c4b08b3f4fae965e93e8fde87d",
+    "currentWorkflow": {
+      "bytes": 254352,
+      "sha256": "0658909d1ece50746c39aa2085de886dd29f21b6386ef3ea06723a7a5183b95a"
+    }
+  },
+  "mttWarmRunnerMainComposition20261029": {
+    "reason": "Compose protected main warm hosted runner admission with the MTT qualification and overnight floor. Preserve both parent audit histories and every financial assertion and qualification state. Current source identity only, not financial recertification.",
+    "protectedMain": "23a8c4dc1b9e78b319b4693c3e414c95f993572b",
+    "currentWorkflow": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    }
+  },
+  "cancellationAdmissionSourceAudit20261030": {
+    "scope": "Adds private PostgreSQL cancellation admission/refund qualification to existing accounting shard4; no existing financial assertion, job selector, or result changed.",
+    "file": ".github/workflows/ci.yml",
+    "bindings": [
+      {
+        "section": "files",
+        "previous": {
+          "bytes": 251814,
+          "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+        },
+        "current": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
+      }
+    ]
+  },
+  "cancellationProtectedMainComposition20261030": {
+    "scope": "Combine existing installed-SQL qualification with cancellation admission in accounting shard4; preserve all financial assertions and both source histories.",
+    "candidate": "414aa72ca953ca40d7138a67b3dc366cf73bcd86",
+    "main": "e8202fac9603a28e340c1f6def8c097785278cf7",
+    "workflow": {
+      "bytes": 253449,
+      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
+    }
+  },
+  "cancellationQualifiedMainComposition20261030": {
+    "scope": "Preserve protected current-main worker and CSS partition changes, installed player-lock source, and cancellation native enforcement; active workflow identity only, both prior histories retained.",
+    "candidate": "88c3a7bff0be570e975095b68a2ab2bd2f055955",
+    "main": "09b2550c1777da01e54e6b91dfe538c055936f56",
+    "workflow": {
+      "bytes": 254099,
+      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
+    }
+  },
+  "originalRecoveryProtectedMainComposition20261030": {
+    "scope": "Current source identity only after ordinary protected-main integration. Preserve both parent financial histories, assertions, audits and qualification states. No historical financial, installed or live recertification.",
+    "protectedMain": "6b4b49e216ae78d07348661f7c296242732e16e9",
+    "recoveryParent": "02590229d338b5eba32d5be7c2c6e83044c79fe9",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "composedCi": {
+      "bytes": 255032,
+      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
     }
   },
   "paidClientRunnerAdmissionSourceAudit20261030": {

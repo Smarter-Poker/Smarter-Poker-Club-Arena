@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253759,
-      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+      "bytes": 255345,
+      "sha256": "64ff283e3121e9a62cf45a3fb03b712b6ab31b35f5c14d811cd07ccd9fe8bf3c"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1223,5 +1223,17 @@
       "bytes": 253759,
       "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
     }
+  },
+  "paidClientRunnerAdmissionSourceAudit20261030": {
+    "scope": "Current source identity only: thirteen existing nonfinancial CI control/client/browser runner selectors use the approved four-core pool behind exact owner and repository ID guards; all other workflow properties retained.",
+    "previousCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    },
+    "currentCiPin": {
+      "bytes": 255345,
+      "sha256": "64ff283e3121e9a62cf45a3fb03b712b6ab31b35f5c14d811cd07ccd9fe8bf3c"
+    },
+    "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical receipt restamp. Actual paid admission improvement is unproven; protected hosted qualification remains mandatory."
   }
 }

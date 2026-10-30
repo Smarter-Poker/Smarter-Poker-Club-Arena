@@ -48,7 +48,7 @@ on:
 
 jobs:
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -252,7 +252,7 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -302,7 +302,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a

@@ -12,7 +12,7 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('uses warm hosted client delivery without moving accounting or server qualification', () => {
+  it('uses exact approved paid client routes without moving financial qualification', () => {
     const paid = (label: string) =>
       "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
       label +
@@ -36,14 +36,14 @@ describe('browser qualification parallel delivery', () => {
       'css-beats-e2e',
       'diamond-playfield-e2e',
     ])
-      expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     for (const key of ['accounting_postgres', 'server_shards'])
       expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
-      expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
+      expect(publishing.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
-      expect(transaction.jobs[key]['runs-on']).toBe('ubuntu-latest');
+      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(4);
     expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
     for (const key of [

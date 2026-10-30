@@ -49,6 +49,7 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${club}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     // A visible game row is the lobby's readiness at every width (the wallets
     // button the phone check waits on is hidden at 1440px, run 40153826373).
     await expect(
@@ -68,7 +69,6 @@ for (const width of [393, 1440]) {
     // holds Join Lightning: the exact path #7879 repaired. Games named
     // "Lightning" that are not running Lightning offer Join Game instead, so
     // the first panel that offers an enabled Join Lightning is the door.
-    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     if (await allGames.count()) await allGames.click();
     // A row is chosen by its live mode, not its name (post-deploy run

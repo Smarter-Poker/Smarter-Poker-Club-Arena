@@ -160,17 +160,25 @@ echo CHECKPOINT_MUST_NOT_RUN
         previous = floor.policy(str(self.repo), old_sha, old_sha)
         current = self.owner_record()
         self.assertNotEqual(current['ownerWindowId'], previous['ownerWindowId'])
-        # 2026-10-30 13:40 UTC continuation (the :55-break release of the heap
-        # fix, V60, V62 and V61) follows the 00:00 and 05:30 UTC entries.
-        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+49200)
-        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
+        # A current carrier can belong to a later finite owner. Historical
+        # target dates stay immutable rather than forcing future restamps.
+        source = json.loads((ROOT/MANIFEST).read_text())
+        from datetime import datetime
+        epoch = lambda value: int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp())
+        self.assertEqual(current['activationEpoch'], epoch(source['activationAt']))
+        self.assertEqual(current['expiresEpoch'], epoch(source['expiresAt']))
+        self.assertGreaterEqual(current['activationEpoch'], previous['expiresEpoch'])
+        self.assertGreaterEqual(current['expiresEpoch']-current['activationEpoch'], 420)
+        self.assertLessEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
-        now = previous['expiresEpoch']+1
-        with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
-        # The old entry is expired while the new one is not yet open: neither
-        # admits. The new one admits from its own activation instant.
-        with self.assertRaises(ValueError): floor.check_window(current, now, now+8400, 'admit')
+        # Preserve the incoming peer's gap control: an expired predecessor
+        # cannot open a future successor early.
+        gap = previous['expiresEpoch']+1
+        with self.assertRaises(ValueError): floor.check_window(previous, gap, gap+8400, 'admit')
+        if gap < current['activationEpoch']:
+            with self.assertRaises(ValueError): floor.check_window(current, gap, gap+8400, 'admit')
         now = current['activationEpoch']
+        with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
         floor.check_window(current, now, now+8400, 'admit')
         floor.check_window(current, current['activationEpoch'], now+8400, 'publish')
         with self.assertRaises(ValueError): floor.policy(str(self.repo), self.sha, old_sha)
@@ -276,7 +284,7 @@ echo CHECKPOINT_MUST_NOT_RUN
         now=r['activationEpoch']+30
         while minutes and datetime.fromtimestamp(now,timezone.utc).astimezone(ZoneInfo('America/Chicago')).minute not in minutes:
             now+=60
-        self.assertLess(now,r['expiresEpoch'])
+        self.assertLess(now+420,r['expiresEpoch'])
         prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(now)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex

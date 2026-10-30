@@ -1039,7 +1039,7 @@ test.describe('Production Cashier Certification', () => {
       contentType: 'application/json',
     });
   });
-  test('prints the existing tracking-only credit line beneath member wallets without moving chips', async ({
+  test('prints the existing agent credit agreement beneath member wallets without moving chips', async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);

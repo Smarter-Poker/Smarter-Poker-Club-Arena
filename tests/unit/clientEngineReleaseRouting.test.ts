@@ -99,7 +99,7 @@ describe('client delivery never inherits the engine activation window', () => {
     expect(classifyChangedPaths(['src/services/DiamondGamesService.ts']).server).toBe(true);
   });
 
-  it('keeps client publication gated only by its own build and tests', () => {
+  it('keeps client publication independent of engine cutover with exact-target scheduling', () => {
     expect(publisher.on.push.branches).toEqual(['main']);
     expect(publisher.on).not.toHaveProperty('schedule');
     expect(publisher.on).not.toHaveProperty('workflow_run');
@@ -108,6 +108,7 @@ describe('client delivery never inherits the engine activation window', () => {
       'client-tests',
       'build-and-store',
       'build-record-gateway',
+      'publication-floor',
     ]);
     const executable = [...Object.values(publisher.jobs), ...Object.values(transaction.jobs)]
       .flatMap((job: any) => job.steps ?? [])

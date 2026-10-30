@@ -1,4 +1,4 @@
-import { supabase } from '../services/supabase.js';
+import { maintenanceSupabase } from '../services/supabase.js';
 import { isDeterministicSettlementRefusal } from './settlementRefusal.js';
 import {
   verifySatelliteSettlementReceipt,
@@ -23,6 +23,13 @@ interface SatelliteSettlementRetryOptions {
   attempts?: number;
   wait?: (delayMs: number) => Promise<void>;
 }
+
+// Satellite settlement permits 30 seconds in PostgreSQL and its serialized
+// resolver permits 45. Use the existing 50-second authority transport for both,
+// as ordinary terminal settlement does. A lost response remains unknown; this
+// does not widen the ordinary game-data deadline or change replay identity.
+
+const authority = maintenanceSupabase;
 
 const defaultWait = (delayMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -76,7 +83,7 @@ export async function requestSatelliteSettlementReceipt(
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       attemptedWrites++;
-      const { data, error } = await supabase.rpc('fn_settle_satellite_tournament', request);
+      const { data, error } = await authority.rpc('fn_settle_satellite_tournament', request);
       if (!error) {
         const receipt = verifySatelliteSettlementReceipt(data, tournamentId, observedWinnerId);
         if (receipt) return receipt;
@@ -93,7 +100,7 @@ export async function requestSatelliteSettlementReceipt(
   }
 
   try {
-    const { data, error } = await supabase.rpc('fn_resolve_satellite_settlement_outcome', request);
+    const { data, error } = await authority.rpc('fn_resolve_satellite_settlement_outcome', request);
     if (error) {
       lastFailure = `${lastFailure}; serialized outcome check failed: ${errorMessage(error)}`;
     } else {

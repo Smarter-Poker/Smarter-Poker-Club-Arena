@@ -166,6 +166,15 @@ mapfile() {
       chmodSync(join(generation, 'engine-release-transaction.sh'), 0o755);
       writeFileSync(join(generation, 'control-sha'), `${controlSha}\n`);
       writeFileSync(
+        join(generation, 'prewarm-engine-image.sh'),
+        readFileSync(resolve(root, 'server/scripts/prewarm-engine-image.sh'))
+      );
+      chmodSync(join(generation, 'prewarm-engine-image.sh'), 0o755);
+      writeFileSync(
+        join(generation, 'engine-release-activation-floor.py'),
+        readFileSync(resolve(root, 'server/scripts/engine-release-activation-floor.py'))
+      );
+      writeFileSync(
         join(requestRoot, `${runKey}.request`),
         `${[
           targetSha,
@@ -298,6 +307,7 @@ set -euo pipefail
 case "$*" in
   *' fetch --no-tags '*) exit 0 ;;
   *" rev-parse --verify origin/main^{commit}") printf '%s\\n' '${targetSha}' ;;
+  *' ls-tree '*' -- server/release/activation-floor.json') exit 0 ;;
   *' cat-file -e '*) exit 0 ;;
   *' merge-base --is-ancestor '*) exit 0 ;;
   *' log '*' -1 --format=%H -- '*) printf '%s\\n' '${targetSha}' ;;
@@ -329,6 +339,7 @@ esac
 if [ "\${1:-}" = info ]; then exit 0; fi
 if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
   if [ "\${3:-}" = --format ]; then
+    if [ "\${4:-}" = '{{.Id}}' ]; then printf '%s\\n' '${targetImage}'; exit 0; fi
     if [ "\${4:-}" = '{{json .Config.Env}}' ]; then
       [ "\${5:-}" = '${sourceImage}' ] || exit 92
       printf '%s\\n' '["GIT_COMMIT_SHA=${sourceSha}"]'

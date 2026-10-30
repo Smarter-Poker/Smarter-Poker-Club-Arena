@@ -26,6 +26,143 @@ RESULT = {'schema': 1, 'runId': REQUEST['runKey'], 'sha': REQUEST['releaseSha'],
           'private_metadata': {'never_export': 'secret fixture'}}
 
 
+class ServingRoleTests(unittest.TestCase):
+    def test_serving_role_exact_selector(self):
+        request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
+                   'instanceId':'1-12345678'}
+        self.assertEqual(R.selection(request), request)
+
+
+    def test_serving_role_selector_refuses_every_extra_or_changed_identity(self):
+        good={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        bad=[None,[],{},dict(good,runKey=REQUEST['runKey']),dict(good,host='localhost'),
+             dict(good,port=9229),dict(good,path='/proc'),dict(good,releaseSha='a'*40),
+             dict(good,instanceId='1-1234567'),dict(good,instanceId='2-12345678'),
+             dict(good,instanceId='1-ABCDEF12'),dict(good,instanceId=1)]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for request in bad:
+            with self.subTest(request=request),self.assertRaises(ValueError):R.selection(request)
+        for old in [REQUEST,dict(REQUEST,mode='pending_transaction'),dict(REQUEST,mode='legacy_checkpoint_inspector')]:
+            self.assertEqual(R.selection(old),old)
+
+    def test_serving_role_dispatch_never_opens_transaction_files(self):
+        request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        sentinel={'schema':'current-serving-inspector-role/v1','readOnly':True,**request,
+            'inspectorOwner':'unknown','limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        with patch.object(R,'serving_role_remote',return_value=sentinel,create=True) as reader, \
+                patch.object(R.os,'open',side_effect=AssertionError('transaction file access')):
+            self.assertEqual(R.remote(request),sentinel)
+        reader.assert_called_once_with(request)
+
+
+    def setUp(self):
+        self.request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'1234','restarts':'0'}
+        self.health={'source':R.EED,'instance':self.request['instanceId']}
+        self.boot='12345678-1234-1234-1234-123456789abc'
+
+    @contextlib.contextmanager
+    def bound(self,role='main',overrides=None):
+        defaults={'_serving_boot_id':{'return_value':self.boot},
+            'inspector_identity':{'return_value':self.identity},
+            'pending_tcp_health':{'return_value':self.health},
+            '_kernel_pid_stat':{'return_value':'987654'},
+            'inspector_command':{'return_value':(R.EED+'\n').encode()},
+            'pending_socket_owner':{'return_value':role}}
+        defaults.update(overrides or {})
+        with contextlib.ExitStack() as stack:
+            mocks={name:stack.enter_context(patch.object(R,name,create=True,**options))
+                   for name,options in defaults.items()}
+            for name in ['pending_tcp_presence','inspector_remote','pending_remote','read_json']:
+                stack.enter_context(patch.object(R,name,side_effect=AssertionError('forbidden read '+name)))
+            yield mocks
+
+    def test_serving_role_exact_minimal_private_reply_and_shared_deadline(self):
+        for role in ['main','other_container_process','unknown']:
+            with self.subTest(role=role),self.bound(role) as mocks:
+                answer=R.serving_role_remote(self.request)
+                self.assertEqual(answer,{'schema':'current-serving-inspector-role/v1','readOnly':True,
+                    **self.request,'inspectorOwner':role,
+                    'limitation':'Kernel role only; no inspector ownership, provenance or action authority.'})
+                self.assertEqual(R.validate_reply(answer,self.request),answer)
+                text=json.dumps(answer)
+                for private in [self.boot,self.identity['container'],self.identity['image'],'987654','hostPid','/proc','runKey']:
+                    self.assertNotIn(private,text)
+                owner=mocks['pending_socket_owner'];owner.assert_called_once()
+                self.assertEqual(owner.call_args.args[0],self.identity)
+                deadline=owner.call_args.args[1]
+                self.assertGreater(deadline,R.time.monotonic());self.assertLessEqual(deadline-R.time.monotonic(),8)
+                for name in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+                    self.assertGreaterEqual(mocks[name].call_count,1)
+                    for call in mocks[name].call_args_list:
+                        self.assertIn(deadline,call.args)
+                for call in mocks['inspector_command'].call_args_list:
+                    self.assertEqual(call.args[0][:3],['docker','image','inspect'])
+                    self.assertEqual(call.args[0][-1],self.identity['image'])
+
+    def test_serving_role_identity_mutations_refuse_even_unknown_kernel(self):
+        cases=[('_serving_boot_id',[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']),
+               ('_kernel_pid_stat',['987654','987655']),
+               ('pending_tcp_health',[self.health,dict(self.health,source='a'*40)]),
+               ('pending_tcp_health',[self.health,dict(self.health,instance='1-87654321')])]
+        for key in self.identity:
+            changed=dict(self.identity);changed[key]=str(changed[key])+'changed'
+            cases.append(('inspector_identity',[self.identity,changed]))
+        for helper,values in cases:
+            with self.subTest(helper=helper,values=values),self.bound('unknown',{helper:{'side_effect':values}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_wrong_source_instance_revision_and_invalid_kernel_refuse(self):
+        cases=[('pending_tcp_health',{'source':'a'*40,'instance':self.request['instanceId']}),
+               ('pending_tcp_health',dict(self.health,instance='1-87654321')),
+               ('inspector_command',('a'*40+'\n').encode())]
+        for helper,value in cases:
+            with self.subTest(helper=helper,value=value),self.bound(overrides={helper:{'return_value':value}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_kernel_ambiguity_never_skips_final_bindings(self):
+        for options in [{'return_value':None},{'return_value':'child'},
+                        {'side_effect':PermissionError('private fixture')},
+                        {'side_effect':ValueError('private fixture')}]:
+            with self.subTest(options=options),self.bound(overrides={'pending_socket_owner':options}) as mocks:
+                self.assertEqual(R.serving_role_remote(self.request)['inspectorOwner'],'unknown')
+                for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat']:
+                    self.assertEqual(mocks[helper].call_count,2)
+            with self.bound(overrides={'pending_socket_owner':options,
+                    '_serving_boot_id':{'side_effect':[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_unavailable_and_expired_bindings_refuse_without_private_error(self):
+        for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+            for error in [PermissionError('private fixture'),ValueError('private fixture')]:
+                with self.subTest(helper=helper,error=type(error)),self.bound(overrides={helper:{'side_effect':error}}):
+                    with self.assertRaises(R.ScopedRefusal) as caught:R.serving_role_remote(self.request)
+                    self.assertEqual(caught.exception.phase,'serving_role')
+                    self.assertIn(caught.exception.code,{'binding_unproved','evidence_unavailable'})
+                    self.assertNotIn('private fixture',str(caught.exception))
+        with self.bound(),patch.object(R.time,'monotonic',side_effect=[100]+[109]*40):
+            with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_boot_reader_fixed_private_bounded_metadata_only(self):
+        deadline=R.time.monotonic()+8
+        with patch.object(R,'_kernel_read',return_value=(self.boot+'\n').encode()) as read:
+            self.assertEqual(R._serving_boot_id(deadline),self.boot)
+        read.assert_called_once_with(Path('/proc/sys/kernel/random/boot_id'),64,deadline)
+        for raw in [b'',b'not-a-boot-id',b'A'*36,b'12345678-1234-1234-1234-123456789abc extra']:
+            with self.subTest(raw=raw),patch.object(R,'_kernel_read',return_value=raw):
+                with self.assertRaises(ValueError):R._serving_boot_id(deadline)
+
+    def test_serving_role_reply_refuses_extra_missing_wrong_fields(self):
+        good={'schema':'current-serving-inspector-role/v1','readOnly':True,**self.request,
+            'inspectorOwner':'unknown','limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        bad=[dict(good,hostPid=1234),dict(good,readOnly=1),dict(good,inspectorOwner='child'),
+             dict(good,releaseSha='a'*40),dict(good,instanceId='1-87654321'),dict(good,limitation='owned')]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for answer in bad:
+            with self.subTest(answer=answer),self.assertRaises(ValueError):R.validate_reply(answer,self.request)
+
+
 class ReaderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='native-recovery-', dir=ROOT.parent)
@@ -1580,6 +1717,25 @@ finally:
                     # Fault cleanup may only kill this isolated fixture group.
                     os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=2)
             child.stdin.close();child.stdout.close();child.stderr.close()
+
+    def test_real_linux_serving_wrapper_uses_actual_proc_socket_role(self):
+        # Docker/health are explicit metadata seams; actual owned process,
+        # socket, proc stat/ns/net/FD joins and two snapshots stay native.
+        with self.fixture('main') as (owned,_,__):
+            identity={**owned,'image':'sha256:'+'d'*64,'running':'true',
+                'startedAt':'2026-10-30T01:00:00.000Z','restarts':'0'}
+            request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+            with patch.object(R,'inspector_identity',return_value=identity), \
+                    patch.object(R,'pending_tcp_health',return_value={'source':R.EED,'instance':request['instanceId']}), \
+                    patch.object(R,'inspector_command',return_value=(R.EED+'\n').encode()), \
+                    patch.object(R,'pending_tcp_presence',side_effect=AssertionError('TCP forbidden')):
+                answer=R.remote(request)
+            self.assertEqual(answer['inspectorOwner'],'main')
+            self.assertEqual(R.validate_reply(answer,request),answer)
+            self.assertEqual(set(answer), {'schema','readOnly','mode','releaseSha',
+                'instanceId','inspectorOwner','limitation'})
+            self.assertNotIn('hostPid',answer)
+            self.assertNotIn('container',answer)
 
     def test_real_linux_main_and_child_listener_roles(self):
         for fixture,expected in [('main','main'),('other','other_container_process')]:

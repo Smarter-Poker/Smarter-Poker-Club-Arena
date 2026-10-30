@@ -335,6 +335,8 @@ async function mountCachedTable(patch: Record<string, unknown> = {}) {
   const view = mount();
   await flush();
   await act(async () => h.clubReads[0].resolve({ data: null, error: null }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+  await flush();
   return { view, table };
 }
 
@@ -468,6 +470,8 @@ async function mountWarmTournaments({
   await act(async () => h.clubReads[0].resolve({ data: club, error: null }));
   expect(h.tournamentReads).toHaveLength(1);
   await act(async () => h.tournamentReads[0].resolve({ data: [row], error: null }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tournaments', exact: true }));
+  await flush();
   expect(
     document.querySelectorAll('[data-testid="lobby-game-row"][data-id="known-tournament"]').length
   ).toBeGreaterThan(0);

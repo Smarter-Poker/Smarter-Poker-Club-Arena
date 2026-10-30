@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type WebSocketRoute } from '@playwright/test';
 import { formatPopupText } from '../../src/utils/popupStyle';
@@ -189,6 +190,7 @@ test('the published table explains controlled seat moves without moving a player
     expect(new URL(page.url()).pathname).toMatch(/^\/hub\/club-arena\/clubs\//);
     await expect(page.locator('.club-home')).toBeVisible({ timeout: 30_000 });
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
     await allGames.click();
     await expect(allGames).toHaveAttribute('aria-selected', 'true');

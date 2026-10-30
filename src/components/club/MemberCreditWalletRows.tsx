@@ -90,13 +90,17 @@ export default function MemberCreditWalletRows({
     );
   if (!result.credit) return null;
   return (
-    <>
+    <section className="mm-card mm-stats" aria-label="Credit Tracking">
+      <h2 className="mm-card__title">Credit Tracking</h2>
+      <p className="mm-range__caption">
+        Tracking Only. Weekly Invoices Use The Agent Wallet Before Rakeback.
+      </p>
       {([['Credit Line', result.credit.limit]] as const).map(([label, amount]) => (
         <div className="mm-stat" key={label}>
           <span className="mm-stat__label">{label}</span>
           <span className="mm-stat__value">{formatWalletChips(amount)}</span>
         </div>
       ))}
-    </>
+    </section>
   );
 }

@@ -1142,16 +1142,16 @@ export default function MemberManagementPage() {
             <StatRow label="Player Wallet" value={formatWalletChips(wallets.player_wallet)} />
             <StatRow label="Agent Wallet" value={formatWalletChips(wallets.agent_wallet)} />
             <StatRow label="Promo Wallet" value={formatWalletChips(wallets.promo_wallet)} />
-            {resolvedClubId && userId && isAgentRole(identity!.role) && (
-              <MemberCreditWalletRows
-                key={`${resolvedClubId}:${userId}`}
-                clubId={resolvedClubId}
-                userId={userId}
-                role={identity!.role}
-                revision={`${recordRevision}:${wallets.agent_wallet}`}
-              />
-            )}
           </section>
+        )}
+        {wallets && resolvedClubId && userId && isAgentRole(identity!.role) && (
+          <MemberCreditWalletRows
+            key={`${resolvedClubId}:${userId}`}
+            clubId={resolvedClubId}
+            userId={userId}
+            role={identity!.role}
+            revision={`${recordRevision}:${wallets.agent_wallet}`}
+          />
         )}
 
         {/* ── Downline ─────────────────────────────────────────────────────── */}

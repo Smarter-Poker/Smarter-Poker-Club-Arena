@@ -371,7 +371,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v3'
+PENDING_SCHEMA = 'existing-release-pending-observation/v4'
 PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
                              'use_hourly', 'unavailable', 'unknown')
 PENDING_RECOVERY_CATEGORIES = {
@@ -663,17 +663,35 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None):
+def validate_pending_tcp(value):
+    unknown_codes = {'not_read', 'command_deadline', 'command_size', 'command_nonzero',
+                     'container_unproved', 'health_unproved', 'image_unproved',
+                     'identity_changed', 'probe_unproved', 'evidence_unavailable'}
+    if (not isinstance(value, dict) or set(value) != {'state', 'binding', 'code'}
+            or any(not isinstance(value[key], str) for key in value)):
+        raise ValueError('Pending TCP export refused')
+    if ((value['state'], value['binding'], value['code']) not in {
+            ('closed', 'matched', 'connection_refused'),
+            ('listening', 'matched', 'connection_established')}
+            and not (value['state'] == 'unknown' and value['binding'] == 'unproved'
+                     and value['code'] in unknown_codes)):
+        raise ValueError('Pending TCP export refused')
+
+
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
     legacy_intent = legacy_intent if legacy_intent is not None else {'status': 'unknown', 'code': 'not_read'}
     validate_pending_intent(legacy_intent)
+    inspector_tcp = inspector_tcp if inspector_tcp is not None else {'state': 'unknown', 'binding': 'unproved', 'code': 'not_read'}
+    validate_pending_tcp(inspector_tcp)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
         'legacyIntent': legacy_intent,
+        'inspectorTcp': inspector_tcp,
         'journalStatus': 'unavailable' if journal_failure else 'observed',
         'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
@@ -741,15 +759,108 @@ def pending_remote(request, root_fd):
                 raise
             signs = None
             journal_failure = {'phase': error.phase, 'code': error.code}
+        # Supplemental current TCP presence needs no historical checkpoint
+        # intent. Its unknown outcome never bypasses the mandatory rechecks.
+        try:
+            inspector_tcp = pending_tcp_presence()
+            validate_pending_tcp(inspector_tcp)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            inspector_tcp = {'state': 'unknown', 'binding': 'unproved', 'code': 'evidence_unavailable'}
         if (legacy_intent, legacy_binding) != pending_legacy_intent(request, directory, before[0][4]):
             legacy_intent = {'status': 'unknown', 'code': 'changed_during_read'}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp)
     finally:
         os.close(directory)
+
+
+# Fixed TCP-only presence: one connection, no bytes sent, HTTP, WebSocket,
+# evaluation, process signals or inspector lifecycle calls. The child destroys
+# only its own socket. Python binds this scalar to the current stable runtime.
+TCP_PRESENCE_NODE = r"""
+import net from 'node:net';
+let socket, timer, finished=false;
+const done=(state,code)=>{
+ if(finished)return;finished=true;clearTimeout(timer);
+ if(socket)socket.destroy();
+ console.log(JSON.stringify({state,code}));
+};
+timer=setTimeout(()=>done('unknown','probe_unproved'),1500);
+try{
+ socket=net.createConnection({host:'127.0.0.1',port:9229});
+ socket.setTimeout(1000,()=>done('unknown','probe_unproved'));
+ socket.once('connect',()=>done('listening','connection_established'));
+ socket.once('error',error=>error.code==='ECONNREFUSED'
+  ?done('closed','connection_refused'):done('unknown','probe_unproved'));
+}catch{done('unknown','probe_unproved');}
+"""
+
+
+def pending_tcp_health(deadline):
+    raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+    value = json.loads(raw, object_pairs_hook=unique_object)
+    source = value.get('releaseSha') if isinstance(value, dict) else None
+    if (not isinstance(value, dict) or value.get('running') is not True
+            or value.get('status') != 'ok' or not isinstance(source, str)
+            or not SHA.fullmatch(source) or value.get('version') != source[:8]
+            or not isinstance(value.get('instanceId'), str)
+            or not re.fullmatch('1-[0-9a-f]{8}', value['instanceId'])):
+        raise ValueError('Pending TCP health unproved')
+    return {'source': source, 'instance': value['instanceId']}
+
+
+def pending_tcp_presence():
+    # One shared supplemental deadline, not eight seconds per native command.
+    # No identities or native exception text leave this helper.
+    deadline = time.monotonic() + 8
+    unknown = lambda code: {'state': 'unknown', 'binding': 'unproved', 'code': code}
+    failure = 'container_unproved'
+    try:
+        before = inspector_identity(deadline)
+        failure = 'health_unproved'
+        health = pending_tcp_health(deadline)
+        failure = 'image_unproved'
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
+            deadline, limit=256).decode().strip()
+        if label != health['source']:
+            return unknown('image_unproved')
+        failure = 'probe_unproved'
+        # Match the original gate's three-second native child ceiling; the
+        # eight-second envelope also includes identity/health binding reads.
+        probe_deadline = min(deadline, time.monotonic() + 3)
+        # Isolate only this reader child: inherited inspector flags or preloads
+        # must not create the very listener whose prior presence we observe.
+        raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+            before['container'], 'node', '--no-inspect', '--input-type=module', '-'],
+            probe_deadline, input_bytes=TCP_PRESENCE_NODE.encode(), limit=1024)
+        probe = json.loads(raw, object_pairs_hook=unique_object)
+        if (not isinstance(probe, dict) or set(probe) != {'state', 'code'}
+                or any(not isinstance(probe[key], str) for key in probe)
+                or (probe.get('state'), probe.get('code')) not in {
+                    ('closed', 'connection_refused'), ('listening', 'connection_established'),
+                    ('unknown', 'probe_unproved')}):
+            return unknown('probe_unproved')
+        failure = 'container_unproved'
+        after = inspector_identity(deadline, stage='recheck_container')
+        failure = 'health_unproved'
+        after_health = pending_tcp_health(deadline)
+        if before != after or health != after_health:
+            return unknown('identity_changed')
+        answer = ({**probe, 'binding': 'matched'} if probe['state'] != 'unknown'
+                  else unknown('probe_unproved'))
+        validate_pending_tcp(answer)
+        return answer
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired)
+                else error.code if isinstance(error, ScopedRefusal)
+                else INSPECTOR_COMMAND_ERRORS.get(str(error)))
+        return unknown(code if code in {'command_deadline', 'command_size', 'command_nonzero'}
+                       else failure)
 
 
 # This mode observes the original one-shot checkpoint only. It never opens or
@@ -955,7 +1066,10 @@ def inspector_endpoint(raw, at):
 
 
 def inspector_probe(container, deadline, expected=None):
-    raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
+    # Keep inherited inspector flags/preloads out of this reader child too;
+    # opening its own endpoint would corrupt the original target observation.
+    raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+        container, 'node', '--no-inspect', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
         input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)
@@ -1121,7 +1235,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -1136,6 +1250,7 @@ def validate_reply(value, request):
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
         validate_pending_intent(value['legacyIntent'])
+        validate_pending_tcp(value['inspectorTcp'])
         validate_pending_journal(value['journalSigns'], value['journalFailure'])
         if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
             raise ValueError('Pending journal status refused')

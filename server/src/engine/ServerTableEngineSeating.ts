@@ -1,3 +1,4 @@
+import { recordHorsePlo5Departure } from '../services/HorsePlo5DepartureEvidence.js';
 import { requestLightningTopUp, type LightningTopUpReceipt } from '../lightning/LightningTopUp.js';
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { loadSeatedPlayers } from '../services/supabase.js';
@@ -1539,6 +1540,43 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
               if (this.postHandTasksPromise === pending) break;
             }
             if (this.isTournamentTable()) return stale();
+            // A reserved seat can be absent from the in-memory roster. Do
+            // not let that fallback bypass the Horse profit floor. Wait for
+            // its actual roster/session to be available before cashing it out.
+            if (
+              !opts.forced &&
+              this.tableInfo?.game_variant === 'plo5' &&
+              Number(this.tableInfo.small_blind) === 2 &&
+              Number(this.tableInfo.big_blind) === 5
+            ) {
+              try {
+                const { data: profile, error } = await supabase
+                  .from('profiles')
+                  .select('is_horse')
+                  .eq('id', userId)
+                  .maybeSingle();
+                if (
+                  error ||
+                  !profile ||
+                  (profile.is_horse !== null && typeof profile.is_horse !== 'boolean') ||
+                  profile.is_horse === true
+                ) {
+                  recordHorsePlo5Departure('unverified_roster');
+                  return {
+                    success: false,
+                    immediate: false,
+                    error: 'The Session Could Not Be Verified. Please Retry.',
+                  };
+                }
+              } catch {
+                recordHorsePlo5Departure('unverified_roster');
+                return {
+                  success: false,
+                  immediate: false,
+                  error: 'The Session Could Not Be Verified. Please Retry.',
+                };
+              }
+            }
             const replacement = this.seatedPlayers.find((p) => p.user_id === userId);
             if (
               replacement &&
@@ -1645,6 +1683,68 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
          now see that it is sitting out. */
           this.broadcastCurrentState();
           return { success: true, immediate: true, tournament: true };
+        }
+
+        // Owner 2026-10-29: a Horse in 2/5 PLO5 does not voluntarily
+        // rack up below 3.5 buy-ins of PROFIT. This shared door covers the
+        // rotator, Stable Hand yields and tournament-driven departures alike.
+        // System eviction/closure remains available; no player money is locked
+        // in the database. Reloads belong to the session cost, never profit.
+        if (
+          !opts.forced &&
+          player.is_horse === true &&
+          this.tableInfo?.game_variant === 'plo5' &&
+          Number(this.tableInfo.small_blind) === 2 &&
+          Number(this.tableInfo.big_blind) === 5
+        ) {
+          const held = {
+            success: false,
+            immediate: false,
+            error: 'Continue Playing Until Session Profit Reaches 3.5 Buy-Ins.',
+          };
+          // The roster contains the previous settlement during a hand. Never
+          // book that old win while the current pot can still change it.
+          if (liveSelf) {
+            recordHorsePlo5Departure('in_hand');
+            return held;
+          }
+          try {
+            const { data: session, error } = await supabase
+              .from('cash_player_session')
+              .select('baseline')
+              .eq('player_id', userId)
+              .eq('table_id', this.tableId)
+              .is('closed_at', null)
+              .maybeSingle();
+            const invested = Number(session?.baseline);
+            const stack = Number(player.stack);
+            // Integer chip cents keep the exact threshold inclusive. Unknown
+            // cost is a reason to stay, never permission to guess a profit.
+            if (error || !Number.isFinite(invested) || invested <= 0 || !Number.isFinite(stack)) {
+              recordHorsePlo5Departure('unknown_investment');
+              return held;
+            }
+            // A hand can start during the investment read. Its hold is not
+            // evidence of a settled below-profit decision.
+            if (this.handController?.getState().players.some((p) => p.user_id === userId)) {
+              recordHorsePlo5Departure('in_hand');
+              return held;
+            }
+            if (Math.round(stack * 100) * 2 < Math.round(invested * 100) * 9) {
+              recordHorsePlo5Departure('below_profit_floor');
+              return held;
+            }
+          } catch (err) {
+            recordHorsePlo5Departure('unknown_investment');
+            reportError(err, 'HorseCashDeparture.sessionRead');
+            return held;
+          }
+          if (this.seatedPlayers.find((p) => p.user_id === userId) !== player) return stale();
+          if (this.handController?.getState().players.some((p) => p.user_id === userId)) {
+            recordHorsePlo5Departure('in_hand');
+            return held;
+          }
+          recordHorsePlo5Departure('eligible');
         }
 
         // ═══════════════════════════════════════════════════════════════════════

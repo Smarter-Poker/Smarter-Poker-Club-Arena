@@ -23,6 +23,24 @@ export function horseHash(id: string): number {
   return h;
 }
 
+/** Owner October 29: the Horse entry floor at 2/5 PLO5 is 500 chips.
+ * Other games retain their configured minimum. A maximum below this floor
+ * is ineligible rather than permission to buy short or exceed table limits. */
+export function horseCashMinimum(
+  table: {
+    game_variant?: unknown;
+    small_blind?: unknown;
+    big_blind?: unknown;
+  },
+  configuredMinimum: number
+): number {
+  return table.game_variant === 'plo5' &&
+    Number(table.small_blind) === 2 &&
+    Number(table.big_blind) === 5
+    ? Math.max(500, configuredMinimum)
+    : configuredMinimum;
+}
+
 /** Owner October 26: every horse chooses the table maximum, to the cent. */
 export function horseMaximumBuyIn(minBuyIn: number, maxBuyIn: number): number {
   if (

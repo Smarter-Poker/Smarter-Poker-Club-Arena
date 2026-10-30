@@ -28,9 +28,11 @@ they do not invoke the production inspector or custody operations. The real reco
 request fixture retains its exact command assertion with the isolated arguments.
 
 The same still-unserved original-hand recovery also has a fresh, separately
-identified finite owner-order entry for 03:05–04:30 UTC on October 30. It keeps
+identified finite owner-order entry for 03:05–05:30 UTC on October 30. It keeps
 minute 53 announcements and tournament-aligned cutover, all existing entries
 and operation deadlines, and the original feature witness and safety reserves.
 Its protected minimum is `3a3107`; its order requires the exact reviewed child
 script bytes. It does not claim an unprotected branch commit survives squash
 merge, extend an old window, schedule an action, or certify live recovery.
+
+Before its first publication, the new finite carrier was bounded at03:05–05:30UTC so source qualification and exact listener ownership can finish during this ongoing unaccepted-original incident. Only minute53 announcements remain eligible; the earliest fully qualified :55 cutover wins. Old carriers, installed records and request deadlines are unchanged. This draft adjustment grants no unknown-listener cleanup and does not enable a recurring recovery.

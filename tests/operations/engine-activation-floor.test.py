@@ -160,18 +160,19 @@ echo CHECKPOINT_MUST_NOT_RUN
         previous = floor.policy(str(self.repo), old_sha, old_sha)
         current = self.owner_record()
         self.assertNotEqual(current['ownerWindowId'], previous['ownerWindowId'])
-        from datetime import datetime
-        self.assertEqual(current['activationEpoch'], int(datetime.fromisoformat('2026-10-30T13:30:00+00:00').timestamp()))
-        self.assertEqual(current['expiresEpoch'], int(datetime.fromisoformat('2026-10-30T19:00:00+00:00').timestamp()))
-        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 19800)
+        # 2026-10-30 13:40 UTC continuation (the :55-break release of the heap
+        # fix, V60, V62 and V61) follows the 00:00 and 05:30 UTC entries.
+        self.assertEqual(current['activationEpoch'], previous['activationEpoch']+49200)
+        self.assertEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
         now = previous['expiresEpoch']+1
         with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
-        # The distinct later continuation does not fill or extend the gap
-        # after the historical request expires.
+        # The old entry is expired while the new one is not yet open: neither
+        # admits. The new one admits from its own activation instant.
         with self.assertRaises(ValueError): floor.check_window(current, now, now+8400, 'admit')
-        floor.check_window(current, current['activationEpoch'], current['activationEpoch']+8400, 'admit')
-        floor.check_window(current, current['activationEpoch'], current['activationEpoch']+8400, 'publish')
+        now = current['activationEpoch']
+        floor.check_window(current, now, now+8400, 'admit')
+        floor.check_window(current, current['activationEpoch'], now+8400, 'publish')
         with self.assertRaises(ValueError): floor.policy(str(self.repo), self.sha, old_sha)
         with self.assertRaises(ValueError): floor.policy(str(self.repo), old_sha, self.sha)
         # Pinned old source is unchanged by the newer authorization.

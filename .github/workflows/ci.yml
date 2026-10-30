@@ -3251,6 +3251,24 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Cancellation admission cannot queue ahead of unrelated hands
+        if: matrix.shard == 4
+        run: |
+          python3 -B scripts/ci/test-tournament-cancellation-lane.py \
+            --evidence artifacts/tournament-cancellation-lane \
+            --work-root "$RUNNER_TEMP/cancellation-lane-work" \
+            --socket-root "$RUNNER_TEMP/cancellation-socket" \
+            --pg-bin /usr/lib/postgresql/17/bin
+
+      - name: Retain cancellation admission and funded rollback evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: tournament-cancellation-lane-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/tournament-cancellation-lane/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Certification cleanup reserves a turn without blocking players
         if: matrix.shard == 4
         env:

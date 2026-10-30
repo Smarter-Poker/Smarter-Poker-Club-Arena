@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 251814,
-      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+      "bytes": 252627,
+      "sha256": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1207,5 +1207,19 @@
       "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
     },
     "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
+  },
+  "cancellationAdmissionSourceAudit20261030": {
+    "scope": "Adds private PostgreSQL cancellation admission/refund qualification to existing accounting shard4; no existing financial assertion, job selector, or result changed.",
+    "file": ".github/workflows/ci.yml",
+    "bindings": [
+      {
+        "section": "files",
+        "previous": {
+          "bytes": 251814,
+          "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+        },
+        "current": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
+      }
+    ]
   }
 }

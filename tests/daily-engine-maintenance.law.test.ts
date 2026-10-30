@@ -379,6 +379,31 @@ describe('daily routine admission uses the existing protected receiver only', ()
         })
       ).toBe(expected);
   });
+  it('binds the channel delivery continuation to its actual protected feature', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const matches = windows.filter(
+      (w: { id: string }) => w.id === '2026-10-30-channel-admission-protected-feature-continuation'
+    );
+    expect(matches).toHaveLength(1);
+    const [entry] = matches;
+    expect(entry.contains).toBe('7d80a3584e4d86af60c1c457c093d985445bf8d8');
+    expect(entry.notBefore).toBe('2026-10-30T16:10:00Z');
+    expect(entry.notAfter).toBe('2026-10-30T20:10:00Z');
+    expect(entry.announceAtChicagoMinutes).toEqual([53]);
+    expect(entry.migrations).toEqual([]);
+    expect(entry.releaseWitness).toEqual({
+      path: 'server/release/activation-floor.json',
+      sha256: '2053a29efd72b730f6fcee2a03508714e66896b8bbee1a3f8a93f387560ea5bf',
+    });
+    expect(entry.ownerOrder).toContain(
+      'c5b7eec46dc5afbb05eebe6584a4630b0f674e9ba7be00ba709df1f5b1b0293a'
+    );
+    expect(entry.ownerOrder).toContain(
+      '5977c7f7fa8e29440783a2bc0c63782fae22d0d9bc1cfc8032f4dc2d5b3ea2c0'
+    );
+  });
   it('binds the safe channel continuation to its own floor and refuses consumed or foreign authority', () => {
     const { windows } = JSON.parse(
       readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')

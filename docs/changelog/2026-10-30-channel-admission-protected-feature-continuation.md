@@ -1,0 +1,7 @@
+# Channel admission has its own protected-feature delivery window
+
+PR #8715 is protected-merged as `7d80a3584e4d86af60c1c457c093d985445bf8d8`. Its first immutable engine delivery was refused while the older c306 runtime owner remained active. That older target lacks the channel fix but shares the horse/heap floor witness, so serving it could consume the shared admission before this assigned fix reaches production.
+
+The owner's fresh 16:09 UTC continuation now has a distinct fixed 16:10-20:10 UTC floor and matching owner entry anchored to the actual protected feature. The earlier expired channel entries and independent recovery records retain their exact bytes. One safely qualified remaining :55 break may deliver a containing target; minute53 notice, hand-boundary drain, native custody and Lightning absence, confirmed freeze/certificate, full 285-second proof/rollback reserve and completed v3 thaw remain required. No old operation is retargeted or replayed, and no peer operation is cancelled.
+
+The existing daily admission law pins the protected feature, fixed bounds and own raw-floor witness. Existing producer-shell and real-Git floor qualification retain consumed, deleted, foreign, expired and unknown-history refusals. No production guard or release workflow changes. Actual host safety and live channel behavior remain separate acceptance; paid Realtime stays enabled. This preparation claims no installation or dollar savings.

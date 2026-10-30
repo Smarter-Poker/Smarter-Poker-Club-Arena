@@ -149,7 +149,11 @@ describe('V61 yields to the V62 polar bettor model', () => {
 
   it('with opponent reads the river bettor is sampled polar and the price shade is not stacked', () => {
     const s = river('nlh', '9s8d', 'Qh9d3s7c2c', 20);
-    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true } as never);
+    // V62 is opt-in since 2026-10-30 18:50 UTC; armed here to pin the yield.
+    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, {
+      telemetry: true,
+      v62RiverBettorPolarity: true,
+    } as never);
     const f = fires();
     expect(f['v62_river_bettor_polarity']).toBe(1);
     expect(f['v61_river_one_pair_shade']).toBeUndefined();
@@ -159,12 +163,9 @@ describe('V61 yields to the V62 polar bettor model', () => {
     const g = fires();
     expect(g['v62_river_bettor_polarity']).toBeUndefined();
     expect(g['v61_river_one_pair_shade']).toBe(1);
-    // and returns when V62 is switched off with reads present
+    // and fires by default with reads present (V62 unset = off)
     seedFastRandom(0x5eed61);
-    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, {
-      telemetry: true,
-      v62RiverBettorPolarity: false,
-    } as never);
+    HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true } as never);
     const h = fires();
     expect(h['v61_river_one_pair_shade']).toBe(1);
   });

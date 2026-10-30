@@ -218,7 +218,7 @@ describe('V62 in the decision: the river bettor is sampled polar', () => {
   });
 
   it('top pair facing a three-quarter pot river bet is a bluff-catch read and folds; the old arm called', () => {
-    const on = verdict(river('nlh', 'AsKd', 'Kh9h7c6s2h', 15), {});
+    const on = verdict(river('nlh', 'AsKd', 'Kh9h7c6s2h', 15), { v62RiverBettorPolarity: true });
     const onFires = fires();
     expect(onFires['v62_river_bettor_polarity']).toBe(1);
     expect(onFires['v38_river_fold']).toBe(1);
@@ -231,12 +231,18 @@ describe('V62 in the decision: the river bettor is sampled polar', () => {
     });
     expect(fires()['v62_river_bettor_polarity']).toBeUndefined();
     expect(off.decision.action).toBe('call');
+    // Opt-in since 2026-10-30 18:50 UTC (mirror league negative against
+    // horses): unset is the off arm.
+    seedFastRandom(0x5eed62);
+    const unset = verdict(river('nlh', 'AsKd', 'Kh9h7c6s2h', 15), {});
+    expect(fires()['v62_river_bettor_polarity']).toBeUndefined();
+    expect(unset.decision.action).toBe('call');
   });
 
   it('applies in tournaments and to a set alike (the model is the bettor range, not the hero hand)', () => {
-    verdict(river('nlh', 'AsKd', 'Kh9h7c6s2h', 15, 'tournament'), {});
+    verdict(river('nlh', 'AsKd', 'Kh9h7c6s2h', 15, 'tournament'), { v62RiverBettorPolarity: true });
     expect(fires()['v62_river_bettor_polarity']).toBe(1);
-    const set = verdict(river('nlh', '7h7d', 'Kc7s2d4h9s', 15), {});
+    const set = verdict(river('nlh', '7h7d', 'Kc7s2d4h9s', 15), { v62RiverBettorPolarity: true });
     expect(fires()['v62_river_bettor_polarity']).toBe(1);
     expect(set.decision.action).not.toBe('fold');
   });
@@ -244,7 +250,10 @@ describe('V62 in the decision: the river bettor is sampled polar', () => {
   it('Omaha, short deck and a measured over-bluffer keep the contact range', () => {
     const decide = (variant: string, hole: string, board: string) => {
       const s = river(variant, hole, board, 15);
-      HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, { telemetry: true } as never);
+      HorseLogic.decide(s.hero, s.gs as never, 'balanced', {}, {
+        telemetry: true,
+        v62RiverBettorPolarity: true,
+      } as never);
       return fires()['v62_river_bettor_polarity'];
     };
     expect(decide('plo4', 'AsKd9c2s', 'Kh9h7c6s2h')).toBeUndefined();

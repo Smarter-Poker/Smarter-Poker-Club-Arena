@@ -236,3 +236,12 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Genuine relation-level linked-cash union statistics are qualified without changing original proof owners.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-linked-cash-statistics-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-linked-cash-statistics.json'))], text=True))
+
+# Original cash refusal reads scope and clock bounds before blocked IDs.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-cash-refusal-scope-time-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('cash-refusal-scope-time.json'))], text=True))
+
+# Original tournament quality consumes bounded physical evidence atomically.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-quality-bounded-evidence-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-quality-bounded-evidence.json'))], text=True))
+
+# Three unsealed original cash readers preserve the genuine generation.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-cash-three-helper-forward-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-cash-three-helper-forward.json'))], text=True))

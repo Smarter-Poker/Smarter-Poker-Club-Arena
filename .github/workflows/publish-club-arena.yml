@@ -48,7 +48,7 @@ on:
 
 jobs:
   publish-needed:
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
@@ -252,7 +252,7 @@ jobs:
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
     if: needs.publish-needed.outputs.component == 'client' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
@@ -262,7 +262,7 @@ jobs:
         shard: [1, 2, 3, 4]
     env:
       HUSKY: '0'
-      VITEST_MAX_THREADS: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}
+      VITEST_MAX_THREADS: 2
     steps:
       - name: Checkout Club Arena at the publish target
         uses: actions/checkout@v4
@@ -301,7 +301,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.publish != 'false'
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a

@@ -111,10 +111,11 @@ describe('one publication transaction follows parallel preparation', () => {
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Only these client jobs move to the isolated paid pool. Preserve the
-      // complete original command/permission/secret snapshot after that route.
+      // Assert only the approved warm routes and two-worker client cap, then
+      // retain the complete original command/permission/secret snapshot.
       if (
         [
+          'publish-needed',
           'client-tests',
           'build-and-store',
           'retain-runtime',
@@ -122,10 +123,20 @@ describe('one publication transaction follows parallel preparation', () => {
           'publish-to-origin',
         ].includes(key)
       ) {
-        const route =
-          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-delivery' || 'ubuntu-latest' }}";
-        expect(body['runs-on']).toBe(route);
-        body['runs-on'] = route.replace('ca-linux-delivery', 'ca-linux-8core');
+        expect(body['runs-on']).toBe('ubuntu-latest');
+        const label = key === 'publish-needed' ? 'ca-linux-4core' : 'ca-linux-8core';
+        body['runs-on'] =
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+          label +
+          "' || 'ubuntu-latest' }}";
+        if (key === 'client-tests') {
+          expect(body.env.VITEST_MAX_THREADS).toBe(2);
+          body.env = {
+            ...body.env,
+            VITEST_MAX_THREADS:
+              "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '4' || '2' }}",
+          };
+        }
       }
 
       expect(createHash('sha256').update(normalizeSteps(body)).digest('hex')).toBe(

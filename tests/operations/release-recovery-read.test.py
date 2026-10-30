@@ -7,6 +7,7 @@ import io
 import ast
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import types
@@ -72,6 +73,95 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('private actor fixture', json.dumps(answer))
         self.assertNotIn('/opt/', json.dumps(answer))
         self.assertEqual(R.validate_reply(answer, request), answer)
+
+    def test_pending_remote_failure_reports_fixed_stage_without_private_detail(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        with self.assertRaises(R.ScopedRefusal) as caught:
+            R.remote(request)
+        self.assertEqual((caught.exception.phase, caught.exception.code),
+                         ('pending_directory', 'records_absent'))
+        directory = self.root / 'engine-release-requests'
+        directory.mkdir()
+        with self.assertRaises(R.ScopedRefusal) as caught:
+            R.remote(request)
+        self.assertEqual((caught.exception.phase, caught.exception.code),
+                         ('pending_request_read', 'records_absent'))
+        raw = '\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+            'b' * 40, '1791829999']) + '\n'
+        for suffix in ('.request', '.intent'):
+            path = directory / (REQUEST['runKey'] + suffix)
+            path.write_text(raw); path.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        cases = [('read_lines', 'request_read'), ('pending_metadata', 'request_binding'),
+                 ('pending_unit', 'unit')]
+        for function, stage in cases:
+            with self.subTest(stage=stage), \
+                    patch.object(R, 'pending_unit', return_value=unit), \
+                    patch.object(R, 'pending_journal', return_value=[]), \
+                    patch.object(R, function, side_effect=ValueError('private fixture detail')):
+                with self.assertRaises(R.ScopedRefusal) as caught:
+                    R.remote(request)
+                exported = R.refusal(request, caught.exception)
+                validated = R.validate_refusal(exported, request)
+                self.assertEqual((validated.phase, validated.code),
+                                 ('pending_' + stage, 'evidence_unavailable'))
+                self.assertNotIn('private fixture detail', json.dumps(exported))
+        with patch.object(R, 'pending_unit', side_effect=[unit, {**unit, 'invocationId': '2' * 32}]), \
+                patch.object(R, 'pending_journal', return_value=[]):
+            with self.assertRaises(R.ScopedRefusal) as caught:
+                R.remote(request)
+            self.assertEqual(caught.exception.phase, 'pending_recheck_unit')
+
+    def test_pending_journal_failure_preserves_only_rechecked_metadata_as_unknown(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        directory = self.root / 'engine-release-requests'; directory.mkdir()
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private actor fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        for suffix in ('.request', '.intent'):
+            path = directory / (REQUEST['runKey'] + suffix)
+            path.write_text('\n'.join(rows) + '\n'); path.chmod(0o600)
+        unit = {'activeState': 'active', 'subState': 'running', 'invocationId': '1' * 32}
+        with patch.object(R, 'pending_unit', return_value=unit) as reads, \
+                patch.object(R, 'pending_journal', side_effect=ValueError('private journal detail')):
+            answer = R.remote(request)
+        self.assertEqual(reads.call_count, 2)
+        self.assertEqual(answer['journalStatus'], 'unavailable')
+        self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['journalFailure'], {'phase': 'pending_journal', 'code': 'evidence_unavailable'})
+        self.assertEqual(R.validate_reply(answer, request), answer)
+        self.assertNotIn('private', json.dumps(answer))
+        failures = [(ValueError('Recovery witness output refused'), 'output_bound'),
+                    (ValueError('Pending journal unavailable'), 'command_nonzero'),
+                    (ValueError('Pending journal ownership refused'), 'ownership_refused'),
+                    (ValueError('Pending journal shape refused'), 'shape_refused'),
+                    (ValueError('Duplicate persisted field'), 'fields_refused'),
+                    (subprocess.TimeoutExpired('private command', 5), 'command_deadline'),
+                    (OSError('private command'), 'command_unavailable'),
+                    (json.JSONDecodeError('private', 'private', 0), 'json_refused')]
+        for error, code in failures:
+            with self.subTest(code=code), self.assertRaises(R.ScopedRefusal) as caught:
+                R.pending_stage('journal', lambda: (_ for _ in ()).throw(error))
+            self.assertEqual((caught.exception.phase, caught.exception.code), ('pending_journal', code))
+        with self.assertRaises(RuntimeError):
+            R.pending_stage('journal', lambda: (_ for _ in ()).throw(RuntimeError('unexpected')))
+        for mutation in [{'journalSigns': []}, {'journalStatus': 'observed'},
+                         {'journalFailure': {'phase': 'pending_unit', 'code': 'evidence_unavailable'}},
+                         {'journalFailure': {'phase': 'pending_journal', 'code': 'private detail'}},
+                         {'schema': 'existing-release-pending-observation/v1'}]:
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                R.validate_reply({**answer, **mutation}, request)
+        for target in ('unit', 'requests'):
+            def journal(*args):
+                if target == 'requests':
+                    path = directory / (REQUEST['runKey'] + '.request')
+                    path.write_text('changed')
+                raise ValueError('private journal detail')
+            with patch.object(R, 'pending_unit', side_effect=[unit, {**unit, 'invocationId': '2' * 32}] if target == 'unit' else None, return_value=unit), \
+                    patch.object(R, 'pending_journal', side_effect=journal), self.assertRaises(R.ScopedRefusal):
+                R.remote(request)
 
     def test_pending_mode_refuses_unknown_modes_and_export_forgery(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
@@ -624,6 +714,64 @@ class InspectorTests(unittest.TestCase):
         for row in [{'state':'closed','endpointSha256':'a'*64},{'state':'open','endpointSha256':None},{'state':'whatever','endpointSha256':None},{'state':'owned','endpointSha256':'a'*64,'native':{},'raw':'private'}]:
             with patch.object(R,'inspector_command',return_value=json.dumps(row).encode()),self.subTest(row=row),self.assertRaises(ValueError):R.inspector_probe('c'*64,123)
 
+
+    def test_inspector_known_boundaries_roundtrip_remote_refusal_without_private_text(self):
+        # Exercise the actual remote selection and final refusal validator;
+        # only maintained literal boundary messages may acquire typed codes.
+        known = {message: code for message, (phase, code) in R.REFUSALS.items()
+                 if phase == 'inspector'}
+        self.assertEqual(len(known), 27)
+        for message, code in known.items():
+            with self.subTest(code=code), patch.object(R, 'inspector_remote', side_effect=ValueError(message)):
+                with self.assertRaises(ValueError) as caught:
+                    R.remote(self.request)
+                exported = R.refusal(self.request, caught.exception)
+                validated = R.validate_refusal(exported, self.request)
+                self.assertEqual((validated.phase, validated.code), ('inspector', code))
+                self.assertNotIn(message, json.dumps(exported))
+                self.assertEqual(set(exported), {'schema','readOnly','runKey','releaseSha','mode','phase','code'})
+        with patch.object(R, 'inspector_remote', side_effect=ValueError('/private/raw stderr secret')):
+            with self.assertRaises(ValueError) as caught:
+                R.remote(self.request)
+            exported = R.refusal(self.request, caught.exception)
+            self.assertEqual(R.validate_refusal(exported,self.request).code, 'evidence_refused')
+            self.assertNotIn('secret', json.dumps(exported))
+
+    def test_literal_command_stages_roundtrip_without_exporting_arguments(self):
+        for stage in R.INSPECTOR_COMMAND_STAGES:
+            for message, code in R.INSPECTOR_COMMAND_ERRORS.items():
+                with self.subTest(stage=stage, code=code), patch.object(R, '_inspector_command', side_effect=ValueError(message)):
+                    with patch.object(R, 'inspector_remote', side_effect=lambda *args: R.inspector_command(['private command secret'],123,stage=stage)):
+                        with self.assertRaises(R.ScopedRefusal) as caught:
+                            R.remote(self.request)
+                    exported = R.refusal(self.request,caught.exception)
+                    answer = R.validate_refusal(exported,self.request)
+                    self.assertEqual((answer.phase,answer.code),('inspector_'+stage,code))
+                    self.assertNotIn('private',json.dumps(exported))
+        with patch.object(R,'_inspector_command') as child, self.assertRaises(ValueError):
+            R.inspector_command(['secret'],123,stage='unreviewed_private')
+        child.assert_not_called()
+
+    def test_native_child_idle_poll_is_not_the_absolute_deadline(self):
+        # A real child stays silent past the old three-second polling slice.
+        started = R.time.monotonic()
+        raw = R.inspector_command([R.sys.executable, '-c',
+            'import time;time.sleep(3.1);print("bounded reply")'], started + 6)
+        self.assertEqual(raw, b'bounded reply\n')
+        self.assertGreaterEqual(R.time.monotonic() - started, 3.1)
+        self.assertLess(R.time.monotonic() - started, 6)
+
+    def test_native_command_refusals_roundtrip_deadline_size_and_nonzero(self):
+        for code, command, seconds, limit in [
+            ('command_deadline', 'import time;time.sleep(2)', .05, 100),
+            ('command_size', 'print("x"*1000)', 2, 100),
+            ('command_nonzero', 'import sys;sys.stderr.write("private secret");sys.exit(7)', 2, 100),
+        ]:
+            with self.subTest(code=code), self.assertRaises(ValueError) as caught:
+                R.inspector_command([R.sys.executable, '-c', command], R.time.monotonic()+seconds, limit=limit)
+            exported = R.refusal(self.request, caught.exception)
+            self.assertEqual(R.validate_refusal(exported,self.request).code, code)
+            self.assertNotIn('private',json.dumps(exported))
 
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1

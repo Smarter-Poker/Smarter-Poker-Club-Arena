@@ -40,8 +40,60 @@ REFUSALS = {
     'Recovery witness cause differs': ('journal', 'cause_refused'),
     'Recovery witness sign refused': ('journal', 'sign_refused'),
     'Duplicate recovery witness sign': ('journal', 'sign_refused'),
+    'Inspector read deadline': ('inspector', 'command_deadline'),
+    'Inspector read size': ('inspector', 'command_size'),
+    'Inspector native unavailable': ('inspector', 'command_nonzero'),
+    'Inspector container unknown': ('inspector', 'container_unproved'),
+    'Inspector healthy predecessor unknown': ('inspector', 'health_unproved'),
+    'Inspector intent unknown': ('inspector', 'intent_unavailable'),
+    'Inspector partial request records': ('inspector', 'request_partial'),
+    'Inspector control differs': ('inspector', 'control_changed'),
+    'Inspector retired failure receipt unknown': ('inspector', 'failure_receipt_unproved'),
+    'Inspector log bound': ('inspector', 'history_size'),
+    'Inspector historical endpoint unknown': ('inspector', 'history_endpoint_unproved'),
+    'Inspector historical time differs': ('inspector', 'history_time_changed'),
+    'Inspector historical endpoint ambiguous': ('inspector', 'history_ambiguous'),
+    'Inspector probe unknown': ('inspector', 'probe_unproved'),
+    'Inspector probe fields': ('inspector', 'probe_fields'),
+    'Inspector probe identity': ('inspector', 'probe_identity'),
+    'Inspector scalar identity': ('inspector', 'scalar_identity'),
+    'Inspector scalar unavailable': ('inspector', 'native_scalar_unavailable'),
+    'Inspector scalar overflow': ('inspector', 'scalar_overflow'),
+    'Inspector export refused': ('inspector', 'export_fields'),
+    'Inspector exported source': ('inspector', 'export_source'),
+    'Inspector exported instance': ('inspector', 'export_instance'),
+    'Inspector exported endpoint': ('inspector', 'export_endpoint'),
+    'Inspector owned export refused': ('inspector', 'export_owned'),
+    'Inspector unknown scalar export': ('inspector', 'export_unknown_scalar'),
+    'Inspector outcome export': ('inspector', 'export_outcome'),
+    'Inspector absence identity export': ('inspector', 'export_absence_identity'),
 }
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
+
+
+INSPECTOR_COMMAND_STAGES = {'container', 'health', 'image', 'probe', 'history',
+                            'recheck_container', 'recheck_health'}
+INSPECTOR_COMMAND_ERRORS = {'Inspector read deadline': 'command_deadline',
+                            'Inspector read size': 'command_size',
+                            'Inspector native unavailable': 'command_nonzero'}
+REFUSAL_CODES |= {('inspector_' + stage, code)
+                  for stage in INSPECTOR_COMMAND_STAGES
+                  for code in INSPECTOR_COMMAND_ERRORS.values()}
+PENDING_READ_STAGES = {'directory', 'request_read', 'request_binding', 'unit',
+                       'journal', 'recheck_requests', 'recheck_unit'}
+REFUSAL_CODES |= {('pending_' + stage, 'evidence_unavailable')
+                  for stage in PENDING_READ_STAGES}
+REFUSAL_CODES |= {('pending_' + stage, 'records_absent')
+                  for stage in ('directory', 'request_read', 'recheck_requests')}
+PENDING_JOURNAL_ERRORS = {
+    'Pending journal unavailable': 'command_nonzero',
+    'Recovery witness output refused': 'output_bound',
+    'Pending journal ownership refused': 'ownership_refused',
+    'Pending journal shape refused': 'shape_refused',
+    'Duplicate persisted field': 'fields_refused',
+}
+REFUSAL_CODES |= {('pending_journal', code) for code in
+    set(PENDING_JOURNAL_ERRORS.values()) | {'command_deadline', 'command_unavailable', 'json_refused'}}
 
 
 class ScopedRefusal(ValueError):
@@ -318,7 +370,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v1'
+PENDING_SCHEMA = 'existing-release-pending-observation/v2'
 PENDING_CATEGORIES = {'certificate_shut', 'candidate_budget_missed',
                       'locked_budget_missed', 'legacy_entry_deferred'}
 
@@ -438,15 +490,28 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs):
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
-    validate_pending_signs(signs)
+    validate_pending_journal(signs, journal_failure)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
+        'journalStatus': 'unavailable' if journal_failure else 'observed',
+        'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
+
+
+def validate_pending_journal(signs, failure):
+    if failure is None:
+        validate_pending_signs(signs)
+        return
+    if (signs is not None or not isinstance(failure, dict)
+            or set(failure) != {'phase', 'code'}
+            or failure['phase'] != 'pending_journal' or not isinstance(failure['code'], str)
+            or (failure['phase'], failure['code']) not in REFUSAL_CODES):
+        raise ValueError('Pending journal unknown export refused')
 
 
 def validate_pending_signs(signs):
@@ -459,19 +524,49 @@ def validate_pending_signs(signs):
         timestamp(sign['observedAtMs'])
 
 
+def pending_stage(stage, read):
+    if stage not in PENDING_READ_STAGES:
+        raise ValueError('Unqualified pending read stage')
+    try:
+        return read()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if isinstance(error, ScopedRefusal):
+            raise
+        if stage == 'journal':
+            code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired) else
+                    'command_unavailable' if isinstance(error, OSError) else
+                    'json_refused' if isinstance(error, json.JSONDecodeError) else
+                    PENDING_JOURNAL_ERRORS.get(str(error), 'evidence_unavailable'))
+            raise ScopedRefusal('pending_journal', code) from None
+        absent = isinstance(error, FileNotFoundError) and stage in {
+            'directory', 'request_read', 'recheck_requests'}
+        raise ScopedRefusal('pending_' + stage,
+                            'records_absent' if absent else 'evidence_unavailable') from None
+
+
 def pending_remote(request, root_fd):
-    directory = os.open('engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+    directory = pending_stage('directory', lambda: os.open(
+        'engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd))
     try:
         names = [request['runKey'] + suffix for suffix in
                  ('.request', '.intent', '.awaiting-certificate', '.break-deadline')]
         read = lambda: [read_lines(directory, name, optional=index > 1) for index, name in enumerate(names)]
-        before = read()
-        pending_metadata(request, *before)
-        unit = pending_unit(request)
-        signs = pending_journal(request, unit)
-        if before != read() or unit != pending_unit(request):
-            raise ValueError('Pending evidence changed across read')
-        return pending_observation(request, *before, unit, signs)
+        before = pending_stage('request_read', read)
+        pending_stage('request_binding', lambda: pending_metadata(request, *before))
+        unit = pending_stage('unit', lambda: pending_unit(request))
+        journal_failure = None
+        try:
+            signs = pending_stage('journal', lambda: pending_journal(request, unit))
+        except ScopedRefusal as error:
+            if error.phase != 'pending_journal':
+                raise
+            signs = None
+            journal_failure = {'phase': error.phase, 'code': error.code}
+        if before != pending_stage('recheck_requests', read):
+            raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
+        if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
+            raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
+        return pending_observation(request, *before, unit, signs, journal_failure)
     finally:
         os.close(directory)
 
@@ -535,7 +630,19 @@ finally{
 """
 
 
-def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
+def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536, stage=None):
+    if stage is not None and stage not in INSPECTOR_COMMAND_STAGES:
+        raise ValueError('Unqualified inspector command stage')
+    try:
+        return _inspector_command(args, deadline, stderr=stderr, input_bytes=input_bytes, limit=limit)
+    except ValueError as error:
+        code = INSPECTOR_COMMAND_ERRORS.get(str(error))
+        if stage is not None and code is not None:
+            raise ScopedRefusal('inspector_' + stage, code) from None
+        raise
+
+
+def _inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=65536):
     """Fixed native child reads, one overall budget, bounded pipes and stderr."""
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -552,9 +659,12 @@ def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=6
             selector.register(child.stderr, selectors.EVENT_READ, True)
             while selector.get_map():
                 left = deadline - time.monotonic()
-                if left <= 0 or not selector.select(min(left, 3)):
+                if left <= 0:
                     raise ValueError('Inspector read deadline')
-                for key, _ in selector.select(0):
+                ready = selector.select(min(left, 3))
+                if not ready:
+                    continue
+                for key, _ in ready:
                     part = os.read(key.fileobj.fileno(), 4096)
                     if not part:
                         selector.unregister(key.fileobj)
@@ -573,9 +683,9 @@ def inspector_command(args, deadline, *, stderr=False, input_bytes=None, limit=6
         child.stderr.close()
 
 
-def inspector_identity(deadline):
+def inspector_identity(deadline, *, stage='container'):
     fmt = '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}} {{.RestartCount}}'
-    raw = inspector_command(['docker', 'inspect', '--format', fmt, 'club-arena-engine'], deadline, limit=2048).decode().strip().split()
+    raw = inspector_command(['docker', 'inspect', '--format', fmt, 'club-arena-engine'], deadline, limit=2048, stage=stage).decode().strip().split()
     if (len(raw) != 6 or not re.fullmatch('[0-9a-f]{64}', raw[0])
             or not re.fullmatch('sha256:[0-9a-f]{64}', raw[1]) or raw[2] != 'true'
             or not re.fullmatch(r'\d{4}-\d\d-\d\dT[\d:.]+Z', raw[3])
@@ -584,9 +694,9 @@ def inspector_identity(deadline):
     return dict(zip(['container', 'image', 'running', 'startedAt', 'hostPid', 'restarts'], raw))
 
 
-def inspector_health(deadline):
+def inspector_health(deadline, *, stage='health'):
     raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
-        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144, stage=stage)
     value = json.loads(raw, object_pairs_hook=unique_object)
     if (not isinstance(value, dict) or value.get('running') is not True
             or value.get('releaseSha') != EED or value.get('version') != EED[:8]
@@ -666,7 +776,7 @@ def inspector_endpoint(raw, at):
 def inspector_probe(container, deadline, expected=None):
     raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
-        input_bytes=INSPECTOR_NODE.encode(), limit=16384)
+        input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)
     state = value.get('state') if isinstance(value, dict) else None
     if state not in {'closed', 'open', 'owned', 'foreign', 'unproved'}:
@@ -717,7 +827,7 @@ def inspector_remote(request, root_fd):
                 and binding['result']['recoveredDesiredImageId'] != before['image']):
             raise ScopedRefusal('inspector', 'identity_changed')
         label = inspector_command(['docker', 'image', 'inspect', '--format',
-            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256).decode().strip()
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']], deadline, limit=256, stage='image').decode().strip()
         if label != intent['source']:
             return answer
         answer.update(controlSha=intent['controlSha'], originalSourceSha=EED, instanceId=intent['instance'])
@@ -728,7 +838,7 @@ def inspector_remote(request, root_fd):
             # Docker logs emits the container stderr stream on stderr. Never
             # export raw logs, URL, socket rows, host PID, container ID or paths.
             raw = inspector_command(['docker', 'logs', '--timestamps', '--since', str(intent['at']),
-                '--until', str(intent['at'] + 10), before['container']], deadline, stderr=True)
+                '--until', str(intent['at'] + 10), before['container']], deadline, stderr=True, stage='history')
             try:
                 historical = inspector_endpoint(raw, intent['at'])
             except ValueError:
@@ -749,7 +859,7 @@ def inspector_remote(request, root_fd):
                         answer.update(status='foreign', reason='established_inspector_client')
                     else:
                         answer['reason'] = 'native_read_unproved'
-        if (before != inspector_identity(deadline) or health != inspector_health(deadline)
+        if (before != inspector_identity(deadline, stage='recheck_container') or health != inspector_health(deadline, stage='recheck_health')
                 or intent != inspector_intent(request, directory)
                 or binding != inspector_binding(request, directory, root_fd, intent)):
             raise ScopedRefusal('inspector', 'identity_changed')
@@ -830,7 +940,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -844,7 +954,9 @@ def validate_reply(value, request):
                 raise ValueError('Pending exported deadline refused')
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
-        validate_pending_signs(value['journalSigns'])
+        validate_pending_journal(value['journalSigns'], value['journalFailure'])
+        if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
+            raise ValueError('Pending journal status refused')
         return value
     fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'cause', 'announcedAtMs',
               'freezeAtMs', 'windowEndsAtMs', 'sealedAtMs', 'evidenceBasis', 'emergencyBasisStatus', 'emergencyBasis'}

@@ -129,11 +129,21 @@ describe('horse tournament entry spends the beneficiary ticket before chips', ()
     const partition = RECURRING.indexOf(
       'const ticketPool = pool.filter((horse) => ticketHintIds.has(horse.id));'
     );
-    const slice = RECURRING.indexOf(': orderedTickets.concat(orderedWallets).slice(0, count);');
+    const slice = RECURRING.indexOf(
+      ': orderedTickets.concat(orderedWallets).slice(0, count * 4 + 6);'
+    );
     expect(lane).toBeGreaterThan(-1);
     expect(bankroll).toBeGreaterThan(lane);
     expect(partition).toBeGreaterThan(bankroll);
     expect(slice).toBeGreaterThan(partition);
+    const quota = RECURRING.indexOf(
+      'const admissionLimit = redeemTickets ? Math.max(count, recoveryTickets.length) : count;'
+    );
+    const stopAtQuota = RECURRING.indexOf('if (registered >= admissionLimit) break;');
+    const entry = RECURRING.indexOf("'fn_register_horse_for_tournament'", stopAtQuota);
+    expect(quota).toBeGreaterThan(slice);
+    expect(stopAtQuota).toBeGreaterThan(quota);
+    expect(entry).toBeGreaterThan(stopAtQuota);
   });
 
   it('rehearses the full horse cycle and both no-wallet race refusals', () => {

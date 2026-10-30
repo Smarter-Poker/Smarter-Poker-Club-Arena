@@ -12,7 +12,7 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('isolates the exact client delivery jobs without moving accounting or server qualification', () => {
+  it('uses warm hosted client delivery without moving accounting or server qualification', () => {
     const paid = (label: string) =>
       "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
       label +
@@ -22,20 +22,39 @@ describe('browser qualification parallel delivery', () => {
       readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
     );
     for (const key of [
+      'changes',
+      'source_windows',
+      'stub_gate',
+      'typecheck',
+      'unit',
+      'server',
+      'verdict',
+      'css-beats-gate',
       'typecheck_compile',
       'unit_shards',
       'build',
       'css-beats-e2e',
       'diamond-playfield-e2e',
     ])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+      expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
     for (const key of ['accounting_postgres', 'server_shards'])
       expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
-    for (const key of ['client-tests', 'build-and-store'])
-      expect(publishing.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+    for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
+      expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
-      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-delivery'));
+      expect(transaction.jobs[key]['runs-on']).toBe('ubuntu-latest');
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(2);
+    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(2);
+    for (const key of [
+      'publish-record-gateway',
+      'bootstrap-record-gateway',
+      'install-record-gateway-credentials',
+      'inspect-record-gateway-host',
+    ])
+      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
+    for (const key of ['live-e2e', 'post-deploy-check'])
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
     expect(publishing.jobs.production.concurrency).toEqual({
       group: 'publish-club-arena-production',
       'cancel-in-progress': false,

@@ -1,3 +1,4 @@
+import { useSatelliteAwards } from '../../components/tournament/details/useSatelliteAwards';
 import { satelliteStartsWhenFull } from '../../utils/satelliteQualification';
 import { readTournamentStandings } from '../../services/readTournamentStandings';
 import {
@@ -1743,12 +1744,15 @@ export default function TournamentDetails({
    * redirected to that table directly") - a finished event's table ids point at
    * closed felts, and a tab that receives no handler renders no link.
    */
+  const satelliteAwards = useSatelliteAwards(tournament, entries, undefined, user?.id);
+
   const tabProps = useMemo<TournamentTabProps | null>(
     () =>
       tournament
         ? {
             tournament,
             entries,
+            satelliteAwards,
             /* A FINISHED EVENT HAS NO FELT (2026-10-04). Tables are only ever
                READ while the event is dealing, and nothing cleared them when
                it stopped, so a lobby left open across the finish - the in-game
@@ -1772,6 +1776,7 @@ export default function TournamentDetails({
     [
       tournament,
       entries,
+      satelliteAwards,
       tables,
       blindLevels,
       user?.id,

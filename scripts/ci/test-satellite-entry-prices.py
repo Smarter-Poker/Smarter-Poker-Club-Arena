@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Native PG qualification of value-ticket selection and atomic escrow use.
-The unchanged gameplay/admission and journal-writer closures are explicit fixture
-boundaries; provider financial qualification and live readback remain required.
-"""
+"""Native PG qualification of satellite schedule pricing and its live-proof predicate."""
 import os,json,re,subprocess,tempfile,shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -54,7 +51,10 @@ try:
  INSERT INTO tournament_satellite_economic_snapshots VALUES('90000000-0000-4000-8000-000000000008');
  """)
  migration=next((root/'supabase/migrations').glob('*_satellite_schedules_fund_economical_target_tickets.sql'))
+ proof=next(line.split('-- @live-proof: ',1)[1] for line in migration.read_text().splitlines() if line.startswith('-- @live-proof: '))
+ check('SELECT NOT ('+proof+');')
  sql(migration.read_text())
+ check('SELECT ('+proof+');')
  check("SELECT config->>'buyIn'='5' AND name='Nightly Satellite 5' AND config->>'rebuyCost'='5' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000003';")
  check("SELECT config->>'buyIn'='0' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000009';")
  check("SELECT config->>'buyIn'='5' FROM tournament_schedules WHERE id='90000000-0000-4000-8000-000000000012';")

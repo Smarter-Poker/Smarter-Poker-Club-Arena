@@ -1,7 +1,7 @@
 -- Owner 2026-10-29: satellite entries fund target tickets, normally one per
 -- five to ten entries. Correct the maintained schedule and unpurchased copies.
 -- Registered/running events and frozen economic/settlement receipts are preserved.
--- @live-proof: economical schedule/empty-instance prices; no registered event changed.
+-- @live-proof: EXISTS (SELECT 1 FROM public.tournament_schedules s JOIN public.tournament_schedules target ON target.active AND target.club_id=s.club_id AND target.union_id IS NOT DISTINCT FROM s.union_id AND lower(target.config->>'type')<>'satellite' AND (target.name=s.config->>'satelliteTargetName' OR target.config->>'name'=s.config->>'satelliteTargetName') WHERE s.active AND lower(s.config->>'type')='satellite' AND s.config->>'shortDescription'='Win Target Tournament Tickets. Entry Value Funds Approximately One Ticket Per Five To Ten Entries.' AND NULLIF(target.config->>'buyIn','')::numeric / NULLIF(round(NULLIF(s.config->>'buyIn','')::numeric*.9,2),0) BETWEEN 5 AND 10)
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='8s';

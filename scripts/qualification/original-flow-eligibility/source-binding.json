@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 254352,
-      "sha256": "0658909d1ece50746c39aa2085de886dd29f21b6386ef3ea06723a7a5183b95a"
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1223,6 +1223,26 @@
     "currentWorkflow": {
       "bytes": 254352,
       "sha256": "0658909d1ece50746c39aa2085de886dd29f21b6386ef3ea06723a7a5183b95a"
+    }
+  },
+  "warmClientRunnerAdmissionSourceAudit20261029": {
+    "scope": "Source identity only: client CI and publication preparation use standard warm GitHub-hosted runner admission; bounded Vitest workers preserve existing test and financial requirements.",
+    "previousCiPin": {
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+    },
+    "currentCiPin": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
+  },
+  "mttWarmRunnerMainComposition20261029": {
+    "reason": "Compose protected main warm hosted runner admission with the MTT qualification and overnight floor. Preserve both parent audit histories and every financial assertion and qualification state. Current source identity only, not financial recertification.",
+    "protectedMain": "23a8c4dc1b9e78b319b4693c3e414c95f993572b",
+    "currentWorkflow": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
   }
 }

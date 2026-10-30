@@ -26,11 +26,11 @@
     "installed_SPGiST_drift_refuses",
     "noncritical27_full_body_after_snapshot_drift_atomic_refusal"
   ],
-  "migration_sha256": "55acccb2fd9e07a3d47b5ef77d80c70372b8003868a66e149e3595e772e23a0e",
+  "migration_sha256": "edbd14382c5dc891356c59596df472aeef92e830de0b13cafe0d25add278979a",
   "source65_GEN_gate_fixtures_explicit": true,
   "production_capacity_claimed": false,
   "all27_authorities_unchanged": true,
   "fixture_rows": 20006,
-  "evidence_boundary": "private PG17 actual-schema20,006 rows; no live production capacity claim",
-  "guard_contract": "7 static critical body/portable-metadata pins plus full27 source/rawmetadata before-after snapshot; actual14/10/3 plus installed SPGiST unchanged"
+  "evidence_boundary": "private PG17 actual-schema20,006rows; targeted ANALYZE(game_scope) real expression stats; no production capacity claim",
+  "guard_contract": "7static critical body/metadata pins plus full27 source/rawmetadata prepost; actual14/10/3 plus installedSPGiST unchanged"
 }

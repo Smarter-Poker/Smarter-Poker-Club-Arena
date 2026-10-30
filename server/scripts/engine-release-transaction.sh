@@ -12,6 +12,7 @@ ENGINE_UP="$CONTROL_DIR/engine-up.sh"
 IMAGE_BUILDER="$CONTROL_DIR/build-engine-image.sh"
 DATABASE_PROOF="$CONTROL_DIR/engine-release-database-proof.py"
 INFLIGHT_HANDS="$CONTROL_DIR/engine-release-inflight-hands.py"
+LIGHTNING_HOLD="$CONTROL_DIR/engine-release-lightning-hold.py"
 LEGACY_CHECKPOINT="$CONTROL_DIR/legacy-engine-checkpoint.sh"
 LEGACY_CHECKPOINT_SHA=2f4e33560bcd23bfb5cc731f31816b2c2e2847e5
 CHECKPOINT_758_SHA=758610f3f844406bbbaee2f5100ced36d84fb943
@@ -404,6 +405,20 @@ FLOOR_NO_ACTION
 # else, and again on every exit. Only newer_release_awaiting_certificate reads
 # it, and only to let an OLDER target stand aside for this one.
 AWAITING_CERTIFICATE_FILE="$REQUEST_ROOT/$RUN_ID.awaiting-certificate"
+# LIGHTNING IS HELD FOR THE CUTOVER (2026-10-30). The legacy one-shot checkpoint
+# refuses with retained_lightning_host_census_unproven while any concrete
+# LightningHandHost is alive in the old process, and Lightning deals ~5,600
+# hands an hour, so an unheld Lightning floor refuses nearly every break
+# (15:55 UTC, 2026-10-30). The break parks classic tables at a hand boundary;
+# this parks Lightning the same way, through the Phase 13 operator door
+# (fn_lightning_operator_control pause: no new hand forms, hands in the air
+# settle, undealt formations are void) as soon as the announced countdown is
+# durable, and resumes exactly the Clusters THIS run paused after the thaw.
+# The hold is a durable file beside the request so a resume survives this
+# process: recover_on_exit releases it on every exit path, and
+# engine-release-recover.sh --mode terminal is its second reader.
+LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+LIGHTNING_HOLD_PLACED=0
 [[ "$AWAITING_CERTIFICATE_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.awaiting-certificate$ ]] \
   || die 'unsafe awaiting-certificate marker path'
 rm -f -- "$AWAITING_CERTIFICATE_FILE"
@@ -421,6 +436,82 @@ rm -f -- "$AWAITING_CERTIFICATE_FILE"
 if [ -e "$LEGACY_CHECKPOINT_INTENT_FILE" ] || [ -L "$LEGACY_CHECKPOINT_INTENT_FILE" ]; then
   LEGACY_CHECKPOINT_ATTEMPTED=1
 fi
+
+# Place the Lightning hold once the announced break is durably counting down.
+# Idempotent: the helper replays its own request ids, and a placed hold is
+# never re-sent. An UNKNOWN answer is retried on the next loop pass; it never
+# admits or refuses the checkpoint by itself (the census guard still decides).
+hold_lightning_when_counting_down() {
+  local response http_code body rc
+  [ "$LIGHTNING_HOLD_PLACED" = 0 ] || return 0
+  [ -z "${DRILL_MODE:-}" ] || return 0
+  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 0
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in 200|503) ;; *) return 0 ;; esac
+  printf '%s' "$body" | python3 -c '
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m = d.get("maintenance") if isinstance(d, dict) else None
+if not isinstance(m, dict): raise SystemExit(1)
+ok = m.get("active") is True and m.get("phase") == "counting_down" and m.get("durableConfirmed") is True
+raise SystemExit(0 if ok else 1)
+' 2>/dev/null || return 0
+  set +e
+  timeout --signal=TERM --kill-after=2s 60s \
+    "$LIGHTNING_HOLD" pause --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
+  rc=$?
+  set -e
+  case "$rc" in
+    0|1) LIGHTNING_HOLD_PLACED=1 ;;
+    126|127) echo "[engine-release-transaction] WARN: the Lightning hold helper could not run (exit $rc); Lightning was NEVER ASKED to pause and the census guard decides on its own" >&2; LIGHTNING_HOLD_PLACED=1 ;;
+    *) echo "[engine-release-transaction] WARN: the Lightning hold answered UNKNOWN (exit $rc); it is retried on the next pass" >&2 ;;
+  esac
+  return 0
+}
+
+# Release the hold after the thaw, on every exit path. Resuming while the
+# platform is still frozen would only be refused, so this waits for the
+# serving engine to report the break over, bounded by the latest known break
+# end plus ninety seconds and never more than ten minutes. The resume itself
+# is retried three times; a hold that still cannot be released stays on disk
+# for engine-release-recover.sh, and says so.
+release_lightning_hold() {
+  local break_end wait_until response http_code body attempt rc
+  [ -e "$LIGHTNING_HOLD_FILE" ] || return 0
+  break_end="${BREAK_END_EPOCH:-0}"
+  [ "${LEGACY_ENTRY_BREAK_END_EPOCH:-0}" -le "$break_end" ] || break_end="$LEGACY_ENTRY_BREAK_END_EPOCH"
+  wait_until=$(( break_end + 90 ))
+  [ "$wait_until" -le $(( $(date +%s) + 600 )) ] || wait_until=$(( $(date +%s) + 600 ))
+  while [ "$(date +%s)" -lt "$wait_until" ]; do
+    response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+      http://127.0.0.1:8080/health 2>/dev/null)" || { sleep 5; continue; }
+    http_code="${response##*$'\n'}"
+    body="${response%$'\n'*}"
+    case "$http_code" in 200|503) ;; *) sleep 5; continue ;; esac
+    if printf '%s' "$body" | python3 -c '
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit(1)
+m = d.get("maintenance") if isinstance(d, dict) else None
+raise SystemExit(0 if d.get("running") is True and isinstance(m, dict) and m.get("active") is not True else 1)
+' 2>/dev/null; then
+      break
+    fi
+    sleep 5
+  done
+  for attempt in 1 2 3; do
+    timeout --signal=TERM --kill-after=2s 60s \
+      "$LIGHTNING_HOLD" resume --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"
+    rc=$?
+    [ "$rc" -ne 0 ] || return 0
+    [ "$attempt" -lt 3 ] && sleep 15
+  done
+  echo "[engine-release-transaction] FATAL: the Lightning hold for run $RUN_ID could not be released (exit $rc); $LIGHTNING_HOLD_FILE stays on disk for engine-release-recover.sh" >&2
+  return 0
+}
 
 recover_on_exit() {
   local rc=$? recovery_deadline recovery_remaining non_break_deadline
@@ -466,6 +557,7 @@ recover_on_exit() {
   elif [ "$rc" -ne 0 ] && [ "$MUTATION_STARTED" = 1 ]; then
     echo '[engine-release-transaction] WARN: deferred recovery to ExecStopPost because the engine lock is not held' >&2
   fi
+  release_lightning_hold
   if [ "$LOCK_HELD" = 1 ]; then
     flock -u 9
   fi
@@ -2264,6 +2356,7 @@ while :; do
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    hold_lightning_when_counting_down
     ENTRY_STARTED_MS="$(date +%s%3N)"
     LEGACY_ENTRY_DEADLINE_MS=$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))
     ADMISSION_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"

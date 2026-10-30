@@ -40,6 +40,7 @@ REQUIRED_FILES=(
   collect-monitoring-health.sh
   engine-release-database-proof.py
   engine-release-inflight-hands.py
+  engine-release-lightning-hold.py
   engine-release-transaction.sh
   engine-release-activation-floor.py
   prewarm-engine-image.sh
@@ -328,7 +329,8 @@ else
     bash -n "$GENERATION_STAGE/$script"
   done
   for script in engine-release-seal.py engine-release-database-proof.py \
-    engine-release-inflight-hands.py engine-release-activation-floor.py main-inspector-retirement.py; do
+    engine-release-inflight-hands.py engine-release-lightning-hold.py \
+    engine-release-activation-floor.py main-inspector-retirement.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

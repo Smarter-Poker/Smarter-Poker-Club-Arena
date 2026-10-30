@@ -1,3 +1,4 @@
+import LobbyGameSections from '../components/lobby/LobbyGameSections';
 import { usePlayerPreference } from '../hooks/usePlayerPreference';
 import { satelliteStartsWhenFull } from '../utils/satelliteQualification';
 import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
@@ -972,6 +973,11 @@ function ClubHomePageContent({
      MTTs therefore opened onto an empty screen blaming "filters" - every
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>(initialGameType ?? 'ALL');
+  // Browsing starts with an explicit choice. A requested landing remains a
+  // deliberate navigation and opens its own section without another click.
+  const [gameSection, setGameSection] = useState<'cash' | 'tournaments' | null>(
+    initialGameType ? (TOURNAMENT_TYPES.includes(initialGameType) ? 'tournaments' : 'cash') : null
+  );
   /* The landing this MOUNT was opened on. Held here, not re-read from the
      prop: the strip clears the prop as soon as the landing is reported
      applied, and the database's later correction of the saved view must still
@@ -2232,6 +2238,7 @@ function ClubHomePageContent({
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
     if (switchingClubs) linkedGameTypeRef.current = undefined;
+    if (switchingClubs || switchingAccounts) setGameSection(null);
 
     const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
@@ -3592,8 +3599,9 @@ function ClubHomePageContent({
 
   // Which halves of the lobby the chosen type can produce. Derived once so the
   // filters, the status row and the empty state cannot disagree about it.
-  const showsCash = gameType === 'ALL' || CASH_TYPES.includes(gameType);
-  const showsTournaments = gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType);
+  const showsCash = gameSection === 'cash' && (gameType === 'ALL' || CASH_TYPES.includes(gameType));
+  const showsTournaments =
+    gameSection === 'tournaments' && (gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType));
   const showTournaments = TOURNAMENT_TYPES.includes(gameType);
 
   /* THE STAKES MENU COUNTS STYLES (Dan 2026-09-05): games per style on THIS
@@ -3743,7 +3751,7 @@ function ClubHomePageContent({
        ALL and then restored the old tab and Favorites state on the next
        visit, which reads as the button not having worked. */
     selectFavoritesOnly(false);
-    selectGameType('ALL');
+    selectGameType(gameSection === 'tournaments' ? 'MTT' : 'ALL');
     setAllStatusFilter('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
@@ -3753,7 +3761,15 @@ function ClubHomePageContent({
       setAdvFilters(next);
       if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     }
-  }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
+  }, [
+    narrowing.fSpec,
+    advFilters,
+    gameType,
+    resolvedClubId,
+    selectFavoritesOnly,
+    selectGameType,
+    gameSection,
+  ]);
 
   // Zero matches is a valid saved preference. Only the player's explicit
   // Show All Games action above may clear it.
@@ -4719,16 +4735,30 @@ function ClubHomePageContent({
         return variant !== undefined && matchesVariant(tournament, variant);
       });
     }
-    if (home !== undefined && home !== gameType && !viewPrefsTouched.current) {
+    if (
+      home !== undefined &&
+      (home !== gameType || gameSection === null) &&
+      !viewPrefsTouched.current
+    ) {
       linkedGameTypeRef.current = home;
       setGameType(home);
+      setGameSection(TOURNAMENT_TYPES.includes(home) ? 'tournaments' : 'cash');
       setSortKey(sortForTab(viewPrefs, home));
       return;
     }
     if (!gameListsLoaded) return;
     pendingGameRef.current = null;
     setLinkedGameId(null);
-  }, [urlSyncEnabled, lobbyEntries, tables, tournaments, gameType, gameListsLoaded, viewPrefs]);
+  }, [
+    urlSyncEnabled,
+    lobbyEntries,
+    tables,
+    tournaments,
+    gameType,
+    gameSection,
+    gameListsLoaded,
+    viewPrefs,
+  ]);
 
   /* The link's filter exemption lasts while it is pending and while its own
      card is open. Once that card closes (here), or the player opens another
@@ -5703,50 +5733,62 @@ function ClubHomePageContent({
           controls={
             <section className="lobby-controls" aria-label="Browse Games">
               <div className="lobby-controls__heading">
-                <div>
-                  <span className="lobby-controls__eyebrow">Live Club Schedule</span>
-                  <strong className="lobby-controls__title">Find Your Game</strong>
-                </div>
-                <div className="lobby-controls__operator-actions">
-                  <span className="lobby-controls__total">
-                    <strong>
-                      {totalGameCount.toLocaleString()}
-                      {countsCapped ? '+' : ''}
-                    </strong>{' '}
-                    Games
-                  </span>
+                <strong className="lobby-controls__title">Find Your Game</strong>
+              </div>
+              <LobbyGameSections
+                selected={gameSection}
+                onToggle={(section) => {
+                  haptic.selection();
+                  setFiltersOpen(false);
+                  const opening = gameSection !== section;
+                  setGameSection(opening ? section : null);
+                  if (opening) {
+                    const matching =
+                      section === 'cash'
+                        ? gameType === 'ALL' || CASH_TYPES.includes(gameType)
+                        : TOURNAMENT_TYPES.includes(gameType);
+                    selectGameType(matching ? gameType : section === 'cash' ? 'ALL' : 'MTT');
+                  }
+                }}
+              />
+              {gameSection && (
+                <div id="lobby-game-section-controls">
                   {canCreateClubGames && (
-                    <GameCreationActions
-                      managementPath={`/clubs/${clubId}/table-management`}
-                      compact
-                      only={CREATE_TARGET_FOR_TAB[gameType]}
-                      tableGame={CREATE_TABLE_GAME_FOR_TAB[gameType]}
-                      desktopOnly
-                      onNavigate={(path) => navigate(path)}
-                    />
+                    <div className="lobby-controls__operator-actions">
+                      <GameCreationActions
+                        managementPath={`/clubs/${clubId}/table-management`}
+                        compact
+                        only={CREATE_TARGET_FOR_TAB[gameType]}
+                        tableGame={CREATE_TABLE_GAME_FOR_TAB[gameType]}
+                        desktopOnly
+                        onNavigate={(path) => navigate(path)}
+                      />
+                    </div>
                   )}
-                </div>
-              </div>
-              <div className="game-bar">
-                <div className="game-bar__types" role="tablist" aria-label="Game Type">
-                  {GAME_TYPE_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      role="tab"
-                      aria-selected={gameType === tab.key}
-                      className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
-                      onClick={() => {
-                        haptic.selection();
-                        selectGameType(tab.key);
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  <div className="game-bar">
+                    <div className="game-bar__types" role="tablist" aria-label="Game Type">
+                      {GAME_TYPE_TABS.filter((tab) =>
+                        gameSection === 'cash'
+                          ? tab.key === 'ALL' || CASH_TYPES.includes(tab.key)
+                          : TOURNAMENT_TYPES.includes(tab.key)
+                      ).map((tab) => (
+                        <button
+                          key={tab.key}
+                          role="tab"
+                          aria-selected={gameType === tab.key}
+                          className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+                          onClick={() => {
+                            haptic.selection();
+                            selectGameType(tab.key);
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* ═══════════════════════════════════════════════════════════════════
+                  {/* ═══════════════════════════════════════════════════════════════════
           QUICK PREFERENCES — the one-tap shortcuts under the action bar
           ───────────────────────────────────────────────────────────────────
           Dan 2026-08-21: "you never added the quick preference link under the
@@ -5758,58 +5800,59 @@ function ClubHomePageContent({
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-              <div className="lobby-refinements">
-                {gameType === 'ALL' ? (
-                  <div className="quickprefs">
-                    <div
-                      className="quickprefs__row quickprefs__row--status"
-                      aria-label="Game Status"
-                    >
-                      {ALL_STATUS_FILTERS.map((status) => (
-                        <button
-                          key={status.key}
-                          type="button"
-                          className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
-                          aria-pressed={allStatusFilter === status.key}
-                          onClick={() => {
-                            haptic.selection();
-                            setAllStatusFilter(status.key);
-                          }}
-                        >
-                          {status.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  (() => {
-                    const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                    if (!qSpec) return null;
-                    const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
-
-                    return (
+                  <div className="lobby-refinements">
+                    {gameType === 'ALL' ? (
                       <div className="quickprefs">
                         <div
                           className="quickprefs__row quickprefs__row--status"
                           aria-label="Game Status"
                         >
-                          <button
-                            type="button"
-                            className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                            aria-pressed={qVal.statuses.length === 0}
-                            onClick={() => {
-                              haptic.selection();
-                              const next: FilterStore = {
-                                ...advFilters,
-                                [gameType]: { ...qVal, statuses: [] },
-                              };
-                              setAdvFilters(next);
-                              if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                            }}
-                          >
-                            All
-                          </button>
-                          {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                          {ALL_STATUS_FILTERS.map((status) => (
+                            <button
+                              key={status.key}
+                              type="button"
+                              className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                              aria-pressed={allStatusFilter === status.key}
+                              onClick={() => {
+                                haptic.selection();
+                                setAllStatusFilter(status.key);
+                              }}
+                            >
+                              {status.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      (() => {
+                        const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                        if (!qSpec) return null;
+                        const qVal =
+                          advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+
+                        return (
+                          <div className="quickprefs">
+                            <div
+                              className="quickprefs__row quickprefs__row--status"
+                              aria-label="Game Status"
+                            >
+                              <button
+                                type="button"
+                                className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                                aria-pressed={qVal.statuses.length === 0}
+                                onClick={() => {
+                                  haptic.selection();
+                                  const next: FilterStore = {
+                                    ...advFilters,
+                                    [gameType]: { ...qVal, statuses: [] },
+                                  };
+                                  setAdvFilters(next);
+                                  if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                }}
+                              >
+                                All
+                              </button>
+                              {/* AUDIT 2026-08-21: these chips used to be a hand-written list
                     chosen by showsCash, which disagreed with the sheet on the
                     same screen - Spin-It offered Full/Empty/Open Seats inside
                     Advanced Filters and Running/Registering out here. Both now
@@ -5819,51 +5862,51 @@ function ClubHomePageContent({
                     They also write the SAVED filter now rather than the local
                     sub-filter state, which is what makes them agree with the
                     sheet after a reload instead of resetting. */}
-                          {qSpec.statuses.map((sf) => {
-                            const on = qVal.statuses.includes(sf.key);
-                            return (
-                              <button
-                                key={sf.key}
-                                className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                                aria-pressed={on}
-                                onClick={() => {
-                                  haptic.selection();
-                                  const next: FilterStore = {
-                                    ...advFilters,
-                                    [gameType]: {
-                                      ...qVal,
-                                      statuses: on
-                                        ? qVal.statuses.filter((k) => k !== sf.key)
-                                        : [...qVal.statuses, sf.key],
-                                    },
-                                  };
-                                  setAdvFilters(next);
-                                  if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                                }}
-                              >
-                                {sf.label}
-                              </button>
-                            );
-                          })}
-                          {currentUserId && showsCash && (
-                            <button
-                              type="button"
-                              className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                              aria-pressed={favoritesOnly}
-                              onClick={() => {
-                                haptic.selection();
-                                selectFavoritesOnly(!favoritesOnly);
-                              }}
-                            >
-                              Favorites
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
-                {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
+                              {qSpec.statuses.map((sf) => {
+                                const on = qVal.statuses.includes(sf.key);
+                                return (
+                                  <button
+                                    key={sf.key}
+                                    className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                                    aria-pressed={on}
+                                    onClick={() => {
+                                      haptic.selection();
+                                      const next: FilterStore = {
+                                        ...advFilters,
+                                        [gameType]: {
+                                          ...qVal,
+                                          statuses: on
+                                            ? qVal.statuses.filter((k) => k !== sf.key)
+                                            : [...qVal.statuses, sf.key],
+                                        },
+                                      };
+                                      setAdvFilters(next);
+                                      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                    }}
+                                  >
+                                    {sf.label}
+                                  </button>
+                                );
+                              })}
+                              {currentUserId && showsCash && (
+                                <button
+                                  type="button"
+                                  className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                                  aria-pressed={favoritesOnly}
+                                  onClick={() => {
+                                    haptic.selection();
+                                    selectFavoritesOnly(!favoritesOnly);
+                                  }}
+                                >
+                                  Favorites
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    )}
+                    {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
             hidden: AdvancedFilters retargets initialType 'ALL' to 'HOLDEM',
@@ -5878,25 +5921,27 @@ function ClubHomePageContent({
             to order. So the sheet opens in sortOnly mode instead: the game
             type row and every filter section are gone, Sort By is all that is
             left, and the button reads Sort. Every other tab is unchanged. */}
-                <button
-                  className={`game-bar__filter-btn ${(() => {
-                    if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
-                    const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                    const fVal = advFilters[gameType as FilterGameType];
-                    const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
-                    return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
-                  })()}`}
-                  aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-                  title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
-                  onClick={() => {
-                    haptic.light();
-                    setFiltersOpen(true);
-                  }}
-                >
-                  <IconSort />
-                  <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
-                </button>
-              </div>
+                    <button
+                      className={`game-bar__filter-btn ${(() => {
+                        if (gameType === 'ALL') return sortKey !== 'recommended' ? 'is-set' : '';
+                        const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                        const fVal = advFilters[gameType as FilterGameType];
+                        const isFilt = fSpec && fVal && isFilterActive(fSpec, fVal);
+                        return isFilt || sortKey !== 'recommended' ? 'is-set' : '';
+                      })()}`}
+                      aria-label={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                      title={gameType === 'ALL' ? 'Sort' : 'Filters And Sort'}
+                      onClick={() => {
+                        haptic.light();
+                        setFiltersOpen(true);
+                      }}
+                    >
+                      <IconSort />
+                      <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
           }
           /* The chip-club campaign opens announcements, an operator surface
@@ -5986,6 +6031,11 @@ function ClubHomePageContent({
             key={`${currentUser?.id ?? 'guest'}:${resolvedClubId || club!.id}`}
             clubId={resolvedClubId || club!.id}
             initialType={gameType as FilterGameType}
+            allowedTypes={
+              gameSection === 'cash'
+                ? (CASH_TYPES as FilterGameType[])
+                : (TOURNAMENT_TYPES as FilterGameType[])
+            }
             onClose={() => {
               /* Filters save on every click inside the sheet (Dan 2026-08-30),
                  so closing without Apply must still show what was saved -
@@ -6036,11 +6086,11 @@ function ClubHomePageContent({
           it never joins, registers, or spends. All commit actions live in
           the panel and reuse the existing platform flows.
       ═══════════════════════════════════════════════════════════════════ */}
-        <div className="club-home__games club-home__games--v2">
+        <div className="club-home__games club-home__games--v2" hidden={!gameSection}>
           {/* Render while loading too: LobbyTable owns the skeleton rows, and
             gating on entries>0 made them unreachable - first load flashed the
             empty state instead (review 2026-08-22). */}
-          {(lobbyEntries.length > 0 || loading) && (
+          {gameSection && (lobbyEntries.length > 0 || loading) && (
             <LobbyTable
               entries={lobbyEntries}
               clubId={club.id}
@@ -6126,7 +6176,8 @@ function ClubHomePageContent({
             It now distinguishes the three real causes and, when the player
             caused it, clears the cause in one tap.
         ═══════════════════════════════════════════════════════════════ */}
-          {!loading &&
+          {gameSection &&
+            !loading &&
             lobbyEntries.length === 0 &&
             (() => {
               // Same three causes the result count reads, from the same place.

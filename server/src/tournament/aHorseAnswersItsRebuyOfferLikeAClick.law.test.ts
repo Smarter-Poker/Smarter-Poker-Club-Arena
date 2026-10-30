@@ -294,6 +294,41 @@ describe('a horse answers its rebuy offer like a click', () => {
     expect(purchases()).toHaveLength(count);
   });
 
+  it.each(['stop', 'freeze', 'cutoff'])(
+    'rechecks %s after reserving a queued input and releases the reservation',
+    async (change) => {
+      vi.useFakeTimers();
+      try {
+        const user = willing[0];
+        const manager = setup({ offers: [user] });
+        const pending = new Map<string, Promise<void>>();
+        manager.horseRebuyPending = pending;
+        manager.running = true;
+        const now = Date.now();
+        vi.spyOn(pending, 'set').mockImplementation((key, promise) => {
+          Map.prototype.set.call(pending, key, promise);
+          if (change === 'stop') manager.running = false;
+          if (change === 'freeze') fixture.frozen = true;
+          if (change === 'cutoff') vi.setSystemTime(now + 10_000);
+          return pending;
+        });
+        const result = await manager.tryTournamentRebuys(
+          [user],
+          new Map([[user, HAND]]),
+          new Map([
+            [user, { handNumber: HAND, bustAtMs: now - 20_000, promptUntilMs: now + 10_000 }],
+          ]),
+          () => manager.running
+        );
+        expect(purchases()).toEqual([]);
+        expect(result.rebought.size).toBe(0);
+        expect(pending.size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+
   it('closes a spent free-buy offer without submitting a new purchase', async () => {
     const userId = willing[0]!;
     await setup({ offers: [userId], freeBuyUsed: 100 }).answerOpenHorseRebuyOffers();

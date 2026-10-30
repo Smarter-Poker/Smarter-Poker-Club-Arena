@@ -17,7 +17,7 @@ const users = Array.from(
 );
 
 const { horseChoosesTournamentRebuy } = await import('./horseTournamentRebuyChoice.js');
-// Derived from the input device itself so the owner share (75%, 2026-10-24)
+// Derived from the input device itself so the owner share (70%, 2026-10-29)
 // can change without re-deriving these indices by hand.
 const willingUsers = users.filter((id) => horseChoosesTournamentRebuy(event, id, 123));
 const decliningUser = users.find((id) => !willingUsers.includes(id))!;
@@ -126,7 +126,12 @@ describe('the tournament input device reads the authoritative closed window once
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
     ).toHaveLength(willingUsers.length);
     expect(result.rebought.size).toBe(0);
-    expect(result.answered.size).toBe(20);
+    // Only an explicit no is final. A false purchase response cannot prove
+    // whether the original transaction committed, so willing horses retain grace.
+    expect([...result.answered].sort()).toEqual(
+      users.filter((id) => !willingUsers.includes(id)).sort()
+    );
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
   });
 
   it('retains the executable re-entry product when the authoritative window is open', async () => {
@@ -215,7 +220,12 @@ describe('a rebuy-window policy the engine cannot read names itself once (2026-0
     expect(
       fixture.rpc.mock.calls.filter((call) => call[0] === 'process_tournament_rebuy')
     ).toHaveLength(willingUsers.length);
-    expect(result.answered.size).toBe(20);
+    // Only an explicit no is final. A false purchase response cannot prove
+    // whether the original transaction committed, so willing horses retain grace.
+    expect([...result.answered].sort()).toEqual(
+      users.filter((id) => !willingUsers.includes(id)).sort()
+    );
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalled();
     const reports = vi
       .mocked(reportError)
       .mock.calls.filter((call) => call[1] === 'Tournament.rebuy_window_unreadable');

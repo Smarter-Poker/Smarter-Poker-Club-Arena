@@ -2814,11 +2814,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           diagnostic('capacity_deferred');
           return;
         }
-        const startedAtMs = Date.now();
+        let startedAtMs: number | undefined;
         let purchase!: Promise<void>;
         purchase = Promise.resolve().then(async () => {
-          diagnostic('purchase_started', undefined, startedAtMs);
           try {
+            // State can change between reservation and this queued callback.
+            // service_role is not protected by the ordinary database freeze trigger.
+            if (!mayMutate() || isMaintenanceFrozen()) return;
+            if (
+              timing?.promptUntilMs !== null &&
+              timing?.promptUntilMs !== undefined &&
+              Date.now() >= timing.promptUntilMs
+            ) {
+              diagnostic('expired');
+              return;
+            }
+            startedAtMs = Date.now();
+            diagnostic('purchase_started', undefined, startedAtMs);
             const { data, error } = await supabase.rpc('process_tournament_rebuy', {
               p_tournament_id: this.tournamentId,
               p_user_id: h.id,

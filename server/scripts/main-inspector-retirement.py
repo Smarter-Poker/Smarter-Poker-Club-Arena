@@ -167,7 +167,17 @@ def bounded_native_facts(value):
                'connection_closed', 'connection_error', 'protocol_refused', 'evaluation_refused',
                'pid_mismatch', 'send_outcome_unknown', 'close_ack_refused', 'outcome_unknown',
                'main_inspector_retirement_unproved'}
+    reasons |= {'runtime_version_unproved', 'runtime_source_unproved', 'runtime_cmdline_unproved',
+                'runtime_unproved', 'discovery_unproved', 'kernel_unproved', 'proposal_unproved',
+                'grant_unproved', 'transport_unproved', 'absence_unproved',
+                'retirement_discovery_bound', 'retirement_endpoint', 'retirement_discovery_timeout',
+                'main_inspector_socket_unproved', 'retirement_claim_timeout', 'retirement_claim_bound',
+                'retirement_claim_missing', 'retirement_claim_mismatch', 'retirement_listener_retained',
+                'retirement_absence_timeout'}
+    entry_stages = {'runtime', 'discovery', 'kernel', 'proposal', 'grant', 'transport', 'absence'}
     result = {'ok': False, 'retryAllowed': False}
+    result['entryStage'] = (value.get('entryStage') if isinstance(value.get('entryStage'), str)
+                            and value.get('entryStage') in entry_stages else None)
     result['stage'] = value.get('stage') if isinstance(value.get('stage'), str) and value.get('stage') in stages else None
     result['reason'] = value.get('reason') if isinstance(value.get('reason'), str) and value.get('reason') in reasons else None
     for name in ('closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent'):

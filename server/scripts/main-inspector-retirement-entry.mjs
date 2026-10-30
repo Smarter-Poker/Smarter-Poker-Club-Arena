@@ -7,6 +7,7 @@ const retirementDeadline = Number(process.argv[1]);
 // the unchanged host20s. Keep100ms for normal exit and Docker forwarding.
 const retirementWorkDeadline = retirementDeadline - 200;
 let retirementPublishing = false;
+let retirementEntryStage = 'runtime';
 async function retirementPublish(outcome, exitCode) {
   if (retirementPublishing) return;
   retirementPublishing = true;
@@ -36,16 +37,49 @@ async function retirementPublish(outcome, exitCode) {
   }
   process.exit(written ? exitCode : 1);
 }
+// Only maintained literals may cross the native/host failure boundary.
+const retirementEntryReasonCodes = new Set([
+  'deadline_exhausted',
+  'runtime_version_unproved',
+  'runtime_source_unproved',
+  'runtime_cmdline_unproved',
+  'retirement_discovery_bound',
+  'retirement_endpoint',
+  'retirement_discovery_timeout',
+  'main_inspector_socket_unproved',
+  'retirement_claim_timeout',
+  'retirement_claim_bound',
+  'retirement_claim_missing',
+  'retirement_claim_mismatch',
+  'retirement_listener_retained',
+  'retirement_absence_timeout',
+]);
+const retirementEntryFallbacks = {
+  runtime: 'runtime_unproved',
+  discovery: 'discovery_unproved',
+  kernel: 'kernel_unproved',
+  proposal: 'proposal_unproved',
+  grant: 'grant_unproved',
+  transport: 'transport_unproved',
+  absence: 'absence_unproved',
+};
+function retirementEntryFailure(error) {
+  const code = error?.message === 'retirement_deadline' ? 'deadline_exhausted' : error?.message;
+  return {
+    // Preserve actual command/ACK/close facts and transport stage when one
+    // exists; before transport begins these facts are intentionally absent.
+    ...ownedMainInspectorDeadlineOutcome(),
+    ok: false,
+    reason: retirementEntryReasonCodes.has(code)
+      ? code
+      : retirementEntryFallbacks[retirementEntryStage],
+    entryStage: retirementEntryStage,
+    retryAllowed: false,
+  };
+}
+
 setTimeout(
-  () =>
-    retirementPublish(
-      ownedMainInspectorDeadlineOutcome() ?? {
-        ok: false,
-        reason: 'deadline_exhausted',
-        retryAllowed: false,
-      },
-      1
-    ),
+  () => retirementPublish(retirementEntryFailure(new Error('deadline_exhausted')), 1),
   Math.max(1, retirementWorkDeadline - Date.now())
 );
 const retirementExpectedSource = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
@@ -57,14 +91,17 @@ const retirementRemaining = () => {
 };
 function retirementRuntime() {
   retirementRemaining();
-  if (
-    process.version !== 'v22.23.2' ||
-    process.env.GIT_COMMIT_SHA !== retirementExpectedSource ||
-    JSON.stringify(
-      retirementFs.readFileSync('/proc/1/cmdline', 'utf8').split('\0').filter(Boolean)
-    ) !== JSON.stringify(['node', 'dist/index.js'])
-  )
-    throw new Error('retirement_runtime');
+  if (process.version !== 'v22.23.2') throw new Error('runtime_version_unproved');
+  if (process.env.GIT_COMMIT_SHA !== retirementExpectedSource)
+    throw new Error('runtime_source_unproved');
+  let cmdline;
+  try {
+    cmdline = retirementFs.readFileSync('/proc/1/cmdline', 'utf8').split('\0').filter(Boolean);
+  } catch {
+    throw new Error('runtime_cmdline_unproved');
+  }
+  if (JSON.stringify(cmdline) !== JSON.stringify(['node', 'dist/index.js']))
+    throw new Error('runtime_cmdline_unproved');
 }
 async function retirementDiscover() {
   return new Promise((resolve, reject) => {
@@ -116,18 +153,23 @@ async function retirementDiscover() {
   });
 }
 async function retirementEntry() {
+  retirementEntryStage = 'runtime';
   retirementRuntime();
+  retirementEntryStage = 'discovery';
   const endpoint = await retirementDiscover();
+  retirementEntryStage = 'kernel';
   const binding = captureMainInspectorBinding({
     pid: 1,
     port: 9229,
     deadlineMs: retirementWorkDeadline,
   });
+  retirementEntryStage = 'proposal';
   const proposal = { schema: 'main-inspector-retirement/v1', endpoint, binding };
   const serialized = JSON.stringify(proposal);
   const digest = retirementHash('sha256').update(serialized).digest('hex');
   console.log(serialized);
   // No attach until root has fsynced this exact proposal inside its operation claim.
+  retirementEntryStage = 'grant';
   const ack = await new Promise((resolve, reject) => {
     let input = '';
     const timer = setTimeout(
@@ -151,6 +193,7 @@ async function retirementEntry() {
     });
   });
   if (ack !== digest + '\n') throw new Error('retirement_claim_mismatch');
+  retirementEntryStage = 'transport';
   const outcome = await retireOwnedMainInspector({
     endpoint,
     expectedPid: 1,
@@ -174,7 +217,9 @@ async function retirementEntry() {
     },
   });
   if (!outcome.ok) return outcome;
+  retirementEntryStage = 'runtime';
   retirementRuntime();
+  retirementEntryStage = 'absence';
   await new Promise((resolve, reject) => {
     const request = retirementHttp.get(
       {
@@ -195,14 +240,10 @@ async function retirementEntry() {
   return { ...outcome, listenerAbsent: true };
 }
 retirementEntry().then(
-  (outcome) => retirementPublish(outcome, outcome.ok && outcome.listenerAbsent ? 0 : 1),
-  () =>
+  (outcome) =>
     retirementPublish(
-      {
-        ok: false,
-        reason: 'main_inspector_retirement_unproved',
-        retryAllowed: false,
-      },
-      1
-    )
+      outcome.ok ? outcome : { ...outcome, entryStage: retirementEntryStage },
+      outcome.ok && outcome.listenerAbsent ? 0 : 1
+    ),
+  (error) => retirementPublish(retirementEntryFailure(error), 1)
 );

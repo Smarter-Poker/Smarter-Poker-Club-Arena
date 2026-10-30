@@ -87,6 +87,7 @@ it.skipIf(process.platform !== 'linux')(
         outcome: {
           ok: false,
           reason: 'deadline_exhausted',
+          entryStage: 'transport',
           stage: 'native_close',
           closeRequested: true,
           closeAcknowledged: true,
@@ -99,6 +100,7 @@ it.skipIf(process.platform !== 'linux')(
         outcome: {
           ok: false,
           reason: 'deadline_exhausted',
+          entryStage: 'transport',
           stage: 'native_close',
           closeRequested: true,
           closeAcknowledged: true,

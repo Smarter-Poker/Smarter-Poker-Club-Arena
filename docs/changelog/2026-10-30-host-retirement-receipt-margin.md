@@ -47,3 +47,16 @@ without changing their bounds or witnesses. The selected host-receipt entry and
 its a7 floor stay first; all57 incoming entries remain byte-exact in their prior
 relative order (58 total), with database windows unchanged. All incoming source
 outside these two manifest intersections is retained from protected main.
+
+The later strict read of the failed456 operation found both current claim and
+receipt absent at read. This narrows the failure to before durable grant without
+identifying its cause or clearing earlier history. The native entry now retains
+closed failure stages for runtime, discovery, kernel proof, proposal, grant,
+transport and absence. Runtime version/source/cmdline refusals have distinct
+static codes; raw values and errors are never published. Existing transport
+stage and actual close facts survive later entry failures; absent facts stay
+null at the host. Positive outcome shape, calls, guards and all budgets remain
+unchanged. The actual composed-entry regression fails on the previous generic
+reason and passes with the closed runtime refusal while observing zero HTTP or
+WebSocket calls. Exact pinned full-host success/UNKNOWN qualification remains
+required for this new revision; the prior ce047 result is not restamped.

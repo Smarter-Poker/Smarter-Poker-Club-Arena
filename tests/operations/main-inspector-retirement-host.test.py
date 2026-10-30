@@ -221,7 +221,7 @@ sys.exit(1)
         self.assertEqual(fact['native'], {
             'ok': False, 'reason': 'deadline_exhausted', 'stage': 'native_close',
             'closeRequested': True, 'closeAcknowledged': True, 'connectionClosed': False,
-            'listenerAbsent': None, 'retryAllowed': False})
+            'listenerAbsent': None, 'entryStage': None, 'retryAllowed': False})
         self.assertEqual(fact['hostStage'], 'native_exit')
         self.assertEqual(fact['childExit'], 'nonzero')
         self.assertEqual(fact['intent'], 'durable')
@@ -257,6 +257,42 @@ sys.exit(1)
         _, error = child.communicate(timeout=2)
         self.assertEqual(child.returncode, 1)
         self.assertGreater(json.loads(error)['remaining'], 50, error)
+
+    def test_actual_composed_entry_preserves_preclaim_runtime_refusal_without_socket_calls(self):
+        observer = """import * as fixtureHttp from 'node:http';
+import {syncBuiltinESMExports as fixtureSync} from 'node:module';
+import {writeSync as fixtureWrite} from 'node:fs';
+let fixtureHttpCalls=0,fixtureWebSocketCalls=0;
+const fixtureHttpNative=process.getBuiltinModule('node:http');
+fixtureHttpNative.get=()=>{fixtureHttpCalls++;throw new Error('fixture_socket_forbidden')};
+fixtureSync();
+globalThis.WebSocket=class {constructor(){fixtureWebSocketCalls++;throw new Error('fixture_socket_forbidden')}};
+process.once('exit',()=>fixtureWrite(2,JSON.stringify({http:fixtureHttpCalls,websocket:fixtureWebSocketCalls,version:process.version})));
+"""
+        source = observer + '\n'.join((REPO/'server/scripts'/name).read_text() for name in (
+            'retire-owned-main-inspector.mjs','main-inspector-socket-qualification.mjs',
+            'main-inspector-retirement-entry.mjs'))
+        env = dict(os.environ)
+        env['GIT_COMMIT_SHA'] = 'isolated-wrong-source'
+        env.pop('NODE_OPTIONS', None); env.pop('NODE_PATH', None)
+        child = self.real_popen(['node','--input-type=module','-e',source,
+                                str(int(time.time()*1000)+5000)],
+                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+        out,error = child.communicate(timeout=3)
+        self.assertEqual(child.returncode, 1)
+        observed = json.loads(error)
+        self.assertEqual((observed['http'],observed['websocket']), (0,0))
+        expected = 'runtime_source_unproved' if observed['version']=='v22.23.2' else 'runtime_version_unproved'
+        outcome = json.loads(out)
+        self.assertEqual(outcome['reason'], expected)
+        self.assertEqual(outcome['entryStage'], 'runtime')
+        self.assertFalse(outcome['ok']); self.assertFalse(outcome['retryAllowed'])
+        self.assertNotIn('isolated-wrong-source', out.decode())
+        projected = HOST.bounded_native_facts(outcome)
+        self.assertEqual(projected['entryStage'], 'runtime')
+        self.assertEqual(projected['reason'], expected)
+        self.assertIsNone(projected['closeRequested'])
+        self.assertIsNone(projected['closeAcknowledged'])
 
     def test_actual_host_failure_publication_handles_blocked_and_closed_pipe_inside_deadline(self):
         source = """import importlib.util,json,signal,sys,time
@@ -342,12 +378,13 @@ sys.exit(0 if ok else 1)
         self.assertFalse(self.receipt.exists())
         for value in [{'ok':False,'retryAllowed':False,'reason':['SECRET'],'stage':{'x':'SECRET'},
                        'closeRequested':1,'closeAcknowledged':'true','connectionClosed':None,
-                       'endpoint':'SECRET'}, {'ok':True}, None]:
+                       'endpoint':'SECRET','entryStage':['SECRET']}, {'ok':True}, None]:
             with self.subTest(value=value):
                 result = HOST.bounded_native_facts(value)
                 self.assertNotIn('SECRET', json.dumps(result))
                 if result:
                     self.assertIsNone(result['stage']); self.assertIsNone(result['reason'])
+                    self.assertIsNone(result['entryStage'])
                     self.assertIsNone(result['closeRequested']); self.assertIsNone(result['listenerAbsent'])
 
     def test_success_requires_durable_claim_before_ack_and_persists_exact_receipt(self):

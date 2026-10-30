@@ -12802,7 +12802,7 @@ export class GameServer {
       engine,
       () => {
         tableStateHub.dropTable(tableId);
-        this.releaseWeeklyPayout(engine);
+        this.releaseWeeklyPayout?.(engine);
       }
     );
   }
@@ -12818,10 +12818,13 @@ export class GameServer {
    */
   unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
     const current = this.tableEngines.get(tableId);
+    // Retained lifecycle harnesses borrow this method onto a bare registry
+    // host (no weekly-payout owner), exactly as adoptWeeklyPayout tolerates.
+    const release = this.releaseWeeklyPayout?.bind(this);
     if (current === undefined) {
       this.tournamentOwnedTables.delete(tableId);
       tableStateHub.dropTable(tableId);
-      this.releaseWeeklyPayout(engine);
+      release?.(engine);
       return true;
     }
     if (current !== engine) return false;
@@ -12829,7 +12832,7 @@ export class GameServer {
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);
-    this.releaseWeeklyPayout(engine);
+    release?.(engine);
     return true;
   }
 

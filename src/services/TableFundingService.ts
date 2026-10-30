@@ -9,7 +9,7 @@ export async function readTableFundingBalance(
   userId: string,
   opts: { tableId?: string | null }
 ): Promise<{ balance: number | null }> {
-  if (!opts.tableId) return { balance: null };
+  if (!userId || userId === 'guest' || !opts.tableId) return { balance: null };
   try {
     let fundingTableId = opts.tableId;
     const room = getLightningPoolSession(fundingTableId);

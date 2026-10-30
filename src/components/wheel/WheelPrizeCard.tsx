@@ -164,6 +164,12 @@ function paintTexture(atlas: string, mesh: ReturnType<typeof triangle>[]) {
       source.src = atlas;
     });
     atlasImages.set(atlas, image);
+    const requestedImage = image;
+    void requestedImage.catch(() => {
+      // A later mount may request the recovered asset. Keep successful work,
+      // but never cache one failed network load for the life of the tab.
+      if (atlasImages.get(atlas) === requestedImage) atlasImages.delete(atlas);
+    });
   }
   const painted = image.then((source) => {
     const polygons = mesh.map((t) => t.clip.split(' ').map((p) => p.split(',').map(Number)));
@@ -201,6 +207,9 @@ function paintTexture(atlas: string, mesh: ReturnType<typeof triangle>[]) {
   // This cache holds only the two finite card catalogs, with a bound for previews.
   if (bandTextures.size >= 128) bandTextures.delete(bandTextures.keys().next().value!);
   bandTextures.set(key, painted);
+  void painted.catch(() => {
+    if (bandTextures.get(key) === painted) bandTextures.delete(key);
+  });
   return painted;
 }
 

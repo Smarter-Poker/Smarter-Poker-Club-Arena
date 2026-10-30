@@ -60,6 +60,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  nonMttPayoutPercent,
   mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
@@ -5108,8 +5109,8 @@ export class TournamentRecurringService {
         // Heads-up has a fixed payout contract; paid depth belongs to fields.
         ...(!seatFirstSng
           ? {
-              payout_percent: mttPayoutPercent(config.payoutPercent),
-              payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
+              payout_percent: nonMttPayoutPercent(config.payoutPercent),
+              payout_depth_percent: null,
             }
           : {}),
         start_time: startTime.toISOString(),

@@ -209,16 +209,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+      "bytes": 253449,
+      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44520,
-      "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+      "bytes": 44787,
+      "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -5010,5 +5010,32 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "cancellationAdmissionComposition20261030": {
+    "scope": "Only additive cancellation native qualification and its fixture-only selector. Preserve every cash financial input, assertion and existing audit; no cash recertification inferred.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 252636,
+          "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+        },
+        "after": {
+          "bytes": 253449,
+          "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
+        }
+      },
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 44520,
+          "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+        },
+        "after": {
+          "bytes": 44787,
+          "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+        }
+      }
+    ]
   }
 }

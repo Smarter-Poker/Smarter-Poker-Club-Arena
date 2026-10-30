@@ -59,3 +59,16 @@ if "${PSQL[@]}" -f "$CALENDAR_MIGRATION" > "$WORK/calendar-replay.log" 2>&1; the
   echo 'Calendar rake migration replay unexpectedly accepted'; exit 1
 fi
 grep -q 'already exists' "$WORK/calendar-replay.log"
+
+# The member's applied ledger dates also scope each downline fee row.
+DOWNLINE_MIGRATION="$ROOT/supabase/migrations/20261030051204_member_downline_fees_follow_the_applied_ledger_range.sql"
+"${PSQL[@]}" -f "$CALENDAR/downline-before.sql" -f "$CALENDAR/downline-preimage.sql"
+if "${PSQL[@]}" -f "$CALENDAR/downline-after.sql" > "$WORK/downline-before.log" 2>&1; then
+  echo 'Downline range regression unexpectedly passed before the fix'; exit 1
+fi
+grep -q 'ca_club_member_downline_in_range' "$WORK/downline-before.log"
+"${PSQL[@]}" -f "$DOWNLINE_MIGRATION" -f "$CALENDAR/downline-after.sql"
+if "${PSQL[@]}" -f "$DOWNLINE_MIGRATION" > "$WORK/downline-replay.log" 2>&1; then
+  echo 'Downline range migration replay unexpectedly accepted'; exit 1
+fi
+grep -q 'already exists' "$WORK/downline-replay.log"

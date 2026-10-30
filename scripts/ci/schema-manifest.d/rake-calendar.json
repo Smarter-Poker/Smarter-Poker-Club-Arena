@@ -1,8 +1,9 @@
 {
-  "_owner": "player-rake-realtime-01a18b24: additive calendar readers promised by 20261030050254; NOT an installed-schema observation",
+  "_owner": "player-rake-realtime-01a18b24: additive readers promised by 20261030050254 and 20261030051204; NOT an installed-schema observation",
   "functions": [
     "ca_player_rake_stats_calendar",
     "ca_player_rake_stats_calendar_by_club",
-    "smarter_private.fn_player_rake_share_calendar_cents"
+    "smarter_private.fn_player_rake_share_calendar_cents",
+    "ca_club_member_downline_in_range"
   ]
 }

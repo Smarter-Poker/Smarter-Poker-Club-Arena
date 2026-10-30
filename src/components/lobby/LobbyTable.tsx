@@ -57,7 +57,16 @@ import './CompactLobbyRows.css';
 
 type SortDir = 'asc' | 'desc';
 
-export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+export type LobbyCategory =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 
 /**
  * The order a tab opens in when the player has never sorted it themselves.
@@ -1367,6 +1376,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_ACTIONS,
       ];
     case 'MTT':
+    case 'SATELLITE':
       /* Dan 2026-08-25: "THAT SHOULD BE THE FIRST LINE DISPLAYED." The title
          led no board here - it sat fourth, behind Starting Time, Game Type and
          Buy-In, which are all facts ABOUT a tournament and answer nothing until
@@ -2189,7 +2199,7 @@ export default function LobbyTable({
                 COL_NAME,
                 category === 'ALL'
                   ? COL_COST
-                  : ['MTT', 'SPIN', 'SNG'].includes(category)
+                  : ['MTT', 'SPIN', 'SNG', 'SATELLITE'].includes(category)
                     ? COL_BUYIN
                     : COL_STAKES,
                 COL_PLAYERS,

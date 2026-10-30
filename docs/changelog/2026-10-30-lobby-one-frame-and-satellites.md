@@ -5,3 +5,7 @@ The mobile lobby now keeps Welcome, the club identity and jackpot, Find Your Gam
 The tournament family adds Satellites, a persisted browse filter over recorded MTT and Sit N Go qualifiers. It does not infer qualification from a tournament's name or change financial formats. Heads Up is relabeled Sit N Go's. Satellite rows and both premium card families identify the actual seat destination through the existing target lookup, with explicit loading/unavailable states. Destination rows wrap the full name instead of hiding it behind the generic metadata clamp. Existing entry, registration, price and authorization paths remain intact.
 
 Validation uses focused predicate/persistence and mounted real-page/card tests, production-order responsive browser cases and normal protected delivery. No production tournament, balance, ledger or engine is modified to manufacture a sample satellite.
+
+# Live Follow-Up
+
+The Satellites board now uses tournament columns on both mobile and desktop, so entry prices are labeled Buy-In. Live verification caught the new category falling through to cash-game column defaults; a mounted board regression pins the correct heading.

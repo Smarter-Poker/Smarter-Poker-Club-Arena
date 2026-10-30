@@ -579,6 +579,9 @@ describe('the member record survives a failed background refresh', () => {
   it('keeps the record on screen with a stale banner and no toast', async () => {
     render(<MemberManagementPage />);
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    // The heading can paint before the resolved-club authority effect settles.
+    // Flush pending passive effects before delivering the one-shot event.
+    await act(async () => {});
     // Own the authority read explicitly: rendering the heading alone does not
     // finish every initial read. A range read must not consume this failure.
     let failAuthority!: (error: Error) => void;

@@ -1,0 +1,9 @@
+# Complete the remaining browser preflight and keyboard qualification
+
+The completed production browser job 124324738128 passed every dedicated Cashier, Lightning, Stats, member-management and customization lane, but the general sweep reported seven failures. Two mode-intent failures are already corrected by #8803 and are retained unchanged here.
+
+The leaderboard keyboard check inherited Global from an earlier visit. Global deliberately has one tab, so the expected Tournament Stats tab did not exist. Select My Clubs and await that tab before the unchanged keyboard/focus assertions. An executable preparation regression starts in saved Global scope, fails before this correction, and passes afterward.
+
+Four first-device preference fixtures confirmed the Terms acceptance POST and the old document's accepted marker, then timed out waiting for the same-tab reload to commit. Preserve the intended durability proof with one new page in that same owned authentication context: load the actual current URL, require its fresh canonical Terms decision, and close the verification page on every outcome. The original page continues its profile flow. Both navigation and the new decision share the original 60-second budget; unknown, not-accepted and navigation failures remain failures. No retry, disabled worker, extended deadline or client-only acceptance can qualify.
+
+This changes verification, not Terms or service-worker product behavior. The four same-tab WebKit reload failures remain an observed browser limitation; two isolated worker/reload probes did not reproduce the suspected first-activation race, so no speculative worker change is made. The new document proves durable canonical acceptance, not general reload health. Existing later preference reload/logout and fresh-device assertions still run unchanged.

@@ -26,3 +26,11 @@ configuration refusal, allowed initial options, and neutral stdin transport.
 Synthetic child payloads qualify startup and unchanged authentication/arguments;
 they do not invoke the production inspector or custody operations. The real recovery
 request fixture retains its exact command assertion with the isolated arguments.
+
+The same still-unserved original-hand recovery also has a fresh, separately
+identified finite owner-order entry for 03:05–04:30 UTC on October 30. It keeps
+minute 53 announcements and tournament-aligned cutover, all existing entries
+and operation deadlines, and the original feature witness and safety reserves.
+Its protected minimum is `3a3107`; its order requires the exact reviewed child
+script bytes. It does not claim an unprotected branch commit survives squash
+merge, extend an old window, schedule an action, or certify live recovery.

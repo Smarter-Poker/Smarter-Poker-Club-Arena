@@ -54,6 +54,26 @@ describe('authorized club-scoped Stats contract', () => {
     });
   });
 
+  it('uses the overview calendar timezone for both rake scopes', async () => {
+    const { StatsFactsService } = await import('../src/services/StatsFactsService');
+    rpc.mockResolvedValue({ data: { hands: 2, rake_paid: 5 }, error: null });
+    await StatsFactsService.getRakeStats('chips', 7, null, 'America/Chicago');
+    expect(rpc).toHaveBeenCalledWith('ca_player_rake_stats_calendar', {
+      p_user: null,
+      p_days: 7,
+      p_asset: 'chips',
+      p_tz: 'America/Chicago',
+    });
+    await StatsFactsService.getRakeStats('diamonds', 1, 'club-1', 'UTC');
+    expect(rpc).toHaveBeenCalledWith('ca_player_rake_stats_calendar_by_club', {
+      p_user: null,
+      p_days: 1,
+      p_asset: 'diamonds',
+      p_club_id: 'club-1',
+      p_tz: 'UTC',
+    });
+  });
+
   it('authorizes every selected club from the signed-in identity and active membership', () => {
     expect(migration).toContain('PERFORM public.ca_assert_self(p_user);');
     expect(migration).toMatch(/m\.user_id\s*=\s*p_user/);

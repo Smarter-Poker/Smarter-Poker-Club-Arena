@@ -530,7 +530,7 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
 });
 
-it('updates live stats without replacing identity, downline rows or an unsaved note', async () => {
+it('updates live stats and downline fees without replacing identity or an unsaved note', async () => {
   render(<MemberManagementPage />);
   await screen.findByText('River Shark');
   fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
@@ -560,7 +560,8 @@ it('updates live stats without replacing identity, downline rows or an unsaved n
     cardReads + 1
   );
   expect(screen.getByText('-44.00')).toBeInTheDocument();
-  expect(state.getDownline).toHaveBeenCalledTimes(2);
+  expect(state.getDownline).toHaveBeenCalledTimes(3);
+  expect(state.getDownline.mock.calls.at(-1)?.[3]).toEqual(selectedRange);
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 

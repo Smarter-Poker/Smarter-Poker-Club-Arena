@@ -44,11 +44,11 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   }
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
-    // Includes the added canonical linked, cash-scope and receipt native checks.
+    // Includes D1 fee, D2 cash, linked-window, cash-scope and receipt native proof.
     // Every preexisting command, runner choice, budget and gate remains pinned.
     const normalized = structuredClone(ci);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '1af24a985543956876851a845fdbfeb55526aff5a18efdea1803c4c653a9b5e8'
+      'fbb7c4d2dcaef136d10f865075b749b45d5ba01c18dd9b9b1ed07fae4f5950c4'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

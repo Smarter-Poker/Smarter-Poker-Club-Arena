@@ -3309,6 +3309,19 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Roster cash preserves funded boundaries and computes each total once
+        id: roster_cash_batch
+        if: matrix.shard == 4
+        run: python3 -B scripts/ci/test-roster-cash-batch.py --pg-bin /usr/lib/postgresql/17/bin --scratch "$RUNNER_TEMP" --output artifacts/roster-cash-batch/native.json
+      - name: Retain roster cash native equivalence and index proof
+        if: always() && matrix.shard == 4 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.roster_cash_batch.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: roster-cash-batch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/roster-cash-batch/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Certification cleanup reserves a turn without blocking players
         if: matrix.shard == 4
         env:

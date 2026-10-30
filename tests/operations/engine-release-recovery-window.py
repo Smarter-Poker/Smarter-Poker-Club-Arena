@@ -140,7 +140,7 @@ timeout() {{
       {answer_branches}
       *) echo unavailable ;;
     esac
-  elif [ "$1" = docker ] && [ "$2 $3 $4 $5" = "exec $CONTAINER node -e" ]; then
+  elif [ "$1" = docker ] && [ "${{2:-}} ${{3:-}} ${{4:-}} ${{5:-}} ${{6:-}} ${{7:-}} ${{8:-}} ${{9:-}} ${{10:-}} ${{11:-}}" = "exec $CONTAINER env -u NODE_OPTIONS -u NODE_PATH node --no-inspect -e" ]; then
     [ "$LOCK_HELD" = 1 ]; record INSPECTOR_READINESS
     return {int(inspector_status)}
   elif [ "$1" = docker ]; then

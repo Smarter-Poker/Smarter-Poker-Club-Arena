@@ -61,6 +61,18 @@ it.skipIf(process.platform !== 'linux')(
       witnessUnchanged: true,
       gameActions: 0,
       cleanupRemoved: true,
+      rawExitSameProcessAlive: true,
+      timeoutEntry: {
+        outcome: {
+          ok: false,
+          reason: 'deadline_exhausted',
+          stage: 'native_close',
+          closeRequested: true,
+          closeAcknowledged: true,
+          connectionClosed: false,
+          retryAllowed: false,
+        },
+      },
       outcome: {
         ok: true,
         stage: 'complete',

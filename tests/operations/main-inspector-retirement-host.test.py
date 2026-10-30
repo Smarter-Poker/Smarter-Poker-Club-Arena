@@ -280,23 +280,41 @@ class HostTests(unittest.TestCase):
         reserve = callback.index("if (stage === 'close' && retirementRemaining() <= 5000) return false;")
         self.assertGreater(reserve, capture)
 
-    def entry(self, owner_uid=0):
+    def entry(self, owner_uid=0, run=RUN, docker_identity=IDENTITY):
         actual_fstat = os.fstat
 
         def owned_fstat(fd):
             value = actual_fstat(fd)
             return SimpleNamespace(st_mode=value.st_mode, st_uid=owner_uid)
 
+        def metadata(args, **kwargs):
+            self.assertEqual(args[:2], ['docker', 'inspect'])
+            self.assertEqual(args[-1], 'club-arena-engine')
+            self.assertLessEqual(kwargs['timeout'], 2)
+            self.events.append('entry_metadata')
+            return SimpleNamespace(stdout=(docker_identity + '\n').encode())
+
         with patch.object(HOST, 'CONTROL', self.control), \
                 patch.dict(os.environ, {'ENGINE_RELEASE_REQUEST_ROOT': str(self.root)}), \
                 patch.object(os, 'geteuid', return_value=0), \
                 patch.object(os, 'fstat', side_effect=owned_fstat), \
-                patch.object(subprocess, 'run', side_effect=AssertionError('entry gate must be read only')), \
+                patch.object(subprocess, 'run', side_effect=metadata), \
                 patch.object(subprocess, 'Popen', side_effect=AssertionError('entry gate cannot attach')):
-            return HOST.entry_state(RUN)
+            return HOST.entry_state(run)
+
+    def foreign(self, run='999-1', identity=IDENTITY, complete=False):
+        claim = {'schema': 'main-inspector-retirement-claim/v1', 'runId': run,
+                 'containerIdentity': identity, 'retryAllowed': False}
+        intent = self.root / (run + '.main-inspector-retirement-intent')
+        receipt = self.root / (run + '.main-inspector-retirement-receipt')
+        intent.write_text(json.dumps(claim))
+        if complete:
+            receipt.write_text(json.dumps({'claim': claim, 'outcome': self.outcome}))
+        return intent, receipt
 
     def test_entry_gate_absence_unknown_orphan_and_dangling_history(self):
         self.assertEqual(self.entry(), 0)
+        self.assertNotIn('entry_metadata', self.events, 'no foreign history performs no Docker read')
         for path in [self.intent, self.receipt]:
             path.write_text('{}')
             self.assertEqual(self.entry(), 1)
@@ -348,6 +366,62 @@ class HostTests(unittest.TestCase):
         self.assertEqual(self.entry(), 1)
         self.intent.unlink()
         self.intent.write_bytes(b'x' * 32769)
+        self.assertEqual(self.entry(), 1)
+
+    def test_new_run_cannot_skip_same_live_process_unknown_even_when_listener_closed(self):
+        intent, receipt = self.foreign()
+        self.assertEqual(self.entry(), 1)
+        self.assertIn('entry_metadata', self.events)
+        self.assertFalse(receipt.exists())
+        self.assertEqual(self.events.count('entry_metadata'), 1)
+
+    def test_foreign_same_process_complete_pair_resolves_uncertainty_without_replay(self):
+        intent, receipt = self.foreign(complete=True)
+        before = (intent.read_bytes(), receipt.read_bytes())
+        self.assertEqual(self.entry(), 0)
+        self.assertEqual((intent.read_bytes(), receipt.read_bytes()), before)
+        self.assertNotIn('spawn', self.events)
+
+    def test_wellformed_unknown_prior_process_does_not_block_new_live_process(self):
+        self.foreign(identity=IDENTITY.replace(CONTAINER, 'd' * 64).replace('2345', '6789'))
+        self.assertEqual(self.entry(), 0)
+
+    def test_foreign_orphan_malformed_mismatched_false_and_symlink_history_refuse(self):
+        intent, receipt = self.foreign(complete=True)
+        good_intent, good_receipt = intent.read_bytes(), receipt.read_bytes()
+        mutations = ['orphan_intent', 'orphan_receipt', 'malformed', 'null',
+                     'mismatch', 'false_outcome', 'bad_identity', 'dangling', 'oversized']
+        for mode in mutations:
+            with self.subTest(mode=mode):
+                for path in [intent, receipt]:
+                    if os.path.lexists(path): path.unlink()
+                intent.write_bytes(good_intent); receipt.write_bytes(good_receipt)
+                if mode == 'orphan_intent': receipt.unlink()
+                elif mode == 'orphan_receipt': intent.unlink()
+                elif mode == 'malformed': intent.write_text('{broken')
+                elif mode == 'null': intent.write_text('null')
+                elif mode == 'mismatch':
+                    value = json.loads(good_receipt); value['claim']['retryAllowed'] = True
+                    receipt.write_text(json.dumps(value))
+                elif mode == 'false_outcome':
+                    value = json.loads(good_receipt); value['outcome']['closeAcknowledged'] = False
+                    receipt.write_text(json.dumps(value))
+                elif mode == 'bad_identity':
+                    value = json.loads(good_intent); value['containerIdentity'] = 'unknown'
+                    intent.write_text(json.dumps(value))
+                elif mode == 'dangling':
+                    intent.unlink(); intent.symlink_to(self.root / 'missing')
+                elif mode == 'oversized': intent.write_bytes(b'x' * 32769)
+                self.assertEqual(self.entry(), 1)
+
+    def test_foreign_scan_rejects_bad_names_excess_pairs_and_unproved_live_metadata(self):
+        bad = self.root / 'foreign.main-inspector-retirement-intent'
+        bad.write_text('{}')
+        self.assertEqual(self.entry(), 1)
+        bad.unlink()
+        self.foreign()
+        self.assertEqual(self.entry(docker_identity='unproved'), 1)
+        for n in range(1000, 1256): self.foreign(run=str(n))
         self.assertEqual(self.entry(), 1)
 
     def test_scheduled_locked_checkpoint_cannot_bypass_unknown_retirement_with_closed_listener(self):

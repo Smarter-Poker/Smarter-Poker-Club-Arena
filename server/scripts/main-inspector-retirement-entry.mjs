@@ -3,7 +3,23 @@ import * as retirementFs from 'node:fs';
 import * as retirementHttp from 'node:http';
 import { createHash as retirementHash } from 'node:crypto';
 const retirementDeadline = Number(process.argv[1]);
-setTimeout(() => process.exit(1), Math.max(1, retirementDeadline - Date.now()));
+setTimeout(
+  () => {
+    // The fixed hard exit can precede the transport timer. Preserve its bounded
+    // command/ACK facts without turning a missing remote close into success.
+    console.log(
+      JSON.stringify(
+        ownedMainInspectorDeadlineOutcome() ?? {
+          ok: false,
+          reason: 'deadline_exhausted',
+          retryAllowed: false,
+        }
+      )
+    );
+    process.exit(1);
+  },
+  Math.max(1, retirementDeadline - Date.now())
+);
 const retirementExpectedSource = 'eed06fe51dea622069c661a6213d5b031ff3a9e3';
 const retirementRemaining = () => {
   const left = retirementDeadline - Date.now();

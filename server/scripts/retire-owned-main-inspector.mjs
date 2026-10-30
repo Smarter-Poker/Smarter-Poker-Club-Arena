@@ -1,6 +1,13 @@
 // Transport only. The owning locked transaction supplies fresh kernel/process
 // qualification and owns its durable one-shot intent and listener readback.
 // Importing this file performs no action.
+// Diagnostic projection for the CLI's existing absolute hard deadline only.
+// It grants no cleanup, retry or runtime authority and exports no target data.
+let ownedMainInspectorDeadlineReader = null;
+export function ownedMainInspectorDeadlineOutcome() {
+  return ownedMainInspectorDeadlineReader?.() ?? null;
+}
+
 export const OWNED_MAIN_INSPECTOR_CLOSE_EXPRESSION =
   "setImmediate(() => process.getBuiltinModule('node:inspector').close()); undefined";
 
@@ -26,6 +33,7 @@ export async function retireOwnedMainInspector({
     connectionClosed,
     retryAllowed: false,
   });
+  ownedMainInspectorDeadlineReader = () => result(false, 'deadline_exhausted');
   const bounded = async (promise) => {
     const remaining = deadlineMs - Date.now();
     if (remaining <= 0) throw refusal('deadline_exhausted');

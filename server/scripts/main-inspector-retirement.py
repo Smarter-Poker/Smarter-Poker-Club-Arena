@@ -31,7 +31,16 @@ def entry_state(run):
     this exact immutable operation's retirement; the caller still checks live
     listener absence, health and its ordinary maintenance authority.
     """
+    deadline = time.monotonic() + 2.5
+
+    def remaining():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise ValueError('state_deadline')
+        return left
+
     def read_owned(path, limit):
+        remaining()
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
             metadata = os.fstat(fd)
@@ -45,12 +54,71 @@ def entry_state(run):
         finally:
             os.close(fd)
 
+    def positive(completed, claim):
+        if not isinstance(completed, dict) or completed.get('claim') != claim:
+            return False
+        outcome = completed.get('outcome')
+        return (isinstance(outcome, dict)
+                and all(outcome.get(key) is True for key in (
+                    'ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent'))
+                and outcome.get('retryAllowed') is False)
+
+    def container_identity(value):
+        if not isinstance(value, str):
+            raise ValueError('state_container_identity')
+        fields = value.split()
+        if (len(fields) != 5 or not re.fullmatch(r'[0-9a-f]{64}', fields[0])
+                or fields[1] != IMAGE or fields[2] != 'true'
+                or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z', fields[3])
+                or not re.fullmatch(r'[1-9][0-9]*', fields[4])):
+            raise ValueError('state_container_identity')
+        return tuple(fields)
+
     try:
         if os.geteuid() != 0 or not re.fullmatch(r'[1-9][0-9]*(?:-[1-9][0-9]*)?', run):
             return 1
         root = Path(os.environ.get('ENGINE_RELEASE_REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests'))
         if not root.is_absolute() or root.is_symlink() or not root.is_dir():
             return 1
+        history = {}
+        suffixes = ('.main-inspector-retirement-intent', '.main-inspector-retirement-receipt')
+        with os.scandir(root) as entries:
+            for item in entries:
+                remaining()
+                suffix = next((s for s in suffixes if item.name.endswith(s)), None)
+                if suffix is None:
+                    continue
+                owner = item.name[:-len(suffix)]
+                if not re.fullmatch(r'[1-9][0-9]*(?:-[1-9][0-9]*)?', owner):
+                    return 1
+                history.setdefault(owner, {})[suffix] = root / item.name
+                if len(history) > 256:
+                    return 1
+        foreign = {owner: paths for owner, paths in history.items() if owner != run}
+        if foreign:
+            live = subprocess.run(['docker', 'inspect', '--format',
+                '{{.Id}} {{.Image}} {{.State.Running}} {{.State.StartedAt}} {{.State.Pid}}',
+                'club-arena-engine'], check=True, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, timeout=min(2, remaining())).stdout
+            live_identity = container_identity(live.decode('ascii').strip())
+            for owner, paths in foreign.items():
+                remaining()
+                prior = json.loads(read_owned(paths[suffixes[0]], 32768)) if suffixes[0] in paths else None
+                completed = json.loads(read_owned(paths[suffixes[1]], 65536)) if suffixes[1] in paths else None
+                candidates = ([prior] if suffixes[0] in paths else [])
+                if suffixes[1] in paths:
+                    if not isinstance(completed, dict):
+                        return 1
+                    candidates.append(completed.get('claim'))
+                same = False
+                for claim in candidates:
+                    if (not isinstance(claim, dict)
+                            or claim.get('schema') != 'main-inspector-retirement-claim/v1'
+                            or claim.get('runId') != owner or claim.get('retryAllowed') is not False):
+                        return 1
+                    same |= container_identity(claim.get('containerIdentity')) == live_identity
+                if same and (prior is None or not positive(completed, prior)):
+                    return 1
         intent = root / (run + '.main-inspector-retirement-intent')
         receipt = root / (run + '.main-inspector-retirement-receipt')
         def present(path):
@@ -82,14 +150,11 @@ def entry_state(run):
                 or claim.get('requestSha256') != hashlib.sha256(request_bytes).hexdigest()
                 or claim.get('retryAllowed') is not False):
             return 1
-        outcome = completed.get('outcome')
-        if (not isinstance(outcome, dict)
-                or any(outcome.get(key) is not True for key in (
-                    'ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent'))
-                or outcome.get('retryAllowed') is not False):
+        if not positive(completed, claim):
             return 1
+        remaining()
         return 0
-    except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError, subprocess.SubprocessError):
         return 1
 
 
@@ -153,6 +218,8 @@ def retire():
                 or not re.fullmatch(r'[0-9a-f]{40}', control_sha)
                 or not request[5].isdigit() or time.time() >= int(request[5])):
             raise ValueError('immutable_request')
+        if entry_state(run) != 0:
+            raise ValueError('prior_retirement_unresolved')
         checkpoint_intent = root / (run + '.legacy-checkpoint-intent')
         if checkpoint_intent.exists() or checkpoint_intent.is_symlink():
             raise ValueError('checkpoint_already_entered')

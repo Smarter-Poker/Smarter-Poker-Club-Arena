@@ -53,8 +53,9 @@ async function fixtureInspect() {
   fixtureTuple(value);
   return value;
 }
-async function fixtureHealth(container) {
-  const expression = `const http=require('node:http');const r=http.get('http://127.0.0.1:8080/health',res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>{if(res.statusCode!==200)process.exit(2);console.log(b);});});r.on('error',()=>process.exit(3));r.setTimeout(1500,()=>{r.destroy();process.exit(4);});`;
+async function fixtureHealth(container, path = '/health', waitMs = 1500) {
+  assert.ok(['/health', '/fixture-delay-close'].includes(path));
+  const expression = `const http=require('node:http');const r=http.get('http://127.0.0.1:8080${path}',res=>{let b='';res.on('data',c=>b+=c);res.on('end',()=>{if(res.statusCode!==200)process.exit(2);console.log(b);});});r.on('error',()=>process.exit(3));r.setTimeout(${waitMs},()=>{r.destroy();process.exit(4);});`;
   return JSON.parse(
     await fixtureDocker(
       [
@@ -70,11 +71,12 @@ async function fixtureHealth(container) {
         '-e',
         expression,
       ],
-      3000
+      waitMs + 1500
     )
   );
 }
-async function fixtureNativeEntry(container, identity) {
+async function fixtureNativeEntry(container, identity, scenario = 'success') {
+  assert.ok(['success', 'deferred-close-timeout'].includes(scenario));
   const source = [
     'retire-owned-main-inspector.mjs',
     'main-inspector-socket-qualification.mjs',
@@ -84,7 +86,11 @@ async function fixtureNativeEntry(container, identity) {
       fs.readFileSync(new URL('../../server/scripts/' + name, import.meta.url), 'utf8')
     )
     .join('\n');
-  const entryDeadline = Math.min(Date.now() + 20000, fixtureWorkDeadline);
+  assert.ok(
+    fixtureWorkDeadline - Date.now() >= 21000,
+    'full native20s plus CLI exit observation must fit the original fixture work bound'
+  );
+  const entryDeadline = Date.now() + 20000;
   return new Promise((resolve, reject) => {
     const child = spawn(
       'docker',
@@ -116,7 +122,9 @@ async function fixtureNativeEntry(container, identity) {
         protocolFailure ??= new Error('native_entry_absolute_deadline');
         child.kill('SIGKILL');
       },
-      Math.max(1, entryDeadline - Date.now())
+      // Test transport grace observes the production helper's own 20s exit;
+      // it does not extend that helper deadline or permit another command.
+      Math.max(1, entryDeadline - Date.now() + (scenario === 'deferred-close-timeout' ? 1000 : 0))
     );
     child.stdin.on('error', () => {
       protocolFailure ??= new Error('native_entry_ack_transport_unknown');
@@ -158,7 +166,7 @@ async function fixtureNativeEntry(container, identity) {
           proposalDigest: claimDigest,
           retryAllowed: false,
         });
-        const claimPath = join(fixtureDirectory, 'retirement-claim.json');
+        const claimPath = join(fixtureDirectory, `retirement-claim-${scenario}.json`);
         const fd = fs.openSync(
           claimPath,
           fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY,
@@ -196,18 +204,26 @@ async function fixtureNativeEntry(container, identity) {
       if (protocolFailure) return reject(protocolFailure);
       try {
         assert.equal(signal, null, 'native entry must exit normally');
-        assert.equal(code, 0, 'native entry failed: ' + output + stderr);
+        assert.equal(
+          code,
+          scenario === 'success' ? 0 : 1,
+          'native entry exit mismatch: ' + output + stderr
+        );
         const lines = output.trim().split('\n');
         assert.equal(lines.length, 2);
         assert.equal(lines[0], proposalLine);
         assert.match(claimDigest, /^[a-f0-9]{64}$/);
         const outcome = JSON.parse(lines[1]);
-        assert.equal(outcome.ok, true);
-        assert.equal(outcome.stage, 'complete');
+        assert.equal(outcome.ok, scenario === 'success');
+        assert.equal(outcome.stage, scenario === 'success' ? 'complete' : 'native_close');
         assert.equal(outcome.closeRequested, true);
         assert.equal(outcome.closeAcknowledged, true);
-        assert.equal(outcome.connectionClosed, true);
-        assert.equal(outcome.listenerAbsent, true);
+        assert.equal(outcome.connectionClosed, scenario === 'success');
+        if (scenario === 'success') assert.equal(outcome.listenerAbsent, true);
+        else {
+          assert.equal(outcome.reason, 'deadline_exhausted');
+          assert.notEqual(outcome.listenerAbsent, true);
+        }
         assert.equal(outcome.retryAllowed, false);
         resolve({ outcome, proposalDigest: claimDigest });
       } catch (error) {
@@ -238,7 +254,17 @@ require('node:inspector').open(9229,'127.0.0.1',false);
 const witness=${JSON.stringify(fixtureWitness)};
 require('node:http').createServer((request,response)=>{
  response.setHeader('Content-Type','application/json');
- response.end(JSON.stringify({pid:process.pid,version:process.version,witness,gameActions:0}));
+ const health={pid:process.pid,version:process.version,witness,gameActions:0};
+ if(request.url==='/fixture-delay-close') {
+  require('node:inspector').open(9229,'127.0.0.1',false);
+  const busyUntil=Date.now()+25000;
+  response.once('finish',()=>setImmediate(()=>{
+   // Ordinary busy JavaScript permits V8 Inspector command interrupts. The
+   // production fixed setImmediate(close) stays queued until this loop ends.
+   while(Date.now()<busyUntil) Math.sqrt(Date.now());
+  }));
+  response.end(JSON.stringify({...health,busyUntil}));
+ } else response.end(JSON.stringify(health));
 }).listen(8080,'127.0.0.1');
 `
     );
@@ -311,6 +337,38 @@ require('node:http').createServer((request,response)=>{
       2000
     );
     assert.equal(absence, 'listener-absent');
+    const delayed = await fixtureHealth(container, '/fixture-delay-close');
+    assert.deepEqual(
+      {
+        pid: delayed.pid,
+        version: delayed.version,
+        witness: delayed.witness,
+        gameActions: delayed.gameActions,
+      },
+      healthBefore
+    );
+    assert.ok(Number.isSafeInteger(delayed.busyUntil) && delayed.busyUntil > Date.now() + 20000);
+    const timeoutEntry = await fixtureNativeEntry(
+      container,
+      fixtureTuple(before),
+      'deferred-close-timeout'
+    );
+    // One bounded read waits for the controlled loop to finish. There is no
+    // replay, Inspector reconnect, alternate close expression or signal.
+    assert.deepEqual(await fixtureHealth(container, '/health', 10000), healthBefore);
+    assert.deepEqual(fixtureTuple(await fixtureInspect()), fixtureTuple(before));
+    const timeoutAbsence = await fixtureDocker(
+      [
+        'exec',
+        container,
+        'node',
+        '--no-inspect',
+        '-e',
+        `const s=require('node:net').createConnection({host:'127.0.0.1',port:9229});s.once('connect',()=>{s.destroy();process.exit(2)});s.once('error',e=>{if(e.code!=='ECONNREFUSED')process.exit(3);console.log('listener-absent')});s.setTimeout(1000,()=>{s.destroy();process.exit(4)});`,
+      ],
+      2000
+    );
+    assert.equal(timeoutAbsence, 'listener-absent');
     fixtureVerdict = {
       ok: true,
       skipped: false,
@@ -320,6 +378,8 @@ require('node:http').createServer((request,response)=>{
       witnessUnchanged: true,
       gameActions: 0,
       ...entry,
+      timeoutEntry,
+      rawExitSameProcessAlive: true,
       elapsedMs: Date.now() - fixtureStarted,
     };
   } catch (error) {

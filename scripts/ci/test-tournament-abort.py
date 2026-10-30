@@ -5,6 +5,7 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 from satellite_qualifier_fixture import module
 from tournament_abort_fixture import install_financial_foundation
+from tournament_abort_registry_native import install_and_reproduce_registry_guard,assert_registered_install
 from tournament_abort_native import install_f06_extension,sql_file,prepare_quiesced,SERVICE
 ROOT=Path(__file__).resolve().parents[2]
 MIGRATION=ROOT/'supabase/migrations/20261030161824_started_tournament_abort_uses_original_charges_and_a_drained.sql'
@@ -15,12 +16,14 @@ def main():
  try:
   e.start();db=e.database();install_financial_foundation(e,db,ROOT,a.evidence);install_f06_extension(e,db,ROOT)
   diamond=module(ROOT/'scripts/ci/fixtures/tournament-abort/diamond/diamond_abort_native.py','abort_diamond_cases');diamond.install_diamond_extension(e,db,ROOT)
+  install_and_reproduce_registry_guard(e,db,ROOT,MIGRATION)
   installed_at=time.monotonic();e.sql(db,file=MIGRATION,label='exact-started-abort-migration',seconds=120)
   e.report['migration_install_seconds']=time.monotonic()-installed_at
   proof=next(line.removeprefix('-- @live-proof: ') for line in MIGRATION.read_text().splitlines() if line.startswith('-- @live-proof: '))
   _,live_proof,_=e.sql(db,'SELECT '+proof+';',label='exact-started-abort-source-live-proof')
   assert live_proof.strip()=='t'
   assert e.report['migration_install_seconds']<5
+  assert_registered_install(e,db,ROOT)
   sql_file(e,db,'receipt-version-strict-mode-constraint',"""BEGIN;
 -- Qualify the exact installed CHECK expression independently of unrelated header fields.
 CREATE TEMP TABLE receipt_version_contract(receipt_version integer NOT NULL,receipt jsonb NOT NULL) ON COMMIT DROP;
@@ -87,7 +90,7 @@ END$$;""")
   names.update(['fn_f06_begin_hand','fn_ca_tournament_entry_gate','fn_ca_capture_tournament_charge_entitlement','fn_poker_diamond_tournament_charge','fn_ca_escrow_on_rake_record','fn_ca_tournament_cancellation_receipt'])
   _,postimages,_=e.sql(db,"SELECT jsonb_object_agg(p.oid::regprocedure::text,md5(pg_get_functiondef(p.oid))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private') AND p.proname IN("+','.join("'"+n+"'" for n in sorted(names))+");",label='qualified-exact-postimages')
   e.report['postimages']=json.loads(postimages.strip())
-  inputs=[Path(__file__),ROOT/'scripts/ci/test-tournament-cancellation-lane.py',ROOT/'scripts/ci/tournament_abort_native.py',ROOT/'scripts/ci/chip_abort_overlay_native.py',ROOT/'scripts/ci/tournament_abort_fixture.py',MIGRATION,ROOT/'.github/workflows/ci.yml']
+  inputs=[Path(__file__),ROOT/'scripts/ci/test-tournament-cancellation-lane.py',ROOT/'scripts/ci/tournament_abort_native.py',ROOT/'scripts/ci/chip_abort_overlay_native.py',ROOT/'scripts/ci/tournament_abort_fixture.py',ROOT/'scripts/ci/tournament_abort_registry_native.py',MIGRATION,ROOT/'.github/workflows/ci.yml']
   e.report['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs})
   e.report['passed']=True;e.report['status']='passed'
  finally:

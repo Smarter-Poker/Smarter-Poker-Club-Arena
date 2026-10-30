@@ -330,6 +330,31 @@ class ReaderTests(unittest.TestCase):
                          {'schema': 'existing-release-pending-observation/v2'}]:
             with self.assertRaises(ValueError): R.validate_reply({**answer, **mutation}, request)
 
+    def test_pending_native_selector_retains_early_counts_despite_late_budget_noise(self):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        early = ('[engine-release-transaction] the restart certificate is shut with 296969ms of the break left: '
+                 "unparkedTables=1 unparkedReasons={'cards_in_air': 1} handsInFlightTotal=1")
+        late = "[engine-release-transaction] the restart certificate is also shut: unparkedTables=1 unparkedReasons={'cards_in_air': 1}"
+        messages = [early] + [late] * 20
+        def journal(args):
+            # Exercise the actual fixed ERE with native grep, then the same
+            # latest-N selection as journalctl. No systemd/host read occurs.
+            pattern = next(arg.removeprefix('--grep=') for arg in args if arg.startswith('--grep='))
+            selected = subprocess.run(['grep', '-E', pattern], input='\n'.join(messages) + '\n',
+                                      capture_output=True, text=True, timeout=2, check=True).stdout.splitlines()
+            limit = int(next(arg.removeprefix('--lines=') for arg in args if arg.startswith('--lines=')))
+            self.assertEqual(limit, 12)
+            rows = [{'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                     '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                     '__REALTIME_TIMESTAMP': str(1793318108736000 + ordinal * 1000), 'MESSAGE': message}
+                    for ordinal, message in enumerate(selected[-limit:])]
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(json.dumps(row) for row in rows).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            signs = R.pending_journal(request, unit)
+        self.assertEqual([sign['category'] for sign in signs], ['certificate_shut'])
+        self.assertEqual(signs[0]['details'][:3], [296969, 1, 1])
+
     def test_pending_twelve_causal_signs_fit_unchanged_transport_on_realistic_full_counts(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
         rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',

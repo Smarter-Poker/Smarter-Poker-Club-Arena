@@ -536,7 +536,9 @@ def pending_journal(request, unit):
     name = 'club-arena-engine-release-v1@' + request['runKey'] + '.service'
     reply = bounded_journal(['journalctl', '--no-pager', '--output=json', '--lines=12',
         '--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID,_SYSTEMD_UNIT,__REALTIME_TIMESTAMP',
-        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is (also shut:|shut with )|the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
+        # Below-budget "also shut" chatter must not evict the early causal
+        # refusal from the existing twelve-row selection. Absence stays unknown.
+        '--grep=^(\\[engine-release-transaction\\] (the restart certificate is shut with |the durable table break has |the locked table break has |the legacy checkpoint entry did not fit|prove_rollback_readiness took |FATAL: (legacy checkpoint did not retain |could not acquire the engine mutation lock for maintenance cutover|deadline expired before maintenance cutover))|\\[engine-release-inflight-hands\\] (weekly payout owns the boundary; refusing cutover|UNKNOWN:|[0-9]+ hand\\(s\\) in the air within ))',
         '_SYSTEMD_INVOCATION_ID=' + invocation, '_SYSTEMD_UNIT=' + name])
     if reply.returncode:
         raise ValueError('Pending journal unavailable')

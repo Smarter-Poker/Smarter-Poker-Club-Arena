@@ -1,0 +1,140 @@
+{
+  "reader": "CREATE OR REPLACE FUNCTION public.ca_club_member_period_fee_totals(p_club_id uuid, p_user_ids uuid[], p_from date, p_until timestamp with time zone)\n RETURNS TABLE(user_id uuid, total_fees numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n WITH bounds AS (\n  SELECT greatest(coalesce(p_from,public.fn_ca_fee_counting_start()),public.fn_ca_fee_counting_start()) d,p_until e\n ), b AS (\n  SELECT d,e,CASE WHEN p_from IS NULL THEN d::timestamp AT TIME ZONE 'UTC'\n   ELSE greatest(d::timestamp AT TIME ZONE 'UTC',p_from::timestamp AT TIME ZONE 'America/Chicago') END s,\n   d::timestamp AT TIME ZONE 'UTC' us,\n   ((e AT TIME ZONE 'UTC')::date+1)::timestamp AT TIME ZONE 'UTC' ue FROM bounds\n ), wanted AS MATERIALIZED (\n  SELECT DISTINCT u uid FROM unnest(coalesce(p_user_ids,ARRAY[]::uuid[])) u WHERE u IS NOT NULL\n ), cash_daily AS (\n  SELECT d.user_id uid,sum(d.rake_cents)/100.0 amount\n  FROM wanted w JOIN public.ca_club_rake_daily_user d ON d.user_id=w.uid CROSS JOIN b\n  WHERE d.club_id=p_club_id AND d.day>=b.d AND d.day<=(b.e AT TIME ZONE 'UTC')::date GROUP BY d.user_id\n ), mtt_daily AS (\n  SELECT d.user_id uid,sum(d.fees) amount\n  FROM wanted w JOIN public.ca_club_member_tournament_fee_daily d ON d.user_id=w.uid CROSS JOIN b\n  WHERE d.club_id=p_club_id AND d.day>=b.d AND d.day<=(b.e AT TIME ZONE 'UTC')::date GROUP BY d.user_id\n ), share AS (\n  -- Canonical rounds each rule/UTC day. Full-rounded + (retained-rounded minus\n  -- full-rounded) equals retained-rounded; never round an excluded fraction.\n  -- Include incoming rules whose donor is outside the requested member set.\n  SELECT r.from_user,r.to_user,\n   round(sum(round(ra.rake_amount*100))*r.share_bps/10000.0)/100 amount\n  FROM smarter_private.player_rake_share_rules r\n  JOIN public.rake_attributions ra ON ra.club_id=r.club_id AND ra.player_id=r.from_user\n   AND ra.created_at>=r.effective_from AND (r.effective_until IS NULL OR ra.created_at<r.effective_until)\n  CROSS JOIN b\n  WHERE r.club_id=p_club_id AND (r.from_user IN(SELECT uid FROM wanted) OR r.to_user IN(SELECT uid FROM wanted))\n   AND ra.rake_amount>0 AND ra.created_at>=b.s AND ra.created_at<b.e\n   AND public.fn_ca_launch_accounting_accepts(ra.club_id,\n    (SELECT rr.created_at FROM public.rake_records rr WHERE rr.id=ra.rake_record_id))\n  GROUP BY r.rule_key,r.from_user,r.to_user,r.share_bps,(ra.created_at AT TIME ZONE 'UTC')::date\n ), cash_edges AS (\n  SELECT ra.player_id uid,-sum(round(ra.rake_amount*100))/100 amount\n  FROM wanted w CROSS JOIN b\n  CROSS JOIN LATERAL(VALUES(b.us,b.s),(b.e,b.ue)) edge(start_at,end_at)\n  JOIN public.rake_attributions ra ON ra.player_id=w.uid\n   AND ra.created_at>=edge.start_at AND ra.created_at<edge.end_at\n  WHERE ra.club_id=p_club_id AND ra.rake_amount>0\n   AND public.fn_ca_launch_accounting_accepts(ra.club_id,\n    (SELECT rr.created_at FROM public.rake_records rr WHERE rr.id=ra.rake_record_id))\n  GROUP BY ra.player_id\n ), mtt_edges AS (\n  SELECT t.player_id uid,-sum(t.rake_credit) amount\n  FROM wanted w CROSS JOIN b\n  CROSS JOIN LATERAL(VALUES(b.us,b.s),(b.e,b.ue)) edge(start_at,end_at)\n  JOIN public.accounting_tournament_fee_sources t ON t.player_id=w.uid\n   AND t.charged_at>=edge.start_at AND t.charged_at<edge.end_at\n  WHERE t.club_id=p_club_id GROUP BY t.player_id\n ), amounts AS (\n  SELECT uid,amount FROM cash_daily UNION ALL SELECT uid,amount FROM mtt_daily\n  UNION ALL SELECT from_user,-amount FROM share\n  UNION ALL SELECT to_user,amount FROM share\n  UNION ALL SELECT uid,amount FROM cash_edges UNION ALL SELECT uid,amount FROM mtt_edges\n  UNION ALL SELECT r.user_id,-r.amount_cents/100.0\n   FROM wanted w JOIN smarter_private.player_fee_redemptions r ON r.user_id=w.uid CROSS JOIN b\n   WHERE r.club_id=p_club_id AND r.effective_on>=b.d AND r.effective_on<=(b.e AT TIME ZONE 'America/Chicago')::date\n ) SELECT w.uid,round(coalesce(sum(a.amount),0),2)\n FROM wanted w LEFT JOIN amounts a ON a.uid=w.uid GROUP BY w.uid;\n$function$\n",
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "default": "gen_random_uuid()",
+      "not_null": true
+    },
+    {
+      "name": "rake_record_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "union_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "coordinator_union_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": false
+    },
+    {
+      "name": "game_type",
+      "type": "text",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "registration_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "source_charge_ledger_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "source_entitlement_id",
+      "type": "uuid",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "charged_at",
+      "type": "timestamp with time zone",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "rake_credit",
+      "type": "numeric",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "contract",
+      "type": "jsonb",
+      "default": null,
+      "not_null": true
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "default": "transaction_timestamp()",
+      "not_null": true
+    }
+  ],
+  "indexes": [
+    "CREATE INDEX accounting_tournament_fee_scope_union_cover ON public.accounting_tournament_fee_sources USING btree (tournament_id) INCLUDE (union_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_club_event ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_club_recorded ON public.accounting_tournament_fee_sources USING btree (club_id, recorded_at) INCLUDE (charged_at)",
+    "CREATE INDEX accounting_tournament_fee_sources_coordinator_club ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE INDEX accounting_tournament_fee_sources_coordinator_event ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, tournament_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE INDEX accounting_tournament_fee_sources_event ON public.accounting_tournament_fee_sources USING btree (tournament_id, rake_record_id)",
+    "CREATE INDEX accounting_tournament_fee_sources_standalone_club ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) WHERE (coordinator_union_id IS NULL)",
+    "CREATE INDEX accounting_tournament_rakeback_player ON public.accounting_tournament_fee_sources USING btree (club_id, player_id)",
+    "CREATE INDEX accounting_tournament_source_identity_keys_cover ON public.accounting_tournament_fee_sources USING btree (id) INCLUDE (tournament_id, rake_record_id)",
+    "CREATE INDEX accounting_tournament_source_record_credit_cover ON public.accounting_tournament_fee_sources USING btree (rake_record_id) INCLUDE (rake_credit)",
+    "CREATE INDEX accounting_tournament_standalone_club_event_cover ON public.accounting_tournament_fee_sources USING btree (club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NULL)",
+    "CREATE INDEX accounting_tournament_week_club_event_cover ON public.accounting_tournament_fee_sources USING btree (coordinator_union_id, club_id, tournament_id) INCLUDE (id, charged_at, rake_credit, union_id) WHERE (coordinator_union_id IS NOT NULL)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_pkey ON public.accounting_tournament_fee_sources USING btree (id)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_rake_record_id_player_id_key ON public.accounting_tournament_fee_sources USING btree (rake_record_id, player_id)",
+    "CREATE UNIQUE INDEX accounting_tournament_fee_sources_source_entitlement_id_key ON public.accounting_tournament_fee_sources USING btree (source_entitlement_id)"
+  ],
+  "relation": {
+    "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+    "rls": true,
+    "force": false,
+    "owner": "postgres"
+  },
+  "constraints": [
+    {
+      "name": "accounting_tournament_fee_sources_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_credit_check",
+      "definition": "CHECK (rake_credit >= 0::numeric AND rake_credit = round(rake_credit, 2) AND (rake_credit::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])))"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_fkey",
+      "definition": "FOREIGN KEY (rake_record_id) REFERENCES accounting_tournament_fee_batches(rake_record_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_rake_record_id_player_id_key",
+      "definition": "UNIQUE (rake_record_id, player_id)"
+    },
+    {
+      "name": "accounting_tournament_fee_sources_source_entitlement_id_key",
+      "definition": "UNIQUE (source_entitlement_id)"
+    }
+  ]
+}

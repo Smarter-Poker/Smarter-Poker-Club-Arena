@@ -20,7 +20,7 @@ function admit(
   health: string,
   schedule = '30 8 * * *',
   createdAt = '2026-10-21T08:30:01Z',
-  owner?: { windows: string; ancestor: boolean; served?: boolean; witness?: string }
+  owner?: { windows: string; ancestor: boolean; served?: boolean; witness?: string; floor?: string }
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'daily-admission-'));
   try {
@@ -30,6 +30,8 @@ function admit(
     if (owner) {
       mkdirSync(join(dir, 'server/release'), { recursive: true });
       writeFileSync(join(dir, 'server/release/owner-maintenance-windows.json'), owner.windows);
+      if (owner.floor)
+        writeFileSync(join(dir, 'server/release/activation-floor.json'), owner.floor);
     }
     const result = spawnSync(
       'bash',
@@ -41,15 +43,19 @@ function admit(
         if [ "$1" = merge-base ]; then [ "$OWNER_SERVED" = 1 ]; return; fi
         if [ "$1" = rev-parse ]; then
           [ "$WITNESS_MODE" != unreadable ] || return 128
-          if [ "$WITNESS_MODE" = shallow ]; then echo true; else echo false; fi
+          if [ "$2" = --is-shallow-repository ]; then
+            if [ "$WITNESS_MODE" = shallow ]; then echo true; else echo false; fi
+          else printf '%040d' 2; fi
           return
         fi
         if [ "$1" = show ]; then
           [ "$WITNESS_MODE" != missing ] || return 128
-          if [ "$WITNESS_MODE" = mismatch ]; then printf changed; else printf 'fixture SQL\n'; fi
+          if [ "$WITNESS_MODE" = mismatch ]; then printf changed
+          elif [ -n "$FLOOR_JSON" ]; then printf '%s' "$FLOOR_JSON"
+          else printf 'fixture SQL\n'; fi
           return
         fi
-        if [ "$1" = rev-list ]; then
+        if [ "$1" = rev-list ] || { [ "$1" = log ] && [ "$2" = -1 ] && [ "$3" = --format=%H ]; }; then
           [ "$WITNESS_MODE" != unknown-serving ] || return 128
           case "$WITNESS_MODE" in served|deleted) printf '%040d' 1 ;; esac
           return 0
@@ -72,6 +78,7 @@ function admit(
           OWNER_ANCESTOR: owner?.ancestor ? '1' : '0',
           OWNER_SERVED: owner?.served ? '1' : '0',
           WITNESS_MODE: owner?.witness ?? 'unserved',
+          FLOOR_JSON: owner?.floor ?? '',
           EVENT_NAME: event,
           HOUR: hour,
           SCHEDULE_EXPRESSION: schedule,
@@ -324,6 +331,160 @@ describe('daily routine admission uses the existing protected receiver only', ()
         ancestor: false,
         served: false,
       })
+    ).toBe(false);
+  });
+  it('bounds the channel-admission owner order to one qualified tournament-aligned cutover', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const matching = windows.filter(
+      (w: { id: string }) => w.id === '2026-10-30-channel-admission-next-55'
+    );
+    expect(matching).toHaveLength(1);
+    const [entry] = matching;
+    expect(entry.contains).toBe('97bcce289707e58d682d25654a5978a34327bf79');
+    expect(entry.notBefore).toBe('2026-10-30T13:40:00Z');
+    expect(entry.notAfter).toBe('2026-10-30T15:00:00Z');
+    expect(entry.announceAtChicagoMinutes).toEqual([53]);
+    expect(entry.migrations).toEqual([]);
+    expect(entry.releaseWitness).toBeUndefined();
+    expect(entry.ownerOrder).toContain('DO THE CUT OVER AT THE NEXT :55 BREAK');
+    expect(entry.ownerOrder).toContain('full 285-second');
+    // This historical order records the reviewed cutover bytes; a later legitimate
+    // ChannelHub change must not rewrite the owner's original instruction.
+    expect(entry.ownerOrder).toContain(
+      'c5b7eec46dc5afbb05eebe6584a4630b0f674e9ba7be00ba709df1f5b1b0293a'
+    );
+    const fixture = JSON.stringify({
+      version: 1,
+      windows: [
+        {
+          ...entry,
+          notBefore: new Date(Date.now() - 60_000).toISOString(),
+          notAfter: new Date(Date.now() + 60_000).toISOString(),
+        },
+      ],
+    });
+    const healthy = JSON.stringify({ liveness: 'ok', releaseSha: 'e'.repeat(40) });
+    for (const [ancestor, served, expected] of [
+      [true, false, true],
+      [true, true, false],
+      [false, false, false],
+    ])
+      expect(
+        admit('push', '18', 'routine', healthy, undefined, undefined, {
+          windows: fixture,
+          ancestor,
+          served,
+        })
+      ).toBe(expected);
+  });
+  it('binds the safe channel continuation to its own floor and refuses consumed or foreign authority', () => {
+    const { windows } = JSON.parse(
+      readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+    );
+    const matches = windows.filter(
+      (w: { id: string }) => w.id === '2026-10-30-channel-admission-safe-55-continuation'
+    );
+    expect(matches).toHaveLength(1);
+    const [entry] = matches;
+    expect(entry.contains).toBe('97bcce289707e58d682d25654a5978a34327bf79');
+    expect(entry.notBefore).toBe('2026-10-30T14:10:00Z');
+    expect(entry.notAfter).toBe('2026-10-30T16:05:00Z');
+    expect(entry.announceAtChicagoMinutes).toEqual([53]);
+    expect(entry.migrations).toEqual([]);
+    // This historical witness stays fixed when a future owner changes the floor.
+    expect(entry.releaseWitness).toEqual({
+      path: 'server/release/activation-floor.json',
+      sha256: '1fc1b58a044e79acce20e21c8b12ef27aa674bfd46b0831dacec39ae84f3a92e',
+    });
+    const notBefore = new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const notAfter = new Date(Date.now() + 3600_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const floor = JSON.stringify({
+      schema: 'engine-release-activation-floor/v2-owner-window',
+      preparationAt: notBefore,
+      activationAt: notBefore,
+      expiresAt: notAfter,
+      timeZone: 'America/Chicago',
+      ownerWindowId: entry.id,
+      clientPublicationAt: notBefore,
+    });
+    const fixture = {
+      ...entry,
+      notBefore,
+      notAfter,
+      releaseWitness: {
+        ...entry.releaseWitness,
+        sha256: createHash('sha256').update(floor).digest('hex'),
+      },
+    };
+    const check = (w = fixture, mode = 'unserved', source = floor) =>
+      admit(
+        'push',
+        '14',
+        'routine',
+        JSON.stringify({ liveness: 'ok', releaseSha: 'e'.repeat(40) }),
+        undefined,
+        undefined,
+        {
+          windows: JSON.stringify({ version: 1, windows: [w] }),
+          ancestor: true,
+          served: true,
+          witness: mode,
+          floor: source,
+        }
+      );
+    // An old floor path in the serving base is not this exact new floor blob.
+    expect(check()).toBe(true);
+    // Preserve actual merged ordering for the currently selected floor. A
+    // historical channel order retains its own isolated refusal cases below.
+    const currentFloor = JSON.parse(
+      readFileSync(join(root, 'server/release/activation-floor.json'), 'utf8')
+    );
+    const selected = windows.find((w: { id: string }) => w.id === currentFloor.ownerWindowId);
+    expect(selected).toBeDefined();
+    const selectedFloor = JSON.stringify({
+      ...currentFloor,
+      preparationAt: notBefore,
+      activationAt: notBefore,
+      expiresAt: notAfter,
+      clientPublicationAt: notBefore,
+    });
+    const ordered = windows.map((w: { id: string }) =>
+      w.id === selected.id
+        ? {
+            ...selected,
+            notBefore,
+            notAfter,
+            releaseWitness: {
+              ...selected.releaseWitness,
+              sha256: createHash('sha256').update(selectedFloor).digest('hex'),
+            },
+          }
+        : w
+    );
+    expect(
+      admit(
+        'push',
+        '14',
+        'routine',
+        JSON.stringify({ liveness: 'ok', releaseSha: 'e'.repeat(40) }),
+        undefined,
+        undefined,
+        {
+          windows: JSON.stringify({ version: 1, windows: ordered }),
+          ancestor: true,
+          served: true,
+          witness: 'unserved',
+          floor: selectedFloor,
+        }
+      )
+    ).toBe(true);
+    for (const mode of ['served', 'deleted', 'unknown-serving', 'shallow', 'missing', 'mismatch'])
+      expect(check(fixture, mode), mode).toBe(false);
+    expect(check({ ...fixture, id: 'foreign-owner' })).toBe(false);
+    expect(
+      check({ ...fixture, releaseWitness: { ...fixture.releaseWitness, sha256: 'f'.repeat(64) } })
     ).toBe(false);
   });
   it('binds a witness to exact target bytes and full unserved history rather than a shared base', () => {
@@ -602,7 +763,8 @@ it('every declared source witness is supported by the installed stage and host a
         expect(window.releaseWitness.sha256).not.toBe(
           createHash('sha256').update(raw).digest('hex')
         );
-        expect(Date.parse(window.notAfter)).toBeLessThan(Date.parse(floor.expiresAt));
+        // Independent historical owners may have later expiry bounds; their
+        // immutable witness never grants the currently selected floor authority.
       }
       expect(admission).toContain('floor_witness');
       expect(admission).toContain('--find-object=');

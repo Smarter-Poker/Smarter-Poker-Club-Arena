@@ -1,0 +1,39 @@
+{
+  "columns": [
+    {
+      "name": "linkage_key",
+      "type": "text",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "ledger_id",
+      "type": "uuid",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "request_intent",
+      "type": "jsonb",
+      "default": null,
+      "notnull": true
+    },
+    {
+      "name": "recorded_at",
+      "type": "timestamp with time zone",
+      "default": "clock_timestamp()",
+      "notnull": true
+    }
+  ],
+  "triggers": [
+    {
+      "trigger": "CREATE TRIGGER ca_correction_intent_immutable_v1 BEFORE DELETE OR UPDATE OR TRUNCATE ON public.ca_correction_request_intents_v1 FOR EACH STATEMENT EXECUTE FUNCTION ca_correction_intent_immutable_v1()",
+      "definition": "CREATE OR REPLACE FUNCTION public.ca_correction_intent_immutable_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'correction_intent_is_immutable';\nEND;\n$function$\n"
+    }
+  ],
+  "constraints": [
+    "UNIQUE (ledger_id)",
+    "PRIMARY KEY (linkage_key)",
+    "CHECK (((jsonb_typeof(request_intent) = 'object'::text) AND ((request_intent ->> 'version'::text) = '1'::text)))"
+  ]
+}

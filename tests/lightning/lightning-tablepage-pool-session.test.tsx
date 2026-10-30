@@ -169,7 +169,10 @@ describe('JOIN LIGHTNING hand-off from the anchor table', () => {
 
   it('after the buy-in, re-points this tab at the pool session once it exists', async () => {
     setLightningEntryIntent(ANCHOR, CLUSTER);
-    rpc.mockResolvedValue({ data: { pool_session_id: POOL, state: 'active' }, error: null });
+    rpc.mockResolvedValue({
+      data: { pool_session_id: POOL, state: 'active', anchor_table_id: ANCHOR },
+      error: null,
+    });
     const follow = vi.fn();
     renderHook(() =>
       useLightningAnchorHandoff({

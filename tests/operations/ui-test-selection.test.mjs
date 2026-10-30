@@ -14,6 +14,7 @@ import {
 } from '../../scripts/ci/ui-test-selection.mjs';
 import {
   classifyChangedPaths,
+  cssBeatJobInputs,
   gitEnvironmentForCwd,
 } from '../../scripts/ci/classify-ci-changes.mjs';
 
@@ -29,6 +30,142 @@ const write = (root, p, s) => {
   mkdirSync(join(root, p, '..'), { recursive: true });
   writeFileSync(join(root, p), s);
 };
+
+test('chained browser inputs admit their paid regression without unrelated server jobs', () => {
+  for (const path of [
+    'tests/browser/rabbit-hunt-flow.spec.ts',
+    'tests/browser/fixtures/rabbit-flow/main.tsx',
+    'tests/browser/fixtures/rabbit-flow/index.html',
+    'tests/browser/fixtures/rabbit-flow/assets/card.png',
+    'tests/browser/fixtures/future-suite/index.html',
+  ]) {
+    assert.deepEqual(
+      classifyChangedPaths([path]),
+      {
+        src: true,
+        server: false,
+        tests: true,
+        phase4: false,
+        fixture: false,
+      },
+      path
+    );
+  }
+  for (const path of [
+    'tests/browser/rabbit-hunt-flow.spec.ts.md',
+    'tests/browser/fixtures/rabbit-flow/README.md',
+    'tests/browser/unrelated.spec.ts',
+    'tests/browser/fixture-other/index.html',
+  ])
+    assert.equal(classifyChangedPaths([path]).src, false, path);
+});
+
+const browserReaderFixture = (root) => {
+  write(
+    root,
+    '.github/workflows/ci.yml',
+    'jobs:\n  css-beats-e2e:\n    steps:\n      - run: npm run test:e2e:parent\n  verdict:\n'
+  );
+  const scripts = {
+    'test:e2e:parent':
+      'playwright test --config=playwright.parent.config.ts && npm run next-browser',
+    'next-browser':
+      'playwright test --config="playwright.future.config.ts" && playwright test --config=playwright.other.config.ts',
+  };
+  write(root, 'package.json', JSON.stringify({ scripts }));
+  write(
+    root,
+    'playwright.parent.config.ts',
+    "export default { testDir: './tests/e2e', testMatch: /tests\\/e2e\\/parent\\.spec\\.ts$/, };\n"
+  );
+  write(
+    root,
+    'playwright.future.config.ts',
+    "export default { testDir: './tests/browser', testMatch: 'future-boundary.spec.ts', };\n"
+  );
+  write(
+    root,
+    'playwright.other.config.ts',
+    'export default { testDir: "./tests/future-browser", testMatch: "another.spec.ts", };\n'
+  );
+  return scripts;
+};
+
+test('browser reader follows generic chained scripts and every literal config', () =>
+  owned((root) => {
+    browserReaderFixture(root);
+    const input = cssBeatJobInputs(root);
+    assert.equal(typeof input, 'function');
+    for (const path of [
+      'tests/e2e/parent.spec.ts',
+      'tests/browser/future-boundary.spec.ts',
+      'tests/browser/nested/future-boundary.spec.ts',
+      'tests/future-browser/another.spec.ts',
+      'tests/browser/fixtures/new-suite/assets/card.webp',
+      'tests/future-browser/fixtures/new-suite/main.tsx',
+      'playwright.future.config.ts',
+    ])
+      assert.equal(input(path), true, path);
+    for (const path of [
+      'tests/browser/unrelated.spec.ts',
+      'tests/future-browser/unrelated.spec.ts',
+      'tests/browser/fixtures/new-suite/README.md',
+      'tests/browser/fixtures-other/main.tsx',
+      'tests/other-fixtures/new-suite/main.tsx',
+    ])
+      assert.equal(input(path), false, path);
+  }));
+
+test('unknown browser chains decline proof and conservatively admit both browser families', () => {
+  for (const fault of [
+    'cycle',
+    'missing-script',
+    'missing-config',
+    'unsafe-config',
+    'unknown-match',
+    'dynamic-script',
+  ])
+    owned((root) => {
+      const scripts = browserReaderFixture(root);
+      if (fault === 'cycle') scripts['next-browser'] = 'npm run test:e2e:parent';
+      if (fault === 'missing-script') scripts['next-browser'] = 'npm run absent';
+      if (fault === 'missing-config')
+        scripts['next-browser'] = 'playwright test --config=playwright.absent.config.ts';
+      if (fault === 'unsafe-config')
+        scripts['next-browser'] = 'playwright test --config=../outside.config.ts';
+      if (fault === 'dynamic-script') scripts['next-browser'] = 'npm run $BROWSER_SCRIPT';
+      if (fault === 'unknown-match')
+        write(
+          root,
+          'playwright.future.config.ts',
+          "export default { testDir: './tests/browser', testMatch: computeMatch(), };\n"
+        );
+      write(root, 'package.json', JSON.stringify({ scripts }));
+      assert.equal(cssBeatJobInputs(root), null, fault);
+      // Import the actual classifier in this isolated layout to exercise its
+      // caller's broad fallback, rather than duplicating the fallback in a test.
+      write(
+        root,
+        'scripts/ci/classify-ci-changes.mjs',
+        readFileSync(new URL('../../scripts/ci/classify-ci-changes.mjs', import.meta.url), 'utf8')
+      );
+      const output = execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import { classifyChangedPaths as classify } from './scripts/ci/classify-ci-changes.mjs';
+       console.log(JSON.stringify([
+         'tests/browser/unknown.spec.ts', 'tests/e2e/unknown.spec.ts',
+         'playwright.unknown.config.ts', 'tests/browser/fixtures/README.md',
+         'tests/unit/unrelated.test.ts'
+       ].map(path => classify([path]).src)));`,
+        ],
+        { cwd: root, encoding: 'utf8', env: gitEnvironmentForCwd() }
+      );
+      assert.deepEqual(JSON.parse(output), [true, true, true, false, false], fault);
+    });
+});
 
 test('configuration proof focuses erased types and navigation copy, never runtime rules', () => {
   const path = 'src/config/cashGames.ts';

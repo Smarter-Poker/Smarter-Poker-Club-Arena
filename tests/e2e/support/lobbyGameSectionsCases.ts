@@ -34,15 +34,46 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
           body: readFileSync('public/assets/club-buttons/club-nav-shell-d45f56465bad.png'),
         })
       );
+      // Production self-hosts this face; the isolated document has no app origin
+      // and must not depend on Google Fonts or cross-origin font response headers.
+      const fontCSSURL = 'https://smarter.poker/hub/club-arena/fonts/fonts.css';
+      const fontCSSResponse = await page.request.get(fontCSSURL);
+      expect(fontCSSResponse.ok()).toBe(true);
+      const fontCSS = await fontCSSResponse.text();
+      const face = fontCSS
+        .match(/@font-face\s*\{[^}]*\}/g)
+        ?.find(
+          (rule) =>
+            rule.includes("font-family: 'Roboto Condensed'") &&
+            /font-weight:\s*800\s*;/.test(rule) &&
+            /unicode-range:\s*U\+0000-00FF/.test(rule)
+        );
+      expect(face, 'Published Roboto Condensed 800 Latin face').toBeTruthy();
+      const source = face!.match(/url\(([^)]+)\)/);
+      expect(source, 'Published font URL').toBeTruthy();
+      const fontResponse = await page.request.get(new URL(source![1], fontCSSURL).href);
+      expect(fontResponse.ok()).toBe(true);
+      const fontBytes = await fontResponse.body();
+      const fixtureFace = face!.replace(
+        source![0],
+        `url(data:font/woff2;base64,${fontBytes.toString('base64')})`
+      );
       await page.setContent(
-        `<base href="https://fixture.invalid/"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;800&display=swap"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
+        `<base href="https://fixture.invalid/"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${fixtureFace}${css}</style><div id="root"></div>`
       );
       await page.addScriptTag({ content: await lobbyGameSectionsFixture() });
-      await page.evaluate(() => document.fonts.ready);
       const cash = page.getByRole('button', { name: 'Cash Games', exact: true });
       const tournaments = page.getByRole('button', { name: 'Tournaments', exact: true });
       await expect(cash).toHaveAttribute('aria-expanded', 'false');
       await expect(tournaments).toHaveAttribute('aria-expanded', 'false');
+      // Mount first: fonts.ready alone can resolve before concurrent React
+      // rendering introduces the labels and therefore before this face is used.
+      const loadedFonts = await page.evaluate(async () => {
+        const loaded = await document.fonts.load('800 16px "Roboto Condensed"', 'Tournaments');
+        await document.fonts.ready;
+        return loaded.length;
+      });
+      expect(loadedFonts, 'The published label face must load before geometry').toBeGreaterThan(0);
       await expect(page.getByRole('tablist')).toHaveCount(0);
       for (const button of [cash, tournaments]) {
         const rect = await button.boundingBox();

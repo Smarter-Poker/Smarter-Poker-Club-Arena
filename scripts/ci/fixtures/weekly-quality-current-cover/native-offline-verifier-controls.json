@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "cases": [
+    "explicit_offline_positive",
+    "paid40_refused",
+    "paid5_refused",
+    "GEN_refused",
+    "authority_refused",
+    "newhistory_refused",
+    "dependencyhistory_refused",
+    "duplicateowner_refused",
+    "native_cannot_certify_actual",
+    "unallocated_refused"
+  ],
+  "production_or_financial_semantics_proof": false
+}

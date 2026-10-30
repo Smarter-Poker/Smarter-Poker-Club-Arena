@@ -99,6 +99,14 @@ BEGIN
     RAISE EXCEPTION 'cashier reclaim and movement history migration history drift';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261029065153'
+       AND name = 'club_promo_send_names_its_journal_source_column'
+  ) THEN
+    RAISE EXCEPTION 'cashier club promo journal source migration history drift';
+  END IF;
+
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_club_wallet_claim_back(uuid,uuid,numeric,text,text,text,uuid,uuid)',
@@ -550,7 +558,8 @@ BEGIN
   -- Renaming keeps the audited production bodies intact. Certify each private
   -- core by exact source, owner, definer/search-path posture and denied caller
   -- ACLs so a same-name replacement cannot hide behind the public wrapper.
-  -- Bank and club-promo cores re-pinned to the installed 20261021174527 bodies.
+  -- Bank cores retain the installed 20261021174527 bodies; club promo also
+  -- includes the qualified 20261029065153 journal-source label.
   v_private_contract := jsonb_build_array(
     jsonb_build_object('signature', 'public.fn_club_bank_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', '0b7684873b6cee74e2eafb2cf9cf604a'),
@@ -565,7 +574,9 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', 'b6b0c7686b67d33e2b01c132f8775cbc'),
     jsonb_build_object('signature', 'public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'e2fa848a65ab3615117385fc0614c229'),
+      -- Derived from the protected source fixture and exact migration patch;
+      -- the previous body omitted the payer's ledger source column.
+      'hash', 'aa695a9cec9ffb9516cf329fcd04fcf9'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', '7a357ba95a8ca4eb13f00f798233d8d4'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',

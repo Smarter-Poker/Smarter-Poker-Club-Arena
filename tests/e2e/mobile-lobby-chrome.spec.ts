@@ -647,6 +647,7 @@ const SHEETS = [
   'src/components/lobby/LobbySortBar.css',
   'src/components/lobby/CompactLobbyRows.css',
   'src/pages/ClubHomeMobilePremium.css',
+  'src/components/wallet/CashierMyWallets.css',
   'src/components/club/ClubBottomNav.module.css',
 ]
   .map(css)
@@ -677,7 +678,7 @@ function lobby(opts: { countText: string; publishControlsHeight: boolean; inTab?
         <div class="lobby-top__main">
           <div class="fx-plaque"></div>
           <div class="fx-plaque"></div>
-          <div class="lobby-top__wallet">
+          <div class="cashier-my-wallets">
             <button type="button" class="lobby-wallets-trigger" aria-expanded="false">
               <span class="lobby-wallets-trigger__icon" aria-hidden="true"></span>
               <span class="lobby-wallets-trigger__copy">

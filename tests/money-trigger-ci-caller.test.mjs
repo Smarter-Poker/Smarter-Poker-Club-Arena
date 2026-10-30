@@ -266,6 +266,7 @@ test('warm client routes are exact while paid financial runners keep the immutab
       const key=/^  ([A-Za-z_][A-Za-z_0-9-]*):\s*$/.exec(line);if(key)job=key[1];
       const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
       if(expected.has(job)){assert.equal(route[1],'ubuntu-latest',job);seen.add(job)}
+      else if ((file==='ci.yml' && ['accounting_postgres','server_shards'].includes(job)) || (file==='component-fixture-native-smoke.yml' && job==='native-smoke')) assert.equal(route[1],"${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_CI_STANDARD_RUNNERS != 'true' && 'ca-linux-8core' || '"+(file==='ci.yml'?'ubuntu-latest':'ubuntu-24.04')+"' }}",job);
       else assert.match(route[1],approvedPaidRoute,job);
     }
     assert.ok(count);assert.deepEqual([...seen].sort(),[...expected].sort());

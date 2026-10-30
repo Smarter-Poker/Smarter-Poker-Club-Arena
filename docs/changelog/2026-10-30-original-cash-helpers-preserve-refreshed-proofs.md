@@ -1,0 +1,5 @@
+# Original cash helpers preserve genuine refreshed proof
+
+The original three-helper migration refused the original producer's refreshed earning windows because it froze old certificate timestamps. A new forward migration retains exactly the three qualified helper bodies and all source, role, maintenance, schema and generation checks. It validates all 84 canonical windows and their complete economic payloads and source maps, then proves every current cache row and timestamp unchanged by installation. Paid receipts and all 40 correction journals remain immutable.
+
+The superseded 30502 migration remains uninstalled. Install 54822 before standalone preparation 51108 or the new tournament quality owner. The maintained existing native runner adds 29 admission, drift and grammar controls while preserving its nine owner, ACL, replay and rollback cases. These isolated checks do not certify production capacity, book closure or automatic Monday readiness. Actual installation and full catalog, history and paid/cache readback remain required.

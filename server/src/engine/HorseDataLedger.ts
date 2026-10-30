@@ -733,7 +733,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   flag(
     'v62RiverBettorPolarity',
-    '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is kept by how often a human bets it at that size, so one-pair river calls are priced against value and bluffs rather than any connecting pair; explicit off arm retained for recorded corpora',
+    '2026-10-30 Hold\'em river bettor polarity: a river wager\'s sampled hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum by bet size; OPT-IN since 18:50 UTC after the mirror league resolved it negative against horses (-3.67 +/- 1.02 bb/100 at 200bb) while V61 alone resolved +1.30 +/- 0.41; re-enable only after a recalibrated stratum resolves positive',
     'V62'
   ),
   flag(

@@ -2071,10 +2071,17 @@ export interface HorseDecideOpts {
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
   /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
-   *  hand is kept by how often a human bets it at that size (HorseEval
-   *  V62_KEEP), so a one-pair call is priced against value and bluffs rather
-   *  than against any pair that connected. Default on; false is the
-   *  historical arm for recorded corpora. */
+   *  hand is drawn from a bluff / two pair+ / top pair / weaker pair stratum
+   *  by bet size (HorseEval V62_BLUFF_SHARE / V62_VALUE_MIX), placed exactly
+   *  from the bettor's band on the board. OPT-IN (default off) since
+   *  2026-10-30 18:50 UTC: the paired-deal mirror league resolved it negative
+   *  against horse opponents, which are most of the fleet's opponents -
+   *  20,000 duplicate pairs each: -3.67 +/- 1.02 bb/100 at 200bb,
+   *  -0.48 +/- 0.22 at 40bb, -0.40 +/- 0.55 at 100bb (its bluff shares are
+   *  the measured HUMAN pool's; the old brain bluffs rivers more) - while
+   *  V61 alone resolved +1.30 +/- 0.41. V61 yields to V62 only when V62 is
+   *  on. Re-enable by default only after a recalibrated stratum resolves
+   *  significant positive in the mirror and the human-field twin. */
   v62RiverBettorPolarity?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
@@ -6676,7 +6683,10 @@ export class HorseLogic {
     // full contact range so a credible bluffer is still called down.
     let polar62 = false;
     if (
-      (opts.v62RiverBettorPolarity ?? true) !== false &&
+      // Opt-in since 2026-10-30 (see the option's note): the mirror league
+      // resolved it negative against horse opponents; V61 carries the
+      // measured correction by default.
+      opts.v62RiverBettorPolarity === true &&
       isRiver &&
       !vi.isOmaha &&
       !vi.isShortDeck &&

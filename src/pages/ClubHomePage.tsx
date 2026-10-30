@@ -414,9 +414,6 @@ type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'S
 const ALL_STATUS_FILTERS: ReadonlyArray<{ key: AllStatusFilter; label: string }> = [
   { key: 'ALL', label: 'All' },
   { key: 'RUNNING', label: 'Running' },
-  { key: 'OPEN_REGISTRATION', label: 'Open Registration' },
-  { key: 'LATE_REG', label: 'Late Reg' },
-  { key: 'STARTING_SOON', label: 'Starting Soon' },
 ];
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
@@ -982,6 +979,8 @@ function ClubHomePageContent({
      prop: the strip clears the prop as soon as the landing is reported
      applied, and the database's later correction of the saved view must still
      land on the requested list for this visit. A club switch drops it. */
+  const gameSectionRef = useRef(gameSection);
+  gameSectionRef.current = gameSection;
   const landingGameTypeRef = useRef<EmbeddedLobbyList | undefined>(initialGameType);
   const landingReportedRef = useRef(false);
   /* ── A SHARED ?game=<id> LINK (2026-10-25) ─────────────────────────────
@@ -2250,6 +2249,10 @@ function ClubHomePageContent({
       /* A shared link's own tab outranks both the same way, for this mount
          only (see `linkedGameTypeRef`). Undefined on every other visit. */
       const shown = linkedGameTypeRef.current ?? tab;
+      // A late saved view can refine this family, but cannot move a player
+      // into the other family after they explicitly opened this one.
+      if (gameSectionRef.current === 'cash' && TOURNAMENT_TYPES.includes(shown)) return;
+      if (gameSectionRef.current === 'tournaments' && !TOURNAMENT_TYPES.includes(shown)) return;
       setGameType(shown);
       setSortKey(sortForTab(p, shown));
       setFavoritesOnly(p.favoritesOnly);
@@ -5743,11 +5746,18 @@ function ClubHomePageContent({
                   const opening = gameSection !== section;
                   setGameSection(opening ? section : null);
                   if (opening) {
+                    if (
+                      section === 'cash' &&
+                      allStatusFilter !== 'ALL' &&
+                      allStatusFilter !== 'RUNNING'
+                    ) {
+                      setAllStatusFilter('ALL');
+                    }
                     const matching =
                       section === 'cash'
                         ? gameType === 'ALL' || CASH_TYPES.includes(gameType)
                         : TOURNAMENT_TYPES.includes(gameType);
-                    selectGameType(matching ? gameType : section === 'cash' ? 'ALL' : 'MTT');
+                    if (!matching) selectGameType(section === 'cash' ? 'ALL' : 'MTT');
                   }
                 }}
               />

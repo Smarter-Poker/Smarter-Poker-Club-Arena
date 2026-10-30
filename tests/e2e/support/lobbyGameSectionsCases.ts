@@ -27,9 +27,10 @@ export function registerLobbyGameSectionsCases() {
         }
       );
       await page.setContent(
-        `<base href="https://fixture.invalid/"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
+        `<base href="https://fixture.invalid/"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700;800&display=swap"><style>body{margin:0;background:#000;color:#e4e7ec}.club-home{width:100%;padding:0}.club-lobby-command-top{display:block!important;min-height:0!important;padding:0!important}${css}</style><div id="root"></div>`
       );
       await page.addScriptTag({ content: await lobbyGameSectionsFixture() });
+      await page.evaluate(() => document.fonts.ready);
       const cash = page.getByRole('button', { name: 'Cash Games', exact: true });
       const tournaments = page.getByRole('button', { name: 'Tournaments', exact: true });
       await expect(cash).toHaveAttribute('aria-expanded', 'false');

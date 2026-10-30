@@ -785,6 +785,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
       await ensureClubMembership(page, testInfo.project.use.baseURL!, CLUB_ID);
       await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded' });
       await prepareCashLobbyActions(page);
+      await openLobbyGameSection(page, 'NLH');
       const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
       await tabs.getByRole('tab', { name: 'NLH', exact: true }).click();
       await expect(tabs.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
@@ -861,6 +862,7 @@ preferenceLifecycleTest.describe('owned preference lifecycle', () => {
         await acknowledgePreferenceWelcome(fresh.page);
         await prepareCashLobbyActions(fresh.page);
         await expect(fresh.page).toHaveURL(exactUrl);
+        await openLobbyGameSection(fresh.page, 'NLH');
         await expect(fresh.page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
           'aria-selected',
           'true',

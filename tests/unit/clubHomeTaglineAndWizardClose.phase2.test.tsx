@@ -362,6 +362,11 @@ describe('Find Your Game starts with two separate sections', () => {
         .getAllByRole('tab')
         .map((t) => t.textContent);
     expect(names()).toEqual(['ALL', 'NLH', 'PLO', 'LIMIT']);
+    expect(
+      within(screen.getByLabelText('Game Status'))
+        .getAllByRole('button')
+        .map((t) => t.textContent)
+    ).toEqual(['All', 'Running']);
     expect(document.querySelector('.lt-row[data-id="cash-a"]')).not.toBeNull();
     expect(document.querySelector('.lt-row[data-id="event-a"]')).toBeNull();
     expect(document.querySelector('.club-home__games')?.hasAttribute('hidden')).toBe(false);
@@ -393,4 +398,19 @@ describe('Find Your Game starts with two separate sections', () => {
     expect(document.querySelector('.club-home__games')?.hasAttribute('hidden')).toBe(true);
     expect(h.register).not.toHaveBeenCalled();
   });
+});
+
+it('keeps the saved cash tab behind the closed section until it is opened', async () => {
+  h.setupReads = [DONE];
+  localStorage.setItem(
+    'ca_lobby_view_viewer:club-a',
+    JSON.stringify({ tab: 'OMAHA', sortByTab: {}, favoritesOnly: false })
+  );
+  await mountLobby();
+  expect(screen.queryByRole('tablist', { name: 'Game Type' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+  await flush();
+  expect(screen.getByRole('tab', { name: 'PLO', exact: true }).getAttribute('aria-selected')).toBe(
+    'true'
+  );
 });

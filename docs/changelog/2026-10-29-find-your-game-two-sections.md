@@ -7,7 +7,9 @@ the open button closes it. Live Club Schedule and the heading's game total are
 removed.
 
 Cash Games contains All, NLH, PLO and Limit. Tournaments contains MTT, Spins and
-Heads Up. Advanced Filters stays within the selected family. Saved tab, sort and
+Heads Up. Cash All offers only All and Running status shortcuts; obsolete saved
+registration shortcuts are cleared when opening cash. Advanced Filters stays
+within the selected family. Saved tab, sort and
 filter preferences retain their existing storage path; opening their matching
 family restores the saved tab. Explicit embedded tournament landings and shared
 game links still open the requested family. Creation access and game admission

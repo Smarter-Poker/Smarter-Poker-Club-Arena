@@ -17,9 +17,15 @@ const SOURCE = readFileSync(
   join(process.cwd(), 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
-const fn = SOURCE.slice(
-  SOURCE.indexOf('prewarm_candidate_image() {'),
-  SOURCE.indexOf('read_pending_owner() {')
+const HELPER_PATH = join(process.cwd(), 'server/scripts/prewarm-engine-image.sh');
+const HELPER = readFileSync(HELPER_PATH, 'utf8');
+const WORKFLOW = readFileSync(
+  join(process.cwd(), '.github/workflows/auto-deploy-hetzner.yml'),
+  'utf8'
+);
+const fn = HELPER.slice(
+  HELPER.indexOf('prewarm_candidate_image() {'),
+  HELPER.indexOf('# Standalone caller:')
 );
 
 function fixture(runFails = false, remaining = 600) {
@@ -84,6 +90,11 @@ function fixture(runFails = false, remaining = 600) {
         encoding: 'utf8',
         env: { ...process.env, PATH: bin + ':' + process.env.PATH },
       }),
+    runHelper: (args: string[]) =>
+      spawnSync('bash', [HELPER_PATH, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: bin + ':' + process.env.PATH },
+      }),
     cleanup: () => {
       chmodSync(join(app, '.env'), 0o600);
       rmSync(sandbox, { recursive: true, force: true });
@@ -100,6 +111,49 @@ describe('a candidate filesystem is warmed before maintenance can be announced',
     expect(
       SOURCE.indexOf('bounded_break_command "$BREAK_CUTOVER_PROOF_SECONDS" env')
     ).toBeGreaterThan(warm);
+  });
+
+  it('uses one bound helper before intake and retains transaction preparation', () => {
+    const prepared = WORKFLOW.indexOf('name: Prepare the scheduled immutable image');
+    const warm = WORKFLOW.indexOf(
+      '"$STAGE/server/scripts/prewarm-engine-image.sh" "$IMAGE_ID" "$RUN_KEY" "$NOT_AFTER_EPOCH"',
+      prepared
+    );
+    const wait = WORKFLOW.indexOf('name: Wait for the immutable activation floor');
+    const intake = WORKFLOW.indexOf('name: Dispatch the staged SHA');
+    expect(warm).toBeGreaterThan(prepared);
+    expect(wait).toBeGreaterThan(warm);
+    expect(intake).toBeGreaterThan(wait);
+    expect(WORKFLOW.slice(prepared, warm)).toContain(
+      '"$CONTROL_SHA:server/scripts/prewarm-engine-image.sh"'
+    );
+    expect(WORKFLOW.slice(prepared, warm)).toContain('imageId');
+    expect(SOURCE).toContain(`docker image inspect --format '{{.Id}}' "$IMAGE_REF"`);
+    expect(SOURCE).toContain(
+      '"$CONTROL_DIR/prewarm-engine-image.sh" "$image_id" "$RUN_ID" "$MUTATION_DEADLINE_EPOCH"'
+    );
+    expect(SOURCE).not.toContain('Buffer.alloc(64 * 1024)');
+  });
+
+  it('the actual helper refuses mutable images, unsafe names and expired deadlines before Docker', () => {
+    const f = fixture();
+    try {
+      const deadline = String(Math.floor(Date.now() / 1000) + 600);
+      for (const args of [
+        ['mutable:tag', '42-1', deadline],
+        [f.image, '../42', deadline],
+        [f.image, '42-1', '1'],
+      ]) {
+        const result = f.runHelper(args);
+        expect(result.status).not.toBe(0);
+        expect(existsSync(f.calls)).toBe(false);
+      }
+      const result = f.runHelper([f.image, '42-1', deadline]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain('ENGINE_IMAGE_PREWARM_FILES=2');
+    } finally {
+      f.cleanup();
+    }
   });
 
   it('retains the ephemeral loopback run without production configuration, labels or application invocation', () => {

@@ -218,7 +218,7 @@ describe('phase 3 page: live from any tab, by asking', () => {
     expect(HOOK).toMatch(/document\.visibilityState !== 'visible'\) return;/);
     expect(HOOK).toMatch(/if \(last === null\) \{\s+last = pulse;/);
     expect(HOOK).toMatch(
-      /if \(away >= staleAfterMs\) \{\s+\/\/[^\n]*\n\s+last = null;\s+onChangeRef\.current\(\);/
+      /if \(away >= staleAfterMs \|\| currentDay !== displayedDay\) \{\s+displayedDay = currentDay;\s+\/\/[^\n]*\n\s+last = null;\s+onChangeRef\.current\(\);/
     );
     expect(HOOK).toMatch(/reportError\(err, 'useStatsPulse\.rpc_ca_player_stats_pulse'\)/);
     expect(HOOK).not.toMatch(/toast/i);

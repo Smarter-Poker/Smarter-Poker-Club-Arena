@@ -1,3 +1,5 @@
+// Keep the scoped ingress source contract in the existing required V31 gate.
+import '../../tests/v31-model-ingress-operations.test.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';

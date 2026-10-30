@@ -199,6 +199,10 @@ function signatureOffenders(migrations: typeof parsed): string[] {
   const offenders: string[] = [];
   migrations.forEach(({ file, creates }, index) => {
     for (const c of creates) {
+      // Pre-law dynamic templates are history, not concrete type signatures.
+      // Keep the last known ABI rather than replacing it with format's %s.
+      // New migrations remain subject to the normal conservative checks.
+      if (file < LAW_FROM && c.types.some((type) => /%(?:\d+\$)?[sIL]/.test(type))) continue;
       const previous = lastSeen.get(c.name);
       const now = sig(c.types);
       if (
@@ -291,6 +295,29 @@ describe('a door the engine calls by name has one overload', () => {
       );
       expect(signatureOffenders([baseline, dropped])).toEqual([]);
     }
+  });
+
+  it('a historical format placeholder cannot replace a known signature', () => {
+    const original = declarations(
+      '20260901000000_base.sql',
+      'CREATE FUNCTION public.fixture(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;'
+    );
+    const template = declarations(
+      '20260902000000_body_patch.sql',
+      "DO $$BEGIN EXECUTE format('CREATE OR REPLACE FUNCTION public.fixture(%s) RETURNS void LANGUAGE sql AS %L', v_args, v_body);END$$;"
+    );
+    const same = declarations(
+      '99999999999990_same.sql',
+      'CREATE OR REPLACE FUNCTION public.fixture(p_id uuid) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;'
+    );
+    expect(signatureOffenders([original, template, same])).toEqual([]);
+    const changed = declarations(
+      '99999999999991_changed.sql',
+      'CREATE OR REPLACE FUNCTION public.fixture(p_id uuid,p_key text) RETURNS void LANGUAGE sql AS $$SELECT NULL$$;'
+    );
+    expect(signatureOffenders([original, template, changed])).toEqual([
+      '99999999999991_changed.sql: fixture(uuid) -> (uuid,text) without a drop',
+    ]);
   });
 
   it('reads implicit and explicit OUT records without consuming the body or following function', () => {

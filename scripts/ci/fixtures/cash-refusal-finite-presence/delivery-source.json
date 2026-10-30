@@ -1,0 +1,12 @@
+{
+  "version": "20261030062635",
+  "name": "cash_refusals_skip_empty_scopes_and_retain_the_original_popu",
+  "protected_source_sha256": "8fb806c7bcd12fc7ed532e32ba6ff4fddb78a7a077294e12dc4f3b41922b05ec",
+  "source_only_not_installed": true,
+  "source_function_sha256": "ad5a0bd4a2dc7cc66597840ac68fd8cf6534ab1c35f6dcf7b4ce07d61e320a38",
+  "fullbefore_md5": "b5ed851614df500cedbfa017e9e21b9a",
+  "fullafter_md5": "68140b9499b8df03590eafece567f62d",
+  "unchanged_gen72": true,
+  "pure_DSS_Midway_actual_component_proof_only": true,
+  "whole180_unqualified": true
+}

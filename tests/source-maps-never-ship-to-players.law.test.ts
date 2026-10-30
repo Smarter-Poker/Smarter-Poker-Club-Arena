@@ -12,6 +12,7 @@ describe('source maps never ship to players', () => {
     // transaction it pipes to the host; the pool prune lives in the latter.
     const publisher =
       read('.github/workflows/publish-club-arena.yml') +
+      read('.github/workflows/publish-club-arena-client.yml') +
       read('.github/workflows/publish-club-arena-transaction.yml') +
       read('.github/scripts/publish-origin-activate.sh');
     expect(publisher).toContain("find dist -name '*.map' -delete");
@@ -19,8 +20,8 @@ describe('source maps never ship to players', () => {
     expect(publisher).toContain(`find "$ROOT/pool" -type f -name '*.map' -delete`);
   });
   it('retains exact application release identity', () => {
-    expect(read('.github/workflows/publish-club-arena.yml')).toContain(
-      'VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}'
+    expect(read('.github/workflows/publish-club-arena-client.yml')).toContain(
+      'VITE_APP_VERSION: ${{ inputs.target_sha }}'
     );
   });
 });

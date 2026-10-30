@@ -146,7 +146,7 @@ describe('post-publication verification belongs to its delivered component', () 
 
   it('isolates the finite club-channel lifecycle proof from client and spectator authority', () => {
     const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
-    expect(lifecycle.needs).toBe('publication-gate');
+    expect(lifecycle.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(lifecycle.if).toContain("github.event_name == 'repository_dispatch'");
     expect(lifecycle.if).toContain("github.event.client_payload.engine_sha != ''");
     expect(lifecycle.concurrency['cancel-in-progress']).toBe(false);
@@ -213,12 +213,12 @@ describe('post-publication verification belongs to its delivered component', () 
   });
 
   it('gives the client its own result without an engine or live-table prerequisite', () => {
-    expect(client.needs).toBe('publication-gate');
+    expect(client.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");
     expect(JSON.stringify(client)).not.toMatch(
       /EXPECTED_ENGINE_SHA|engine-ready|ENGINE_TRIGGER_SHA|live-table-realtime/
     );
-    expect(engine.needs).toBe('publication-gate');
+    expect(engine.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(engine.concurrency.group).not.toBe(client.concurrency.group);
     expect(engine.concurrency['cancel-in-progress']).toBe(false);
     expect(JSON.stringify(engine)).toContain('production-live-table-realtime.spec.ts');

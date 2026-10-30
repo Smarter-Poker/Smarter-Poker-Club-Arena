@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/auth-permanent-01a18a0c - The auth request deadline must load eagerly with the Supabase client before shared session-lock ownership. Lazy-loading its helper adds an unbounded module download before the deadline starts; this small dependency-free helper must be ready before the locked auth transport runs.",
+  "modules": ["src/lib/authFetchDeadline.ts"]
+}

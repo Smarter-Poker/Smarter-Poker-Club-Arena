@@ -8,15 +8,9 @@ const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
 const native = parse(readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8'));
 const trusted =
   "github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872'";
-const recovery = " && vars.CA_REQUIRED_CI_STANDARD_RUNNERS != 'true'";
-const expression = (standard: string, recover = true) =>
-  '$' +
-  '{{ ' +
-  trusted +
-  (recover ? recovery : '') +
-  " && 'ca-linux-8core' || '" +
-  standard +
-  "' }}";
+const recovery = " && vars.CA_REQUIRED_NATIVE_PROFILE == 'large'";
+const expression = (standard: string) =>
+  '$' + '{{ ' + trusted + recovery + " && 'ca-linux-8core' || '" + standard + "' }}";
 const jobs = [
   ['accounting_postgres', ci.jobs.accounting_postgres, 'ubuntu-latest'],
   ['server_shards', ci.jobs.server_shards, 'ubuntu-latest'],
@@ -25,23 +19,24 @@ const jobs = [
 
 describe('required CI uses a closed standard hosted capacity recovery', () => {
   for (const [name, job, standard] of jobs) {
-    it(name + ' accepts only its declared standard OS or the unchanged paid default', () => {
+    it(name + ' accepts only its declared standard OS or the fixed large profile', () => {
       expect(job['runs-on']).toBe(expression(standard));
       for (const [owner, id, value, expected] of [
-        ['Smarter-Software-PIQ', '1132369872', '', 'ca-linux-8core'],
-        ['Smarter-Software-PIQ', '1132369872', 'false', 'ca-linux-8core'],
-        ['Smarter-Software-PIQ', '1132369872', 'true', standard],
-        ['Smarter-Software-PIQ', '1132369872', 'self-hosted', 'ca-linux-8core'],
-        ['Smarter-Software-PIQ', '1132369872', 'custom-runner', 'ca-linux-8core'],
-        ['other-org', '1132369872', '', standard],
-        ['Smarter-Software-PIQ', '42', 'true', standard],
+        ['Smarter-Software-PIQ', '1132369872', '', standard],
+        ['Smarter-Software-PIQ', '1132369872', 'false', standard],
+        ['Smarter-Software-PIQ', '1132369872', 'standard', standard],
+        ['Smarter-Software-PIQ', '1132369872', 'large', 'ca-linux-8core'],
+        ['Smarter-Software-PIQ', '1132369872', 'self-hosted', standard],
+        ['Smarter-Software-PIQ', '1132369872', 'custom-runner', standard],
+        ['other-org', '1132369872', 'large', standard],
+        ['Smarter-Software-PIQ', '42', 'large', standard],
         ['other-org', '42', 'self-hosted', standard],
       ]) {
         const body = job['runs-on'].slice(3, -2).trim();
         expect(
           runInNewContext(body, {
             github: { repository_owner: owner, repository_id: id },
-            vars: { CA_REQUIRED_CI_STANDARD_RUNNERS: value },
+            vars: { CA_REQUIRED_NATIVE_PROFILE: value },
           })
         ).toBe(expected);
       }
@@ -50,17 +45,14 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
-    for (const key of ['accounting_postgres', 'server_shards'])
-      normalized.jobs[key]['runs-on'] = expression('ubuntu-latest', false);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '939e60b61c3b8fe7d4ac6c49b0c44a2052527042b0050ddd2313fa538dbf1808'
+      '1d012410e596656beee8192178fb76fff26a096d8ae4bd24336a2c037f82066e'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);
-    normalized.jobs['native-smoke']['runs-on'] = expression('ubuntu-24.04', false);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      'b86cd1553ebc48af73ddcf18a87243fb7dfd868cd0bfd5f209a980cc13ec0d36'
+      '9d89b70e835f0476c8b3d4abf5d5c11c07e7b77a83b5bd95aacfae472153c457'
     );
   });
 });

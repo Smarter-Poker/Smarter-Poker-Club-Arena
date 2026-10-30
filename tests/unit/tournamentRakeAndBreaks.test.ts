@@ -153,7 +153,9 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
   it('the break waits for its hands while this server owns the drain', () => {
     const start = GAME_SERVER.indexOf('private async waitForAllTablesParked');
     const waiter = GAME_SERVER.slice(start, GAME_SERVER.indexOf('\n  }\n', start) + 5);
-    expect(waiter).toContain('while (this.running && this.directAdmissionIsCurrent(generation))');
+    expect(waiter).toMatch(
+      /while\s*\(\s*this\.running\s*&&\s*this\.directAdmissionIsCurrent\(generation\)\s*&&\s*this\.synchronizedBreakGeneration === breakGeneration\s*\)/
+    );
     expect(waiter).toContain('return false;');
     expect(waiter).not.toMatch(/Date\.now\(\)\s*</);
   });

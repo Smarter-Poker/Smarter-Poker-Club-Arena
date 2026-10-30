@@ -587,3 +587,53 @@ test('actual Git revision owns the producer layout, not dirty worktree content o
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('nested immutable producer retains exact matrix and only the maintained caller prefix', () => {
+  const root = mkdtempSync(join(tmpdir(), 'publisher-nested-source-'));
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: root, env: gitEnvironmentForCwd(), encoding: 'utf8' }).trim();
+  const entry = join(root, '.github/workflows/publish-club-arena.yml');
+  const helper = join(root, '.github/workflows/publish-club-arena-client.yml');
+  const caller =
+    'jobs:\n  client-publication:\n    needs: publish-needed\n    uses: ./.github/workflows/publish-club-arena-client.yml\n';
+  try {
+    git('init', '-q');
+    git('config', 'user.name', 'Nested fixture');
+    git('config', 'user.email', 'fixture@example.invalid');
+    mkdirSync(join(root, '.github/workflows'), { recursive: true });
+    writeFileSync(entry, caller);
+    for (const count of [4, 16]) {
+      writeFileSync(
+        helper,
+        producerWorkflow(count).replace('jobs:', 'on:\n  workflow_call:\njobs:')
+      );
+      git('add', '.');
+      git('commit', '-qm', `nested ${count}`);
+      assert.deepEqual(readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')), {
+        total: count,
+        indices: Array.from({ length: count }, (_, i) => i + 1),
+        jobPrefix: 'client-publication / ',
+      });
+    }
+    for (const bad of [
+      caller.replace('publish-club-arena-client.yml', 'arbitrary.yml'),
+      caller.replace('needs: publish-needed', 'needs: other'),
+      caller + '  client-publication:\n',
+    ]) {
+      writeFileSync(entry, bad);
+      git('add', '.');
+      git('commit', '-qm', 'unsupported caller');
+      assert.throws(() => readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')));
+    }
+    writeFileSync(entry, caller);
+    writeFileSync(
+      helper,
+      producerWorkflow(16).replace('jobs:', 'on:\n  push:\n  workflow_call:\njobs:')
+    );
+    git('add', '.');
+    git('commit', '-qm', 'unapproved event entry');
+    assert.throws(() => readImmutablePublisherClientShards(root, git('rev-parse', 'HEAD')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

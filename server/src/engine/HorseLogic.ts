@@ -2049,6 +2049,10 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V61 (2026-10-29): Hold'em one-pair river calls are shaded 6-12 equity
+   * points against the price unless the bettor's read says they over-bluff.
+   * Default on; explicit false keeps the unshaded V38 verdict. */
+  v61RiverOnePairShade?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -2066,6 +2070,12 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
+   *  hand is kept by how often a human bets it at that size (HorseEval
+   *  V62_KEEP), so a one-pair call is priced against value and bluffs rather
+   *  than against any pair that connected. Default on; false is the
+   *  historical arm for recorded corpora. */
+  v62RiverBettorPolarity?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -3781,6 +3791,19 @@ function v54OpponentProfile(
   } catch {
     return 'unknown';
   }
+}
+
+/**
+ * V61 (2026-10-29): how far a hold'em one-pair river bluff-catch is priced
+ * below its raw read, by the price faced (toCall over the pot it is called
+ * into). Measured over 14 days of NLH review stack-offs: under a fifth of the
+ * pot those calls were about break-even (17-18% won against ~20% needed), at
+ * a quarter to a half they won 21-22% against ~29%, and at a half to a full
+ * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
+ */
+export function v61RiverOnePairShade(toCall: number, pot: number): number {
+  if (!(toCall > 0) || !(pot > 0)) return 0;
+  return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
 }
 
 export class HorseLogic {
@@ -6644,6 +6667,32 @@ export class HorseLogic {
         if (tele15 && oppReads.some((read) => read?.strictPressureRange))
           noteFire('v56_omaha_pressure_range');
       }
+    }
+    // ═══ V62 RIVER BETTOR POLARITY (2026-10-30) ═══ Single-board Hold'em,
+    // facing a river wager from a bettor without an over-bluffer read: the
+    // sampler keeps that bettor's hand by the likelihood they bet it at this
+    // size (HorseEval V62_KEEP). The read says WHO wagered on the river; the
+    // exploit read (callDownMod above 1 = a measured over-bluffer) keeps the
+    // full contact range so a credible bluffer is still called down.
+    let polar62 = false;
+    if (
+      (opts.v62RiverBettorPolarity ?? true) !== false &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.lastStage === 'river')
+    ) {
+      oppReads = oppReads.map((read) =>
+        read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
+      );
+      polar62 = true;
+      if (tele15) noteFire('v62_river_bettor_polarity');
     }
     let equity: number;
     /**
@@ -9578,7 +9627,9 @@ export class HorseLogic {
       // a fresh flush/straight completion hero does not beat (and cannot
       // block) got the same call bar as a blank. The A4-two-pair-calls-a-jam
       // -on-a-three-diamond-river hand from the review table pays this.
-      const scare21 = useV21 && dangered ? 0.05 : 0;
+      // V62: the polar river sampler already carries the completed draws in
+      // the bettor's value stratum, so the scare margin is not added twice.
+      const scare21 = useV21 && dangered && !polar62 ? 0.05 : 0;
       if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
       // ═══ V23 PKO BOUNTY PRICING (2026-08-28) ═══ calling off against an
       // all-in hero COVERS pays the bounty on top of the pot — the required
@@ -9641,7 +9692,37 @@ export class HorseLogic {
           return { action: 'fold', thinkTime: 0, continuationGuard: 'dominated_commitment_floor' };
         }
       }
-      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;
+      // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE, committed branch ═══ a
+      // hero who bet the river and was raised, or whose stack is already
+      // mostly in, prices the call here rather than in the V38 block below.
+      // Measured over the same 14 days: after betting the river, one-pair
+      // and board-paired two-pair calls of the raise won 14-15% in cash and
+      // tournaments alike at an average price of 0.38 (-178,000bb), while
+      // better hands won 35-37%. Same gate as below: single-board hold'em,
+      // the bluff-catch class, no over-bluffer read on the opponent.
+      let shade61c = 0;
+      if (
+        (opts.v61RiverOnePairShade ?? true) !== false &&
+        // V62 sampled this bettor polar: the model carries what the shade
+        // corrected for, so the price shade is not stacked on top of it.
+        !polar62 &&
+        isRiver &&
+        !vi.isOmaha &&
+        !vi.isShortDeck &&
+        vi.holeCount === 2 &&
+        !multiBoard36 &&
+        !gs.bombPot &&
+        exploit.callDownMod <= 1 &&
+        cat > 0 &&
+        (cat <= 2 || (cat === 3 && pairedBoard)) &&
+        toCall > 0 &&
+        pot > 0
+      ) {
+        shade61c = v61RiverOnePairShade(toCall, pot);
+        if (shade61c > 0 && tele15) noteFire('v61_river_one_pair_shade');
+      }
+      const required =
+        potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity
@@ -10242,8 +10323,44 @@ export class HorseLogic {
       );
       const risk38 = risk > 0 && stack > 0 ? risk : 0;
       if (isRiver) {
+        // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE (2026-10-29) ═══ Hold'em,
+        // one board: a one-pair hand (or two pair sharing the board's pair)
+        // calling a river wager is a bluff-catcher, and the range read it is
+        // priced against is too bluff-heavy. Measured over 14 days of NLH
+        // review stack-offs (cash and tournament alike): those calls won
+        // 17-18% when the price was under a quarter of the pot, 21-22% at a
+        // quarter to a half, and 14% at a half to a full pot, against the
+        // 20/29/40% the price demands; -1,146,000bb between them. The shade
+        // scales with the price and is withheld when the bettor's read says
+        // they over-bluff (respect below 1), so a credible bluffer is still
+        // called down. Under a fifth of the pot the measured calls were about
+        // break-even, so the shade starts there and reaches its 12-point cap
+        // at half the pot. Omaha, multiple boards and bomb pots keep their own
+        // pricing; the committed branch above carries the same shade.
+        let shade61 = 0;
+        if (
+          (opts.v61RiverOnePairShade ?? true) !== false &&
+          !polar62 &&
+          !vi.isOmaha &&
+          !vi.isShortDeck &&
+          vi.holeCount === 2 &&
+          !multiBoard36 &&
+          !gs.bombPot &&
+          // the measured over-bluffer read, as the committed branch reads it:
+          // `respect` also carries the style's callRespect offset, which sat
+          // at 0.96 for a neutral read with the mind on and left the shade
+          // unfired in production until 2026-10-30.
+          exploit.callDownMod <= 1 &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard)) &&
+          toCall > 0 &&
+          pot > 0
+        ) {
+          shade61 = v61RiverOnePairShade(toCall, pot);
+          if (shade61 > 0 && tele15) noteFire('v61_river_one_pair_shade');
+        }
         const v = riverCallVerdict({
-          equity: eqRead38,
+          equity: clamp01(eqRead38 - shade61),
           pot,
           toCall,
           stack,

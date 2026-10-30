@@ -111,7 +111,6 @@ function CreditRequestsForScope({
   canRequest,
   canReview,
   currentCreditLimit,
-  currentCreditUsed,
   showCreditStatus = true,
 }: CreditRequestWidgetProps) {
   const isMounted = useIsMounted();
@@ -274,24 +273,13 @@ function CreditRequestsForScope({
     );
 
   const limit = readCreditMoney(currentCreditLimit);
-  const used = readCreditMoney(currentCreditUsed);
-  const usedPercent =
-    limit !== null && used !== null && limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
   return (
     <div className="credit-request-widget">
       {showCreditStatus && (
         <div className="credit-status">
-          {limit !== null && used !== null && (
-            <progress
-              className="credit-meter"
-              aria-label="Credit Used"
-              max={100}
-              value={usedPercent}
-            />
-          )}
           <div className="credit-info">
-            <span>{creditAdminMoney(used)} Used</span>
-            <span>Of {creditAdminMoney(limit)}</span>
+            <span>Credit Line (Tracking Only)</span>
+            <span>{creditAdminMoney(limit)}</span>
           </div>
         </div>
       )}

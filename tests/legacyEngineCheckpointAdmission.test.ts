@@ -132,7 +132,7 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
   it('checks the installed custody contract before saving intent or opening inspector access', () => {
     const prerequisite = checkpointShell.indexOf('--mixed-custody-contract');
     const intent = checkpointShell.indexOf('CHECKPOINT_INTENT="$(checkpoint_entry_read python3');
-    const inspector = checkpointShell.indexOf('node --input-type=module');
+    const inspector = checkpointShell.indexOf('node --no-inspect --input-type=module');
     expect(prerequisite).toBeGreaterThan(0);
     expect(prerequisite).toBeLessThan(intent);
     expect(intent).toBeLessThan(inspector);
@@ -315,7 +315,9 @@ fi
   });
 
   it('passes only the seal-selected closed profile into the native transport', () => {
-    expect(checkpointShell).toContain('node --input-type=module - "$INSTANCE" "$LEGACY_SHA"');
+    expect(checkpointShell).toContain(
+      'node --no-inspect --input-type=module - "$INSTANCE" "$LEGACY_SHA"'
+    );
     const production = checkpointTransport.slice(
       checkpointTransport.indexOf("if (process.argv[1] === '-'")
     );

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   native-smoke:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_CI_STANDARD_RUNNERS != 'true' && 'ca-linux-8core' || 'ubuntu-24.04' }}
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-24.04' }}
     timeout-minutes: 55
     outputs:
       native_verified: ${{ steps.smoke.outputs.native_verified }}

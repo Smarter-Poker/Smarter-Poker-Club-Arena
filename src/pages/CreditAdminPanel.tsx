@@ -162,7 +162,7 @@ function CreditAdminPanelForScope() {
             supabase
               .from('agents')
               .select(
-                'id, user_id, club_id, agent_wallet_balance::text, credit_limit::text, credit_used::text, status'
+                'id, user_id, club_id, agent_wallet_balance::text, credit_limit::text, status'
               ),
             scopeKey
           )
@@ -439,7 +439,7 @@ function CreditAdminPanelForScope() {
         { key: 'displayName', label: 'Agent' },
         { key: 'creditLimit', label: 'Credit Limit' },
         { key: 'currentBalance', label: 'Balance' },
-        { key: 'debtOwed', label: 'Debt Owed' },
+        { key: 'debtOwed', label: 'Current Wallet Shortfall' },
         { key: 'status', label: 'Status' },
       ]);
     } catch (error) {
@@ -546,7 +546,7 @@ function CreditAdminPanelForScope() {
             <dd className="sc-ink--blue">{creditAdminMoney(totalCreditExposure)}</dd>
           </div>
           <div className={styles.summaryRow}>
-            <dt>Debt In View</dt>
+            <dt>Wallet Shortfall In View</dt>
             <dd className="sc-ink--red">{creditAdminMoney(totalDebt)}</dd>
           </div>
           <div className={styles.summaryRow}>
@@ -586,7 +586,7 @@ function CreditAdminPanelForScope() {
                         <dd className="sc-ink--green">{creditAdminMoney(agent.currentBalance)}</dd>
                       </div>
                       <div>
-                        <dt>Debt</dt>
+                        <dt>Wallet Shortfall</dt>
                         <dd className="sc-ink--red">{creditAdminMoney(agent.debtOwed)}</dd>
                       </div>
                     </dl>

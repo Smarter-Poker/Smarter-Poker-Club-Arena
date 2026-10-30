@@ -143,6 +143,12 @@ GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show \
   | cmp -s - "$STAGE/server/scripts/install-engine-supervisor.sh" \
   || die 'staged installer bytes do not match the control commit'
 
+# The immutable target owns its one-time floor. This is before the installer,
+# engine lock, release unit, checkpoint, and all runtime recovery paths.
+python3 "$STAGE/server/scripts/engine-release-activation-floor.py" admit \
+  --repo "$REPO_DIR" --target "$TARGET_SHA" --control "$CONTROL_SHA" \
+  --deadline "$NOT_AFTER_EPOCH" || die 'target activation floor refused before control installation'
+
 set +e
 INSTALL_OUTPUT="$(ENGINE_CONTROL_SHA="$CONTROL_SHA" \
 ENGINE_RELEASE_RUN_ID="$RUN_ID" \

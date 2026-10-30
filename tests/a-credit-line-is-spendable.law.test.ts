@@ -131,46 +131,52 @@ describe('the promotion assigns the funding', () => {
   });
 });
 
-describe('the credit line is spendable', () => {
-  it('the send draws the shortfall against the line', () => {
-    expect(SQL).toMatch(/credit_used\s*=\s*coalesce\(credit_used, 0\) \+ v_shortfall/i);
+describe('credit lines track funded chips without creating spendable capacity', () => {
+  const tracking = read(
+    'supabase/migrations/20261030051934_credit_line_tracks_funded_agent_chips_and_weekly_wallet_topu.sql'
+  );
+  const send = tracking
+    .split('CREATE OR REPLACE FUNCTION public.fn_agent_wallet_send_core_20260830')[1]
+    .split('$function$;')[0];
+  it('refuses every unfunded send and debits the entire amount from the wallet', () => {
+    expect(send).toContain('if v_float_before < p_amount then');
+    expect(send).toContain("'credit_tracking_only', true");
+    expect(send).toContain('agent_wallet_balance = coalesce(agent_wallet_balance, 0) - p_amount');
+    expect(send).not.toMatch(/credit_used\s*=/i);
+    expect(send).not.toContain("'credit_facility'");
   });
-
-  it('the wallet pays what it can, so it lands on zero and never goes negative', () => {
-    expect(SQL).toMatch(
-      /agent_wallet_balance = coalesce\(agent_wallet_balance, 0\) - \(p_amount - v_shortfall\)/i
+  it('freezes the actual wallet before either commission implementation pays earnings', () => {
+    expect(tracking).toContain('greatest(credit_line-agent_wallet_before_rakeback,0)');
+    for (const name of [
+      'fn_settle_accounting_commission_stage',
+      'fn_settle_accounting_commission_stage_v3',
+    ]) {
+      const body = tracking
+        .split(`CREATE OR REPLACE FUNCTION public.${name}(`)[1]
+        .split('$function$;')[0];
+      expect(body.indexOf('fn_capture_agent_credit_week(')).toBeGreaterThan(0);
+      expect(body.indexOf('fn_capture_agent_credit_week(')).toBeLessThan(
+        body.indexOf('UPDATE public.agents')
+      );
+    }
+    expect(tracking).toContain('pre_rakeback_credit_basis_required');
+    expect(tracking).toContain('ON CONFLICT(agent_id,period_end) DO NOTHING');
+  });
+  it('pays new statements into the agent wallet from an actual funded source', () => {
+    expect(tracking).toContain('agent_wallet_balance=agent_wallet_balance+p_amount');
+    expect(tracking).toContain('chip_treasury=chip_treasury-p_amount');
+    expect(tracking).toContain('IF NOT tracking AND p_amount>agent.credit_used');
+    expect(tracking).toContain('credit_invoice_basis_mismatch');
+  });
+  it('executes the whole final installer and real R2/R3 and ledger under required native CI', () => {
+    expect(read('scripts/ci/test-own-agent-financial-postgres.py')).toContain(
+      'tracking_module.qualify('
     );
-  });
-
-  it('a prepaid agent is still refused when short', () => {
-    expect(SQL).toMatch(/if v_is_prepaid or v_credit_limit <= 0 then/i);
-  });
-
-  it('the limit caps the debt outstanding, not the amount ever borrowed', () => {
-    expect(SQL).toMatch(/v_headroom\s*:=\s*v_credit_limit - v_credit_used/i);
-  });
-
-  it('says what to do when the line is exhausted, in Dan’s own words', () => {
-    expect(SQL).toMatch(/Square Up Your Invoice/);
-  });
-
-  it('records what was borrowed, so the claim back can repay it', () => {
-    expect(SQL).toMatch(/'credit_drawn', v_shortfall/);
-    expect(SQL).toMatch(/'credit_repaid', 0/);
-  });
-
-  /**
-   * A caller cannot tell a retry from a first attempt, so the two must not
-   * answer differently. Three replay branches exist: the core's early read, the
-   * core's unique_violation handler, and the outer wrapper, which answers from
-   * the ledger row and never reaches the core at all.
-   */
-  it('answers a replayed send with the credit fields too, in all three branches', () => {
-    const branches = SQL.match(/'credit_drawn', coalesce\(\(v_prior\.metadata/g) ?? [];
-    expect(branches.length).toBeGreaterThanOrEqual(2);
-    expect(SQL).toMatch(
-      /'credit_drawn',coalesce\(\(v_prior\.metadata->>'credit_drawn'\)::numeric,0\)/
+    expect(read('scripts/ci/test_launch_reset_floor.py')).toContain(
+      'test-own-agent-financial-postgres.py'
     );
+    expect(read('scripts/ci/credit_tracking_native.py')).toContain('frozen-before-real-r2-and-r3');
+    expect(read('scripts/ci/credit_tracking_native.py')).toContain('caw_assert_conserved');
   });
 });
 

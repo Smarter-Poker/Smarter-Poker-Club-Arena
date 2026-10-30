@@ -26,6 +26,154 @@ RESULT = {'schema': 1, 'runId': REQUEST['runKey'], 'sha': REQUEST['releaseSha'],
           'private_metadata': {'never_export': 'secret fixture'}}
 
 
+def kernel_evidence(owner='unknown'):
+    return ({'stage':'complete','code':'exclusive'} if owner in {'main','other_container_process'}
+            else {'stage':'snapshot','code':'unproved'})
+
+
+class ServingRoleTests(unittest.TestCase):
+    def test_serving_role_exact_selector(self):
+        request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
+                   'instanceId':'1-12345678'}
+        self.assertEqual(R.selection(request), request)
+
+
+    def test_serving_role_selector_refuses_every_extra_or_changed_identity(self):
+        good={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        bad=[None,[],{},dict(good,runKey=REQUEST['runKey']),dict(good,host='localhost'),
+             dict(good,port=9229),dict(good,path='/proc'),dict(good,releaseSha='a'*40),
+             dict(good,instanceId='1-1234567'),dict(good,instanceId='2-12345678'),
+             dict(good,instanceId='1-ABCDEF12'),dict(good,instanceId=1)]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for request in bad:
+            with self.subTest(request=request),self.assertRaises(ValueError):R.selection(request)
+        for old in [REQUEST,dict(REQUEST,mode='pending_transaction'),dict(REQUEST,mode='legacy_checkpoint_inspector')]:
+            self.assertEqual(R.selection(old),old)
+
+    def test_serving_role_dispatch_never_opens_transaction_files(self):
+        request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        sentinel={'schema':'current-serving-inspector-role/v2','readOnly':True,**request,
+            'inspectorOwner':'unknown','inspectorOwnerEvidence':kernel_evidence(),'limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        with patch.object(R,'serving_role_remote',return_value=sentinel,create=True) as reader, \
+                patch.object(R.os,'open',side_effect=AssertionError('transaction file access')):
+            self.assertEqual(R.remote(request),sentinel)
+        reader.assert_called_once_with(request)
+
+
+    def setUp(self):
+        self.request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'1234','restarts':'0'}
+        self.health={'source':R.EED,'instance':self.request['instanceId']}
+        self.boot='12345678-1234-1234-1234-123456789abc'
+
+    @contextlib.contextmanager
+    def bound(self,role='main',overrides=None):
+        defaults={'_serving_boot_id':{'return_value':self.boot},
+            'inspector_identity':{'return_value':self.identity},
+            'pending_tcp_health':{'return_value':self.health},
+            '_kernel_pid_stat':{'return_value':'987654'},
+            'inspector_command':{'return_value':(R.EED+'\n').encode()},
+            'pending_socket_owner_details':{'return_value':(role,kernel_evidence(role))}}
+        defaults.update(overrides or {})
+        with contextlib.ExitStack() as stack:
+            mocks={name:stack.enter_context(patch.object(R,name,create=True,**options))
+                   for name,options in defaults.items()}
+            for name in ['pending_tcp_presence','inspector_remote','pending_remote','read_json']:
+                stack.enter_context(patch.object(R,name,side_effect=AssertionError('forbidden read '+name)))
+            yield mocks
+
+    def test_serving_role_exact_minimal_private_reply_and_shared_deadline(self):
+        for role in ['main','other_container_process','unknown']:
+            with self.subTest(role=role),self.bound(role) as mocks:
+                answer=R.serving_role_remote(self.request)
+                self.assertEqual(answer,{'schema':'current-serving-inspector-role/v2','readOnly':True,
+                    **self.request,'inspectorOwner':role,'inspectorOwnerEvidence':kernel_evidence(role),
+                    'limitation':'Kernel role only; no inspector ownership, provenance or action authority.'})
+                self.assertEqual(R.validate_reply(answer,self.request),answer)
+                text=json.dumps(answer)
+                for private in [self.boot,self.identity['container'],self.identity['image'],'987654','hostPid','/proc','runKey']:
+                    self.assertNotIn(private,text)
+                owner=mocks['pending_socket_owner_details'];owner.assert_called_once()
+                self.assertEqual(owner.call_args.args[0],self.identity)
+                deadline=owner.call_args.args[1]
+                self.assertGreater(deadline,R.time.monotonic());self.assertLessEqual(deadline-R.time.monotonic(),8)
+                for name in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+                    self.assertGreaterEqual(mocks[name].call_count,1)
+                    for call in mocks[name].call_args_list:
+                        self.assertIn(deadline,call.args)
+                for call in mocks['inspector_command'].call_args_list:
+                    self.assertEqual(call.args[0][:3],['docker','image','inspect'])
+                    self.assertEqual(call.args[0][-1],self.identity['image'])
+
+    def test_serving_role_identity_mutations_refuse_even_unknown_kernel(self):
+        cases=[('_serving_boot_id',[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']),
+               ('_kernel_pid_stat',['987654','987655']),
+               ('pending_tcp_health',[self.health,dict(self.health,source='a'*40)]),
+               ('pending_tcp_health',[self.health,dict(self.health,instance='1-87654321')])]
+        for key in self.identity:
+            changed=dict(self.identity);changed[key]=str(changed[key])+'changed'
+            cases.append(('inspector_identity',[self.identity,changed]))
+        for helper,values in cases:
+            with self.subTest(helper=helper,values=values),self.bound('unknown',{helper:{'side_effect':values}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_wrong_source_instance_revision_and_invalid_kernel_refuse(self):
+        cases=[('pending_tcp_health',{'source':'a'*40,'instance':self.request['instanceId']}),
+               ('pending_tcp_health',dict(self.health,instance='1-87654321')),
+               ('inspector_command',('a'*40+'\n').encode())]
+        for helper,value in cases:
+            with self.subTest(helper=helper,value=value),self.bound(overrides={helper:{'return_value':value}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_kernel_ambiguity_never_skips_final_bindings(self):
+        for options in [{'return_value':None},{'return_value':'child'},
+                        {'side_effect':PermissionError('private fixture')},
+                        {'side_effect':ValueError('private fixture')}]:
+            with self.subTest(options=options),self.bound(overrides={'pending_socket_owner_details':options}) as mocks:
+                self.assertEqual(R.serving_role_remote(self.request)['inspectorOwner'],'unknown')
+                for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat']:
+                    self.assertEqual(mocks[helper].call_count,2)
+            with self.bound(overrides={'pending_socket_owner_details':options,
+                    '_serving_boot_id':{'side_effect':[self.boot,'aaaaaaaa-1234-1234-1234-123456789abc']}}):
+                with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_unavailable_and_expired_bindings_refuse_without_private_error(self):
+        for helper in ['_serving_boot_id','inspector_identity','pending_tcp_health','_kernel_pid_stat','inspector_command']:
+            for error in [PermissionError('private fixture'),ValueError('private fixture')]:
+                with self.subTest(helper=helper,error=type(error)),self.bound(overrides={helper:{'side_effect':error}}):
+                    with self.assertRaises(R.ScopedRefusal) as caught:R.serving_role_remote(self.request)
+                    self.assertEqual(caught.exception.phase,'serving_role')
+                    self.assertIn(caught.exception.code,{'binding_unproved','evidence_unavailable'})
+                    self.assertNotIn('private fixture',str(caught.exception))
+        with self.bound(),patch.object(R.time,'monotonic',side_effect=[100]+[109]*40):
+            with self.assertRaises(ValueError):R.serving_role_remote(self.request)
+
+    def test_serving_role_boot_reader_fixed_private_bounded_metadata_only(self):
+        deadline=R.time.monotonic()+8
+        with patch.object(R,'_kernel_read',return_value=(self.boot+'\n').encode()) as read:
+            self.assertEqual(R._serving_boot_id(deadline),self.boot)
+        read.assert_called_once_with(Path('/proc/sys/kernel/random/boot_id'),64,deadline)
+        for raw in [b'',b'not-a-boot-id',b'A'*36,b'12345678-1234-1234-1234-123456789abc extra']:
+            with self.subTest(raw=raw),patch.object(R,'_kernel_read',return_value=raw):
+                with self.assertRaises(ValueError):R._serving_boot_id(deadline)
+
+    def test_serving_role_reply_refuses_extra_missing_wrong_fields(self):
+        good={'schema':'current-serving-inspector-role/v2','readOnly':True,**self.request,
+            'inspectorOwner':'unknown','inspectorOwnerEvidence':kernel_evidence(),'limitation':'Kernel role only; no inspector ownership, provenance or action authority.'}
+        bad=[dict(good,hostPid=1234),dict(good,readOnly=1),dict(good,inspectorOwner='child'),
+             dict(good,releaseSha='a'*40),dict(good,instanceId='1-87654321'),dict(good,limitation='owned')]
+        bad += [dict(good,inspectorOwnerEvidence=evidence) for evidence in [None,{},
+            {'stage':'private','code':'unproved'},{'stage':'snapshot','code':'private'},
+            {'stage':'snapshot','code':'unproved','hostPid':1234},
+            {'stage':'complete','code':'exclusive'},
+            {'stage':'not_observed','code':'not_read'}]]
+        bad += [dict(good,inspectorOwner='main'),dict(good,schema='current-serving-inspector-role/v1')]
+        bad += [{k:v for k,v in good.items() if k!=missing} for missing in good]
+        for answer in bad:
+            with self.subTest(answer=answer),self.assertRaises(ValueError):R.validate_reply(answer,self.request)
+
+
 class ReaderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='native-recovery-', dir=ROOT.parent)
@@ -39,7 +187,8 @@ class ReaderTests(unittest.TestCase):
         self.patcher.start()
         # Exact-file fixtures never inspect the machine running the tests.
         self.tcp_patcher = patch.object(R, 'pending_tcp_presence', create=True,
-            return_value=({'state':'unknown','binding':'unproved','code':'not_read'}, 'unknown'))
+            return_value=({'state':'unknown','binding':'unproved','code':'not_read'}, 'unknown',
+                          {'stage':'not_observed','code':'not_read'}))
         self.tcp_patcher.start()
 
     def tearDown(self):
@@ -91,17 +240,23 @@ class ReaderTests(unittest.TestCase):
         tcp={'state':'listening','binding':'matched','code':'connection_established'}
         with patch.object(R,'pending_unit',return_value=unit) as reads, \
                 patch.object(R,'pending_journal',return_value=[]), \
-                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')):
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main',kernel_evidence('main'))) as tcp_reads:
             answer=R.remote(request)
         self.assertEqual(answer['inspectorOwner'],'main');self.assertEqual(answer['inspectorTcp'],tcp)
+        self.assertEqual(answer['inspectorOwnerEvidence'],kernel_evidence('main'))
         self.assertEqual(reads.call_count,2);self.assertEqual(R.validate_reply(answer,request),answer)
+        tcp_reads.assert_called_once_with(include_owner_evidence=True)
         self.assertNotIn('private',json.dumps(answer))
-        for mutation in [{'inspectorOwner':'private PID123'},{'schema':'existing-release-pending-observation/v4'},
+        for mutation in [{'inspectorOwner':'private PID123'},{'schema':'existing-release-pending-observation/v5'},
+                         {'inspectorOwnerEvidence':{'stage':'descriptors','code':'permission_denied'}},
+                         {'inspectorOwnerEvidence':{'stage':'complete','code':'exclusive','inode':'private'}},
+                         {'inspectorOwnerEvidence':{'stage':'private','code':'unproved'}},
+                         {'inspectorOwnerEvidence':{'stage':'snapshot','code':'private'}},
                          {'inspectorTcp':{'state':'closed','binding':'matched','code':'connection_refused'}}]:
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):R.validate_reply({**answer,**mutation},request)
         with patch.object(R,'pending_unit',side_effect=[unit,{**unit,'invocationId':'2'*32}]), \
                 patch.object(R,'pending_journal',return_value=[]), \
-                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')),self.assertRaises(R.ScopedRefusal) as refused:
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main',kernel_evidence('main'))),self.assertRaises(R.ScopedRefusal) as refused:
             R.remote(request)
         self.assertEqual((refused.exception.phase,refused.exception.code),('pending_recheck_unit','evidence_unavailable'))
 
@@ -1289,7 +1444,7 @@ class PendingTcpTests(unittest.TestCase):
         self.assertEqual(json.loads(after.stdout),{'state':'listening','code':'connection_established'})
         self.assertEqual(received,[b''])
 
-    def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None, owner='unknown', owner_error=None, expected_owner='unknown'):
+    def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None, owner='unknown', owner_error=None, expected_owner='unknown', include_evidence=False, expected_evidence=None):
         identity=' '.join(self.identity.values()).encode()
         health=json.dumps({'status':'ok','running':True,'releaseSha':self.health['source'],
             'version':self.health['source'][:8],'instanceId':self.health['instance']}).encode()
@@ -1298,8 +1453,11 @@ class PendingTcpTests(unittest.TestCase):
         if after_health is not None:rows[5]=json.dumps(after_health).encode()
         if failure is not None:rows[failure[0]]=failure[1]
         with patch.object(R,'inspector_command',side_effect=rows) as native, \
-                patch.object(R,'pending_socket_owner',return_value=owner,side_effect=owner_error) as kernel:
-            answer,observed_owner=R.pending_tcp_presence()
+                patch.object(R,'pending_socket_owner_details',return_value=(owner,kernel_evidence(owner)),side_effect=owner_error) as kernel:
+            observed=R.pending_tcp_presence(include_owner_evidence=True) if include_evidence else R.pending_tcp_presence()
+            answer,observed_owner=observed[:2]
+            self.assertEqual(len(observed),3 if include_evidence else 2)
+            if include_evidence:self.assertEqual(observed[2],expected_evidence)
         self.last_kernel_read=kernel
         self.assertEqual(observed_owner,expected_owner)
         if kernel.called:
@@ -1312,17 +1470,18 @@ class PendingTcpTests(unittest.TestCase):
         probe={'state':'listening','code':'connection_established'}
         expected={'state':'listening','code':'connection_established','binding':'matched'}
         for role in ['main','other_container_process']:
-            answer,_=self.run_bound_probe(probe,owner=role,expected_owner=role)
-            self.assertEqual(answer,expected);self.last_kernel_read.assert_called_once()
-        answer,_=self.run_bound_probe(probe,owner='main',after={**self.identity,'hostPid':'124'})
+            for include_evidence in [False,True]:
+                answer,_=self.run_bound_probe(probe,owner=role,expected_owner=role,include_evidence=include_evidence,expected_evidence=kernel_evidence(role))
+                self.assertEqual(answer,expected);self.last_kernel_read.assert_called_once()
+        answer,_=self.run_bound_probe(probe,owner='main',after={**self.identity,'hostPid':'124'},include_evidence=True,expected_evidence={'stage':'not_observed','code':'tcp_unproved'})
         self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
         changed={'status':'ok','running':True,'releaseSha':self.health['source'],
             'version':self.health['source'][:8],'instanceId':'1-87654321'}
         answer,_=self.run_bound_probe(probe,owner='main',after_health=changed)
         self.assertEqual(answer['code'],'identity_changed')
-        answer,_=self.run_bound_probe(probe,owner_error=PermissionError('private proc path'))
+        answer,_=self.run_bound_probe(probe,owner_error=PermissionError('private proc path'),include_evidence=True,expected_evidence={'stage':'snapshot','code':'unavailable'})
         self.assertEqual(answer,expected)
-        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},owner='main')
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},owner='main',include_evidence=True,expected_evidence={'stage':'not_observed','code':'not_listening'})
         self.assertEqual(answer['state'],'closed');self.last_kernel_read.assert_not_called()
 
     def test_tcp_binds_current_runtime_before_and_after_without_legacy_intent(self):
@@ -1406,6 +1565,11 @@ class KernelOwnerTests(unittest.TestCase):
         with patch.object(R,'_kernel_read',return_value=record) as read:
             self.assertEqual(R._kernel_pid_stat('123',self.deadline),'98765')
         self.assertEqual(read.call_args.args,(R.KERNEL_PROC_ROOT/'123'/'stat',4096,self.deadline))
+        # Linux emits opaque comm bytes; only the numeric suffix is ASCII.
+        for comm in [b'n\xc3\xb8de',b'private \xff ) name (']:
+            record=b'123 ('+comm+b') S '+b' '.join([b'0']*18+[b'98765']+[b'0']*30)
+            with self.subTest(comm=comm),patch.object(R,'_kernel_read',return_value=record):
+                self.assertEqual(R._kernel_pid_stat('123',self.deadline),'98765')
         for pid in ['../123','0','123/private','-1']:
             with self.subTest(pid=pid),patch.object(R,'_kernel_read') as read,self.assertRaises(ValueError):
                 R._kernel_pid_stat(pid,self.deadline)
@@ -1441,22 +1605,27 @@ class KernelOwnerTests(unittest.TestCase):
             for owners,expected in [(('123',),'main'),(('124',),'other_container_process')]:
                 snapshot={**self.snapshot,'owners':owners}
                 with patch.object(R,'_socket_owner_snapshot',return_value=snapshot) as read:
-                    result=R.pending_socket_owner(self.identity,self.deadline)
-                self.assertEqual(result,expected);self.assertEqual(read.call_count,2)
+                    result,evidence=R.pending_socket_owner_details(self.identity,self.deadline)
+                self.assertEqual(result,expected);self.assertEqual(evidence,kernel_evidence(expected));self.assertEqual(read.call_count,2)
                 self.assertNotIn('123',json.dumps(result));self.assertNotIn('private',json.dumps(result))
             for changed in [{'members':('123','125')},{'processes':(('123','11'),('124','20'))},
                             {'namespace':'net:[999]'},{'inode':'456790'},{'owners':('124',)}]:
                 with self.subTest(changed=changed),patch.object(R,'_socket_owner_snapshot',side_effect=[self.snapshot,{**self.snapshot,**changed}]):
-                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
-            for error in [PermissionError('private path'),FileNotFoundError('private process'),ValueError('private overflow'),
-                          subprocess.TimeoutExpired(['private'],1)]:
+                    self.assertEqual(R.pending_socket_owner_details(self.identity,self.deadline),('unknown',{'stage':'snapshot','code':'changed'}))
+            for error,code in [(PermissionError('private path'),'permission_denied'),(FileNotFoundError('private process'),'changed'),(ValueError('private overflow'),'unproved'),
+                          (subprocess.TimeoutExpired(['private'],1),'deadline')]:
                 with patch.object(R,'_socket_owner_snapshot',side_effect=error):
-                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+                    self.assertEqual(R.pending_socket_owner_details(self.identity,self.deadline),('unknown',{'stage':'snapshot','code':code}))
             with patch.object(R,'_socket_owner_snapshot',return_value=self.snapshot):
-                self.assertEqual(R.pending_socket_owner(self.identity,R.time.monotonic()-1),'unknown')
+                self.assertEqual(R.pending_socket_owner_details(self.identity,R.time.monotonic()-1),('unknown',{'stage':'snapshot','code':'deadline'}))
         with patch.object(R.sys,'platform','darwin'),patch.object(R,'_socket_owner_snapshot') as read:
-            self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+            self.assertEqual(R.pending_socket_owner_details(self.identity,self.deadline),('unknown',{'stage':'identity','code':'unsupported'}))
         read.assert_not_called()
+        with patch.object(R.sys,'platform','linux'),patch.object(R,'_socket_owner_snapshot') as read:
+            self.assertEqual(R.pending_socket_owner_details({},self.deadline),('unknown',{'stage':'identity','code':'unproved'}))
+        read.assert_not_called()
+        with patch.object(R,'pending_socket_owner_details',return_value=('main',kernel_evidence('main'))):
+            self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'main')
 
     def test_kernel_wire_role_requires_matched_listening_and_never_accepts_private_fields(self):
         listening={'state':'listening','binding':'matched','code':'connection_established'}
@@ -1468,19 +1637,35 @@ class KernelOwnerTests(unittest.TestCase):
             R.validate_pending_owner('unknown',tcp)
             for role in ['main','other_container_process']:
                 with self.assertRaises(ValueError):R.validate_pending_owner(role,tcp)
-        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v5')
+        for owner in ['main','other_container_process']:
+            self.assertEqual(R.validate_kernel_owner_evidence(kernel_evidence(owner),owner),kernel_evidence(owner))
+        for stage in ['identity','members','process_stat','namespace','listeners','descriptors','recheck_process','recheck_members','recheck_listeners','snapshot']:
+            evidence={'stage':stage,'code':'unproved'}
+            self.assertEqual(R.validate_kernel_owner_evidence(evidence,'unknown'),evidence)
+        unread={'stage':'not_observed','code':'not_read'}
+        self.assertEqual(R.validate_kernel_owner_evidence(unread,'unknown',allow_not_observed=True),unread)
+        for value,owner in [(None,'unknown'),({},'unknown'),({'stage':'private','code':'unproved'},'unknown'),
+                ({'stage':'snapshot','code':'private'},'unknown'),({'stage':'snapshot','code':'unproved','pid':123},'unknown'),
+                ({'stage':True,'code':'unproved'},'unknown'),(kernel_evidence('main'),'unknown'),
+                (kernel_evidence(),'main'),(unread,'unknown'),({'stage':'snapshot','code':'not_read'},'unknown')]:
+            with self.subTest(value=value,owner=owner),self.assertRaises(ValueError):
+                R.validate_kernel_owner_evidence(value,owner)
+        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v6')
 
     def test_kernel_snapshot_bounds_shared_unmapped_descriptors_and_process_races(self):
         # Native Linux components below exercise /proc; these finite adversarial
         # records qualify refusal branches without touching this host's processes.
         def run(*,fd_targets=('socket:[456789]',),names=('3',),stats=('10','20','10','20'),
-                members=(('123','124'),('123','124')),listeners=('456789','456789'),networks=('net:[123456]','net:[123456]'),end_networks=None,other_targets=(),budget=None):
+                members=(('123','124'),('123','124')),listeners=('456789','456789'),networks=('net:[123456]','net:[123456]'),end_networks=None,other_targets=(),budget=None,details=False):
             entries=[types.SimpleNamespace(name=name,path='/private/'+name) for name in names]
             with patch.object(R,'_kernel_members',side_effect=members), \
                     patch.object(R,'_kernel_pid_stat',side_effect=stats), \
                     patch.object(R,'_kernel_listeners',side_effect=listeners), \
                     patch.object(R.os,'readlink',side_effect=[*networks,*fd_targets,*other_targets,*(end_networks or networks)]), \
                     patch.object(R.os,'scandir',side_effect=[contextlib.nullcontext(iter(entries)),contextlib.nullcontext(iter([types.SimpleNamespace(name=str(i+8),path='/private/other'+str(i)) for i in range(len(other_targets))]))]):
+                if details:
+                    with patch.object(R.sys,'platform','linux'):
+                        return R.pending_socket_owner_details(self.identity,self.deadline)
                 return R._socket_owner_snapshot(self.identity,self.deadline,budget)
         self.assertEqual(run()['owners'],('123',))
         shared_budget={'fds':16383}
@@ -1494,6 +1679,27 @@ class KernelOwnerTests(unittest.TestCase):
                        dict(end_networks=('net:[123456]','net:[999]')),dict(other_targets=('socket:[456789]',))]:
             with self.subTest(kwargs=str(kwargs)),self.assertRaises((OSError,ValueError)):
                 run(**kwargs)
+        reasons=[
+            (dict(members=(PermissionError('private'),)),'members','permission_denied'),
+            (dict(members=(ValueError('Inspector native unavailable'),)),'members','command_failed'),
+            (dict(members=(ValueError('Inspector read deadline'),)),'members','deadline'),
+            (dict(members=(ValueError('Inspector read size'),)),'members','bound'),
+            (dict(stats=(UnicodeDecodeError('ascii',b'\xff',0,1,'private'),)),'process_stat','invalid_encoding'),
+            (dict(networks=(PermissionError('private'),)),'namespace','permission_denied'),
+            (dict(listeners=(ValueError('Kernel owner file bound'),)),'listeners','bound'),
+            (dict(fd_targets=(FileNotFoundError('private'),)),'descriptors','changed'),
+            (dict(fd_targets=('x'*4097,)),'descriptors','bound'),
+            (dict(fd_targets=('socket:[999]',)),'descriptors','ambiguous'),
+            (dict(stats=('10','20','11','20')),'recheck_process','changed'),
+            (dict(end_networks=('net:[123456]','net:[999]')),'recheck_process','changed'),
+            (dict(members=(('123','124'),('123',))),'recheck_members','changed'),
+            (dict(listeners=('456789','999')),'recheck_listeners','changed'),
+            (dict(other_targets=('socket:[456789]',)),'descriptors','ambiguous')]
+        for kwargs,stage,code in reasons:
+            with self.subTest(stage=stage,code=code):
+                result=run(**kwargs,details=True)
+                self.assertEqual(result,('unknown',{'stage':stage,'code':code}))
+                self.assertNotIn('private',json.dumps(result))
         entries=(types.SimpleNamespace(name=str(i),path='/private/'+str(i)) for i in range(16385))
         with patch.object(R,'_kernel_members',return_value=('123',)), \
                 patch.object(R,'_kernel_pid_stat',return_value='10'), \
@@ -1509,8 +1715,9 @@ class LinuxKernelOwnerTests(unittest.TestCase):
     # fixture members; socket tables, stat, namespaces and descriptor links are
     # read from the real Linux kernel by the maintained implementation.
     FIXTURE=r"""
-import json,os,signal,socket,sys
+import ctypes,json,os,signal,socket,sys
 role=sys.argv[1]
+opaque_comm=len(sys.argv)>2 and sys.argv[2]=='opaque'
 srv=None;child=None;control=None;ack=None;port=None
 try:
  if role in ('main','shared'):
@@ -1519,15 +1726,30 @@ try:
   read,write=os.pipe();ready_read,ready_write=os.pipe();child=os.fork()
   if child==0:
    os.close(write);os.close(ready_read)
-   if role=='other':
-    srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
-   os.write(ready_write,(str(port)+'\n').encode());os.close(ready_write)
-   while True:
-    command=os.read(read,1)
-    if command in (b'',b'q'):break
-    if command==b'c':
-     srv.close();srv=None
-     os.write(1,b'{"childClosed":true}\n')
+   saved_name=None;prctl=None
+   try:
+    if opaque_comm:
+     prctl=ctypes.CDLL(None,use_errno=True).prctl
+     prctl.argtypes=[ctypes.c_int,ctypes.c_void_p,ctypes.c_ulong,ctypes.c_ulong,ctypes.c_ulong]
+     prctl.restype=ctypes.c_int
+     previous=ctypes.create_string_buffer(16)
+     if prctl(16,previous,0,0,0)!=0:raise RuntimeError('owned fixture comm read unavailable')
+     saved_name=previous
+     own_name=ctypes.create_string_buffer(b'own-\xc3\xb8-\xff')
+     if prctl(15,own_name,0,0,0)!=0:raise RuntimeError('owned fixture comm change unavailable')
+    if role=='other':
+     srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
+    os.write(ready_write,(str(port)+'\n').encode());os.close(ready_write)
+    while True:
+     command=os.read(read,1)
+     if command in (b'',b'q'):break
+     if command==b'c':
+      srv.close();srv=None
+      os.write(1,b'{"childClosed":true}\n')
+   finally:
+    # Only this owned child changes its comm, and restores it before exit.
+    if saved_name is not None and prctl(15,saved_name,0,0,0)!=0:
+     raise RuntimeError('owned fixture comm restore unavailable')
    os._exit(0)
   os.close(read);os.close(ready_write);control=write
   raw=b''
@@ -1549,9 +1771,9 @@ finally:
 """
 
     @contextlib.contextmanager
-    def fixture(self,role):
+    def fixture(self,role,opaque_comm=False):
         import signal
-        child=subprocess.Popen([R.sys.executable,'-u','-c',self.FIXTURE,role],
+        child=subprocess.Popen([R.sys.executable,'-u','-c',self.FIXTURE,role,'opaque' if opaque_comm else 'plain'],
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
         def line():
             deadline=R.time.monotonic()+5;data=bytearray()
@@ -1581,12 +1803,35 @@ finally:
                     os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=2)
             child.stdin.close();child.stdout.close();child.stderr.close()
 
+    def test_real_linux_serving_wrapper_uses_actual_proc_socket_role(self):
+        # Docker/health are explicit metadata seams; actual owned process,
+        # socket, proc stat/ns/net/FD joins and two snapshots stay native.
+        with self.fixture('main') as (owned,_,__):
+            identity={**owned,'image':'sha256:'+'d'*64,'running':'true',
+                'startedAt':'2026-10-30T01:00:00.000Z','restarts':'0'}
+            request={'mode':'current_serving_inspector_role','releaseSha':R.EED,'instanceId':'1-12345678'}
+            with patch.object(R,'inspector_identity',return_value=identity), \
+                    patch.object(R,'pending_tcp_health',return_value={'source':R.EED,'instance':request['instanceId']}), \
+                    patch.object(R,'inspector_command',return_value=(R.EED+'\n').encode()), \
+                    patch.object(R,'pending_tcp_presence',side_effect=AssertionError('TCP forbidden')):
+                answer=R.remote(request)
+            self.assertEqual(answer['inspectorOwner'],'main')
+            self.assertEqual(R.validate_reply(answer,request),answer)
+            self.assertEqual(set(answer), {'schema','readOnly','mode','releaseSha',
+                'instanceId','inspectorOwner','inspectorOwnerEvidence','limitation'})
+            self.assertNotIn('hostPid',answer)
+            self.assertNotIn('container',answer)
+
     def test_real_linux_main_and_child_listener_roles(self):
-        for fixture,expected in [('main','main'),('other','other_container_process')]:
-            with self.subTest(role=fixture),self.fixture(fixture) as (identity,_,__):
-                role=R.pending_socket_owner(identity,R.time.monotonic()+3)
+        for fixture,expected,opaque in [('main','main',False),
+                                       ('other','other_container_process',False),
+                                       ('other','other_container_process',True)]:
+            with self.subTest(role=fixture,opaque_comm=opaque),self.fixture(fixture,opaque) as (identity,_,__):
+                role,evidence=R.pending_socket_owner_details(identity,R.time.monotonic()+3)
                 self.assertEqual(role,expected)
-                self.assertNotIn(identity['hostPid'],json.dumps(role))
+                self.assertEqual(evidence,{'stage':'complete','code':'exclusive'})
+                self.assertNotIn(identity['hostPid'],json.dumps((role,evidence)))
+                self.assertNotIn('own-',json.dumps((role,evidence)))
 
     def test_real_linux_shared_parent_child_descriptor_is_unknown(self):
         with self.fixture('shared') as (identity,_,__):

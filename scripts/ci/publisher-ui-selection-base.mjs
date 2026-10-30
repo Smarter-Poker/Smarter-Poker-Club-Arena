@@ -160,12 +160,13 @@ export async function publishedSelectionBase({
       // producer stays valid, but four successful jobs cannot prove a sixteen-
       // shard producer. Missing source is uncertainty, never permission to reuse.
       const plan = await producerShards(retainedRun.head_sha);
-      const shards = qualified.jobs.filter((job) => /^client-tests(?: |$)/.test(job.name));
+      const prefix = plan.jobPrefix || '';
+      const shards = qualified.jobs.filter((job) => /(?:^| \/ )client-tests(?: |$)/.test(job.name));
       if (
         shards.length !== plan.total ||
         new Set(shards.map((job) => job.name)).size !== plan.total ||
         !plan.indices.every((index) => {
-          const matches = shards.filter((job) => job.name === `client-tests (${index})`);
+          const matches = shards.filter((job) => job.name === `${prefix}client-tests (${index})`);
           if (matches.length !== 1) return false;
           const job = matches[0];
           return (

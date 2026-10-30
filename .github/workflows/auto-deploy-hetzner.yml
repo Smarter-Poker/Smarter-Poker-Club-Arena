@@ -340,6 +340,14 @@ jobs:
             echo "::notice::Exact target $SHA is behind protected-main engine $LATEST_REQUIRED; host forward-only admission is still required."
           fi
 
+      - name: Admit only the immutable target's preparation window
+        run: |
+          set -euo pipefail
+          python3 server/scripts/engine-release-activation-floor.py prepare \
+            --repo . --target "$SHA" --control "$CONTROL_SHA" \
+            --deadline "$RELEASE_DISPATCH_DEADLINE_EPOCH" \
+            > "$RUNNER_TEMP/engine-activation-floor-$RUN_KEY.json"
+
       - name: Establish pinned ephemeral SSH transport
         id: ssh
         env:
@@ -455,6 +463,57 @@ jobs:
           PY
           REMOTE
 
+      - name: Prepare the scheduled immutable image without entering release intake
+        run: |
+          set -euo pipefail
+          if python3 - "$RUNNER_TEMP/engine-activation-floor-$RUN_KEY.json" <<'PYTHON'
+          import json, sys
+          raise SystemExit(0 if json.load(open(sys.argv[1])).get('schema') in ('engine-release-activation-floor/v1', 'engine-release-activation-floor/v2-owner-window') else 1)
+          PYTHON
+          then
+            REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
+            [ "$REMAINING" -gt 0 ]
+            [ "$REMAINING" -le 3450 ] || REMAINING=3450
+            timeout --signal=TERM --kill-after=5s "${REMAINING}s" \
+              "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' NOT_AFTER_EPOCH='$RELEASE_DISPATCH_DEADLINE_EPOCH' REPO_DIR='$REPO_DIR' bash -se" \
+              <<'REMOTE' | tee "$RUNNER_TEMP/engine-prepared-image-$RUN_KEY.log"
+          set -euo pipefail
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          python3 "$STAGE/server/scripts/engine-release-activation-floor.py" prepare \
+            --repo "$REPO_DIR" --target "$TARGET_SHA" --control "$CONTROL_SHA" --deadline "$NOT_AFTER_EPOCH"
+          # Reuse the existing bounded immutable builder. No installer, release
+          # unit, engine lock, maintenance request or runtime operation exists yet.
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/build-engine-image.sh" \
+            | cmp -s - "$STAGE/server/scripts/build-engine-image.sh"
+          "$STAGE/server/scripts/build-engine-image.sh" "$REPO_DIR" "$TARGET_SHA" "club-arena-engine:$TARGET_SHA"
+          IMAGE_JSON="$(docker image inspect "club-arena-engine:$TARGET_SHA")"
+          EXPECTED_TREE="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse "$TARGET_SHA:server")"
+          IMAGE_JSON="$IMAGE_JSON" EXPECTED_TREE="$EXPECTED_TREE" python3 - <<'PYTHON'
+          import json, os, re
+          image = json.loads(os.environ['IMAGE_JSON'])
+          assert len(image) == 1
+          image = image[0]
+          labels = image['Config']['Labels']
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}', image['Id'])
+          assert labels['org.opencontainers.image.revision'] == os.environ['TARGET_SHA']
+          assert labels['com.smarterpoker.engine.source-tree'] == os.environ['EXPECTED_TREE']
+          assert labels['com.smarterpoker.engine.build-contract'] == 'clean-server-archive-v1'
+          print('ENGINE_PREPARED_IMAGE=' + json.dumps({'targetSha': os.environ['TARGET_SHA'], 'controlSha': os.environ['CONTROL_SHA'], 'imageId': image['Id'], 'serverTree': os.environ['EXPECTED_TREE'], 'activated': False}, sort_keys=True))
+          PYTHON
+          IMAGE_ID="$(printf '%s' "$IMAGE_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["Id"])')"
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/prewarm-engine-image.sh" \
+            | cmp -s - "$STAGE/server/scripts/prewarm-engine-image.sh"
+          "$STAGE/server/scripts/prewarm-engine-image.sh" "$IMAGE_ID" "$RUN_KEY" "$NOT_AFTER_EPOCH"
+          REMOTE
+          fi
+
+      - name: Wait for the immutable activation floor before creating any intake
+        run: |
+          set -euo pipefail
+          python3 server/scripts/engine-release-activation-floor.py wait \
+            --repo . --target "$SHA" --control "$CONTROL_SHA" \
+            --deadline "$RELEASE_DISPATCH_DEADLINE_EPOCH"
+
       - name: Dispatch the staged SHA through the durable Hetzner intake
         id: release
         run: |
@@ -500,6 +559,8 @@ jobs:
           STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
           ACTOR="$(printf '%s' "$ACTOR_B64" | base64 -d)"
           [[ "$NOT_AFTER_EPOCH" =~ ^[1-9][0-9]*$ ]]
+          python3 "$STAGE/server/scripts/engine-release-activation-floor.py" admit \
+            --repo /opt/club-arena --target "$TARGET_SHA" --control "$CONTROL_SHA" --deadline "$NOT_AFTER_EPOCH"
           "$STAGE/server/scripts/install-engine-intake.sh" \
             --target-sha "$TARGET_SHA" --control-sha "$CONTROL_SHA" \
             --run-id "$RUN_KEY" --actor "$ACTOR" \

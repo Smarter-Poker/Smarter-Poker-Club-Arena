@@ -198,7 +198,8 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
         </div>
       ) : invoices.length === 0 ? (
         <p className="sc-copy sc-copy--center sc-ink--muted">
-          No Invoices. Weekly Invoices Appear Here When Your Account Carries A Balance.
+          No Invoices. Weekly Top-Up Invoices Use Your Credit Line Minus Your Agent Wallet Before
+          Rakeback.
         </p>
       ) : (
         <ol className={styles.invoiceList} aria-label="Credit Invoice History">

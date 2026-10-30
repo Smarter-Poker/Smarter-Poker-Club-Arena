@@ -1,0 +1,50 @@
+[
+  {
+    "signature": "public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)",
+    "md5": "1ee7dc270ba19bf1b6a4a894900d9b38"
+  },
+  {
+    "signature": "public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)",
+    "md5": "ce1a9dd4344c7987918dcf8a82427ef5"
+  },
+  {
+    "signature": "public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamptz,timestamptz)",
+    "md5": "4e44bbbaf769aafe445819ab7a6683a4"
+  },
+  {
+    "signature": "public.fn_process_weekly_accounting_scope(uuid,uuid)",
+    "md5": "a68500342f07e0608c6eb69f4cb0739e"
+  },
+  {
+    "signature": "smarter_private.weekly_payout_eligible_scopes(timestamptz,timestamptz)",
+    "md5": "fd2603a21dc9c93a234afbda57d6abba"
+  },
+  {
+    "signature": "public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)",
+    "md5": "c0f4657b3a53265b0d7fe03784d1b83b"
+  },
+  {
+    "signature": "public.fn_process_credit_invoice_payment(uuid,numeric,text,uuid,text)",
+    "md5": "e99cfa877c5a67d5dde5744ea76b4285"
+  },
+  {
+    "signature": "public.fn_accounting_credit_document_on_insert()",
+    "md5": "5a515636d7634d29514c723aa5dcfae2"
+  },
+  {
+    "signature": "public.fn_generate_credit_invoice(uuid,timestamptz,timestamptz,numeric,timestamptz)",
+    "md5": "c87928c03ef42c498377c17bbaa51a7f"
+  },
+  {
+    "signature": "public.fn_generate_scope_credit_invoices(uuid,timestamptz,timestamptz)",
+    "md5": "851f015057ecefc7ab4162cc36fa522c"
+  },
+  {
+    "signature": "public.fn_generate_all_credit_invoices(timestamptz)",
+    "md5": "e1e68666b757cda7b3d314acde7c599b"
+  },
+  {
+    "signature": "public.fn_capture_agent_credit_week(uuid[],timestamptz,timestamptz,text,uuid)",
+    "md5": "0d3ab6e7532fc9a3ee245658c617d79a"
+  }
+]

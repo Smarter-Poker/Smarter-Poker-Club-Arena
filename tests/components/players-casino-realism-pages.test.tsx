@@ -344,6 +344,28 @@ describe('Players detail surfaces', () => {
     expect(name).toHaveValue('Newer Draft');
   });
 
+  it('scopes downline fees to the applied range and withdraws old rows while it loads', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    let finish!: (rows: unknown[]) => void;
+    state.getDownline.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+    await waitFor(() => expect(state.getDownline).toHaveBeenCalledTimes(2));
+    const range = state.getMemberDetail.mock.calls.at(-1)![2];
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual(range);
+    expect(range.from).not.toBeNull();
+    expect(screen.queryByText('Cyan Rail')).not.toBeInTheDocument();
+    await act(async () =>
+      finish([{ user_id: 'child', alias: 'Ranged Child', role: 'player', total_fees: 7.22 }])
+    );
+    expect(await screen.findByText('Ranged Child')).toBeVisible();
+  });
+
   it('does not label old ledger figures with a failed new range', async () => {
     render(<MemberManagementPage />);
     await screen.findByRole('heading', { name: 'River Shark' });
@@ -630,11 +652,22 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
   });
 
+  it('refreshes downline fee rows on the committed record event without a range change', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    state.getDownline.mockResolvedValueOnce([
+      { user_id: 'child', alias: 'Updated Downline', role: 'player', total_fees: 7.22 },
+    ]);
+    await authorityEvent();
+    expect(await screen.findByText('Updated Downline')).toBeVisible();
+    expect(state.getDownline.mock.calls.at(-1)![3]).toEqual({ from: null, to: null });
+  });
+
   it('keeps a shown downline when only its refresh fails', async () => {
     render(<MemberManagementPage />);
     expect(await screen.findByText('Cyan Rail')).toBeVisible();
     state.getDownline.mockRejectedValueOnce(new Error('downline down'));
-    fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+    await authorityEvent();
     expect(
       await screen.findByText(
         'Could Not Refresh The Downline. Showing The Previous Successful Read.'

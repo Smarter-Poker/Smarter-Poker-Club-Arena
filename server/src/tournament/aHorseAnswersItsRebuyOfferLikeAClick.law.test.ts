@@ -46,6 +46,8 @@ function setup(
     purchase?: Purchase;
     freeBuyUsed?: number;
     profileFailure?: 'error' | 'throw' | 'null';
+    offerPageFailure?: boolean;
+    afterOfferRead?: () => void;
   } = {}
 ) {
   const horses = opts.horses ?? ids;
@@ -76,18 +78,38 @@ function setup(
     }
     if (table === 'tournament_knockout_candidates') {
       const q: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'gt', 'order']) q[m] = vi.fn(() => q);
-      q.limit = vi.fn(async () => ({
-        data: offers.map((id) => ({
-          eliminated_user_id: id,
-          hand_number: HAND,
-          // Busted 20 s ago in a 30 s offer: every willing horse's human think
-          // time (2026-10-24, aHorseTakesAHumanMomentToRebuy) has passed.
-          created_at: new Date(Date.now() - 20_000).toISOString(),
-          rebuy_prompt_until: new Date(Date.now() + 10_000).toISOString(),
-        })),
-        error: null,
-      }));
+      let cursor = '';
+      let limit = 1000;
+      for (const m of ['select', 'eq', 'order']) q[m] = vi.fn(() => q);
+      q.gt = vi.fn((column: string, value: string) => {
+        if (column === 'id') cursor = value;
+        return q;
+      });
+      q.limit = vi.fn((value: number) => {
+        limit = Math.min(value, 1000);
+        return q;
+      });
+      q.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({
+          data:
+            cursor && opts.offerPageFailure
+              ? null
+              : offers
+                  .map((userId, index) => ({
+                    id: `eeeeeeee-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+                    eliminated_user_id: userId,
+                    hand_number: HAND,
+                    created_at: new Date(Date.now() - 20_000).toISOString(),
+                    rebuy_prompt_until: new Date(Date.now() + 10_000).toISOString(),
+                  }))
+                  .filter((row) => row.id > cursor)
+                  .slice(0, limit),
+          error:
+            cursor && opts.offerPageFailure ? { message: 'later offer page unavailable' } : null,
+        }).then((value) => {
+          opts.afterOfferRead?.();
+          return resolve(value);
+        });
       return q;
     }
     if (table === 'profiles') {
@@ -156,6 +178,47 @@ describe('a horse answers its rebuy offer like a click', () => {
     expect(purchases().sort()).toEqual([...willing].sort());
     expect(again).toBe(false);
   });
+
+  it.each([81, 1001])('answers the willing horse behind %s open offers', async (count) => {
+    const humans = Array.from(
+      { length: count - 1 },
+      (_, i) => `dddddddd-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
+    );
+    const manager = setup({ offers: [...humans, willing[0]!], horses: [willing[0]!] });
+    expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+    expect(purchases()).toEqual([willing[0]!]);
+    expect(declines()).toEqual([]);
+  });
+
+  it('keeps an incomplete offer inventory pending without acting on its prefix', async () => {
+    const humans = Array.from(
+      { length: 1000 },
+      (_, i) => `dddddddd-0000-4000-8000-${String(i + 1).padStart(12, '0')}`
+    );
+    const manager = setup({
+      offers: [willing[0]!, ...humans],
+      horses: [willing[0]!],
+      offerPageFailure: true,
+    });
+    expect(await manager.answerOpenHorseRebuyOffers()).toBe(true);
+    expect(purchases()).toEqual([]);
+    expect(declines()).toEqual([]);
+  });
+
+  it.each(['stop', 'freeze'])(
+    'does not decide after %s wins during the offer read',
+    async (mode) => {
+      const options: { afterOfferRead?: () => void } = {};
+      const manager = setup(options);
+      options.afterOfferRead = () => {
+        if (mode === 'stop') manager.running = false;
+        else fixture.frozen = true;
+      };
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+      expect(purchases()).toEqual([]);
+      expect(declines()).toEqual([]);
+    }
+  );
 
   it('sends nothing for a declining horse and nothing on behalf of a human', async () => {
     const human = willing[0];

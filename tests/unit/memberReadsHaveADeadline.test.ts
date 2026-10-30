@@ -40,6 +40,22 @@ describe('real PostgREST member reads have one request deadline', () => {
       expect(state.fetch.mock.calls[0][1].signal.aborted).toBe(true);
     }
   );
+  it('sends the applied UTC dates through the range-aware downline RPC', async () => {
+    state.fetch.mockResolvedValue(
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    const range = { from: '2026-10-26', to: '2026-10-29' };
+    await ClubRosterService.getDownline('club', 'player', undefined, range);
+    const [url, options] = state.fetch.mock.calls[0];
+    expect(String(url)).toContain('/rpc/ca_club_member_downline_in_range');
+    expect(JSON.parse(options.body)).toEqual({
+      p_club_id: 'club',
+      p_user_id: 'player',
+      p_from: range.from,
+      p_to: range.to,
+    });
+  });
+
   it('bounds response decoding after successful headers', async () => {
     state.fetch.mockResolvedValue(
       new Response(new ReadableStream({ start() {} }), { status: 200 })

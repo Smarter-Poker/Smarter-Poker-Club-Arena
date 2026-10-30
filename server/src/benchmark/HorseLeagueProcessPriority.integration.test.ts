@@ -301,7 +301,7 @@ it('CI still runs this suite on a host where the gated qualification can run', (
     `the qualification above only runs on ${QUALIFICATION_HOST.platform}; if this job ` +
       'moves to another runner it will skip silently on every host, forever'
   ).toBe(
-    "runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_CI_STANDARD_RUNNERS != 'true' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+    "runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
   );
   expect(
     job,

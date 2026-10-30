@@ -1,0 +1,9 @@
+# Completed standalone rakeback uses its original paid receipts
+
+Standalone preparation fell through to unpaid recalculation after its original R2 and R3 had already completed. The union path already returned paid replay. This change adds the corresponding standalone branch after the existing authority, refusal, interpretation, scope and payer-lock checks. It requires exact scope/week, completed successful routing-v3/source-v2 receipts and zero shortfalls; the coordinator retains its final receipt checks.
+
+The existing financial runner reuses three genuinely settled isolated books. The original preparation reproduces the reconciliation refusal; the new branch accepts replay with chunking on or off, original R2/R3 return duplicates, malformed receipts fail, and financial/source/certificate metadata stays unchanged. All fixture changes roll back. The full runner passed 63 cases, including replay, installer, refusal, metadata, and rollback controls. Native installer qualification explicitly adapts production OID metadata to native identities; it does not claim those OIDs match production. The guarded migration preserves the function metadata and restrictive ACL and refuses a changed preimage or recorded version.
+
+Actual preparation in the full Deep Stack Society rollback trial completed; its later tournament-quality calculation still timed out. This independent preparation repair does not certify full closure, Monday automation, a deployment, or new wallet credits. Installation and affected live verification remain required.
+
+The original own-agent-v1 source and generated migration remain byte-identical because they reproduce the already installed 20261028184531 migration. The new maintained function lives under supabase/accounting/standalone-paid-replay and is installed only by the separately reserved 20261030051108 followup. The existing native runner verifies that followup against its exact original preimage.

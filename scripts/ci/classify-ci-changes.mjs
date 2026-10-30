@@ -70,6 +70,9 @@ const phase4 =
 const breakfastWitness =
   /^scripts\/ci\/(?:test-breakfast-original-witness\.py$|breakfast_(?:fixture|original_witness|qualification|concurrency)\.py$|fixtures\/breakfast-original-witness\/|probes\/breakfast-original-witness\/)/;
 
+const cancellationAdmission =
+  /^(scripts\/ci\/(?:test-tournament-cancellation-lane\.py$|fixtures\/tournament-cancellation-lane\/)|tests\/unit\/tournamentCancellationLane\.test\.ts$)/;
+
 const satelliteQualifiers =
   /^(scripts\/ci\/(?:test-satellite-qualifiers\.py$|(?:satellite_qualifier_(?:fixture|concurrency)|satellite_entry_club_native)\.py$|fixtures\/satellite-qualifiers\/|probes\/(?:satellite-entry-club-native\.sql|satellite-qualifier(?:s-native\.sql|-(?:finish|reader)\.spec))$)|tests\/operations\/satellite-qualifier-results\.test\.py$)/;
 const mttPreparation =
@@ -399,6 +402,7 @@ export function classifyChangedPaths(paths) {
       buildGate ||
       matches(/^src\//),
     server:
+      matches(cancellationAdmission) ||
       matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
       matches(
         /^scripts\/ci\/(?:test-club-promo-journal-source\.py|fixtures\/club-promo-journal-[^/]+\.(?:json|sql))$/
@@ -466,6 +470,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(cancellationAdmission) ||
       matches(/^scripts\/ci\/fixtures\/hand-prune-one-page\.sql$/) ||
       privateRecordHosting ||
       matches(nativeAlerts) ||

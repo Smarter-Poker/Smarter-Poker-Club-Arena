@@ -1869,7 +1869,7 @@ function AgentDashboardContent() {
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}
               >
-                Every Agent Is Prepaid. Send Chips Into An Agent Wallet From Here.
+                Send Funded Chips Into An Agent Wallet. Credit Lines Track Advances Separately.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1929,9 +1929,8 @@ function AgentDashboardContent() {
                     try {
                       const amt = Number(creditAmount);
                       assertChipAmount(amt);
-                      /* Every agent is prepaid with no credit line (Dan,
-                           October 2026). Funding an agent means sending chips
-                           into their agent wallet through fn_agent_wallet_send. */
+                      /* Funding moves existing chips into the Agent Wallet.
+                         A tracking line never supplies chips to this send. */
                       const resolvedCreditClub = await resolveClubUUID(clubId || '');
                       const note = creditNotes.trim() || undefined;
                       await runAgentWalletOperation(

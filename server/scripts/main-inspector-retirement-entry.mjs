@@ -129,8 +129,10 @@ async function retirementEntry() {
     deadlineMs: retirementDeadline,
     qualify: async (stage) => {
       retirementRuntime();
-      // HTTP discovery during attachment would introduce a second client.
-      if (stage === 'attach' && (await retirementDiscover()) !== endpoint) return false;
+      // The proposal already binds the endpoint to this exact MAIN listener.
+      // Recheck its PID/start/namespace/inode and exclusive clients below.
+      // Another HTTP discovery here creates our own closing client immediately
+      // before that zero-client proof; do not introduce a new socket after ACK.
       captureMainInspectorBinding({
         pid: 1,
         port: 9229,

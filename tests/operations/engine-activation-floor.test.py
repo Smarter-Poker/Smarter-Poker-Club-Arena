@@ -67,6 +67,67 @@ class ActivationFloor(unittest.TestCase):
         self.sha = self.commit()
         return floor.policy(str(self.repo), self.sha, self.sha)
 
+    def test_actual_floor_reads_share_legacy_entry_budget_and_retain_announcement(self):
+        import shlex
+        import shutil
+        import sys
+        record = self.owner_record()
+        requests = self.repo / 'requests'; requests.mkdir()
+        floor.entry_state(record, str(requests), '123-1', True,
+                          record['activationEpoch'], record['expiresEpoch']+1, announcement=True)
+        marker = requests / '123-1.activation-entry'
+        original = marker.read_bytes()
+        source = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+        wrapper = source[source.index('legacy_entry_read() {'):source.index('legacy_entry_trace() {')]
+        binaries = self.repo / 'delayed-bin'; binaries.mkdir()
+        launched = self.repo / 'git-child-started'
+        git = binaries / 'git'
+        git.write_text('#!' + sys.executable + '\nimport time\nfrom pathlib import Path\n'
+                       + 'Path(' + repr(str(launched)) + ').write_text("started")\n'
+                       + 'time.sleep(3)\nraise SystemExit(1)\n')
+        git.chmod(0o755)
+        self.assertIsNotNone(shutil.which('timeout'))
+        def invoke(name, *, old=False, expired=False):
+            if launched.exists(): launched.unlink()
+            start = source.index(name + '() {'); end = source.index('\n}', start)+2
+            body = source[start:end]
+            if old: body = body.replace('legacy_entry_read python3', 'python3')
+            deadline = time.time_ns()//1000000 + (5000 if expired else 7000)
+            script = f'''set -euo pipefail
+{wrapper}
+date() {{ {shlex.quote(sys.executable)} -c 'import time;print(time.time_ns()//1000000)'; }}
+die() {{ exit 77; }}
+LEGACY_ENTRY_DEADLINE_MS={deadline}
+ACTIVATION_FLOOR_OWNER_WINDOW={record['ownerWindowId']}
+CONTROL_DIR={shlex.quote(str(ROOT/'server/scripts'))}
+REPO_DIR={shlex.quote(str(self.repo))}
+SHA={self.sha}; CONTROL_SHA={self.sha}
+MUTATION_DEADLINE_EPOCH={record['expiresEpoch']+1}
+REQUEST_ROOT={shlex.quote(str(requests))}; RUN_ID=123-1
+{body}
+{name}
+echo CHECKPOINT_MUST_NOT_RUN
+'''
+            started = time.monotonic()
+            result = subprocess.run([BASH, '-c', script], text=True, capture_output=True,
+                env={**os.environ, 'PATH':str(binaries)+os.pathsep+os.environ['PATH']}, timeout=8)
+            return result, time.monotonic()-started
+        # Actual old caller exceeds the shared entry work allowance on a slow Git read.
+        before, elapsed = invoke('floor_reservation_stamp', old=True)
+        self.assertNotEqual(before.returncode, 124)
+        self.assertGreaterEqual(elapsed, 2.8)
+        for name, expected in [('floor_reservation_stamp',124),('record_floor_runtime_entry',77)]:
+            with self.subTest(name=name):
+                result, elapsed = invoke(name)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertLess(elapsed, 2.8, result.stderr)
+                self.assertNotIn('CHECKPOINT_MUST_NOT_RUN', result.stdout)
+                self.assertEqual(marker.read_bytes(), original)
+                result, _ = invoke(name, expired=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertFalse(launched.exists(), 'expired entry launched the helper Git read')
+                self.assertEqual(marker.read_bytes(), original)
+
     def test_owner_window_is_exact_bounded_and_needs_full_lead(self):
         r = self.owner_record()
         self.assertEqual(r['schema'], floor.OWNER_CAPABILITY)

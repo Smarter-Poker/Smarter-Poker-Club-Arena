@@ -322,3 +322,22 @@ describe('finite published record client proof admission and verdict', () => {
     expect(source).toContain('finally');
   });
 });
+
+it('selects the verified independent fallback in both actual client build inputs', async () => {
+  const { parse } = await import('yaml');
+  for (const file of [
+    '.github/workflows/publish-club-arena.yml',
+    '.github/workflows/publish-club-arena-transaction.yml',
+  ]) {
+    const workflow = parse(readFileSync(file, 'utf8'));
+    const builds = Object.values(workflow.jobs).flatMap((job: any) =>
+      (job.steps ?? []).filter((step: any) =>
+        Object.hasOwn(step.env ?? {}, 'VITE_PRIVATE_RECORD_FALLBACK_URL')
+      )
+    );
+    expect(builds, file).toHaveLength(1);
+    expect(builds[0].env.VITE_PRIVATE_RECORD_FALLBACK_URL, file).toBe(
+      'https://ca-static.smarter.poker/private-record'
+    );
+  }
+});

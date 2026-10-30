@@ -81,7 +81,7 @@ BREAK_DEADLINE_SLACK_SECONDS=0
 # impossibility one gate later.
 LEGACY_CHECKPOINT_BUDGET_SECONDS=40
 # The figures above describe the measured split, not independent allowances.
-# ENTRY_STARTED_MS now fixes one absolute deadline before the locked countdown.
+# ENTRY_STARTED_MS fixes one absolute deadline before the initial countdown.
 # Native work may consume unused entry headroom, always reserving its final
 # five seconds for cleanup; neither the forty seconds nor the certificate grows.
 # The publisher's bounded work inside that budget, from the .mjs figures
@@ -202,11 +202,44 @@ STARTED_EPOCH="$(date +%s)"
 SUPERSEDED_BY=""
 DEADLINE=0
 CERTIFICATE_DEADLINE=0
+LEGACY_ENTRY_DEADLINE_MS=0
 
 remaining_seconds() {
   local remaining=$((DEADLINE - $(date +%s)))
   [ "$remaining" -gt 0 ] || return 1
   printf '%s\n' "$remaining"
+}
+
+# Only the admitted legacy entry uses this clock. Every native read in that
+# entry shares its work deadline; the last five seconds remain native cleanup.
+# Outside that entry the original command and its own bounds are unchanged.
+legacy_entry_read() {
+  local remaining_ms budget_duration
+  if [ "${LEGACY_ENTRY_DEADLINE_MS:-0}" -eq 0 ]; then "$@"; return; fi
+  remaining_ms=$((LEGACY_ENTRY_DEADLINE_MS - $(date +%s%3N) - 5000))
+  [ "$remaining_ms" -gt 1000 ] || return 124
+  remaining_ms=$((remaining_ms - 1000))
+  if [ "${1:-}" = timeout ]; then
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in --signal=TERM|--kill-after=1s|--kill-after=5s) shift ;; *) break ;; esac
+    done
+    [[ "${1:-}" =~ ^([1-9][0-9]*)s$ ]] || return 124
+    local requested_ms=$((BASH_REMATCH[1] * 1000))
+    [ "$requested_ms" -ge "$remaining_ms" ] || remaining_ms="$requested_ms"
+    shift
+  fi
+  printf -v budget_duration '%d.%03ds' "$((remaining_ms / 1000))" "$((remaining_ms % 1000))"
+  timeout --signal=TERM --kill-after=1s "$budget_duration" "$@"
+}
+
+legacy_entry_trace() {
+  local now elapsed remaining window
+  now="$(date +%s%3N)"
+  elapsed=$((now - ENTRY_STARTED_MS))
+  remaining=$((LEGACY_ENTRY_DEADLINE_MS - now))
+  window=$((LEGACY_ENTRY_BREAK_END_EPOCH * 1000 - now))
+  echo "[engine-release-transaction] legacy entry phase=$1 reason=$2 elapsedEntryMs=$elapsed remainingEntryMs=$remaining remainingWindowMs=$window" >&2
 }
 
 assert_time_remaining() {
@@ -449,7 +482,7 @@ acquire_engine_lock() {
   wait_seconds="$remaining"
   [ "$wait_seconds" -le 600 ] || wait_seconds=600
   exec 9>"$ENGINE_LOCK"
-  flock -w "$wait_seconds" 9 || die "could not acquire the engine mutation lock for $label"
+  legacy_entry_read flock -w "$wait_seconds" 9 || die "could not acquire the engine mutation lock for $label"
   LOCK_HELD=1
 }
 
@@ -499,7 +532,7 @@ source_target_is_current() {
   lock_wait="$remaining"
   [ "$lock_wait" -le 90 ] || lock_wait=90
   exec 8>"$SOURCE_LOCK"
-  flock -w "$lock_wait" 8 || die 'could not acquire the source-object lock'
+  legacy_entry_read flock -w "$lock_wait" 8 || die 'could not acquire the source-object lock'
   fetched=0
   [ "$use_local_main" = 0 ] || fetched=1
   for attempt in 1 2 3; do
@@ -509,7 +542,7 @@ source_target_is_current() {
     fetch_wait=$((remaining - 5))
     [ "$fetch_wait" -le 20 ] || fetch_wait=20
     if GIT_NO_REPLACE_OBJECTS=1 GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=15 \
-      timeout --signal=TERM --kill-after=5s "${fetch_wait}s" \
+      legacy_entry_read timeout --signal=TERM --kill-after=5s "${fetch_wait}s" \
       git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'; then
       fetched=1
       break
@@ -517,39 +550,39 @@ source_target_is_current() {
     if [ "$attempt" != 3 ]; then
       remaining=$((source_deadline - $(date +%s)))
       [ "$remaining" -gt 3 ] || die 'source verification deadline expired between fetch attempts'
-      sleep 3
+      legacy_entry_read sleep 3
     fi
   done
   [ "$fetched" = 1 ] || die 'bounded protected-main fetch failed after three attempts'
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before protected-main inspection'
   [ "$remaining" -le 10 ] || remaining=10
-  main_sha="$(timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+  main_sha="$(legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')" \
     || die 'bounded protected-main revision lookup failed'
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before target object proof'
   [ "$remaining" -le 10 ] || remaining=10
-  timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+  legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" cat-file -e "$SHA^{commit}" \
     || die 'bounded target object proof failed'
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before ancestry proof'
   [ "$remaining" -le 10 ] || remaining=10
-  timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+  legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$main_sha" \
     || die "target $SHA is no longer contained in protected main"
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before component high-water lookup'
   [ "$remaining" -le 10 ] || remaining=10
-  latest="$(timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+  latest="$(legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" log "$main_sha" -1 --format=%H -- \
       'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')" \
     || die 'bounded engine component high-water lookup failed'
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before server tree lookup'
   [ "$remaining" -le 10 ] || remaining=10
-  EXPECTED_SERVER_TREE="$(timeout --signal=TERM --kill-after=1s "${remaining}s" env \
+  EXPECTED_SERVER_TREE="$(legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env \
     GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse --verify "$SHA:server")" \
     || die 'bounded target server tree lookup failed'
   # A normal deploy must contain the durable high-water release, including
@@ -559,11 +592,11 @@ source_target_is_current() {
   remaining=$((source_deadline - $(date +%s)))
   [ "$remaining" -gt 2 ] || die 'source verification deadline expired before forward-only proof'
   [ "$remaining" -le 10 ] || remaining=10
-  high_water="$(timeout --signal=TERM --kill-after=1s 5s "$RELEASE_SEAL" get high-water-sha 2>/dev/null || true)"
+  high_water="$(legacy_entry_read timeout --signal=TERM --kill-after=1s 5s "$RELEASE_SEAL" get high-water-sha 2>/dev/null || true)"
   high_water_contained=0
   target_already_sealed_past=0
   if [[ "$high_water" =~ ^[0-9a-f]{40}$ ]]; then
-    if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+    if legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
       git -C "$REPO_DIR" merge-base --is-ancestor "$high_water" "$SHA" 2>/dev/null; then
       high_water_contained=1
     else
@@ -583,7 +616,7 @@ source_target_is_current() {
       remaining=$((source_deadline - $(date +%s)))
       if [ "$remaining" -gt 2 ]; then
         [ "$remaining" -le 10 ] || remaining=10
-        if timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
+        if legacy_entry_read timeout --signal=TERM --kill-after=1s "${remaining}s" env GIT_NO_REPLACE_OBJECTS=1 \
           git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$high_water" 2>/dev/null; then
           target_already_sealed_past=1
         fi
@@ -636,7 +669,7 @@ health_instance_for_sha() {
     curl_timeout=$((proof_remaining - 1))
     [ "$curl_timeout" -le 5 ] || curl_timeout=5
   fi
-  response="$(curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
+  response="$(legacy_entry_read curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
     --write-out $'\n%{http_code}' "$url" 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
@@ -671,7 +704,7 @@ source_instance_for_sha() {
   # common JSON body. The caller first binds the image's unique full source
   # identity to the durable seal. Only this predecessor path may read the
   # absent-field legacy version; candidate/pre-commit/final stay strict.
-  response="$(curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
+  response="$(legacy_entry_read curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
     --write-out $'\n%{http_code}' "$url" 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
@@ -743,7 +776,7 @@ health_instance() {
 # noServingReleaseBuysACustodyException.law.test.ts).
 floor_reservation_stamp() {
   if [ -z "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then printf '0\n'; return 0; fi
-  python3 "$CONTROL_DIR/engine-release-activation-floor.py" reservation     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"     --deadline "$MUTATION_DEADLINE_EPOCH" --run-id "$RUN_ID"     --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"
+  legacy_entry_read python3 "$CONTROL_DIR/engine-release-activation-floor.py" reservation     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"     --deadline "$MUTATION_DEADLINE_EPOCH" --run-id "$RUN_ID"     --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"
 }
 
 maintenance_certificate() {
@@ -762,8 +795,8 @@ maintenance_certificate() {
   # rather than curl's HTTP-success policy, remain the restart authority.
   # Read durable weekly ownership before health: the bounded RPC must not
   # consume a certificate whose remainingMs was captured before that read.
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
-  response="$(curl -sS --max-time 10 --write-out $'\n%{http_code}' \
+  legacy_entry_read "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
+  response="$(legacy_entry_read curl -sS --max-time 10 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
@@ -774,7 +807,7 @@ maintenance_certificate() {
   # A positive health owner also refuses. Missing/null health is safe only
   # after the authoritative read above; it never supplies database inactivity.
   set +e
-  printf '%s' "$body" | python3 -c '
+  printf '%s' "$body" | legacy_entry_read python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: raise SystemExit(3)
@@ -789,7 +822,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -917,7 +950,7 @@ raise SystemExit(4)
   # cutover every other gate had admitted was thrown away. Both now go to
   # stderr, where the journal still records them.
   set +e
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
+  legacy_entry_read "$INFLIGHT_HANDS" --env-file "$ENV_FILE" >&2
   local inflight_rc=$?
   set -e
   case "$inflight_rc" in
@@ -948,7 +981,7 @@ raise SystemExit(4)
 # The helper independently checks every physical table before writing. Only
 # the unchanged maintenance_certificate below can admit a replacement.
 legacy_checkpoint_countdown() {
-  local response http_code body headroom floor_stamp
+  local response http_code body headroom floor_stamp elapsed_ms=0 expected_end="${2:-0}"
   floor_stamp=0
   if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
     floor_stamp="$(floor_reservation_stamp)" || return 1
@@ -957,10 +990,15 @@ legacy_checkpoint_countdown() {
   # admission and BEFORE the guard reads the same reserve. Defaulting to 0
   # keeps the historical contract for callers that have nothing left to do.
   headroom="${1:-0}"
+  if [ "${3:-initial}" = locked ]; then
+    elapsed_ms=$(( $(date +%s%3N) - ENTRY_STARTED_MS ))
+    [ "$elapsed_ms" -ge 0 ] && [ "$elapsed_ms" -lt 35000 ] || return 1
+    [ "$expected_end" -gt 0 ] || return 1
+  fi
   # Read durable weekly ownership before health: the bounded RPC must not
   # consume a certificate whose remainingMs was captured before that read.
-  "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
-  response="$(curl -sS --max-time 2 --write-out $'\n%{http_code}' \
+  legacy_entry_read "$INFLIGHT_HANDS" --env-file "$ENV_FILE" --weekly-payout-only >&2 || return 1
+  response="$(legacy_entry_read curl -sS --max-time 2 --write-out $'\n%{http_code}' \
     http://127.0.0.1:8080/health 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
@@ -968,7 +1006,7 @@ legacy_checkpoint_countdown() {
   # A positive health owner also refuses. Missing/null health is safe only
   # after the authoritative read above; it never supplies database inactivity.
   set +e
-  printf '%s' "$body" | python3 -c '
+  printf '%s' "$body" | legacy_entry_read python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: raise SystemExit(3)
@@ -982,7 +1020,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     0|2) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) ENTRY_STARTED_MS="${ENTRY_STARTED_MS:-0}" ENTRY_MODE="${3:-initial}" EXPECTED_BREAK_END_EPOCH="$expected_end" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -1013,6 +1051,13 @@ valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and 
 if not (d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and valid_number(remaining) and valid_number(ends)):
     raise SystemExit(1)
 minimum=int(os.environ["MIN_BREAK_MS"])
+if os.environ["ENTRY_MODE"]=="locked":
+    spent=math.floor(time.time()*1000)-int(os.environ["ENTRY_STARTED_MS"])
+    if not 0<=spent<35000: raise SystemExit(1)
+    minimum-=spent
+expected=int(os.environ["EXPECTED_BREAK_END_EPOCH"])
+if expected and math.floor(ends/1000)!=expected:
+    raise SystemExit(1)
 if remaining<minimum or ends-time.time()*1000<minimum:
     raise SystemExit(1)
 print(math.floor(ends/1000))
@@ -1550,7 +1595,7 @@ bounded_break_command() {
   [ "$proof_remaining" -gt 2 ] || return 124
   allowed=$((proof_remaining - 2))
   [ "$requested" -le "$allowed" ] || requested="$allowed"
-  timeout --signal=TERM --kill-after=1s "${requested}s" "$@"
+  legacy_entry_read timeout --signal=TERM --kill-after=1s "${requested}s" "$@"
 }
 
 persist_result() {
@@ -1604,12 +1649,12 @@ persist_result() {
 
 exact_runtime_instance() {
   local desired desired_image actual actual_image state local_instance public_instance
-  desired="$($RELEASE_SEAL get desired-sha 2>/dev/null)" || return 1
+  desired="$(legacy_entry_read "$RELEASE_SEAL" get desired-sha 2>/dev/null)" || return 1
   [ "$desired" = "$SHA" ] || return 1
-  desired_image="$($RELEASE_SEAL get desired-image-id 2>/dev/null)" || return 1
-  actual="$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null)" || return 1
-  state="$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null)" || return 1
-  actual_image="$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null)" || return 1
+  desired_image="$(legacy_entry_read "$RELEASE_SEAL" get desired-image-id 2>/dev/null)" || return 1
+  actual="$(legacy_entry_read docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null)" || return 1
+  state="$(legacy_entry_read docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null)" || return 1
+  actual_image="$(legacy_entry_read docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null)" || return 1
   [ "$actual" = "$SHA" ] && [ "$state" = running ] && [ "$actual_image" = "$desired_image" ] \
     || return 1
   local_instance="$(health_instance 'http://127.0.0.1:8080/health')" || return 1
@@ -1986,7 +2031,7 @@ if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announce
 fi
 
 record_floor_runtime_entry() {
-  python3 "$CONTROL_DIR/engine-release-activation-floor.py" "${1:-entry}" \
+  legacy_entry_read python3 "$CONTROL_DIR/engine-release-activation-floor.py" "${1:-entry}" \
     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
     --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID" \
     >/dev/null || die 'immutable activation floor refused actual runtime entry'
@@ -2180,6 +2225,8 @@ while :; do
   # ordinary one is admitted by the first certificate the engine can actually
   # present, which is never at t=0: see BREAK_CERTIFICATE_LAG_SECONDS.
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
+    ENTRY_STARTED_MS="$(date +%s%3N)"
+    LEGACY_ENTRY_DEADLINE_MS=$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))
     ADMISSION_MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS"
   else
     ADMISSION_MIN_BREAK_MS="$BREAK_ADMISSION_MIN_BREAK_MS"
@@ -2192,6 +2239,7 @@ while :; do
     # Counting down follows the final announcement. Run even when the old
     # certificate says ready: that predecessor can retain a stale saved bit.
     if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
+      LEGACY_ENTRY_DEADLINE_MS=0
       # These exact successors already implement the original bounded recovery
       # event. Retain that opportunity; the helper still needs its real durable
       # countdown, and an unknown request can never create another announcement.
@@ -2205,6 +2253,8 @@ while :; do
       bounded_sleep 5
       continue
     fi
+    LEGACY_ENTRY_BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    legacy_entry_trace admitted verified
   elif [ "$CERTIFICATE_RC" -eq 2 ]; then
     note_missed_admission "${BREAK_REMAINING_MS:-0}"
     # A predecessor or image build can consume the beginning of this break.
@@ -2231,13 +2281,15 @@ while :; do
   fi
   BREAK_DEFERRED_TO=''
   acquire_engine_lock 'maintenance cutover'
+  if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then legacy_entry_trace locked verified; fi
   source_target_is_current
   if EXACT_INSTANCE="$(exact_runtime_instance)"; then
+    LEGACY_ENTRY_DEADLINE_MS=0
     emit_already_released "$EXACT_INSTANCE"
   fi
   [ -z "${DRILL_MODE:-}" ] || drill_preconditions
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
-    CHECKPOINT_PREDECESSOR_SHA="$(timeout --signal=TERM --kill-after=1s 10s \
+    CHECKPOINT_PREDECESSOR_SHA="$(legacy_entry_read timeout --signal=TERM --kill-after=1s 10s \
       "$RELEASE_SEAL" get desired-sha)" || die 'locked checkpoint predecessor is unreadable'
     if [ "$CHECKPOINT_PREDECESSOR_SHA" != "$LEGACY_CHECKPOINT_SHA" ] \
       && [ "$CHECKPOINT_PREDECESSOR_SHA" != "$CHECKPOINT_758_SHA" ] \
@@ -2248,11 +2300,13 @@ while :; do
       # Source/high-water admission above still owns whether our target may
       # follow it. Never apply the old-image compatibility path to its successor.
       LEGACY_CHECKPOINT_REQUIRED=0
+      LEGACY_ENTRY_DEADLINE_MS=0
     fi
   fi
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ]; then
-    ENTRY_STARTED_MS="$(date +%s%3N)"
-    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS")"; then
+    if ! LEGACY_COUNTDOWN_END="$(legacy_checkpoint_countdown "$BREAK_ENTRY_BUDGET_MS" "$LEGACY_ENTRY_BREAK_END_EPOCH" locked)"; then
+      legacy_entry_trace refused countdown_refused
+      LEGACY_ENTRY_DEADLINE_MS=0
       release_engine_lock
       bounded_sleep 5
       continue
@@ -2264,6 +2318,7 @@ while :; do
     # consume up to LEGACY_CHECKPOINT_BUDGET_SECONDS of the candidate-proof
     # budget; the certificate read after them demands LEGACY_MIN_BREAK_REMAINING_MS.
     BREAK_END_EPOCH="$LEGACY_COUNTDOWN_END"
+    ROLLBACK_PROOF_STARTED_MS="$(date +%s%3N)"
     prove_rollback_readiness
     # Measure the real cost of this host's rollback proof, the dominant entry
     # term, and log it against the entry allowance inside the legacy budget.
@@ -2272,7 +2327,7 @@ while :; do
     # already contains the entry: a threshold above 285000 can never be met
     # by a 300000ms countdown that has paid ~15000ms of entry, so demanding
     # it would defer every break for ever instead of refusing this one.
-    ROLLBACK_PROOF_MS=$(( $(date +%s%3N) - ENTRY_STARTED_MS ))
+    ROLLBACK_PROOF_MS=$(( $(date +%s%3N) - ROLLBACK_PROOF_STARTED_MS ))
     echo "[engine-release-transaction] prove_rollback_readiness took ${ROLLBACK_PROOF_MS}ms of the ${LEGACY_ENTRY_ALLOWANCE_MS}ms entry allowance inside the ${LEGACY_CHECKPOINT_BUDGET_SECONDS}s legacy checkpoint budget"
     BREAK_ENTRY_BUDGET_MS=$(( ROLLBACK_PROOF_MS * 2 ))
     [ "$BREAK_ENTRY_BUDGET_MS" -ge 0 ] || BREAK_ENTRY_BUDGET_MS=0
@@ -2280,10 +2335,17 @@ while :; do
       || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
     record_floor_runtime_entry
     LEGACY_CHECKPOINT_ATTEMPTED=1
+    legacy_entry_trace checkpoint verified
     set +e
-    "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))"
+    "$LEGACY_CHECKPOINT" "$RUN_ID" "$((ENTRY_STARTED_MS + LEGACY_CHECKPOINT_BUDGET_SECONDS * 1000))" "$LEGACY_ENTRY_BREAK_END_EPOCH"
     LEGACY_CHECKPOINT_RC=$?
     set -e
+    if [ "$LEGACY_CHECKPOINT_RC" = 0 ]; then
+      legacy_entry_trace completed verified
+    else
+      legacy_entry_trace refused checkpoint_refused
+    fi
+    LEGACY_ENTRY_DEADLINE_MS=0
     if [ "$LEGACY_CHECKPOINT_RC" = 75 ]; then
       # The helper refused ABOVE its durable one-shot intent: this attempt
       # arrived too late in the break, and nothing was attempted. That is a

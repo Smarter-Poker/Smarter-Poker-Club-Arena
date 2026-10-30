@@ -68,7 +68,7 @@ describe('a re-entered release refuses by name', () => {
   it('the O_EXCL one-shot is intact and nothing removes the intent to get past it', () => {
     expect(checkpointShell).toContain('os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600');
     const write = checkpointShell.slice(
-      checkpointShell.indexOf('CHECKPOINT_INTENT="$(python3'),
+      checkpointShell.indexOf('CHECKPOINT_INTENT="$(checkpoint_entry_read python3'),
       checkpointShell.indexOf('CHECKPOINT_INTENT_RC=$?')
     );
     expect(write).not.toContain('O_TRUNC');
@@ -155,6 +155,7 @@ describe('a re-entered release refuses by name', () => {
             `set -euo pipefail
 die() { echo "$*" >&2; exit 1; }
 defer() { echo "$*" >&2; exit 75; }
+checkpoint_entry_read() { "$@"; }
 date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
 CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))
 REQUEST_ROOT="$PROBE_ROOT"
@@ -216,6 +217,8 @@ printf '%s' inspector-boundary-reached
  die() { echo "$*" >&2; exit 1; }
  defer() { echo "$*" >&2; exit 75; }
  defer_proved_not_started() { echo "$*" >&2; exit 75; }
+ checkpoint_entry_read() { "$@"; }
+ checkpoint_final_read() { "$@"; }
  timeout() { shift; "$@"; }
  date() { "$CHECKPOINT_TEST_NODE" -e 'console.log(Date.now())'; }
  CHECKPOINT_DEADLINE_MS=$(( $(date +%s%3N) + 40000 ))

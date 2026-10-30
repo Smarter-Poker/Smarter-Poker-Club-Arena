@@ -417,8 +417,8 @@ jobs:
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
-          # Remains off until a protected source change follows hosted qualification.
-          VITE_PRIVATE_RECORD_FALLBACK_URL: ''
+          # Qualified by gateway publisher 40977779005; paid Realtime stays enabled.
+          VITE_PRIVATE_RECORD_FALLBACK_URL: 'https://ca-static.smarter.poker/private-record'
           VITE_APP_ENV: production
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'

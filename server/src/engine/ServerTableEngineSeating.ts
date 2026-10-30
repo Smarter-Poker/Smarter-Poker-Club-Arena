@@ -1724,6 +1724,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
               recordHorsePlo5Departure('unknown_investment');
               return held;
             }
+            // A hand can start during the investment read. Its hold is not
+            // evidence of a settled below-profit decision.
+            if (this.handController?.getState().players.some((p) => p.user_id === userId)) {
+              recordHorsePlo5Departure('in_hand');
+              return held;
+            }
             if (Math.round(stack * 100) * 2 < Math.round(invested * 100) * 9) {
               recordHorsePlo5Departure('below_profit_floor');
               return held;

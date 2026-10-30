@@ -685,6 +685,7 @@ describe('2/5 PLO5 Horse profit floor', () => {
       live?: boolean;
       missingRoster?: boolean;
       nullableHuman?: boolean;
+      handStartsDuringRead?: boolean;
     } = {}
   ) {
     const e = makeEngine();
@@ -701,13 +702,17 @@ describe('2/5 PLO5 Horse profit floor', () => {
       select: vi.fn(() => chain),
       eq: vi.fn(() => chain),
       is: vi.fn(() => chain),
-      maybeSingle: vi.fn(async () => ({
-        data:
-          baseline === null
-            ? null
-            : { baseline, is_horse: options.nullableHuman ? null : !options.human },
-        error: options.error ? { message: 'unavailable' } : null,
-      })),
+      maybeSingle: vi.fn(async () => {
+        if (options.handStartsDuringRead)
+          e.handController = { getState: () => ({ players: [{ user_id: id }] }) };
+        return {
+          data:
+            baseline === null
+              ? null
+              : { baseline, is_horse: options.nullableHuman ? null : !options.human },
+          error: options.error ? { message: 'unavailable' } : null,
+        };
+      }),
     };
     const from = vi.spyOn(supabase, 'from').mockReturnValue(chain);
     cashoutVoluntary.mockResolvedValue({ ok: true, stack });
@@ -780,6 +785,14 @@ describe('2/5 PLO5 Horse profit floor', () => {
         .success
     ).toBe(true);
     expect(cashout).toHaveBeenCalled();
+  });
+  it('does not certify a profit refusal if a hand starts during the investment read', async () => {
+    const before = horsePlo5DepartureEvidence().counts;
+    expect((await attempt(1000, 500, { handStartsDuringRead: true })).result.success).toBe(false);
+    const after = horsePlo5DepartureEvidence().counts;
+    expect(after.in_hand).toBe(before.in_hand + 1);
+    expect(after.below_profit_floor).toBe(before.below_profit_floor);
+    expect(cashoutVoluntary).not.toHaveBeenCalled();
   });
   it('binds the read to this Horse, table and open session', async () => {
     const { chain, fromCalls } = await attempt(2250, 500);

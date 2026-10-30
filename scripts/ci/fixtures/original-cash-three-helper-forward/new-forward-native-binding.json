@@ -7,14 +7,14 @@
     "post": "post-NEWFORWARD54822-READONLY15-ROLLBACK60.sql"
   },
   "source_sha256": {
-    "supabase/migrations/20261030054822_original_cash_helpers_preserve_genuine_refreshed_weekly_proo.sql": "d71475888fdd2b69cb857cc5623a5f2a1760e4558a567769054716892b472b80",
+    "supabase/migrations/20261030054822_original_cash_helpers_preserve_genuine_refreshed_weekly_proo.sql": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
     "supabase/migrations/20261029230502_original_cash_reads_keep_their_complete_proof_without_changi.sql": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6"
   },
   "files": {
-    "new_forward_guard.py": "efaf22ed9b08a72024380c1b57f0a2c5d6c4bf8ff9acf99a99574abead15b149",
+    "new_forward_guard.py": "0a702179a38479c0164785d741fedbdcd516f9924cc3782c492613d09871bef1",
     "new-forward-derived-cache-snapshots.json": "c7ed463faedd4cbc5254c5062662fdb02f93ae674cfba61088ada694a904cbaf",
-    "pre-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "64034815f18ecd6c4bd5bb256f20767330ab28cb8b30f3fc0d085713f5e63d82",
-    "post-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "cc1513d02e9efd8a6220f8cbfd3325ee35e4735fd831b85a3f4f26445371456a"
+    "pre-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "97fddc525aae28351c6efbad05adc67491427dbc5bf71a3080f4228905628bc4",
+    "post-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "73bcd12f69d65a794953a9de02263a98e8fcfd99ec7be0de19f640abf68b8d0a"
   },
   "original_migration_sha256": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6",
   "actual_source_GEN_not_invoked_or_faked": true

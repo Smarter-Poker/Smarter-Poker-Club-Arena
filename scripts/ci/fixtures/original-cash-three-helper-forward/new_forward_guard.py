@@ -81,6 +81,17 @@ def run(must,call,F):
         results.append({'case':'raw-hash-constructor-'+column,'passed':True})
     must('BEGIN;'+fn+seed+"CREATE TEMP TABLE native_raw_before AS SELECT economic_md5,full_md5 FROM pg_temp._forward3_partial_rows();UPDATE accounting_close_partials SET computed_at=computed_at+interval '1 hour';DO $$BEGIN IF(SELECT economic_md5 FROM pg_temp._forward3_partial_rows())IS DISTINCT FROM(SELECT economic_md5 FROM native_raw_before)OR(SELECT full_md5 FROM pg_temp._forward3_partial_rows())IS NOT DISTINCT FROM(SELECT full_md5 FROM native_raw_before)THEN RAISE EXCEPTION 'timestamp_economic_separation_wrong';END IF;END$$;ROLLBACK;")
     results.append({'case':'raw-timestamp-affects-full-not-economic-digest','passed':True})
+    # Full-row representation covers ALL12 original fields using the exact maintained constructor.
+    full_mutations=[('kind',"'changed'"),('union_id',"'00000000-0000-0000-0000-000000000099'::uuid"),('period_start',"period_start+interval '1 second'"),('period_end',"period_end+interval '1 second'"),('window_start',"window_start+interval '1 second'"),('window_end',"window_end+interval '1 second'"),('value',"'{\"value\":2}'::jsonb"),('cash_ids',"ARRAY['00000000-0000-0000-0000-000000000001']::uuid[]"),('cash_md5',"'\\x03'::bytea"),('fee_ids',"ARRAY['00000000-0000-0000-0000-000000000001']::uuid[]"),('fee_md5',"'\\x04'::bytea"),('computed_at',"computed_at+interval '1 second'")]
+    for column,value in full_mutations:
+        for suffix,replacement in [('changed',value),('null','NULL')]:
+            must('BEGIN;'+fn+seed+"CREATE TEMP TABLE native_raw_before AS SELECT full_md5 FROM pg_temp._forward3_partial_rows();UPDATE accounting_close_partials SET "+column+'='+replacement+";DO $$BEGIN IF(SELECT full_md5 FROM pg_temp._forward3_partial_rows())IS NOT DISTINCT FROM(SELECT full_md5 FROM native_raw_before)THEN RAISE EXCEPTION 'full12_hash_mutation_missing';END IF;END$$;ROLLBACK;")
+            results.append({'case':'all12-full-hash-'+column+'-'+suffix,'passed':True})
+    for column in ['cash_ids','fee_ids']:
+        first="ARRAY['00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002']::uuid[]"
+        reversed_ids="ARRAY['00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001']::uuid[]"
+        must('BEGIN;'+fn+seed+'UPDATE accounting_close_partials SET '+column+'='+first+";CREATE TEMP TABLE native_raw_before AS SELECT economic_md5,full_md5 FROM pg_temp._forward3_partial_rows();UPDATE accounting_close_partials SET "+column+'='+reversed_ids+";DO $$BEGIN IF(SELECT economic_md5 FROM pg_temp._forward3_partial_rows())IS NOT DISTINCT FROM(SELECT economic_md5 FROM native_raw_before)OR(SELECT full_md5 FROM pg_temp._forward3_partial_rows())IS NOT DISTINCT FROM(SELECT full_md5 FROM native_raw_before)THEN RAISE EXCEPTION 'ordered_array_hash_mutation_missing';END IF;END$$;ROLLBACK;")
+        results.append({'case':'ordered-array-both-hashes-'+column,'passed':True})
     driver=s.split('BEGIN;',1)[1].rsplit('COMMIT;',1)[0]
     must('BEGIN;CREATE FUNCTION pg_temp.parse_new_forward()RETURNS void LANGUAGE plpgsql AS $parse_new$BEGIN IF false THEN '+driver+' END IF;END;$parse_new$;ROLLBACK;')
     results.append({'case':'full-new-forward-outer-grammar','passed':True})

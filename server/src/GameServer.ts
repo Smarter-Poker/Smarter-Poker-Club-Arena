@@ -2077,6 +2077,7 @@ export class GameServer {
     if (this.tableEngines.get(tableId) !== engine) return;
 
     this.tableEngines.delete(tableId);
+    this.releaseWeeklyPayout(engine);
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
 
@@ -3996,7 +3997,21 @@ export class GameServer {
   private weeklyPayoutRead: Promise<void> | null = null;
   private weeklyPayoutReadPending = false;
   private weeklyPayoutGeneration = 0;
-  private readonly weeklyPayoutTableListeners = new Map<ServerTableEngine, () => void>();
+  /**
+   * Weekly-payout boundary subscriptions, keyed by the engine that owns them.
+   *
+   * This must never be a strong registry. Until 2026-10-29 it was a `Map`,
+   * so every engine generation ever adopted (each tournament table, each
+   * replacement after lease loss, each cash wake or zombie rebuild) stayed
+   * reachable from GameServer for the life of the process together with its
+   * hand controller, telemetry rings and, through its owner callbacks, its
+   * whole TournamentManager. Nothing removed an entry before shutdown, and the
+   * main isolate exhausted its V8 heap twice in one day on the first image to
+   * carry it. A WeakMap keeps the subscription for exactly as long as the
+   * engine is alive somewhere else; `releaseWeeklyPayout` drops it the moment
+   * an engine leaves the process registry.
+   */
+  private readonly weeklyPayoutTableListeners = new WeakMap<ServerTableEngine, () => void>();
   private readonly weeklyPayoutStore = createWeeklyPayoutPauseStore(INSTANCE_ID, () => {
     const claims: WeeklyPayoutLeaseClaim[] = [];
     for (const [tableId, engine] of this.enginesIncludingMixedF06Custody()) {
@@ -4066,6 +4081,22 @@ export class GameServer {
     this.weeklyPayoutPause.adopt(engine);
   }
 
+  /**
+   * An engine that has left the process registry owns no further hand
+   * boundaries. Drop its weekly-payout subscription so neither the listener
+   * set on the engine nor this registry keeps the retired generation alive.
+   * Idempotent: an engine that was never adopted, or was already released, is
+   * a no-op. A quarantined engine still in `tableEngines` is not released.
+   */
+  private releaseWeeklyPayout(engine: ServerTableEngine): void {
+    // A retained lifecycle harness may release tables before this owner exists.
+    if (!this.weeklyPayoutTableListeners) return;
+    const unsubscribe = this.weeklyPayoutTableListeners.get(engine);
+    if (!unsubscribe) return;
+    this.weeklyPayoutTableListeners.delete(engine);
+    unsubscribe();
+  }
+
   private refreshWeeklyPayout(): Promise<void> {
     this.weeklyPayoutReadPending = true;
     if (this.weeklyPayoutRead) return this.weeklyPayoutRead;
@@ -4129,8 +4160,11 @@ export class GameServer {
     const channel = this.weeklyPayoutChannel;
     this.weeklyPayoutChannel = null;
     if (channel) await supabase.removeChannel(channel);
-    for (const unsubscribe of this.weeklyPayoutTableListeners.values()) unsubscribe();
-    this.weeklyPayoutTableListeners.clear();
+    // Engines that already left the registry released their subscription on
+    // the way out; the ones still published (including retained mixed F06
+    // custody) release here.
+    for (const [, engine] of this.enginesIncludingMixedF06Custody())
+      this.releaseWeeklyPayout(engine);
     await this.weeklyPayoutRead?.catch((error) =>
       reportError(error, 'GameServer.weekly_payout_stop_unknown')
     );
@@ -5366,7 +5400,10 @@ export class GameServer {
         );
         continue;
       }
-      if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
+      if (this.tableEngines.get(tableId) === engine) {
+        this.tableEngines.delete(tableId);
+        this.releaseWeeklyPayout(engine);
+      }
     }
     for (let index = 0; index < managerStopResults.length; index++) {
       const result = managerStopResults[index];
@@ -12732,6 +12769,8 @@ export class GameServer {
       replaced = true;
     }
     if (!replaced) return false;
+    // The stopped generation has left the registry whichever branch follows.
+    this.releaseWeeklyPayout(expected);
     if (!this.running) {
       await replacement.stop().catch(() => undefined);
       unregisterOwnedTournamentTableEngine(
@@ -12739,7 +12778,10 @@ export class GameServer {
         this.tournamentOwnedTables,
         tableId,
         replacement,
-        () => tableStateHub.dropTable(tableId)
+        () => {
+          tableStateHub.dropTable(tableId);
+          this.releaseWeeklyPayout(replacement);
+        }
       );
       return false;
     }
@@ -12760,7 +12802,10 @@ export class GameServer {
       this.tournamentOwnedTables,
       tableId,
       engine,
-      () => tableStateHub.dropTable(tableId)
+      () => {
+        tableStateHub.dropTable(tableId);
+        this.releaseWeeklyPayout?.(engine);
+      }
     );
   }
 
@@ -12775,9 +12820,13 @@ export class GameServer {
    */
   unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
     const current = this.tableEngines.get(tableId);
+    // Retained lifecycle harnesses borrow this method onto a bare registry
+    // host (no weekly-payout owner), exactly as adoptWeeklyPayout tolerates.
+    const release = this.releaseWeeklyPayout?.bind(this);
     if (current === undefined) {
       this.tournamentOwnedTables.delete(tableId);
       tableStateHub.dropTable(tableId);
+      release?.(engine);
       return true;
     }
     if (current !== engine) return false;
@@ -12785,6 +12834,7 @@ export class GameServer {
     this.tableEngines.delete(tableId);
     this.tournamentOwnedTables.delete(tableId);
     tableStateHub.dropTable(tableId);
+    release?.(engine);
     return true;
   }
 

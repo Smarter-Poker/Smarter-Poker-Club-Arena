@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+      "bytes": 254099,
+      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1236,5 +1236,37 @@
       "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
     },
     "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
+  },
+  "cancellationAdmissionSourceAudit20261030": {
+    "scope": "Adds private PostgreSQL cancellation admission/refund qualification to existing accounting shard4; no existing financial assertion, job selector, or result changed.",
+    "file": ".github/workflows/ci.yml",
+    "bindings": [
+      {
+        "section": "files",
+        "previous": {
+          "bytes": 251814,
+          "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+        },
+        "current": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
+      }
+    ]
+  },
+  "cancellationProtectedMainComposition20261030": {
+    "scope": "Combine existing installed-SQL qualification with cancellation admission in accounting shard4; preserve all financial assertions and both source histories.",
+    "candidate": "414aa72ca953ca40d7138a67b3dc366cf73bcd86",
+    "main": "e8202fac9603a28e340c1f6def8c097785278cf7",
+    "workflow": {
+      "bytes": 253449,
+      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
+    }
+  },
+  "cancellationQualifiedMainComposition20261030": {
+    "scope": "Preserve protected current-main worker and CSS partition changes, installed player-lock source, and cancellation native enforcement; active workflow identity only, both prior histories retained.",
+    "candidate": "88c3a7bff0be570e975095b68a2ab2bd2f055955",
+    "main": "09b2550c1777da01e54e6b91dfe538c055936f56",
+    "workflow": {
+      "bytes": 254099,
+      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
+    }
   }
 }

@@ -242,16 +242,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+      "bytes": 254099,
+      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 44520,
-      "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+      "bytes": 44787,
+      "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -5056,5 +5056,41 @@
       "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
     },
     "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
+  },
+  "cancellationAdmissionComposition20261030": {
+    "scope": "Only additive cancellation native qualification and its fixture-only selector. Preserve every cash financial input, assertion and existing audit; no cash recertification inferred.",
+    "changes": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "before": {
+          "bytes": 252636,
+          "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+        },
+        "after": {
+          "bytes": 253449,
+          "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
+        }
+      },
+      {
+        "file": "scripts/ci/classify-ci-changes.mjs",
+        "before": {
+          "bytes": 44520,
+          "sha256": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822"
+        },
+        "after": {
+          "bytes": 44787,
+          "sha256": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+        }
+      }
+    ]
+  },
+  "cancellationQualifiedMainComposition20261030": {
+    "scope": "Preserve protected current-main worker and CSS partition changes, installed player-lock source, and cancellation native enforcement; active workflow identity only, both prior histories retained.",
+    "candidate": "88c3a7bff0be570e975095b68a2ab2bd2f055955",
+    "main": "09b2550c1777da01e54e6b91dfe538c055936f56",
+    "workflow": {
+      "bytes": 254099,
+      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
+    }
   }
 }

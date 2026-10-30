@@ -326,7 +326,7 @@
     },
     "tests/unit/fixtureNativeCi.test.ts": {
       "bytes": 117348,
-      "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
     }
   },
   "nativePgCron": {
@@ -5204,5 +5204,18 @@
       "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
+  },
+  "clientEightShardFixtureNativeActivePinAudit20261030": {
+    "scope": "Current active fixtureNativeCi source pin only: exactly three client unit command denominators change from four to eight; all financial assertions and every other source byte remain identical.",
+    "previousActivePin": {
+      "bytes": 117348,
+      "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+    },
+    "currentActivePin": {
+      "bytes": 117348,
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+    },
+    "exactPreviousBytesProvedByRevertingThreeUnitDenominators": true,
+    "qualification": "SOURCE_ONLY_UNRUN. No native SQL result, production installation or historical financial receipt is restamped. Required local and protected hosted qualification remain enforced."
   }
 }

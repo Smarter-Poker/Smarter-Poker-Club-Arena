@@ -171,6 +171,8 @@ function runAudit(fx: Fixture) {
     encoding: 'utf8',
     env,
   });
+  if (result.error) throw result.error;
+  if (result.signal) throw new Error(`Estate audit terminated by ${result.signal}`);
   const report = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
   return { result, report, combined: `${result.stdout}\n${result.stderr}\n${report}` };
 }

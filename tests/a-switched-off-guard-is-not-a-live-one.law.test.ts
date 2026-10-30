@@ -164,6 +164,8 @@ esac
       PATH: `${bin}:${process.env.PATH ?? ''}`,
     },
   });
+  if (result.error) throw result.error;
+  if (result.signal) throw new Error(`Estate audit terminated by ${result.signal}`);
 
   const report = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
   return { result, combined: `${result.stdout}\n${result.stderr}\n${report}` };

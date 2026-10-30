@@ -26,4 +26,5 @@ cannot turn the rejected 41-second case into an accepted 40-second case. The
 real estate-audit fixtures exceeded their 20-second test budgets at 24.3 seconds
 in the 321-file suite. Their children now have a finite 45-second bound and a
 60-second outer test budget, including reporting and cleanup time. Assertions
-and production release deadlines are unchanged.
+and production release deadlines are unchanged. A child process error or signal
+throws before any partial report can be used as a passing assertion.

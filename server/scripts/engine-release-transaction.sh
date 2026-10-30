@@ -1477,6 +1477,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
   reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
+  reserve_args+=(--include-eligibility)
   if ! stamp="$(timeout --signal=TERM --kill-after=1s 15s "$RELEASE_SEAL" reserve-recovery-window \
     "${reserve_args[@]}")"; then
     # NOT FATAL (2026-10-02). A refused or slow reservation asks for nothing:
@@ -1486,6 +1487,17 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     release_engine_lock
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
     echo "[engine-release-transaction] recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break"
+    return 0
+  fi
+  if [[ "$stamp" =~ ^rate-limited:([1-9][0-9]{12})$ ]]; then
+    # The seal owns the rolling-hour boundary under its existing lock. Resume
+    # this bounded transaction at that boundary, rounded UP to its clock unit;
+    # a blind sixty seconds can skip the owner's only permitted minute.
+    # The next pass still rechecks owner minute, health, source and ownership.
+    RECOVERY_NEXT_EVALUATION=$(( (BASH_REMATCH[1] + 999) / 1000 ))
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
+    release_engine_lock
+    echo "[engine-release-transaction] off-cycle window wanted ($reason) but the seal's rolling-hour boundary has not elapsed; re-evaluate at $RECOVERY_NEXT_EVALUATION"
     return 0
   fi
   if [ "$stamp" = rate-limited ]; then

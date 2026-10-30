@@ -234,6 +234,26 @@ describe('exact protected transaction publisher display names', () => {
     expect(r.error).toBeNull();
     expect(r.output).toContain('should_run=true');
   });
+  it('accepts the exact nested client publication origin proof (41073917180)', () => {
+    const r = runGate([published('client-publication / production / publish-to-origin')]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true');
+  });
+  it('keeps nested origin ambiguity, failed proof and foreign wrappers fail-closed', () => {
+    const nested = 'client-publication / production / publish-to-origin';
+    const failed = published(nested);
+    failed.steps[2].conclusion = 'failure';
+    for (const jobs of [
+      [published(nested), published('production / publish-to-origin')],
+      [published(`foreign / ${nested}`)],
+      [published('client-publication / foreign / publish-to-origin')],
+      [failed],
+    ]) {
+      const r = runGate(jobs);
+      expect(r.error).not.toBeNull();
+      expect(r.output).not.toContain('should_run=true');
+    }
+  });
   it.each(['cancelled', 'failure', 'success', 'unknown'])(
     'keeps proven web publication independent of the %s run summary',
     (conclusion) => {

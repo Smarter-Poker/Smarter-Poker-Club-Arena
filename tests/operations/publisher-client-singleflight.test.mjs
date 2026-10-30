@@ -265,7 +265,8 @@ test('the caller singleflights one exact target before all existing work', () =>
   assert.match(entry, /uses: \.\/\.github\/workflows\/publish-club-arena-client.yml/);
   assert.match(helper, /workflow_call:/);
   assert.doesNotMatch(helper, /^  (push|schedule|workflow_dispatch|repository_dispatch):/m);
-  assert.match(helper, /needs: \[admit, client-tests, build-and-store\]/);
+  assert.match(helper, /needs: \[admit, client-tests, build-and-store, publication-floor\]/);
+  assert.match(helper, /needs.publication-floor.result == 'success'/);
   assert.match(helper, /group: publish-club-arena-production\n      cancel-in-progress: false/);
   assert.match(helper, /needs.admit.outputs.published != 'true'/);
 });

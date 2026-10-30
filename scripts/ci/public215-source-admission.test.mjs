@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {collectSourceAdmission,immutableClassification,sourceRequirements} from './public215-source-admission.mjs';
+import {boundedSourceReaders,sourceCommandFailure,collectSourceAdmission,immutableClassification,sourceRequirements} from './public215-source-admission.mjs';
 
 const candidate='a'.repeat(40),head='b'.repeat(40),parent='c'.repeat(40),base='d'.repeat(40);
 const names=['TypeScript Check','Client Unit Tests (vitest)','Server Engine (typecheck + tests)','Money trigger declaration authority','Production Build','CSS Beat E2E (multi-table + animations)'];
@@ -90,4 +90,22 @@ test('workflow invokes the dedicated admission before SSH, and actually executes
  assert.match(s,/git merge-base --is-ancestor/);
  for(const scope of ['contents','actions','checks','pull-requests'])assert.match(s,new RegExp('  '+scope+': read'));
  assert.doesNotMatch(s,/permissions: write-all|checks: write|pull-requests: write/);
+});
+
+
+test('failed metadata reads name only a canonical route and typed status, and remain fail closed',async()=>{
+ const path=`/commits/${head}/check-runs?filter=all&per_page=100&page=1`;
+ const result={status:1,stdout:Buffer.from('secret body'),stderr:Buffer.from('gh: API rate limit exceeded (HTTP 403)\nAuthorization: Bearer secret-token\nhttps://storage.example/signed?token=secret-url')};
+ const readers=boundedSourceReaders(()=>result);
+ await assert.rejects(readers.read(path),error=>{
+  assert.match(error.message,/kind api_rate_limit; HTTP 403; exit 1/);
+  assert.ok(error.message.includes(path));assert.doesNotMatch(error.message,/secret|Authorization|storage/);return true;
+ });
+ assert.equal(readers.stats().commands,1);
+ for(const bad of ['repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/rules/branches/main?token=secret-url','/pulls/7\nsecret','https://evil/secret']){
+  const message=sourceCommandFailure('gh',['api',bad],result);
+  assert.match(message,/unrecognized route/);assert.doesNotMatch(message,/secret|Authorization|storage/);
+ }
+ assert.match(sourceCommandFailure('gh',['api','repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/rules/branches/main'],{status:null,error:{code:'ETIMEDOUT'},stderr:Buffer.alloc(0)}),/kind timeout; HTTP unknown; exit unavailable/);
+ assert.equal(sourceCommandFailure('git',['fetch','secret'],result),'Immutable Git source command refused (exit 1)');
 });

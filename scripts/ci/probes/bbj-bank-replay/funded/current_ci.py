@@ -209,7 +209,12 @@ def timing_observation(current, response, now):
         ('status', job.get('status') == 'in_progress'),
         ('conclusion', job.get('conclusion') is None),
         ('completed_at', job.get('completed_at') is None),
-        ('labels', job.get('labels') == (['ca-linux-8core'] if current['repository'] == TRANSFERRED_REPOSITORY else ['ubuntu-latest'])),
+        # The closed workflow selector permits these two fixed singleton routes
+        # for the transferred repository. Read actual job metadata rather than
+        # a mutable repository variable that may differ from dispatch time.
+        ('labels', (current['repository'] == TRANSFERRED_REPOSITORY and
+                    job.get('labels') in (['ca-linux-8core'], ['ubuntu-latest'])) or
+                   (current['repository'] == REPOSITORY and job.get('labels') == ['ubuntu-latest'])),
     )
     mismatches = [field for field, matches in identity_checks if not matches]
     if mismatches:

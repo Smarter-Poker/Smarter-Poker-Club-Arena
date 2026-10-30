@@ -474,7 +474,8 @@ import { scheduleLightningRenderAck } from '../lightning/lightningRenderAck';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
-import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
+import type { ShareableHand, ShareableAction } from '../components/table/ShareHand';
+import { shareBoardPrefix, shareExtraBoards, visibleShareCards } from '../lib/liveShareCards';
 import { toShareVariant } from '../lib/shareHandModel';
 import TableMenu from '../components/table/TableMenu';
 
@@ -666,6 +667,7 @@ import {
 // the beats are testable outside this 13k-line component.
 import {
   buildAwardGroups,
+  normalizePotAwardWire,
   boardLabelFromAwards,
   isAllInShowdown,
   pendingStackHold,
@@ -19155,11 +19157,7 @@ function LiveTablePage({
         // by the 3s reset timer further down this same case).
         try {
           const st = tableStateRef.current;
-          const board = st.communityCards || [];
-          const asShareCard = (c: Card): ShareableCard => ({
-            rank: c.rank,
-            suit: c.suit,
-          });
+          const board = shareBoardPrefix(st.communityCards);
           /**
            * EVERY VERB THAT IS NOT ONE OF FIVE USED TO BE SHARED AS ALL IN.
            *
@@ -19211,9 +19209,7 @@ function LiveTablePage({
                     // Only cards actually visible on screen travel in the link
                     // -- hero's own, plus anything shown down at showdown. A
                     // shared hand must never leak a mucked holding.
-                    cards: (p.holeCards || []).length
-                      ? (p.holeCards as Card[]).map(asShareCard)
-                      : undefined,
+                    cards: visibleShareCards(p.holeCards),
                     isHero: i + 1 === st.heroSeat,
                     isWinner: winnerSeats.has(i + 1),
                   }
@@ -19239,10 +19235,7 @@ function LiveTablePage({
                `ritResult` in this closure is whatever it was when the handler
                was created. */
             const runs = ritResultRef.current?.boards || [];
-            const extraBoards = runs
-              .slice(1)
-              .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
-              .filter((b) => b.length > 0);
+            const extraBoards = shareExtraBoards(runs);
             setSharedHandId(null);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
@@ -19254,17 +19247,9 @@ function LiveTablePage({
               players: sharePlayers,
               preflop: byStreet('preflop'),
               flop:
-                board.length >= 3
-                  ? { cards: board.slice(0, 3).map(asShareCard), actions: flopActions }
-                  : undefined,
-              turn:
-                board.length >= 4
-                  ? { card: asShareCard(board[3]), actions: turnActions }
-                  : undefined,
-              river:
-                board.length >= 5
-                  ? { card: asShareCard(board[4]), actions: riverActions }
-                  : undefined,
+                board.length >= 3 ? { cards: board.slice(0, 3), actions: flopActions } : undefined,
+              turn: board.length >= 4 ? { card: board[3], actions: turnActions } : undefined,
+              river: board.length >= 5 ? { card: board[4], actions: riverActions } : undefined,
               potTotal: st.pot || 0,
               winners: winnerRows,
               /* v4 (2026-09-05). What the LIVE snapshot knows: the hand's own
@@ -19918,9 +19903,12 @@ function LiveTablePage({
         // UNMERGED per-pot(-half) award groups. Everything below that needs
         // "which pot, which half, whose share" reads these; the flat
         // winners[] stays the source of per-player totals.
-        const potAwardsWire = (evt.data as any).pot_awards as
-          | import('../lib/showdownPresentation').PotAwardGroupWire[]
-          | undefined;
+        const potAwardsWire = normalizePotAwardWire(
+          (evt.data as any).pot_awards as
+            | import('../lib/showdownPresentation').PotAwardGroupWire[]
+            | import('../lib/showdownPresentation').FlatPotAwardWire[]
+            | undefined
+        );
         const boardLabel = boardLabelFromAwards(
           potAwardsWire,
           ((evt.data as any).hand_name as string) ||
@@ -25336,6 +25324,12 @@ function LiveTablePage({
   useEffect(() => {
     if (!lightningMeta) return;
     const seed = lightningTableSeed(lightningMeta);
+    // Pool rooms have no tables row, so the physical-table bootstrap never
+    // fills this owner. Use the room's own cluster metadata for its counters.
+    if (lightningMeta.clubId) {
+      actualClubIdRef.current = lightningMeta.clubId;
+      setActualClubIdLoaded(true);
+    }
     setTableState((prev) => {
       const empty = prev.players.every((p) => !p);
       const resize = empty && prev.players.length !== seed.maxPlayers;

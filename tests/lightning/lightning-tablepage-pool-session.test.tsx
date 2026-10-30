@@ -76,6 +76,16 @@ describe('TablePage on a pool-session id', () => {
     expect(PAGE).toMatch(/useLightningPoolSession\(tableId\)/);
   });
 
+  it('uses the cluster owner for counters when the pool room has no tables row', () => {
+    const start = PAGE.indexOf('const lightningMeta = lightningRoom?.meta ?? null;');
+    const end = PAGE.indexOf('/* The Cluster row asked for once', start);
+    const bootstrap = PAGE.slice(start, end);
+    expect(bootstrap).toMatch(/if \(lightningMeta.clubId\) \{/);
+    expect(bootstrap).toContain('actualClubIdRef.current = lightningMeta.clubId;');
+    expect(bootstrap).toContain('setActualClubIdLoaded(true);');
+    expect(bootstrap).not.toContain('currentClubId');
+  });
+
   it('subscribes to one room, the route id, for every hand', () => {
     expect(PAGE).toMatch(/useEngineTableState\(tableId \|\| undefined,/);
     const block = PAGE.slice(

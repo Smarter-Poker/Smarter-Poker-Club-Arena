@@ -96,6 +96,37 @@ describe('useStatsPulse', () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes at local midnight without requiring a new hand and cancels on unmount', async () => {
+    vi.setSystemTime(new Date(2026, 9, 29, 23, 59, 59));
+    rpc.mockResolvedValue(payload('unchanged'));
+    const onChange = vi.fn();
+    const { unmount } = renderHook(() => useStatsPulse({ userId: 'u1', enabled: true, onChange }));
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('refreshes on a short hidden return across midnight even when the pulse is unchanged', async () => {
+    vi.setSystemTime(new Date(2026, 9, 29, 23, 59, 59));
+    rpc.mockResolvedValue(payload('unchanged'));
+    const onChange = vi.fn();
+    renderHook(() => useStatsPulse({ userId: 'u1', enabled: true, onChange }));
+    await flush();
+    act(() => setVisible(false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => setVisible(true));
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it('does nothing when disabled or without a user', async () => {
     const onChange = vi.fn();
     renderHook(() => useStatsPulse({ userId: 'u1', enabled: false, onChange }));

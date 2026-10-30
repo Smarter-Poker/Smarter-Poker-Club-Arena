@@ -87,6 +87,7 @@ export function useStatsPulse({
     let reported = false;
     let hiddenAt: number | null = null;
     let cancelled = false;
+    let displayedDay = new Date().toDateString();
 
     const tick = async () => {
       if (cancelled || inFlight || document.visibilityState !== 'visible') return;
@@ -127,7 +128,9 @@ export function useStatsPulse({
       }
       const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
       hiddenAt = null;
-      if (away >= staleAfterMs) {
+      const currentDay = new Date().toDateString();
+      if (away >= staleAfterMs || currentDay !== displayedDay) {
+        displayedDay = currentDay;
         // One refetch for the return; the next sample is the new baseline.
         last = null;
         onChangeRef.current();
@@ -135,6 +138,23 @@ export function useStatsPulse({
       void tick();
     };
 
+    // Calendar windows change at the viewer's midnight even when no hand is
+    // played. Schedule that exact boundary, rather than waiting for a new fact.
+    let midnightTimer: ReturnType<typeof setTimeout>;
+    const armMidnight = () => {
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      midnightTimer = setTimeout(() => {
+        if (cancelled) return;
+        if (document.visibilityState === 'visible') {
+          displayedDay = new Date().toDateString();
+          last = null;
+          onChangeRef.current();
+        }
+        armMidnight();
+      }, next.getTime() - now.getTime());
+    };
+    armMidnight();
     void tick();
     const timer = setInterval(() => void tick(), intervalMs);
     document.addEventListener('visibilitychange', onVisibility);
@@ -142,6 +162,7 @@ export function useStatsPulse({
     return () => {
       cancelled = true;
       clearInterval(timer);
+      clearTimeout(midnightTimer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [userId, enabled, intervalMs, staleAfterMs, scope, clubId]);

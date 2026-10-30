@@ -1,0 +1,4 @@
+{
+  "_owner": "player-rake-realtime-01a18b24: additive calendar readers promised by 20261030050254; NOT an installed-schema observation",
+  "functions": ["ca_player_rake_stats_calendar", "ca_player_rake_stats_calendar_by_club"]
+}

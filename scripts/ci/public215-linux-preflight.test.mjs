@@ -82,3 +82,109 @@ test('existing image discovery is read-only, exact-source bound and guarded agai
  assert.throws(()=>remoteImageResolutionCommand('main','d'.repeat(40)));
  assert.throws(()=>remoteImageResolutionCommand(sha,'tree;false'));
 });
+
+// The handoff is an explicit immutable input in this already-watched module.
+import {spawnSync} from 'node:child_process';
+import {R7_RESUME_HANDOFF,resumeSelection,resumeProvider,downloadResumeArchive,resumeArchiveFiles,resumeFilesAdmission,inheritedEvidence,commandFacts,failureEvidence,preservePrimary} from './public215-linux-preflight.mjs';
+const pinned=R7_RESUME_HANDOFF,prior=pinned.predecessor;
+function providerFixture(){
+ const run={id:prior.run_id,run_attempt:prior.attempt,head_sha:prior.head_sha,repository:{id:1132369872},head_repository:{id:1132369872},path:'.github/workflows/public215-linux-preflight.yml',event:'workflow_dispatch',head_branch:'main',status:'completed',conclusion:'failure'};
+ const base={run_id:prior.run_id,head_sha:prior.head_sha,status:'completed'};
+ const jobs=[{...base,id:prior.contract_job,name:'contract',conclusion:'success'},{...base,id:prior.evidence_job,name:'evidence',conclusion:'failure',steps:[['Existing protected PR and exact candidate source admission','success'],['Establish existing pinned SSH identity','success'],['Read approved preparations and collect bounded isolated Linux receipts','failure'],['Retain execution receipts only','success']].map(([name,conclusion])=>({name,status:'completed',conclusion}))}];
+ const artifact={id:prior.artifact_id,name:prior.artifact_name,expired:false,size_in_bytes:prior.archive_bytes,digest:'sha256:'+prior.archive_sha256,workflow_run:{id:prior.run_id,repository_id:1132369872,head_repository_id:1132369872,head_branch:'main',head_sha:prior.head_sha}};
+ return {run,jobs,artifact};
+}
+test('six-receipt continuation is pinned to the original dataset/source/stage/image/global identity',()=>{
+ const selected={dataset:pinned.dataset,candidate_sha:pinned.candidate_sha,stage_run:pinned.stage_run,image_id:RESOLVE_EXISTING_IMAGE};
+ assert.equal(resumeSelection(selected,pinned.server_tree,pinned.serving_sha,pinned.image_id),pinned);
+ assert.equal(resumeSelection({...selected,dataset:inputs.dataset},pinned.server_tree,pinned.serving_sha,pinned.image_id),null);
+ for(const field of ['candidate_sha','stage_run'])assert.throws(()=>resumeSelection({...selected,[field]:field==='candidate_sha'?sha:'1'},pinned.server_tree,pinned.serving_sha,pinned.image_id));
+ for(const values of [[sha,pinned.serving_sha,pinned.image_id],[pinned.server_tree,sha,pinned.image_id],[pinned.server_tree,pinned.serving_sha,image]])assert.throws(()=>resumeSelection(selected,...values));
+ assert.equal(pinned.files.length,16);assert.equal(new Set(pinned.files.map(f=>f.name)).size,16);assert.deepEqual(pinned.contexts.map(c=>c.offset),[0,1,2,3,4,5]);
+ assert.deepEqual(Object.keys(invocation(env,{inputs})),['dataset','candidate_sha','image_id','stage_run']);
+});
+test('provider continuation requires the exact first-party completed attempt and successful original source/SSH gates',()=>{
+ const f=providerFixture();resumeProvider(pinned,f.run,f.jobs,f.artifact);
+ for(const change of [{id:1},{run_attempt:2},{head_sha:sha},{event:'pull_request'},{conclusion:'success'},{status:'in_progress'},{repository:{id:1}}])assert.throws(()=>resumeProvider(pinned,{...f.run,...change},f.jobs,f.artifact));
+ for(const change of [{expired:true},{digest:'sha256:'+hex},{id:1},{size_in_bytes:1},{workflow_run:{...f.artifact.workflow_run,head_sha:sha}}])assert.throws(()=>resumeProvider(pinned,f.run,f.jobs,{...f.artifact,...change}));
+ for(let i=0;i<4;i++){const bad=structuredClone(f.jobs);bad[1].steps[i].conclusion=i===2?'success':'skipped';assert.throws(()=>resumeProvider(pinned,f.run,bad,f.artifact));}
+ assert.throws(()=>resumeProvider(pinned,f.run,f.jobs.slice(1),f.artifact));
+ assert.throws(()=>resumeProvider(pinned,f.run,[...f.jobs,{...f.jobs[0],id:1}],f.artifact));
+});
+function zipFixture(mode='valid'){
+ const files=Array.from({length:16},(_,i)=>({name:`file-${i}.json`,value:Buffer.from(`value-${i}`)}));
+ const program=String.raw`import sys,json,io,zipfile,base64,stat
+p=json.load(sys.stdin); out=io.BytesIO()
+with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
+ for i,f in enumerate(p['files']):
+  name=f['name']
+  if i==0 and p['mode']=='traversal': name='../file-0.json'
+  if i==0 and p['mode']=='backslash': name='a'+chr(92)+'file-0.json'
+  if i==1 and p['mode']=='duplicate': name=p['files'][0]['name']
+  info=zipfile.ZipInfo(name)
+  if i==0 and p['mode']=='symlink': info.create_system=3; info.external_attr=(stat.S_IFLNK|0o777)<<16
+  z.writestr(info,base64.b64decode(f['value']))
+sys.stdout.buffer.write(out.getvalue())`;
+ const r=spawnSync('python3',['-c',program],{input:JSON.stringify({mode,files:files.map(f=>({name:f.name,value:f.value.toString('base64')}))}),maxBuffer:1024*1024});assert.equal(r.status,0);
+ const bytes=r.stdout,m={predecessor:{archive_bytes:bytes.length,archive_sha256:createHash('sha256').update(bytes).digest('hex')},files:files.map(f=>({name:f.name,bytes:f.value.length,sha256:createHash('sha256').update(f.value).digest('hex')}))};return {bytes,m,files};
+}
+test('real ZIP reader admits exact bytes and refuses member substitution, duplicates, traversal, symlinks and truncation',()=>{
+ const {bytes,m,files}=zipFixture();const parsed=resumeArchiveFiles(bytes,m);assert.equal(parsed.size,16);for(const f of files)assert.deepEqual(parsed.get(f.name),f.value);
+ for(const mode of ['traversal','backslash','duplicate','symlink']){const bad=zipFixture(mode);assert.throws(()=>resumeArchiveFiles(bad.bytes,bad.m));}
+ assert.throws(()=>resumeArchiveFiles(bytes.subarray(1),m));
+ const wrong=structuredClone(m);wrong.files[0].sha256=hex;assert.throws(()=>resumeArchiveFiles(bytes,wrong));
+ const corrupt=Buffer.from(bytes);corrupt[40]^=1;const tampered={...m,predecessor:{archive_bytes:corrupt.length,archive_sha256:createHash('sha256').update(corrupt).digest('hex')}};assert.throws(()=>resumeArchiveFiles(corrupt,tampered));
+});
+test('official artifact download isolates API credentials and verifies the full pinned ZIP before use',async()=>{
+ const f=zipFixture(),calls=[];
+ const fetchImpl=async(url,options)=>{calls.push({url,options});return calls.length===1?new Response(null,{status:302,headers:{location:'https://artifacts.blob.core.windows.net/object?sig=do-not-print'}}):new Response(f.bytes);};
+ assert.deepEqual(await downloadResumeArchive(f.m,{fetchImpl,token:'test-api-only'}),f.bytes);
+ assert.equal(calls.length,2);assert.equal(calls[0].options.headers.Authorization,'Bearer test-api-only');assert.deepEqual(calls[1].options.headers,{});assert.equal(calls[1].options.redirect,'manual');
+ for(const location of ['http://artifacts.blob.core.windows.net/a','https://evil.example/a','https://user:password@artifacts.blob.core.windows.net/a','https://artifacts.blob.core.windows.net:444/a']){
+  let calls=0;await assert.rejects(downloadResumeArchive(f.m,{token:'test',fetchImpl:async()=>{calls++;return new Response(null,{status:302,headers:{location}});}}));assert.equal(calls,1);
+ }
+ await assert.rejects(downloadResumeArchive(f.m,{token:'test',fetchImpl:async()=>new Response('private signed URL',{status:403})}),e=>JSON.stringify(failureEvidence(e,{phase:'resume'})).includes('403')&&!JSON.stringify(failureEvidence(e,{phase:'resume'})).includes('private'));
+ let n=0;await assert.rejects(downloadResumeArchive(f.m,{token:'test',fetchImpl:async()=>++n===1?new Response(null,{status:302,headers:{location:'https://a.blob.core.windows.net/a'}}):new Response(null,{status:302,headers:{location:'https://evil.example'}})}));assert.equal(n,2);
+});
+function inheritedFixture(){
+ const files=new Map(),model='d'.repeat(64);
+ for(const c of pinned.contexts){
+  const receipt={dataset_id:pinned.dataset,model_checksum:model};const result={format:'public_hist215_preflight_result_v1',receipt,receipt_checksum:digest(receipt),execution_ms_f64:'3ff0000000000000',peak_rss_bytes:1024};
+  const exit={exit_code:0,context_id:c.context_id,request_sha256:c.request_sha256,candidate_sha:pinned.candidate_sha,image_id:pinned.image_id,stage_run:pinned.stage_run,observedAt:'2026-10-30T09:09:10.151Z'};
+  // Deliberately preserve noncanonical original formatting in this fixture.
+  files.set(c.context_id+'.result.json',Buffer.from(JSON.stringify(result,null,2)+'\n'));files.set(c.context_id+'.exit.json',Buffer.from(JSON.stringify(exit,null,2)+'\n'));
+ }return {files,row:{model_checksum:model}};
+}
+test('current preparations reuse exactly six verbatim originals and require 101 fresh executions for the full 107 census',()=>{
+ const {files,row}=inheritedFixture(),output=new Map();let executions=0,imports=0;
+ for(let offset=0;offset<107;offset++){
+  const c=pinned.contexts[offset]||{context_id:offset.toString(16).padStart(64,'0'),request_sha256:hex};
+  const inherited=inheritedEvidence(pinned,files,offset,c.context_id,c.request_sha256,row);
+  if(inherited){imports++;for(const name of inherited)output.set(name,files.get(name));}else executions++;
+ }
+ assert.equal(imports,6);assert.equal(executions,101);assert.equal(imports+executions,107);for(const [name,bytes]of output)assert.equal(bytes,files.get(name));
+ const c=pinned.contexts[0];assert.throws(()=>inheritedEvidence(pinned,files,0,c.context_id,hex,row));assert.throws(()=>inheritedEvidence(pinned,files,0,hex,c.request_sha256,row));assert.throws(()=>inheritedEvidence(pinned,files,0,c.context_id,c.request_sha256,{model_checksum:hex}));assert.throws(()=>inheritedEvidence(pinned,files,6,c.context_id,c.request_sha256,row));
+ for(const change of [{exit_code:1},{image_id:image},{stage_run:'1'},{candidate_sha:sha}]){const bad=new Map(files),name=c.context_id+'.exit.json';bad.set(name,Buffer.from(JSON.stringify({...JSON.parse(files.get(name)),...change})));assert.throws(()=>inheritedEvidence(pinned,bad,0,c.context_id,c.request_sha256,row));}
+});
+test('sanitized failure retains phase/context/offset, distinguishes host refusal from actual native exit, and never leaks stderr',()=>{
+ const secret='https://secret.example/token?sig=do-not-print';
+ const lock=commandFacts({status:75,stderr:'Existing release lock is busy\n'+secret});assert.equal(lock.ssh_exit,75);assert.equal(lock.native_exit,null);assert.equal(lock.host_code,'host_lock_busy');
+ const native=commandFacts({status:1,stderr:'PUBLIC215_PREFLIGHT_WORKER_TERMINAL\nPUBLIC215_NATIVE_EXIT=1\n'+secret});assert.equal(native.native_exit,1);assert.equal(native.native_code,'PUBLIC215_PREFLIGHT_WORKER_TERMINAL');
+ assert.equal(commandFacts({status:0,stderr:'PUBLIC215_NATIVE_EXIT=0\n'}).native_exit,0);
+ assert.equal(commandFacts({status:1,stderr:'PUBLIC215_PREFLIGHT_LINUX_NODE22_REQUIRED\n'}).native_code,'PUBLIC215_PREFLIGHT_LINUX_NODE22_REQUIRED');
+ assert.equal(commandFacts({status:1,stderr:'PUBLIC215_NATIVE_EXIT=1\nPUBLIC215_NATIVE_EXIT=0\n'}).native_exit,null);
+ assert.equal(commandFacts({status:null,error:{code:'ETIMEDOUT'},signal:'SIGTERM'}).errno,'ETIMEDOUT');
+ assert.equal(commandFacts({status:1,stderr:'PUBLIC215_PREFLIGHT_SECRET_VALUE\n'}).native_code,null);
+ const evidence=failureEvidence(Error(secret),{phase:'native',offset:6,context_id:hex,request_sha256:hex});assert.equal(evidence.offset,6);assert.equal(evidence.code,'contract_refused');assert.doesNotMatch(JSON.stringify(evidence),/secret|sig=|do-not-print/);
+});
+test('a failed final health read cannot replace the primary native failure',async()=>{
+ const primary=Error('primary'),secondary=Error('secondary'),observed=[];
+ await assert.rejects(preservePrimary(async()=>{throw primary;},async()=>{throw secondary;},e=>observed.push(e)),e=>e===primary);assert.deepEqual(observed,[secondary]);
+ await assert.rejects(preservePrimary(async()=>{},async()=>{throw secondary;},()=>assert.fail()),e=>e===secondary);
+});
+test('owned contract labels remain actionable while arbitrary errors and failed secondary writes stay redacted',async()=>{
+ let refusal;try{resumeSelection({...inputs,dataset:pinned.dataset},pinned.server_tree,pinned.serving_sha,pinned.image_id);}catch(error){refusal=error;}
+ assert.match(refusal.message,/Explicit R7 continuation identity differs/);const evidence=failureEvidence(refusal,{phase:'resume',offset:null,context_id:null,request_sha256:null});assert.equal(evidence.facts.contract,'Explicit R7 continuation identity differs');
+ const primary=Error('untrusted failure');await assert.rejects(preservePrimary(async()=>{throw primary;},async()=>{throw Error('post-health');},()=>{throw Error('disk');}),e=>e===primary);
+ assert.equal(failureEvidence(primary,{phase:'native'}).secondary_evidence_unavailable,true);
+});

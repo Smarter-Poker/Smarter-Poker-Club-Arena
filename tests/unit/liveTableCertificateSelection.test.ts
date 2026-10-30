@@ -50,6 +50,62 @@ const running = {
   blind_structure: [level(10), level(10), level(10), level(10), level(10), level(10), level(10)],
 };
 
+it('opens Cash Games before the Lightning lobby readiness assertion', async () => {
+  const source = readFileSync(
+    join(__dirname, '../e2e/production-lightning-lobby-join.spec.ts'),
+    'utf8'
+  );
+  const start = source.indexOf('    const offer = diamondEntryRead(page);');
+  const end = source.indexOf('    await settleDiamondSpinsOffer(page, offer);', start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const readiness: string[] = [];
+  let cashSectionOpen = false;
+  const page = {
+    goto: async () => {},
+    locator: () => ({ first: () => ({ cashCards: true }) }),
+    getByRole: (role: string, { name }: { name: string }) => ({
+      waitFor: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected section control: ${role} ${name}`);
+      },
+      getAttribute: async () => (cashSectionOpen ? 'true' : 'false'),
+      click: async () => {
+        if (role !== 'button' || name !== 'Cash Games')
+          throw new Error(`Unexpected browse action: ${role} ${name}`);
+        cashSectionOpen = true;
+        readiness.push('cash-section-open');
+      },
+    }),
+  };
+  const runReadiness = new Function(
+    'page',
+    'club',
+    'expect',
+    'prepareCashLobbyActions',
+    'diamondEntryRead',
+    'openLobbyGameSection',
+    transpileModule(`async function run() {${source.slice(start, end)}}`, {}).outputText +
+      '\nreturn run();'
+  );
+  await runReadiness(
+    page,
+    'fixture',
+    (target: unknown) => ({
+      not: { toHaveURL: async () => {} },
+      toBeVisible: async () => {
+        if (!(target as { cashCards?: boolean }).cashCards || !cashSectionOpen)
+          throw new Error('Cash Games must open before Lightning cash rows are ready');
+        readiness.push('cash-rows-ready');
+      },
+    }),
+    async () => {},
+    () => ({}),
+    openLobbyGameSection
+  );
+  expect(readiness).toEqual(['cash-section-open', 'cash-rows-ready']);
+});
+
 describe('an MTT table is selected only if its tournament can yield an eligible HUD clock', () => {
   it('excludes a currently eligible synchronized clock whose recovery look-ahead reaches the break', () => {
     const synchronized = { ...running, synchronized_breaks: true };

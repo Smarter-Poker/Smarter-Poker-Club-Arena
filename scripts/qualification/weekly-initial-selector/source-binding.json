@@ -108,8 +108,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 254559,
-      "sha256": "1b38bd7edac1d6748f9f0e6b8396e223c2d8c5b8a8543f5a7e7e718504974b2f"
+      "bytes": 255032,
+      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1276,5 +1276,26 @@
       "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
     },
     "financial_recertification": false
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "mergedUnionAndClientCiSourceAudit20261030": {
+    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
+    "currentCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    }
   }
 }

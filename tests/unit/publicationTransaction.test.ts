@@ -130,6 +130,30 @@ describe('one publication transaction follows parallel preparation', () => {
           label +
           "' || 'ubuntu-latest' }}";
         if (key === 'client-tests') {
+          expect(body.strategy).toEqual({
+            'fail-fast': true,
+            matrix: { shard: Array.from({ length: 16 }, (_, index) => index + 1) },
+          });
+          body.strategy = { 'fail-fast': true, matrix: { shard: [1, 2, 3, 4] } };
+          const suite = body.steps.filter((step: any) =>
+            step.name?.startsWith('Client tests must pass')
+          );
+          expect(suite).toHaveLength(1);
+          expect(suite[0].name).toBe(
+            'Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/16)'
+          );
+          expect(suite[0].run).toBe(
+            'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/16'
+          );
+          body.steps = body.steps.map((step: any) =>
+            step === suite[0]
+              ? {
+                  ...step,
+                  name: 'Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)',
+                  run: 'node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4',
+                }
+              : step
+          );
           expect(body.env.VITEST_MAX_THREADS).toBe(4);
           body.env = {
             ...body.env,

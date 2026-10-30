@@ -256,10 +256,11 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    # Partition the same selected client files sixteen ways; all results still gate production.
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     env:
       HUSKY: '0'
       VITEST_MAX_THREADS: 4
@@ -292,11 +293,11 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
+      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/16)
         env:
           CI_BASE_SHA: ${{ needs.publish-needed.outputs.selection_base }}
           CI_HEAD_SHA: ${{ needs.publish-needed.outputs.target_sha }}
-        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/4
+        run: node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/16
 
   build-and-store:
     needs: publish-needed

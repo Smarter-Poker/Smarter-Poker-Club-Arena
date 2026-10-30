@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_ca_escrow_on_rake_record()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_rake_record()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_fee numeric := round(COALESCE(NEW.rake_amount,0),2);\nBEGIN\n  IF NOT COALESCE(NEW.is_tournament,false) OR NEW.tournament_id IS NULL THEN\n    RETURN NULL;\n  END IF;\n  IF v_fee < 0 AND NEW.source IN (\n       'atomic_cancel_tournament',\n       'fn_unregister_from_tournament') THEN\n    RETURN NULL;\n  END IF;\n  IF NEW.source = 'fn_award_satellite_seat' THEN\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.tournament_id,'satellite seat fee',\n      p_satellite_fee_in => v_fee,\n      -- Version 2 transfer gross already excludes its fee; legacy gross does not.\n      p_satellite_in => CASE WHEN NEW.metadata->>'entry_split_version'='2'\n                            THEN 0 ELSE -v_fee END);\n  ELSE\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.tournament_id,'entry fee',p_fee_entries_in => v_fee);\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+    "definition_md5": "0dc096bb5615758ed945365a45997c8c"
+  }
+]

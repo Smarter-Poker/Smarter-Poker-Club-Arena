@@ -34,6 +34,10 @@ def qualify(q,R,results,r2,r3,prep,calc):
     failed=q('SET check_function_bodies=off;'+broken,check=False)
     assert failed.returncode and 'credit_tracking_owner_preimage_changed' in failed.stderr,failed.stderr[-3000:]
     assert q("SELECT to_regclass('agent_credit_weekly_basis')IS NULL").stdout.strip()=='t'
+    post_fault=candidate.replace('1ee7dc270ba19bf1b6a4a894900d9b38','00000000000000000000000000000000')
+    failed=q('SET check_function_bodies=off;'+post_fault,check=False)
+    assert failed.returncode and 'credit_tracking_owner_postimage_changed'in failed.stderr,failed.stderr[-3000:]
+    assert q("SELECT to_regclass('agent_credit_weekly_basis')IS NULL AND to_regclass('agent_credit_weekly_scopes')IS NULL").stdout.strip()=='t'
     q('SET check_function_bodies=off;'+candidate)
     replay=q('SET check_function_bodies=off;'+candidate,check=False)
     assert replay.returncode and 'credit_tracking_owner_preimage_changed' in replay.stderr
@@ -58,6 +62,7 @@ def qualify(q,R,results,r2,r3,prep,calc):
     payment=lambda amt,method='wallet',op='payment':"fn_process_credit_invoice_payment("+invoice+","+str(amt)+",'"+method+"',caw_u('"+op+"'),"+("'external-native-reference'"if method=='external'else'NULL')+")"
     actor="SELECT set_config('test.credit_actor',caw_u('A')::text,true);"
     case('frozen-before-real-r2-and-r3',"SELECT "+prep+";SELECT "+calc+";SELECT own_pause_round(2);SELECT "+r2+";SELECT caw_assert((SELECT debt_owed=500 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'line500 minus wallet0 before R2');SELECT own_pause_round(3);SELECT "+r3+";SELECT caw_assert((SELECT debt_owed=500 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'R3 own earnings never netted');SELECT caw_assert((SELECT agent_wallet_before_rakeback=0 AND credit_line=500 FROM agent_credit_weekly_basis WHERE agent_id=caw_u('agentA')),'immutable zero basis');SELECT "+r2+";SELECT caw_assert((SELECT count(*)=1 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'retry one invoice');")
+    case('fallback-r2-snapshots-before-paying',"SELECT "+prep+";SELECT "+calc+";SELECT own_pause_round(2);SELECT "+r2.replace('commission_stage(','commission_stage_v3(')+";SELECT caw_assert((SELECT debt_owed=500 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'fallback freezes before commission');")
     case('wallet-topup-and-replay',capture+actor+"SELECT caw_assert(("+payment(125)+")->>'success'='true','funded player topup');SELECT caw_assert(("+payment(125)+")->>'duplicate'='true','idempotent topup');SELECT caw_assert((SELECT agent_wallet_balance=125 AND credit_used=0 FROM agents WHERE id=caw_u('agentA')),'agent restored credit untouched');SELECT caw_assert((SELECT chip_balance=875 FROM club_members WHERE user_id=caw_u('A')AND club_id=caw_u('club')),'player source charged once');SELECT caw_assert((SELECT amount_remaining=375 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'invoice remainder');")
     case('external-topup-and-reference-replay',capture+"SELECT set_config('test.credit_actor',caw_u('O')::text,true);SELECT caw_assert(("+payment(100,'external')+")->>'success'='true','bank funds external topup');SELECT caw_assert(("+payment(100,'external','different-operation')+")->>'duplicate'='true','same reference not applied twice');SELECT caw_assert((SELECT agent_wallet_balance=100 AND credit_used=0 FROM agents WHERE id=caw_u('agentA')),'external restores wallet');")
     case('no-unfunded-wallet-topup',capture+actor+"SELECT caw_assert(("+payment(5000)+")->>'reason'='amount_exceeds_remaining','overpayment refused');SELECT caw_assert((SELECT agent_wallet_balance=0 FROM agents WHERE id=caw_u('agentA')),'no minted chips');")
@@ -65,6 +70,7 @@ def qualify(q,R,results,r2,r3,prep,calc):
     case('missing-pre-rakeback-basis',"SELECT fn_generate_scope_credit_invoices(caw_u('club'),'2026-10-19 07:00Z','2026-10-26 07:00Z');",'pre_rakeback_credit_basis_required')
     case('no-rakeback-reduction-on-retry',capture+actor+"SELECT "+payment(100)+";"+capture+"SELECT caw_assert((SELECT debt_owed=500 AND amount_remaining=400 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'retry original terms after topup');")
     case('next-week-does-not-double-bill',capture+actor+"SELECT "+payment(100)+";SELECT fn_capture_agent_credit_week(ARRAY[caw_u('club')],'2026-10-19 07:00Z','2026-10-26 07:00Z','club',caw_u('club'));SELECT caw_assert((SELECT sum(amount_remaining)=400 AND count(*)=2 FROM credit_invoices WHERE agent_id=caw_u('agentA')),'current shortfall only, prior immutable totals retained');")
+    case('late-agent-keeps-closed-week-immutable',capture+"UPDATE agents SET credit_limit=250,is_prepaid=false WHERE id=caw_u('agentS');"+capture+"SELECT caw_assert(NOT EXISTS(SELECT FROM agent_credit_weekly_basis WHERE agent_id=caw_u('agentS')),'new agent cannot be added after snapshot');SELECT fn_generate_scope_credit_invoices(caw_u('club'),'2026-10-12 07:00Z','2026-10-19 07:00Z');SELECT caw_assert((SELECT count(*)=1 FROM credit_invoices),'late agent neither rebilled nor blocks close');")
     case('invalid-balance-refused',"UPDATE agents SET credit_limit='NaN' WHERE id=caw_u('agentA');"+capture,'agent_credit_weekly_basis')
 
     send="fn_agent_wallet_send_core_20260830(caw_u('club'),caw_u('A'),50,'player_wallet','Synthetic funded send',caw_u('send'))"

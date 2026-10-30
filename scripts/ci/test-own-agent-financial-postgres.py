@@ -459,6 +459,7 @@ try:
     inputs={**source_inputs,**inputs}
     tracking_spec=importlib.util.spec_from_file_location('credit_tracking_native',R/'scripts/ci/credit_tracking_native.py');tracking_module=importlib.util.module_from_spec(tracking_spec);tracking_spec.loader.exec_module(tracking_module)
     tracking_module.qualify(q,R,results,nr2,nr3,prep,calc)
+    inputs={**source_inputs,**inputs,str(Path("scripts/ci/credit_tracking_native.py")):hashlib.sha256((R/"scripts/ci/credit_tracking_native.py").read_bytes()).hexdigest()}
     if A.output:A.output.write_text(json.dumps({'status':'fragment_compiler_passed'if A.compile_fragments else'passed','whole_installer':not A.compile_fragments,'input_sha256':inputs,'actual_document_pipeline':document_proof,'history_only_no_messenger':True,'cases':results,'postimages':postimages},indent=2)+'\n')
     print(json.dumps({'status':'source-and-financial-passed','cases':results}))
 finally:

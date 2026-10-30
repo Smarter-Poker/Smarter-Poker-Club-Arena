@@ -2049,6 +2049,10 @@ export interface HorseDecideOpts {
    *  6-5-Q-9-3 over a river raise on 200 of 200 seeds. Disable to ablate
    *  (default: enabled; league matchup v51_river_flat). */
   v51RiverFlat?: boolean;
+  /** V61 (2026-10-29): Hold'em one-pair river calls are shaded 6-12 equity
+   * points against the price unless the bettor's read says they over-bluff.
+   * Default on; explicit false keeps the unshaded V38 verdict. */
+  v61RiverOnePairShade?: boolean;
   /** V55: river Omaha sets/trips on a board permitting stronger hands do
    * not turn a qualified call into a raise. Opt-in until the separate
    * PLO4/PLO5 cards qualify it. PLO6 remains unqualified after an inert
@@ -10242,8 +10246,36 @@ export class HorseLogic {
       );
       const risk38 = risk > 0 && stack > 0 ? risk : 0;
       if (isRiver) {
+        // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE (2026-10-29) ═══ Hold'em,
+        // one board: a one-pair hand (or two pair sharing the board's pair)
+        // calling a river wager is a bluff-catcher, and the range read it is
+        // priced against is too bluff-heavy. Measured over 14 days of NLH
+        // review stack-offs (cash and tournament alike): those calls won
+        // 17-18% when the price was under a quarter of the pot, 21-22% at a
+        // quarter to a half, and 14% at a half to a full pot, against the
+        // 20/29/40% the price demands; -1,146,000bb between them. The shade
+        // scales with the price and is withheld when the bettor's read says
+        // they over-bluff (respect below 1), so a credible bluffer is still
+        // called down. Omaha, multiple boards and bomb pots keep their own
+        // pricing; the committed branch above already owns a stack that is in.
+        let shade61 = 0;
+        if (
+          (opts.v61RiverOnePairShade ?? true) !== false &&
+          !vi.isOmaha &&
+          !vi.isShortDeck &&
+          vi.holeCount === 2 &&
+          !multiBoard36 &&
+          !gs.bombPot &&
+          respect >= 1 &&
+          cat > 0 &&
+          (cat <= 2 || (cat === 3 && pairedBoard)) &&
+          pot > 0
+        ) {
+          shade61 = Math.min(0.12, 0.06 + 0.12 * Math.min(1, toCall / pot));
+          if (tele15) noteFire('v61_river_one_pair_shade');
+        }
         const v = riverCallVerdict({
-          equity: eqRead38,
+          equity: clamp01(eqRead38 - shade61),
           pot,
           toCall,
           stack,

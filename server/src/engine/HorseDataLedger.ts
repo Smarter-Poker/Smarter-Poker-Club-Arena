@@ -727,6 +727,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V57'
   ),
   flag(
+    'v61RiverOnePairShade',
+    'Hold em one-pair (or board-paired two pair) river calls are shaded 6-12 equity points against the price unless the bettor reads as an over-bluffer; measured 14-day review stack-offs won 14-22% at prices demanding 20-40%; explicit off arm retained',
+    'V61'
+  ),
+  flag(
     'v60CashPressure',
     'Dan 2026-10-24 NLH cash pressure: blinds and late position value 3-bet a single open from their measured hand shares, re-steal volume matches the tournament layer, and the opener defends a 3-bet from the top 10% in position and top 8% out of it up to 100bb; explicit off arm retained for the neutrality corpus',
     'V60'
@@ -2115,6 +2120,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V38',
     'decide',
     0.002
+  ),
+  receipt(
+    'v61_river_one_pair_shade',
+    'HorseLogic (V61)',
+    'Hold em one-pair river call shaded against the price',
+    'V61',
+    'decide',
+    0.001
   ),
   receipt(
     'v38_river_fold',

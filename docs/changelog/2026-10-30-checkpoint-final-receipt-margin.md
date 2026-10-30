@@ -73,3 +73,10 @@ existing law now pins exactly two exits: awaited publication first, publication
 failure only exit1, then the unchanged sole native deferral predicate for75/1.
 Its negative permutations, original shell intent rules and245-second reserve
 remain unchanged. The failed first push did not publish the branch.
+
+Protected main later added bounded native census counts in#8766, intersecting
+the same client and transport fixture. Integration preserves that complete
+change, every incoming migration and qualification binding, and both sets of
+fixture scenarios and assertions. The two fixture conflicts are resolved by
+selecting census refusals before the existing hang modes and retaining both
+independent receipt and census assertion blocks. No migration is replayed.

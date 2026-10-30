@@ -7,9 +7,7 @@
       "contains": "cd6746ff38cba31201c2ee652890b4375d2f8600",
       "notBefore": "2026-10-30T18:30:00Z",
       "notAfter": "2026-10-30T22:30:00Z",
-      "announceAtChicagoMinutes": [
-        53
-      ],
+      "announceAtChicagoMinutes": [53],
       "migrations": [],
       "releaseWitness": {
         "path": "server/release/activation-floor.json",

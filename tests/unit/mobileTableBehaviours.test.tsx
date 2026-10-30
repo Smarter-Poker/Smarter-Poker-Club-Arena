@@ -17,7 +17,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { render, act, cleanup } from '@testing-library/react';
-import { transpileModule } from 'typescript';
+import ts, { transpileModule } from 'typescript';
 import { ChipAnimationManager } from '../../src/components/table/ChipAnimation';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -279,6 +279,47 @@ describe('every awarded pot plays its animation', () => {
 
   it('synthesises a fan when the award groups produce none', () => {
     expect(TABLE_PAGE).toContain("'TablePage.pot_win_no_award_groups'");
+  });
+
+  it('never lets a periodic TablePage callback retire chip state', () => {
+    const source = ts.createSourceFile(
+      'TablePage.tsx',
+      TABLE_PAGE,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    const periodicWriters: number[] = [];
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isCallExpression(node) &&
+        (ts.isIdentifier(node.expression)
+          ? node.expression.text === 'setInterval'
+          : ts.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === 'setInterval')
+      ) {
+        const callback = node.arguments[0];
+        const findWriter = (child: ts.Node) => {
+          if (
+            ts.isCallExpression(child) &&
+            ts.isIdentifier(child.expression) &&
+            child.expression.text === 'setChipAnimations'
+          ) {
+            periodicWriters.push(
+              source.getLineAndCharacterOfPosition(child.getStart(source)).line + 1
+            );
+          }
+          ts.forEachChild(child, findWriter);
+        };
+        if (callback) findWriter(callback);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(
+      periodicWriters,
+      'mounted flights retire through their own completion, never an interval'
+    ).toEqual([]);
   });
 
   it.each([0, 20_000])(

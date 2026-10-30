@@ -11,6 +11,9 @@ const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 describe('durable original continuation qualification remains connected', () => {
   it.each([
     'scripts/ci/test-hand-continuation.py',
+    'scripts/ci/fixtures/hand-continuation/retain_shared_lane_qualification.py',
+    'scripts/ci/fixtures/hand-continuation/build-retain-shared-lane.py',
+    'supabase/migrations/20261029231647_retained_original_hands_share_their_tournament_table_lane.sql',
     'scripts/ci/played_clock_floor_cases.py',
     'scripts/ci/build-played-level-recovery-migration.py',
     'scripts/ci/fixtures/played-clock-floor/opening.sql',
@@ -95,5 +98,27 @@ describe('durable original continuation qualification remains connected', () => 
     expect(chairs).toContain('stale-generation');
     expect(chairs).toContain('duplicate-roster');
     expect(chairs).toContain('terminal+final');
+  });
+  it('runs the original save shared-lane regression through the existing PostgreSQL owner', () => {
+    const runner = read('scripts/ci/test-hand-continuation.py');
+    expect(runner).toContain(
+      "module(ROOT/DATA/'retain_shared_lane_qualification.py','retain_shared_lane').qualify(e,ROOT,hand,db)"
+    );
+    const native = read(
+      'scripts/ci/fixtures/hand-continuation/retain_shared_lane_qualification.py'
+    );
+    for (const evidence of [
+      'retain-old-sibling-projection-blocks',
+      'retain-new-sibling-projection-progress',
+      'retain-blocks-terminal',
+      'retain-full-original-financial-boundaries',
+      'same-table',
+      'lease',
+    ]) {
+      expect(native).toContain(evidence);
+    }
+    expect(runner).toContain(
+      "Path('supabase/migrations/20261029231647_retained_original_hands_share_their_tournament_table_lane.sql')"
+    );
   });
 });

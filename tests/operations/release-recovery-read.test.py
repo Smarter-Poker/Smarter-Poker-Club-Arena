@@ -355,6 +355,99 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual([sign['category'] for sign in signs], ['certificate_shut'])
         self.assertEqual(signs[0]['details'][:3], [296969, 1, 1])
 
+    def recovery_messages(self):
+        prefix = '[engine-release-transaction] '
+        return [
+            (prefix + 'newer release ' + 'c' * 40 + ' (run 40980634821-1) is in flight and owns any off-cycle window; this release waits for the scheduled break', 'recovery_newer_owner'),
+            (prefix + 'legacy inspector absence is not proved; no recovery window requested and no inspector was touched', 'recovery_inspector_unproved'),
+            (prefix + 'recovery announcement reservation could not be established; no window was announced, waiting for the scheduled break', 'recovery_reservation_unestablished'),
+            (prefix + 'off-cycle window wanted (owner-ordered private-window-fixture) but one was already announced in the last hour; waiting for the scheduled break', 'recovery_rate_limited'),
+        ] + [(prefix + 'fixed recovery announcement 1793318108736: ' + status + '; existing certificate and rollback budget remain required', 'recovery_announcement_' + status)
+             for status in ['accepted', 'active', 'pending', 'busy', 'expired', 'use_hourly', 'unavailable', 'unknown']]
+
+    def recovery_signs(self, messages, native=False):
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        def journal(args):
+            selected = messages
+            if native:
+                pattern = next(arg.removeprefix('--grep=') for arg in args if arg.startswith('--grep='))
+                result = subprocess.run(['grep', '-E', pattern], input='\n'.join(messages) + '\n',
+                                        capture_output=True, text=True, timeout=2)
+                self.assertIn(result.returncode, [0, 1], result.stderr)
+                self.assertIn('--lines=12', args)
+                selected = result.stdout.splitlines()[-12:]
+            rows = [{'_SYSTEMD_INVOCATION_ID': unit['invocationId'],
+                     '_SYSTEMD_UNIT': 'club-arena-engine-release-v1@' + request['runKey'] + '.service',
+                     '__REALTIME_TIMESTAMP': str(1793318108736000 + ordinal * 1000), 'MESSAGE': message}
+                    for ordinal, message in enumerate(selected)]
+            return types.SimpleNamespace(returncode=0, stdout='\n'.join(json.dumps(row) for row in rows).encode())
+        with patch.object(R, 'bounded_journal', side_effect=journal):
+            return R.pending_journal(request, unit)
+
+    def test_pending_recovery_producer_messages_export_closed_categories_only(self):
+        cases = self.recovery_messages()
+        signs = self.recovery_signs([message for message, _ in cases])
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        self.assertTrue(all(sign['details'] is None for sign in signs))
+        R.validate_pending_signs(signs)
+        body = json.dumps(signs)
+        for private in ['c' * 40, '40980634821', 'private-window-fixture']:
+            self.assertNotIn(private, body)
+        producer = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
+        for literal in ['newer release ${newer#* } (run ${newer%% *})',
+                        'legacy inspector absence is not proved; no recovery window requested',
+                        'recovery announcement reservation could not be established; no window was announced',
+                        'off-cycle window wanted ($reason) but one was already announced',
+                        'fixed recovery announcement $stamp: $outcome; existing certificate and rollback budget remain required']:
+            self.assertIn(literal, producer)
+
+    def test_pending_recovery_native_selector_retains_the_maintained_forms(self):
+        cases = self.recovery_messages()
+        signs = self.recovery_signs([message for message, _ in cases], native=True)
+        self.assertEqual([sign['category'] for sign in signs], [category for _, category in cases])
+        for reason in ['engine-degraded liveness=dead', 'engine-degraded wholeFleetStalled',
+                       'engine-degraded tournamentManagersQuarantined=100',
+                       'engine-degraded liveness=dead,wholeFleetStalled,tournamentManagersQuarantined=101']:
+            message = cases[3][0].replace('owner-ordered private-window-fixture', reason)
+            self.assertEqual(self.recovery_signs([message], native=True)[0]['category'], 'recovery_rate_limited')
+
+    def test_pending_recovery_malformed_private_tails_are_not_classified(self):
+        cases = self.recovery_messages()
+        malformed = [cases[0][0].replace('c' * 40, 'C' * 40),
+                     cases[0][0].replace('40980634821-1', 'private-run'),
+                     cases[1][0] + ' private endpoint', cases[2][0] + ' private reason',
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'private cause'),
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'engine-degraded private=1'),
+                     cases[3][0].replace('owner-ordered private-window-fixture', 'owner-ordered ' + 'x' * 65),
+                     cases[4][0].replace(': accepted;', ': private;'),
+                     cases[4][0].replace('1793318108736', '9999999999999'),
+                     cases[4][0] + ' private endpoint']
+        self.assertEqual(self.recovery_signs(malformed), [])
+
+    def test_pending_recovery_export_refuses_unknown_statuses_and_details(self):
+        sign = {'category': 'recovery_announcement_accepted', 'observedAtMs': 1793318108736, 'details': None}
+        R.validate_pending_signs([sign])
+        for mutation in [{'category': 'recovery_announcement_private'}, {'details': [1793318108736]},
+                         {'reason': 'private fixture'}]:
+            with self.assertRaises(ValueError): R.validate_pending_signs([{**sign, **mutation}])
+
+    def test_pending_recovery_latest_rows_preserve_unknown_earlier_evidence(self):
+        early = ('[engine-release-transaction] the restart certificate is shut with 296969ms of the break left: '
+                 "unparkedTables=1 unparkedReasons={'cards_in_air': 1} handsInFlightTotal=1")
+        signs = self.recovery_signs([early] + [self.recovery_messages()[1][0]] * 20, native=True)
+        self.assertEqual(len(signs), 12)
+        self.assertTrue(all(sign['category'] == 'recovery_inspector_unproved' for sign in signs))
+        request = {**REQUEST, 'mode': 'pending_transaction'}
+        rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+                'private fixture', '/usr/local/lib/club-arena/engine-control-generations/' + 'b' * 40,
+                'b' * 40, '1791829999']
+        unit = {'activeState': 'activating', 'subState': 'start', 'invocationId': '1' * 32}
+        answer = R.pending_observation(request, rows, rows, [REQUEST['releaseSha']], None, unit, signs)
+        self.assertIn('unknown', answer['absenceMeans'])
+        self.assertLessEqual(len(json.dumps(answer).encode()), 4096)
+        self.assertEqual(R.validate_reply(answer, request), answer)
+
     def test_pending_twelve_causal_signs_fit_unchanged_transport_on_realistic_full_counts(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
         rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',

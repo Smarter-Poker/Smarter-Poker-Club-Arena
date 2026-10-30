@@ -456,7 +456,7 @@ function SeatsMeter({ entry }: { entry: LobbyEntry }) {
 function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   /* null, not an empty span: a non-empty cell defeats `td:empty` and reserves
      34px on every tournament row. */
-  if (entry.kind !== 'cash' || !ctx.onToggleFavorite) return null;
+  if (!ctx.onToggleFavorite) return null;
   const isFav = ctx.favoriteIds.has(entry.id);
   return (
     <button
@@ -467,7 +467,7 @@ function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
       title={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       onClick={(e) => {
         e.stopPropagation();
-        ctx.onToggleFavorite?.(entry.id, !isFav);
+        ctx.onToggleFavorite?.(entry.id, !isFav, entry.kind);
       }}
     >
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -783,7 +783,10 @@ const COL_STATUS: ColumnDef = {
           on their last bought seat rather than at a time, so "Starts In 29
           Min..." beside a badge reading Filling was two different answers to
           the same question; and a cash game is running now. */}
-      <LobbyStatusBadge status={e.status} label={e.statusLabel} />
+      <LobbyStatusBadge
+        status={e.status}
+        label={e.kind !== 'cash' && e.status === 'late_reg' ? 'Running' : e.statusLabel}
+      />
     </span>
   ),
 };
@@ -1354,6 +1357,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          other tab the name already sits first behind the favourite star. */
       return [
         COL_TNAME,
+        COL_FAV,
         COL_STARTS,
         { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
@@ -1392,6 +1396,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          here because a player who has never opened a Spin has no way to know
          that, not because it varies. */
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -1405,6 +1410,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       ];
     case 'SNG':
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -2263,6 +2269,7 @@ export default function LobbyTable({
                 onClick={() => onSelect(entry)}
               >
                 <td>
+                  <FavCell entry={entry} ctx={rowCtx} />
                   <button
                     type="button"
                     className="compact-lobby__open"

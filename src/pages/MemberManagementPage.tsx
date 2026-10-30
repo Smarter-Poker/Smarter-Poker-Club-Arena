@@ -142,7 +142,7 @@ export default function MemberManagementPage() {
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const recordRefreshRef = useRef<() => void>(() => {});
-  const authorityRefreshRef = useRef<() => void>(() => {});
+  const authorityRefreshRef = useRef<(refreshMetrics?: boolean) => void>(() => {});
   const [recordRevision, setRecordRevision] = useState(0);
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [downline, setDownline] = useState<DownlineMember[]>([]);
@@ -164,6 +164,7 @@ export default function MemberManagementPage() {
   const [myRole, setMyRole] = useState<ClubRole>('player');
   const [myRoleLoaded, setMyRoleLoaded] = useState(false);
   const detailAbortRef = useRef<AbortController | null>(null);
+  const detailReadRevisionRef = useRef(0);
   const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
   const [rangeMode, setRangeMode] = usePlayerPreference<RangeMode>(
@@ -253,6 +254,9 @@ export default function MemberManagementPage() {
     accessDenialRef.current = { key: walletScopeKey, revision: 0, detail: null };
   const applyAccessDenial = (value: MemberDetail, denied: MemberDetail): MemberDetail => ({
     ...value,
+    ...(!denied.capabilities.can_view_financials
+      ? { stats: null, wallets: null, downline: null }
+      : {}),
     capabilities: {
       ...denied.capabilities,
       can_view_financials:
@@ -346,9 +350,9 @@ export default function MemberManagementPage() {
         : null,
     event: 'record_changed',
     enabled: !!resolvedClubId && !!user?.id,
-    onPayload: () => authorityRefreshRef.current(),
+    onPayload: () => authorityRefreshRef.current(true),
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') authorityRefreshRef.current();
+      if (status === 'SUBSCRIBED') authorityRefreshRef.current(true);
     },
     onSubscriptionError: () => toast.error('The Live Member Connection Could Not Be Established.'),
   });
@@ -390,6 +394,7 @@ export default function MemberManagementPage() {
 
   const loadDetail = useCallback(
     async (activeRange: MemberRange, getIsMounted?: () => boolean, background = false) => {
+      detailReadRevisionRef.current += 1;
       detailAbortRef.current?.abort();
       const controller = new AbortController();
       detailAbortRef.current = controller;
@@ -458,7 +463,6 @@ export default function MemberManagementPage() {
           activeRange,
           controller.signal
         );
-        const downlineResult = await downlineRead;
         if (!live()) return;
         detailOwnerRef.current = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
         const reconciledWallets = walletUpdatesRef.current.reconcile(
@@ -477,40 +481,56 @@ export default function MemberManagementPage() {
         setDetail(currentDetail);
         setLoadError(false);
         setRefreshFailed(false);
-        if (!currentDetail.capabilities.can_view_financials) {
-          setDownline([]);
-          setDownlineFailed(false);
-        } else if (downlineResult.ok) {
-          setDownline(downlineResult.rows);
-          setDownlineFailed(false);
-          if (!background) setDownlineShown(DOWNLINE_RENDER_CAP);
-        } else {
-          // Keep any downline already shown; the section says it is stale.
-          reportError(downlineResult.error, 'MemberManagementPage.loadDownline');
-          setDownlineFailed(true);
-        }
+        // Publish the verified record without waiting for its independent section.
+        setLoading(false);
+        void downlineRead.then((downlineResult) => {
+          if (!live()) return;
+          if (
+            (accessDenialRef.current.revision > accessRevision &&
+              !accessDenialRef.current.detail?.capabilities.can_view_financials) ||
+            !currentDetail.capabilities.can_view_financials
+          ) {
+            setDownline([]);
+            setDownlineFailed(false);
+          } else if (downlineResult.ok) {
+            setDownline(downlineResult.rows);
+            setDownlineFailed(false);
+            if (!background) setDownlineShown(DOWNLINE_RENDER_CAP);
+          } else {
+            reportError(downlineResult.error, 'MemberManagementPage.loadDownline');
+            setDownlineFailed(true);
+          }
+        });
         setRecordRevision((revision) => revision + 1);
 
         // Whoever is reading decides what this page lets them do. One row, and
         // only for the viewer, so it costs a single indexed lookup.
         if (user?.id) {
-          const mine = await runRosterReadWithRetry(
-            async (signal) => {
-              const result = await supabase
-                .from('club_members')
-                .select('role')
-                .eq('club_id', resolved)
-                .eq('user_id', user.id)
-                .abortSignal(signal)
-                .maybeSingle();
-              if (result.error) throw result.error;
-              return result.data;
-            },
-            { attempts: 1, timeoutMs: 8_000, signal: controller.signal }
-          );
-          if (live()) {
-            setMyRole(normaliseRole(mine?.role));
-            setMyRoleLoaded(true);
+          try {
+            const mine = await runRosterReadWithRetry(
+              async (signal) => {
+                const result = await supabase
+                  .from('club_members')
+                  .select('role')
+                  .eq('club_id', resolved)
+                  .eq('user_id', user.id)
+                  .abortSignal(signal)
+                  .maybeSingle();
+                if (result.error) throw result.error;
+                return result.data;
+              },
+              { attempts: 1, timeoutMs: 8_000, signal: controller.signal }
+            );
+            if (live()) {
+              setMyRole(normaliseRole(mine?.role));
+              setMyRoleLoaded(true);
+            }
+          } catch (error) {
+            if (live()) {
+              setMyRole('player');
+              setMyRoleLoaded(false);
+              reportError(error, 'MemberManagementPage.LoadViewerRole');
+            }
           }
         }
       } catch (error) {
@@ -550,14 +570,15 @@ export default function MemberManagementPage() {
     void loadDetail(range);
   }, [loadDetail, range]);
 
-  // Only explicit retries and completed writes reload the record. Ambient
-  // events can withdraw authority, but never replace the operator's workspace.
+  // Record events refresh measured values in place. Authority-only signals
+  // can withdraw access without replacing the operator's workspace.
   useEffect(() => {
     const controller = new AbortController();
-    const owner = { active: false, queued: false };
+    const owner = { active: false, queued: false, metrics: false };
     const live = () => !controller.signal.aborted && isMountedRef.current;
     recordRefreshRef.current = () => void loadDetail(range, live, true);
-    const checkAuthority = () => {
+    const checkAuthority = (refreshMetrics = false) => {
+      owner.metrics ||= refreshMetrics;
       // Permission signals also own the pending first read. A denial must
       // retire that read before its older allowed answer can mount privately.
       if (!resolvedClubId || !userId || !user?.id) return;
@@ -575,19 +596,22 @@ export default function MemberManagementPage() {
         return;
       }
       owner.active = true;
+      const readMetrics = owner.metrics;
+      owner.metrics = false;
+      const detailReadRevision = detailReadRevisionRef.current;
       void (async () => {
         try {
           const accessRevision = accessDenialRef.current.revision;
           const authority = await ClubRosterService.getMemberDetail(
             resolvedClubId,
             userId,
-            undefined,
+            readMetrics ? range : undefined,
             controller.signal
           );
           if (!live() || owner.queued) return;
           if (accessDenialRef.current.revision > accessRevision) return;
           // Record the denial epoch so an older explicit range read cannot
-          // restore permission. Do not apply this response's metrics or identity.
+          // restore permission. Identity and editor inputs remain locally owned.
           const prior = accessDenialRef.current.detail;
           const current = currentDetailRef.current ?? prior ?? authority;
           const restricted = {
@@ -606,6 +630,30 @@ export default function MemberManagementPage() {
             },
           };
           withdrawRecordAccess(restricted);
+          if (
+            readMetrics &&
+            !initializing &&
+            detailReadRevisionRef.current === detailReadRevision &&
+            detailOwnerRef.current === walletScopeKey &&
+            authority.identity?.user_id === userId &&
+            authority.range.from === range.from &&
+            authority.range.to === range.to
+          ) {
+            setDetail((previous) =>
+              previous
+                ? {
+                    ...applyAccessDenial(previous, restricted),
+                    stats: restricted.capabilities.can_view_financials ? authority.stats : null,
+                    downline: restricted.capabilities.can_view_financials
+                      ? authority.downline
+                      : null,
+                    range: authority.range,
+                  }
+                : previous
+            );
+            setRefreshFailed(false);
+            setRecordRevision((revision) => revision + 1);
+          }
           const mine = await supabase
             .from('club_members')
             .select('role')
@@ -635,7 +683,7 @@ export default function MemberManagementPage() {
           owner.active = false;
           if (owner.queued && live()) {
             owner.queued = false;
-            checkAuthority();
+            checkAuthority(readMetrics || owner.metrics);
           }
         }
       })();

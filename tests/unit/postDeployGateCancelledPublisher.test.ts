@@ -225,6 +225,11 @@ describe('exact protected transaction publisher display names', () => {
       'Verify the origin serves this bundle',
     ].map((name) => ({ name, status: 'completed', conclusion: 'success' })),
   });
+  it('accepts the current reusable-client transaction origin proof', () => {
+    const r = runGate([published('client-publication / production / publish-to-origin')]);
+    expect(r.error).toBeNull();
+    expect(r.output).toContain('should_run=true');
+  });
   it('accepts the real transaction origin proof', () => {
     const r = runGate([published('production / publish-to-origin')]);
     expect(r.error).toBeNull();

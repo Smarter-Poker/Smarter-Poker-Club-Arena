@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+      "bytes": 257696,
+      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1364,5 +1364,17 @@
       "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
+  },
+  "startedTournamentAbortNativeBinding20261030": {
+    "reason": "Add the required shard-four socket-only PG17 started-event abort qualification and retained evidence. Existing financial command selection, assertions, budgets, historical qualification state and source audits remain unchanged. This records source identity only; it does not certify historical cash/weekly behavior or production installation.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "current": {
+      "bytes": 257696,
+      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
+    }
   }
 }

@@ -833,8 +833,11 @@ def pending_tcp_presence():
         # Match the original gate's three-second native child ceiling; the
         # eight-second envelope also includes identity/health binding reads.
         probe_deadline = min(deadline, time.monotonic() + 3)
-        raw = inspector_command(['docker', 'exec', '-i', before['container'], 'node',
-            '--input-type=module', '-'], probe_deadline, input_bytes=TCP_PRESENCE_NODE.encode(), limit=1024)
+        # Isolate only this reader child: inherited inspector flags or preloads
+        # must not create the very listener whose prior presence we observe.
+        raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+            before['container'], 'node', '--no-inspect', '--input-type=module', '-'],
+            probe_deadline, input_bytes=TCP_PRESENCE_NODE.encode(), limit=1024)
         probe = json.loads(raw, object_pairs_hook=unique_object)
         if (not isinstance(probe, dict) or set(probe) != {'state', 'code'}
                 or any(not isinstance(probe[key], str) for key in probe)

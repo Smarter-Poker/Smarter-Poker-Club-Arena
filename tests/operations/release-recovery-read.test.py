@@ -1184,6 +1184,57 @@ class PendingTcpTests(unittest.TestCase):
         for forbidden in ['node:inspector','Runtime.evaluate','WebSocket','node:http','socket.write','process.kill']:
             self.assertNotIn(forbidden,R.TCP_PRESENCE_NODE)
 
+    def test_native_tcp_child_options_cannot_create_its_own_listener_or_load_preloads(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        # Demonstrate the actual inherited-options counterexample in isolation.
+        before=subprocess.run([node,'--input-type=module','-'],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'listening')
+        isolated={**inherited,'NODE_OPTIONS':''}
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+            capture_output=True,env=isolated,timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','code':'connection_refused'})
+        self.assertEqual(inherited['NODE_OPTIONS'],'--inspect=127.0.0.1:'+str(port))
+        with tempfile.TemporaryDirectory(prefix='tcp-preload-',dir=ROOT.parent) as temp:
+            marker=Path(temp)/'preload-ran';preload=Path(temp)/'preload.cjs'
+            preload.write_text("require('node:fs').writeFileSync("+json.dumps(str(marker))+",'fixture');")
+            inherited={**os.environ,'NODE_OPTIONS':'--require='+str(preload)}
+            before=subprocess.run([node,'--input-type=module','-'],input=source,
+                capture_output=True,env=inherited,timeout=5)
+            self.assertEqual(before.returncode,0,before.stderr)
+            self.assertEqual(marker.read_text(),'fixture');marker.unlink()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+                capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+            self.assertEqual(after.returncode,0,after.stderr)
+            self.assertFalse(marker.exists(),'probe must not execute inherited preloads')
+        # Clearing child options must still see a genuine, separate listener.
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],
+                input=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode(),
+                capture_output=True,env={**os.environ,'NODE_OPTIONS':''},timeout=5)
+            thread.join(timeout=3);self.assertFalse(thread.is_alive())
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+
     def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None):
         identity=' '.join(self.identity.values()).encode()
         health=json.dumps({'status':'ok','running':True,'releaseSha':self.health['source'],
@@ -1204,7 +1255,7 @@ class PendingTcpTests(unittest.TestCase):
             self.assertEqual(answer,{'state':state,'code':code,'binding':'matched'})
             self.assertEqual(native.call_count,6)
             calls=native.call_args_list
-            self.assertEqual(calls[3].args[0][:4],['docker','exec','-i',self.identity['container']])
+            self.assertEqual(calls[3].args[0],['docker','exec','-i','-e','NODE_OPTIONS=',self.identity['container'],'node','--no-inspect','--input-type=module','-'])
             self.assertEqual(calls[3].kwargs['input_bytes'],R.TCP_PRESENCE_NODE.encode())
             shared=[call.args[1] for call in calls if call is not calls[3]]
             self.assertTrue(all(value==shared[0] for value in shared))

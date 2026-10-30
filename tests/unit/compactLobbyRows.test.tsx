@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import LobbyTable from '../../src/components/lobby/LobbyTable';
+import LobbyTable, { columnsFor } from '../../src/components/lobby/LobbyTable';
 import {
   cashEntry,
   tournamentEntry,
@@ -54,6 +54,24 @@ function mount() {
 }
 
 describe('compact lobby selection is a pre-commit detail step', () => {
+  it('labels satellite entry prices as buy-ins on both boards', () => {
+    render(
+      <MemoryRouter>
+        <LobbyTable
+          entries={[]}
+          category="SATELLITE"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+    const board = screen.getByRole('table', { name: 'Games' });
+    expect(within(board).getByRole('columnheader', { name: 'Buy-In' })).toBeTruthy();
+    expect(within(board).queryByRole('columnheader', { name: 'Stakes' })).toBeNull();
+    expect(columnsFor('SATELLITE').map((column) => column.key)).toContain('buyin');
+    expect(columnsFor('SATELLITE').map((column) => column.key)).not.toContain('stakes');
+  });
   it('renders a compact row, opens details once, and never joins or spends', () => {
     const { list, onSelect, writers } = mount();
     expect(

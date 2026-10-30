@@ -1,6 +1,7 @@
 -- Reserved by scripts/new-migration.mjs. Installed cash cover removes heap cost;
 -- original100 still exceeds8s in per-attribution fee cutoff. Retain it once.
 -- Same NULL/finite acceptance, bounds, sharing, rounding, metadata and source65.
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.ca_club_member_period_fee_totals(uuid,uuid[],date,timestamptz)'::regprocedure))='425276516cf350b62c3876023818ce48')
 BEGIN;
 SET LOCAL statement_timeout='5s';
 SET LOCAL lock_timeout='1s';

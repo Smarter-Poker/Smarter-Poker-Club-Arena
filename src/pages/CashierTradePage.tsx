@@ -108,6 +108,7 @@ import {
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import CashierMyWallets from '../components/wallet/CashierMyWallets';
 import { CashierFrameBalance } from '../components/wallet/CashierFrameBalance';
 import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
@@ -4053,6 +4054,15 @@ function CashierTradeWorkspace() {
         className={styles.console}
       >
         <div className={styles.glass}>
+          {user?.id && clubUuid && roleResolved && currentClub && (
+            <CashierMyWallets
+              key={`${user.id}:${clubUuid}:${myRole}`}
+              userId={user.id}
+              clubId={clubUuid}
+              role={myRole}
+              variant={currentClub.entityType}
+            />
+          )}
           {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
           and no toolbar row; its Advanced switch sits beside the club so the
           club leads the glass. Advanced keeps its labelled toolbar. */}

@@ -15,6 +15,7 @@ const source = readFileSync(path.join(sourceRoot, 'scripts/stamp-build-provenanc
  */
 const workflow =
   readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena.yml'), 'utf8') +
+  readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena-client.yml'), 'utf8') +
   readFileSync(
     path.join(sourceRoot, '.github/workflows/publish-club-arena-transaction.yml'),
     'utf8'
@@ -435,14 +436,15 @@ test('only the existing web and native publisher build steps carry the admitted 
         'utf8'
       )
     );
-    const step = (w.jobs[job] ?? transaction.jobs[job]).steps.find(
+    const client = parse(
+      readFileSync(path.join(sourceRoot, '.github/workflows/publish-club-arena-client.yml'), 'utf8')
+    );
+    const step = (w.jobs[job] ?? client.jobs[job] ?? transaction.jobs[job]).steps.find(
       (s: { run?: string }) => s.run === command
     );
     expect(step.env.CA_BUILD_PURPOSE).toBe('production-publish');
     expect(step.env.CA_PUBLISH_TARGET_SHA).toBe(
-      job === 'build-and-store'
-        ? '${{ needs.publish-needed.outputs.target_sha }}'
-        : '${{ inputs.target_sha }}'
+      job === 'build-and-store' ? '${{ inputs.target_sha }}' : '${{ inputs.target_sha }}'
     );
   }
 });

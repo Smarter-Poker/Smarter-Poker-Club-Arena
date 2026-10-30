@@ -26,6 +26,7 @@ const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
 // migration apply/ledger, monitoring deploy, money recovery, post-deploy proof.
 const NEVER_CANCEL = [
   'publish-club-arena.yml',
+  'publish-club-arena-client.yml',
   'publish-club-arena-transaction.yml',
   'stage-engine-release.yml',
   'auto-deploy-hetzner.yml',
@@ -42,6 +43,7 @@ const NEVER_CANCEL = [
 describe('workflow concurrency guards runner capacity without risking production', () => {
   it('holds one global lock around the complete reusable production transaction', () => {
     const caller = parse(readFileSync(resolve(dir, 'publish-club-arena.yml'), 'utf8'));
+    const client = parse(readFileSync(resolve(dir, 'publish-club-arena-client.yml'), 'utf8'));
     const child = parse(readFileSync(resolve(dir, 'publish-club-arena-transaction.yml'), 'utf8'));
     expect(caller.concurrency).toBeUndefined();
     expect(child.concurrency).toBeUndefined();
@@ -57,7 +59,14 @@ describe('workflow concurrency guards runner capacity without risking production
       Object.entries(caller.jobs)
         .filter(([, value]: any) => value.concurrency)
         .map(([key]) => key)
-    ).toEqual(['production']);
+    ).toEqual(['client-publication', 'production']);
+    expect(client.on).toEqual({ workflow_call: { inputs: client.on.workflow_call.inputs } });
+    expect(client.jobs.production.concurrency).toEqual(production.concurrency);
+    expect(caller.jobs['client-publication'].concurrency).toEqual({
+      group:
+        'publish-club-arena-client-${{ github.repository_id }}-${{ needs.publish-needed.outputs.target_sha }}',
+      'cancel-in-progress': false,
+    });
     expect(Object.values(child.jobs).every((value: any) => !value.concurrency)).toBe(true);
     expect(Object.keys(child.jobs).sort()).toEqual(
       [
@@ -75,8 +84,8 @@ describe('workflow concurrency guards runner capacity without risking production
       component: '${{ needs.publish-needed.outputs.component }}',
       publish: '${{ needs.publish-needed.outputs.publish }}',
       tests_proven: '${{ needs.publish-needed.outputs.tests_proven }}',
-      client_result: '${{ needs.client-tests.result }}',
-      build_result: '${{ needs.build-and-store.result }}',
+      client_result: 'skipped',
+      build_result: 'skipped',
       gateway_build_result: '${{ needs.build-record-gateway.result }}',
     });
     for (const key of Object.keys(production.with))

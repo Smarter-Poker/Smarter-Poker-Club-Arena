@@ -73,9 +73,11 @@ count. The V38 verdict path keeps its small `dangered` respect shift.
 Not in scope: Omaha, short deck, fixed limit, multiple boards and bomb pots
 keep their own sampling; a measured over-bluffer keeps the full contact
 range; the decision above the verdict (value raise, V51 flat, V54) is
-unchanged except through the equity it reads. V61 stays as written - the
-stacked effect was checked in the probe above and the two measure different
-things (model vs price).
+unchanged except through the equity it reads. V61 (#8705) yields to this model: when
+the bettor was sampled polar the price shade is withheld in both the verdict
+path and the committed branch (stacking both folded a top-pair call-once
+against a river raise at 32.7% versus a 35.1% bar), and V61 keeps every path
+V62 cannot reach - no opponent reads, `mind: false`, the V62 off arm.
 
 ## Interaction with recorded corpora
 

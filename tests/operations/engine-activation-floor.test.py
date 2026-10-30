@@ -264,12 +264,19 @@ echo CHECKPOINT_MUST_NOT_RUN
         source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
         start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
         body=source[start:end]
-        # This carrier retains the owner's :53 notice restriction. Its
-        # activation floor opens at :30; that does not authorize a :30 notice.
-        notice = (r['activationEpoch']//3600)*3600 + 53*60
-        self.assertGreaterEqual(notice, r['activationEpoch'])
-        self.assertLess(notice, r['expiresEpoch'])
-        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(notice)+'; }\n'
+        # The selected window may restrict announcements to a Chicago minute
+        # (the :53 notice before the :55 tournament break); evaluate at the
+        # first such instant inside the window rather than at a random minute.
+        windows_doc=json.loads((ROOT/'server/release/owner-maintenance-windows.json').read_text())
+        selected=next(w for w in windows_doc['windows'] if w['id']==r['ownerWindowId'])
+        minutes=selected.get('announceAtChicagoMinutes')
+        from datetime import datetime,timezone
+        from zoneinfo import ZoneInfo
+        now=r['activationEpoch']+30
+        while minutes and datetime.fromtimestamp(now,timezone.utc).astimezone(ZoneInfo('America/Chicago')).minute not in minutes:
+            now+=60
+        self.assertLess(now,r['expiresEpoch'])
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(now)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex
         def reason(serving):
@@ -429,10 +436,12 @@ echo CHECKPOINT_MUST_NOT_RUN
                 floor.check_window(r, r['activationEpoch'] - 1, r['expiresEpoch'] + 100, 'publish')
         floor.check_window(r, r['activationEpoch'], r['expiresEpoch'] + 100, 'publish')
         floor.check_window(r, r['expiresEpoch'] + 1, r['expiresEpoch'] + 100, 'publish')
-        source = (ROOT / '.github/workflows/publish-club-arena.yml').read_text()
+        caller = (ROOT / '.github/workflows/publish-club-arena.yml').read_text()
+        self.assertIn('uses: ./.github/workflows/publish-club-arena-client.yml', caller)
+        source = (ROOT / '.github/workflows/publish-club-arena-client.yml').read_text()
         production = source[source.index('  production:'):]
         self.assertIn('needs.publication-floor.result == \'success\'', production)
-        self.assertIn('build-record-gateway, publication-floor]', production)
+        self.assertIn('admit, client-tests, build-and-store, publication-floor]', production)
         admission = source[source.index('  publication-floor:'):source.index('  production:')]
         self.assertIn('engine-release-activation-floor.py publish', admission)
         self.assertNotIn('outputs.publish', admission)

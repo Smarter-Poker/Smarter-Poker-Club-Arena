@@ -58,6 +58,7 @@ const ROOT = process.cwd();
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
 const PUBLISH =
   readFileSync(join(ROOT, '.github/workflows/publish-club-arena.yml'), 'utf8') +
+  readFileSync(join(ROOT, '.github/workflows/publish-club-arena-client.yml'), 'utf8') +
   readFileSync(join(ROOT, '.github/workflows/publish-club-arena-transaction.yml'), 'utf8');
 const CUSTOMIZATION_CONFIG = readFileSync(join(ROOT, 'playwright.customization.config.ts'), 'utf8');
 

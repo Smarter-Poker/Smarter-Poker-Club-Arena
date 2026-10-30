@@ -776,3 +776,43 @@ it('every declared source witness is supported by the installed stage and host a
     expect(window.releaseWitness.sha256, window.id).toMatch(/^[0-9a-f]{64}$/);
   }
 });
+
+it('bounds the original recovery evening continuation without replaying an earlier carrier', () => {
+  const raw = readFileSync(join(root, 'server/release/activation-floor.json'));
+  const floor = JSON.parse(raw.toString());
+  const { windows } = JSON.parse(
+    readFileSync(join(root, 'server/release/owner-maintenance-windows.json'), 'utf8')
+  );
+  const matches = windows.filter(
+    (w: { id: string }) => w.id === '2026-10-30-original-recovery-evening-continuation'
+  );
+  expect(matches).toHaveLength(1);
+  const [entry] = matches;
+  expect(entry.contains).toBe('c05ea757ff9b0e1b15cfb7e29943d26c1e11763b');
+  expect([entry.notBefore, entry.notAfter]).toEqual([
+    '2026-10-30T19:00:00Z',
+    '2026-10-31T01:00:00Z',
+  ]);
+  expect(Date.parse(entry.notAfter) - Date.parse(entry.notBefore)).toBe(6 * 3600_000);
+  expect(entry.announceAtChicagoMinutes).toEqual([53]);
+  expect(entry.migrations).toEqual([]);
+  expect(entry.ownerOrder).toContain('agent-selected six-hour bound');
+  expect(entry.ownerOrder).toContain('Finish the runner and listener fixes');
+  expect(entry.ownerOrder).toContain('nonretryable');
+  expect(floor.ownerWindowId).toBe(entry.id);
+  expect([
+    floor.preparationAt,
+    floor.activationAt,
+    floor.clientPublicationAt,
+    floor.expiresAt,
+  ]).toEqual([entry.notBefore, entry.notBefore, entry.notBefore, entry.notAfter]);
+  expect(entry.releaseWitness).toEqual({
+    path: 'server/release/activation-floor.json',
+    sha256: createHash('sha256').update(raw).digest('hex'),
+  });
+  expect(
+    windows.find(
+      (w: { id: string }) => w.id === '2026-10-30-horse-river-model-and-heap-fix-next-55'
+    ).releaseWitness.sha256
+  ).toBe('eab739dc6dd9139c25489c341b39b04ff1cf0003f26aff05ecf9af46a2c1caad');
+});

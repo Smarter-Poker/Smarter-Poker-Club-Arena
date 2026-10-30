@@ -24,10 +24,12 @@ describe('discovery isolates the physical retirement of each tournament', () => 
           })
       ),
       getTournamentLeaseGeneration: () => null,
+      retainsTournamentAbortBoundary: () => false,
     };
     const next = {
       stop: vi.fn().mockResolvedValue(undefined),
       getTournamentLeaseGeneration: () => null,
+      retainsTournamentAbortBoundary: () => false,
     };
     server.tournamentEngines.set('slow', slow);
     server.tournamentEngines.set('next', next);

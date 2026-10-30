@@ -1,0 +1,12 @@
+[
+  {
+    "signature": "fn_ca_launch_accounting_cutoff(text,uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_launch_accounting_cutoff(p_kind text, p_id uuid)\n RETURNS timestamp with time zone\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n SELECT cutoff_at FROM public.ca_launch_accounting_boundaries WHERE scope_kind=p_kind AND scope_id=p_id AND undone_at IS NULL\n$function$\n",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_ca_launch_accounting_accepts(uuid,timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_launch_accounting_accepts(p_club_id uuid, p_earned_at timestamp with time zone)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n SELECT CASE WHEN b.cutoff IS NULL THEN true ELSE p_earned_at IS NOT NULL AND isfinite(p_earned_at) AND p_earned_at>=b.cutoff END\n FROM (SELECT public.fn_ca_launch_accounting_cutoff('club',p_club_id) cutoff)b\n$function$\n",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  }
+]

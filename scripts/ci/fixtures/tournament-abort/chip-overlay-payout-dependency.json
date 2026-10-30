@@ -1,0 +1,7 @@
+[
+  {
+    "signature": "fn_ca_payout_structure(integer,numeric)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent numeric)\n RETURNS jsonb\n LANGUAGE plpgsql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_places int;\n  v_pct    numeric;\n  v_out    jsonb;\nBEGIN\n  v_pct := CASE WHEN p_percent > 0 AND p_percent <= 100 THEN p_percent ELSE 12.5 END;\n  IF COALESCE(p_entrants,0) <= 0 THEN\n    RETURN '[]'::jsonb;\n  END IF;\n  -- at least one place, never more places than players, rounded up\n  v_places := GREATEST(1, LEAST(p_entrants, ceil(p_entrants * v_pct / 100.0)::int));\n\n  WITH w AS (\n    SELECT i AS place, 1.0 / power(i, 0.8) AS weight\n      FROM generate_series(1, v_places) i\n  ), n AS (\n    SELECT place, 100.0 * weight / SUM(weight) OVER () AS exact FROM w\n  ), f AS (\n    SELECT place, floor(exact * 100) / 100 AS floored,\n           (exact * 100) - floor(exact * 100) AS frac\n      FROM n\n  ), r AS (\n    SELECT place, floored,\n           row_number() OVER (ORDER BY frac DESC, place ASC) AS rk,\n           round((100.0 - SUM(floored) OVER ()) * 100)::int AS cents_left\n      FROM f\n  )\n  SELECT jsonb_agg(jsonb_build_object('place', place,\n           'percentage', floored + CASE WHEN rk <= cents_left THEN 0.01 ELSE 0 END)\n           ORDER BY place)\n    INTO v_out FROM r;\n  RETURN COALESCE(v_out, '[]'::jsonb);\nEND;\n$function$\n",
+    "definition_md5": "ca2aae4023d6711400263d674b4721ed"
+  }
+]

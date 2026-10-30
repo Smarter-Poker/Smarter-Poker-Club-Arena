@@ -2830,6 +2830,59 @@ export class TournamentManager extends TournamentManagerEliminations {
     return base;
   }
 
+  protected override tournamentAbortSourcesMatch(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    if (!super.tournamentAbortSourcesMatch(expected)) return false;
+    const byId = new Map(expected);
+    const originals = new Set(byId.values());
+    for (const engine of this.stoppedOriginalBreaks.values())
+      if (!originals.has(engine)) return false;
+    for (const [id, value] of this.retainedTournamentBreakSources)
+      if (byId.get(id) !== value.engine) return false;
+    for (const value of this.pendingNoStartContinuations.values())
+      if (byId.get(value.binding.tableId) !== value.engine) return false;
+    for (const wakes of this.tournamentBreakArrivalWakes.values())
+      for (const engine of wakes.values()) if (!originals.has(engine)) return false;
+    if (
+      this.pendingTableBreakRetirement &&
+      byId.get(this.pendingTableBreakRetirement.tableId) !== this.pendingTableBreakRetirement.engine
+    )
+      return false;
+    return (
+      this.pendingTournamentSeatMoveOutcomes.size === 0 &&
+      this.pendingTournamentParkRequests.size === 0 &&
+      this.pendingTournamentBreakBegins.size === 0 &&
+      this.pendingTournamentBreakAmendments.size === 0 &&
+      this.rejectedTournamentBreakBegins.size === 0 &&
+      this.resolvedTournamentBreakProposals.size === 0 &&
+      this.pendingTournamentBreakCustodyIds.size === 0 &&
+      this.pendingTournamentCleanupKinds.size === 0 &&
+      this.pendingNoStartContinuations.size === 0 &&
+      this.activeStoppedOriginalCustody.size === 0 &&
+      this.stoppedOriginalBreaks.size === 0 &&
+      this.tournamentBreakArrivalWakes.size === 0 &&
+      this.pendingTableBreakRetirement === null
+    );
+  }
+
+  protected override tournamentAbortBusinessTailsDrained(): boolean {
+    return this.mixedRecoveryOperation === null && super.tournamentAbortBusinessTailsDrained();
+  }
+
+  protected override tournamentAbortOwnedTailIdentity(): unknown {
+    return this.tournamentSeatMoveSerialTail;
+  }
+
+  protected override async joinTournamentAbortOwnedTails(): Promise<void> {
+    await super.joinTournamentAbortOwnedTails();
+    for (;;) {
+      const original = this.tournamentSeatMoveSerialTail;
+      await original;
+      if (original === this.tournamentSeatMoveSerialTail) return;
+    }
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {

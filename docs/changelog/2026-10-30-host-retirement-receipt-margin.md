@@ -41,3 +41,9 @@ eligibility or replace the existing provider. Chicago53 notice/55 activation,
 120/300/285/245/135/40/5 safeguards and actual sealed/own-thaw/live proof remain
 required. Non-engine work keeps its immediate route. Full original recovery,
 all1000 horses and allfive game acceptance remain open.
+
+Protected-main integration retains the two incoming overnight MTT owner entries
+without changing their bounds or witnesses. The selected host-receipt entry and
+its a7 floor stay first; all57 incoming entries remain byte-exact in their prior
+relative order (58 total), with database windows unchanged. All incoming source
+outside these two manifest intersections is retained from protected main.

@@ -1020,6 +1020,34 @@ class InspectorTests(unittest.TestCase):
             self.assertEqual(R.validate_refusal(exported,self.request).code, code)
             self.assertNotIn('private',json.dumps(exported))
 
+    def test_actual_inspector_observer_child_isolates_inherited_options_in_both_phases(self):
+        import socket
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        for expected in [None,self.digest]:
+            with patch.object(R,'inspector_command',return_value=b'{"state":"closed","endpointSha256":null}') as command:
+                result=R.inspector_probe(self.identity['container'],123,expected)
+            self.assertEqual(result,{'state':'closed','endpointSha256':None})
+            self.assertEqual(command.call_args.args[0],['docker','exec','-i','-e','NODE_OPTIONS=',
+                self.identity['container'],'node','--no-inspect','--input-type=module','-',
+                'read' if expected else 'probe',expected or ''])
+            self.assertEqual(command.call_args.args[1],123)
+            self.assertEqual(command.call_args.kwargs,
+                {'input_bytes':R.INSPECTOR_NODE.encode(),'limit':16384,'stage':'probe'})
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.INSPECTOR_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        before=subprocess.run([node,'--input-type=module','-','probe',''],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'open')
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-','probe',''],input=source,
+            capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','endpointSha256':None})
+
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local
@@ -1082,8 +1110,8 @@ class InspectorTests(unittest.TestCase):
             source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
             source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
             digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
-            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
-                env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+            reply=R.subprocess.run([node,'--no-inspect','--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+                env={**os.environ,'NODE_OPTIONS':'','HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
             self.assertEqual(reply.returncode,0,reply.stderr)
             value=json.loads(reply.stdout)
             self.assertEqual(value['state'],'owned');self.assertEqual(value['native']['pid'],selected['pid'])

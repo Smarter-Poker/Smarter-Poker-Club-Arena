@@ -1066,7 +1066,10 @@ def inspector_endpoint(raw, at):
 
 
 def inspector_probe(container, deadline, expected=None):
-    raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
+    # Keep inherited inspector flags/preloads out of this reader child too;
+    # opening its own endpoint would corrupt the original target observation.
+    raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+        container, 'node', '--no-inspect', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
         input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)

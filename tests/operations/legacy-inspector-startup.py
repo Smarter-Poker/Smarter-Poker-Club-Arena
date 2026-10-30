@@ -17,7 +17,7 @@ SOURCE = (ROOT / 'server/scripts/engine-release-transaction.sh').read_text()
 HELPER = SOURCE[SOURCE.index('legacy_inspector_is_closed() {'):SOURCE.index('\nrequest_recovery_window() {')]
 CHECKPOINT = (ROOT / 'server/scripts/legacy-engine-checkpoint.sh').read_text()
 RUNTIME_START = CHECKPOINT[CHECKPOINT.index('checkpoint_entry_read timeout 3s docker exec "$CONTAINER_ID"'):CHECKPOINT.index("' checkpoint-runtime -e '") + len("' checkpoint-runtime")]
-TRANSPORT_START = next(line.split('| ', 1)[1] for line in CHECKPOINT.splitlines()
+TRANSPORT_START = next(line.split('| ', 1)[1] for line in CHECKPOINT.splitlines(keepends=True)
                        if '| checkpoint_final_read docker exec -i' in line)
 
 

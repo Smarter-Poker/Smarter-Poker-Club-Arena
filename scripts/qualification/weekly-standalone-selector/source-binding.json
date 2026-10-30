@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+      "bytes": 253746,
+      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1230,5 +1230,33 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "requiredNativeRunnerProfile20261030": {
+    "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660",
+        "current": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+      }
+    ],
+    "financial_recertification": false
+  },
+  "requiredNativeProfileComposition20261030": {
+    "scope": "Exact source identity after ordinary integration of protected client delivery and fixed required native runner profiles. No financial or live recertification; historical evidence and financial verdicts preserved.",
+    "protectedClientCi": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+    },
+    "qualifiedNativeProfileCi": {
+      "bytes": 253096,
+      "sha256": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+    },
+    "composedCi": {
+      "bytes": 253746,
+      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
+    },
+    "financial_recertification": false
   }
 }

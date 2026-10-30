@@ -467,6 +467,7 @@ const HISTORY_RANGES: ReadonlyArray<readonly [HistoryRange, string]> = [
   ['today', 'Today'],
   ['7d', '7 Days'],
   ['30d', '30 Days'],
+  ['all', 'All Dates'],
 ];
 
 /** The start of a date range chip, read at the moment of the request. */
@@ -1737,7 +1738,7 @@ function CashierTradeWorkspace() {
      name is one request. */
   useEffect(() => {
     const typed = recordQuery.trim();
-    const timer = setTimeout(() => setHistorySearch(typed.length >= 2 ? typed : ''), 350);
+    const timer = setTimeout(() => setHistorySearch(typed), 350);
     return () => clearTimeout(timer);
   }, [recordQuery]);
 
@@ -4950,6 +4951,33 @@ function CashierTradeWorkspace() {
                 )}
               </div>
 
+              <form
+                className={styles.historySearchForm}
+                role="search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  // Enter asks for this person's full book, not today's preview.
+                  setHistorySearch(recordQuery.trim());
+                  setHistoryRange('all');
+                  setHistoryKind('all');
+                  setRecordDirection('all');
+                  setHistoryPerson(null);
+                  setRecordsReload((value) => value + 1);
+                }}
+              >
+                <input
+                  className={styles.ledgerSearch}
+                  type="search"
+                  value={recordQuery}
+                  onChange={(event) => setRecordQuery(event.target.value)}
+                  placeholder="Enter A Player Name Or Invoice Number"
+                  aria-label="Search Transaction History"
+                />
+                <button type="submit" className={styles.historySearchButton}>
+                  Search
+                </button>
+              </form>
+
               {(() => {
                 // Which books this viewer may choose between. A player has one.
                 const books: ReadonlyArray<readonly [HistoryBook, string]> = !roleResolved
@@ -4990,37 +5018,39 @@ function CashierTradeWorkspace() {
                 ) : null;
               })()}
 
-              <div className={styles.ledgerFilters} role="group" aria-label="Filter By Type">
-                {HISTORY_KINDS.map(([kind, label]) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    className={`${styles.ledgerFilter} ${historyKind === kind ? styles.ledgerFilterActive : ''}`}
-                    aria-pressed={historyKind === kind}
-                    onClick={() => {
-                      if (kind === historyKind) return;
-                      setHistoryKind(kind);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className={styles.ledgerFilters} role="group" aria-label="Filter By Date">
-                {HISTORY_RANGES.map(([range, label]) => (
-                  <button
-                    key={range}
-                    type="button"
-                    className={`${styles.ledgerFilter} ${historyRange === range ? styles.ledgerFilterActive : ''}`}
-                    aria-pressed={historyRange === range}
-                    onClick={() => {
-                      if (range === historyRange) return;
-                      setHistoryRange(range);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className={styles.historyControls}>
+                <div className={styles.ledgerFilters} role="group" aria-label="Filter By Type">
+                  {HISTORY_KINDS.map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      className={`${styles.ledgerFilter} ${historyKind === kind ? styles.ledgerFilterActive : ''}`}
+                      aria-pressed={historyKind === kind}
+                      onClick={() => {
+                        if (kind === historyKind) return;
+                        setHistoryKind(kind);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.ledgerFilters} role="group" aria-label="Filter By Date">
+                  {HISTORY_RANGES.map(([range, label]) => (
+                    <button
+                      key={range}
+                      type="button"
+                      className={`${styles.ledgerFilter} ${historyRange === range ? styles.ledgerFilterActive : ''}`}
+                      aria-pressed={historyRange === range}
+                      onClick={() => {
+                        if (range === historyRange) return;
+                        setHistoryRange(range);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* ONE PLAYER INSIDE MY DOWNLINE (Dan 2026-10-24): an agent can
@@ -5148,14 +5178,6 @@ function CashierTradeWorkspace() {
               ) : null}
 
               <div className={styles.ledgerToolbar}>
-                <input
-                  className={styles.ledgerSearch}
-                  type="search"
-                  value={recordQuery}
-                  onChange={(event) => setRecordQuery(event.target.value)}
-                  placeholder="Search A Name Or Invoice Number"
-                  aria-label="Search Transaction History"
-                />
                 <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
                   {(['all', 'in', 'out'] as const).map((direction) => (
                     <button
@@ -5166,7 +5188,7 @@ function CashierTradeWorkspace() {
                       onClick={() => setRecordDirection(direction)}
                     >
                       {direction === 'all'
-                        ? 'Latest Transactions'
+                        ? 'All Transactions'
                         : direction === 'in'
                           ? 'Incoming'
                           : direction === 'out'
@@ -5292,22 +5314,25 @@ function CashierTradeWorkspace() {
                     {recordsLoadingMore ? 'Loading Older Entries...' : 'Load 50 Older Entries'}
                   </button>
                 )}
-                <button
-                  type="button"
-                  className={styles.classicLink}
-                  onClick={() => navigate(`/clubs/${clubParam}/cashier/statements`)}
-                >
-                  Full Statement
-                </button>
-                <button
-                  type="button"
-                  className={styles.classicLink}
-                  disabled={historyExporting || !roleResolved || !isOnline}
-                  aria-busy={historyExporting}
-                  onClick={() => void exportHistory()}
-                >
-                  {historyExporting ? 'Preparing Download...' : 'Download These Transactions'}
-                </button>
+                <details className={styles.historyTools} open={advanced || undefined}>
+                  <summary>Statement Tools</summary>
+                  <button
+                    type="button"
+                    className={styles.classicLink}
+                    onClick={() => navigate(`/clubs/${clubParam}/cashier/statements`)}
+                  >
+                    Full Statement
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.classicLink}
+                    disabled={historyExporting || !roleResolved || !isOnline}
+                    aria-busy={historyExporting}
+                    onClick={() => void exportHistory()}
+                  >
+                    {historyExporting ? 'Preparing Download...' : 'Download These Transactions'}
+                  </button>
+                </details>
               </div>
             </section>
           )}

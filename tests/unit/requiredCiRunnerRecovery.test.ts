@@ -48,7 +48,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     // Every preexisting command, runner choice, budget and gate remains pinned.
     const normalized = structuredClone(ci);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '7b66a583f5ac3db3998ff4d82d28caa0f75cb36de5942a3c810378d595b493f5'
+      '1af24a985543956876851a845fdbfeb55526aff5a18efdea1803c4c653a9b5e8'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

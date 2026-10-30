@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 258144,
-      "sha256": "813b274d9f62ab2ba17e8ffa54d4f2a65cac742eaa54c04034893ad7c8dc3997"
+      "bytes": 258812,
+      "sha256": "0c988d6b32d908fc15e67703fb0358ccdd12a1ef6110a50fdbd0f469356b499f"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1411,5 +1411,49 @@
       "sha256": "813b274d9f62ab2ba17e8ffa54d4f2a65cac742eaa54c04034893ad7c8dc3997"
     },
     "qualification": "No historical financial qualification, production installation or book closure restamped."
+  },
+  "rosterFeeWindowIndexSourceAudit20261030": {
+    "scope": "Add the private PG17 100-member tournament-fee physical-index qualification and report to required accounting shard4. Existing financial assertions, matrices, deadlines and historical evidence remain unchanged.",
+    "previousCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+    },
+    "currentCiPin": {
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
+    },
+    "qualification": "Current source identity only. No historical certificate, financial verdict or production installation restamped."
+  },
+  "rosterFeeMainIntegrationSourceAudit20261030": {
+    "scope": "Current workflow identity after normal merge of protected main c306ce19153ffe1c4d9d571cacf4e35d6092f427. Retain both independent roster-fee shard4 native qualification and newer client eight-shard diagnostic controls; no historical receipt restamped.",
+    "previousBranchCiPin": {
+      "bytes": 257286,
+      "sha256": "0fad9d765b095be7f5c6e04ccd7d0cc40d0ce96293c21a341b62a77819e8a7d5"
+    },
+    "previousMainCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "qualification": "Source binding only; protected hosted checks required for integrated head. Roster migration and native seven-case fixture unchanged."
+  },
+  "DssMidwayProtectedRosterCiComposition20261030": {
+    "scope": "Current workflow identity only: preserve protected-main roster fee qualification/artifact steps together with added original-linked/cash-scope/receipt native verification. All original budgets, runners, permissions and financial assertions retained.",
+    "previousOwnedCi": {
+      "bytes": 258144,
+      "sha256": "813b274d9f62ab2ba17e8ffa54d4f2a65cac742eaa54c04034893ad7c8dc3997"
+    },
+    "protectedMainCi": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "composedCi": {
+      "bytes": 258812,
+      "sha256": "0c988d6b32d908fc15e67703fb0358ccdd12a1ef6110a50fdbd0f469356b499f"
+    },
+    "historicalFinancialEvidenceRestamped": false
   }
 }

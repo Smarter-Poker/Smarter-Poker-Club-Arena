@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256928,
-      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+      "bytes": 257696,
+      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5217,5 +5217,17 @@
     },
     "exactPreviousBytesProvedByRevertingThreeUnitDenominators": true,
     "qualification": "SOURCE_ONLY_UNRUN. No native SQL result, production installation or historical financial receipt is restamped. Required local and protected hosted qualification remain enforced."
+  },
+  "startedTournamentAbortNativeBinding20261030": {
+    "reason": "Reviewed addition of required shard-four explicit started-event abort native proof plus evidence retention. All existing cash qualification inputs, commands, assertions, historical audits and financial/native/live states remain unchanged. Source identity only.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "current": {
+      "bytes": 257696,
+      "sha256": "ba69268654c24e3fc50d922e4c246220be69b3ffa179c2a13ee9b65232046b7b"
+    }
   }
 }

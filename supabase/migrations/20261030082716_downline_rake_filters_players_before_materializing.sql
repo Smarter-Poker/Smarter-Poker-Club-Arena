@@ -5,6 +5,7 @@
 -- the exact existing everyone(player_id,club_id) set before materialization.
 -- The later join, launch gate, rollups, per-row cent rounding, authorization,
 -- function identity/defaults/owner/ACL and all financial records are unchanged.
+-- @live-proof: EXISTS (SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.fn_agent_downline_rake(uuid,uuid,timestamptz,timestamptz,text,integer)') AND md5(pg_get_functiondef(oid))='056d558e8c39454a21f3705c631de049')
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='20s';

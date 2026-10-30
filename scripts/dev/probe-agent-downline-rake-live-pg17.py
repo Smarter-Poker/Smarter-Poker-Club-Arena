@@ -70,9 +70,12 @@ CREATE UNIQUE INDEX ON rake_records(id);
    for k,v in vals.items():cte=re.sub(r'\b'+k+r'\b',v,cte)
    return int(q(cte+' SELECT count(*) FROM edge_att;'))
   old=definition();before_count=edge_count(old)
+  proof=next(line.removeprefix('-- @live-proof: ') for line in M.read_text().splitlines() if line.startswith('-- @live-proof: '))
+  check('installed_proof_false_before_change',q('SELECT '+proof+';')=='f')
   q(M.read_text());after=definition()
   check('only_three_exact_predicate_changes',old.count(OLD)==3 and after==old.replace(OLD,NEW))
   check('identity_defaults_acl_owner_unchanged',meta()==before_meta)
+  check('installed_proof_true_after_change',q('SELECT '+proof+';')=='t')
   after_count=edge_count(after);print(json.dumps({'edge_before':before_count,'edge_after':after_count}));check('foreign_players_excluded_before_materialization',before_count==after_count+120001 and after_count==6)
   candidate={name:read(**args) for name,args in cases}
   check('all_whole_reader_numeric_scope_search_limit_service_results_identical',candidate==baseline)

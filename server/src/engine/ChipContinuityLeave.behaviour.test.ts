@@ -1,3 +1,4 @@
+import { horsePlo5DepartureEvidence } from '../services/HorsePlo5DepartureEvidence.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THE LEAVE DOOR, DRIVEN (chip continuity, Gate 1 deep audit, 2026-09-04)
@@ -722,12 +723,16 @@ describe('2/5 PLO5 Horse profit floor', () => {
     }
   }
   it.each([500, 1000, 1750, 2249.99])('keeps a 500 buy-in seated at stack %s', async (stack) => {
+    const before = horsePlo5DepartureEvidence().counts.below_profit_floor;
     expect((await attempt(stack, 500)).result.success).toBe(false);
+    expect(horsePlo5DepartureEvidence().counts.below_profit_floor).toBe(before + 1);
     expect(cashoutVoluntary).not.toHaveBeenCalled();
     expect(departure).not.toHaveBeenCalled();
   });
   it.each([2250, 2250.01, 3000])('permits the threshold and above at stack %s', async (stack) => {
+    const before = horsePlo5DepartureEvidence().counts.eligible;
     expect((await attempt(stack, 500)).result.success).toBe(true);
+    expect(horsePlo5DepartureEvidence().counts.eligible).toBe(before + 1);
     expect(cashoutVoluntary).toHaveBeenCalled();
   });
   it('counts reloads as invested money rather than winnings', async () => {

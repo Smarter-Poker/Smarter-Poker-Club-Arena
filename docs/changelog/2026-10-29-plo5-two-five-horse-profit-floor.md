@@ -9,3 +9,5 @@ The check waits until the Horse is outside a live hand and retains the seat if s
 Regression coverage drives the real engine leave method with isolated database responses, including the cent below/exact/above boundary, reloads, unreadable cost, a live hand, system exits and scope exclusions. Production activation and behavior evidence remain separate from local tests.
 
 Owner follow-up: Horses may stay beyond the profit floor. Their minimum entry/rebuy for this game is 500 chips, and the existing maximum-purchase policy remains the default for every eligible Horse. Tables with a maximum below 500 are declined, never overbought. Bankroll and table-limit checks remain authoritative.
+
+The existing health response includes bounded aggregate decision counts for this rule, recorded only by actual leave attempts. These distinguish a below-profit refusal from an in-hand or unknown-investment hold and expose no player identity, financial amount or per-decision timestamp. They provide live operational evidence without synthetic production cashouts and never affect leave decisions or routing health.

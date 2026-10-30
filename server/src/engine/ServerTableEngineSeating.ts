@@ -1,3 +1,4 @@
+import { recordHorsePlo5Departure } from '../services/HorsePlo5DepartureEvidence.js';
 import { requestLightningTopUp, type LightningTopUpReceipt } from '../lightning/LightningTopUp.js';
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
 import { loadSeatedPlayers } from '../services/supabase.js';
@@ -1559,13 +1560,16 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
                   !profile ||
                   (profile.is_horse !== null && typeof profile.is_horse !== 'boolean') ||
                   profile.is_horse === true
-                )
+                ) {
+                  recordHorsePlo5Departure('unverified_roster');
                   return {
                     success: false,
                     immediate: false,
                     error: 'The Session Could Not Be Verified. Please Retry.',
                   };
+                }
               } catch {
+                recordHorsePlo5Departure('unverified_roster');
                 return {
                   success: false,
                   immediate: false,
@@ -1700,7 +1704,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           };
           // The roster contains the previous settlement during a hand. Never
           // book that old win while the current pot can still change it.
-          if (liveSelf) return held;
+          if (liveSelf) {
+            recordHorsePlo5Departure('in_hand');
+            return held;
+          }
           try {
             const { data: session, error } = await supabase
               .from('cash_player_session')
@@ -1713,21 +1720,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
             const stack = Number(player.stack);
             // Integer chip cents keep the exact threshold inclusive. Unknown
             // cost is a reason to stay, never permission to guess a profit.
-            if (
-              error ||
-              !Number.isFinite(invested) ||
-              invested <= 0 ||
-              !Number.isFinite(stack) ||
-              Math.round(stack * 100) * 2 < Math.round(invested * 100) * 9
-            )
+            if (error || !Number.isFinite(invested) || invested <= 0 || !Number.isFinite(stack)) {
+              recordHorsePlo5Departure('unknown_investment');
               return held;
+            }
+            if (Math.round(stack * 100) * 2 < Math.round(invested * 100) * 9) {
+              recordHorsePlo5Departure('below_profit_floor');
+              return held;
+            }
           } catch (err) {
+            recordHorsePlo5Departure('unknown_investment');
             reportError(err, 'HorseCashDeparture.sessionRead');
             return held;
           }
           if (this.seatedPlayers.find((p) => p.user_id === userId) !== player) return stale();
-          if (this.handController?.getState().players.some((p) => p.user_id === userId))
+          if (this.handController?.getState().players.some((p) => p.user_id === userId)) {
+            recordHorsePlo5Departure('in_hand');
             return held;
+          }
+          recordHorsePlo5Departure('eligible');
         }
 
         // ═══════════════════════════════════════════════════════════════════════

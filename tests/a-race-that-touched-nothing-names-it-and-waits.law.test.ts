@@ -314,7 +314,22 @@ describe('LAW: a race that touched nothing names it and waits', () => {
       expect(checkpointModule).toContain(
         'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);'
       );
-      expect(checkpointModule.match(/process\.exit\(/g)).toHaveLength(1);
+      const publication = checkpointModule.indexOf(
+        'const receiptPublished = await publishLegacyCheckpointReceipt('
+      );
+      const publicationFailure = checkpointModule.indexOf(
+        'if (!receiptPublished) process.exit(1);'
+      );
+      const nativeExit = checkpointModule.indexOf(
+        'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);'
+      );
+      expect(publication).toBeGreaterThan(0);
+      expect(publicationFailure).toBeGreaterThan(publication);
+      expect(nativeExit).toBeGreaterThan(publicationFailure);
+      expect(checkpointModule.match(/process\.exit\(/g)).toHaveLength(2);
+      expect(checkpointModule.match(/process\.exit\([^;]*75[^;]*\);/g)).toEqual([
+        'process.exit(deferrableCheckpointRefusal(checkpointResult) ? 75 : 1);',
+      ]);
     });
   });
 

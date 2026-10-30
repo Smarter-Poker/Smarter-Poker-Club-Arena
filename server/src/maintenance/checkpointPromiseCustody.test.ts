@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 // All GC runs in synthetic targets inside this network-isolated container.
 it.skipIf(process.platform !== 'linux')(
-  'preserves checkpoint Promise custody across native GC on exact production Node',
+  'preserves checkpoint Promise custody and final receipt margin on exact production Node',
   () => {
     const image =
       'node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5';
@@ -17,7 +17,7 @@ it.skipIf(process.platform !== 'linux')(
       const {spawnSync}=require('node:child_process');
       assert.equal(process.version,'v22.23.2');
       const results=[];
-      for(const scenario of ['promise_gc','promise_gc_settle']) {
+      for(const scenario of ['promise_gc','promise_gc_settle','receipt_deadline','receipt_publication']) {
         const child=spawnSync(process.execPath,[
           'tests/operations/legacy-checkpoint-transport.mjs',scenario,
           'file:///repository/server/scripts/legacy-engine-checkpoint.mjs'
@@ -27,9 +27,26 @@ it.skipIf(process.platform !== 'linux')(
         assert.equal(child.status,0,child.stdout+child.stderr);
         const result=JSON.parse(child.stdout.trim());
         assert.equal(result.ok,true);assert.equal(result.scenario,scenario);
-        assert.equal(result.node,'v22.23.2');assert.equal(result.gcCalls,1);
+        assert.equal(result.node,'v22.23.2');
+        if(scenario==='receipt_publication') {
+          assert.equal(result.backpressureFlushed,true);
+          assert.equal(result.blockedPublicationBounded,true);
+          assert.equal(result.closedReaderRefused,true);
+          results.push(result);continue;
+        }
+        if(scenario!=='receipt_deadline')assert.equal(result.gcCalls,1);
+        else {
+          assert.ok(result.receiptRemainingMs>=500);
+          assert.equal(result.checkpointResult.ok,false);
+          assert.equal(result.checkpointResult.reason,'inspector cleanup not verified');
+          assert.equal(result.checkpointResult.retryAllowed,false);
+          assert.equal(result.checkpointResult.inspectorClosed,false);
+          assert.equal(result.nativeShutdownRequests,1);
+          assert.equal(result.clientCloseCalls,0);
+          assert.match(result.checkpointResult.transportDetail,/^op=guardAwait,cause=request_timeout,/);
+        }
         assert.equal(result.guardRequests,1);assert.equal(result.guardAwaitRequests,1);
-        assert.deepEqual(result.nativeProtocolErrors,[]);
+        if(scenario!=='receipt_deadline')assert.deepEqual(result.nativeProtocolErrors,[]);
         assert.equal(result.sameProcessAliveAfterCleanup,true);
         assert.equal(result.portClosed,true);assert.equal(result.normalExit,true);
         results.push(result);
@@ -76,7 +93,12 @@ it.skipIf(process.platform !== 'linux')(
       expect(JSON.parse(native.stdout.trim())).toMatchObject({
         ok: true,
         node: 'v22.23.2',
-        results: [{ scenario: 'promise_gc' }, { scenario: 'promise_gc_settle' }],
+        results: [
+          { scenario: 'promise_gc' },
+          { scenario: 'promise_gc_settle' },
+          { scenario: 'receipt_deadline' },
+          { scenario: 'receipt_publication' },
+        ],
       });
     } finally {
       if (attempted) {

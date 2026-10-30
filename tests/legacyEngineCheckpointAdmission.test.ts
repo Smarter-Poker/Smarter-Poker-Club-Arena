@@ -130,7 +130,19 @@ describe('the exact legacy checkpoint enters the existing release transaction', 
     expect(checkpointShell).toContain('"$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"');
     expect(checkpointTransport).toContain('checkpointDeadlineMs: Number(process.argv[5])');
     expect(checkpointTransport).toContain('checkpointDeadlineMs - cleanupBudgetMs');
-    expect(checkpointTransport).toContain('checkpointDeadlineMs ?? Infinity');
+    expect(checkpointTransport).toContain(
+      'checkpointDeadlineMs - cleanupBudgetMs - receiptReserveMs'
+    );
+    expect(checkpointTransport).toContain('checkpointDeadlineMs - receiptReserveMs');
+    expect(checkpointTransport).toContain(
+      'checkpointDeadlineMs <= startedAt + cleanupBudgetMs + receiptReserveMs'
+    );
+    expect(checkpointTransport).toMatch(
+      /const receiptPublished = await publishLegacyCheckpointReceipt\(/
+    );
+    expect(checkpointTransport).toContain('if (!receiptPublished) process.exit(1)');
+    expect(checkpointTransport).toContain('stream.write(JSON.stringify(result)');
+    expect(checkpointTransport).toContain('Math.min(deadlineMs - 100, Date.now() + 900)');
   });
 
   it('checks the installed custody contract before saving intent or opening inspector access', () => {

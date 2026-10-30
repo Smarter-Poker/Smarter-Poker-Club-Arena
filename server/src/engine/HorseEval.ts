@@ -1277,6 +1277,10 @@ export interface OppPostflopRead {
    * a river bettor holds it at that size - value always, a worse made hand
    * by how often it is bet for value, air by a bluff share. */
   riverPolar?: boolean;
+  /** V62 bluff share per size class [small, medium, large] in place of
+   * V62_BLUFF_SHARE (league calibration arm; HorseLogic copies it from
+   * `opts.v62BluffShares`). */
+  riverPolarBluffShare?: readonly [number, number, number];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1343,8 +1347,13 @@ export function v62ValueClass(oppCards: Card[], board: Card[], shortDeck: boolea
 
 /** Draw the target stratum for one river-bettor sample: 0 = bluff, else the
  * value class (1..3). `r1`/`r2` are uniform draws. Exported for the test. */
-export function v62TargetClass(sizeClass: 0 | 1 | 2, r1: number, r2: number): 0 | 1 | 2 | 3 {
-  if (r1 < V62_BLUFF_SHARE[sizeClass]) return 0;
+export function v62TargetClass(
+  sizeClass: 0 | 1 | 2,
+  r1: number,
+  r2: number,
+  bluffShare: readonly [number, number, number] = V62_BLUFF_SHARE
+): 0 | 1 | 2 | 3 {
+  if (r1 < bluffShare[sizeClass]) return 0;
   const mix = V62_VALUE_MIX[sizeClass];
   if (r2 < mix[0]) return 3;
   if (r2 < mix[0] + mix[1]) return 2;
@@ -3048,7 +3057,12 @@ export function simulateEquity(
         if (read.riverPolar === true && boardCards.length === 5 && oppHole === 2) {
           const index62 = v62Indexes ? v62Indexes[o] : null;
           if (index62) {
-            const target62 = v62TargetClass(v62SizeClass(read), fastRandom(), fastRandom());
+            const target62 = v62TargetClass(
+              v62SizeClass(read),
+              fastRandom(),
+              fastRandom(),
+              read.riverPolarBluffShare ?? V62_BLUFF_SHARE
+            );
             if (placeV62Combo(deck, windowStart, n, index62, target62, vi.isShortDeck)) {
               oppCards[0] = deck[windowStart];
               oppCards[1] = deck[windowStart + 1];

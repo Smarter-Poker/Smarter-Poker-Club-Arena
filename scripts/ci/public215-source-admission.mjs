@@ -147,13 +147,57 @@ export function sourceCommandFailure(binary,args,result){
  return `GitHub source metadata command refused (route ${route}; kind ${kind}; HTTP ${http?.[1]??'unknown'}; exit ${exit})`;
 }
 
-export function boundedSourceReaders(run=spawnSync){
+const LOG_BYTES=16*1024*1024;
+const LOG_CAUSES=new Set(['ENOTFOUND','EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET','CERT_HAS_EXPIRED','DEPTH_ZERO_SELF_SIGNED_CERT','UNABLE_TO_VERIFY_LEAF_SIGNATURE','ERR_TLS_CERT_ALTNAME_INVALID']);
+const logRefusal=(stage,status,code)=>new SourceRefusal(`Classifier log refused (stage ${stage}; HTTP ${Number.isInteger(status)&&status>=100&&status<=599?status:'unknown'}; code ${code})`);
+const logCause=error=>['AbortError','TimeoutError'].includes(error?.name)?'timeout':LOG_CAUSES.has(error?.cause?.code)?error.cause.code:LOG_CAUSES.has(error?.code)?error.code:'transport_failed';
+
+// GitHub documents a 302 to a short-lived log URL. Keep the repository token
+// on the API leg only; never forward it to storage or print the signed URL.
+export async function boundedJobLog(id,{fetchImpl=fetch,token=process.env.GH_TOKEN||process.env.GITHUB_TOKEN,takeBudget=()=>{},deadline=Date.now()+120000}={}){
+ demand(positive(id),'Exact classifier job identity required');
+ demand(typeof token==='string'&&token.length>0,'Workflow source reader credential unavailable');
+ const end=Math.min(deadline,Date.now()+20000);
+ const request=async(stage,url,headers={})=>{
+  takeBudget();const remaining=end-Date.now();if(remaining<=0)throw logRefusal(stage,null,'timeout');
+  try{return await fetchImpl(url,{method:'GET',redirect:'manual',headers,signal:AbortSignal.timeout(remaining)});}
+  catch(error){throw logRefusal(stage,null,logCause(error));}
+ };
+ const api=await request('api',`https://api.github.com/repos/${REPO}/actions/jobs/${id}/logs`,{Authorization:`Bearer ${token}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+ if(api.status!==302){void api.body?.cancel().catch(()=>{});throw logRefusal('api',api.status,'expected_redirect');}
+ let target;
+ try{target=new URL(api.headers.get('location'));}catch{throw logRefusal('api',302,'invalid_redirect');}
+ finally{void api.body?.cancel().catch(()=>{});}
+ if(target.protocol!=='https:'||target.username||target.password||target.port||target.hash||!(/^[a-z0-9-]+\.blob\.core\.windows\.net$/.test(target.hostname)||target.hostname==='results-receiver.actions.githubusercontent.com'))throw logRefusal('api',302,'invalid_redirect');
+ const response=await request('download',target.href);
+ if(response.status!==200){void response.body?.cancel().catch(()=>{});throw logRefusal('download',response.status,'expected_log');}
+ const length=response.headers.get('content-length');
+ if(length!==null&&(!/^[0-9]+$/.test(length)||Number(length)>LOG_BYTES)){void response.body?.cancel().catch(()=>{});throw logRefusal('download',200,'body_limit');}
+ if(!response.body)throw logRefusal('download',200,'missing_body');
+ const reader=response.body.getReader(),parts=[];let size=0;
+ try{
+  for(;;){
+   const part=await reader.read();if(part.done)break;
+   if(!(part.value instanceof Uint8Array))throw logRefusal('download',200,'invalid_body');
+   size+=part.value.byteLength;if(size>LOG_BYTES){void reader.cancel().catch(()=>{});throw logRefusal('download',200,'body_limit');}
+   parts.push(Buffer.from(part.value));
+  }
+ }catch(error){if(error instanceof SourceRefusal)throw error;throw logRefusal('download',200,logCause(error));}
+ finally{reader.releaseLock();}
+ if(Date.now()>end)throw logRefusal('download',200,'timeout');
+ let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(Buffer.concat(parts,size));}
+ catch{throw logRefusal('download',200,'invalid_utf8');}
+ if(Date.now()>end)throw logRefusal('download',200,'timeout');return text;
+}
+
+export function boundedSourceReaders(run=spawnSync,fetchImpl=fetch){
  const started=Date.now(),deadline=started+120000;let calls=0;const cache=new Map();
- const command=(binary,args)=>{demand(++calls<=80&&Date.now()<deadline,'Finite source admission budget exceeded');const r=run(binary,args,{encoding:null,maxBuffer:16*1024*1024,timeout:Math.min(20000,deadline-Date.now())});demand(!r.error&&r.status===0,sourceCommandFailure(binary,args,r));return r.stdout;};
+ const takeBudget=()=>demand(++calls<=80&&Date.now()<deadline,'Finite source admission budget exceeded');
+ const command=(binary,args)=>{takeBudget();const r=run(binary,args,{encoding:null,maxBuffer:16*1024*1024,timeout:Math.min(20000,deadline-Date.now())});demand(!r.error&&r.status===0,sourceCommandFailure(binary,args,r));return r.stdout;};
  const json=path=>JSON.parse(command('gh',['api',`repos/${REPO}${path}`]).toString('utf8'));
  const read=async path=>{if(!cache.has(path))cache.set(path,json(path));return cache.get(path);};
  const readArray=async path=>{const result=[];for(let page=1;page<=10;page++){const rows=await read(`${path}?per_page=100&page=${page}`);demand(Array.isArray(rows),'Readable merge associations required');result.push(...rows);if(rows.length<100)return result;}throw Error('Unbounded merge associations');};
- return {read,readArray,readLog:async id=>command('gh',['api',`repos/${REPO}/actions/jobs/${id}/logs`]).toString('utf8'),git:args=>command('git',args),readFresh:async path=>json(path),stats:()=>({commands:calls,elapsed_ms:Date.now()-started})};
+ return {read,readArray,readLog:async id=>boundedJobLog(id,{fetchImpl,takeBudget,deadline}),git:args=>command('git',args),readFresh:async path=>json(path),stats:()=>({commands:calls,elapsed_ms:Date.now()-started})};
 }
 
 async function main(){

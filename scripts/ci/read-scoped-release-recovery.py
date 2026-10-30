@@ -379,7 +379,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v5'
+PENDING_SCHEMA = 'existing-release-pending-observation/v6'
 PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
                              'use_hourly', 'unavailable', 'unknown')
 PENDING_RECOVERY_CATEGORIES = {
@@ -692,7 +692,23 @@ def validate_pending_owner(value, tcp):
         raise ValueError('Pending socket owner refused')
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None):
+def validate_kernel_owner_evidence(value, owner, *, allow_not_observed=False):
+    if (not isinstance(value, dict) or set(value) != {'stage', 'code'}
+            or not isinstance(value['stage'], str) or value['stage'] not in KERNEL_OWNER_STAGES
+            or not isinstance(value['code'], str) or value['code'] not in KERNEL_OWNER_CODES):
+        raise ValueError('Kernel owner evidence refused')
+    if ((value['stage'] == 'complete' or value['code'] == 'exclusive')
+            != (owner != 'unknown')
+            or (owner != 'unknown' and value != {'stage': 'complete', 'code': 'exclusive'})
+            or (value['stage'] == 'not_observed' and (not allow_not_observed
+                or value['code'] not in {'not_read', 'not_listening', 'tcp_unproved'}))
+            or (value['stage'] != 'not_observed'
+                and value['code'] in {'not_read', 'not_listening', 'tcp_unproved'})):
+        raise ValueError('Kernel owner evidence refused')
+    return value
+
+
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None, inspector_owner_evidence=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
@@ -702,6 +718,9 @@ def pending_observation(request, rows, intent, marker, deadline, unit, signs, jo
     validate_pending_tcp(inspector_tcp)
     inspector_owner = inspector_owner if inspector_owner is not None else 'unknown'
     validate_pending_owner(inspector_owner, inspector_tcp)
+    inspector_owner_evidence = (inspector_owner_evidence if inspector_owner_evidence is not None
+                               else {'stage': 'not_observed', 'code': 'not_read'})
+    validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
@@ -709,6 +728,7 @@ def pending_observation(request, rows, intent, marker, deadline, unit, signs, jo
         'legacyIntent': legacy_intent,
         'inspectorTcp': inspector_tcp,
         'inspectorOwner': inspector_owner,
+        'inspectorOwnerEvidence': inspector_owner_evidence,
         'journalStatus': 'unavailable' if journal_failure else 'observed',
         'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
@@ -779,19 +799,21 @@ def pending_remote(request, root_fd):
         # Supplemental current TCP presence needs no historical checkpoint
         # intent. Its unknown outcome never bypasses the mandatory rechecks.
         try:
-            inspector_tcp, inspector_owner = pending_tcp_presence()
+            inspector_tcp, inspector_owner, inspector_owner_evidence = pending_tcp_presence(include_owner_evidence=True)
             validate_pending_tcp(inspector_tcp)
             validate_pending_owner(inspector_owner, inspector_tcp)
+            validate_kernel_owner_evidence(inspector_owner_evidence, inspector_owner, allow_not_observed=True)
         except (OSError, ValueError, subprocess.SubprocessError):
             inspector_tcp = {'state': 'unknown', 'binding': 'unproved', 'code': 'evidence_unavailable'}
             inspector_owner = 'unknown'
+            inspector_owner_evidence = {'stage': 'not_observed', 'code': 'tcp_unproved'}
         if (legacy_intent, legacy_binding) != pending_legacy_intent(request, directory, before[0][4]):
             legacy_intent = {'status': 'unknown', 'code': 'changed_during_read'}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner, inspector_owner_evidence)
     finally:
         os.close(directory)
 
@@ -834,6 +856,61 @@ def pending_tcp_health(deadline):
 
 KERNEL_PROC_ROOT = Path('/proc')
 KERNEL_INSPECTOR_PORT = 9229
+KERNEL_OWNER_STAGES = {'not_observed', 'identity', 'members', 'process_stat', 'namespace',
+    'listeners', 'descriptors', 'recheck_process', 'recheck_members', 'recheck_listeners',
+    'snapshot', 'complete'}
+KERNEL_OWNER_CODES = {'not_read', 'not_listening', 'tcp_unproved', 'unsupported',
+    'unproved', 'unavailable', 'permission_denied', 'changed', 'ambiguous', 'bound',
+    'deadline', 'command_failed', 'invalid_encoding', 'exclusive'}
+
+
+class KernelOwnerFailure(ValueError):
+    def __init__(self, stage, code):
+        if stage not in KERNEL_OWNER_STAGES or code not in KERNEL_OWNER_CODES:
+            raise ValueError('Kernel owner evidence refused')
+        self.evidence = {'stage': stage, 'code': code}
+        super().__init__('Kernel owner observation unproved')
+
+
+def _kernel_error_code(error):
+    # Project a closed vocabulary only. Native messages, paths and process
+    # names never become exported diagnostic text.
+    if isinstance(error, subprocess.TimeoutExpired):
+        return 'deadline'
+    if isinstance(error, PermissionError):
+        return 'permission_denied'
+    if isinstance(error, FileNotFoundError):
+        return 'changed'
+    if isinstance(error, UnicodeError):
+        return 'invalid_encoding'
+    if isinstance(error, ScopedRefusal):
+        return {'command_deadline': 'deadline', 'command_size': 'bound',
+                'command_nonzero': 'command_failed'}.get(error.code, 'unavailable')
+    if isinstance(error, OSError):
+        return 'unavailable'
+    return {
+        'Inspector native unavailable': 'command_failed',
+        'Inspector read deadline': 'deadline',
+        'Inspector read size': 'bound',
+        'Kernel owner deadline': 'deadline',
+        'Kernel owner file bound': 'bound',
+        'Kernel owner socket bound': 'bound',
+        'Kernel owner descriptor bound': 'bound',
+        'Kernel owner listener ambiguous': 'ambiguous',
+        'Kernel owner descriptor ambiguous': 'ambiguous',
+        'Kernel owner namespace differs': 'changed',
+        'Kernel owner process changed': 'changed',
+        'Kernel owner snapshot changed': 'changed',
+    }.get(str(error), 'unproved')
+
+
+def _kernel_observe(stage, operation):
+    try:
+        return operation()
+    except KernelOwnerFailure:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise KernelOwnerFailure(stage, _kernel_error_code(error)) from None
 
 
 def _kernel_deadline(deadline):
@@ -874,15 +951,15 @@ def _kernel_members(identity, deadline):
 def _kernel_pid_stat(pid, deadline):
     if not isinstance(pid, str) or not re.fullmatch(r'[1-9][0-9]{0,9}', pid):
         raise ValueError('Kernel owner process unproved')
-    raw = _kernel_read(KERNEL_PROC_ROOT / pid / 'stat', 4096, deadline).decode('ascii')
-    prefix, separator, tail = raw.rpartition(')')
+    raw = _kernel_read(KERNEL_PROC_ROOT / pid / 'stat', 4096, deadline)
+    prefix, separator, tail = raw.rpartition(b')')
     fields = tail.split()
     # Field22 is starttime; the private comm field can itself contain spaces
     # or parentheses, so never split the whole proc record on whitespace.
-    if (not separator or not prefix.startswith(pid + ' (') or len(fields) < 20
-            or not re.fullmatch(r'[0-9]{1,20}', fields[19])):
+    if (not separator or not prefix.startswith(pid.encode('ascii') + b' (') or len(fields) < 20
+            or not re.fullmatch(rb'[0-9]{1,20}', fields[19])):
         raise ValueError('Kernel owner process unproved')
-    return fields[19]
+    return fields[19].decode('ascii')
 
 
 def _kernel_listeners(main_pid, deadline):
@@ -915,75 +992,100 @@ def _kernel_listeners(main_pid, deadline):
 
 def _socket_owner_snapshot(identity, deadline, budget=None):
     budget = budget if budget is not None else {'fds': 0}
-    members = _kernel_members(identity, deadline)
-    main = identity['hostPid']
-    processes = []
-    namespace = None
-    for pid in members:
-        _kernel_deadline(deadline)
-        started = _kernel_pid_stat(pid, deadline)
-        network = os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net')
-        if not re.fullmatch(r'net:\[[1-9][0-9]{0,19}\]', network):
-            raise ValueError('Kernel owner namespace unproved')
-        if namespace is None:
-            namespace = network
-        if network != namespace:
-            raise ValueError('Kernel owner namespace differs')
-        processes.append((pid, started))
-    inode = _kernel_listeners(main, deadline)
-    owners = set()
-    for pid in members:
-        with os.scandir(KERNEL_PROC_ROOT / pid / 'fd') as entries:
-            for entry in entries:
-                _kernel_deadline(deadline)
-                budget['fds'] += 1
-                if budget['fds'] > 16384 or not re.fullmatch(r'[0-9]{1,10}', entry.name):
-                    raise ValueError('Kernel owner descriptor bound')
-                target = os.readlink(entry.path)
-                if len(target) > 4096:
-                    raise ValueError('Kernel owner descriptor bound')
-                if target == 'socket:[' + inode + ']':
-                    owners.add(pid)
-    # Shared descriptors and unmapped listeners are not exclusive ownership.
-    if len(owners) != 1:
-        raise ValueError('Kernel owner descriptor ambiguous')
-    for pid, started in processes:
-        if (_kernel_pid_stat(pid, deadline) != started
-                or os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net') != namespace):
-            raise ValueError('Kernel owner process changed')
-    if (_kernel_members(identity, deadline) != members
-            or _kernel_listeners(main, deadline) != inode):
-        raise ValueError('Kernel owner snapshot changed')
-    return {'members': members, 'processes': tuple(processes), 'namespace': namespace,
-            'inode': inode, 'owners': tuple(sorted(owners, key=int))}
+    stage = 'members'
+    try:
+        members = _kernel_members(identity, deadline)
+        main = identity['hostPid']
+        processes = []
+        namespace = None
+        for pid in members:
+            stage = 'process_stat'
+            _kernel_deadline(deadline)
+            started = _kernel_pid_stat(pid, deadline)
+            stage = 'namespace'
+            network = os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net')
+            if not re.fullmatch(r'net:\[[1-9][0-9]{0,19}\]', network):
+                raise ValueError('Kernel owner namespace unproved')
+            if namespace is None:
+                namespace = network
+            if network != namespace:
+                raise ValueError('Kernel owner namespace differs')
+            processes.append((pid, started))
+        stage = 'listeners'
+        inode = _kernel_listeners(main, deadline)
+        owners = set()
+        stage = 'descriptors'
+        for pid in members:
+            with os.scandir(KERNEL_PROC_ROOT / pid / 'fd') as entries:
+                for entry in entries:
+                    _kernel_deadline(deadline)
+                    budget['fds'] += 1
+                    if budget['fds'] > 16384 or not re.fullmatch(r'[0-9]{1,10}', entry.name):
+                        raise ValueError('Kernel owner descriptor bound')
+                    target = os.readlink(entry.path)
+                    if len(target) > 4096:
+                        raise ValueError('Kernel owner descriptor bound')
+                    if target == 'socket:[' + inode + ']':
+                        owners.add(pid)
+        # Shared descriptors and unmapped listeners are not exclusive ownership.
+        if len(owners) != 1:
+            raise ValueError('Kernel owner descriptor ambiguous')
+        stage = 'recheck_process'
+        for pid, started in processes:
+            if (_kernel_pid_stat(pid, deadline) != started
+                    or os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net') != namespace):
+                raise ValueError('Kernel owner process changed')
+        stage = 'recheck_members'
+        if _kernel_members(identity, deadline) != members:
+            raise ValueError('Kernel owner snapshot changed')
+        stage = 'recheck_listeners'
+        if _kernel_listeners(main, deadline) != inode:
+            raise ValueError('Kernel owner snapshot changed')
+        return {'members': members, 'processes': tuple(processes), 'namespace': namespace,
+                'inode': inode, 'owners': tuple(sorted(owners, key=int))}
+    except KernelOwnerFailure:
+        raise
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise KernelOwnerFailure(stage, _kernel_error_code(error)) from None
+
+
+def pending_socket_owner_details(identity, deadline):
+    # The reason is a closed stage/code pair, never native exception text.
+    # Two equal complete snapshots and one shared FD/deadline budget remain
+    # mandatory. Partial ownership never becomes a positive observation.
+    if sys.platform != 'linux':
+        return 'unknown', {'stage': 'identity', 'code': 'unsupported'}
+    if (not isinstance(identity, dict) or not isinstance(identity.get('container'), str)
+            or not re.fullmatch('[0-9a-f]{64}', identity['container'])
+            or not isinstance(identity.get('hostPid'), str)
+            or not re.fullmatch(r'[1-9][0-9]{0,9}', identity['hostPid'])):
+        return 'unknown', {'stage': 'identity', 'code': 'unproved'}
+    try:
+        budget = {'fds': 0}
+        before = _kernel_observe('snapshot', lambda: _socket_owner_snapshot(identity, deadline, budget))
+        after = _kernel_observe('snapshot', lambda: _socket_owner_snapshot(identity, deadline, budget))
+        _kernel_observe('snapshot', lambda: _kernel_deadline(deadline))
+        if before != after:
+            return 'unknown', {'stage': 'snapshot', 'code': 'changed'}
+        owner = 'main' if before['owners'] == (identity['hostPid'],) else 'other_container_process'
+        return owner, {'stage': 'complete', 'code': 'exclusive'}
+    except KernelOwnerFailure as error:
+        return 'unknown', error.evidence
 
 
 def pending_socket_owner(identity, deadline):
-    # Linux kernel metadata only; private IDs and paths never leave this
-    # helper. Two equal complete snapshots are required, not one positive FD.
-    try:
-        if (sys.platform != 'linux' or not isinstance(identity, dict)
-                or not isinstance(identity.get('container'), str)
-                or not re.fullmatch(r'[0-9a-f]{64}', identity['container'])
-                or not isinstance(identity.get('hostPid'), str)
-                or not re.fullmatch(r'[1-9][0-9]{0,9}', identity['hostPid'])):
-            return 'unknown'
-        budget = {'fds': 0}
-        before = _socket_owner_snapshot(identity, deadline, budget)
-        after = _socket_owner_snapshot(identity, deadline, budget)
-        _kernel_deadline(deadline)
-        if before != after:
-            return 'unknown'
-        return 'main' if before['owners'] == (identity['hostPid'],) else 'other_container_process'
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return 'unknown'
+    return pending_socket_owner_details(identity, deadline)[0]
 
 
-def pending_tcp_presence():
+def pending_tcp_presence(*, include_owner_evidence=False):
     # One shared supplemental deadline, not eight seconds per native command.
     # No identities or native exception text leave this helper.
     deadline = time.monotonic() + 8
     unknown = lambda code: {'state': 'unknown', 'binding': 'unproved', 'code': code}
+    def result(tcp, owner='unknown', evidence=None):
+        evidence = evidence if evidence is not None else {'stage': 'not_observed', 'code': 'tcp_unproved'}
+        validate_kernel_owner_evidence(evidence, owner, allow_not_observed=True)
+        return (tcp, owner, evidence) if include_owner_evidence else (tcp, owner)
     failure = 'container_unproved'
     try:
         before = inspector_identity(deadline)
@@ -994,7 +1096,7 @@ def pending_tcp_presence():
             '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
             deadline, limit=256).decode().strip()
         if label != health['source']:
-            return unknown('image_unproved'), 'unknown'
+            return result(unknown('image_unproved'))
         failure = 'probe_unproved'
         # Match the original gate's three-second native child ceiling; the
         # eight-second envelope also includes identity/health binding reads.
@@ -1010,33 +1112,36 @@ def pending_tcp_presence():
                 or (probe.get('state'), probe.get('code')) not in {
                     ('closed', 'connection_refused'), ('listening', 'connection_established'),
                     ('unknown', 'probe_unproved')}):
-            return unknown('probe_unproved'), 'unknown'
+            return result(unknown('probe_unproved'))
         owner = 'unknown'
+        owner_evidence = {'stage': 'not_observed', 'code': 'not_listening' if probe['state'] == 'closed' else 'tcp_unproved'}
         if probe['state'] == 'listening':
             try:
-                owner = pending_socket_owner(before, deadline)
+                owner, owner_evidence = pending_socket_owner_details(before, deadline)
                 if not isinstance(owner, str) or owner not in {'main', 'other_container_process', 'unknown'}:
-                    owner = 'unknown'
+                    raise ValueError('Kernel owner evidence refused')
+                validate_kernel_owner_evidence(owner_evidence, owner)
             except (OSError, ValueError, subprocess.SubprocessError):
                 # An optional kernel read failure alone cannot erase an
                 # independently rebound TCP result; exhausted binding time can.
                 owner = 'unknown'
+                owner_evidence = {'stage': 'snapshot', 'code': 'unavailable'}
         failure = 'container_unproved'
         after = inspector_identity(deadline, stage='recheck_container')
         failure = 'health_unproved'
         after_health = pending_tcp_health(deadline)
         if before != after or health != after_health:
-            return unknown('identity_changed'), 'unknown'
+            return result(unknown('identity_changed'))
         answer = ({**probe, 'binding': 'matched'} if probe['state'] != 'unknown'
                   else unknown('probe_unproved'))
         validate_pending_tcp(answer)
-        return answer, owner
+        return result(answer, owner, owner_evidence)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired)
                 else error.code if isinstance(error, ScopedRefusal)
                 else INSPECTOR_COMMAND_ERRORS.get(str(error)))
-        return unknown(code if code in {'command_deadline', 'command_size', 'command_nonzero'}
-                       else failure), 'unknown'
+        return result(unknown(code if code in {'command_deadline', 'command_size', 'command_nonzero'}
+                       else failure))
 
 
 # This mode observes the original one-shot checkpoint only. It never opens or
@@ -1379,7 +1484,7 @@ def validate_inspector(value, request):
     return value
 
 
-SERVING_ROLE_SCHEMA = 'current-serving-inspector-role/v1'
+SERVING_ROLE_SCHEMA = 'current-serving-inspector-role/v2'
 SERVING_ROLE_LIMITATION = 'Kernel role only; no inspector ownership, provenance or action authority.'
 
 
@@ -1408,11 +1513,14 @@ def serving_role_remote(request):
         if label != request['releaseSha']:
             raise ScopedRefusal('serving_role', 'binding_unproved')
         owner = 'unknown'
+        owner_evidence = {'stage': 'snapshot', 'code': 'unavailable'}
         try:
-            projected = pending_socket_owner(before, deadline)
-            if isinstance(projected, str) and projected in {'main', 'other_container_process', 'unknown'}:
-                owner = projected
-        except (OSError, ValueError, subprocess.SubprocessError):
+            projected, evidence = pending_socket_owner_details(before, deadline)
+            if not isinstance(projected, str) or projected not in {'main', 'other_container_process', 'unknown'}:
+                raise ValueError('Kernel owner evidence refused')
+            validate_kernel_owner_evidence(evidence, projected)
+            owner, owner_evidence = projected, evidence
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError):
             pass
         # A failed optional projection never removes these mandatory current
         # runtime bindings. No retired release records are read or recreated.
@@ -1425,7 +1533,8 @@ def serving_role_remote(request):
                 or health != after_health):
             raise ScopedRefusal('serving_role', 'binding_unproved')
         return {'schema': SERVING_ROLE_SCHEMA, 'readOnly': True, **request,
-                'inspectorOwner': owner, 'limitation': SERVING_ROLE_LIMITATION}
+                'inspectorOwner': owner, 'inspectorOwnerEvidence': owner_evidence,
+                'limitation': SERVING_ROLE_LIMITATION}
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if isinstance(error, ScopedRefusal) and error.phase == 'serving_role':
             raise
@@ -1435,7 +1544,7 @@ def serving_role_remote(request):
 def validate_serving_role(value, request):
     request = selection(request)
     if (not isinstance(value, dict)
-            or set(value) != {'schema', 'readOnly', 'mode', 'releaseSha', 'instanceId', 'inspectorOwner', 'limitation'}
+            or set(value) != {'schema', 'readOnly', 'mode', 'releaseSha', 'instanceId', 'inspectorOwner', 'inspectorOwnerEvidence', 'limitation'}
             or value['schema'] != SERVING_ROLE_SCHEMA or value['readOnly'] is not True
             or request.get('mode') != 'current_serving_inspector_role'
             or any(value[key] != expected for key, expected in request.items())
@@ -1443,6 +1552,7 @@ def validate_serving_role(value, request):
             or value['inspectorOwner'] not in {'main', 'other_container_process', 'unknown'}
             or value['limitation'] != SERVING_ROLE_LIMITATION):
         raise ValueError('Serving role export refused')
+    validate_kernel_owner_evidence(value['inspectorOwnerEvidence'], value['inspectorOwner'])
     return value
 
 
@@ -1482,7 +1592,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'inspectorOwnerEvidence', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -1499,6 +1609,7 @@ def validate_reply(value, request):
         validate_pending_intent(value['legacyIntent'])
         validate_pending_tcp(value['inspectorTcp'])
         validate_pending_owner(value['inspectorOwner'], value['inspectorTcp'])
+        validate_kernel_owner_evidence(value['inspectorOwnerEvidence'], value['inspectorOwner'], allow_not_observed=True)
         validate_pending_journal(value['journalSigns'], value['journalFailure'])
         if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
             raise ValueError('Pending journal status refused')

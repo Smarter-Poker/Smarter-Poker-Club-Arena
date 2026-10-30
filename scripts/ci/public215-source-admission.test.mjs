@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {boundedSourceReaders,sourceCommandFailure,collectSourceAdmission,immutableClassification,sourceRequirements} from './public215-source-admission.mjs';
+import {boundedJobLog,boundedSourceReaders,sourceCommandFailure,collectSourceAdmission,immutableClassification,sourceRequirements} from './public215-source-admission.mjs';
 
 const candidate='a'.repeat(40),head='b'.repeat(40),parent='c'.repeat(40),base='d'.repeat(40);
 const names=['TypeScript Check','Client Unit Tests (vitest)','Server Engine (typecheck + tests)','Money trigger declaration authority','Production Build','CSS Beat E2E (multi-table + animations)'];
@@ -108,4 +108,58 @@ test('failed metadata reads name only a canonical route and typed status, and re
  }
  assert.match(sourceCommandFailure('gh',['api','repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/rules/branches/main'],{status:null,error:{code:'ETIMEDOUT'},stderr:Buffer.alloc(0)}),/kind timeout; HTTP unknown; exit unavailable/);
  assert.equal(sourceCommandFailure('git',['fetch','secret'],result),'Immutable Git source command refused (exit 1)');
+});
+
+
+const storage='https://productionresults.blob.core.windows.net/logs/job.txt?sig=private-signed-value';
+const apiLog='https://api.github.com/repos/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/jobs/123/logs';
+const redirect=location=>new Response(null,{status:302,headers:{Location:location}});
+function logFixture(responses){
+ const calls=[];let budget=0;
+ return {calls,options:{token:'private-test-token',takeBudget:()=>budget++,fetchImpl:async(url,options)=>{calls.push({url,options});const response=responses.shift();if(response instanceof Error)throw response;return response;}},budget:()=>budget};
+}
+
+test('job log uses the exact two-leg API protocol and never forwards the token or follows another redirect',async()=>{
+ const original='\ufeff2026-10-30T00:00:00.000Z genuine classifier log\n';
+ const f=logFixture([redirect(storage),new Response(original)]);
+ assert.equal(await boundedJobLog(123,f.options),original);assert.equal(f.budget(),2);assert.equal(f.calls.length,2);
+ assert.equal(f.calls[0].url,apiLog);assert.equal(f.calls[0].options.headers.Authorization,'Bearer private-test-token');
+ assert.equal(f.calls[0].options.redirect,'manual');assert.equal(f.calls[1].options.redirect,'manual');assert.deepEqual(f.calls[1].options.headers,{});
+ assert.ok(f.calls.every(c=>c.options.signal instanceof AbortSignal));
+ const g=logFixture([redirect(storage),redirect(storage)]);await assert.rejects(boundedJobLog(123,g.options),/stage download; HTTP 302; code expected_log/);assert.equal(g.calls.length,2);
+});
+
+test('job log refuses unsafe destinations before download and redacts all provider-controlled data',async()=>{
+ for(const location of ['http://productionresults.blob.core.windows.net/log','https://user:private-test-token@productionresults.blob.core.windows.net/log','https://productionresults.blob.core.windows.net:444/log','https://evil.example/private-signed-value','https://productionresults.blob.core.windows.net.evil.example/log','/relative-private-signed-value','https://productionresults.blob.core.windows.net/log#private-signed-value']){
+  const f=logFixture([redirect(location)]);await assert.rejects(boundedJobLog(123,f.options),error=>{assert.match(error.message,/code invalid_redirect/);assert.doesNotMatch(error.message,/private|evil|https?:|user/);return true;});assert.equal(f.calls.length,1);
+ }
+ const missing=logFixture([new Response(null,{status:302})]);await assert.rejects(boundedJobLog(123,missing.options),/invalid_redirect/);
+ for(const [responses,expected]of [[[new Response('private-test-token',{status:403})],/stage api; HTTP 403/],[[redirect(storage),new Response('private-signed-value',{status:503})],/stage download; HTTP 503/]]){
+  const f=logFixture(responses);await assert.rejects(boundedJobLog(123,f.options),error=>{assert.match(error.message,expected);assert.doesNotMatch(error.message,/private|sig=|https:/);return true;});
+ }
+});
+
+test('job log enforces both advertised and streamed byte bounds and rejects malformed UTF8',async()=>{
+ const over=16*1024*1024+1;
+ for(const response of [new Response('x',{headers:{'content-length':String(over)}}),new Response(new Uint8Array(over)),new Response(new Uint8Array([0xc3,0x28]))]){
+  const f=logFixture([redirect(storage),response]);await assert.rejects(boundedJobLog(123,f.options),/code (body_limit|invalid_utf8)/);assert.equal(f.calls.length,2);
+ }
+ const exact=logFixture([redirect(storage),new Response('x'.repeat(16*1024*1024))]);assert.equal((await boundedJobLog(123,exact.options)).length,16*1024*1024);
+});
+
+test('job log has one shared deadline and finite budget, with safe fixed transport codes',async()=>{
+ const f=logFixture([]);await assert.rejects(boundedJobLog(123,{...f.options,deadline:Date.now()-1}),/code timeout/);assert.equal(f.calls.length,0);
+ for(const error of [Object.assign(new Error('private-signed-value'),{cause:{code:'ECONNRESET'}}),Object.assign(new Error('private-test-token'),{name:'TimeoutError'}),new Error('https://secret/private')]){
+  const g=logFixture([redirect(storage),error]);await assert.rejects(boundedJobLog(123,g.options),e=>{assert.match(e.message,/stage download; HTTP unknown; code (ECONNRESET|timeout|transport_failed)/);assert.doesNotMatch(e.message,/private|secret|https:/);return true;});assert.equal(g.calls.length,2);
+ }
+ let calls=0;await assert.rejects(boundedJobLog(123,{token:'private-test-token',takeBudget:()=>{throw Error('finite budget');},fetchImpl:async()=>{calls++;}}),/finite budget/);assert.equal(calls,0);
+ await assert.rejects(boundedJobLog('123',f.options),/Exact classifier job identity/);await assert.rejects(boundedJobLog(123,{...f.options,token:''}),/credential unavailable/);
+});
+
+
+test('download streaming is aborted by the original shared log deadline',async()=>{
+ const keepAlive=setTimeout(()=>{},100);
+ const fetchImpl=async(url,options)=>url===apiLog?redirect(storage):new Response(new ReadableStream({start(controller){options.signal.addEventListener('abort',()=>controller.error(options.signal.reason),{once:true});}}));
+ try{await assert.rejects(boundedJobLog(123,{token:'private-test-token',fetchImpl,deadline:Date.now()+25}),/stage download; HTTP 200; code timeout/);}
+ finally{clearTimeout(keepAlive);}
 });

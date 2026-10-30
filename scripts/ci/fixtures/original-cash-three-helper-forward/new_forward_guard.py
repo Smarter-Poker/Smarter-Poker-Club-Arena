@@ -16,7 +16,9 @@ def run(must,call,F):
     original_binding=json.loads((F/'source-binding.json').read_text())
     original=(F.parents[3]/'supabase/migrations'/original_binding['migration']).read_text()
     assert hashlib.sha256(original.encode()).hexdigest()==m['original_migration_sha256'],'original6e83source changed'
-    assert re.findall(r'\$eight\$(.*?)\$eight\$',s,re.S)==re.findall(r'\$eight\$(.*?)\$eight\$',original,re.S),'full27 original GEN/source guards changed'
+    protected_credit=json.loads((F/'credit51934-provenance.json').read_text());current=protected_credit['actual_process'];original_rows=re.findall(r'\$eight\$(.*?)\$eight\$',original,re.S);new_rows=re.findall(r'\$eight\$(.*?)\$eight\$',s,re.S);assert len(original_rows)==len(new_rows)==2
+    for baseline,forward in zip(original_rows,new_rows):
+        rows=json.loads(baseline);oldrow=next(r for r in rows if r['signature']=='public.fn_process_weekly_accounting_scope(uuid,uuid)');assert oldrow['md5']=='aa771409420704b6dd05cfaef9d2f8dc';assert oldrow['metadata']['prosrc'].count('a.credit_used>0')==2 and oldrow['metadata']['prosrc'].replace('a.credit_used>0','a.credit_limit>0')==current['metadata']['prosrc'];assert {k:v for k,v in oldrow['metadata'].items()if k!='prosrc'}=={k:v for k,v in current['metadata'].items()if k!='prosrc'};oldrow['md5']=current['md5'];oldrow['metadata']=current['metadata'];assert json.dumps(rows,separators=(',',':'))==forward,'only exact protected51934 process delta may change full27'
     assert s.split('-- BEGIN EXACT THREE OWNERS')[1].split('-- END EXACT THREE OWNERS')[0]==original.split('-- BEGIN EXACT THREE OWNERS')[1].split('-- END EXACT THREE OWNERS')[0]
     assert len(d['current759'])==759 and len(d['old84'])==84
     assert 'b8d99249ccae0bb4fea16d37419c71d9'not in s and '9bec3874c122122649f0775d4bdb0c96'not in s
@@ -100,4 +102,5 @@ def run(must,call,F):
         reader=reader[reader.index('BEGIN ISOLATION LEVEL'):].split(';',1)[1].rsplit('ROLLBACK;',1)[0]
         must('BEGIN;CREATE FUNCTION pg_temp.parse_new_reader()RETURNS void LANGUAGE plpgsql AS $parse_reader$BEGIN IF false THEN '+reader+' END IF;END;$parse_reader$;ROLLBACK;')
         results.append({'case':phase+'-new-forward-reader-grammar','passed':True})
-    return {'cases':results,'allocated_forward_sha256':hashlib.sha256(s.encode()).hexdigest(),'allocated_version':m['forward_version'],'boundary':'Derived actual snapshot predicate controls plus raw synthetic hash constructor; not actual financial/GEN/history qualification','exact_native_text_adapter_inverse':True}
+    credit_ns={};exec(compile((F/'new_credit51934_guard.py').read_text(),str(F/'new_credit51934_guard.py'),'exec'),credit_ns);credit_proof=credit_ns['run'](must,call,F,s)
+    return {'credit51934_dependency_controls':credit_proof,'cases':results,'allocated_forward_sha256':hashlib.sha256(s.encode()).hexdigest(),'allocated_version':m['forward_version'],'boundary':'Derived actual snapshot predicate controls plus raw synthetic hash constructor; not actual financial/GEN/history qualification','exact_native_text_adapter_inverse':True}

@@ -120,8 +120,8 @@
       "sha256": "e4e050861cd66b668833fff0948a8fcbf0fe0db861e325a6d5f30ec4feed6b15"
     },
     "scripts/ci/test-mtt-unlimited.py": {
-      "bytes": 44548,
-      "sha256": "008f685692694f7bec680bee4d317629fc23210badcce8156f6f04ef06180f98"
+      "bytes": 44960,
+      "sha256": "09a224758539d72c8348d09682ac72a4dce4108800d59a506270fb64fe76e82e"
     },
     "scripts/dev/probe-cash-original17-pg17.sh": {
       "bytes": 1215,
@@ -1462,6 +1462,21 @@
     "reason": "Compose protected main warm hosted runner admission with the MTT qualification and overnight floor. Preserve both parent audit histories and every financial assertion and qualification state. Current source identity only, not financial recertification.",
     "protectedMain": "23a8c4dc1b9e78b319b4693c3e414c95f993572b",
     "currentWorkflow": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    }
+  },
+  "mttFifteenPercentQualification20261029": {
+    "reason": "Owner changed all new and unfinalized MTTs to 15%, preserving finalized ladders. Existing required MTT preparation invokes one bounded private PG17 migration/ladder proof before unchanged preparation checks. Only this reviewed test harness pin changes; CI workflow bytes and financial qualification assertions stay unchanged.",
+    "validation": "Actual isolated PostgreSQL 17 source-bound native proof passed; exact-head hosted accounting remains mandatory."
+  },
+  "installedTournamentSqlRecording20261030": {
+    "reason": "Add existing qualified certification club-scope concurrency and business regressions to accounting shard4 while recording two already-installed outage migrations. All existing financial commands, assertions, budgets, matrices, historical audits and qualification states remain unchanged. Current workflow source identity only; no financial recertification or production installation.",
+    "previous": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "current": {
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }

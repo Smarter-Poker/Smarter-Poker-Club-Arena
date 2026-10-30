@@ -25,3 +25,13 @@ The credit display reads the same active agent agreement as the existing editor,
 Policy reread before final validation: 2026-10-29T23:49:14Z, identical 2.9 hashes. Secret-name metadata reads returned 403 through configured CLI access; publisher credentials remain unknown until owning provider execution, with source submission/check access usable. No values read or copied.
 
 Final local compiler `npx tsc --noEmit -p tsconfig.app.json` passed after the credit refresh wiring. `git diff --check` and scoped Prettier checks passed. Fixture files archived outside the source checkout.
+
+## Protected Delivery And Verification Follow-Up
+
+PR #8693 merged as 23a8c4dc1b9e78b319b4693c3e414c95f993572b. All protected checks passed for d0bf0a7935d7605aef1d4bbd224c503c7d0b393c; normal pre-push passed 722 changed/source-contract assertions and 779 importing assertions. Publisher 40977729444 completed successfully; both public build-info endpoints served the exact merged SHA at live readback. A separate record-gateway publication was not used as client proof.
+
+Live Chrome verification reached the new form, and pressing Enter selected All Dates, but existing authentication reads stalled before the history and member agreements could be read. Read-only navigator.locks.query showed the same exclusive smarter-poker-auth lock held with eight waiters. No session was copied, signed out or impersonated; active user game tabs were preserved. This is a live proof gap, not an empty ledger or zero credit agreement.
+
+Follow-up branch fix/cashier-verification-01a18a0c updates the maintained production browser case's old Latest Transactions label and opens the now-secondary Statement Tools before its preserved export assertion. It also submits the actual Enter gesture and requires p_from=null, p_kind=all, p_person=null and matching selected controls. This is test alignment and production readback, with no additional client/engine/database behavior change.
+
+The follow-up also submits an existing approved cash-out recipient name and requires real matching ledger rows, and reads Rooster's existing active agent agreement through the native member page. Its Wallets assertions compare displayed limit/used/available to the actual read response (or require no invented line for prepaid terms). No credit is created, drawn, assigned or changed for verification.

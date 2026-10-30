@@ -1,0 +1,5 @@
+The urgent MTT registration repair merged as8d34e9c06efa21adc71dc343c57113d447913889 after its applicable protected checks passed. An older already staged engine target contains the earlier shared base and lacks this repair. Bind the same finite activation entry to the actual protected feature revision, so the older release cannot consume the still-unshipped feature allowance.
+
+Keep the original21:25–03:25UTC bounds, minute53notice, minute55cutover, single activation, provider ownership, hand drain, durable freeze, full285-second proof/rollback reserve and v3thaw. No new interval, migration, runtime-source witness, publisher or direct restart. Once8d or a descendant has served, the entry admits nothing.
+
+The real admission-shell regression proves the unserved/served/absent-feature cases and pins the original limits. The qualified helper digest remains0388b2241cd28ae0b4ee4df5c07896d780f5ad153c2f08e483af6417d14b31ce.20focused timing/admission tests and application TypeScript passed before normal hooks.

@@ -238,7 +238,7 @@ describe('browser qualification parallel delivery', () => {
   });
 });
 
-function reserve(free: string, fail = false) {
+function reserve(free: string, fail = false, failRemove = false) {
   if (process.platform === 'darwin' && !tmpdir().startsWith('/Volumes/SmarterWork/agent-work/'))
     throw Error('Owned external SSD TMPDIR required');
   const root = mkdtempSync(join(tmpdir(), 'browser-reserve-'));
@@ -254,12 +254,12 @@ function reserve(free: string, fail = false) {
   );
   writeFileSync(
     join(bin, 'sudo'),
-    '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE_TEST"\ncase "$1" in\n du) [ "$2" = -sh ] && [ "$3" = "$SDK_TEST" ] || exit 81 ;;\n rm) [ "$2" = -rf ] && [ "$3" = -- ] && [ "$4" = "$SDK_TEST" ] || exit 82; /bin/rm -rf -- "$SDK_TEST" ;;\n *) exit 83 ;;\nesac\n',
+    '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TRACE_TEST"\ncase "$1" in\n rm) [ "$2" = -rf ] && [ "$3" = -- ] && [ "$4" = "$SDK_TEST" ] || exit 82; [ "$FAIL_RM" = false ] || exit 24; /bin/rm -rf -- "$SDK_TEST" ;;\n *) exit 83 ;;\nesac\n',
     { mode: 0o755 }
   );
   try {
     const source = step('Reserve disk for browser checks').run;
-    expect(source.match(/\/usr\/local\/lib\/android\/sdk/g)).toHaveLength(3);
+    expect(source.match(/\/usr\/local\/lib\/android\/sdk/g)).toHaveLength(2);
     const result = spawnSync('bash', ['-c', source.replaceAll('/usr/local/lib/android/sdk', sdk)], {
       encoding: 'utf8',
       env: {
@@ -267,6 +267,7 @@ function reserve(free: string, fail = false) {
         PATH: `${bin}:${process.env.PATH}`,
         FREE_TEST: free,
         FAIL_DF: String(fail),
+        FAIL_RM: String(failRemove),
         SDK_TEST: sdk,
         TRACE_TEST: trace,
       },
@@ -287,7 +288,7 @@ function reserve(free: string, fail = false) {
 }
 
 it.each(['104857600', '386924544', '0104857600'])(
-  'proven ample capacity %s avoids both expensive SDK operations',
+  'proven ample capacity %s avoids SDK cleanup',
   (free) => {
     expect(reserve(free)).toEqual({ status: 0, exists: true, calls: [] });
   }
@@ -298,10 +299,110 @@ it.each(['104857599', '0', '', 'unknown', '-1', '1.2'])(
     expect(reserve(free)).toEqual({
       status: 0,
       exists: false,
-      calls: ['du -sh SDK', 'rm -rf -- SDK'],
+      calls: ['rm -rf -- SDK'],
     });
   }
 );
 it('does not turn a failed capacity read into an ample-capacity success', () => {
   expect(reserve('386924544', true)).toEqual({ status: 23, exists: true, calls: [] });
+});
+
+it('does not turn failed SDK cleanup into a successful capacity reservation', () => {
+  expect(reserve('0', false, true)).toEqual({
+    status: 24,
+    exists: true,
+    calls: ['rm -rf -- SDK'],
+  });
+});
+
+describe('eight client shards retain the required verdict and unchanged safeguards', () => {
+  it('partitions the same selector inventory across eight distinct paid runners', () => {
+    const shards = ci.jobs.unit_shards;
+    expect(shards.strategy).toEqual({
+      'fail-fast': true,
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8] },
+    });
+    expect(new Set(shards.strategy.matrix.shard).size).toBe(8);
+    expect(shards.env.VITEST_MAX_THREADS).toBe(4);
+    expect(shards['timeout-minutes']).toBe(15);
+    expect(
+      shards.steps.find((value: { name: string }) => value.name === 'Run Test Suite').run
+    ).toBe('node scripts/ci/ui-test-selection.mjs unit --shard=${{ matrix.shard }}/8');
+    expect(shards.steps.find((value: { name: string }) => value.name === 'Report').run).toContain(
+      'Client Unit Tests - shard ${{ matrix.shard }}/8'
+    );
+    expect(ci.jobs.unit.needs).toBe('unit_shards');
+    expect(ci.jobs.unit.if).toBe('always()');
+    expect(ci.jobs.unit.name).toBe('Client Unit Tests (vitest)');
+  });
+
+  it.each(['success', 'failure', 'cancelled', '', 'skipped'])(
+    'the actual eight-shard aggregate preserves result %s without hiding a failed shard',
+    (result) => {
+      const root = mkdtempSync(join(tmpdir(), 'client-eight-verdict-'));
+      try {
+        const judge = ci.jobs.unit.steps.find(
+          (value: { name: string }) => value.name === 'Every shard passed'
+        );
+        expect(judge.run).toContain('All eight shards passed.');
+        const run = spawnSync(
+          'bash',
+          ['-e', '-c', judge.run.replace('${{ needs.unit_shards.result }}', result)],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, GITHUB_STEP_SUMMARY: join(root, 'summary') },
+          }
+        );
+        expect(run.status, run.stderr).toBe(['success', 'skipped'].includes(result) ? 0 : 1);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('proves presentation scope after dependencies and before judging unchanged bitmap inputs', () => {
+    const steps = ci.jobs.typecheck_compile.steps;
+    const index = (name: string) =>
+      steps.findIndex((value: { name: string }) => value.name === name);
+    const proof = steps.findIndex((value: { id?: string }) => value.id === 'compile_scope');
+    expect(proof).toBeGreaterThan(index('Install Dependencies'));
+    expect(proof).toBeLessThan(index('No asset ships a white matte'));
+    expect(steps[proof].env.CI_HEAD_SHA).toBe('${{ github.sha }}');
+    expect(steps[proof]['continue-on-error']).toBeUndefined();
+    expect(
+      steps[index('The matte baseline is a record, not a list of excuses')].if
+    ).toBeUndefined();
+    expect(
+      ci.jobs.source_windows.steps.find(
+        (value: { name: string }) => value.name === 'No asset ships a white matte'
+      ).if
+    ).toBeUndefined();
+  });
+
+  it.each([
+    'No asset ships a white matte',
+    'Evaluate fleet throughput against live dealing capacity',
+  ])('%s runs unless GitHub recognizes the positive proof', (name) => {
+    const guarded = ci.jobs.typecheck_compile.steps.find(
+      (value: { name: string }) => value.name === name
+    );
+    expect(guarded.if).toBe("steps.compile_scope.outputs.presentation_only != 'true'");
+    const evaluate = new Function('steps', `return (${guarded.if});`);
+    for (const [presentation, expected] of [
+      [undefined, true],
+      ['', true],
+      ['false', true],
+      ['FALSE', true],
+      ['unknown', true],
+      ['true?', true],
+      ['true', false],
+      ['TRUE', false],
+    ] as const) {
+      // GitHub compares expression strings without case; JavaScript does not.
+      const output = typeof presentation === 'string' ? presentation.toLowerCase() : presentation;
+      expect(evaluate({ compile_scope: { outputs: { presentation_only: output } } })).toBe(
+        expected
+      );
+    }
+  });
 });

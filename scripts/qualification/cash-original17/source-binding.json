@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 256618,
-      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1651,5 +1651,17 @@
     "channelAdmissionParent": "4f49c6517737d755dd6e49f99da79da15af3cf44",
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
+  },
+  "browserSdkDiagnosticSourceAudit20261030": {
+    "scope": "Current source identity only: omit redundant SDK sizing; partition the unchanged client test inventory across eight paid four-core shards; omit unchanged bitmap scanning and offline monitoring-rule evaluation only after the existing immutable presentation/configuration proof succeeds. Preserve default full checks for missing, mixed, financial and unknown inputs; matte baseline law, all browser cases, compiler/native/financial checks, profile controls, deadlines, permissions and publisher matrices remain unchanged.",
+    "previousCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+    },
+    "currentCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation, historical receipt restamp or production adoption inferred."
   }
 }

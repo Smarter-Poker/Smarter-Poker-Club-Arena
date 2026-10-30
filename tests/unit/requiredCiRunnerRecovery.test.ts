@@ -46,7 +46,7 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '1d012410e596656beee8192178fb76fff26a096d8ae4bd24336a2c037f82066e'
+      '756ebaa3b74445e08a3e0fb4e9408607539376c85540311e0fa9e90fda64cbd5'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

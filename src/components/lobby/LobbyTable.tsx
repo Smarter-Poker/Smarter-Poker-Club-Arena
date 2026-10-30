@@ -1,3 +1,5 @@
+import { isRecordedSatelliteTournament } from '../../utils/tournamentFilters';
+import { useSatelliteDestination } from './game-cards/useTournamentCardText';
 import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useSharedSecondTick } from './useSharedSecondTick';
 /**
@@ -55,7 +57,16 @@ import './CompactLobbyRows.css';
 
 type SortDir = 'asc' | 'desc';
 
-export type LobbyCategory = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+export type LobbyCategory =
+  | 'ALL'
+  | 'HOLDEM'
+  | 'OMAHA'
+  | 'LIMIT'
+  | 'MIXED'
+  | 'MTT'
+  | 'SNG'
+  | 'SPIN'
+  | 'SATELLITE';
 
 /**
  * The order a tab opens in when the player has never sorted it themselves.
@@ -338,6 +349,19 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   return cls.join(' ') || undefined;
 }
 
+function SatelliteRowDestination({ entry }: { entry: LobbyEntry }) {
+  const row = entry.kind !== 'cash' ? (entry.raw as LobbyTournamentRow) : undefined;
+  const destination = useSatelliteDestination(row?.satellite_target_id || row?.satellite_target);
+  const label =
+    destination ||
+    (row && isRecordedSatelliteTournament({ ...row })
+      ? 'Satellite Destination Unavailable'
+      : undefined);
+  return label ? (
+    <span className="compact-lobby__meta compact-lobby__destination">{label}</span>
+  ) : null;
+}
+
 function TournamentRowSignals({
   entry,
   badgesOnly = false,
@@ -456,7 +480,7 @@ function SeatsMeter({ entry }: { entry: LobbyEntry }) {
 function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
   /* null, not an empty span: a non-empty cell defeats `td:empty` and reserves
      34px on every tournament row. */
-  if (entry.kind !== 'cash' || !ctx.onToggleFavorite) return null;
+  if (!ctx.onToggleFavorite) return null;
   const isFav = ctx.favoriteIds.has(entry.id);
   return (
     <button
@@ -467,7 +491,7 @@ function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
       title={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       onClick={(e) => {
         e.stopPropagation();
-        ctx.onToggleFavorite?.(entry.id, !isFav);
+        ctx.onToggleFavorite?.(entry.id, !isFav, entry.kind);
       }}
     >
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
@@ -602,6 +626,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <SatelliteRowDestination entry={e} />
           <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
@@ -645,6 +670,7 @@ const COL_NAME: ColumnDef = {
           {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
           {e.name}
         </span>
+        <SatelliteRowDestination entry={e} />
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
         <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
@@ -783,7 +809,10 @@ const COL_STATUS: ColumnDef = {
           on their last bought seat rather than at a time, so "Starts In 29
           Min..." beside a badge reading Filling was two different answers to
           the same question; and a cash game is running now. */}
-      <LobbyStatusBadge status={e.status} label={e.statusLabel} />
+      <LobbyStatusBadge
+        status={e.status}
+        label={e.kind !== 'cash' && e.status === 'late_reg' ? 'Running' : e.statusLabel}
+      />
     </span>
   ),
 };
@@ -1347,6 +1376,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
         COL_ACTIONS,
       ];
     case 'MTT':
+    case 'SATELLITE':
       /* Dan 2026-08-25: "THAT SHOULD BE THE FIRST LINE DISPLAYED." The title
          led no board here - it sat fourth, behind Starting Time, Game Type and
          Buy-In, which are all facts ABOUT a tournament and answer nothing until
@@ -1354,6 +1384,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          other tab the name already sits first behind the favourite star. */
       return [
         COL_TNAME,
+        COL_FAV,
         COL_STARTS,
         { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,
@@ -1392,6 +1423,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          here because a player who has never opened a Spin has no way to know
          that, not because it varies. */
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -1405,6 +1437,7 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
       ];
     case 'SNG':
       return [
+        COL_FAV,
         COL_NAME,
         COL_VARIANT,
         COL_BUYIN,
@@ -2166,7 +2199,7 @@ export default function LobbyTable({
                 COL_NAME,
                 category === 'ALL'
                   ? COL_COST
-                  : ['MTT', 'SPIN', 'SNG'].includes(category)
+                  : ['MTT', 'SPIN', 'SNG', 'SATELLITE'].includes(category)
                     ? COL_BUYIN
                     : COL_STAKES,
                 COL_PLAYERS,
@@ -2263,6 +2296,7 @@ export default function LobbyTable({
                 onClick={() => onSelect(entry)}
               >
                 <td>
+                  <FavCell entry={entry} ctx={rowCtx} />
                   <button
                     type="button"
                     className="compact-lobby__open"
@@ -2288,6 +2322,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>

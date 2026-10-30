@@ -436,9 +436,33 @@ describe('daily routine admission uses the existing protected receiver only', ()
       );
     // An old floor path in the serving base is not this exact new floor blob.
     expect(check()).toBe(true);
-    // Preserve actual merged ordering: the selected own floor must precede a
-    // different still-valid floor, whose witness cannot authorize this target.
-    const ordered = windows.map((w: { id: string }) => (w.id === entry.id ? fixture : w));
+    // Preserve actual merged ordering for the currently selected floor. A
+    // historical channel order retains its own isolated refusal cases below.
+    const currentFloor = JSON.parse(
+      readFileSync(join(root, 'server/release/activation-floor.json'), 'utf8')
+    );
+    const selected = windows.find((w: { id: string }) => w.id === currentFloor.ownerWindowId);
+    expect(selected).toBeDefined();
+    const selectedFloor = JSON.stringify({
+      ...currentFloor,
+      preparationAt: notBefore,
+      activationAt: notBefore,
+      expiresAt: notAfter,
+      clientPublicationAt: notBefore,
+    });
+    const ordered = windows.map((w: { id: string }) =>
+      w.id === selected.id
+        ? {
+            ...selected,
+            notBefore,
+            notAfter,
+            releaseWitness: {
+              ...selected.releaseWitness,
+              sha256: createHash('sha256').update(selectedFloor).digest('hex'),
+            },
+          }
+        : w
+    );
     expect(
       admit(
         'push',
@@ -452,7 +476,7 @@ describe('daily routine admission uses the existing protected receiver only', ()
           ancestor: true,
           served: true,
           witness: 'unserved',
-          floor,
+          floor: selectedFloor,
         }
       )
     ).toBe(true);

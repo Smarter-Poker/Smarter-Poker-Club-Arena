@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59",
+    "tests/unit/fixtureNativeCi.test.ts": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1653,5 +1653,15 @@
     "channelAdmissionParent": "4f49c6517737d755dd6e49f99da79da15af3cf44",
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
+  },
+  "clientEightShardContractSourceAudit20261030": {
+    "scope": "Current source identity only: three existing client CLI source assertions now expect the unchanged full client selector inventory partitioned across eight CI shards. No native/financial assertion, source, amount, case, profile, deadline or historical receipt changed.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "previousSHA256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59",
+    "current": {
+      "bytes": 117348,
+      "sha256": "003222154af7f597a139fdd03ba3ff543f66946bfde9306298b6f19de6056321"
+    },
+    "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical qualification restamp."
   }
 }

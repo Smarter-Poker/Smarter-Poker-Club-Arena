@@ -1,3 +1,4 @@
+import { useTournamentCardText } from './useTournamentCardText';
 import type { ArenaGameCardActions, ArenaGameCardData } from './arenaGameCardTypes';
 import { zoneText } from './arenaGameCardTypes';
 import {
@@ -77,6 +78,7 @@ export function HeadsUpPremiumCard({
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
 }) {
+  const { destination } = useTournamentCardText(data);
   return (
     <div className="agc-layered agc-headsup-premium">
       <LayeredChassis src={HEADS_UP_PREMIUM_ASSETS.chassis} />
@@ -117,7 +119,11 @@ export function HeadsUpPremiumCard({
         name="blindLevels"
         value={zoneText('blindLevels', data.blindLevels)}
       />
-      <Value zone={HEADS_UP_PREMIUM_ZONES.format} name="format" value={data.format || 'Standard'} />
+      <Value
+        zone={HEADS_UP_PREMIUM_ZONES.format}
+        name="format"
+        value={destination || data.format || 'Standard'}
+      />
 
       <LayeredActionButton
         canvas={C}

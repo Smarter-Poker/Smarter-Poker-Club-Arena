@@ -189,6 +189,7 @@ test('exact Git proof refuses missing inputs, executable companions, deletes and
     git('config', 'user.email', 'selection@example.invalid');
     const p = 'src/components/example/Control.tsx';
     write(root, p, 'export const Control = () => <button>Continue</button>;');
+    write(root, '.gitignore', '**/ignored-local.*\n');
     git('add', '.');
     git('commit', '-qm', 'base');
     const base = git('rev-parse', 'HEAD');
@@ -197,6 +198,23 @@ test('exact Git proof refuses missing inputs, executable companions, deletes and
     git('commit', '-qm', 'copy');
     const head = git('rev-parse', 'HEAD');
     assert.equal(selectionInputs(root, base, head).focused, true);
+    for (const file of [
+      'public/assets/untracked.png',
+      'docs/art/untracked-baseline.json',
+      'public/assets/ignored-local.png',
+      'docs/art/ignored-local.json',
+    ]) {
+      write(root, file, 'local detector input');
+      if (file.includes('ignored-local')) {
+        assert.equal(git('check-ignore', '--', file), file);
+        assert.equal(git('ls-files', '--others', '--exclude-standard', '--', file), '');
+      }
+      const proof = selectionInputs(root, base, head);
+      assert.equal(proof.focused, false, file);
+      assert.equal(proof.reason, 'Untracked asset or art baseline input', file);
+      rmSync(join(root, file));
+      assert.equal(selectionInputs(root, base, head).focused, true, file);
+    }
     const output = join(root, 'scope-output');
     runSelection(root, ['scope'], {
       ...process.env,

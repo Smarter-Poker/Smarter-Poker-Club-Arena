@@ -133,7 +133,7 @@ describe('native publishing requires the exact origin verification', () => {
       'fail-fast': true,
       matrix: { shard: Array.from({ length: 16 }, (_, index) => index + 1) },
     });
-    expect(ci.jobs.unit_shards.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+    expect(ci.jobs.unit_shards.strategy.matrix.shard).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const workers = 4;
     expect(client.env.VITEST_MAX_THREADS).toBe(workers);
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(workers);

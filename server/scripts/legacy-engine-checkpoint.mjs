@@ -257,21 +257,61 @@ function connectInspector(endpoint, deadline, createWebSocket) {
     ended = false;
   const fail = (reason) => {
     ended = true;
-    for (const waiter of pending.values()) waiter.reject(refused(reason));
+    // A ready-made error (one that already names its operation and cause)
+    // is delivered as it is; a bare reason is wrapped exactly as before.
+    for (const waiter of pending.values())
+      waiter.reject(reason instanceof Error ? reason : refused(reason));
     pending.clear();
+  };
+  /* A PROTOCOL REFUSAL SAYS WHICH ONE (2026-10-30, run 41071578166). The
+     owner-window release of 82f1e5632 reached the guard call on the serving
+     EED predecessor and the whole outcome was the one word
+     `inspector protocol refused`: three different events share it - an
+     inspector response over the 64 KiB carrier, a CDP error object for the
+     request in flight, and an unparseable frame - and nothing recorded which
+     request it answered or what the inspector said. Observability only, as
+     with `lost()` above: `reason` stays exactly `inspector protocol refused`,
+     the refusal is still a refusal and `retryAllowed` is still false. What
+     changes is that the operation, the cause and the inspector's own error
+     code/message (sanitised to the same 512-character carrier class) ride on
+     the error and reach `transportDetail`. */
+  const protocolRefusal = (detail) => {
+    const error = refused('inspector protocol refused');
+    error.transportDetail = detail.replace(/[^\w .,:/=()+-]+/g, ' ').slice(0, 512);
+    return error;
+  };
+  const describeCdpError = (value) => {
+    const code = Number.isSafeInteger(value?.code) ? value.code : 'unknown';
+    const text = typeof value?.message === 'string' ? value.message.slice(0, 160) : 'unknown';
+    const data = typeof value?.data === 'string' ? value.data.slice(0, 160) : '';
+    return `code=${code},message=${text}${data ? `,data=${data}` : ''}`;
   };
   socket.addEventListener('message', ({ data }) => {
     try {
-      if (typeof data !== 'string' || Buffer.byteLength(data) > 65536)
-        throw refused('inspector protocol refused');
+      if (typeof data !== 'string' || Buffer.byteLength(data) > 65536) {
+        const bytes = typeof data === 'string' ? Buffer.byteLength(data) : -1;
+        let answered = 'unparsed';
+        try {
+          const id = JSON.parse(data)?.id;
+          answered = pending.get(id)?.operation ?? `id ${String(id)}`;
+        } catch {
+          answered = 'unparsed';
+        }
+        throw protocolRefusal(`op=${answered},cause=oversize_response,bytes=${bytes}`);
+      }
       const message = JSON.parse(data),
         waiter = pending.get(message.id);
       if (!waiter) return;
       pending.delete(message.id);
-      if (message.error) waiter.reject(refused('inspector protocol refused'));
+      if (message.error)
+        waiter.reject(
+          protocolRefusal(
+            `op=${waiter.operation},cause=cdp_error,method=${waiter.method},${describeCdpError(message.error)}`
+          )
+        );
       else waiter.resolve(message.result);
-    } catch {
-      fail('inspector protocol refused');
+    } catch (error) {
+      fail(detailOf(error) ? error : 'inspector protocol refused');
       socket.close();
     }
   });
@@ -337,6 +377,8 @@ function connectInspector(endpoint, deadline, createWebSocket) {
         };
         timer = setTimeout(expireRequest, allowanceMs);
         pending.set(id, {
+          operation,
+          method,
           resolve(value) {
             clearTimeout(timer);
             resolve(value);
@@ -878,8 +920,10 @@ export async function runLegacyEngineCheckpoint({
         ? error.message
         : 'inspector operation outcome unknown';
     // Only an outcome nobody can state needs describing; a refusal that named
-    // itself already has. The description never becomes the refusal.
+    // itself already has. The description never becomes the refusal. A
+    // protocol refusal carries its own operation/cause/inspector error.
     if (/outcome unknown/.test(failure)) transportDetail = describeLoss(error);
+    else if (failure === 'inspector protocol refused') transportDetail = detailOf(error);
   } finally {
     if (signalled) {
       const cleanupDeadline = Math.min(

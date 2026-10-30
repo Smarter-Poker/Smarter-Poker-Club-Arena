@@ -37,8 +37,13 @@ class ReaderTests(unittest.TestCase):
         self.result.write_text(json.dumps(RESULT))
         self.patcher = patch.object(R, 'STATE_ROOT', self.root)
         self.patcher.start()
+        # Exact-file fixtures never inspect the machine running the tests.
+        self.tcp_patcher = patch.object(R, 'pending_tcp_presence', create=True,
+            return_value=({'state':'unknown','binding':'unproved','code':'not_read'}, 'unknown'))
+        self.tcp_patcher.start()
 
     def tearDown(self):
+        self.tcp_patcher.stop()
         self.patcher.stop()
         self.temp.cleanup()
 
@@ -73,6 +78,32 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn('private actor fixture', json.dumps(answer))
         self.assertNotIn('/opt/', json.dumps(answer))
         self.assertEqual(R.validate_reply(answer, request), answer)
+
+    def test_pending_kernel_role_projection_keeps_original_unit_recheck(self):
+        request={**REQUEST,'mode':'pending_transaction'}
+        directory=self.root/'engine-release-requests';directory.mkdir()
+        raw='\n'.join([REQUEST['releaseSha'],
+            'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/38268897283',
+            'private actor','/usr/local/lib/club-arena/engine-control-generations/'+'b'*40,'b'*40,'1791829999'])+'\n'
+        for suffix in ['.request','.intent']:
+            path=directory/(REQUEST['runKey']+suffix);path.write_text(raw);path.chmod(0o600)
+        unit={'activeState':'active','subState':'running','invocationId':'1'*32}
+        tcp={'state':'listening','binding':'matched','code':'connection_established'}
+        with patch.object(R,'pending_unit',return_value=unit) as reads, \
+                patch.object(R,'pending_journal',return_value=[]), \
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')):
+            answer=R.remote(request)
+        self.assertEqual(answer['inspectorOwner'],'main');self.assertEqual(answer['inspectorTcp'],tcp)
+        self.assertEqual(reads.call_count,2);self.assertEqual(R.validate_reply(answer,request),answer)
+        self.assertNotIn('private',json.dumps(answer))
+        for mutation in [{'inspectorOwner':'private PID123'},{'schema':'existing-release-pending-observation/v4'},
+                         {'inspectorTcp':{'state':'closed','binding':'matched','code':'connection_refused'}}]:
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):R.validate_reply({**answer,**mutation},request)
+        with patch.object(R,'pending_unit',side_effect=[unit,{**unit,'invocationId':'2'*32}]), \
+                patch.object(R,'pending_journal',return_value=[]), \
+                patch.object(R,'pending_tcp_presence',return_value=(tcp,'main')),self.assertRaises(R.ScopedRefusal) as refused:
+            R.remote(request)
+        self.assertEqual((refused.exception.phase,refused.exception.code),('pending_recheck_unit','evidence_unavailable'))
 
     def test_pending_remote_failure_reports_fixed_stage_without_private_detail(self):
         request = {**REQUEST, 'mode': 'pending_transaction'}
@@ -317,12 +348,14 @@ class ReaderTests(unittest.TestCase):
         with patch.object(R, 'pending_unit', return_value=unit) as unit_reads, \
                 patch.object(R, 'read_lines', wraps=R.read_lines) as file_reads, \
                 patch.object(R, 'pending_journal', side_effect=ValueError('private journal')), \
-                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]):
+                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]), \
+                patch.object(R, 'pending_tcp_presence', side_effect=OSError('private TCP failure')):
             answer = R.remote(request)
         self.assertEqual(unit_reads.call_count, 2)
         self.assertEqual(file_reads.call_count, 8)
         self.assertEqual(answer['legacyIntent'], {'status': 'unknown', 'code': 'changed_during_read'})
         self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['inspectorTcp'], {'state':'unknown','binding':'unproved','code':'evidence_unavailable'})
         self.assertEqual(R.validate_reply(answer, request), answer)
         self.assertNotIn('private', json.dumps(answer))
         for mutation in [{'legacyIntent': {'status': 'absent_at_read', 'code': 'never_entered'}},
@@ -1013,6 +1046,34 @@ class InspectorTests(unittest.TestCase):
             self.assertEqual(R.validate_refusal(exported,self.request).code, code)
             self.assertNotIn('private',json.dumps(exported))
 
+    def test_actual_inspector_observer_child_isolates_inherited_options_in_both_phases(self):
+        import socket
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        for expected in [None,self.digest]:
+            with patch.object(R,'inspector_command',return_value=b'{"state":"closed","endpointSha256":null}') as command:
+                result=R.inspector_probe(self.identity['container'],123,expected)
+            self.assertEqual(result,{'state':'closed','endpointSha256':None})
+            self.assertEqual(command.call_args.args[0],['docker','exec','-i','-e','NODE_OPTIONS=',
+                self.identity['container'],'node','--no-inspect','--input-type=module','-',
+                'read' if expected else 'probe',expected or ''])
+            self.assertEqual(command.call_args.args[1],123)
+            self.assertEqual(command.call_args.kwargs,
+                {'input_bytes':R.INSPECTOR_NODE.encode(),'limit':16384,'stage':'probe'})
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.INSPECTOR_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        before=subprocess.run([node,'--input-type=module','-','probe',''],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'open')
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-','probe',''],input=source,
+            capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','endpointSha256':None})
+
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local
@@ -1043,19 +1104,40 @@ class InspectorTests(unittest.TestCase):
         import re
         node=os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
         target=R.subprocess.Popen([node,'--input-type=module','-e',
-            "import inspector from 'node:inspector';inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));process.stdin.resume();"],
-            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.DEVNULL)
-        try:
+            "import inspector from 'node:inspector';import readline from 'node:readline';console.log(JSON.stringify({ready:'fixture-ready',closed:inspector.url()===undefined}));readline.createInterface({input:process.stdin}).once('line',line=>{if(line!=='open')process.exit(2);inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));});"],
+            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.PIPE)
+        def fixture_line(seconds):
+            deadline=R.time.monotonic()+seconds
+            out=bytearray();err=bytearray()
             with R.selectors.DefaultSelector() as selector:
-                selector.register(target.stdout,R.selectors.EVENT_READ)
-                self.assertTrue(selector.select(2),'isolated target startup deadline')
-                selected=json.loads(target.stdout.readline())
+                selector.register(target.stdout,R.selectors.EVENT_READ,'out')
+                selector.register(target.stderr,R.selectors.EVENT_READ,'err')
+                while R.time.monotonic()<deadline:
+                    events=selector.select(max(0,deadline-R.time.monotonic()))
+                    for key,_ in events:
+                        chunk=os.read(key.fileobj.fileno(),4096)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        selected=out if key.data=='out' else err
+                        selected.extend(chunk)
+                        self.assertLessEqual(len(selected),4096,'isolated fixture output bound')
+                        if b'\n' in out:
+                            line,extra=out.split(b'\n',1)
+                            self.assertFalse(extra,'unexpected fixture output')
+                            return json.loads(line)
+                    if not selector.get_map():break
+            self.fail('isolated fixture deadline/exit: '+str(target.poll())+' stderr='+err.decode(errors='replace'))
+        try:
+            self.assertEqual(fixture_line(5),{'ready':'fixture-ready','closed':True})
+            target.stdin.write(b'open\n');target.stdin.flush()
+            selected=fixture_line(2)
             port=int(selected['url'].split(':')[2].split('/')[0])
             source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
             source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
             digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
-            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
-                env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+            reply=R.subprocess.run([node,'--no-inspect','--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+                env={**os.environ,'NODE_OPTIONS':'','HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
             self.assertEqual(reply.returncode,0,reply.stderr)
             value=json.loads(reply.stdout)
             self.assertEqual(value['state'],'owned');self.assertEqual(value['native']['pid'],selected['pid'])
@@ -1063,7 +1145,7 @@ class InspectorTests(unittest.TestCase):
             self.assertGreater(value['native']['usedHeapBytes'],0)
             self.assertIsNone(target.poll(),'reader must not stop its target')
         finally:
-            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close()
+            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close();target.stderr.close()
 
 
     def retired(self):
@@ -1117,6 +1199,414 @@ class InspectorTests(unittest.TestCase):
         with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
         self.receipt.unlink();self.receipt.symlink_to(self.path)
         with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
+
+
+
+
+class PendingTcpTests(unittest.TestCase):
+    def setUp(self):
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'123','restarts':'0'}
+        self.health={'source':'a'*40,'instance':'1-12345678'}
+
+    def test_native_tcp_closed_and_listening_send_no_payload(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+        reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'closed','code':'connection_refused'})
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:
+                    conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+            reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+        for forbidden in ['node:inspector','Runtime.evaluate','WebSocket','node:http','socket.write','process.kill']:
+            self.assertNotIn(forbidden,R.TCP_PRESENCE_NODE)
+
+    def test_native_tcp_child_options_cannot_create_its_own_listener_or_load_preloads(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        # Demonstrate the actual inherited-options counterexample in isolation.
+        before=subprocess.run([node,'--input-type=module','-'],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'listening')
+        isolated={**inherited,'NODE_OPTIONS':''}
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+            capture_output=True,env=isolated,timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','code':'connection_refused'})
+        self.assertEqual(inherited['NODE_OPTIONS'],'--inspect=127.0.0.1:'+str(port))
+        with tempfile.TemporaryDirectory(prefix='tcp-preload-',dir=ROOT.parent) as temp:
+            marker=Path(temp)/'preload-ran';preload=Path(temp)/'preload.cjs'
+            preload.write_text("require('node:fs').writeFileSync("+json.dumps(str(marker))+",'fixture');")
+            inherited={**os.environ,'NODE_OPTIONS':'--require='+str(preload)}
+            before=subprocess.run([node,'--input-type=module','-'],input=source,
+                capture_output=True,env=inherited,timeout=5)
+            self.assertEqual(before.returncode,0,before.stderr)
+            self.assertEqual(marker.read_text(),'fixture');marker.unlink()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+                capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+            self.assertEqual(after.returncode,0,after.stderr)
+            self.assertFalse(marker.exists(),'probe must not execute inherited preloads')
+        # Clearing child options must still see a genuine, separate listener.
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],
+                input=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode(),
+                capture_output=True,env={**os.environ,'NODE_OPTIONS':''},timeout=5)
+            thread.join(timeout=3);self.assertFalse(thread.is_alive())
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+
+    def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None, owner='unknown', owner_error=None, expected_owner='unknown'):
+        identity=' '.join(self.identity.values()).encode()
+        health=json.dumps({'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':self.health['instance']}).encode()
+        rows=[identity,health,self.health['source'].encode(),json.dumps(probe).encode(),identity,health]
+        if after is not None:rows[4]=' '.join(after.values()).encode()
+        if after_health is not None:rows[5]=json.dumps(after_health).encode()
+        if failure is not None:rows[failure[0]]=failure[1]
+        with patch.object(R,'inspector_command',side_effect=rows) as native, \
+                patch.object(R,'pending_socket_owner',return_value=owner,side_effect=owner_error) as kernel:
+            answer,observed_owner=R.pending_tcp_presence()
+        self.last_kernel_read=kernel
+        self.assertEqual(observed_owner,expected_owner)
+        if kernel.called:
+            self.assertEqual(kernel.call_args.args,(self.identity,native.call_args_list[0].args[1]))
+        self.assertNotIn(self.identity['container'],json.dumps(answer))
+        self.assertNotIn('private',json.dumps(answer))
+        return answer,native
+
+    def test_kernel_role_uses_existing_tcp_deadline_and_never_survives_binding_change(self):
+        probe={'state':'listening','code':'connection_established'}
+        expected={'state':'listening','code':'connection_established','binding':'matched'}
+        for role in ['main','other_container_process']:
+            answer,_=self.run_bound_probe(probe,owner=role,expected_owner=role)
+            self.assertEqual(answer,expected);self.last_kernel_read.assert_called_once()
+        answer,_=self.run_bound_probe(probe,owner='main',after={**self.identity,'hostPid':'124'})
+        self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
+        changed={'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':'1-87654321'}
+        answer,_=self.run_bound_probe(probe,owner='main',after_health=changed)
+        self.assertEqual(answer['code'],'identity_changed')
+        answer,_=self.run_bound_probe(probe,owner_error=PermissionError('private proc path'))
+        self.assertEqual(answer,expected)
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},owner='main')
+        self.assertEqual(answer['state'],'closed');self.last_kernel_read.assert_not_called()
+
+    def test_tcp_binds_current_runtime_before_and_after_without_legacy_intent(self):
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            answer,native=self.run_bound_probe({'state':state,'code':code})
+            self.assertEqual(answer,{'state':state,'code':code,'binding':'matched'})
+            self.assertEqual(native.call_count,6)
+            calls=native.call_args_list
+            self.assertEqual(calls[3].args[0],['docker','exec','-i','-e','NODE_OPTIONS=',self.identity['container'],'node','--no-inspect','--input-type=module','-'])
+            self.assertEqual(calls[3].kwargs['input_bytes'],R.TCP_PRESENCE_NODE.encode())
+            shared=[call.args[1] for call in calls if call is not calls[3]]
+            self.assertTrue(all(value==shared[0] for value in shared))
+            self.assertLessEqual(calls[3].args[1],shared[0])
+        for key,value in [('container','e'*64),('image','sha256:'+'f'*64),('hostPid','124'),('restarts','1')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after={**self.identity,key:value})
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
+        changed={'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':'1-87654321'}
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after_health=changed)
+        self.assertEqual(answer['code'],'identity_changed')
+
+    def test_tcp_native_startup_failure_deadline_and_bad_health_stay_unknown(self):
+        for error,code in [(ValueError('Inspector read deadline'),'command_deadline'),
+                           (ValueError('Inspector read size'),'command_size'),
+                           (ValueError('Inspector native unavailable'),'command_nonzero')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(3,error))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+        for index,bad,code in [(0,b'private unknown','container_unproved'),
+                               (1,b'{"running":true}','health_unproved'),
+                               (2,b'private wrong image','image_unproved'),
+                               (3,b'{"state":"closed","code":"private"}','probe_unproved')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(index,bad))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+
+    def test_tcp_schema_rejects_false_binding_private_fields_and_future_codes(self):
+        for value in [
+            {'state':'closed','binding':'unproved','code':'connection_refused'},
+            {'state':'unknown','binding':'matched','code':'probe_unproved'},
+            {'state':'listening','binding':'matched','code':'connection_refused'},
+            {'state':'unknown','binding':'unproved','code':'secret error'},
+            {'state':'closed','binding':'matched','code':'connection_refused','container':'private'}]:
+            with self.subTest(value=value),self.assertRaises(ValueError):R.validate_pending_tcp(value)
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            R.validate_pending_tcp({'state':state,'binding':'matched','code':code})
+        R.validate_pending_tcp({'state':'unknown','binding':'unproved','code':'not_read'})
+
+
+
+class KernelOwnerTests(unittest.TestCase):
+    def setUp(self):
+        self.identity={'container':'c'*64,'hostPid':'123'}
+        self.deadline=R.time.monotonic()+3
+        self.snapshot={'members':('123','124'),'processes':(('123','10'),('124','20')),
+            'namespace':'net:[123456]','inode':'456789','owners':('123',)}
+
+    def test_kernel_docker_top_accepts_only_bounded_unique_pid_membership(self):
+        with patch.object(R,'inspector_command',return_value=b'PID\n124\n123\n') as native:
+            self.assertEqual(R._kernel_members(self.identity,self.deadline),('123','124'))
+        self.assertEqual(native.call_args.args,(['docker','top','c'*64,'-eo','pid'],self.deadline))
+        self.assertEqual(native.call_args.kwargs,{'limit':4096})
+        for data in [b'PID COMMAND\n123 private\n',b'PID\n124\n',b'PID\n123\n123\n',
+                     b'PID\n0\n123\n',b'PID\n123\n-2\n',b'PID\n123\n124 extra\n',
+                     ('PID\n'+'\n'.join(str(i) for i in range(1,258))).encode()]:
+            with self.subTest(data=data[:30]),patch.object(R,'inspector_command',return_value=data),self.assertRaises(ValueError):
+                R._kernel_members(self.identity,self.deadline)
+
+    def test_kernel_native_file_bound_symlink_and_expired_deadline(self):
+        with tempfile.TemporaryDirectory(prefix='kernel-owner-file-',dir=ROOT.parent) as temp:
+            path=Path(temp)/'fixed';path.write_bytes(b'12345678')
+            self.assertEqual(R._kernel_read(path,8,self.deadline),b'12345678')
+            path.write_bytes(b'123456789')
+            with self.assertRaises(ValueError):R._kernel_read(path,8,self.deadline)
+            link=Path(temp)/'linked';link.symlink_to(path)
+            with self.assertRaises(OSError):R._kernel_read(link,8,self.deadline)
+            with patch.object(R.os,'open') as opened,self.assertRaises(ValueError):
+                R._kernel_read(path,8,R.time.monotonic()-1)
+            opened.assert_not_called()
+
+    def test_kernel_stat_starttime_handles_private_comm_without_export(self):
+        record=('123 (private ) comm (name)) S '+' '.join(['0']*18+['98765']+['0']*30)).encode()
+        with patch.object(R,'_kernel_read',return_value=record) as read:
+            self.assertEqual(R._kernel_pid_stat('123',self.deadline),'98765')
+        self.assertEqual(read.call_args.args,(R.KERNEL_PROC_ROOT/'123'/'stat',4096,self.deadline))
+        for pid in ['../123','0','123/private','-1']:
+            with self.subTest(pid=pid),patch.object(R,'_kernel_read') as read,self.assertRaises(ValueError):
+                R._kernel_pid_stat(pid,self.deadline)
+            read.assert_not_called()
+        for record in [b'124 (private) S '+b'0 '*18+b'98765',b'123 (private) S 0',
+                       b'123 (private) S '+b'0 '*18+b'private']:
+            with patch.object(R,'_kernel_read',return_value=record),self.assertRaises(ValueError):
+                R._kernel_pid_stat('123',self.deadline)
+
+    @staticmethod
+    def socket_table(*rows):
+        return ('sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n'+''.join(
+            '0: 0100007F:%04X 00000000:0000 %s 00000000:00000000 00:00000000 00000000 1000 0 %s\n'%row
+            for row in rows)).encode()
+
+    def test_kernel_listener_is_fixed_port_listen_only_and_exclusive_inode(self):
+        empty=self.socket_table()
+        with patch.object(R,'_kernel_read',side_effect=[self.socket_table((9228,'0A','7'),(9229,'01','8'),(9229,'0A','9')),empty]) as read:
+            self.assertEqual(R._kernel_listeners('123',self.deadline),'9')
+        self.assertEqual([call.args[0] for call in read.call_args_list],
+            [R.KERNEL_PROC_ROOT/'123'/'net'/'tcp',R.KERNEL_PROC_ROOT/'123'/'net'/'tcp6'])
+        for first,second in [(empty,empty),
+            (self.socket_table((9229,'0A','9'),(9229,'0A','10')),empty),
+            (self.socket_table((9229,'0A','9')),self.socket_table((9229,'0A','10'))),
+            (self.socket_table((9229,'0A','0')),empty),
+            (b'private malformed',empty),
+            (self.socket_table(*[(9229,'0A',str(i)) for i in range(1,11)]),empty)]:
+            with patch.object(R,'_kernel_read',side_effect=[first,second]),self.assertRaises(ValueError):
+                R._kernel_listeners('123',self.deadline)
+
+    def test_kernel_two_snapshots_bind_owner_and_refuse_race_permission_or_deadline(self):
+        with patch.object(R.sys,'platform','linux'):
+            for owners,expected in [(('123',),'main'),(('124',),'other_container_process')]:
+                snapshot={**self.snapshot,'owners':owners}
+                with patch.object(R,'_socket_owner_snapshot',return_value=snapshot) as read:
+                    result=R.pending_socket_owner(self.identity,self.deadline)
+                self.assertEqual(result,expected);self.assertEqual(read.call_count,2)
+                self.assertNotIn('123',json.dumps(result));self.assertNotIn('private',json.dumps(result))
+            for changed in [{'members':('123','125')},{'processes':(('123','11'),('124','20'))},
+                            {'namespace':'net:[999]'},{'inode':'456790'},{'owners':('124',)}]:
+                with self.subTest(changed=changed),patch.object(R,'_socket_owner_snapshot',side_effect=[self.snapshot,{**self.snapshot,**changed}]):
+                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+            for error in [PermissionError('private path'),FileNotFoundError('private process'),ValueError('private overflow'),
+                          subprocess.TimeoutExpired(['private'],1)]:
+                with patch.object(R,'_socket_owner_snapshot',side_effect=error):
+                    self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+            with patch.object(R,'_socket_owner_snapshot',return_value=self.snapshot):
+                self.assertEqual(R.pending_socket_owner(self.identity,R.time.monotonic()-1),'unknown')
+        with patch.object(R.sys,'platform','darwin'),patch.object(R,'_socket_owner_snapshot') as read:
+            self.assertEqual(R.pending_socket_owner(self.identity,self.deadline),'unknown')
+        read.assert_not_called()
+
+    def test_kernel_wire_role_requires_matched_listening_and_never_accepts_private_fields(self):
+        listening={'state':'listening','binding':'matched','code':'connection_established'}
+        for role in ['main','other_container_process','unknown']:R.validate_pending_owner(role,listening)
+        for role in ['123',{'pid':123},True,None,'foreign/private']:
+            with self.subTest(role=role),self.assertRaises(ValueError):R.validate_pending_owner(role,listening)
+        for tcp in [{'state':'closed','binding':'matched','code':'connection_refused'},
+                    {'state':'unknown','binding':'unproved','code':'probe_unproved'}]:
+            R.validate_pending_owner('unknown',tcp)
+            for role in ['main','other_container_process']:
+                with self.assertRaises(ValueError):R.validate_pending_owner(role,tcp)
+        self.assertEqual(R.PENDING_SCHEMA,'existing-release-pending-observation/v5')
+
+    def test_kernel_snapshot_bounds_shared_unmapped_descriptors_and_process_races(self):
+        # Native Linux components below exercise /proc; these finite adversarial
+        # records qualify refusal branches without touching this host's processes.
+        def run(*,fd_targets=('socket:[456789]',),names=('3',),stats=('10','20','10','20'),
+                members=(('123','124'),('123','124')),listeners=('456789','456789'),networks=('net:[123456]','net:[123456]'),end_networks=None,other_targets=(),budget=None):
+            entries=[types.SimpleNamespace(name=name,path='/private/'+name) for name in names]
+            with patch.object(R,'_kernel_members',side_effect=members), \
+                    patch.object(R,'_kernel_pid_stat',side_effect=stats), \
+                    patch.object(R,'_kernel_listeners',side_effect=listeners), \
+                    patch.object(R.os,'readlink',side_effect=[*networks,*fd_targets,*other_targets,*(end_networks or networks)]), \
+                    patch.object(R.os,'scandir',side_effect=[contextlib.nullcontext(iter(entries)),contextlib.nullcontext(iter([types.SimpleNamespace(name=str(i+8),path='/private/other'+str(i)) for i in range(len(other_targets))]))]):
+                return R._socket_owner_snapshot(self.identity,self.deadline,budget)
+        self.assertEqual(run()['owners'],('123',))
+        shared_budget={'fds':16383}
+        self.assertEqual(run(budget=shared_budget)['owners'],('123',))
+        self.assertEqual(shared_budget['fds'],16384)
+        with self.assertRaises(ValueError):run(budget=shared_budget)
+        for kwargs in [dict(fd_targets=('socket:[999]',)),dict(names=('private',)),
+                       dict(fd_targets=(PermissionError('private'),)),
+                       dict(stats=('10','20','11','20')),dict(members=(('123','124'),('123',))),
+                       dict(listeners=('456789','999')),dict(networks=('net:[123456]','net:[999]')),
+                       dict(end_networks=('net:[123456]','net:[999]')),dict(other_targets=('socket:[456789]',))]:
+            with self.subTest(kwargs=str(kwargs)),self.assertRaises((OSError,ValueError)):
+                run(**kwargs)
+        entries=(types.SimpleNamespace(name=str(i),path='/private/'+str(i)) for i in range(16385))
+        with patch.object(R,'_kernel_members',return_value=('123',)), \
+                patch.object(R,'_kernel_pid_stat',return_value='10'), \
+                patch.object(R,'_kernel_listeners',return_value='456789'), \
+                patch.object(R.os,'readlink',side_effect=lambda path:'net:[123456]' if str(path).endswith('/ns/net') else '/private/ignored'), \
+                patch.object(R.os,'scandir',return_value=contextlib.nullcontext(entries)),self.assertRaises(ValueError):
+            R._socket_owner_snapshot(self.identity,self.deadline)
+
+
+@unittest.skipUnless(R.sys.platform=='linux','actual Linux proc/socket qualification required; unavailable on Mac')
+class LinuxKernelOwnerTests(unittest.TestCase):
+    # Owned fork fixtures only. The Docker-top boundary supplies exactly the
+    # fixture members; socket tables, stat, namespaces and descriptor links are
+    # read from the real Linux kernel by the maintained implementation.
+    FIXTURE=r"""
+import json,os,signal,socket,sys
+role=sys.argv[1]
+srv=None;child=None;control=None;ack=None;port=None
+try:
+ if role in ('main','shared'):
+  srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
+ if role in ('other','shared'):
+  read,write=os.pipe();ready_read,ready_write=os.pipe();child=os.fork()
+  if child==0:
+   os.close(write);os.close(ready_read)
+   if role=='other':
+    srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',0));srv.listen();port=srv.getsockname()[1]
+   os.write(ready_write,(str(port)+'\n').encode());os.close(ready_write)
+   while True:
+    command=os.read(read,1)
+    if command in (b'',b'q'):break
+    if command==b'c':
+     srv.close();srv=None
+     os.write(1,b'{"childClosed":true}\n')
+   os._exit(0)
+  os.close(read);os.close(ready_write);control=write
+  raw=b''
+  while not raw.endswith(b'\n'):raw+=os.read(ready_read,32)
+  os.close(ready_read);port=int(raw)
+ print(json.dumps({'main':os.getpid(),'child':child,'port':port}),flush=True)
+ for line in sys.stdin:
+  if line.strip()=='quit':break
+  if line.strip() in ('close','replace'):
+   if child:raise RuntimeError('commands are main fixture only')
+   if srv:srv.close();srv=None
+   if line.strip()=='replace':
+    srv=socket.socket();srv.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);srv.bind(('127.0.0.1',port));srv.listen()
+   print(json.dumps({'replaced':True} if srv else {'closed':True}),flush=True)
+finally:
+ if child:
+  os.write(control,b'q');os.close(control);os.waitpid(child,0)
+ if srv:srv.close()
+"""
+
+    @contextlib.contextmanager
+    def fixture(self,role):
+        import signal
+        child=subprocess.Popen([R.sys.executable,'-u','-c',self.FIXTURE,role],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+        def line():
+            deadline=R.time.monotonic()+5;data=bytearray()
+            with R.selectors.DefaultSelector() as selector:
+                selector.register(child.stdout,R.selectors.EVENT_READ)
+                while R.time.monotonic()<deadline:
+                    if not selector.select(max(0,deadline-R.time.monotonic())):break
+                    part=os.read(child.stdout.fileno(),4096)
+                    if not part:break
+                    data.extend(part);self.assertLessEqual(len(data),4096)
+                    if b'\n' in data:
+                        raw,extra=data.split(b'\n',1);self.assertFalse(extra)
+                        return json.loads(raw)
+            self.fail('owned Linux fixture readiness deadline; exit='+str(child.poll()))
+        try:
+            ready=line();main=str(ready['main']);members=tuple(str(pid) for pid in [ready['main'],ready['child']] if pid)
+            identity={'container':'c'*64,'hostPid':main}
+            with patch.object(R,'_kernel_members',return_value=tuple(sorted(members,key=int))), \
+                    patch.object(R,'KERNEL_INSPECTOR_PORT',ready['port']):
+                yield identity,child,line
+        finally:
+            if child.poll() is None:
+                child.stdin.write(b'quit\n');child.stdin.flush()
+                try:child.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Fault cleanup may only kill this isolated fixture group.
+                    os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=2)
+            child.stdin.close();child.stdout.close();child.stderr.close()
+
+    def test_real_linux_main_and_child_listener_roles(self):
+        for fixture,expected in [('main','main'),('other','other_container_process')]:
+            with self.subTest(role=fixture),self.fixture(fixture) as (identity,_,__):
+                role=R.pending_socket_owner(identity,R.time.monotonic()+3)
+                self.assertEqual(role,expected)
+                self.assertNotIn(identity['hostPid'],json.dumps(role))
+
+    def test_real_linux_shared_parent_child_descriptor_is_unknown(self):
+        with self.fixture('shared') as (identity,_,__):
+            self.assertEqual(R.pending_socket_owner(identity,R.time.monotonic()+3),'unknown')
+
+    def test_real_linux_disappearing_and_replaced_listener_between_snapshots_is_unknown(self):
+        for command,ack in [(b'close\n',{'closed':True}),(b'replace\n',{'replaced':True})]:
+            with self.subTest(command=command),self.fixture('main') as (identity,child,line):
+                original=R._socket_owner_snapshot
+                calls=0
+                def snapshot(*args):
+                    nonlocal calls
+                    calls+=1;value=original(*args)
+                    if calls==1:
+                        child.stdin.write(command);child.stdin.flush()
+                        self.assertEqual(line(),ack)
+                    return value
+                with patch.object(R,'_socket_owner_snapshot',side_effect=snapshot):
+                    self.assertEqual(R.pending_socket_owner(identity,R.time.monotonic()+3),'unknown')
+                self.assertEqual(calls,2)
 
 
 if __name__ == '__main__':

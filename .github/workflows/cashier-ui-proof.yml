@@ -1,0 +1,153 @@
+name: Scoped Cashier UI Proof
+run-name: Scoped Cashier UI Proof ${{ github.sha }}
+
+# Explicit, bounded verification only. The workflow definition always comes
+# from the protected default branch; callers cannot select code or test inputs.
+on:
+  repository_dispatch:
+    types: [verify-cashier-ui]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cashier-ui-proof-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify Player History And Existing Credit Display
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROOF_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Require the default branch invocation
+        run: test "$GITHUB_REF" = 'refs/heads/main'
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Admit only the closed request and exact protected source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --filter=blob:none origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          node scripts/verification-harness/cashier-ui-proof.mjs admit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Prepare the scoped evidence directory
+        run: mkdir -p e2e-report/cashier-ui-proof
+
+      - name: Install Chromium only
+        timeout-minutes: 5
+        run: |
+          sudo python3 scripts/ci/ubuntu-apt-mirror.py
+          npx playwright install --with-deps chromium
+
+      - name: Create the owned isolated account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+
+      - name: Prepare its existing zero-balance staff workspace
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+
+      - name: Pin the published client before the two cases
+        id: before
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/verification-harness/cashier-ui-proof.mjs pin
+          e2e-report/cashier-ui-proof/before.json
+
+      - name: Verify only player history and the existing credit agreement
+        id: browser
+        timeout-minutes: 12
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/cashier-ui-proof/report.json
+        run: |
+          set -euo pipefail
+          npx playwright test tests/e2e/production-cashier.spec.ts \
+            --grep '(reads Transaction History through the installed feed and scopes, with real receipts|prints the existing agent credit agreement beneath member wallets without moving chips)$' \
+            --project=chromium --workers=1 --retries=0 --trace=off --reporter=line,json \
+            --output=test-results/cashier-ui-proof \
+            2>&1 | tee e2e-report/cashier-ui-proof/browser.log
+
+      - name: Pin the published client after the two cases
+        id: after
+        if: always() && steps.before.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/verification-harness/cashier-ui-proof.mjs pin
+          e2e-report/cashier-ui-proof/after.json
+
+      - name: Retire only the owned account and verify cleanup
+        id: cleanup
+        if: always() && steps.account.outcome != '' && steps.account.outcome != 'skipped'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from 'node:fs';
+          import { cleanupProductionE2EAccount } from './scripts/ci/production-e2e-account.mjs';
+          if (await cleanupProductionE2EAccount() !== true) throw new Error('Owned account cleanup did not verify retirement');
+          mkdirSync('e2e-report/cashier-ui-proof', { recursive: true });
+          writeFileSync('e2e-report/cashier-ui-proof/cleanup.json', JSON.stringify({
+            verified: true,
+            runId: process.env.GITHUB_RUN_ID,
+          }));
+          NODE
+
+      - name: Certify exactly the two completed scoped cases
+        if: always() && steps.before.outcome == 'success'
+        run: >-
+          node scripts/verification-harness/cashier-ui-proof.mjs assert
+          e2e-report/cashier-ui-proof/before.json
+          e2e-report/cashier-ui-proof/after.json
+          e2e-report/cashier-ui-proof/report.json
+          e2e-report/cashier-ui-proof/cleanup.json
+
+      - name: Retain only token-free scoped evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cashier-ui-proof-${{ github.run_id }}
+          path: |
+            cashier-ui-proof.json
+            e2e-report/cashier-ui-proof/before.json
+            e2e-report/cashier-ui-proof/after.json
+            e2e-report/cashier-ui-proof/report.json
+            e2e-report/cashier-ui-proof/cleanup.json
+            e2e-report/cashier-ui-proof/browser.log
+            test-results/cashier-ui-proof/**/*.png
+            test-results/cashier-ui-proof/**/*.jpg
+            test-results/cashier-ui-proof/**/attachments/*.json
+            test-results/cashier-ui-proof/**/error-context.md
+          if-no-files-found: warn
+          retention-days: 7

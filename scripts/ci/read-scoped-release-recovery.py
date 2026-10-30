@@ -371,7 +371,7 @@ def retained_reason(request, window, result):
 
 
 
-PENDING_SCHEMA = 'existing-release-pending-observation/v3'
+PENDING_SCHEMA = 'existing-release-pending-observation/v5'
 PENDING_RECOVERY_STATUSES = ('accepted', 'active', 'pending', 'busy', 'expired',
                              'use_hourly', 'unavailable', 'unknown')
 PENDING_RECOVERY_CATEGORIES = {
@@ -663,17 +663,44 @@ def pending_metadata(request, rows, intent, marker, deadline):
     return rows[4], stamp, break_deadline
 
 
-def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None):
+def validate_pending_tcp(value):
+    unknown_codes = {'not_read', 'command_deadline', 'command_size', 'command_nonzero',
+                     'container_unproved', 'health_unproved', 'image_unproved',
+                     'identity_changed', 'probe_unproved', 'evidence_unavailable'}
+    if (not isinstance(value, dict) or set(value) != {'state', 'binding', 'code'}
+            or any(not isinstance(value[key], str) for key in value)):
+        raise ValueError('Pending TCP export refused')
+    if ((value['state'], value['binding'], value['code']) not in {
+            ('closed', 'matched', 'connection_refused'),
+            ('listening', 'matched', 'connection_established')}
+            and not (value['state'] == 'unknown' and value['binding'] == 'unproved'
+                     and value['code'] in unknown_codes)):
+        raise ValueError('Pending TCP export refused')
+
+
+def validate_pending_owner(value, tcp):
+    if (not isinstance(value, str) or value not in {'main', 'other_container_process', 'unknown'}
+            or (value != 'unknown' and tcp != {'state': 'listening', 'binding': 'matched', 'code': 'connection_established'})):
+        raise ValueError('Pending socket owner refused')
+
+
+def pending_observation(request, rows, intent, marker, deadline, unit, signs, journal_failure=None, legacy_intent=None, inspector_tcp=None, inspector_owner=None):
     control, stamp, break_deadline = pending_metadata(request, rows, intent, marker, deadline)
     validate_pending_unit(unit)
     validate_pending_journal(signs, journal_failure)
     legacy_intent = legacy_intent if legacy_intent is not None else {'status': 'unknown', 'code': 'not_read'}
     validate_pending_intent(legacy_intent)
+    inspector_tcp = inspector_tcp if inspector_tcp is not None else {'state': 'unknown', 'binding': 'unproved', 'code': 'not_read'}
+    validate_pending_tcp(inspector_tcp)
+    inspector_owner = inspector_owner if inspector_owner is not None else 'unknown'
+    validate_pending_owner(inspector_owner, inspector_tcp)
     return {'schema': PENDING_SCHEMA, 'readOnly': True, **request, 'controlSha': control,
         'requestDeadlineEpoch': stamp, 'breakDeadlineEpoch': break_deadline,
         'stage': 'awaiting_certificate_marker_retained' if marker else 'unknown_not_retained',
         'unit': unit, 'journalSigns': signs,
         'legacyIntent': legacy_intent,
+        'inspectorTcp': inspector_tcp,
+        'inspectorOwner': inspector_owner,
         'journalStatus': 'unavailable' if journal_failure else 'observed',
         'journalFailure': journal_failure,
         'absenceMeans': 'unknown; bounded latest journal rows do not prove absence'}
@@ -741,15 +768,267 @@ def pending_remote(request, root_fd):
                 raise
             signs = None
             journal_failure = {'phase': error.phase, 'code': error.code}
+        # Supplemental current TCP presence needs no historical checkpoint
+        # intent. Its unknown outcome never bypasses the mandatory rechecks.
+        try:
+            inspector_tcp, inspector_owner = pending_tcp_presence()
+            validate_pending_tcp(inspector_tcp)
+            validate_pending_owner(inspector_owner, inspector_tcp)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            inspector_tcp = {'state': 'unknown', 'binding': 'unproved', 'code': 'evidence_unavailable'}
+            inspector_owner = 'unknown'
         if (legacy_intent, legacy_binding) != pending_legacy_intent(request, directory, before[0][4]):
             legacy_intent = {'status': 'unknown', 'code': 'changed_during_read'}
         if before != pending_stage('recheck_requests', read):
             raise ScopedRefusal('pending_recheck_requests', 'evidence_unavailable')
         if unit != pending_stage('recheck_unit', lambda: pending_unit(request)):
             raise ScopedRefusal('pending_recheck_unit', 'evidence_unavailable')
-        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent)
+        return pending_observation(request, *before, unit, signs, journal_failure, legacy_intent, inspector_tcp, inspector_owner)
     finally:
         os.close(directory)
+
+
+# Fixed TCP-only presence: one connection, no bytes sent, HTTP, WebSocket,
+# evaluation, process signals or inspector lifecycle calls. The child destroys
+# only its own socket. Python binds this scalar to the current stable runtime.
+TCP_PRESENCE_NODE = r"""
+import net from 'node:net';
+let socket, timer, finished=false;
+const done=(state,code)=>{
+ if(finished)return;finished=true;clearTimeout(timer);
+ if(socket)socket.destroy();
+ console.log(JSON.stringify({state,code}));
+};
+timer=setTimeout(()=>done('unknown','probe_unproved'),1500);
+try{
+ socket=net.createConnection({host:'127.0.0.1',port:9229});
+ socket.setTimeout(1000,()=>done('unknown','probe_unproved'));
+ socket.once('connect',()=>done('listening','connection_established'));
+ socket.once('error',error=>error.code==='ECONNREFUSED'
+  ?done('closed','connection_refused'):done('unknown','probe_unproved'));
+}catch{done('unknown','probe_unproved');}
+"""
+
+
+def pending_tcp_health(deadline):
+    raw = inspector_command(['curl', '--noproxy', '*', '--silent', '--show-error', '--fail',
+        '--max-time', '2', 'http://127.0.0.1:8080/health'], deadline, limit=262144)
+    value = json.loads(raw, object_pairs_hook=unique_object)
+    source = value.get('releaseSha') if isinstance(value, dict) else None
+    if (not isinstance(value, dict) or value.get('running') is not True
+            or value.get('status') != 'ok' or not isinstance(source, str)
+            or not SHA.fullmatch(source) or value.get('version') != source[:8]
+            or not isinstance(value.get('instanceId'), str)
+            or not re.fullmatch('1-[0-9a-f]{8}', value['instanceId'])):
+        raise ValueError('Pending TCP health unproved')
+    return {'source': source, 'instance': value['instanceId']}
+
+
+KERNEL_PROC_ROOT = Path('/proc')
+KERNEL_INSPECTOR_PORT = 9229
+
+
+def _kernel_deadline(deadline):
+    if time.monotonic() >= deadline:
+        raise ValueError('Kernel owner deadline')
+
+
+def _kernel_read(path, limit, deadline):
+    _kernel_deadline(deadline)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        chunks = bytearray()
+        while True:
+            _kernel_deadline(deadline)
+            part = os.read(fd, min(4096, limit + 1 - len(chunks)))
+            if not part:
+                return bytes(chunks)
+            chunks.extend(part)
+            if len(chunks) > limit:
+                raise ValueError('Kernel owner file bound')
+    finally:
+        os.close(fd)
+
+
+def _kernel_members(identity, deadline):
+    _kernel_deadline(deadline)
+    raw = inspector_command(['docker', 'top', identity['container'], '-eo', 'pid'],
+                            deadline, limit=4096).decode('ascii').splitlines()
+    if (not raw or raw[0].strip() != 'PID' or not 1 <= len(raw) - 1 <= 256):
+        raise ValueError('Kernel owner members unproved')
+    members = tuple(line.strip() for line in raw[1:])
+    if (any(not re.fullmatch(r'[1-9][0-9]{0,9}', pid) for pid in members)
+            or len(set(members)) != len(members) or identity['hostPid'] not in members):
+        raise ValueError('Kernel owner members unproved')
+    return tuple(sorted(members, key=int))
+
+
+def _kernel_pid_stat(pid, deadline):
+    if not isinstance(pid, str) or not re.fullmatch(r'[1-9][0-9]{0,9}', pid):
+        raise ValueError('Kernel owner process unproved')
+    raw = _kernel_read(KERNEL_PROC_ROOT / pid / 'stat', 4096, deadline).decode('ascii')
+    prefix, separator, tail = raw.rpartition(')')
+    fields = tail.split()
+    # Field22 is starttime; the private comm field can itself contain spaces
+    # or parentheses, so never split the whole proc record on whitespace.
+    if (not separator or not prefix.startswith(pid + ' (') or len(fields) < 20
+            or not re.fullmatch(r'[0-9]{1,20}', fields[19])):
+        raise ValueError('Kernel owner process unproved')
+    return fields[19]
+
+
+def _kernel_listeners(main_pid, deadline):
+    selected = set()
+    for family in ('tcp', 'tcp6'):
+        raw = _kernel_read(KERNEL_PROC_ROOT / main_pid / 'net' / family,
+                           131072, deadline).decode('ascii')
+        lines = raw.splitlines()
+        if not lines or 'inode' not in lines[0]:
+            raise ValueError('Kernel owner sockets unproved')
+        for line in lines[1:]:
+            _kernel_deadline(deadline)
+            fields = line.split()
+            if len(fields) < 10:
+                raise ValueError('Kernel owner sockets unproved')
+            endpoint = fields[1].split(':')
+            if (len(endpoint) != 2 or not re.fullmatch(r'[0-9A-Fa-f]{4}', endpoint[1])
+                    or not re.fullmatch(r'[0-9A-Fa-f]{2}', fields[3])):
+                raise ValueError('Kernel owner sockets unproved')
+            if int(endpoint[1], 16) == KERNEL_INSPECTOR_PORT and fields[3].upper() == '0A':
+                if not re.fullmatch(r'[1-9][0-9]{0,19}', fields[9]):
+                    raise ValueError('Kernel owner sockets unproved')
+                selected.add(fields[9])
+                if len(selected) > 8:
+                    raise ValueError('Kernel owner socket bound')
+    if len(selected) != 1:
+        raise ValueError('Kernel owner listener ambiguous')
+    return next(iter(selected))
+
+
+def _socket_owner_snapshot(identity, deadline, budget=None):
+    budget = budget if budget is not None else {'fds': 0}
+    members = _kernel_members(identity, deadline)
+    main = identity['hostPid']
+    processes = []
+    namespace = None
+    for pid in members:
+        _kernel_deadline(deadline)
+        started = _kernel_pid_stat(pid, deadline)
+        network = os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net')
+        if not re.fullmatch(r'net:\[[1-9][0-9]{0,19}\]', network):
+            raise ValueError('Kernel owner namespace unproved')
+        if namespace is None:
+            namespace = network
+        if network != namespace:
+            raise ValueError('Kernel owner namespace differs')
+        processes.append((pid, started))
+    inode = _kernel_listeners(main, deadline)
+    owners = set()
+    for pid in members:
+        with os.scandir(KERNEL_PROC_ROOT / pid / 'fd') as entries:
+            for entry in entries:
+                _kernel_deadline(deadline)
+                budget['fds'] += 1
+                if budget['fds'] > 16384 or not re.fullmatch(r'[0-9]{1,10}', entry.name):
+                    raise ValueError('Kernel owner descriptor bound')
+                target = os.readlink(entry.path)
+                if len(target) > 4096:
+                    raise ValueError('Kernel owner descriptor bound')
+                if target == 'socket:[' + inode + ']':
+                    owners.add(pid)
+    # Shared descriptors and unmapped listeners are not exclusive ownership.
+    if len(owners) != 1:
+        raise ValueError('Kernel owner descriptor ambiguous')
+    for pid, started in processes:
+        if (_kernel_pid_stat(pid, deadline) != started
+                or os.readlink(KERNEL_PROC_ROOT / pid / 'ns' / 'net') != namespace):
+            raise ValueError('Kernel owner process changed')
+    if (_kernel_members(identity, deadline) != members
+            or _kernel_listeners(main, deadline) != inode):
+        raise ValueError('Kernel owner snapshot changed')
+    return {'members': members, 'processes': tuple(processes), 'namespace': namespace,
+            'inode': inode, 'owners': tuple(sorted(owners, key=int))}
+
+
+def pending_socket_owner(identity, deadline):
+    # Linux kernel metadata only; private IDs and paths never leave this
+    # helper. Two equal complete snapshots are required, not one positive FD.
+    try:
+        if (sys.platform != 'linux' or not isinstance(identity, dict)
+                or not isinstance(identity.get('container'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', identity['container'])
+                or not isinstance(identity.get('hostPid'), str)
+                or not re.fullmatch(r'[1-9][0-9]{0,9}', identity['hostPid'])):
+            return 'unknown'
+        budget = {'fds': 0}
+        before = _socket_owner_snapshot(identity, deadline, budget)
+        after = _socket_owner_snapshot(identity, deadline, budget)
+        _kernel_deadline(deadline)
+        if before != after:
+            return 'unknown'
+        return 'main' if before['owners'] == (identity['hostPid'],) else 'other_container_process'
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 'unknown'
+
+
+def pending_tcp_presence():
+    # One shared supplemental deadline, not eight seconds per native command.
+    # No identities or native exception text leave this helper.
+    deadline = time.monotonic() + 8
+    unknown = lambda code: {'state': 'unknown', 'binding': 'unproved', 'code': code}
+    failure = 'container_unproved'
+    try:
+        before = inspector_identity(deadline)
+        failure = 'health_unproved'
+        health = pending_tcp_health(deadline)
+        failure = 'image_unproved'
+        label = inspector_command(['docker', 'image', 'inspect', '--format',
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}', before['image']],
+            deadline, limit=256).decode().strip()
+        if label != health['source']:
+            return unknown('image_unproved'), 'unknown'
+        failure = 'probe_unproved'
+        # Match the original gate's three-second native child ceiling; the
+        # eight-second envelope also includes identity/health binding reads.
+        probe_deadline = min(deadline, time.monotonic() + 3)
+        # Isolate only this reader child: inherited inspector flags or preloads
+        # must not create the very listener whose prior presence we observe.
+        raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+            before['container'], 'node', '--no-inspect', '--input-type=module', '-'],
+            probe_deadline, input_bytes=TCP_PRESENCE_NODE.encode(), limit=1024)
+        probe = json.loads(raw, object_pairs_hook=unique_object)
+        if (not isinstance(probe, dict) or set(probe) != {'state', 'code'}
+                or any(not isinstance(probe[key], str) for key in probe)
+                or (probe.get('state'), probe.get('code')) not in {
+                    ('closed', 'connection_refused'), ('listening', 'connection_established'),
+                    ('unknown', 'probe_unproved')}):
+            return unknown('probe_unproved'), 'unknown'
+        owner = 'unknown'
+        if probe['state'] == 'listening':
+            try:
+                owner = pending_socket_owner(before, deadline)
+                if not isinstance(owner, str) or owner not in {'main', 'other_container_process', 'unknown'}:
+                    owner = 'unknown'
+            except (OSError, ValueError, subprocess.SubprocessError):
+                # An optional kernel read failure alone cannot erase an
+                # independently rebound TCP result; exhausted binding time can.
+                owner = 'unknown'
+        failure = 'container_unproved'
+        after = inspector_identity(deadline, stage='recheck_container')
+        failure = 'health_unproved'
+        after_health = pending_tcp_health(deadline)
+        if before != after or health != after_health:
+            return unknown('identity_changed'), 'unknown'
+        answer = ({**probe, 'binding': 'matched'} if probe['state'] != 'unknown'
+                  else unknown('probe_unproved'))
+        validate_pending_tcp(answer)
+        return answer, owner
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        code = ('command_deadline' if isinstance(error, subprocess.TimeoutExpired)
+                else error.code if isinstance(error, ScopedRefusal)
+                else INSPECTOR_COMMAND_ERRORS.get(str(error)))
+        return unknown(code if code in {'command_deadline', 'command_size', 'command_nonzero'}
+                       else failure), 'unknown'
 
 
 # This mode observes the original one-shot checkpoint only. It never opens or
@@ -955,7 +1234,10 @@ def inspector_endpoint(raw, at):
 
 
 def inspector_probe(container, deadline, expected=None):
-    raw = inspector_command(['docker', 'exec', '-i', container, 'node', '--input-type=module', '-',
+    # Keep inherited inspector flags/preloads out of this reader child too;
+    # opening its own endpoint would corrupt the original target observation.
+    raw = inspector_command(['docker', 'exec', '-i', '-e', 'NODE_OPTIONS=',
+        container, 'node', '--no-inspect', '--input-type=module', '-',
         'read' if expected else 'probe', expected or ''], deadline,
         input_bytes=INSPECTOR_NODE.encode(), limit=16384, stage='probe')
     value = json.loads(raw, object_pairs_hook=unique_object)
@@ -1121,7 +1403,7 @@ def validate_reply(value, request):
     if request.get('mode') == 'legacy_checkpoint_inspector':
         return validate_inspector(value, request)
     if request.get('mode') == 'pending_transaction':
-        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'absenceMeans'}
+        fields = {'schema', 'readOnly', 'runKey', 'releaseSha', 'mode', 'controlSha', 'requestDeadlineEpoch', 'breakDeadlineEpoch', 'stage', 'unit', 'journalSigns', 'journalStatus', 'journalFailure', 'legacyIntent', 'inspectorTcp', 'inspectorOwner', 'absenceMeans'}
         if (not isinstance(value, dict) or set(value) != fields or value['schema'] != PENDING_SCHEMA
                 or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
                 or not isinstance(value['controlSha'], str) or not SHA.fullmatch(value['controlSha'])
@@ -1136,6 +1418,8 @@ def validate_reply(value, request):
             timestamp(value[key] * 1000)
         validate_pending_unit(value['unit'])
         validate_pending_intent(value['legacyIntent'])
+        validate_pending_tcp(value['inspectorTcp'])
+        validate_pending_owner(value['inspectorOwner'], value['inspectorTcp'])
         validate_pending_journal(value['journalSigns'], value['journalFailure'])
         if value['journalStatus'] != ('observed' if value['journalFailure'] is None else 'unavailable'):
             raise ValueError('Pending journal status refused')

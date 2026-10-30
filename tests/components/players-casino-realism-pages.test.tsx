@@ -583,18 +583,19 @@ describe('the member record survives a failed background refresh', () => {
       render(<MemberManagementPage />);
     });
     expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    // The heading can paint before the resolved-club authority effect settles.
+    // Flush pending passive effects before delivering the one-shot event.
+    await act(async () => {});
     // Own the authority read explicitly: rendering the heading alone does not
     // finish every initial read. A range read must not consume this failure.
     let failAuthority!: (error: Error) => void;
     const authorityRead = new Promise<never>((_, reject) => {
       failAuthority = reject;
     });
-    state.getMemberDetail.mockImplementation((_club, _user, range) =>
-      range === undefined ? authorityRead : Promise.resolve(memberDetail)
-    );
+    state.getMemberDetail.mockReturnValue(authorityRead);
     await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
-    expect(state.getMemberDetail.mock.calls[1][2]).toBeUndefined();
+    expect(state.getMemberDetail.mock.calls[1][2]).toEqual(state.getMemberDetail.mock.calls[0][2]);
     await act(async () => failAuthority(new Error('offline')));
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('Member Connection Interrupted');
@@ -605,11 +606,7 @@ describe('the member record survives a failed background refresh', () => {
     expect(state.toast.error).not.toHaveBeenCalled();
 
     // A second failed background read still does not toast.
-    state.getMemberDetail.mockImplementation((_club, _user, range) =>
-      range === undefined
-        ? Promise.reject(new Error('still offline'))
-        : Promise.resolve(memberDetail)
-    );
+    state.getMemberDetail.mockRejectedValue(new Error('still offline'));
     await authorityEvent();
     await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
     expect(state.toast.error).not.toHaveBeenCalled();

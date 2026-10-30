@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5021,6 +5021,27 @@
     "current": {
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    }
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Bind only the two added current typed Union financial regression/evidence workflow lines. The existing cash pg_cron qualification command, inputs, assertions and historical receipts remain unchanged; this is current workflow identity only, not a hosted or historical certificate.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "mergedUnionAndClientCiSourceAudit20261030": {
+    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
+    "currentCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
     }
   }
 }

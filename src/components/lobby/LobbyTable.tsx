@@ -1356,8 +1356,8 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
          you know which tournament they describe. It leads now, and on every
          other tab the name already sits first behind the favourite star. */
       return [
-        COL_FAV,
         COL_TNAME,
+        COL_FAV,
         COL_STARTS,
         { ...COL_VARIANT, label: 'Game Type' },
         COL_BUYIN,

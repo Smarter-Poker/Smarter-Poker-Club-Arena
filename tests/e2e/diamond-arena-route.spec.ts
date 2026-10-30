@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * THE DIAMOND ARENA ROUTE ON A PHONE (D8, 2026-09-20)
  *
@@ -229,6 +230,7 @@ for (const [orientation, viewport] of ORIENTATIONS) {
       const context = authority.context!;
       // This case certifies both cash and tournament doors. The account's saved
       // MTT tab legitimately hides cash, so choose the complete board explicitly.
+      await openLobbyGameSection(page, 'ALL');
       const allGames = page.getByRole('tab', { name: 'ALL', exact: true });
       await allGames.click();
       await expect(allGames).toHaveAttribute('aria-selected', 'true');
@@ -280,6 +282,7 @@ for (const [orientation, viewport] of ORIENTATIONS) {
         }
         await page.getByRole('button', { name: 'Close Game Lobby', exact: true }).click();
       }
+      await openLobbyGameSection(page, 'MTT');
       const tournamentCards = page.locator('[data-testid="lobby-game-row"][data-kind="mtt"]');
       for (const card of await tournamentCards.all()) {
         const id = await card.getAttribute('data-id');

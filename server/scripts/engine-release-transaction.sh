@@ -367,6 +367,36 @@ PREPARED=0
 MUTATION_STARTED=0
 LEGACY_CHECKPOINT_INTENT_FILE="$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent"
 LEGACY_CHECKPOINT_ATTEMPTED=0
+refuse_foreign_floor_owner() {
+  [ "${FLOOR_DISPOSITION:-legacy}" = never-entered ] || [ "${FLOOR_DISPOSITION:-legacy}" = announced ] || return 0
+  local foreign rc
+  if foreign="$(newer_release_in_flight any)"; then
+    die "fresh scheduled release cannot compete with active runtime owner ${foreign%% *}"
+  else
+    rc=$?
+    [ "$rc" = 1 ] || die 'foreign runtime ownership is unreadable'
+  fi
+}
+
+retire_unannounced_floor_entry() {
+  [ "${FLOOR_RESERVATION_FRESH:-0}" = 1 ] || return 0
+  # Only a definitive no-reservation answer, while holding the engine lock,
+  # can retire this invocation's new intent. Unknown outcomes retain recovery.
+  python3 - "$REQUEST_ROOT" "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}" "$RUN_ID" <<'FLOOR_NO_ACTION'
+import os, sys
+from pathlib import Path
+root, state, run = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+reservation = state / ('engine-recovery-window-' + run + '.json')
+if os.path.lexists(reservation): raise SystemExit('reservation exists; entry remains owned')
+(root / (run + '.activation-entry')).unlink()
+fd = os.open(root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+try: os.fsync(fd)
+finally: os.close(fd)
+FLOOR_NO_ACTION
+  FLOOR_DISPOSITION=never-entered
+  FLOOR_RESERVATION_FRESH=0
+}
+
 # THE NEWEST WAITING RELEASE TAKES THE BREAK (2026-09-27). This run's marker
 # says "my immutable image is built and I am waiting at the certificate". It is
 # never left over from an earlier invocation of the same run key (a systemd
@@ -744,12 +774,21 @@ health_instance() {
 # No bank or custody reason, and no serving-release identity, may widen what
 # this certificate admits (pinned by
 # noServingReleaseBuysACustodyException.law.test.ts).
+floor_reservation_stamp() {
+  if [ -z "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then printf '0\n'; return 0; fi
+  legacy_entry_read python3 "$CONTROL_DIR/engine-release-activation-floor.py" reservation     --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"     --deadline "$MUTATION_DEADLINE_EPOCH" --run-id "$RUN_ID"     --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"
+}
+
 maintenance_certificate() {
   # The minimum break remaining is the strict MIN_BREAK_REMAINING_MS unless the
   # caller names another; the only caller that does is the read straight after
   # a legacy checkpoint, which passes LEGACY_MIN_BREAK_REMAINING_MS.
   local minimum_ms="${1:-$MIN_BREAK_REMAINING_MS}"
-  local response http_code body verdict status
+  local response http_code body verdict status floor_stamp
+  floor_stamp=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    floor_stamp="$(floor_reservation_stamp)" || return 1
+  fi
   # A degraded optional subsystem can correctly make /health return 503 while
   # the engine is still running and has durably parked every table for this
   # certified break. Preserve that JSON so the certificate predicates below,
@@ -783,7 +822,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" legacy_entry_read python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -797,6 +836,17 @@ daily=(local.hour==4 and local.minute<5)
 emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
+floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if floor_end:
+    import time
+    now=time.time()
+    if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+        stamp=int(os.environ.get("FLOOR_ANNOUNCED_AT", "0"))
+        if not (stamp > 0 and stamp/1000+120 <= now < stamp/1000+420 <= floor_end
+                and emergency and m.get("breakEndsAt")==stamp+420000):
+            raise SystemExit(1)
+    elif not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+        raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
 window=(d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
 if not window: raise SystemExit(1)
@@ -931,7 +981,11 @@ raise SystemExit(4)
 # The helper independently checks every physical table before writing. Only
 # the unchanged maintenance_certificate below can admit a replacement.
 legacy_checkpoint_countdown() {
-  local response http_code body headroom elapsed_ms=0 expected_end="${2:-0}"
+  local response http_code body headroom floor_stamp elapsed_ms=0 expected_end="${2:-0}"
+  floor_stamp=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    floor_stamp="$(floor_reservation_stamp)" || return 1
+  fi
   # Required headroom for the entry work that still has to happen AFTER this
   # admission and BEFORE the guard reads the same reserve. Defaulting to 0
   # keeps the historical contract for callers that have nothing left to do.
@@ -966,9 +1020,7 @@ raise SystemExit(0 if d["weeklyPayout"] is None else 1)
     0|2) ;;
     *) return 1 ;;
   esac
-  # The first admission stays strict. A locked read debits only time already
-  # spent inside this SAME forty-second entry, never the restart/rollback floor.
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) ENTRY_STARTED_MS="${ENTRY_STARTED_MS:-0}" ENTRY_MODE="${3:-initial}" EXPECTED_BREAK_END_EPOCH="$expected_end" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" legacy_entry_read python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) ENTRY_STARTED_MS="${ENTRY_STARTED_MS:-0}" ENTRY_MODE="${3:-initial}" EXPECTED_BREAK_END_EPOCH="$expected_end" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" ACTIVATION_FLOOR_END_EPOCH="${ACTIVATION_FLOOR_END_EPOCH:-0}" ACTIVATION_FLOOR_OWNER_WINDOW="${ACTIVATION_FLOOR_OWNER_WINDOW:-}" FLOOR_ANNOUNCED_AT="$floor_stamp" legacy_entry_read python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -982,6 +1034,17 @@ daily=(local.hour==4 and local.minute<5)
 emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
+floor_end=int(os.environ.get("ACTIVATION_FLOOR_END_EPOCH", "0"))
+if floor_end:
+    import time
+    now=time.time()
+    if os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW"):
+        stamp=int(os.environ.get("FLOOR_ANNOUNCED_AT", "0"))
+        if not (stamp > 0 and stamp/1000+120 <= now < stamp/1000+420 <= floor_end
+                and emergency and m.get("breakEndsAt")==stamp+420000):
+            raise SystemExit(1)
+    elif not (floor_end-300 <= now < floor_end and daily and m.get("reason")=="Scheduled Engine Maintenance"):
+        raise SystemExit(1)
 
 remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
 valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
@@ -1127,6 +1190,9 @@ entries = [w for w in doc.get("windows") or [] if isinstance(w, dict)]
 # Prefer specific feature orders, preserving order within each class. Known
 # consumed witnesses may fall back to the original first legacy window.
 entries = [w for w in entries if "releaseWitness" in w] + [w for w in entries if "releaseWitness" not in w]
+import os
+selected = os.environ.get("ACTIVATION_FLOOR_OWNER_WINDOW", "")
+if selected: entries = [w for w in entries if w.get("id") == selected]
 for w in entries:
     try:
         wid, contains, order = str(w["id"]), str(w["contains"]), str(w["ownerOrder"])
@@ -1145,7 +1211,7 @@ for w in entries:
     if "releaseWitness" in w:
         valid = isinstance(witness, dict) and set(witness) == {"path", "sha256"}
         if valid: path, digest = witness["path"], witness["sha256"]
-        if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs")
+        if not (valid and isinstance(path, str) and (re.fullmatch(r"supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql", path) or path == "server/scripts/retained-original-checkpoint-guard.mjs" or (selected == wid and path == "server/release/activation-floor.json"))
                 and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
             print("invalid - - -")
             break
@@ -1174,8 +1240,13 @@ print(v if isinstance(v, str) and re.fullmatch(r"[0-9a-f]{40}", v) else "")
       git -C "$REPO_DIR" show "$SHA:$witness_path" 2>/dev/null \
       | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')" || return 0
     [ "$target_witness" = "$witness_sha" ] || return 0
-    served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-      git -C "$REPO_DIR" rev-list -1 "$serving" -- "$witness_path" 2>/dev/null)" || return 0
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] && [ "$witness_path" = server/release/activation-floor.json ]; then
+      local witness_blob
+      witness_blob="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-parse "$SHA:$witness_path")" || return 0
+      served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" log -1 --format=%H --find-object="$witness_blob" "$serving" -- "$witness_path")" || return 0
+    else
+      served_witness="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" rev-list -1 "$serving" -- "$witness_path" 2>/dev/null)" || return 0
+    fi
     [ -z "$served_witness" ] || continue
   elif timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
     git -C "$REPO_DIR" merge-base --is-ancestor "$contains" "$serving" 2>/dev/null; then
@@ -1199,19 +1270,29 @@ recovery_cause() {
 # running on this host, if there is one. Only a durable request whose unit is
 # still live counts; a finished or failed one owns nothing.
 newer_release_in_flight() {
-  local request run other state
+  local request run other state mode="${1:-newer}"
   for request in "$REQUEST_ROOT"/*.request; do
     [ -f "$request" ] || continue
     run="${request##*/}"
     run="${run%.request}"
     [ "$run" != "$RUN_ID" ] || continue
     other="$(head -n 1 -- "$request" 2>/dev/null)" || continue
-    [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    if [ "$mode" = any ]; then
+      [[ "$other" =~ ^[0-9a-f]{40}$ ]] || return 2
+    else
+      [[ "$other" =~ ^[0-9a-f]{40}$ ]] && [ "$other" != "$SHA" ] || continue
+    fi
     state="$(systemctl show "club-arena-engine-release-v1@$run.service" \
       -p ActiveState --value 2>/dev/null || true)"
-    case "$state" in active|activating|reloading) ;; *) continue ;; esac
+    case "$state" in active|activating|reloading) ;;
+      deactivating) [ "$mode" = any ] || continue ;;
+      inactive|failed) continue ;;
+      *) [ "$mode" != any ] || return 2; continue ;;
+    esac
+    if [ "$mode" != any ]; then
     timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
       git -C "$REPO_DIR" merge-base --is-ancestor "$SHA" "$other" 2>/dev/null || continue
+    fi
     printf '%s %s\n' "$run" "$other"
     return 0
   done
@@ -1287,6 +1368,8 @@ request_recovery_window() {
   local health minute now stamp outcome reason cause_key newer stuck cause_required
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
+  # This immutable one-time target may use only its daily certificate.
+  [ "${ACTIVATION_FLOOR_END_EPOCH:-0}" = 0 ] || [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ] || return 0
   # A drill is planned work: it waits for a scheduled break and never spends
   # the hour's one off-cycle window that a real emergency may need.
   [ -z "${DRILL_MODE:-}" ] || return 0
@@ -1323,8 +1406,13 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     fi
     return 0
   fi
-  reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    reason="$(owner_window_reason "$health")"
+    [ "$reason" = "owner-ordered $ACTIVATION_FLOOR_OWNER_WINDOW" ] || reason=''
+  else
+    reason="$(recovery_window_reason "$health")"
+    [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  fi
   # NO LOCK WITHOUT AN EMERGENCY (2026-10-04). The seal answers `unavailable`
   # to every reservation that names no cause, so a routine release (no
   # reason, or only a scheduled break it waited through) has nothing to ask.
@@ -1358,8 +1446,13 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     release_engine_lock
     return 0
   }
-  reason="$(recovery_window_reason "$health")"
-  [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    reason="$(owner_window_reason "$health")"
+    [ "$reason" = "owner-ordered $ACTIVATION_FLOOR_OWNER_WINDOW" ] || reason=''
+  else
+    reason="$(recovery_window_reason "$health")"
+    [ -n "$reason" ] || reason="$(owner_window_reason "$health")"
+  fi
   case "${reason%% *}" in
     engine-degraded|owner-ordered) ;;
     *)
@@ -1372,6 +1465,15 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
     echo '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched'
     return 0
+  fi
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then refuse_foreign_floor_owner; fi
+  FLOOR_RESERVATION_FRESH=0
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    [ "$FLOOR_DISPOSITION" != never-entered ] || FLOOR_RESERVATION_FRESH=1
+    # The existing reservation/announcement is this fresh request's first
+    # runtime-capable action. Persist ownership before any unknown outcome.
+    record_floor_runtime_entry announcement-entry
+    FLOOR_DISPOSITION=announced
   fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
   reserve_args+=(--cause "$(recovery_cause "${reason%% *}")")
@@ -1393,11 +1495,13 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     # a blind sixty seconds can skip the owner's only permitted minute.
     # The next pass still rechecks owner minute, health, source and ownership.
     RECOVERY_NEXT_EVALUATION=$(( (BASH_REMATCH[1] + 999) / 1000 ))
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
     release_engine_lock
     echo "[engine-release-transaction] off-cycle window wanted ($reason) but the seal's rolling-hour boundary has not elapsed; re-evaluate at $RECOVERY_NEXT_EVALUATION"
     return 0
   fi
   if [ "$stamp" = rate-limited ]; then
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
     release_engine_lock
     RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
     echo "[engine-release-transaction] off-cycle window wanted ($reason) but one was already announced in the last hour; waiting for the scheduled break"
@@ -1405,10 +1509,14 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   fi
   RECOVERY_CHECKED_CAUSE="$cause_key"
   if [ "$stamp" = unavailable ]; then
+    if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then retire_unannounced_floor_entry; fi
     release_engine_lock
     return 0
   fi
   [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then
+    [ "$(floor_reservation_stamp)" = "$stamp" ] || die 'recovery reservation differs from immutable owner window'
+  fi
   cause_required="$(printf '%s' "$health" | python3 -c '
 import json,sys
 print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCauseRequired") is True else 0)
@@ -1839,77 +1947,19 @@ print(contract)
   TARGET_IMAGE_ID="${IMAGE_FIELDS[0]}"
 }
 
-# THE CANDIDATE IMAGE IS WARMED BEFORE THE BREAK (2026-10-23).
-# A freshly built image has never had a container. On engine-01 (containerd
-# snapshotter) the first `docker run` of a new image spent 13-40 s unpacking
-# its snapshot and another 18-52 s joining the bridge network, while a second
-# run of the same image takes 0.3 s for both. Measured over every cutover since
-# 2026-10-17: rollback restarts of an already-run image never exceeded 0.3 s,
-# and first runs of new images reached 81.5 s (stop 12.9 + create 23.9 +
-# join 44.7) on 2026-10-22 06:28 UTC, which alone exceeds the 75 s cutover
-# budget (run 39728449445-1). The engine is down for every one of those
-# seconds. One throwaway container is therefore run to completion from the
-# exact candidate image here, outside any break, with the engine command
-# replaced so nothing connects to production. It carries no engine labels,
-# no env file and only an ephemeral loopback port. Publishing exercises the
-# port-mapper path that the old bridge-only warm-up skipped. The command still
-# never starts the engine or binds the serving port.
-# A Node-only exit did not hydrate the application layer: release 735e first
-# emitted application output 58 seconds after Docker's start timestamp and
-# exhausted the unchanged replacement budget. Read the candidate's application
-# files here, with bounded memory and no imports, configuration or network work.
-# An incomplete warm-up now refuses BEFORE any maintenance announcement.
+# Use the same isolated preparation before intake and again before maintenance.
+# Resolve the tag once; the helper accepts and runs only an immutable image ID.
 prewarm_candidate_image() {
-  local remaining warm_timeout warm_name started finished warm_program
-  remaining="$(remaining_seconds)" || die 'deadline expired before candidate filesystem warm-up'
-  warm_timeout=$((remaining - 30))
-  [ "$warm_timeout" -le 120 ] || warm_timeout=120
-  [ "$warm_timeout" -ge 10 ] || die 'insufficient budget for candidate filesystem warm-up before maintenance'
-  warm_program="$(cat <<'CANDIDATE_FILESYSTEM_WARM'
-const fs = require('node:fs');
-const path = require('node:path');
-const root = process.argv[1];
-if (!root || !fs.lstatSync(path.join(root, 'dist/index.js')).isFile()) {
-  throw new Error('candidate application entrypoint absent');
-}
-const buffer = Buffer.alloc(64 * 1024);
-let files = 0;
-let bytes = 0;
-const pending = [root];
-while (pending.length) {
-  const directory = pending.pop();
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === '.env' || entry.name.startsWith('.env.')) continue;
-    const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) { pending.push(file); continue; }
-    if (!entry.isFile()) continue; // Never follow links outside the candidate.
-    const fd = fs.openSync(file, 'r');
-    try {
-      let count;
-      while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) bytes += count;
-      files++;
-    } finally { fs.closeSync(fd); }
-  }
-}
-if (!files || !bytes) throw new Error('candidate filesystem warm-up incomplete');
-console.log('ENGINE_IMAGE_PREWARM_FILES=' + files);
-console.log('ENGINE_IMAGE_PREWARM_BYTES=' + bytes);
-CANDIDATE_FILESYSTEM_WARM
-)"
-  warm_name="club-arena-engine-prewarm-$RUN_ID"
-  timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
-  started="$(date +%s)"
-  if timeout --signal=TERM --kill-after=5s "${warm_timeout}s" docker run --rm --pull never \
-    --name "$warm_name" --restart no --network bridge \
-    --publish 127.0.0.1::8080 --entrypoint node \
-    "$IMAGE_REF" -e "$warm_program" /app 2>/dev/null; then
-    finished="$(date +%s)"
-    echo "ENGINE_IMAGE_PREWARM_SECONDS=$((finished - started))"
-  else
-    timeout --signal=TERM --kill-after=2s 10s docker rm -f "$warm_name" >/dev/null 2>&1 || true
-    die 'candidate filesystem warm-up did not finish before maintenance'
-  fi
-  return 0
+  local image_id remaining inspect_timeout
+  remaining="$(remaining_seconds)" || die 'deadline expired before image preparation identity'
+  [ "$remaining" -gt 12 ] || die 'insufficient image preparation identity budget'
+  inspect_timeout=$((remaining - 2))
+  [ "$inspect_timeout" -le 10 ] || inspect_timeout=10
+  image_id="$(timeout --signal=TERM --kill-after=1s "${inspect_timeout}s" \
+    docker image inspect --format '{{.Id}}' "$IMAGE_REF")" \
+    || die 'candidate image preparation identity is unavailable'
+  "$CONTROL_DIR/prewarm-engine-image.sh" "$image_id" "$RUN_ID" "$MUTATION_DEADLINE_EPOCH" \
+    || die 'candidate filesystem warm-up did not finish before maintenance'
 }
 
 read_pending_owner() {
@@ -1983,12 +2033,37 @@ recover_pending_owner() {
     || die "pending release $owner was recovered but its abort audit failed"
 }
 
-# A duplicate dispatch is certified immediately. It cannot wait for a later
-# maintenance break, and HTTP identity alone is not enough: the exact process
-# must also be the fresh elected database leader.
+# A floor-aware fresh request has no authority to restore a live predecessor.
+# Classify it from exact immutable capability before taking an engine lock.
+FLOOR_DISPOSITION="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" entry-check \
+  --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+  --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID")" \
+  || die 'immutable activation floor refused runtime admission'
+ACTIVATION_FLOOR_END_EPOCH=0
+export ACTIVATION_FLOOR_OWNER_WINDOW=
+if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; then
+  ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
+    --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+    --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
+  ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiresEpoch"])')"
+  ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
+fi
+
+record_floor_runtime_entry() {
+  legacy_entry_read python3 "$CONTROL_DIR/engine-release-activation-floor.py" "${1:-entry}" \
+    --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+    --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID" \
+    >/dev/null || die 'immutable activation floor refused actual runtime entry'
+}
+
+# Duplicate certification and interrupted recovery retain their original owner.
 acquire_engine_lock 'duplicate certification'
+refuse_foreign_floor_owner
 while :; do
   read_pending_owner
+  if { [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; } && [ "$PENDING_STATE" != none ]; then
+    die 'fresh scheduled release cannot take over an existing runtime recovery owner'
+  fi
   # A boot-resumed unit owns its exact interrupted receipt. Expired receipts
   # and this run's interrupted receipt are recovered before Git/network work.
   if [ "$PENDING_STATE" = expired ] \
@@ -2019,6 +2094,12 @@ done
 # pending candidate, repair the sealed desired runtime immediately under the
 # mutation lock—never build or wait for another hourly break while service is
 # absent merely because a prior response was lost.
+if [ "$FLOOR_DISPOSITION" = never-entered ] || [ "$FLOOR_DISPOSITION" = announced ]; then
+  # No runtime restoration for a fresh scheduled request. The existing locked
+  # proof below verifies sealed/local/public/DB identity immediately before
+  # checkpoint or prepare, once, under the actual daily certificate budget.
+  :
+else
 MUTATION_STARTED=1
 PREWORK_RECOVERY_REMAINING="$(remaining_seconds)" \
   || die 'deadline expired before sealed desired runtime recovery'
@@ -2033,6 +2114,7 @@ timeout --signal=TERM --kill-after=1s "${PREWORK_RECOVERY_REMAINING}s" env \
   "$CONTROL_DIR/engine-supervisor.sh" \
   || die 'sealed desired runtime could not be restored before release work'
 MUTATION_STARTED=0
+fi
 # Once this exact run crossed the fsynced commit boundary, mutable protected
 # main can no longer decide whether its missing result receipt is recoverable.
 # Certify the restored exact runtime and elected-leader identity first. This is
@@ -2077,6 +2159,17 @@ timeout --signal=TERM --kill-after=15s "${BUILD_TIMEOUT}s" \
 prewarm_candidate_image
 source_target_is_current
 NEXT_FRESHNESS_CHECK=$(( $(date +%s) + 60 ))
+# The receiver/intake already enforced the no-write floor. Rebind it here
+# before checkpoint/certificate work; existing interrupted-owner recovery above
+# retains its original authority and is never blocked by a later expiry.
+ACTIVATION_FLOOR_JSON="$(python3 "$CONTROL_DIR/engine-release-activation-floor.py" admit \
+  --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA" \
+  --deadline "$MUTATION_DEADLINE_EPOCH")" || die 'immutable daily activation intent refused'
+ACTIVATION_FLOOR_END_EPOCH="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresEpoch",0))')"
+ACTIVATION_FLOOR_OWNER_WINDOW="$(printf '%s' "$ACTIVATION_FLOOR_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerWindowId") or "")')"
+if [ "$ACTIVATION_FLOOR_END_EPOCH" -gt 0 ] && [ "$CERTIFICATE_DEADLINE" -gt "$ACTIVATION_FLOOR_END_EPOCH" ]; then
+  CERTIFICATE_DEADLINE="$ACTIVATION_FLOOR_END_EPOCH"
+fi
 # This is a compatibility operation for three pinned immutable predecessors, not a
 # general checkpoint API. The helper rebinds the seal/image/process under the
 # engine lock immediately before its one durable intent and checkpoint.
@@ -2259,6 +2352,7 @@ while :; do
     [ "$BREAK_ENTRY_BUDGET_MS" -ge 0 ] || BREAK_ENTRY_BUDGET_MS=0
     [ "$BREAK_ENTRY_BUDGET_MS" -le "$BREAK_ENTRY_BUDGET_CEILING_MS" ] \
       || BREAK_ENTRY_BUDGET_MS="$BREAK_ENTRY_BUDGET_CEILING_MS"
+    record_floor_runtime_entry
     LEGACY_CHECKPOINT_ATTEMPTED=1
     legacy_entry_trace checkpoint verified
     set +e
@@ -2282,7 +2376,23 @@ while :; do
       # and then a retry stays forbidden however the helper exited. Anything
       # other than a clean, absent intent is a die, so this fails closed.
       [ ! -e "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
+        && [ ! -L "$REQUEST_ROOT/$RUN_ID.legacy-checkpoint-intent" ] \
         || die 'legacy checkpoint deferred but its durable intent exists; refusing a retry'
+      if [ "$FLOOR_DISPOSITION" = never-entered ]; then
+        # Exit75 plus the absent one-shot intent proves this fresh checkpoint
+        # never acted. Retire only this entry marker while the owned lock is
+        # held; an interrupted/uncertain checkpoint keeps its recovery owner.
+        python3 - "$REQUEST_ROOT" "$RUN_ID" <<'FLOOR_NO_ACTION'
+import os, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+(root / (sys.argv[2] + ".activation-entry")).unlink()
+fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try: os.fsync(fd)
+finally: os.close(fd)
+FLOOR_NO_ACTION
+      elif [ "$FLOOR_DISPOSITION" = announced ]; then
+        python3 "$CONTROL_DIR/engine-release-activation-floor.py" checkpoint-no-action           --repo "$REPO_DIR" --target "$SHA" --control "$CONTROL_SHA"           --deadline "$MUTATION_DEADLINE_EPOCH" --request-root "$REQUEST_ROOT" --run-id "$RUN_ID"           --state-root "${ENGINE_RELEASE_STATE_DIR:-/var/lib/club-arena}"           >/dev/null || die 'checkpoint no-action could not retain announcement ownership'
+      fi
       LEGACY_CHECKPOINT_ATTEMPTED=0
       BREAK_END_EPOCH=0
       release_engine_lock
@@ -2346,6 +2456,7 @@ while :; do
     | grep -v "^$CONTAINER$" || true)"
   [ -z "$STRANGERS" ] || die 'an unmanaged engine container is running on this host'
 
+  record_floor_runtime_entry
   set +e
   PREPARE_OUTPUT="$(bounded_break_command 10 "$RELEASE_SEAL" prepare \
     --sha "$SHA" --image "$TARGET_IMAGE_ID" --mode "$SEAL_MODE" --repo "$REPO_DIR" \

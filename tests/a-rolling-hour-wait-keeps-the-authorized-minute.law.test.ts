@@ -12,5 +12,5 @@ it('keeps authoritative rolling-hour eligibility inside the existing owner minut
     }
   );
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 9 tests');
+  expect(result.stderr).toContain('Ran 11 tests');
 }, 35_000);

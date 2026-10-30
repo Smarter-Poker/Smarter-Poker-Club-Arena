@@ -14,7 +14,7 @@
  * cheapest possible guard against shipping a blank page again.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 
 // ── Network and platform boundaries ──────────────────────────────────────────
 
@@ -69,6 +69,12 @@ let routeUserId: string | undefined;
 let preferencesError: Error | null;
 let authUserId = 'user-1';
 const rpcMock = vi.hoisted(() => vi.fn());
+const livePulse = vi.hoisted(() => ({ onChange: () => {} }));
+vi.mock('../../src/hooks/useStatsPulse', () => ({
+  useStatsPulse: (options: { onChange: () => void }) => {
+    livePulse.onChange = options.onChange;
+  },
+}));
 const statsRouteState = vi.hoisted(() => ({ search: '' }));
 const toastApi = vi.hoisted(() => ({
   show: vi.fn(),
@@ -211,6 +217,7 @@ vi.mock('../../src/components/common/Toast', () => ({
   useToast: () => toastApi,
 }));
 
+import { StatsFactsService } from '../../src/services/StatsFactsService';
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
 import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 import { isFullStatsPayload } from '../../src/pages/stats/playerStatsPageModel';
@@ -282,9 +289,38 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('PlayerStatsPage mounts', () => {
+  it('refreshes rake when live stats change without changing the range', async () => {
+    const rakeRead = vi.mocked(StatsFactsService.getRakeStats);
+    rakeRead.mockClear();
+    render(<PlayerStatsPage />);
+    await waitFor(() => expect(rakeRead).toHaveBeenCalledTimes(1));
+    act(() => livePulse.onChange());
+    await waitFor(() => expect(rakeRead).toHaveBeenCalledTimes(2), { timeout: 4000 });
+    expect(rakeRead.mock.calls[1]).toEqual(rakeRead.mock.calls[0]);
+  });
+
+  it('does not postpone live rake reads indefinitely while changes keep arriving', async () => {
+    const rakeRead = vi.mocked(StatsFactsService.getRakeStats);
+    rakeRead.mockClear();
+    render(<PlayerStatsPage />);
+    await waitFor(() => expect(rakeRead).toHaveBeenCalledTimes(1));
+    vi.useFakeTimers();
+    act(() => livePulse.onChange());
+    for (let n = 0; n < 4; n++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      act(() => livePulse.onChange());
+    }
+    expect(rakeRead).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the authorized shared-club boundary without requesting private owner stats', async () => {
     routeUserId = 'user-2';
 

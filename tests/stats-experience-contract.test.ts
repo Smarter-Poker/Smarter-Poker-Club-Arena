@@ -117,7 +117,7 @@ describe('Stats production certification', () => {
     // The separate fixed one-case recovery must not replace the full deployed-page lane.
     const production = parse(POST_DEPLOY_WORKFLOW).jobs['production-e2e'];
     const commands = production.steps.map((step: { run?: string }) => step.run ?? '').join('\n');
-    expect(production.needs).toBe('publication-gate');
+    expect(production.needs).toEqual(['publication-gate', 'certification-cleanup-safety']);
     expect(production.if).toContain("needs.publication-gate.outputs.should_run == 'true'");
     const statsGate = commands.indexOf('tests/e2e/stats-deep.spec.ts');
     const broadSweep = commands.indexOf('tests/e2e/smoke.spec.ts');

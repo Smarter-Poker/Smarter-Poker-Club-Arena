@@ -45,6 +45,7 @@ const gate = (overrides: Record<string, string> = {}) => {
     build: 'success',
     gateway: 'skipped',
     admission: 'success',
+    floor: 'success',
     ...overrides,
   };
   const expr = caller.jobs.production.if
@@ -52,6 +53,7 @@ const gate = (overrides: Record<string, string> = {}) => {
     .replaceAll('needs.publish-needed.outputs.publish', JSON.stringify(values.publish))
     .replaceAll('needs.publish-needed.outputs.tests_proven', JSON.stringify(values.tests_proven))
     .replaceAll('needs.publish-needed.result', JSON.stringify(values.admission))
+    .replaceAll('needs.publication-floor.result', JSON.stringify(values.floor))
     .replaceAll('needs.client-tests.result', JSON.stringify(values.client))
     .replaceAll('needs.build-and-store.result', JSON.stringify(values.build))
     .replaceAll('needs.build-record-gateway.result', JSON.stringify(values.gateway));
@@ -80,6 +82,7 @@ describe('one publication transaction follows parallel preparation', () => {
       'client-tests',
       'build-and-store',
       'build-record-gateway',
+      'publication-floor',
     ]);
     expect(caller.jobs.production.with).toEqual({
       target_sha: '${{ needs.publish-needed.outputs.target_sha }}',
@@ -217,6 +220,7 @@ describe('one publication transaction follows parallel preparation', () => {
       expect(gate({ client: status })).toBe(false);
       expect(gate({ build: status })).toBe(false);
       expect(gate({ admission: status })).toBe(false);
+      expect(gate({ floor: status })).toBe(false);
     }
     expect(
       gate({

@@ -41,6 +41,8 @@ REQUIRED_FILES=(
   engine-release-database-proof.py
   engine-release-inflight-hands.py
   engine-release-transaction.sh
+  engine-release-activation-floor.py
+  prewarm-engine-image.sh
   legacy-engine-checkpoint.sh
   legacy-engine-checkpoint.mjs
   legacy-engine-checkpoint-guard.mjs
@@ -313,7 +315,7 @@ else
   chmod 0644 "$GENERATION_STAGE/control-sha" "$GENERATION_STAGE/generation-files"
   for script in \
     engine-supervisor.sh engine-up.sh build-engine-image.sh verify-recovery-stack.sh \
-    collect-monitoring-health.sh \
+    collect-monitoring-health.sh prewarm-engine-image.sh \
     engine-release-transaction.sh engine-release-recover.sh engine-release-unit-wrapper.sh \
     legacy-engine-checkpoint.sh \
     observe-engine-release.sh launch-engine-release.sh engine-release-intake.sh \
@@ -322,7 +324,7 @@ else
     bash -n "$GENERATION_STAGE/$script"
   done
   for script in engine-release-seal.py engine-release-database-proof.py \
-    engine-release-inflight-hands.py; do
+    engine-release-inflight-hands.py engine-release-activation-floor.py; do
     python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
       "$GENERATION_STAGE/$script"
   done

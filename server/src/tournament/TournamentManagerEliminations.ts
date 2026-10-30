@@ -2513,15 +2513,33 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const t = this.tournamentCache as { is_rebuy?: boolean; is_reentry?: boolean } | undefined;
     if (!t?.is_rebuy && !t?.is_reentry) return false;
     const nowIso = new Date().toISOString();
-    const { data: offers, error } = await supabase
-      .from('tournament_knockout_candidates')
-      .select('eliminated_user_id, hand_number, created_at, rebuy_prompt_until')
-      .eq('tournament_id', this.tournamentId)
-      .eq('state', 'pending')
-      .gt('rebuy_prompt_until', nowIso)
-      .order('hand_number', { ascending: true })
-      .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE * 4);
-    if (error || !Array.isArray(offers)) return true;
+    const mayAnswer = () => this.running && !isMaintenanceFrozen();
+    // An unanswered prefix (including human offers) must not hide a later
+    // horse's input. Read the complete open board before making decisions.
+    const offerRead = await fetchAllRows<{
+      id: string;
+      eliminated_user_id: string;
+      hand_number: unknown;
+      created_at?: unknown;
+      rebuy_prompt_until?: unknown;
+    }>(
+      (cursor, pageSize) => {
+        let query = supabase
+          .from('tournament_knockout_candidates')
+          .select('id, eliminated_user_id, hand_number, created_at, rebuy_prompt_until')
+          .eq('tournament_id', this.tournamentId)
+          .eq('state', 'pending')
+          .gt('rebuy_prompt_until', nowIso)
+          .order('id', { ascending: true })
+          .limit(pageSize);
+        if (cursor) query = query.gt('id', cursor);
+        return query;
+      },
+      { label: 'Tournament.horseRebuyOffers', pageAttempts: 1, shouldContinue: mayAnswer }
+    );
+    if (!mayAnswer()) return false;
+    if (!offerRead.complete) return true;
+    const offers = offerRead.rows.sort((a, b) => Number(a.hand_number) - Number(b.hand_number));
     if (offers.length === 0) return false;
 
     const handNumbers = new Map<string, number>();
@@ -2543,7 +2561,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const userIds = [...handNumbers.keys()];
     if (userIds.length === 0) return false;
 
-    const mayAnswer = () => this.running && !isMaintenanceFrozen();
     let stillOpen = false;
     let nextDueAtMs: number | null = null;
     for (let i = 0; i < userIds.length; i += TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE) {

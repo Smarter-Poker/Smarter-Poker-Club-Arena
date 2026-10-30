@@ -615,13 +615,38 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  publication-floor:
+    name: Admit The Selected Client Publication Window
+    needs: publish-needed
+    if: needs.publish-needed.outputs.component == 'client'
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact selected protected source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse early publication independently of backlog or runtime reuse
+        env:
+          TARGET_SHA: ${{ needs.publish-needed.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          python3 -B server/scripts/engine-release-activation-floor.py publish \
+            --repo . --target "$TARGET_SHA" --control "$TARGET_SHA" \
+            --deadline "$(( $(date +%s) + 120 ))"
+
   production:
     name: production
-    needs: [publish-needed, client-tests, build-and-store, build-record-gateway]
+    needs: [publish-needed, client-tests, build-and-store, build-record-gateway, publication-floor]
     if: >-
       always() &&
       needs.publish-needed.result == 'success' &&
       ((needs.publish-needed.outputs.component == 'client' &&
+        needs.publication-floor.result == 'success' &&
         (needs.client-tests.result == 'success' ||
          (needs.client-tests.result == 'skipped' && needs.publish-needed.outputs.tests_proven == 'true')) &&
         (needs.publish-needed.outputs.publish == 'false' || needs.build-and-store.result == 'success')) ||

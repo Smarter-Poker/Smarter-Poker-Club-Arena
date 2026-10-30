@@ -256,9 +256,10 @@ export function useSatellites(
           .limit(SATELLITE_LIMIT);
 
         if (fetchErr) throw fetchErr;
+        if (!Array.isArray(data)) throw new Error('Satellite list response is unavailable');
         if (cancelled || request !== liveRequest.current) return;
 
-        const sats = (data || []) as unknown as SatelliteRow[];
+        const sats = data as unknown as SatelliteRow[];
         setRows(sats);
 
         /* ONE registration query for the whole list, replacing one per card.
@@ -276,13 +277,16 @@ export function useSatellites(
               sats.map((s) => s.id)
             );
           if (cancelled || request !== liveRequest.current) return;
-          if (regErr) {
-            reportError(regErr, 'useSatellites.registration');
+          if (regErr || !Array.isArray(regRows)) {
+            reportError(
+              regErr ?? new Error('Satellite registration response is unavailable'),
+              'useSatellites.registration'
+            );
             setRegistration(null);
           } else {
             const map: Record<string, boolean> = {};
             for (const s of sats) map[s.id] = false;
-            for (const r of regRows || []) map[String(r.tournament_id)] = true;
+            for (const r of regRows) map[String(r.tournament_id)] = true;
             setRegistration(map);
           }
         }

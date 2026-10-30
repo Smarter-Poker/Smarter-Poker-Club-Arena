@@ -2,7 +2,9 @@
 """Real recovery block, owner-minute predicate and locked seal on isolated files.
 
 Health, protected-source transport, engine lock and announcement are positive
-I/O fixtures. The seal CLI, file lock, rolling-hour calculation and durable
+I/O fixtures, including floor-entry creation and foreign-owner checks. Floor
+retirement uses the maintained cleanup function. The seal CLI, file lock,
+rolling-hour calculation and durable
 reservation are real. No serving engine or production database is contacted.
 """
 from contextlib import contextmanager
@@ -23,7 +25,7 @@ TARGET = 'b' * 40
 
 
 @contextmanager
-def fixture(priors=None, *, malformed=False, unknown=False):
+def fixture(priors=None, *, malformed=False, unknown=False, floor=False):
     with tempfile.TemporaryDirectory(prefix='recovery-rolling-', dir=os.environ.get('RUNNER_TEMP') or os.environ.get('TMPDIR') or ROOT.parent) as name:
         root = Path(name)
         state_dir = root / 'state'
@@ -80,6 +82,14 @@ timeout() {{
 }}
 {block}
 '''
+        if floor:
+            helper = SOURCE[SOURCE.index('retire_unannounced_floor_entry() {'):SOURCE.index('# THE NEWEST WAITING RELEASE')]
+            floor_setup = """ACTIVATION_FLOOR_OWNER_WINDOW=offline-exact-minute
+FLOOR_DISPOSITION=never-entered
+refuse_foreign_floor_owner() { record FLOOR_OWNER_CHECK; }
+record_floor_runtime_entry() { printf 'fixture-owned-entry\\n' > "$REQUEST_ROOT/$RUN_ID.activation-entry"; }
+"""
+            script = script.replace(block, helper + floor_setup + block)
         before = state_file.read_bytes()
         yield root, env, script, before
         if state_file.read_bytes() != before:
@@ -143,6 +153,27 @@ class RollingEligibility(unittest.TestCase):
         self.assertEqual(sum(e.startswith('ANNOUNCE:') for e in events), 1)
         self.assertEqual(sum(e.startswith('SEAL:') for e in events), 2)
         self.assertEqual(receipt['announcedAt'], FIRST + 6000)
+
+    def test_floor_epoch_refusal_retires_only_its_unannounced_entry(self):
+        with fixture(floor=True) as (root, env, script, _):
+            foreign = root / 'requests/foreign.activation-entry'
+            foreign.parent.mkdir(exist_ok=True)
+            foreign.write_text('foreign-owner')
+            result = subprocess.run(['bash', '-c', script + f'export NOW_MS={FIRST}\nrequest_recovery_window\n'], env=env, text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / 'requests/900-2.activation-entry').exists())
+            self.assertEqual(foreign.read_text(), 'foreign-owner')
+            self.assertFalse((root / 'state/engine-recovery-window-900-2.json').exists())
+            self.assertNotIn('ANNOUNCE:', (root / 'events').read_text())
+
+    def test_floor_unknown_reservation_keeps_its_entry(self):
+        with fixture(floor=True) as (root, env, script, _):
+            (root / 'seal-wrapper.py').write_text('#!/usr/bin/env python3\nraise SystemExit(75)\n')
+            result = subprocess.run(['bash', '-c', script + f'export NOW_MS={FIRST}\nrequest_recovery_window\n'], env=env, text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / 'requests/900-2.activation-entry').is_file())
+            self.assertFalse((root / 'state/engine-recovery-window-900-2.json').exists())
+            self.assertNotIn('ANNOUNCE:', (root / 'events').read_text())
 
     def test_corrupt_future_eligibility_cannot_authorize_an_announcement(self):
         with fixture() as (root, env, script, _):

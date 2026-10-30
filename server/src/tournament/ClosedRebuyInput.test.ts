@@ -31,6 +31,7 @@ const timings = new Map(
 function setup(window: unknown = { open: false, reason: 'tournament_not_rebuyable' }) {
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
     tournamentId: event,
+    lifecycleJobs: new Set(),
     tournamentCache: { is_rebuy: true, free_buy: false },
     currentLevel: 20,
     eliminationMutationAllowed: vi.fn(() => true),

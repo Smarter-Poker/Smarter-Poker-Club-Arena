@@ -65,6 +65,7 @@ let purchasedAt = new Map<string, number>();
 function setup() {
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
     tournamentId: event,
+    lifecycleJobs: new Set(),
     tournamentCache: { is_rebuy: true, is_reentry: true, free_buy: false },
     currentLevel: 3,
     running: true,

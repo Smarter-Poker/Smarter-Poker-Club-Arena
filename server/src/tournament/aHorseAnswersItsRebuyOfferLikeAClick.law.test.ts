@@ -53,6 +53,7 @@ function setup(
   const purchase = opts.purchase ?? 'ok';
   const manager = Object.assign(Object.create(TournamentManagerEliminations.prototype), {
     tournamentId: event,
+    lifecycleJobs: new Set(),
     tournamentCache: { is_rebuy: true, is_reentry: true, free_buy: opts.freeBuyUsed !== undefined },
     currentLevel: 3,
     running: true,
@@ -328,6 +329,35 @@ describe('a horse answers its rebuy offer like a click', () => {
       }
     }
   );
+
+  it('the existing lifecycle drain waits for the retained physical purchase response', async () => {
+    const user = willing[0];
+    const manager = setup({ offers: [user] });
+    const normal = fixture.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name === 'process_tournament_rebuy') await held;
+      return normal(name, args);
+    });
+    await manager.answerOpenHorseRebuyOffers(false);
+    expect(manager.lifecycleJobs.size).toBe(1);
+    expect(manager.horseRebuyPending.size).toBe(1);
+    let drained = false;
+    const drain = manager.drainLifecycleJobs().then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    manager.running = false; // stop fences fresh input; it still owes the original response
+    release();
+    await drain;
+    expect(manager.lifecycleJobs.size).toBe(0);
+    expect(manager.horseRebuyPending.size).toBe(0);
+    expect(purchases()).toEqual([user]);
+  });
 
   it('closes a spent free-buy offer without submitting a new purchase', async () => {
     const userId = willing[0]!;

@@ -2816,59 +2816,63 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
         let startedAtMs: number | undefined;
         let purchase!: Promise<void>;
-        purchase = Promise.resolve().then(async () => {
-          try {
-            // State can change between reservation and this queued callback.
-            // service_role is not protected by the ordinary database freeze trigger.
-            if (!mayMutate() || isMaintenanceFrozen()) return;
-            if (
-              timing?.promptUntilMs !== null &&
-              timing?.promptUntilMs !== undefined &&
-              Date.now() >= timing.promptUntilMs
-            ) {
-              diagnostic('expired');
-              return;
-            }
-            startedAtMs = Date.now();
-            diagnostic('purchase_started', undefined, startedAtMs);
-            const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-              p_tournament_id: this.tournamentId,
-              p_user_id: h.id,
-              p_rebuy_type: recoveryType,
-              // null: let the server price it. Passing a client-side quote here
-              // would only risk a spurious 'Price mismatch'.
-              p_cost: null,
-              p_chips: null,
-              p_current_level: this.currentLevel,
-            });
-            diagnostic(
-              error || (data as { success?: boolean } | null)?.success !== true
-                ? 'purchase_unproven'
-                : 'purchased',
-              error,
-              startedAtMs
-            );
-            if (!mayMutate()) return;
-            if (error || (data as { success?: boolean } | null)?.success !== true) {
-              const message = error?.message ?? 'purchase response unproven';
-              declined.set(message, (declined.get(message) || 0) + 1);
-              // A transport error can follow a committed purchase. Keep the
-              // decision grace open and re-read chips next pass; never eliminate
-              // this horse from a stale pre-rebuy snapshot.
+        purchase = this.trackLifecycleJob(
+          Promise.resolve().then(async () => {
+            try {
+              // State can change between reservation and this queued callback.
+              // service_role is not protected by the ordinary database freeze trigger.
+              if (!mayMutate() || isMaintenanceFrozen()) return;
+              if (
+                timing?.promptUntilMs !== null &&
+                timing?.promptUntilMs !== undefined &&
+                Date.now() >= timing.promptUntilMs
+              ) {
+                diagnostic('expired');
+                return;
+              }
+              startedAtMs = Date.now();
+              diagnostic('purchase_started', undefined, startedAtMs);
+              const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+                p_tournament_id: this.tournamentId,
+                p_user_id: h.id,
+                p_rebuy_type: recoveryType,
+                // null: let the server price it. Passing a client-side quote here
+                // would only risk a spurious 'Price mismatch'.
+                p_cost: null,
+                p_chips: null,
+                p_current_level: this.currentLevel,
+              });
+              diagnostic(
+                error || (data as { success?: boolean } | null)?.success !== true
+                  ? 'purchase_unproven'
+                  : 'purchased',
+                error,
+                startedAtMs
+              );
+              if (!mayMutate()) return;
+              if (error || (data as { success?: boolean } | null)?.success !== true) {
+                const message = error?.message ?? 'purchase response unproven';
+                declined.set(message, (declined.get(message) || 0) + 1);
+                // A transport error can follow a committed purchase. Keep the
+                // decision grace open and re-read chips next pass; never eliminate
+                // this horse from a stale pre-rebuy snapshot.
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              answered.add(h.id);
+              rebought.add(h.id);
+            } catch (error) {
+              diagnostic('purchase_unproven', error, startedAtMs);
               this.requestUrgentEliminationSweepAfter(
                 TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
               );
-              return;
+            } finally {
+              if (pending.get(key) === purchase) pending.delete(key);
             }
-            answered.add(h.id);
-            rebought.add(h.id);
-          } catch (error) {
-            diagnostic('purchase_unproven', error, startedAtMs);
-            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-          } finally {
-            if (pending.get(key) === purchase) pending.delete(key);
-          }
-        });
+          })
+        );
         pending.set(key, purchase);
         // The direct input must return to arm other horses' due moments even
         // while this response is slow. Existing bounded passes re-read the

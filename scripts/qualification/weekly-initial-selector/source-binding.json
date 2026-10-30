@@ -1,4 +1,16 @@
 {
+  "clientExecutionBudgetSourceAudit20261029": {
+    "scope": "Source identity only: ten general and ten disjoint occupied-portrait CSS shards preserve the complete case inventory, plus requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
+    "previousCiPin": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "currentCiPin": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+    },
+    "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
+  },
   "uiPresentationSelection20261028": {
     "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
     "changes": {
@@ -75,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,

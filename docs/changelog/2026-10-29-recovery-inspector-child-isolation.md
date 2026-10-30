@@ -1,0 +1,7 @@
+# Isolate inherited options in the original inspector observer child
+
+The bounded TCP diagnostic exposed a genuine current listener. Its process ownership remains unproved. Separately, the original intent-bound inspector observer still launched a Node child with inherited options, allowing an inherited inspector flag or preload to create or alter the endpoint being observed.
+
+Both probe and scalar-read phases now launch with child-only empty NODE_OPTIONS and explicit --no-inspect. The existing TCP observer already has identical isolation. These are the only two Docker Node observer launch sites in this reader. The serving engine environment, protocols, request/intent authorization, original endpoint hash, main PID/source/instance binding, transport/native budgets and all refusals remain unchanged. This change grants no new authority to attach, close a listener or retarget an old intent.
+
+Actual Node22 isolation regression verifies the original probe body can see its own inherited inspector, while the corrected child sees a closed private test port. Both phase arguments, the original endpoint digest and bounded command are pinned; the existing real HTTP/WebSocket scalar test retains its native identity, heap, endpoint and target-survival assertions with the same child isolation. The connected law runs all77 native cases. Production use still requires the original current ownership evidence and protected source.

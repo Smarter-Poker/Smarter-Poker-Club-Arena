@@ -46,7 +46,9 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '72820dff22232cef409cbffa156ac0c4b1ae6e6fb6c49d9a0893587a114cf4ad'
+      // Protected D1 fee proof plus the additive cash reader proof/retention.
+      // All runner profiles, other commands, gates and budgets remain pinned.
+      'fbf604fb20b312fbf489dc9a50e29d861b4c9cf25d39518c3776eaedace7e77a'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

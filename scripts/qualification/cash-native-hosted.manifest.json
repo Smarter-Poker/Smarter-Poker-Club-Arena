@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 257596,
-      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+      "bytes": 258359,
+      "sha256": "344509d091bb5af7c81fa1777dbfd41c2a4cb2de06c5f2d9b30b04762098b31f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5300,5 +5300,32 @@
       "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
     },
     "qualification": "Source binding only; protected hosted checks required for integrated head. Roster migration and native seven-case fixture unchanged."
+  },
+  "rosterCashBatchSourceAudit20261030": {
+    "scope": "Add roster cash native equivalence/index proof only; preserve historical financial inputs, assertions and qualification verdicts. Current CI identity only, no financial/live certificate.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    }
+  },
+  "rosterFeeCashProtectedComposition20261030": {
+    "scope": "Compose protected-main tournament-fee proof with roster cash proof in required accounting shard4. Keep both native commands and every historical qualification/audit. Current CI source identity only; retained unchanged cash native7 proof is not production installation or a new financial certificate.",
+    "protectedMain": "ec783a2a91ef1778680e276b4616a6e85815d844",
+    "cashBranchCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    },
+    "protectedMainCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "composedCiPin": {
+      "bytes": 258359,
+      "sha256": "344509d091bb5af7c81fa1777dbfd41c2a4cb2de06c5f2d9b30b04762098b31f"
+    }
   }
 }

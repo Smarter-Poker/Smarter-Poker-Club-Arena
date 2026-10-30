@@ -84,4 +84,73 @@ describe('real mobile payout presentation evidence', () => {
     const f = await flight('landed');
     expect(f.evidence().violations).toContain('Payout Missed Its Rendered Recipient');
   });
+  it('measures an explicit landing against this flight recipient before its seat departs', async () => {
+    const f = await flight();
+    document.querySelector('[data-player-id]')!.remove();
+    await Promise.resolve();
+    f.bounds.mockReturnValue(rect(100, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    expect(f.evidence()).toMatchObject({
+      landings: [{ recipient: 'winner', distance: 0, targetProvenance: 'departed-recipient' }],
+      violations: [],
+    });
+  });
+  it('still refuses a departed recipient landing more than two pixels away', async () => {
+    const f = await flight();
+    document.querySelector('[data-player-id]')!.remove();
+    await Promise.resolve();
+    f.bounds.mockReturnValue(rect(104, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    expect(f.evidence().violations).toContain('Payout Missed Its Rendered Recipient');
+  });
+  it('does not borrow a departed seat target for a hidden replacement recipient', async () => {
+    const f = await flight();
+    document.querySelector('[data-player-id]')!.remove();
+    const replacement = document.createElement('div');
+    replacement.dataset.playerId = 'winner';
+    replacement.innerHTML = '<div class="seat__info"></div>';
+    document.body.append(replacement);
+    f.bounds.mockReturnValue(rect(100, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    expect(f.evidence().violations).toContain('Payout Has No Rendered Recipient');
+  });
+  it('does not claim a landing for a recipient never observed', async () => {
+    const f = await flight();
+    f.chip.dataset.chipRecipient = 'never-observed';
+    f.bounds.mockReturnValue(rect(100, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    expect(f.evidence().violations).toContain('Payout Has No Rendered Recipient');
+  });
+  it('requires an explicit landing after its previously observed recipient departs', async () => {
+    const f = await flight();
+    f.bounds.mockReturnValue(rect(100, 100));
+    await vi.advanceTimersByTimeAsync(32);
+    document.querySelector('[data-player-id]')!.remove();
+    await Promise.resolve();
+    f.chip.remove();
+    await Promise.resolve();
+    expect(f.evidence()).toMatchObject({
+      landings: [],
+      violations: ['Payout Disappeared Before Reaching Its Recipient'],
+    });
+  });
+  it('does not borrow a departed recipient from a different hand', async () => {
+    const f = await flight();
+    const table = document.createElement('div');
+    table.className = 'table-page';
+    table.innerHTML = '<span class="table-brand__hand">Hand #41</span>';
+    table.append(document.querySelector('[data-player-id]')!, f.chip);
+    document.body.append(table);
+    await vi.advanceTimersByTimeAsync(32);
+    document.querySelector('[data-player-id]')!.remove();
+    document.querySelector('.table-brand__hand')!.textContent = 'Hand #42';
+    f.bounds.mockReturnValue(rect(100, 100));
+    f.chip.dataset.chipPhase = 'landed';
+    await Promise.resolve();
+    expect(f.evidence().violations).toContain('Payout Has No Rendered Recipient');
+  });
 });

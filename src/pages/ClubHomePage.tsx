@@ -128,18 +128,6 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID, resolveClubUUIDSync } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
-import DynamicWallet from '../components/wallet/DynamicWallet';
-import WalletCashierModal from '../components/wallet/WalletCashierModal';
-import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
-import UnionTreasuryDetailModal, {
-  type TreasuryDetailMode,
-} from '../components/union/UnionTreasuryDetailModal';
-import Modal from '../components/common/Modal';
-import { RakeReports } from '../components/admin/RakeReports';
-import SpinActivationPanel from '../components/club/SpinActivationPanel';
-import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
-import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
-import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
@@ -946,25 +934,6 @@ function ClubHomePageContent({
     return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
   }, [lobbyMini, diamondJackpot, isAutomaticArena]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
-  // to agent wallets, the full chip ledger, and (standalone clubs only) the
-  // Chip Mint, which used to be a "+" on the wallet panel itself.
-  const [activeCashier, setActiveCashier] = useState<
-    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
-  >(null);
-  const [unionWalletModal, setUnionWalletModal] = useState<{
-    key: UnionWalletKey;
-    label: string;
-    balance: number;
-  } | null>(null);
-  const [unionTreasuryModal, setUnionTreasuryModal] = useState<TreasuryDetailMode | null>(null);
-  const [standaloneRakeModal, setStandaloneRakeModal] = useState(false);
-  const [standaloneSpinsModal, setStandaloneSpinsModal] = useState(false);
-  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
-  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
-  // member's own statement - a read-only view, so it is not an activeCashier.
-  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
-  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -1065,8 +1034,6 @@ function ClubHomePageContent({
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [walletsExpanded, setWalletsExpanded] = useState(false);
-  const [visibleWalletCount, setVisibleWalletCount] = useState(0);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
   // 'running', which was invisible: picking a game type silently hid every
   // empty table and every tournament still taking registrations, so a club
@@ -1961,22 +1928,6 @@ function ClubHomePageContent({
     clubId ? resolveClubUUIDSync(clubId) : null
   );
 
-  /* Collapse the wallet list when the club changes. The count under MY WALLETS
-     is NOT reset here, and must not be: DynamicWallet publishes it from a
-     layout effect in the same commit this effect belongs to, and a child's
-     effects run before its parent's, so a reset here landed AFTER the publish
-     and wiped it. Measured 2026-09-10 against production, signed in, on an
-     iPhone profile: the bay printed nothing at 15 seconds on a cold load, a
-     warm reload and a client-side re-entry alike, and before that it printed
-     the placeholder Dan photographed on 2026-09-09 - for the same reason, from
-     the day the count shipped (#2050). The wallet re-publishes whenever its
-     row set changes, which is the only time this number can change, so there
-     is nothing for a reset to do except blank the plate until the next club
-     switch. Pinned by tests/the-mobile-lobby-chrome-stays-fixed.law.test.ts and
-     tests/unit/theWalletsCountSurvivesTheClubReset.test.tsx. */
-  useEffect(() => {
-    setWalletsExpanded(false);
-  }, [resolvedClubId]);
   useEffect(() => {
     resolvedClubIdRef.current = resolvedClubId;
   }, [resolvedClubId]);
@@ -5466,119 +5417,6 @@ function ClubHomePageContent({
               {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
             </button>
           )}
-          {/* ── Wallet ──
-              WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
-              it renders CLUB money. The variant used to become 'union' whenever
-              a union owner opened one of his own clubs, which replaced Club
-              Bank with Union Bank / Rake Treasury / Clubs Wallet / Backup BBJ —
-              the union's books, on the club's lobby. Owning both does not merge
-              them; one wallet never gets access to the other. Union figures are
-              managed on the union's own surfaces and appear nowhere here.
-
-              The lobby exposes every balance authorized for the viewer's role;
-              each actionable row opens its matching ledger or cashier without
-              leaving the club lobby. */}
-          {currentUserId && resolvedClubId && (
-            <div className="lobby-top__wallet">
-              <button
-                type="button"
-                className="lobby-wallets-trigger"
-                aria-expanded={walletsExpanded}
-                aria-controls="club-wallet-list"
-                onClick={() => {
-                  haptic.selection();
-                  setWalletsExpanded((expanded) => !expanded);
-                }}
-              >
-                <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
-                <span className="lobby-wallets-trigger__copy">
-                  <strong>My Wallets</strong>
-                  {/* THE COUNT, OR NOTHING AT ALL (Dan 2026-09-09): it
-                      "shouldn't say LOADING BALANC. It should just have 5
-                      BALANCES or how ever many wallets that user has only."
-
-                      DynamicWallet knows how many rows this viewer gets before
-                      a single balance has loaded - the row set comes from the
-                      role, not from the money - and it now publishes that count
-                      in a layout effect, so the real number is here for the
-                      first painted frame. The empty string is only the frame
-                      before that: an empty bay, never a word that has to be
-                      taken back a moment later. */}
-                  <small>
-                    {visibleWalletCount > 0
-                      ? `${visibleWalletCount} ${visibleWalletCount === 1 ? 'Balance' : 'Balances'}`
-                      : ''}
-                  </small>
-                </span>
-                <span
-                  className={`lobby-wallets-trigger__chevron ${walletsExpanded ? 'is-expanded' : ''}`}
-                  aria-hidden="true"
-                />
-              </button>
-              <div
-                id="club-wallet-list"
-                className="lobby-wallets-content"
-                data-expanded={walletsExpanded}
-              >
-                <div className="lobby-wallets-content__inner">
-                  {/* The lobby renders its own compact Bad Beat Jackpot tile next
-                  to the club identity. DynamicWallet therefore suppresses its
-                  duplicate jackpot banner and supplies only the role-safe
-                  balance tiles below it. */}
-                  <DynamicWallet
-                    userId={currentUserId}
-                    clubId={clubId || ''}
-                    // WHOSE books. A union's own lobby shows union books; every
-                    // club lobby shows club books, whoever is standing in it.
-                    variant={club?.is_union ? 'union' : 'club'}
-                    // WHO is looking. Decides which rows exist - see walletRows.ts.
-                    // The club's owner_id outranks a stale club_members row, which
-                    // is how a brand new owner sees their own Club Bank.
-                    role={isOwner ? 'owner' : userRole}
-                    compactLobby
-                    showAllLobbyWallets
-                    showBBJ={false}
-                    onVisibleWalletCountChange={setVisibleWalletCount}
-                    onBuyDiamonds={() => {
-                      haptic.medium();
-                      setShowDiamondWallet(true);
-                    }}
-                    // Dan 2026-08-23: "if they click on Club Bank, that should
-                    // open the Club Bank Cashier." The row only renders for owner,
-                    // co-owner, admin and super agent, and fn_can_use_club_bank
-                    // refuses everyone else server-side. The Chip Mint moved
-                    // INSIDE that cashier - there is no mint button out here any
-                    // more, and no mint at all once the club is in a union.
-                    onOpenPlayerWallet={() => setShowPlayerWallet(true)}
-                    onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
-                    onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
-                    onOpenClubBank={() => setActiveCashier('club_bank')}
-                    onOpenBBJ={() => {
-                      haptic.medium();
-                      setShowBBJInfo(true);
-                    }}
-                    onOpenUnionBank={(balance) => {
-                      setUnionWalletModal({ key: 'chips', label: 'Union Bank', balance });
-                    }}
-                    onOpenUnionRake={() => setUnionTreasuryModal('rake')}
-                    onOpenUnionBackupBBJ={() => setUnionTreasuryModal('backup')}
-                    onOpenUnionPromo={(balance) => {
-                      setUnionWalletModal({ key: 'promo', label: 'Promo Wallet', balance });
-                    }}
-                    onOpenUnionSpins={(balance) => {
-                      setUnionWalletModal({
-                        key: 'spin_reserve',
-                        label: 'Spins Treasury',
-                        balance,
-                      });
-                    }}
-                    onOpenClubRake={() => setStandaloneRakeModal(true)}
-                    onOpenClubSpins={() => setStandaloneSpinsModal(true)}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ── NO SEARCH BOX ────────────────────────────────────────────────
@@ -5598,83 +5436,6 @@ function ClubHomePageContent({
             comment - would defeat the check. */}
       </header>
 
-      <WalletCashierModal
-        isOpen={!!activeCashier}
-        onClose={() => setActiveCashier(null)}
-        clubId={resolvedClubId || clubId || ''}
-        role={isOwner ? 'owner' : userRole}
-        walletType={activeCashier || DEFAULT_CASHIER_WALLET}
-      />
-      {unionWalletModal && (
-        <UnionWalletModal
-          isOpen={true}
-          onClose={() => setUnionWalletModal(null)}
-          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
-          walletKey={unionWalletModal.key}
-          walletLabel={unionWalletModal.label}
-          balance={unionWalletModal.balance}
-        />
-      )}
-      {unionTreasuryModal && (
-        <UnionTreasuryDetailModal
-          isOpen={true}
-          onClose={() => setUnionTreasuryModal(null)}
-          unionId={unionIdForCreate || resolvedClubId || clubId || ''}
-          mode={unionTreasuryModal}
-          onSendFrom={
-            unionTreasuryModal === 'backup'
-              ? undefined
-              : () => {
-                  const isRake = unionTreasuryModal === 'rake';
-                  setUnionTreasuryModal(null);
-                  setUnionWalletModal({
-                    key: isRake ? 'rake' : 'bbj',
-                    label: isRake ? 'Rake Treasury' : 'BBJ Pool',
-                    // The wallet modal fetches the true balance anyway, so 0 is fine
-                    balance: 0,
-                  });
-                }
-          }
-        />
-      )}
-      {standaloneRakeModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setStandaloneRakeModal(false)}
-          title="Rake Treasury"
-          size="large"
-          showCloseButton
-          className="club-home-treasury-modal"
-        >
-          <div style={{ height: '70vh', overflowY: 'auto', padding: '0 12px 24px' }}>
-            <RakeReports clubId={resolvedClubId || clubId || ''} />
-          </div>
-        </Modal>
-      )}
-      {standaloneSpinsModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setStandaloneSpinsModal(false)}
-          title="Spins Wallet"
-          size="medium"
-          showCloseButton
-          className="club-home-treasury-modal"
-        >
-          <div style={{ padding: '0 12px 24px' }}>
-            <SpinActivationPanel clubId={resolvedClubId || clubId || ''} />
-          </div>
-        </Modal>
-      )}
-      <PlayerWalletModal
-        isOpen={showPlayerWallet}
-        onClose={() => setShowPlayerWallet(false)}
-        clubId={resolvedClubId || clubId || ''}
-      />
-      <DiamondWalletModal
-        isOpen={showDiamondWallet}
-        onClose={() => setShowDiamondWallet(false)}
-        onBuyClick={() => navigate(withClubContext('/vip', clubId))}
-      />
       <BBJInfoModal
         isOpen={showBBJInfo}
         onClose={() => setShowBBJInfo(false)}

@@ -97,7 +97,7 @@ async function openLobby(page: Page, openSection = true) {
   // Either optional welcome can cover a later tab action. Use the original
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
-  await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({
+  await expect(page.getByRole('button', { name: 'CASH GAMES', exact: true })).toBeVisible({
     timeout: 45_000,
   });
   // Then settle that offer here, through its real Not Now and with its whole
@@ -220,9 +220,14 @@ test.describe('the mobile lobby chrome on production', () => {
     if (failures.length === 1) throw failures[0];
   });
 
-  test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {
+  test('MY WALLETS lives in Cashier and keeps its count centred and unclipped', async ({
+    page,
+  }) => {
     await openLobby(page);
-    const small = page.locator('.lobby-wallets-trigger__copy small');
+    await expect(page.locator('.lobby-wallets-trigger')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Cashier', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Cashier', exact: true })).toBeVisible();
+    const small = page.locator('.cashier-my-wallets .lobby-wallets-trigger__copy small');
 
     /* The number the viewer's role decides, in the wallet's own words. Not a
        placeholder, and not the empty bay that a wiped count leaves behind. */
@@ -256,6 +261,19 @@ test.describe('the mobile lobby chrome on production', () => {
     }, TITLE_CENTRE_PCT);
     expect(m.clipped, `${printed} is clipped at the plate's edge`).toBe(false);
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
+    const wallets = page.getByRole('region', { name: 'My Wallets', exact: true });
+    const trigger = wallets.getByRole('button', { name: /^My Wallets/i });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeVisible();
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(
+      wallets.getByRole('region', { name: 'Wallet Balances', exact: true })
+    ).toBeHidden();
   });
 
   test('Create, Find and Join lead the arena with no Play Poker plate', async ({ page }) => {

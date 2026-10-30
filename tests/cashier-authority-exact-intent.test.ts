@@ -98,7 +98,7 @@ describe('cashier authority and exact intent', () => {
     const exactCorePins = [
       [
         'fn_club_bank_send_core_20261004',
-        // 20261020210238 restricts agent banks inside the retained core.
+        // Restricted bank core plus the installed journal-source label.
         'fn_club_bank_send_core_20261004',
         '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
         '0b7684873b6cee74e2eafb2cf9cf604a',
@@ -112,7 +112,7 @@ describe('cashier authority and exact intent', () => {
       ],
       [
         'fn_club_bank_reverse_core_20261004',
-        // 20261020210238 restricts agent banks inside the retained core.
+        // Restricted bank core plus the installed journal-source label.
         'fn_club_bank_reverse_core_20261004',
         '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
         '2a67b4b80c857356ef0eaca621b358c3',
@@ -131,10 +131,10 @@ describe('cashier authority and exact intent', () => {
       ],
       [
         'fn_club_promo_send_core_20261004',
-        // 20261020210238 restricts agent banks inside the retained core.
+        // Restricted bank core plus the installed journal-source label.
         'fn_club_promo_send_core_20261004',
         '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
-        'e2fa848a65ab3615117385fc0614c229',
+        'aa695a9cec9ffb9516cf329fcd04fcf9',
       ],
       [
         'fn_agent_wallet_claim_back_core_20261004',
@@ -193,6 +193,26 @@ describe('cashier authority and exact intent', () => {
           expect(installedBody).toContain(before);
           installedBody = installedBody.replaceAll(before, decode(replacement[2]));
         }
+      }
+      if (name === 'fn_club_promo_send_core_20261004') {
+        expect(createHash('md5').update(installedBody).digest('hex')).toBe(
+          'e2fa848a65ab3615117385fc0614c229'
+        );
+        const journal = readFileSync(
+          resolve(
+            import.meta.dirname,
+            '../supabase/migrations/20261029065153_club_promo_send_names_its_journal_source_column.sql'
+          ),
+          'utf8'
+        );
+        const start = journal.indexOf(`d := pg_get_functiondef('public.${name}(`);
+        expect(start).toBeGreaterThanOrEqual(0);
+        const patch = journal.slice(start, journal.indexOf('  EXECUTE d;', start));
+        const replacement = patch.match(/d := replace\(d, '((?:''|[^'])*)', '((?:''|[^'])*)'\);/)!;
+        expect(replacement).toBeTruthy();
+        const before = replacement[1].replaceAll("''", "'");
+        expect(installedBody.split(before)).toHaveLength(2);
+        installedBody = installedBody.replace(before, replacement[2].replaceAll("''", "'"));
       }
       if (name === 'fn_request_chips_core_20261004') {
         const blockDelimiter = '$block$';

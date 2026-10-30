@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
+const MY_WALLETS = readFileSync(
+  resolve(ROOT, 'src/components/wallet/CashierMyWallets.tsx'),
+  'utf8'
+);
 const PAGE_CSS = readFileSync(resolve(ROOT, 'src/pages/ClubHomePage.css'), 'utf8');
 const TOP = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop.tsx'), 'utf8');
 const TOP_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop.css'), 'utf8');
@@ -62,7 +66,7 @@ describe('responsive premium Club Arena', () => {
   it('keeps every data-bearing surface on its production component and live handlers', () => {
     expect(PAGE).toContain('<ClubIdentityCard');
     expect(PAGE).toContain('className="lobby-bbj"');
-    expect(PAGE).toContain('<DynamicWallet');
+    expect(MY_WALLETS).toContain('<DynamicWallet');
     expect(PAGE).toContain('<LobbyTable');
     expect(PAGE).toContain('onSelect={openEntry}');
     expect(PAGE).toContain('onActivate={openEntry}');
@@ -123,9 +127,9 @@ describe('responsive premium Club Arena', () => {
        written on a desktop and touched on a phone was silently cut. One
        surface now, one cap, and the drift has nowhere to live. */
     expect(PAGE).not.toContain('CLUB_LOBBY_MESSAGE_MAX_LENGTH');
-    expect(PAGE).toContain('className="lobby-wallets-trigger"');
-    expect(PAGE).toContain('aria-expanded={walletsExpanded}');
-    expect(PAGE).toContain('data-expanded={walletsExpanded}');
+    expect(MY_WALLETS).toContain('className="lobby-wallets-trigger"');
+    expect(MY_WALLETS).toContain('aria-expanded={walletsExpanded}');
+    expect(MY_WALLETS).toContain('data-expanded={walletsExpanded}');
 
     expect(PAGE_CSS).toMatch(
       /\.lobby-top__main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s
@@ -191,8 +195,13 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('shows every role-authorized wallet on both desktop and mobile', () => {
-    expect(PAGE).toContain('showAllLobbyWallets');
-    expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
+    expect(PAGE).not.toContain('<DynamicWallet');
+    expect(PAGE).not.toContain('lobby-wallets-trigger');
+    expect(readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8')).toContain(
+      '<CashierMyWallets'
+    );
+    expect(MY_WALLETS).toContain('showAllLobbyWallets');
+    expect(MY_WALLETS).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
     /* This line has moved twice and is now gone, which is the point.
        2026-09-01 it pinned the message strip as the LAST child of the wallet
        stack; Dan moved it to the top and the assertion was inverted to pin it
@@ -225,13 +234,11 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toMatch(
       /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*fill/s
     );
-    expect(PAGE).toContain(
-      "import DiamondWalletModal from '../components/wallet/DiamondWalletModal'"
-    );
-    expect(PAGE).toContain('setShowDiamondWallet(true)');
-    expect(PAGE).toContain('<DiamondWalletModal');
-    expect(PAGE).toContain('onOpenClubRake={() => setStandaloneRakeModal(true)}');
-    expect(PAGE).toContain('onOpenClubSpins={() => setStandaloneSpinsModal(true)}');
+    expect(MY_WALLETS).toContain("import DiamondWalletModal from './DiamondWalletModal'");
+    expect(MY_WALLETS).toContain('setShowDiamondWallet(true)');
+    expect(MY_WALLETS).toContain('<DiamondWalletModal');
+    expect(MY_WALLETS).toContain('onOpenClubRake={() => setStandaloneRakeModal(true)}');
+    expect(MY_WALLETS).toContain('onOpenClubSpins={() => setStandaloneSpinsModal(true)}');
     expect(PAGE).not.toContain('navigate(`/clubs/${clubId}/detail`)');
   });
 

@@ -148,5 +148,18 @@ if "${psql[@]}" -f "$repo/supabase/migrations/20261027190154_bus_event_logs_obey
 fi
 if ! grep -q 'already exists' "$work/bus-replay.log"; then cat "$work/bus-replay.log"; exit 1; fi
 
+# A variant must include the same tournament charges as All Variants.
+variant_fee_migration="$repo/supabase/migrations/20261030045555_member_variant_statistics_include_tournament_fee_receipts.sql"
+"${psql[@]}" -f "$fixture/variant-fee-before.sql"
+if "${psql[@]}" -f "$fixture/variant-fee-after.sql" > "$work/variant-fee-before.log" 2>&1; then
+  echo 'Variant fee regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Variant tournament fee receipts missing' "$work/variant-fee-before.log"; then cat "$work/variant-fee-before.log"; exit 1; fi
+"${psql[@]}" -f "$variant_fee_migration" -f "$fixture/variant-fee-after.sql"
+if "${psql[@]}" -f "$variant_fee_migration" > "$work/variant-fee-replay.log" 2>&1; then
+  echo 'Variant fee migration replay unexpectedly accepted'; exit 1
+fi
+grep -q 'Member variant fee preimage changed or migration already installed' "$work/variant-fee-replay.log"
+
 # Independent fallback: native committed signal, LISTEN, authorized WebSocket.
 "$repo/server/node_modules/.bin/tsx" "$repo/server/scripts/privateRecordGatewayPostgres.mts" "$work/socket" 57642

@@ -170,6 +170,29 @@ describe('post-publication verification belongs to its delivered component', () 
     expect(retained.with['if-no-files-found']).toBe('error');
   });
 
+  it('executes bounded ten-socket admission proof before the existing ACL cases and cleanup', () => {
+    const source = readFileSync(
+      join(root, 'tests/e2e/production-club-channel-lifecycle.spec.ts'),
+      'utf8'
+    );
+    expect(source).toContain('async function admissionCohort()');
+    expect(source.indexOf('await admissionCohort();')).toBeLessThan(
+      source.indexOf("await negative('absent')")
+    );
+    expect(source).toContain('index < 10');
+    expect(source).toContain('open(staffLogin.data.session!.access_token, false)');
+    expect(source).toContain('expect((await state(refused)).closeCode).toBe(4429)');
+    expect(source).toContain('await probeCohort(cohort)');
+    expect(source).toMatch(/await expect\s*\.poll\(async \(\) => \(await state\(index\)\)\.closed/);
+    expect(source).toContain("label: 'connection-admission'");
+    expect(source).toContain('retired: true');
+    expect(source).toContain('if (join)');
+    expect(source).toContain('finally {\n    await cleanup();');
+    expect(source).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
+    expect(source).toContain("trace: 'off', video: 'off', screenshot: 'off'");
+    expect(source).toContain("await negative('departed')");
+  });
+
   it('waits for exact-engine thaw before provisioning a channel lifecycle account', () => {
     const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
     // 15m next-announcement lead, 12m wait, 15m case/fixture allowance,

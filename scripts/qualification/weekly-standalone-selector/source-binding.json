@@ -155,8 +155,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 253286,
-      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+      "bytes": 253386,
+      "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1230,5 +1230,22 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "requiredCiHostedCapacityRecovery20261030": {
+    "review": "Only three required-job runs-on selections gain a closed trusted-repository standard-hosted recovery variable; paid defaults/fork OS fallbacks, all commands, permissions, assertions, budgets, joins and financial states remain unchanged. Current input identity only; no native financial or live qualification restamp. Historical audits preserved.",
+    "changes": [
+      {
+        "section": "files",
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 253286,
+          "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+        },
+        "current": {
+          "bytes": 253386,
+          "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+        }
+      }
+    ]
   }
 }

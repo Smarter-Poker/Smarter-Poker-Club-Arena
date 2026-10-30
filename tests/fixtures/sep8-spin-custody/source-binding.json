@@ -57,7 +57,7 @@
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/restore-synthetic-terms.sql": "9d14a15482330a285c5346e9607a3beec85b2b21b46dcec3a15372a1524e5596",
     "tests/fixtures/sep8-spin-custody/setup.sql": "eded939b6797c5e561e12071cb08938a25359b791cdb810fc49b5e0424565f29",
-    "tests/unit/fixtureNativeCi.test.ts": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d",
+    "tests/unit/fixtureNativeCi.test.ts": "6ffd004c6ad839897e1d5cf2d5087cef3730429ef0979942c854f3eab7c44692",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1605,5 +1605,16 @@
       }
     ],
     "financial_recertification": false
+  },
+  "requiredCiHostedCapacityRecovery20261030": {
+    "review": "Only three required-job runs-on selections gain a closed trusted-repository standard-hosted recovery variable; paid defaults/fork OS fallbacks, all commands, permissions, assertions, budgets, joins and financial states remain unchanged. Current input identity only; no native financial or live qualification restamp. Historical audits preserved.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "file": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d",
+        "current": "6ffd004c6ad839897e1d5cf2d5087cef3730429ef0979942c854f3eab7c44692"
+      }
+    ]
   }
 }

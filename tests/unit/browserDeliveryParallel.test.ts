@@ -12,9 +12,11 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('uses warm hosted client delivery without moving accounting or server qualification', () => {
-    const paid = (label: string) =>
-      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
+  it('keeps warm client delivery and guarded required qualification routes', () => {
+    const paid = (label: string, recovery = false) =>
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872'" +
+      (recovery ? " && vars.CA_REQUIRED_CI_STANDARD_RUNNERS != 'true'" : '') +
+      " && '" +
       label +
       "' || 'ubuntu-latest' }}";
     const publishing = YAML.parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
@@ -38,7 +40,7 @@ describe('browser qualification parallel delivery', () => {
     ])
       expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
     for (const key of ['accounting_postgres', 'server_shards'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core', true));
     for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
       expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));

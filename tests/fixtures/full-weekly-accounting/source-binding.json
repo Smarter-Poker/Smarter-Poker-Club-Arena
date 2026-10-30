@@ -209,8 +209,8 @@
     "tests/fixtures/credit-request-authority/captured-name-catalog.json": "d7e65573b95e9983da7bf3c747467ca2e4de42b757c261f02fb18169318edb3c",
     "tests/fixtures/credit-request-authority/captured-preimages.sql": "1e2dad53a20cc0c80c0e4a6c71160e1a366bdead956d6303772dce7260aa99de",
     "tests/fixtures/credit-request-authority/regression.sql": "cfddf809c701bdc9b43c71392ba1d130fe9275489670bffabef94ecb38e9e86a",
-    "tests/credit-admin-data.test.ts": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
-    "tests/credit-admin-panel-scope.test.tsx": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
+    "tests/credit-admin-data.test.ts": "4a0314b6d67b26952d6a7836fffebe9239349c53474f4ff034f6e7eff2049bcf",
+    "tests/credit-admin-panel-scope.test.tsx": "1f6bc078af417542917561e2667dde60fff236eaaffee07f7591170f7bfc42b4",
     "tests/credit-request-widget-scope.test.tsx": "45ad84f004fe5fd39fcb8affa7a6c0f16c5782335966f4c01728305de8cd126d",
     "tests/super-agent-credit-routing.test.tsx": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580",
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
@@ -2982,6 +2982,22 @@
       "from": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
       "to": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
       "why": "Reviewed Dan 2026-10-24 owner rule: when an owner, co-owner or admin accepts or cancels a cash out, the agent it was assigned to receives the decision document too (migration 20261024220301). The fixture installs the same one-line audience change after the 2026-10-23 one, and adds two checks: an admin acceptance is delivered to exactly owner, player, accepter and assigned agent, and an admin cancellation reaches the assigned agent. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
+    },
+    {
+      "on": "2026-10-30",
+      "why": "Explicit owner correction: credit line is tracking only. Reviewed the exact client tests: derive current wallet shortfall from line minus Agent Wallet, ignore legacy drawn credit, preserve invalid/unknown values and exact cents, export the bounded shown-row scope with the correct shortfall, and remove the unused drawn-counter projection. All scope, RLS, stale-read, unavailable-money and edit guards remain. Integrated focused six-file/154-assertion run passed, and the actual final PostgreSQL tracking installer plus R2/R2-v3/R3 and conservation passed 50 cases. Historical captured financial rows, qualifications and completion statuses are unchanged; these successor client pins do not claim a production weekly close.",
+      "changed_bindings": [
+        {
+          "file": "tests/credit-admin-data.test.ts",
+          "from": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
+          "to": "4a0314b6d67b26952d6a7836fffebe9239349c53474f4ff034f6e7eff2049bcf"
+        },
+        {
+          "file": "tests/credit-admin-panel-scope.test.tsx",
+          "from": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
+          "to": "1f6bc078af417542917561e2667dde60fff236eaaffee07f7591170f7bfc42b4"
+        }
+      ]
     }
   ],
   "tournament_rake_club_successor_20260921": {

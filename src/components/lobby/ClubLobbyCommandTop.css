@@ -2728,3 +2728,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@media (max-width: 360px) {
+  .club-home.club-home--unified-mobile
+    .club-lobby-command-top
+    .lobby-controls
+    .lobby-refinements
+    .quickprefs__row--status
+    .quickprefs__chip {
+    font-size: 11px;
+  }
+}

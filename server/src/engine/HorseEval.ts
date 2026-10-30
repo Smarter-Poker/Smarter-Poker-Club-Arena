@@ -1270,6 +1270,163 @@ export interface OppPostflopRead {
   /** V56 qualification arm: sample the declared made-hand stratum directly
    * instead of treating a bounded rejection miss as a value hand. */
   strictPressureRange?: boolean;
+  /** V62: the newest postflop street on which this opponent bet or raised. */
+  lastStage?: 'flop' | 'turn' | 'river';
+  /** V62 (Hold'em, attached by HorseLogic on the river only): this opponent
+   * wagered on the river, so their sampled hand is kept with the likelihood
+   * a river bettor holds it at that size - value always, a worse made hand
+   * by how often it is bet for value, air by a bluff share. */
+  riverPolar?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V62 RIVER BETTOR POLARITY (2026-10-30)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The V12/V16 contact sampler asks whether a river bettor's hand CONNECTS
+// with the board; the river asks a different question - whether they would
+// BET that hand. A middle pair or a weak top pair is contact, but a river
+// bettor rarely holds one at half a pot or more: a river wager is value that
+// expects to be paid or a bluff, and the bigger the wager the more polar the
+// range. Pricing a one-pair call against "any pair" (and, on a dry board,
+// against the band's large mass of air that never bets) credited the horse
+// with equity against hands that check behind, which is the measured Hold'em
+// leak: one-pair river calls won 14-22% against prices demanding 20-40%.
+//
+// The model draws the river bettor's hand by STRATUM, not by keep factor on
+// whatever the band happens to contain: a target composition is
+// board-independent wherever the board permits it, which is how the leak
+// was measured (aggregated over every board). First the sample is declared
+// a BLUFF with the size class's bluff share (measured on this pool: one-pair
+// calls won 17-18% under a quarter pot, 21-22% at a quarter to a half, 14%
+// at a half to a full pot - a human river bettor here bluffs less than the
+// balanced 20-33%; the shares below sit a little above the measurement so a
+// credible mix is still called down). Otherwise it is a VALUE draw from one
+// of three sub-strata whose shares shift with the size: two pair or better
+// dominates a large wager, top pair / an overpair is bet for value mostly at
+// small and medium sizes, a weaker pair is a merged small bet and almost
+// never a large one. A river RAISE uses the largest class. Each stratum is
+// rejection-sampled inside the band with bounded tries; late tries accept
+// the nearest class (any pair for a value draw) so a board that cannot make
+// the target still yields a made hand, never a random one. The prior is
+// independent of the hero's hand, as the bettor cannot see it.
+export const V62_BLUFF_SHARE = [0.25, 0.22, 0.18] as const;
+/** Value sub-strata shares by size class: [two pair+, top pair/overpair, weaker pair]. */
+export const V62_VALUE_MIX = [
+  [0.35, 0.45, 0.2],
+  [0.55, 0.38, 0.07],
+  [0.75, 0.22, 0.03],
+] as const;
+
+export function v62SizeClass(read: OppPostflopRead): 0 | 1 | 2 {
+  if (read.raised) return 2;
+  const frac = read.lastFrac ?? (read.bigBet ? 1 : 0.5);
+  if (read.bigBet || frac >= 0.7) return 2;
+  if (frac >= 0.4) return 1;
+  return 0;
+}
+
+/** Made-hand class of a sampled river hand: 3 = two pair or better made by
+ * the hole cards, 2 = top pair or an overpair, 1 = a weaker pair, 0 = no
+ * pair. Exported for the test. */
+export function v62ValueClass(oppCards: Card[], board: Card[], shortDeck: boolean): 0 | 1 | 2 | 3 {
+  const cat = connectsBoard(oppCards, board, shortDeck);
+  if (cat >= 3) return 3;
+  if (cat !== 2) return 0;
+  let topRank = 0;
+  for (const c of board) topRank = Math.max(topRank, RANK_VALUES[c.rank]);
+  const pocket = oppCards.length === 2 && oppCards[0].rank === oppCards[1].rank;
+  const pairsTop = oppCards.some((c) => RANK_VALUES[c.rank] === topRank);
+  const overpair = pocket && RANK_VALUES[oppCards[0].rank] > topRank;
+  return pairsTop || overpair ? 2 : 1;
+}
+
+/** Draw the target stratum for one river-bettor sample: 0 = bluff, else the
+ * value class (1..3). `r1`/`r2` are uniform draws. Exported for the test. */
+export function v62TargetClass(sizeClass: 0 | 1 | 2, r1: number, r2: number): 0 | 1 | 2 | 3 {
+  if (r1 < V62_BLUFF_SHARE[sizeClass]) return 0;
+  const mix = V62_VALUE_MIX[sizeClass];
+  if (r2 < mix[0]) return 3;
+  if (r2 < mix[0] + mix[1]) return 2;
+  return 1;
+}
+
+/** Per-decision index of a river bettor's band: the combo-table indices of
+ * every two-card hand inside the band that is still possible given the hero's
+ * cards, the board and known dead cards, bucketed by v62ValueClass. Built
+ * once per simulateEquity call, so the stratum is drawn exactly instead of
+ * by bounded rejection (a band that holds few two-pair hands on this board
+ * still yields two pair when the target asks for it). */
+export type V62StratumIndex = [number[], number[], number[], number[]];
+
+export function buildV62StratumIndex(
+  band: [number, number] | null,
+  board: Card[],
+  excluded: readonly Card[],
+  shortDeck: boolean
+): V62StratumIndex {
+  const tbl = comboTable(shortDeck);
+  const lo = band ? lowerBound(tbl.scores, band[0]) : 0;
+  const hi = band ? lowerBound(tbl.scores, band[1] + 1e-12) : tbl.scores.length;
+  const dead = new Uint8Array(64);
+  for (const c of excluded) dead[cardId(c)] = 1;
+  for (const c of board) dead[cardId(c)] = 1;
+  const out: V62StratumIndex = [[], [], [], []];
+  for (let idx = lo; idx < hi; idx++) {
+    const a = tbl.c1[idx];
+    const b = tbl.c2[idx];
+    if (dead[cardId(a)] || dead[cardId(b)]) continue;
+    out[v62ValueClass([a, b], board, shortDeck)].push(idx);
+  }
+  return out;
+}
+
+/** Nearest-class order for a target: the exact stratum first, then the
+ * closest made class (a value target never falls to air while any pair is
+ * available). */
+export const V62_FALLBACK: ReadonlyArray<ReadonlyArray<0 | 1 | 2 | 3>> = [
+  [0, 1],
+  [1, 2, 3],
+  [2, 3, 1],
+  [3, 2, 1],
+];
+
+function placeV62Combo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  index: V62StratumIndex,
+  target: 0 | 1 | 2 | 3,
+  shortDeck: boolean
+): boolean {
+  const tbl = comboTable(shortDeck);
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+  for (const cls of V62_FALLBACK[target]) {
+    const list = index[cls];
+    if (list.length === 0) continue;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const idx = list[Math.floor(fastRandom() * list.length)];
+      const a = tbl.c1[idx];
+      const b = tbl.c2[idx];
+      if (!cardAvail[cardId(a)] || !cardAvail[cardId(b)]) continue;
+      for (let k = 0; k < 2; k++) {
+        const want = k === 0 ? a : b;
+        const slot = windowStart + k;
+        if (deck[slot] === want) continue;
+        for (let j = slot; j < n; j++) {
+          if (deck[j] === want) {
+            const tmp = deck[slot];
+            deck[slot] = deck[j];
+            deck[j] = tmp;
+            break;
+          }
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2500,6 +2657,21 @@ export function simulateEquity(
     if (rangeUse) rangeUse.invalidDeck = true;
     return 0.5;
   }
+  // V62: one exact stratum index per river bettor for this call.
+  let v62Indexes: Array<V62StratumIndex | null> | null = null;
+  if (oppReads && !vi.isOmaha && boardCards.length === 5 && oppHole === 2) {
+    for (let o = 0; o < numOpponents; o++) {
+      const read = oppReads[o];
+      if (!read || read.riverPolar !== true) continue;
+      if (!v62Indexes) v62Indexes = new Array<V62StratumIndex | null>(numOpponents).fill(null);
+      v62Indexes[o] = buildV62StratumIndex(
+        oppBands ? (oppBands[o] ?? null) : null,
+        boardCards,
+        [...holeCards, ...knownDeadCards],
+        vi.isShortDeck
+      );
+    }
+  }
 
   let score = 0; // pot share accumulated across iterations
   const n = deck.length;
@@ -2866,6 +3038,21 @@ export function simulateEquity(
           const cat = connectsBoard(oppCards, boardCards, vi.isShortDeck);
           if (cat >= 4 && fastRandom() < 0.55 + Math.min(0.25, read.checked * 0.12)) {
             redraw();
+          }
+        }
+        // V62: a river bettor's hand is drawn from a target stratum - bluff
+        // by the size class's bluff share, otherwise two pair+, top pair or
+        // a weaker pair by the size class's value mix (V62_BLUFF_SHARE /
+        // V62_VALUE_MIX) - placed exactly from the per-call band index. A
+        // collision with cards already dealt keeps the contact-sampled hand.
+        if (read.riverPolar === true && boardCards.length === 5 && oppHole === 2) {
+          const index62 = v62Indexes ? v62Indexes[o] : null;
+          if (index62) {
+            const target62 = v62TargetClass(v62SizeClass(read), fastRandom(), fastRandom());
+            if (placeV62Combo(deck, windowStart, n, index62, target62, vi.isShortDeck)) {
+              oppCards[0] = deck[windowStart];
+              oppCards[1] = deck[windowStart + 1];
+            }
           }
         }
       }

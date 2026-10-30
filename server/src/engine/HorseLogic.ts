@@ -2066,6 +2066,12 @@ export interface HorseDecideOpts {
   v57TournamentAggression?: boolean;
   /** 2026-10-29 NLH cash pressure: wider value/bluff 3-bets and 3-bet defence. Default on. */
   v60CashPressure?: boolean;
+  /** V62 (2026-10-30) Hold'em river bettor polarity: a river wager's sampled
+   *  hand is kept by how often a human bets it at that size (HorseEval
+   *  V62_KEEP), so a one-pair call is priced against value and bluffs rather
+   *  than against any pair that connected. Default on; false is the
+   *  historical arm for recorded corpora. */
+  v62RiverBettorPolarity?: boolean;
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -6644,6 +6650,30 @@ export class HorseLogic {
         if (tele15 && oppReads.some((read) => read?.strictPressureRange))
           noteFire('v56_omaha_pressure_range');
       }
+    }
+    // ═══ V62 RIVER BETTOR POLARITY (2026-10-30) ═══ Single-board Hold'em,
+    // facing a river wager from a bettor without an over-bluffer read: the
+    // sampler keeps that bettor's hand by the likelihood they bet it at this
+    // size (HorseEval V62_KEEP). The read says WHO wagered on the river; the
+    // exploit read (callDownMod above 1 = a measured over-bluffer) keeps the
+    // full contact range so a credible bluffer is still called down.
+    if (
+      (opts.v62RiverBettorPolarity ?? true) !== false &&
+      isRiver &&
+      !vi.isOmaha &&
+      !vi.isShortDeck &&
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
+      extraBoards.length === 0 &&
+      gs.bombPot !== true &&
+      exploit.callDownMod <= 1 &&
+      oppReads &&
+      oppReads.some((read) => read?.lastStage === 'river')
+    ) {
+      oppReads = oppReads.map((read) =>
+        read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
+      );
+      if (tele15) noteFire('v62_river_bettor_polarity');
     }
     let equity: number;
     /**

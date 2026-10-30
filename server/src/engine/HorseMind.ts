@@ -1964,6 +1964,9 @@ export class HorseMind {
       if (lastAggrStage != null) {
         readOut.lastFrac = lastAggrFrac;
         readOut.raised = lastAggrRaised;
+        // V62: which street the newest wager was on, for the river model.
+        if (lastAggrStage === 'flop' || lastAggrStage === 'turn' || lastAggrStage === 'river')
+          readOut.lastStage = lastAggrStage;
       }
       let checked = 0;
       for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;

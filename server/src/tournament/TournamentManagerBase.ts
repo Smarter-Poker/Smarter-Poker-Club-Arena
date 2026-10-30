@@ -9422,6 +9422,23 @@ export abstract class TournamentManagerBase {
       return this.tournamentAbortBoundary.run(true);
     }
     const originals = [...this.tableEngines.entries()];
+    const required = request.tables.filter((table) => table.required);
+    // No physical side effect or original-roster capture precedes a complete
+    // graph. An accepted table move/start may still publish its original
+    // outcome; the same durable request can observe that outcome afterward.
+    if (
+      this.lifecycleOperation !== null ||
+      this.tableEngineStartJobs.size !== 0 ||
+      !this.tournamentAbortSourcesMatch(originals) ||
+      required.length === 0 ||
+      required.length !== originals.length ||
+      required.some((table) => !this.tableEngines.has(table.table_id))
+    )
+      return Promise.resolve({
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_not_ready',
+      });
     const current = () =>
       this.hasCurrentTournamentLeaseAuthority() &&
       !this.stopFenceApplied &&
@@ -9439,6 +9456,11 @@ export abstract class TournamentManagerBase {
         await this.drainLifecycleJobs();
         await this.drainEliminationSchedulerJobs();
         await this.drainLifecycleJobs();
+      },
+      joinRetiredManagerTails: async () => {
+        await this.drainTableEngineRunJobs();
+        await this.drainLifecycleJobs();
+        await this.drainEliminationSchedulerJobs();
       },
       managerReadyToFence: () => this.tournamentAbortBusinessTailsDrained(),
       fenceManager: () => this.beginServerShutdownDrain(),

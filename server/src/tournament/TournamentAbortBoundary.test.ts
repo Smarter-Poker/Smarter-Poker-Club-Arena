@@ -16,13 +16,16 @@ function fixture() {
     allocation_epoch: 'epoch',
   };
   const engine = {
-    parkForTerminalCloseout: vi.fn(async () => true),
+    parkForTournamentAbort: vi.fn(async () => true),
     prepareTournamentAbortBoundary: vi.fn(async () => {}),
     captureParkedTournamentAbortIdentity: vi.fn(() => identity as typeof identity | null),
+    captureStoppedTournamentAbortIdentity: vi.fn(() => identity as typeof identity | null),
+    retireTournamentAbortBoundary: vi.fn(async () => {}),
   };
   const deps = {
     current: vi.fn(() => true),
     joinManagerTails: vi.fn(async () => {}),
+    joinRetiredManagerTails: vi.fn(async () => {}),
     managerReadyToFence: vi.fn(() => true),
     fenceManager: vi.fn(),
     managerDrained: vi.fn(() => true),
@@ -43,7 +46,7 @@ describe('the explicit abort owner positively joins original writers', () => {
   it('joins duplicate requests while the accepted hand is still running', async () => {
     const f = fixture();
     const hand = deferred();
-    f.engine.parkForTerminalCloseout.mockImplementation(async () => {
+    f.engine.parkForTournamentAbort.mockImplementation(async () => {
       await hand.promise;
       return true;
     });
@@ -54,7 +57,7 @@ describe('the explicit abort owner positively joins original writers', () => {
     expect(f.deps.acknowledge).not.toHaveBeenCalled();
     hand.resolve();
     await first;
-    expect(f.engine.parkForTerminalCloseout).toHaveBeenCalledTimes(1);
+    expect(f.engine.parkForTournamentAbort).toHaveBeenCalledTimes(1);
     await f.owner.run();
     expect(f.deps.acknowledge).toHaveBeenCalledTimes(1);
   });
@@ -73,7 +76,8 @@ describe('the explicit abort owner positively joins original writers', () => {
       'table',
       17,
       expect.objectContaining({
-        physical_parked: true,
+        physical_stopped: true,
+        parked_before_retirement: true,
         manager_tail_joined: true,
         bank_state_write_pending: false,
         source_table_ids: ['table'],
@@ -84,7 +88,7 @@ describe('the explicit abort owner positively joins original writers', () => {
   });
   it('never turns a park timeout into permission to refund or unpark', async () => {
     const f = fixture();
-    f.engine.parkForTerminalCloseout.mockResolvedValue(false);
+    f.engine.parkForTournamentAbort.mockResolvedValue(false);
     expect(await f.owner.run()).toMatchObject({ state: 'pending' });
     expect(f.deps.fenceManager).not.toHaveBeenCalled();
     expect(f.deps.acknowledge).not.toHaveBeenCalled();
@@ -115,20 +119,36 @@ describe('the explicit abort owner positively joins original writers', () => {
   it('re-proves the same originals when persisted current certification became ineffective', async () => {
     const f = fixture();
     await f.owner.run();
-    f.engine.captureParkedTournamentAbortIdentity.mockReturnValue(null);
+    f.engine.captureStoppedTournamentAbortIdentity.mockReturnValue(null);
     expect(await f.owner.run(true)).toMatchObject({ reason: 'physical_writer_not_drained' });
+    expect(f.deps.acknowledge).toHaveBeenCalledTimes(1);
+  });
+  it('joins the original stopped-bank write before ACK and retains a partial stop on retry', async () => {
+    const f = fixture();
+    const bank = deferred();
+    f.engine.retireTournamentAbortBoundary.mockImplementationOnce(async () => {
+      await bank.promise;
+      throw Error('unknown bank write');
+    });
+    const run = f.owner.run();
+    await vi.waitFor(() => expect(f.engine.retireTournamentAbortBoundary).toHaveBeenCalledTimes(1));
+    expect(f.deps.acknowledge).not.toHaveBeenCalled();
+    bank.resolve();
+    await expect(run).rejects.toThrow('unknown bank write');
+    await f.owner.run();
+    expect(f.engine.parkForTournamentAbort).toHaveBeenCalledTimes(1);
     expect(f.deps.acknowledge).toHaveBeenCalledTimes(1);
   });
   it('refuses a foreign generation before any physical side effect', async () => {
     const f = fixture();
     f.deps.current.mockReturnValue(false);
     expect(await f.owner.run()).toMatchObject({ reason: 'original_owner_changed' });
-    expect(f.engine.parkForTerminalCloseout).not.toHaveBeenCalled();
+    expect(f.engine.parkForTournamentAbort).not.toHaveBeenCalled();
   });
   it('refuses missing original tables instead of certifying their absence', async () => {
     const f = fixture();
     f.request.tables.push({ table_id: 'retained-other-table', lifecycle: '24', required: true });
     expect(await f.owner.run()).toMatchObject({ reason: 'original_table_coverage_incomplete' });
-    expect(f.engine.parkForTerminalCloseout).not.toHaveBeenCalled();
+    expect(f.engine.parkForTournamentAbort).not.toHaveBeenCalled();
   });
 });

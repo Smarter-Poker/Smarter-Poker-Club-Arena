@@ -7526,6 +7526,22 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /** Startup restores an accepted original after its early pause gate. Do
+   * not put that original behind a new closeout gate before it can actuate.
+   * The durable abort request already refuses fresh hand admission.
+   */
+  parkForTournamentAbort(maxWaitMs: number): Promise<boolean> {
+    if (
+      this.handController === null &&
+      (this.isOriginalInputPending() ||
+        this.retainedPreparedOriginalController !== null ||
+        !this.f06PreparationDrained() ||
+        this.hasUnresolvedF06Preparation())
+    )
+      return Promise.resolve(false);
+    return this.parkForTerminalCloseout(maxWaitMs);
+  }
+
   /** The explicit abort owner joins the actual bank/snapshot writers. A
    * completed teardown diagnostic or a settled F06 permit is not this proof.
    * This runs only after the dealer is inside its irreversible closeout gate.
@@ -7578,6 +7594,7 @@ export abstract class ServerTableEngineBase {
       this.entryHoldWriteChains.size !== 0 ||
       !this.parkedBankSaveComplete ||
       !this.f06PreparationDrained() ||
+      this.hasUnresolvedF06Preparation() ||
       this.pendingOriginalContinuation !== null ||
       this.isOriginalInputPending() ||
       this.handContinuation?.isUnretained() === true ||
@@ -7589,6 +7606,33 @@ export abstract class ServerTableEngineBase {
       hand_number: this.handCount,
       engine_id: this.lifecycleDiagnostics.instanceId,
       allocation_epoch: this.f06AllocationEpoch,
+    });
+  }
+
+  /** Persist the original stopped custody before cancellation seals tables.
+   * stop() retains its actual promise; a repeated request never recaptures a
+   * new timestamp or discards an unknown original write.
+   */
+  async retireTournamentAbortBoundary(): Promise<void> {
+    await this.stop();
+    await this.persistStoppedTimeBankCustody();
+    await this.presenceSave;
+  }
+
+  captureStoppedTournamentAbortIdentity(tableId: string, tournamentId: string, generation: string) {
+    if (
+      this.snapshotDirty ||
+      this.unresolvedTimeBankDebits.size !== 0 ||
+      this.hasUnretiredStoppedTimeBankCustody()
+    )
+      return null;
+    const original = this.captureDrainedF06Identity(tableId, tournamentId, generation);
+    if (!original) return null;
+    return Object.freeze({
+      lifecycle: original.lifecycle,
+      hand_number: original.bank_custody.hand_number,
+      engine_id: original.engine_id,
+      allocation_epoch: original.allocation_epoch,
     });
   }
 

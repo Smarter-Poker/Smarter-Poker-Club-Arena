@@ -12,7 +12,7 @@ export interface AbortBoundaryRequest {
 }
 
 export interface AbortBoundaryEngine {
-  parkForTerminalCloseout(maxWaitMs: number): Promise<boolean>;
+  parkForTournamentAbort(maxWaitMs: number): Promise<boolean>;
   prepareTournamentAbortBoundary(): Promise<void>;
   captureParkedTournamentAbortIdentity(
     tableId: string,
@@ -24,6 +24,8 @@ export interface AbortBoundaryEngine {
     engine_id: string;
     allocation_epoch: string | null;
   } | null;
+  retireTournamentAbortBoundary(): Promise<void>;
+  captureStoppedTournamentAbortIdentity: AbortBoundaryEngine['captureParkedTournamentAbortIdentity'];
 }
 
 /** One explicit request owns these originals even after HTTP disconnection.
@@ -33,12 +35,14 @@ export interface AbortBoundaryEngine {
 export class TournamentAbortBoundary {
   private active: Promise<unknown> | null = null;
   private completed: unknown = null;
+  private retirementStarted = false;
   constructor(
     readonly request: AbortBoundaryRequest,
     private readonly originals: readonly (readonly [string, AbortBoundaryEngine])[],
     private readonly deps: {
       current(): boolean;
       joinManagerTails(): Promise<void>;
+      joinRetiredManagerTails(): Promise<void>;
       managerReadyToFence(): boolean;
       fenceManager(): void;
       managerDrained(): boolean;
@@ -78,26 +82,49 @@ export class TournamentAbortBoundary {
       required.some((table) => !this.originals.some(([id]) => id === table.table_id))
     )
       return pending('original_table_coverage_incomplete');
-    // Arm every original synchronously before waiting on any individual hand.
-    const parked = await Promise.all(
-      this.originals.map(([, engine]) => engine.parkForTerminalCloseout(30_000))
-    );
-    if (parked.some((value) => !value)) return pending('accepted_hand_not_parked');
-    await this.deps.joinManagerTails();
-    if (!this.deps.current()) return pending('original_owner_changed');
-    if (!this.deps.managerReadyToFence()) return pending('accepted_manager_tail_pending');
-    // Accepted callbacks finish before revocation; callbacks admitted during
-    // the final join are fenced synchronously and then physically joined.
-    this.deps.fenceManager();
-    await this.deps.joinManagerTails();
-    await Promise.all(this.originals.map(([, engine]) => engine.prepareTournamentAbortBoundary()));
+    if (!this.retirementStarted) {
+      // Arm every original synchronously before waiting on any individual hand.
+      const parked = await Promise.all(
+        this.originals.map(([, engine]) => engine.parkForTournamentAbort(30_000))
+      );
+      if (parked.some((value) => !value)) return pending('accepted_hand_not_parked');
+      await this.deps.joinManagerTails();
+      if (!this.deps.current()) return pending('original_owner_changed');
+      if (!this.deps.managerReadyToFence()) return pending('accepted_manager_tail_pending');
+      // Accepted callbacks finish before revocation; callbacks admitted during
+      // the final join are fenced synchronously and then physically joined.
+      this.deps.fenceManager();
+      await this.deps.joinManagerTails();
+      await Promise.all(
+        this.originals.map(([, engine]) => engine.prepareTournamentAbortBoundary())
+      );
+      if (!this.deps.current() || !this.deps.managerDrained())
+        return pending('manager_tail_not_drained');
+      if (
+        this.originals.some(
+          ([id, engine]) =>
+            engine.captureParkedTournamentAbortIdentity(
+              id,
+              this.request.tournament_id,
+              this.request.current_generation
+            ) === null
+        )
+      )
+        return pending('physical_writer_not_drained');
+      this.retirementStarted = true;
+    }
+    // Retire and persist these original child objects before the immutable
+    // financial header exists. Their manager lease remains heartbeating.
+    // Partial/unknown stops retain this phase and these exact original promises.
+    await Promise.all(this.originals.map(([, engine]) => engine.retireTournamentAbortBoundary()));
+    await this.deps.joinRetiredManagerTails();
     if (!this.deps.current() || !this.deps.managerDrained())
       return pending('manager_tail_not_drained');
     const identities = this.originals.map(
       ([id, engine]) =>
         [
           id,
-          engine.captureParkedTournamentAbortIdentity(
+          engine.captureStoppedTournamentAbortIdentity(
             id,
             this.request.tournament_id,
             this.request.current_generation
@@ -117,7 +144,7 @@ export class TournamentAbortBoundary {
       // Re-prove after each network await; no old captured proof authorizes
       // another table after ownership or a physical writer changed.
       const engine = this.originals.find(([tableId]) => tableId === id)![1];
-      const fresh = engine.captureParkedTournamentAbortIdentity(
+      const fresh = engine.captureStoppedTournamentAbortIdentity(
         id,
         this.request.tournament_id,
         this.request.current_generation
@@ -135,7 +162,8 @@ export class TournamentAbortBoundary {
           ...fresh,
           kind: 'tournament_abort_boundary_v1',
           certificate_version: '1',
-          physical_parked: true,
+          physical_stopped: true,
+          parked_before_retirement: true,
           drained: true,
           manager_tail_joined: true,
           pending_writers: 0,

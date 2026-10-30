@@ -195,7 +195,7 @@ export function useLightningAnchorHandoff(input: {
   }, [readyPoolSessionId, input.clusterId, identity]);
 
   useEffect(() => {
-    if (!tableId || isPoolSession || !heroBoughtIn) {
+    if (!tableId || isPoolSession || !conversionFunded) {
       setJoining(false);
       return;
     }
@@ -217,7 +217,11 @@ export function useLightningAnchorHandoff(input: {
       try {
         const session = await fetchMyLightningSession(clusterId);
         if (stopped) return;
-        if (hasLightningRoom(session) && session.poolSessionId) {
+        if (
+          hasLightningRoom(session) &&
+          session.poolSessionId &&
+          session.anchorTableId === tableId
+        ) {
           /* FIRST-HAND PATH (Lightning Phase 12): JOIN -> HAND with no
              avoidable round trip. The tab follows the chair the moment the
              pool session exists; the Cluster's felt metadata is not waited
@@ -258,7 +262,7 @@ export function useLightningAnchorHandoff(input: {
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [tableId, isPoolSession, heroBoughtIn, cancelled]);
+  }, [tableId, isPoolSession, conversionFunded, cancelled, identity]);
 
   return { joining, cancel, readyPoolSessionId, viewReady };
 }

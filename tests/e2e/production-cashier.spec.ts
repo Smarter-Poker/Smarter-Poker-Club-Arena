@@ -379,9 +379,9 @@ test.describe('Production Cashier Certification', () => {
           options.map((option) => (option as HTMLOptionElement).value).filter(Boolean)
         )
     ).toEqual(expectedTicketValues);
-    await expect(ticketValue.getByRole('option', { name: '40 Ticket', exact: true })).toHaveValue(
-      '40'
-    );
+    await expect(
+      ticketValue.getByRole('option', { name: '40 Ticket', exact: true })
+    ).toHaveAttribute('value', '40');
     await ticketValue.selectOption('40');
     await expect(ticketValue).toHaveValue('40');
     await expect(ticketDialog).toContainText('Total: 80');

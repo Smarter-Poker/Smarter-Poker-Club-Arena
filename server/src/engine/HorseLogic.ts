@@ -2083,6 +2083,9 @@ export interface HorseDecideOpts {
    *  on. Re-enable by default only after a recalibrated stratum resolves
    *  significant positive in the mirror and the human-field twin. */
   v62RiverBettorPolarity?: boolean;
+  /** League calibration arm (item 17): [min, max] pot fraction for the small
+   *  flop/turn continuation bet, each in [0.2, 1.5] with min <= max. */
+  cbetSizeFrac?: readonly [number, number];
   /** V52 (2026-10-24): the public-range advantage read added with the
    *  continuation work (#7838, #7866). When enabled, heads-up postflop spots
    *  compare hero's and the opponent's public ranges on the actual board; the
@@ -3808,6 +3811,15 @@ function v54OpponentProfile(
  * a quarter to a half they won 21-22% against ~29%, and at a half to a full
  * pot 14% against ~40%. Zero below a fifth, twelve points from half a pot.
  */
+/** Validate a c-bet size range; anything malformed yields null (defaults). */
+export function cbetSizeRange(value: unknown): readonly [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const [lo, hi] = value;
+  if (typeof lo !== 'number' || typeof hi !== 'number') return null;
+  if (!(lo >= 0.2 && hi <= 1.5 && lo <= hi)) return null;
+  return [lo, hi];
+}
+
 export function v61RiverOnePairShade(toCall: number, pot: number): number {
   if (!(toCall > 0) || !(pot > 0)) return 0;
   return Math.min(0.12, Math.max(0, (toCall / pot - 0.2) * 0.4));
@@ -9028,7 +9040,16 @@ export class HorseLogic {
           /* reads are best-effort */
         }
       }
-      const cbetSize = boardFavorsAggressor ? 0.28 + fastRandom() * 0.06 : 0.3 + fastRandom() * 0.1;
+      // League calibration arm (item 17, 2026-10-30): the small c-bet's size
+      // range can be replaced to measure the production split (small flop
+      // c-bets -7/-8 bb a hand against +3/+5 for big ones, confounded by
+      // holding strength) with paired deals.
+      const cbetRange = cbetSizeRange(opts.cbetSizeFrac);
+      const cbetSize = cbetRange
+        ? cbetRange[0] + fastRandom() * (cbetRange[1] - cbetRange[0])
+        : boardFavorsAggressor
+          ? 0.28 + fastRandom() * 0.06
+          : 0.3 + fastRandom() * 0.1;
       if (
         (initiative === 'hero' || prevChecked) &&
         oppCount <= 2 &&

@@ -1,10 +1,4 @@
 {
-  "mttApprovalCompleteReadAudit20261029": {
-    "reason": "Reviewed one-line tightening of MembershipService discarded-error baseline from 2 to 1 after complete member reads now reject errors. All other assertions, source pins, historical audits and qualification statuses remain unchanged. Current test identity only, not financial or live recertification.",
-    "path": "tests/unit/discardedErrorReadRatchet.test.ts",
-    "previousSHA256": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
-    "currentSHA256": "79deae1f4f7751b8544ba0fa28e0e72e851a6759f90d423a367620fc3beae912"
-  },
   "accountPreferenceFixtureAudit20261029": {
     "reason": "Reviewed exact fixture-only diff: replace the empty useUserStore mock with its selector bound to the existing synthetic auth identity. Preserve every cashout receipt, ABA, financial invariant and assertion. Connected 34-case fixture run passed; no production financial mutation or certificate restamp.",
     "path": "tests/components/cashout-own-event-acknowledgment.test.tsx",
@@ -209,8 +203,8 @@
     "tests/fixtures/credit-request-authority/captured-name-catalog.json": "d7e65573b95e9983da7bf3c747467ca2e4de42b757c261f02fb18169318edb3c",
     "tests/fixtures/credit-request-authority/captured-preimages.sql": "1e2dad53a20cc0c80c0e4a6c71160e1a366bdead956d6303772dce7260aa99de",
     "tests/fixtures/credit-request-authority/regression.sql": "cfddf809c701bdc9b43c71392ba1d130fe9275489670bffabef94ecb38e9e86a",
-    "tests/credit-admin-data.test.ts": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
-    "tests/credit-admin-panel-scope.test.tsx": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
+    "tests/credit-admin-data.test.ts": "4a0314b6d67b26952d6a7836fffebe9239349c53474f4ff034f6e7eff2049bcf",
+    "tests/credit-admin-panel-scope.test.tsx": "1f6bc078af417542917561e2667dde60fff236eaaffee07f7591170f7bfc42b4",
     "tests/credit-request-widget-scope.test.tsx": "45ad84f004fe5fd39fcb8affa7a6c0f16c5782335966f4c01728305de8cd126d",
     "tests/super-agent-credit-routing.test.tsx": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580",
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
@@ -522,7 +516,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "b9f542f63132a5e0f984c08bc3e3e67f9c355fd42ff3b971027fffb8fc8f3b32",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "e93098c68ba2aa80cc9ceac78dd8a1d511ca941c3632ff66fd8785b0755265f6",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -2982,6 +2976,22 @@
       "from": "a7ba6a6ad1364be7fcd7fe17f43ce8e16b59fa8b1f933bc00f98aaca834677e7",
       "to": "77f954697140fd4cb0d04076da422a7a99ec70a47a20e938571bf4ceab565517",
       "why": "Reviewed Dan 2026-10-24 owner rule: when an owner, co-owner or admin accepts or cancels a cash out, the agent it was assigned to receives the decision document too (migration 20261024220301). The fixture installs the same one-line audience change after the 2026-10-23 one, and adds two checks: an admin acceptance is delivered to exactly owner, player, accepter and assigned agent, and an admin cancellation reaches the assigned agent. No other assertion, financial input, captured row or qualification status changed. Matching source hashes are not production or financial execution proof."
+    },
+    {
+      "on": "2026-10-30",
+      "why": "Explicit owner correction: credit line is tracking only. Reviewed the exact client tests: derive current wallet shortfall from line minus Agent Wallet, ignore legacy drawn credit, preserve invalid/unknown values and exact cents, export the bounded shown-row scope with the correct shortfall, and remove the unused drawn-counter projection. All scope, RLS, stale-read, unavailable-money and edit guards remain. Integrated focused six-file/154-assertion run passed, and the actual final PostgreSQL tracking installer plus R2/R2-v3/R3 and conservation passed 50 cases. Historical captured financial rows, qualifications and completion statuses are unchanged; these successor client pins do not claim a production weekly close.",
+      "changed_bindings": [
+        {
+          "file": "tests/credit-admin-data.test.ts",
+          "from": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
+          "to": "4a0314b6d67b26952d6a7836fffebe9239349c53474f4ff034f6e7eff2049bcf"
+        },
+        {
+          "file": "tests/credit-admin-panel-scope.test.tsx",
+          "from": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
+          "to": "1f6bc078af417542917561e2667dde60fff236eaaffee07f7591170f7bfc42b4"
+        }
+      ]
     }
   ],
   "tournament_rake_club_successor_20260921": {
@@ -5871,6 +5881,36 @@
     ],
     "financial_recertification": false
   },
+  "requiredNativeRunnerProfile20261030": {
+    "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
+    "changes": [
+      {
+        "section": "repository_fixtures",
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d",
+        "current": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
+        "previous": "eeb0c727ae093e99a785f658073ee57a0f74362b1aecb45a65ddee4fe2d028cb",
+        "current": "2fd5402db5d5f2683c21513cd89957ea950c3435714f3218978368462e24ed43"
+      },
+      {
+        "section": "repository_fixtures",
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous": "801fb15314d062d80491230a0e6cb6ad0bdba383987262cd01e526c9473b2fd4",
+        "current": "2df9182f8ed296032ab019b94f86d2da5f2cc4163519f9451ce3116b40682d0e"
+      }
+    ],
+    "financial_recertification": false
+  },
+  "mttApprovalCompleteReadAudit20261029": {
+    "reason": "Reviewed one-line tightening of MembershipService discarded-error baseline from 2 to 1 after complete member reads now reject errors. All other assertions, source pins, historical audits and qualification statuses remain unchanged. Current test identity only, not financial or live recertification.",
+    "path": "tests/unit/discardedErrorReadRatchet.test.ts",
+    "previousSHA256": "79ac20b530ab8adf76b7821f83db486e9218c24a1dcd03d000fb4bd44b2cd4bc",
+    "currentSHA256": "79deae1f4f7751b8544ba0fa28e0e72e851a6759f90d423a367620fc3beae912"
+  },
   "cancellationAdmissionSelectorAudit20261030": {
     "scope": "New cancellation native fixture/runner inputs explicitly select existing accounting and source checks. Existing selectors and financial assertions unchanged.",
     "file": "scripts/ci/classify-ci-changes.mjs",
@@ -5897,28 +5937,15 @@
       }
     ]
   },
-  "requiredNativeRunnerProfile20261030": {
-    "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
-    "changes": [
-      {
-        "section": "repository_fixtures",
-        "path": "tests/unit/fixtureNativeCi.test.ts",
-        "previous": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d",
-        "current": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
-      },
-      {
-        "section": "repository_fixtures",
-        "path": "tests/fixtures/earlybird-fee-custody/source-binding.json",
-        "previous": "eeb0c727ae093e99a785f658073ee57a0f74362b1aecb45a65ddee4fe2d028cb",
-        "current": "2fd5402db5d5f2683c21513cd89957ea950c3435714f3218978368462e24ed43"
-      },
-      {
-        "section": "repository_fixtures",
-        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
-        "previous": "801fb15314d062d80491230a0e6cb6ad0bdba383987262cd01e526c9473b2fd4",
-        "current": "2df9182f8ed296032ab019b94f86d2da5f2cc4163519f9451ce3116b40682d0e"
-      }
-    ],
-    "financial_recertification": false
+  "originalRecoveryProtectedMainComposition20261030": {
+    "scope": "Current source identity only after ordinary protected-main integration. Preserve both parent financial histories, assertions, audits and qualification states. No historical financial, installed or live recertification.",
+    "protectedMain": "6b4b49e216ae78d07348661f7c296242732e16e9",
+    "recoveryParent": "02590229d338b5eba32d5be7c2c6e83044c79fe9",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false,
+    "composedChildBinding": {
+      "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+      "sha256": "e93098c68ba2aa80cc9ceac78dd8a1d511ca941c3632ff66fd8785b0755265f6"
+    }
   }
 }

@@ -1606,17 +1606,6 @@
     ],
     "financial_recertification": false
   },
-  "cancellationAdmissionSelectorAudit20261030": {
-    "scope": "New cancellation native fixture/runner inputs explicitly select existing accounting and source checks. Existing selectors and financial assertions unchanged.",
-    "file": "scripts/ci/classify-ci-changes.mjs",
-    "bindings": [
-      {
-        "section": "repository_files",
-        "previous": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
-        "current": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
-      }
-    ]
-  },
   "requiredNativeRunnerProfile20261030": {
     "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
     "changes": [
@@ -1628,5 +1617,23 @@
       }
     ],
     "financial_recertification": false
+  },
+  "cancellationAdmissionSelectorAudit20261030": {
+    "scope": "New cancellation native fixture/runner inputs explicitly select existing accounting and source checks. Existing selectors and financial assertions unchanged.",
+    "file": "scripts/ci/classify-ci-changes.mjs",
+    "bindings": [
+      {
+        "section": "repository_files",
+        "previous": "db39c898c86f2abf589ad354799d7ca199fa8a34866902f096dc6a50e6672822",
+        "current": "a5c85c0cab841d28541342cca3e4cde165fc0fe6bd746760602ffb488ccf41fa"
+      }
+    ]
+  },
+  "originalRecoveryProtectedMainComposition20261030": {
+    "scope": "Current source identity only after ordinary protected-main integration. Preserve both parent financial histories, assertions, audits and qualification states. No historical financial, installed or live recertification.",
+    "protectedMain": "6b4b49e216ae78d07348661f7c296242732e16e9",
+    "recoveryParent": "02590229d338b5eba32d5be7c2c6e83044c79fe9",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

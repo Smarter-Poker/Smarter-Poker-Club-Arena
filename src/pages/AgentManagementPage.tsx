@@ -152,13 +152,7 @@ export default function AgentManagementPage() {
   });
   const [activeTab, setActiveTab] = useState<TabType>('agents');
   const swipeHandlers = useSwipeTabs({
-    tabs: [
-      'agents',
-      'players',
-      'hierarchy',
-      'commissions',
-      'payouts',
-    ] as TabType[],
+    tabs: ['agents', 'players', 'hierarchy', 'commissions', 'payouts'] as TabType[],
     activeTab,
     onTabChange: setActiveTab,
   });
@@ -1058,32 +1052,26 @@ export default function AgentManagementPage() {
         {/* The six views are lit words cut into the glass. The master paints
             no tab, so nothing here draws one. */}
         <nav className={styles.rail} role="tablist" aria-label="Agent Views">
-          {(
-            [
-              'agents',
-              'players',
-              'hierarchy',
-              'commissions',
-              'payouts',
-            ] as TabType[]
-          ).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              className={`${styles.railWord} ${
-                activeTab === tab ? 'sc-ink--silver' : 'sc-ink--muted'
-              }`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab === 'agents' && 'Agents'}
-              {tab === 'players' && 'Players'}
-              {tab === 'hierarchy' && 'Hierarchy'}
-              {tab === 'commissions' && 'Commissions'}
-              {tab === 'payouts' && 'Payouts'}
-            </button>
-          ))}
+          {(['agents', 'players', 'hierarchy', 'commissions', 'payouts'] as TabType[]).map(
+            (tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`${styles.railWord} ${
+                  activeTab === tab ? 'sc-ink--silver' : 'sc-ink--muted'
+                }`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab === 'agents' && 'Agents'}
+                {tab === 'players' && 'Players'}
+                {tab === 'hierarchy' && 'Hierarchy'}
+                {tab === 'commissions' && 'Commissions'}
+                {tab === 'payouts' && 'Payouts'}
+              </button>
+            )
+          )}
         </nav>
       </SpadeConsole>
 
@@ -1532,7 +1520,7 @@ export default function AgentManagementPage() {
                             <dd className={`${styles.factValue} sc-ink--silver`}>
                               {row.is_prepaid
                                 ? 'Prepaid'
-                                : `${fmtChips(row.credit_used)} Of ${fmtChips(row.credit_limit)} Drawn`}
+                                : `${fmtChips(row.credit_limit)} Credit Line (Tracking Only)`}
                             </dd>
                           </div>
                         </dl>
@@ -1682,8 +1670,8 @@ export default function AgentManagementPage() {
               </div>
 
               <p className={styles.fieldDesc}>
-                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
-                Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The Agent Sets
+                The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
 
               <p className={styles.fieldDesc}>

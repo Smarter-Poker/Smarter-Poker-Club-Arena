@@ -53,6 +53,20 @@ export function readCreditMoney(value: unknown): number | null {
     : null;
 }
 
+/** Amount needed to restore the agent wallet, excluding any future rakeback. */
+export function creditWalletShortfall(line: unknown, wallet: unknown): number | null {
+  const lineCents = readCreditCents(line);
+  const walletCents = readCreditCents(wallet);
+  if (
+    lineCents === null ||
+    walletCents === null ||
+    readCreditMoney(line) === null ||
+    readCreditMoney(wallet) === null
+  )
+    return null;
+  return readCreditMoney(decimalFromCents(lineCents > walletCents ? lineCents - walletCents : 0n));
+}
+
 export function creditAdminRow(
   row: Record<string, unknown>,
   displayName: string,
@@ -69,7 +83,7 @@ export function creditAdminRow(
     displayName,
     creditLimit: readCreditMoney(row.credit_limit),
     currentBalance: readCreditMoney(row.agent_wallet_balance),
-    debtOwed: readCreditMoney(row.credit_used),
+    debtOwed: creditWalletShortfall(row.credit_limit, row.agent_wallet_balance),
     status: typeof row.status === 'string' && row.status.length > 0 ? row.status : 'Unavailable',
   };
 }

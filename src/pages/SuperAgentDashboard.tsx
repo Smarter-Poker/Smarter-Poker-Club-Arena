@@ -535,10 +535,8 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                 <span className="value">{formatWalletChips(agent.playerBalance)}</span>
               </div>
               <div className="balance-card">
-                <span className="label">Credit Used</span>
-                <span className="value">
-                  {agent.creditUsed.toLocaleString()} / {agent.creditLimit.toLocaleString()}
-                </span>
+                <span className="label">Credit Line (Tracking Only)</span>
+                <span className="value">{formatWalletChips(agent.creditLimit)}</span>
               </div>
             </div>
             <div className="rates-card">

@@ -39,13 +39,25 @@ function fixture(inheritedEnv = process.env) {
     GIT_COMMITTER_NAME: 'Journey Fixture',
     GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
   };
-  const git = (...args: string[]) =>
-    execFileSync('git', args, {
+  // Repeated qualifications inspect the same immutable objects. Read each
+  // object from real Git once; mutable refs and all writes always execute.
+  // This keeps the byte-comparison case within its unchanged deadline on SSD.
+  const immutableReads = new Map<string, string>();
+  const git = (...args: string[]) => {
+    const immutable =
+      (args[0] === 'ls-tree' && /^[0-9a-f]{40}$/.test(args[1] || '')) ||
+      (args[0] === 'rev-parse' && /^[0-9a-f]{40}:/.test(args[1] || ''));
+    const key = JSON.stringify(args);
+    if (immutable && immutableReads.has(key)) return immutableReads.get(key)!;
+    const result = execFileSync('git', args, {
       cwd: root,
       env,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    if (immutable) immutableReads.set(key, result);
+    return result;
+  };
   for (const path of [...statsHarnessInputs(sourceRoot), ...controls]) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     copyFileSync(join(sourceRoot, path), join(root, path));

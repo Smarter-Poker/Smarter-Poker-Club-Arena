@@ -31,8 +31,8 @@ describe('credit agreement beneath member wallets', () => {
     render(<MemberCreditWalletRows {...props} />);
     expect(await screen.findByText('Credit Line')).toBeInTheDocument();
     expect(screen.getByText('Credit Line').parentElement).toHaveTextContent('5,000.00');
-    expect(screen.getByText('Credit Used').parentElement).toHaveTextContent('1,250.00');
-    expect(screen.getByText('Credit Available').parentElement).toHaveTextContent('3,750.00');
+    expect(screen.queryByText('Credit Used')).not.toBeInTheDocument();
+    expect(screen.queryByText('Credit Available')).not.toBeInTheDocument();
   });
   it('does not invent a line for prepaid terms', async () => {
     mocks.read.mockResolvedValue({ data: { ...terms, is_prepaid: true }, error: null });

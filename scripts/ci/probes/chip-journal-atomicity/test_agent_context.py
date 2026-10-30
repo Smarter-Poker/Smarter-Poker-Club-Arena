@@ -29,21 +29,32 @@ def verify_agent_context(run):
   state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {n} t)" for n in ["club_members","agents","chip_transactions","chip_ledger"])+")"
   count=0
   for dest in ["player_wallet","agent_wallet","promo_wallet"]:
-   seed=f"INSERT INTO clubs(id) VALUES('{C}');INSERT INTO club_members(id,user_id,club_id,role) VALUES('{I}','{I}','{C}','owner'),('{H}','{H}','{C}','{'player' if dest=='player_wallet' else 'agent'}');INSERT INTO agents(club_id,user_id,agent_wallet_balance) VALUES('{C}','{I}',2),('{C}','{H}',20);SELECT set_config('test.actor','{I}',true);"
+   seed=f"INSERT INTO clubs(id) VALUES('{C}');INSERT INTO club_members(id,user_id,club_id,role) VALUES('{I}','{I}','{C}','owner'),('{H}','{H}','{C}','{'player' if dest=='player_wallet' else 'agent'}');INSERT INTO agents(club_id,user_id,agent_wallet_balance) VALUES('{C}','{I}',10),('{C}','{H}',20);SELECT set_config('test.actor','{I}',true);"
    send=f"fn_agent_wallet_send_core_20260830('{C}','{H}',5,'{dest}',NULL,'{O}')"
    claim=f"fn_agent_wallet_claim_back_phase2_core_20260831('{C}',(SELECT id FROM chip_transactions WHERE transaction_type='agent_wallet_send'),NULL,NULL,'{Q}')"
+   # The line still records 100 chips, but cannot make an unfunded send.
+   # A refusal must leave the original transaction and ledger context intact.
+   unfunded_seed=seed.replace(",10),",",2),")
+   run("BEGIN;"+unfunded_seed+context+f"""
+    DO $t$ DECLARE r jsonb;s jsonb;BEGIN SELECT {state} INTO s;
+     r:={send};
+     IF r->>'success' IS DISTINCT FROM 'false' OR r->>'credit_tracking_only' IS DISTINCT FROM 'true'
+      OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN
+       RAISE EXCEPTION 'Unfunded agent send changed state or borrowed tracking credit';END IF;
+    END $t$;ROLLBACK;""");count+=1
    run("BEGIN;"+seed+context+f"""
     DO $t$ DECLARE r jsonb;s jsonb;BEGIN
      r:={send};
      IF r->>'success' IS DISTINCT FROM 'true' OR NOT ({correct}) THEN RAISE EXCEPTION 'Agent send leaks ledger context';END IF;
-     IF EXISTS(SELECT 1 FROM chip_ledger WHERE tournament_id IS NOT NULL) OR (SELECT count(*) FROM chip_ledger)<>2
-      OR (SELECT credit_used FROM agents WHERE user_id='{I}')<>3 THEN RAISE EXCEPTION 'Incorrect send accounting';END IF;
+     IF EXISTS(SELECT 1 FROM chip_ledger WHERE tournament_id IS NOT NULL) OR (SELECT count(*) FROM chip_ledger)<>1
+      OR (SELECT credit_used FROM agents WHERE user_id='{I}')<>0
+      OR (SELECT agent_wallet_balance FROM agents WHERE user_id='{I}')<>5 THEN RAISE EXCEPTION 'Incorrect send accounting';END IF;
      SELECT {state} INTO s;r:={send};
      IF r->>'replayed' IS DISTINCT FROM 'true' OR s IS DISTINCT FROM {state} THEN RAISE EXCEPTION 'Send replay changed state';END IF;
      r:={claim};
      IF r->>'success' IS DISTINCT FROM 'true' OR NOT ({correct}) THEN RAISE EXCEPTION 'Agent claim leaks ledger context';END IF;
-     IF (SELECT agent_wallet_balance FROM agents WHERE user_id='{I}')<>2
-      OR (SELECT credit_used FROM agents WHERE user_id='{I}')<>0 OR (SELECT count(*) FROM chip_ledger)<>4
+     IF (SELECT agent_wallet_balance FROM agents WHERE user_id='{I}')<>10
+      OR (SELECT credit_used FROM agents WHERE user_id='{I}')<>0 OR (SELECT count(*) FROM chip_ledger)<>2
       OR EXISTS(SELECT 1 FROM chip_ledger WHERE tournament_id IS NOT NULL) THEN RAISE EXCEPTION 'Incorrect claim accounting';END IF;
      SELECT {state} INTO s;r:={claim};
      IF r->>'replayed' IS DISTINCT FROM 'true' OR s IS DISTINCT FROM {state} THEN RAISE EXCEPTION 'Claim replay changed state';END IF;

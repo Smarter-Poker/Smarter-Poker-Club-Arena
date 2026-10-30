@@ -133,7 +133,7 @@ def selection(value):
             raise ValueError('Exact current serving identity required')
         return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector'})):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -1556,6 +1556,207 @@ def validate_serving_role(value, request):
     return value
 
 
+RETIREMENT_SCHEMA = 'existing-main-inspector-retirement-records/v1'
+RETIREMENT_LIMITATION = 'Historical files only; no current process, listener, cleanup, retry or action authority.'
+RETIREMENT_IMAGE = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b'
+RETIREMENT_PREDICATES = ('ok', 'closeRequested', 'closeAcknowledged', 'connectionClosed', 'listenerAbsent')
+
+
+def retirement_records(request, root_fd):
+    # Only five exact files under fixed directories. No process, network,
+    # Inspector, journal, seal command, directory census or remote writes.
+    deadline = time.monotonic() + 3
+    def check():
+        if time.monotonic() >= deadline:
+            raise ValueError('retirement file deadline')
+    def read(directory, name, limit):
+        check()
+        try:
+            parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        except OSError:
+            return ('unknown', None)
+        try:
+            try:
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            except FileNotFoundError:
+                return ('absent_at_read', None)
+            except OSError:
+                return ('unknown', None)
+            try:
+                before = os.fstat(fd)
+                if (not stat.S_ISREG(before.st_mode) or before.st_uid != 0
+                        or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > limit):
+                    return ('unknown', None)
+                raw = bytearray()
+                while len(raw) <= limit:
+                    check()
+                    chunk = os.read(fd, min(4096, limit + 1 - len(raw)))
+                    if not chunk:
+                        break
+                    raw.extend(chunk)
+                after = os.fstat(fd)
+                identity = lambda x: (x.st_dev, x.st_ino, x.st_size, x.st_mtime_ns, x.st_ctime_ns, x.st_uid, x.st_mode)
+                if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > limit:
+                    return ('unknown', None)
+                check()
+                return ('present_at_read', bytes(raw))
+            finally:
+                os.close(fd)
+        finally:
+            os.close(parent)
+    files = [('engine-release-requests', request['runKey'] + suffix, limit) for suffix, limit in (
+        ('.request', 4096), ('.intent', 4096),
+        ('.main-inspector-retirement-intent', 32768),
+        ('.main-inspector-retirement-receipt', 65536))]
+    files.append(('engine-release-results', request['runKey'] + '.json', 65536))
+    def snapshot():
+        return [read(*item) for item in files]
+    def parse(record):
+        if record[0] != 'present_at_read':
+            raise ValueError('retirement record unavailable')
+        value = json.loads(record[1], object_pairs_hook=unique_object)
+        if not isinstance(value, dict):
+            raise ValueError('retirement record shape')
+        return value
+    answer = {'schema': RETIREMENT_SCHEMA, 'readOnly': True, **request,
+              'intentPresence': 'unknown', 'receiptPresence': 'unknown',
+              'status': 'unknown', 'bindingKind': None, 'controlSha': None,
+              'claimIdentity': None, 'receiptMatchesClaim': False,
+              'outcomePredicates': None, 'positiveReceipt': False,
+              'retryAllowed': False, 'limitation': RETIREMENT_LIMITATION}
+    before = snapshot()
+    answer.update(intentPresence=before[2][0], receiptPresence=before[3][0])
+    try:
+        if before[0][0] == before[1][0] == 'present_at_read':
+            rows, original = [value[1].decode('utf8').splitlines() for value in before[:2]]
+            control, request_deadline, _ = pending_metadata(request, rows, original, None, None)
+            binding = {'kind': 'retained_request', 'control': control, 'invocation': None, 'deadline':request_deadline, 'completedAt':None}
+        elif before[0][0] == before[1][0] == 'absent_at_read':
+            result = parse(before[4])
+            fields = {'schema', 'runId', 'result', 'sha', 'controlSha', 'invocationId',
+                      'transactionExitStatus', 'recoveredDesiredSha', 'recoveredDesiredImageId', 'completedAt'}
+            if (set(result) != fields or type(result['schema']) is not int or result['schema'] != 1
+                    or result['runId'] != request['runKey'] or result['sha'] != request['releaseSha']
+                    or result['result'] != 'failed' or not SHA.fullmatch(result['controlSha'])
+                    or not INVOCATION.fullmatch(result['invocationId'])
+                    or result['recoveredDesiredSha'] != EED or result['recoveredDesiredImageId'] != RETIREMENT_IMAGE
+                    or type(result['transactionExitStatus']) is not int or not 1 <= result['transactionExitStatus'] <= 255
+                    or type(result['completedAt']) is not int or not 946684800 <= result['completedAt'] < 4102444800):
+                raise ValueError('retirement terminal binding')
+            binding = {'kind': 'terminal_failure', 'control': result['controlSha'], 'invocation': result['invocationId'], 'deadline':None, 'completedAt':result['completedAt']}
+        else:
+            raise ValueError('retirement partial request')
+        answer.update(bindingKind=binding['kind'], controlSha=binding['control'])
+        if before[2][0] == before[3][0] == 'absent_at_read':
+            answer['status'] = 'both_absent_at_read'
+        else:
+            claim = parse(before[2])
+            expected = {'schema','runId','invocationId','controlSha','requestDeadline','target','requestSha256',
+                        'nativeUnit','source','instance','containerIdentity','proposal','proposalSha256','deadlineMs','retryAllowed'}
+            proposal = claim.get('proposal')
+            if (set(claim) != expected or claim['schema'] != 'main-inspector-retirement-claim/v1'
+                    or claim['runId'] != request['runKey'] or claim['target'] != request['releaseSha']
+                    or claim['controlSha'] != binding['control'] or claim['source'] != EED
+                    or claim['retryAllowed'] is not False or not INVOCATION.fullmatch(claim['invocationId'])
+                    or (binding['invocation'] is not None and claim['invocationId'] != binding['invocation'])
+                    or not re.fullmatch(r'1-[0-9a-f]{8}', claim['instance'])
+                    or not re.fullmatch(r'[0-9a-f]{64}', claim['requestSha256'])
+                    or type(claim['requestDeadline']) is not int or not 946684800 <= claim['requestDeadline'] < 4102444800
+                    or (binding['deadline'] is not None and claim['requestDeadline'] != binding['deadline'])
+                    or type(claim['deadlineMs']) is not int or not 946684800000 <= claim['deadlineMs'] <= claim['requestDeadline'] * 1000
+                    or claim['nativeUnit'] not in [{'InvocationID':claim['invocationId'],'ActiveState':a,'SubState':b}
+                        for a in ('active','activating') for b in ('running','start')]
+                    or not isinstance(proposal, dict) or set(proposal) != {'schema','endpoint','binding'}
+                    or proposal['schema'] != 'main-inspector-retirement/v1'
+                    or not re.fullmatch(r'ws://127\.0\.0\.1:9229/[0-9a-f-]{36}', proposal['endpoint'], re.I)
+                    or not isinstance(proposal['binding'], dict)
+                    or claim['proposalSha256'] != hashlib.sha256(json.dumps(proposal, separators=(',', ':')).encode()).hexdigest()):
+                raise ValueError('retirement claim binding')
+            native = proposal['binding']
+            if (set(native) != {'schema','pid','startTicks','namespace','listener'}
+                    or native['schema'] != 'main-inspector-socket-binding/v1' or type(native['pid']) is not int or native['pid'] != 1
+                    or not re.fullmatch('[0-9]{1,20}',native['startTicks'])
+                    or not re.fullmatch(r'net:\[[1-9][0-9]*\]',native['namespace'])
+                    or not isinstance(native['listener'],dict) or set(native['listener']) != {'family','local','inode'}
+                    or native['listener']['family'] not in {'tcp','tcp6'}
+                    or native['listener']['local'] != {'tcp':'0100007F:240D','tcp6':'00000000000000000000000001000000:240D'}.get(native['listener']['family'])
+                    or not re.fullmatch('[1-9][0-9]*',native['listener']['inode'])):
+                raise ValueError('retirement proposal binding')
+            container = claim['containerIdentity'].split()
+            if (len(container) != 5 or not re.fullmatch('[0-9a-f]{64}', container[0])
+                    or container[1:3] != [RETIREMENT_IMAGE,'true']
+                    or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z', container[3])
+                    or not re.fullmatch(r'[1-9][0-9]*', container[4])):
+                raise ValueError('retirement container binding')
+            if binding['kind'] == 'retained_request' and claim['requestSha256'] != hashlib.sha256(before[0][1]).hexdigest():
+                raise ValueError('retirement request hash')
+            answer['claimIdentity'] = {'invocationId': claim['invocationId'], 'sourceSha': EED,
+                'instanceId': claim['instance'], 'proposalSha256': claim['proposalSha256'],
+                'containerIdentitySha256': hashlib.sha256(claim['containerIdentity'].encode()).hexdigest()}
+            completed = parse(before[3])
+            if set(completed) != {'claim','outcome','observedAt'} or completed['claim'] != claim:
+                raise ValueError('retirement receipt binding')
+            if (type(completed['observedAt']) not in {int,float}
+                    or not 946684800 <= completed['observedAt'] <= claim['requestDeadline']
+                    or (binding['completedAt'] is not None and not completed['observedAt'] < binding['completedAt'] + 1)):
+                raise ValueError('retirement receipt timestamp')
+            answer['receiptMatchesClaim'] = True
+            outcome = completed['outcome']
+            if not isinstance(outcome, dict) or outcome.get('retryAllowed') is not False:
+                raise ValueError('retirement outcome binding')
+            answer['outcomePredicates'] = {key: outcome.get(key) is True for key in RETIREMENT_PREDICATES}
+            answer['positiveReceipt'] = all(answer['outcomePredicates'].values())
+            if answer['positiveReceipt']:
+                answer['status'] = 'bound_positive_historical_receipt'
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, UnicodeError):
+        pass
+    if answer['bindingKind'] is None:
+        answer.update(intentPresence='unknown', receiptPresence='unknown')
+    if before != snapshot():
+        answer.update(status='unknown', bindingKind=None, controlSha=None, claimIdentity=None,
+                      receiptMatchesClaim=False, outcomePredicates=None, positiveReceipt=False,
+                      intentPresence='unknown', receiptPresence='unknown')
+    return validate_retirement_records(answer, request)
+
+
+def validate_retirement_records(value, request):
+    fields = {'schema','readOnly','runKey','releaseSha','mode','intentPresence','receiptPresence',
+              'status','bindingKind','controlSha','claimIdentity','receiptMatchesClaim',
+              'outcomePredicates','positiveReceipt','retryAllowed','limitation'}
+    if (not isinstance(value, dict) or set(value) != fields or value['schema'] != RETIREMENT_SCHEMA
+            or value['readOnly'] is not True or any(value[k] != request[k] for k in request)
+            or value['mode'] != 'main_inspector_retirement' or value['retryAllowed'] is not False
+            or value['limitation'] != RETIREMENT_LIMITATION
+            or any(value[k] not in {'unknown','present_at_read','absent_at_read'} for k in ('intentPresence','receiptPresence'))
+            or value['status'] not in {'unknown','both_absent_at_read','bound_positive_historical_receipt'}
+            or value['bindingKind'] not in {None,'retained_request','terminal_failure'}
+            or (value['controlSha'] is not None and not SHA.fullmatch(value['controlSha']))
+            or type(value['receiptMatchesClaim']) is not bool or type(value['positiveReceipt']) is not bool):
+        raise ValueError('Retirement export refused')
+    claim = value['claimIdentity']
+    if claim is not None and (not isinstance(claim,dict) or set(claim) != {'invocationId','sourceSha','instanceId','proposalSha256','containerIdentitySha256'}
+            or not INVOCATION.fullmatch(claim['invocationId']) or claim['sourceSha'] != EED
+            or not re.fullmatch(r'1-[0-9a-f]{8}',claim['instanceId'])
+            or any(not re.fullmatch('[0-9a-f]{64}',claim[k]) for k in ('proposalSha256','containerIdentitySha256'))):
+        raise ValueError('Retirement claim export refused')
+    predicates = value['outcomePredicates']
+    if predicates is not None and (not isinstance(predicates,dict) or set(predicates) != set(RETIREMENT_PREDICATES)
+            or any(type(item) is not bool for item in predicates.values())):
+        raise ValueError('Retirement predicate export refused')
+    positive = (value['bindingKind'] is not None and value['controlSha'] is not None and claim is not None
+                and value['intentPresence'] == value['receiptPresence'] == 'present_at_read'
+                and value['receiptMatchesClaim'] is True and predicates is not None and all(predicates.values()))
+    absent = (value['bindingKind'] is not None and value['controlSha'] is not None
+              and value['intentPresence'] == value['receiptPresence'] == 'absent_at_read')
+    if (value['bindingKind'] is None and any(value[k] is not None for k in ('controlSha','claimIdentity','outcomePredicates'))
+            or (absent and (claim is not None or value['receiptMatchesClaim'] or predicates is not None))
+            or value['positiveReceipt'] != positive
+            or (value['status'] == 'bound_positive_historical_receipt') != positive
+            or (value['status'] == 'both_absent_at_read') != absent):
+        raise ValueError('Retirement outcome export refused')
+    return value
+
+
 def remote(request):
     request = selection(request)
     if request.get('mode') == 'current_serving_inspector_role':
@@ -1563,6 +1764,8 @@ def remote(request):
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'main_inspector_retirement':
+            return retirement_records(request, root_fd)
         if request.get('mode') == 'legacy_checkpoint_inspector':
             return validate_inspector(inspector_remote(request, root_fd), request)
         if request.get('mode') == 'pending_transaction':
@@ -1587,6 +1790,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'main_inspector_retirement':
+        return validate_retirement_records(value, request)
     if request.get('mode') == 'current_serving_inspector_role':
         return validate_serving_role(value, request)
     if request.get('mode') == 'legacy_checkpoint_inspector':

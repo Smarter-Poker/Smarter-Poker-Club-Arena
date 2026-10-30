@@ -1854,5 +1854,181 @@ finally:
                 self.assertEqual(calls,2)
 
 
+
+class MainRetirementRecordTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='retirement-files-', dir=ROOT.parent)
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.requests = self.root / 'engine-release-requests'; self.requests.mkdir()
+        self.results = self.root / 'engine-release-results'; self.results.mkdir()
+        self.request = dict(REQUEST, mode='main_inspector_retirement')
+        self.control = 'b' * 40
+        self.rows = [REQUEST['releaseSha'], 'https://github.com/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/actions/runs/' + REQUEST['runKey'].split('-')[0],
+                     'fixture private actor', '/usr/local/lib/club-arena/engine-control-generations/' + self.control,
+                     self.control, '1793389999']
+        self.proposal = {'schema':'main-inspector-retirement/v1',
+            'endpoint':'ws://127.0.0.1:9229/12345678-1234-1234-1234-123456789abc',
+            'binding':{'schema':'main-inspector-socket-binding/v1','pid':1,'startTicks':'123',
+                'namespace':'net:[44]','listener':{'family':'tcp','local':'0100007F:240D','inode':'555'}}}
+        self.claim = {'schema':'main-inspector-retirement-claim/v1','runId':REQUEST['runKey'],
+            'invocationId':'c'*32,'controlSha':self.control,'requestDeadline':1793389999,
+            'target':REQUEST['releaseSha'],'requestSha256':R.hashlib.sha256(('\n'.join(self.rows)+'\n').encode()).hexdigest(),
+            'nativeUnit':{'InvocationID':'c'*32,'ActiveState':'activating','SubState':'start'},
+            'source':R.EED,'instance':'1-a474c9ca','containerIdentity':'d'*64+' '+R.RETIREMENT_IMAGE+' true 2026-10-30T13:38:28.940Z 12345',
+            'proposal':self.proposal,'proposalSha256':R.hashlib.sha256(json.dumps(self.proposal,separators=(',',':')).encode()).hexdigest(),
+            'deadlineMs':1793389900000,'retryAllowed':False}
+        self.outcome = dict.fromkeys(R.RETIREMENT_PREDICATES,True)
+        self.outcome.update(stage='complete',reason='native_close_observed',retryAllowed=False)
+        self.failed = {'schema':1,'runId':REQUEST['runKey'],'result':'failed','sha':REQUEST['releaseSha'],
+            'controlSha':self.control,'invocationId':'c'*32,'transactionExitStatus':1,
+            'recoveredDesiredSha':R.EED,'recoveredDesiredImageId':R.RETIREMENT_IMAGE,'completedAt':1793389910}
+        self.patch = patch.object(R,'STATE_ROOT',self.root);self.patch.start();self.addCleanup(self.patch.stop)
+        # Actual filesystem IO remains native; only root UID metadata is mapped
+        # for unprivileged Mac/hosted test users. Production always requires UID0.
+        self.fstat = os.fstat
+        def owned(fd):
+            value = list(self.fstat(fd));value[4] = 0
+            return os.stat_result(value)
+        self.owner = patch.object(R.os,'fstat',side_effect=owned);self.owner.start();self.addCleanup(self.owner.stop)
+        for name in ['pending_remote','inspector_remote','serving_role_remote','pending_tcp_presence',
+                     'pending_socket_owner_details','inspector_command','pending_unit','pending_journal']:
+            p = patch.object(R,name,side_effect=AssertionError('pure file mode cannot call '+name));p.start();self.addCleanup(p.stop)
+
+    def write(self, name, value, result=False):
+        path = (self.results if result else self.requests) / (REQUEST['runKey']+name)
+        path.write_text(value if isinstance(value,str) else json.dumps(value));path.chmod(0o600)
+        return path
+
+    def bind(self, terminal=True):
+        if terminal:self.write('.json',self.failed,True)
+        else:
+            for suffix in ('.request','.intent'):self.write(suffix,'\n'.join(self.rows)+'\n')
+
+    def records(self):
+        self.write('.main-inspector-retirement-intent',self.claim)
+        self.write('.main-inspector-retirement-receipt',{'claim':self.claim,'outcome':self.outcome,'observedAt':1793389901.5})
+
+    def read(self):
+        value=R.remote(self.request)
+        self.assertEqual(R.validate_reply(value,self.request),value)
+        return value
+
+    def test_mode_admits_only_exact_run_source_and_closed_selector(self):
+        self.assertEqual(R.selection(self.request),self.request)
+        for bad in [dict(self.request,path='/etc/passwd'),dict(self.request,instanceId='1-a474c9ca'),
+                    dict(self.request,runKey='../run'),dict(self.request,releaseSha='x'*40),
+                    {'mode':'main_inspector_retirement'}]:
+            with self.subTest(bad=bad),self.assertRaises(ValueError):R.selection(bad)
+
+    def test_terminal_binding_distinguishes_actual_absence_without_action_authority(self):
+        self.bind();value=self.read()
+        self.assertEqual(value['status'],'both_absent_at_read')
+        self.assertEqual(value['intentPresence'],'absent_at_read')
+        self.assertEqual(value['bindingKind'],'terminal_failure')
+        self.assertFalse(value['positiveReceipt']);self.assertFalse(value['retryAllowed'])
+        self.assertIsNone(value['claimIdentity'])
+
+    def test_native_actual_files_bind_success_and_drop_every_private_identity(self):
+        for terminal in (True,False):
+            with self.subTest(terminal=terminal):
+                self.bind(terminal);self.records();value=self.read()
+                self.assertTrue(value['positiveReceipt']);self.assertTrue(value['receiptMatchesClaim'])
+                self.assertEqual(value['status'],'bound_positive_historical_receipt')
+                self.assertEqual(value['claimIdentity']['proposalSha256'],self.claim['proposalSha256'])
+                for secret in [self.proposal['endpoint'],'fixture private actor','/usr/local/',self.claim['containerIdentity'],'12345','net:[44]']:
+                    self.assertNotIn(secret,json.dumps(value))
+                for path in self.requests.iterdir():path.unlink()
+        self.proposal['binding']['listener'].update(family='tcp6',local='00000000000000000000000001000000:240D')
+        self.claim['proposalSha256']=R.hashlib.sha256(json.dumps(self.proposal,separators=(',',':')).encode()).hexdigest()
+        self.bind();self.records();self.assertTrue(self.read()['positiveReceipt'])
+
+    def test_partial_negative_and_mismatched_receipts_stay_unknown(self):
+        self.bind();intent=self.write('.main-inspector-retirement-intent',self.claim)
+        value=self.read();self.assertEqual(value['status'],'unknown');self.assertIsNotNone(value['claimIdentity'])
+        self.outcome['ok']=False;self.records();value=self.read()
+        self.assertEqual(value['status'],'unknown');self.assertFalse(value['positiveReceipt'])
+        self.assertFalse(value['outcomePredicates']['ok'])
+        wrong=dict(self.claim,controlSha='e'*40)
+        self.write('.main-inspector-retirement-receipt',{'claim':wrong,'outcome':self.outcome,'observedAt':1793389901})
+        self.assertFalse(self.read()['receiptMatchesClaim'])
+        intent.unlink();self.assertEqual(self.read()['status'],'unknown')
+
+    def test_binding_is_required_even_when_both_retirement_files_are_absent(self):
+        self.assertEqual(self.read()['status'],'unknown')
+        self.bind();bad=dict(self.failed,invocationId='not-an-invocation')
+        self.write('.json',bad,True);self.assertEqual(self.read()['status'],'unknown')
+        self.write('.request','\n'.join(self.rows)+'\n')
+        self.assertIsNone(self.read()['bindingKind'])
+
+    def test_unsafe_file_metadata_json_bounds_and_symlinks_are_not_absence(self):
+        self.bind();path=self.write('.main-inspector-retirement-intent',self.claim)
+        path.chmod(0o644);self.assertEqual(self.read()['intentPresence'],'unknown')
+        path.chmod(0o600);path.write_text('x'*32769);self.assertEqual(self.read()['intentPresence'],'unknown')
+        path.unlink();path.symlink_to(self.results/(REQUEST['runKey']+'.json'))
+        self.assertEqual(self.read()['intentPresence'],'unknown')
+        path.unlink();self.write('.main-inspector-retirement-intent','{broken')
+        self.assertEqual(self.read()['status'],'unknown')
+        self.owner.stop()
+        # On unprivileged test users actual UID is rejected; no root impersonation.
+        if os.geteuid()!=0:self.assertEqual(self.read()['intentPresence'],'unknown')
+        self.owner.start()
+        self.records()
+        loads=R.json.loads
+        changed=False
+        def change_after_snapshot(raw,*args,**kwargs):
+            nonlocal changed
+            if not changed and isinstance(raw,bytes) and b'main-inspector-retirement-claim/v1' in raw:
+                changed=True
+                self.write('.main-inspector-retirement-intent',dict(self.claim,instance='1-87654321'))
+            return loads(raw,*args,**kwargs)
+        with patch.object(R.json,'loads',side_effect=change_after_snapshot):value=self.read()
+        self.assertTrue(changed);self.assertEqual(value['status'],'unknown')
+        self.assertIsNone(value['claimIdentity']);self.assertIsNone(value['bindingKind'])
+        self.assertEqual(value['intentPresence'],'unknown')
+
+    def test_exact_terminal_and_claim_identity_mismatch_never_export_claim(self):
+        self.bind();self.records()
+        for field,bad in [('runId','999-1'),('target','e'*40),('controlSha','e'*40),
+                          ('invocationId','e'*32),('source','e'*40),('proposalSha256','0'*64),
+                          ('containerIdentity','private invalid identity')]:
+            claim=dict(self.claim,**{field:bad});self.write('.main-inspector-retirement-intent',claim)
+            with self.subTest(field=field):self.assertIsNone(self.read()['claimIdentity'])
+        self.write('.main-inspector-retirement-intent',self.claim)
+        self.write('.json',dict(self.failed,sha='e'*40),True)
+        self.assertEqual(self.read()['status'],'unknown')
+        self.write('.json',self.failed,True)
+        for observed in ['private time',float('nan'),float('inf'),self.claim['requestDeadline']+1,self.failed['completedAt']+1]:
+            self.write('.main-inspector-retirement-receipt',{'claim':self.claim,'outcome':self.outcome,'observedAt':observed})
+            with self.subTest(observed=observed):self.assertFalse(self.read()['positiveReceipt'])
+        # Integer terminal timestamps represent a whole recorded second.
+        self.write('.main-inspector-retirement-receipt',{'claim':self.claim,'outcome':self.outcome,'observedAt':self.failed['completedAt']+0.5})
+        self.assertTrue(self.read()['positiveReceipt'])
+        (self.results/(REQUEST['runKey']+'.json')).unlink()
+        self.bind(False);self.records();bad=dict(self.claim,requestDeadline=self.claim['requestDeadline']-1)
+        self.write('.main-inspector-retirement-intent',bad)
+        self.assertIsNone(self.read()['claimIdentity'])
+
+    def test_export_validator_rejects_authority_extra_fields_and_fabricated_positive(self):
+        self.bind();value=self.read()
+        for bad in [dict(value,retryAllowed=True),dict(value,endpoint=self.proposal['endpoint']),
+                    dict(value,positiveReceipt=True),dict(value,status='bound_positive_historical_receipt'),
+                    dict(value,claimIdentity={'raw':self.claim})]:
+            with self.subTest(bad=bad),self.assertRaises((ValueError,TypeError)):R.validate_reply(bad,self.request)
+
+    def test_remote_serialization_is_bounded_and_strictly_pure_file(self):
+        self.bind();self.records()
+        # Existing --remote transport calls this same dispatcher and encoder;
+        # roundtrip its actual bytes through the normal reply validator.
+        output=io.StringIO()
+        encoded=base64.b64encode(json.dumps(self.request).encode()).decode()
+        with patch.object(R.sys,'argv',['reader','--remote',encoded]),contextlib.redirect_stdout(output):
+            R.main()
+        raw=output.getvalue().encode()
+        self.assertLess(len(raw),4096)
+        self.assertEqual(R.validate_reply(json.loads(raw),self.request)['readOnly'],True)
+        self.assertNotIn(b'endpoint',raw);self.assertNotIn(b'containerIdentity"',raw)
+
+
 if __name__ == '__main__':
     unittest.main()

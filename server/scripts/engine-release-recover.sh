@@ -9,6 +9,8 @@ LEASE_ROOT="${ENGINE_RELEASE_IMAGE_LEASE_ROOT:-/var/lib/club-arena/engine-image-
 ENGINE_LOCK="${ENGINE_LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 CONTAINER="${CONTAINER:-club-arena-engine}"
 PUBLIC_URL="${ENGINE_URL:-https://engine.smarter.poker}"
+ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"
+LIGHTNING_HOLD="$CONTROL_DIR/engine-release-lightning-hold.py"
 RECOVERY_MAX_SECONDS=300
 
 recovery_remaining() {
@@ -165,6 +167,20 @@ bounded_recovery_command 15 "$CONTROL_DIR/engine-release-seal.py" attest-termina
   --sha "${TERMINAL_REQUEST_LINES[0]}" --run-id "$RUN_ID" \
   --control-sha "${TERMINAL_REQUEST_LINES[4]}" >/dev/null \
   || { echo '[engine-release-recover] FATAL: exact terminal receipt is absent; durable release state retained' >&2; exit 1; }
+
+# A Lightning hold the transaction placed for this run and could not release
+# (engine-release-transaction.sh release_lightning_hold) is this fence's second
+# reader. Resume is idempotent through its own request ids; a refusal is loud
+# and leaves the hold file on disk, it never blocks terminal retirement.
+LIGHTNING_HOLD_FILE="$REQUEST_ROOT/$RUN_ID.lightning-hold.json"
+if [ -e "$LIGHTNING_HOLD_FILE" ]; then
+  if bounded_recovery_command 60 "$LIGHTNING_HOLD" resume \
+    --env-file "$ENV_FILE" --run-id "$RUN_ID" --hold-file "$LIGHTNING_HOLD_FILE"; then
+    echo '[engine-release-recover] released the Lightning hold the transaction left behind'
+  else
+    echo "[engine-release-recover] FATAL: the Lightning hold for run $RUN_ID is still not released; $LIGHTNING_HOLD_FILE retained for an operator" >&2
+  fi
+fi
 
 # Remove the generation pin first while intent, request, and the enabled boot
 # edge still exist. A crash here simply replays the request and recreates the

@@ -106,6 +106,9 @@ CHECKPOINT_8825_SHA=8825af51817f379c4261658ca29ecc9d8d81932d
 CHECKPOINT_EED_SHA=eed06fe51dea622069c661a6213d5b031ff3a9e3
 CHECKPOINT_PREDECESSOR_SHA="$CHECKPOINT_8825_SHA"
 legacy_checkpoint_countdown() {{ event "COUNTDOWN:$LOCK_HELD"; printf '%s\\n' $((NOW + 299)); }}
+# The Lightning hold (2026-10-30) is placed on every legacy pass before the
+# entry clock; here it only records that it was asked, unlocked.
+hold_lightning_when_counting_down() {{ event "LIGHTNING_HOLD:$LOCK_HELD"; }}
 timeout() {{ printf '%s\\n' "$CHECKPOINT_8825_SHA"; }}
 prove_rollback_readiness() {{ event "ROLLBACK_PROOF:$LOCK_HELD:$BREAK_END_EPOCH"; }}
 # The helper's exit code per invocation: 0 ran, 75 deferred above its durable
@@ -227,6 +230,8 @@ class WindowQueueTests(unittest.TestCase):
         self.assertEqual([e for e in events if e.startswith('CERTIFICATE:')],
                          ['CERTIFICATE:1:0:260000', 'CERTIFICATE:2:1:245000'])
         self.assertNotIn('LEGACY_CHECKPOINT:1:1', events)
+        # An ordinary (non-legacy) release never asks Lightning to hold.
+        self.assertNotIn('LIGHTNING_HOLD:0', events)
 
     def test_legacy_checkpoint_is_read_against_the_legacy_reserve_after_it_ran(self):
         # Run 35615604946: the checkpoint enters at the 285000ms threshold and
@@ -243,6 +248,10 @@ class WindowQueueTests(unittest.TestCase):
         self.assertLess(checkpoint, events.index('CERTIFICATE:2:1:245000'))
         self.assertEqual(events[-1], 'PREPARE_ALLOWED:1000:900:0')
         self.assertEqual(events.count('LOCK'), 1)
+        # Lightning is asked to hold on the legacy pass, unlocked, before the
+        # countdown is read and before any checkpoint.
+        self.assertLess(events.index('LIGHTNING_HOLD:0'), events.index('COUNTDOWN:0'))
+        self.assertNotIn('LIGHTNING_HOLD:1', events)
 
     def test_legacy_checkpoint_that_breaks_the_legacy_reserve_dies_before_prepare(self):
         result, events = run_queue([(2, 275000), (2, 244999)], legacy=True)

@@ -12,9 +12,10 @@ const triggers = (yaml: string) => yaml.slice(yaml.indexOf('\non:'), yaml.indexO
 
 const entry = read('.github/workflows/publish-club-arena.yml');
 const transaction = read('.github/workflows/publish-club-arena-transaction.yml');
-const publisher = entry + '\n' + transaction;
+const client = read('.github/workflows/publish-club-arena-client.yml');
+const publisher = entry + '\n' + client + '\n' + transaction;
 const publisherCode = uncommented(publisher);
-const target = '${{ needs.publish-needed.outputs.target_sha }}';
+const target = '${{ inputs.target_sha }}';
 
 describe('no commit left behind means exact, fail-closed release events', () => {
   it('resolves one full current-main SHA and exposes it to every release job', () => {
@@ -90,7 +91,9 @@ describe('one event creates one publish attempt', () => {
     expect(publishers).toEqual(['publish-club-arena-transaction.yml']);
     expect(entry).toContain('uses: ./.github/workflows/publish-club-arena-transaction.yml');
     expect(transaction).toMatch(/^ {2}workflow_call:/m);
-    expect(transaction).not.toMatch(/^ {2}(?:push|repository_dispatch|workflow_dispatch|schedule):/m);
+    expect(transaction).not.toMatch(
+      /^ {2}(?:push|repository_dispatch|workflow_dispatch|schedule):/m
+    );
   });
 });
 

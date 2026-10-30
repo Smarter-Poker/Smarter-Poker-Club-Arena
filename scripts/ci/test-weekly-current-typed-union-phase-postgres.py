@@ -22,6 +22,8 @@ source=source[:source.index(marker)]
 source+="""
     if sys.platform=='darwin':assert A.scratch_root.resolve().is_relative_to('/Volumes/SmarterWork/agent-work'),'owned external scratch required'
     OUT=A.scratch_root/'weekly-current-typed-union-phase-output';OUT.mkdir(exist_ok=True)
+    q((R/'supabase/accounting/standalone-paid-replay/fn_prepare_accounting_week.sql').read_text())
+    assert q("SELECT md5(pg_get_functiondef('public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz)'::regprocedure))").stdout.strip()=='39a7e057da9a65dab5d0b2f761428f13'
     exec(compile((EXT/'global_extension.py').read_text(),str(EXT/'global_extension.py'),'exec'))
 finally:
     if started: subprocess.run([str(A.pg_bin/'pg_ctl'),'-D',str(D),'-m','immediate','stop'],env=E,capture_output=True)

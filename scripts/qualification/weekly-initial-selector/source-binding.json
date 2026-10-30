@@ -1,4 +1,28 @@
 {
+  "downlineRakeLiveCiSourceAudit20261030": {
+    "reason": "Reviewed only the additive six-line CI diff: required accounting shard 3 now executes the current whole downline-rake reader regression after the existing authorization fixture. No existing step, condition, shard, assertion, timeout or financial source was removed or relaxed. Local PG17 reports 9 passing checks; matching workflow bytes are not financial, installed or production proof. Hosted qualification remains required.",
+    "before": {
+      "bytes": 255032,
+      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
+    },
+    "after": {
+      "bytes": 255312,
+      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
+    },
+    "changedPath": ".github/workflows/ci.yml",
+    "protectedMainIntegration": {
+      "protectedMain": "0acf4accfd65fdb5312287c6ffdabcbfad3c73b1",
+      "reason": "Preserve protected-main publication singleflight, paid worker admission and all qualification/financial source updates. The only task CI difference remains the reviewed additive six-line accounting shard 3 current-reader invocation. Both parent audit histories remain unchanged; this records source identity only, not financial or live recertification.",
+      "protectedMainWorkflowPin": {
+        "bytes": 256618,
+        "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
+      },
+      "combinedWorkflowPin": {
+        "bytes": 256898,
+        "sha256": "7c29492ebeb1a31ccaafcefa8780cba897cb3cd7b3b0d106fb823625705a64e0"
+      }
+    }
+  },
   "clientExecutionBudgetSourceAudit20261029": {
     "scope": "Source identity only: ten general and ten disjoint occupied-portrait CSS shards preserve the complete case inventory, plus requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
     "previousCiPin": {
@@ -87,8 +111,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 255312,
-      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
+      "bytes": 256898,
+      "sha256": "7c29492ebeb1a31ccaafcefa8780cba897cb3cd7b3b0d106fb823625705a64e0"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1320,16 +1344,17 @@
       "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
     }
   },
-  "downlineRakeLiveCiSourceAudit20261030": {
-    "reason": "Reviewed only the additive six-line CI diff: required accounting shard 3 now executes the current whole downline-rake reader regression after the existing authorization fixture. No existing step, condition, shard, assertion, timeout or financial source was removed or relaxed. Local PG17 reports 9 passing checks; matching workflow bytes are not financial, installed or production proof. Hosted qualification remains required.",
-    "before": {
+  "paidClientRunnerAdmissionSourceAudit20261030": {
+    "scope": "Current source identity only: thirteen existing nonfinancial CI control/client/browser runner selectors use the approved four-core pool behind exact owner and repository ID guards; all other workflow properties retained.",
+    "previousCiPin": {
       "bytes": 255032,
       "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
     },
-    "after": {
-      "bytes": 255312,
-      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
+    "currentCiPin": {
+      "bytes": 256618,
+      "sha256": "3548f9c0631b90a2d382be673ea7452e6ae5caf92d004104df9f96fa5c21906b"
     },
-    "changedPath": ".github/workflows/ci.yml"
+    "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical receipt restamp. Actual paid admission improvement is unproven; protected hosted qualification remains mandatory.",
+    "integration": "Protected main 6b4b49e216ae78d07348661f7c296242732e16e9 retained, including native profile controls and all financial qualification history. This audit changes source identity only."
   }
 }

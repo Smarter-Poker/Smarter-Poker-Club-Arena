@@ -19,6 +19,7 @@ const job = (yaml: string, name: string) => {
 
 const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const publish = read('.github/workflows/publish-club-arena.yml');
+const client = read('.github/workflows/publish-club-arena-client.yml');
 const transaction = read('.github/workflows/publish-club-arena-transaction.yml');
 /**
  * The origin job's shell is the step text PLUS the activation transaction it
@@ -298,7 +299,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('contains no executable World Hub checkout, sync token, or Vercel deploy', () => {
-    for (const source of [publishCode, uncommented(transaction)]) {
+    for (const source of [publishCode, uncommented(client), uncommented(transaction)]) {
       expect(source).not.toMatch(/repository:\s*Smarter-Poker\/Smarter-Poker-World-Hub/);
       expect(source).not.toMatch(/WORLD_HUB_(?:SYNC_)?TOKEN/);
       expect(source).not.toMatch(/\bvercel\s+(?:deploy|--prod)\b/i);
@@ -328,13 +329,12 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('runs every release job on a fresh hosted runner', () => {
-    const runners = [publish, transaction]
+    const runners = [publish, client, transaction]
       .flatMap((source) => [...source.matchAll(/^\s+runs-on:\s*(.+)$/gm)])
       .map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(
       new Set([
-        'ubuntu-latest',
         ...['ca-linux-4core', 'ca-linux-8core'].map(
           (label) =>
             "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
@@ -343,6 +343,19 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
         ),
       ])
     );
+    const paidClientSelector =
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}";
+    expect(runners).toContain(paidClientSelector);
+    // Evaluate the exact guarded selector: other owners or repository IDs must
+    // retain the standard hosted fallback, never inherit our paid pool.
+    const selectClientRunner = (owner: string, repositoryId: string) =>
+      Function(
+        'github',
+        `return (${paidClientSelector.slice(3, -2)})`
+      )({ repository_owner: owner, repository_id: repositoryId });
+    expect(selectClientRunner('Smarter-Software-PIQ', '1132369872')).toBe('ca-linux-4core');
+    expect(selectClientRunner('another-owner', '1132369872')).toBe('ubuntu-latest');
+    expect(selectClientRunner('Smarter-Software-PIQ', '42')).toBe('ubuntu-latest');
     expect(publish).not.toContain('vars.CI_RUNNER');
     // Attestation verification explicitly denies self-hosted provenance.
     // Runner selection itself remains strictly hosted.
@@ -352,8 +365,8 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
 
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = originJob();
-    expect(job(publish, 'production')).toContain(
-      'needs: [publish-needed, client-tests, build-and-store, build-record-gateway, publication-floor]'
+    expect(job(client, 'production')).toContain(
+      'needs: [admit, client-tests, build-and-store, publication-floor]'
     );
     expect(origin).toContain("inputs.build_result == 'success'");
     expect(origin).toContain("inputs.client_result == 'success'");
@@ -393,7 +406,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(manifest).toBeGreaterThan(lock);
     expect(swap).toBeGreaterThan(manifest);
     expect(origin).not.toContain('$ORIGIN_ROOT/releases/$SHA/"');
-    expect(publish).toContain('Seal the immutable release bytes');
+    expect(client).toContain('Seal the immutable release bytes');
     expect(origin).toContain('(cd "$FINAL" && sha256sum --strict -c');
   });
 
@@ -405,7 +418,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(existingReleaseEnd).toBeGreaterThan(existingReleaseStart);
     const existingRelease = origin.slice(existingReleaseStart, existingReleaseEnd);
 
-    expect(publish).toContain('"built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+    expect(client).toContain('"built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
     expect(buildProvenance).toContain('buildTime: new Date().toISOString()');
     expect(existingRelease).not.toContain(
       'cmp -s "$STAGE/.release-manifest.sha256" "$FINAL/.release-manifest.sha256"'
@@ -455,9 +468,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('carries the hidden release seal through the artifact courier', () => {
-    const upload = publish.slice(
-      publish.indexOf('- name: Upload dist for the sync job'),
-      publish.indexOf('- name: Verify dist is complete')
+    const upload = client.slice(
+      client.indexOf('- name: Upload dist for the sync job'),
+      client.indexOf('- name: Verify dist is complete')
     );
     expect(upload).toContain('uses: actions/upload-artifact@v4');
     expect(upload).toContain('include-hidden-files: true');
@@ -549,10 +562,10 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   });
 
   it('bounds every job and every origin transport operation', () => {
-    const jobTimeouts = [publish, transaction]
+    const jobTimeouts = [publish, client, transaction]
       .flatMap((source) => [...source.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)])
       .map((match) => Number(match[1]));
-    expect(jobTimeouts).toHaveLength(12);
+    expect(jobTimeouts).toHaveLength(13);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = originJob();
     expect(origin).toContain('timeout 35s ssh');

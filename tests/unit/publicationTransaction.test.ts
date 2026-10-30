@@ -6,6 +6,7 @@ import { conservativeClientInput } from '../../scripts/ci/client-runtime-inputs.
 import { publisherJobKey } from '../../scripts/ci/publisher-job-identity.mjs';
 
 const caller = parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+const client = parse(readFileSync('.github/workflows/publish-club-arena-client.yml', 'utf8'));
 const transaction = parse(
   readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
 );
@@ -22,6 +23,7 @@ const moved = [
   'inspect-record-gateway-host',
 ];
 const replacements: Record<string, string> = {
+  'inputs.selection_base': 'needs.publish-needed.outputs.selection_base',
   'inputs.target_sha': 'needs.publish-needed.outputs.target_sha',
   'inputs.component': 'needs.publish-needed.outputs.component',
   'inputs.publish': 'needs.publish-needed.outputs.publish',
@@ -46,9 +48,17 @@ const gate = (overrides: Record<string, string> = {}) => {
     gateway: 'skipped',
     admission: 'success',
     floor: 'success',
+    published: 'false',
     ...overrides,
   };
-  const expr = caller.jobs.production.if
+  const expr = (
+    values.component === 'client' ? client.jobs.production.if : caller.jobs.production.if
+  )
+    .replaceAll('needs.admit.outputs.published', JSON.stringify(values.published))
+    .replaceAll('needs.admit.result', JSON.stringify(values.admission))
+    .replaceAll('inputs.component', JSON.stringify(values.component))
+    .replaceAll('inputs.publish', JSON.stringify(values.publish))
+    .replaceAll('inputs.tests_proven', JSON.stringify(values.tests_proven))
     .replaceAll('needs.publish-needed.outputs.component', JSON.stringify(values.component))
     .replaceAll('needs.publish-needed.outputs.publish', JSON.stringify(values.publish))
     .replaceAll('needs.publish-needed.outputs.tests_proven', JSON.stringify(values.tests_proven))
@@ -77,21 +87,27 @@ describe('one publication transaction follows parallel preparation', () => {
       expect(job.concurrency).toBeUndefined();
   });
   it('keeps qualification outside the lock and binds all exact preparation results', () => {
-    expect(caller.jobs.production.needs).toEqual([
-      'publish-needed',
+    expect(client.jobs.production.needs).toEqual([
+      'admit',
       'client-tests',
       'build-and-store',
-      'build-record-gateway',
       'publication-floor',
     ]);
-    expect(caller.jobs.production.with).toEqual({
-      target_sha: '${{ needs.publish-needed.outputs.target_sha }}',
-      component: '${{ needs.publish-needed.outputs.component }}',
-      publish: '${{ needs.publish-needed.outputs.publish }}',
-      tests_proven: '${{ needs.publish-needed.outputs.tests_proven }}',
+    expect(client.jobs.production.with).toEqual({
+      target_sha: '${{ inputs.target_sha }}',
+      component: '${{ inputs.component }}',
+      publish: '${{ inputs.publish }}',
+      tests_proven: '${{ inputs.tests_proven }}',
       client_result: '${{ needs.client-tests.result }}',
       build_result: '${{ needs.build-and-store.result }}',
-      gateway_build_result: '${{ needs.build-record-gateway.result }}',
+      gateway_build_result: 'skipped',
+    });
+    expect(client.jobs.production.concurrency).toEqual(caller.jobs.production.concurrency);
+    expect(caller.jobs.production.needs).toEqual(['publish-needed', 'build-record-gateway']);
+    expect(caller.jobs['client-publication'].concurrency).toEqual({
+      group:
+        'publish-club-arena-client-${{ github.repository_id }}-${{ needs.publish-needed.outputs.target_sha }}',
+      'cancel-in-progress': false,
     });
     for (const key of [
       'publish-needed',
@@ -99,19 +115,20 @@ describe('one publication transaction follows parallel preparation', () => {
       'build-and-store',
       'build-record-gateway',
     ]) {
-      expect(caller.jobs[key]).toBeDefined();
-      expect(caller.jobs[key].concurrency).toBeUndefined();
+      const job = caller.jobs[key] ?? client.jobs[key];
+      expect(job).toBeDefined();
+      expect(job.concurrency).toBeUndefined();
     }
     expect(transaction.jobs['publish-to-app'].needs).toBe('publish-to-origin');
   });
   for (const key of Object.keys(golden))
     it(`preserves every existing step, secret scope and command for ${key}`, () => {
-      const job = caller.jobs[key] ?? transaction.jobs[key];
+      const job = caller.jobs[key] ?? client.jobs[key] ?? transaction.jobs[key];
       expect(job).toBeDefined();
       const body = { ...job };
       delete body.if;
       delete body.needs;
-      // Assert only the approved warm routes and hardware-bounded client worker cap, then
+      // Assert only the approved paid client routes and hardware-bounded client worker cap, then
       // retain the complete original command/permission/secret snapshot.
       if (
         [
@@ -123,7 +140,9 @@ describe('one publication transaction follows parallel preparation', () => {
           'publish-to-origin',
         ].includes(key)
       ) {
-        expect(body['runs-on']).toBe('ubuntu-latest');
+        expect(body['runs-on']).toBe(
+          "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-4core' || 'ubuntu-latest' }}"
+        );
         const label = key === 'publish-needed' ? 'ca-linux-4core' : 'ca-linux-8core';
         body['runs-on'] =
           "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
@@ -215,6 +234,7 @@ describe('one publication transaction follows parallel preparation', () => {
     });
   it('requires successful preparation, accepting only the existing proven-test skip', () => {
     expect(gate()).toBe(true);
+    expect(gate({ published: 'true' })).toBe(false);
     expect(gate({ client: 'skipped', tests_proven: 'true' })).toBe(true);
     for (const status of ['failure', 'cancelled', 'skipped', 'unknown', '']) {
       expect(gate({ client: status })).toBe(false);
@@ -234,14 +254,17 @@ describe('one publication transaction follows parallel preparation', () => {
     expect(gate({ component: 'unknown' })).toBe(false);
   });
   it('treats transaction source as a conservative client release input', () => {
-    expect(conservativeClientInput('.github/workflows/publish-club-arena-transaction.yml')).toBe(
-      true
-    );
+    for (const path of [
+      '.github/workflows/publish-club-arena-transaction.yml',
+      '.github/workflows/publish-club-arena-client.yml',
+    ])
+      expect(conservativeClientInput(path)).toBe(true);
   });
   it('normalizes only exact legacy or protected transaction job names', () => {
     for (const key of ['publish-to-origin', 'retain-runtime']) {
       expect(publisherJobKey(key)).toBe(key);
       expect(publisherJobKey(`production / ${key}`)).toBe(key);
+      expect(publisherJobKey(`client-publication / production / ${key}`)).toBe(key);
       for (const bad of [`other / ${key}`, `production / other / ${key}`, `${key} extra`, '', null])
         expect(publisherJobKey(bad)).toBeNull();
     }

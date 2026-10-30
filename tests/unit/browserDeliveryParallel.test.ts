@@ -13,12 +13,15 @@ const step = (name: string) =>
   browser.steps.find((value: { name?: string }) => value.name === name);
 
 describe('browser qualification parallel delivery', () => {
-  it('uses warm hosted client delivery without moving accounting or server qualification', () => {
+  it('uses exact approved paid client routes without moving financial qualification', () => {
     const paid = (label: string) =>
       "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
       label +
       "' || 'ubuntu-latest' }}";
     const publishing = YAML.parse(readFileSync('.github/workflows/publish-club-arena.yml', 'utf8'));
+    const client = YAML.parse(
+      readFileSync('.github/workflows/publish-club-arena-client.yml', 'utf8')
+    );
     const transaction = YAML.parse(
       readFileSync('.github/workflows/publish-club-arena-transaction.yml', 'utf8')
     );
@@ -37,18 +40,19 @@ describe('browser qualification parallel delivery', () => {
       'css-beats-e2e',
       'diamond-playfield-e2e',
     ])
-      expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
+      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     for (const key of ['accounting_postgres', 'server_shards'])
       expect(ci.jobs[key]['runs-on']).toBe(
         "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
       );
-    for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
-      expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
+    expect(publishing.jobs['publish-needed']['runs-on']).toBe(paid('ca-linux-4core'));
+    for (const key of ['admit', 'client-tests', 'build-and-store'])
+      expect(client.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
-      expect(transaction.jobs[key]['runs-on']).toBe('ubuntu-latest');
+      expect(transaction.jobs[key]['runs-on']).toBe(paid('ca-linux-4core'));
     expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(4);
-    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
+    expect(client.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
     for (const key of [
       'publish-record-gateway',
       'bootstrap-record-gateway',

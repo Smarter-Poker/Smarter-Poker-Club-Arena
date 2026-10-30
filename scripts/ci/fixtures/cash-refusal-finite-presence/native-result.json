@@ -1,0 +1,79 @@
+{
+  "same_existing6000row_fixture": true,
+  "sixteen_native_scope_mode_bags_equal": true,
+  "duplicate_missing_NULL_pointers_scopes_dates_infinity_status_mismatch_preserved": true,
+  "four_invalid_scope_errors_preserved": true,
+  "full_metadata_except_prosrc_and_allrawrows_unchanged": true,
+  "minority_natural_existing_CASE_index": true,
+  "no_forced_GUC_in_plan_checks": true,
+  "candidate_full_md5": "68140b9499b8df03590eafece567f62d",
+  "production_or_installer_qualification_NOT_claimed": true,
+  "cases": [
+    {
+      "case": "retained_scope_bag_0",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_1",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_2",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_3",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_4",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_5",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_6",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_7",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_8",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_9",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_10",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_11",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_12",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_13",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_14",
+      "passed": true
+    },
+    {
+      "case": "retained_scope_bag_15",
+      "passed": true
+    }
+  ],
+  "finite_presence_LIMIT1_only_id_and_index_orderkeys": true,
+  "one_time_filter_visible_in_both_native_plans": true
+}

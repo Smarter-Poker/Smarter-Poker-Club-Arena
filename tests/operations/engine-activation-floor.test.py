@@ -419,10 +419,12 @@ echo CHECKPOINT_MUST_NOT_RUN
                 floor.check_window(r, r['activationEpoch'] - 1, r['expiresEpoch'] + 100, 'publish')
         floor.check_window(r, r['activationEpoch'], r['expiresEpoch'] + 100, 'publish')
         floor.check_window(r, r['expiresEpoch'] + 1, r['expiresEpoch'] + 100, 'publish')
-        source = (ROOT / '.github/workflows/publish-club-arena.yml').read_text()
+        caller = (ROOT / '.github/workflows/publish-club-arena.yml').read_text()
+        self.assertIn('uses: ./.github/workflows/publish-club-arena-client.yml', caller)
+        source = (ROOT / '.github/workflows/publish-club-arena-client.yml').read_text()
         production = source[source.index('  production:'):]
         self.assertIn('needs.publication-floor.result == \'success\'', production)
-        self.assertIn('build-record-gateway, publication-floor]', production)
+        self.assertIn('admit, client-tests, build-and-store, publication-floor]', production)
         admission = source[source.index('  publication-floor:'):source.index('  production:')]
         self.assertIn('engine-release-activation-floor.py publish', admission)
         self.assertNotIn('outputs.publish', admission)

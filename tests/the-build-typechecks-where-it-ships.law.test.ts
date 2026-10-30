@@ -64,7 +64,7 @@ describe('the build typechecks where it ships', () => {
   });
 
   it('the publisher builds the shipping tree WITH the typecheck', () => {
-    const publisher = read('.github/workflows/publish-club-arena.yml');
+    const publisher = read('.github/workflows/publish-club-arena-client.yml');
     expect(publisher).toMatch(/run:\s*npm run build\s*$/m);
     expect(publisher).not.toMatch(/run:\s*npm run build:ci/);
   });

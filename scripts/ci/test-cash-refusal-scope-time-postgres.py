@@ -110,6 +110,10 @@ def main():
   cand=(CF/'candidate.sql').read_text();assert cand in fnbody
   q(fnbody.replace(cand,cand+';ALTER FUNCTION fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz)COST 101;',1),'cash_refusal_owner_changed');assert state()==baseline
   ok('postguard_cost_fault_rolls_back_replacement_and_all42metadata')
+  # Current finite-scope owner regression is additive; historical migration evidence stays exact.
+  finite_output=a.output.with_name(a.output.stem+'-finite-presence.json');assert not finite_output.exists()
+  run(['python3',R/'scripts/ci/fixtures/cash-refusal-finite-presence/native-parity.py','--repo',R,'--pg-bin',a.pg_bin,'--scratch',a.scratch,'--output',finite_output])
+  finite=json.loads(finite_output.read_text());assert finite['sixteen_native_scope_mode_bags_equal']and finite['four_invalid_scope_errors_preserved']and finite['portable_installer_controls']['passed']and len(finite['portable_installer_controls']['cases'])==6
   result={'status':'passed','cases':cases,'index_sha256':hashlib.sha256(ixsource.encode()).hexdigest(),'statistics_sha256':hashlib.sha256(stsource.encode()).hexdigest(),'function_sha256':hashlib.sha256(fnsource.encode()).hexdigest(),'limits':'Native OIDs/rawcatalog expected payload explicitly adapted using exactguardqueries; external source65/window collaborators controlled; zero business calls/bags rerun; no production installation/capacity claim.'};a.output.write_text(json.dumps(result,indent=2)+'\n')
  finally:
   if started:run([a.pg_bin/'pg_ctl','-D',d,'-m','immediate','-w','stop'])

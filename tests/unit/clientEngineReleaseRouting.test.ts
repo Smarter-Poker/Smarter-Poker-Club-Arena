@@ -103,21 +103,26 @@ describe('client delivery never inherits the engine activation window', () => {
     expect(publisher.on.push.branches).toEqual(['main']);
     expect(publisher.on).not.toHaveProperty('schedule');
     expect(publisher.on).not.toHaveProperty('workflow_run');
-    expect(publisher.jobs.production.needs).toEqual([
-      'publish-needed',
+    const preparation = workflow('publish-club-arena-client.yml');
+    expect(publisher.jobs['client-publication'].needs).toBe('publish-needed');
+    expect(preparation.jobs.production.needs).toEqual([
+      'admit',
       'client-tests',
       'build-and-store',
-      'build-record-gateway',
       'publication-floor',
     ]);
-    const executable = [...Object.values(publisher.jobs), ...Object.values(transaction.jobs)]
+    const executable = [
+      ...Object.values(publisher.jobs),
+      ...Object.values(preparation.jobs),
+      ...Object.values(transaction.jobs),
+    ]
       .flatMap((job: any) => job.steps ?? [])
       .map((step: any) => step.run ?? '')
       .join('\n');
     expect(executable).not.toMatch(
       /maintenance_certificate|readyForRestart|engine-release-transaction|deploy-club-arena-engine|\bdate\s+(?:-[a-zA-Z]+\s+)*['"]?\+%M(?:['"\s;)]|$)/
     );
-    expect(publisher.jobs.production.concurrency.group).not.toBe(
+    expect(preparation.jobs.production.concurrency.group).not.toBe(
       workflow('auto-deploy-hetzner.yml').concurrency.group
     );
   });

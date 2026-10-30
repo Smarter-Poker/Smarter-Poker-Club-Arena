@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
+import { runInNewContext } from 'node:vm';
 
 const ci = YAML.parse(readFileSync(resolve('.github/workflows/ci.yml'), 'utf8'));
 const browser = ci.jobs['css-beats-e2e'];
@@ -38,14 +39,16 @@ describe('browser qualification parallel delivery', () => {
     ])
       expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
     for (const key of ['accounting_postgres', 'server_shards'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
+      expect(ci.jobs[key]['runs-on']).toBe(
+        "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      );
     for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
       expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
     for (const key of ['retain-runtime', 'publish-to-app', 'publish-to-origin'])
       expect(transaction.jobs[key]['runs-on']).toBe('ubuntu-latest');
-    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(2);
-    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(2);
+    expect(ci.jobs.unit_shards.env.VITEST_MAX_THREADS).toBe(4);
+    expect(publishing.jobs['client-tests'].env.VITEST_MAX_THREADS).toBe(4);
     for (const key of [
       'publish-record-gateway',
       'bootstrap-record-gateway',
@@ -61,8 +64,64 @@ describe('browser qualification parallel delivery', () => {
     });
   });
 
-  it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {
-    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5] } });
+  it('defaults required native qualification to the approved standard hosted profile', () => {
+    for (const job of ['accounting_postgres', 'server_shards']) {
+      const expression = ci.jobs[job]['runs-on'];
+      const evaluate = (owner: string, id: string, profile?: string) =>
+        runInNewContext(
+          expression.slice(3, -2),
+          {
+            github: { repository_owner: owner, repository_id: id },
+            vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
+          },
+          { timeout: 1000 }
+        );
+      for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
+        expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-latest');
+      expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
+      expect(evaluate('other', '1132369872', 'large')).toBe('ubuntu-latest');
+      expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-latest');
+      expect(ci.jobs[job]['continue-on-error']).toBeUndefined();
+      expect(ci.jobs[job].strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+      expect(ci.jobs[job].strategy['fail-fast']).toBe(false);
+    }
+    expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(50);
+    expect(ci.jobs.server_shards['timeout-minutes']).toBe(25);
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    expect(ci.jobs.server.needs).toContain('server_shards');
+  });
+
+  it('keeps the required native fixture callee on the same fixed hosted profile', () => {
+    const job = YAML.parse(
+      readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8')
+    ).jobs['native-smoke'];
+    const evaluate = (owner: string, id: string, profile?: string) =>
+      runInNewContext(
+        job['runs-on'].slice(3, -2),
+        {
+          github: { repository_owner: owner, repository_id: id },
+          vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
+        },
+        { timeout: 1000 }
+      );
+    for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
+      expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-24.04');
+    expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
+    expect(evaluate('foreign', '1132369872', 'large')).toBe('ubuntu-24.04');
+    expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-24.04');
+    expect(job['timeout-minutes']).toBe(55);
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(ci.jobs.fixture_native.uses).toBe(
+      './.github/workflows/component-fixture-native-smoke.yml'
+    );
+    expect(ci.jobs.typecheck.needs).toContain('fixture_native');
+  });
+
+  it('balances the complete browser selector across general and portrait shards without waivers', () => {
+    expect(browser.strategy).toEqual({
+      'fail-fast': false,
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], partition: ['general', 'portrait'] },
+    });
     expect(browser['timeout-minutes']).toBe(30);
     expect(browser['continue-on-error']).toBeUndefined();
     const beats = browser.steps.find((value: { id?: string }) => value.id === 'css-beats');
@@ -70,13 +129,31 @@ describe('browser qualification parallel delivery', () => {
     expect(beats.run).toContain('node scripts/ci/ui-test-selection.mjs browser ');
     expect(beats.run).toContain('--project=chromium --project=webkit-footer');
     expect(beats.run).toContain('--retries=1');
-    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/5$/);
+    const portrait =
+      'occupied portrait rings keep the board clear, bets on the rail and controls at their approved sizes at';
+    const grep = beats.env?.CSS_BEAT_GREP ?? browser.env?.CSS_BEAT_GREP;
+    expect(grep).toContain(portrait);
+    expect(grep).toContain(`^(?!.*${portrait})`);
+    expect(grep).toContain("matrix.partition == 'portrait'");
+    expect(beats.run).toContain('--grep="$CSS_BEAT_GREP"');
+    expect(browser.name).toContain('${{ matrix.partition }}');
+    expect(beats.run).not.toContain('--pass-with-no-tests');
+    expect(beats.run.trim()).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/10$/);
     expect((beats.run.match(/tests\/e2e\//g) || []).length).toBe(26);
     for (const value of browser.steps) expect(value['continue-on-error']).toBeUndefined();
     const evidence = step('Preserve failed CSS beat browser evidence');
     expect(evidence.if).toContain("steps.css-beats.outcome == 'failure'");
     expect(evidence.with.name).toContain('${{ matrix.shard }}');
+    expect(evidence.with.name).toContain('${{ matrix.partition }}');
     expect(evidence.with.path).toBe('test-results/');
+  });
+
+  it('retains the portrait consumer for any focused presentation change', async () => {
+    const { browserSpecs } = await import('../../scripts/ci/ui-test-selection.mjs');
+    const portraitSpec = 'tests/e2e/table-proportions.spec.ts';
+    expect(
+      browserSpecs(process.cwd(), ['src/unrelated-presentation.module.css'], [portraitSpec])
+    ).toEqual([portraitSpec]);
   });
 
   it('partitions every Diamond case across three isolated single-worker VMs', () => {
@@ -119,7 +196,7 @@ describe('browser qualification parallel delivery', () => {
       const matching = browser.steps.filter((value: { run?: string }) => value.run === command);
       expect(matching).toHaveLength(1);
       expect(step(name)).toBe(matching[0]);
-      expect(matching[0].if).toBe(`matrix.shard == ${shard}`);
+      expect(matching[0].if).toBe(`matrix.partition == 'general' && matrix.shard == ${shard}`);
       expect(matching[0]['continue-on-error']).toBeUndefined();
       expect(matching[0]['timeout-minutes']).toBeUndefined();
     }

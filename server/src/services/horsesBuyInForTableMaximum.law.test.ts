@@ -3,6 +3,7 @@ import { bankrollPolicyFor } from './HorseBankroll.js';
 import { horseRebuyAmount } from './HorseRebuyPolicy.js';
 import { cappedAutoTopUp } from './HorseTopUpStyle.js';
 import { readFileSync } from 'node:fs';
+import { horseCashMinimum, horseMaximumBuyIn } from './HorseBehavior.js';
 
 const wallet = vi.hoisted(() => ({ balance: undefined as number | undefined, throws: false }));
 vi.mock('./supabase/wallets.js', () => ({
@@ -70,5 +71,48 @@ describe('owner maximum cash reload', () => {
   });
   it('uses the standard 200bb table ceiling only when no maximum was supplied', async () => {
     expect(await horseRebuyAmount({ ...request, maxBuyIn: undefined })).toBe(400);
+  });
+});
+
+describe('2/5 PLO5 Horse minimum is 500, with maximum purchases preferred', () => {
+  const table = { game_variant: 'plo5', small_blind: 2, big_blind: 5 };
+  it('raises only the scoped minimum and respects a higher configured floor', () => {
+    expect(horseCashMinimum(table, 200)).toBe(500);
+    expect(horseCashMinimum(table, 800)).toBe(800);
+    expect(horseCashMinimum({ ...table, game_variant: 'plo4' }, 200)).toBe(200);
+    expect(horseCashMinimum({ ...table, small_blind: 1 }, 200)).toBe(200);
+  });
+  it('chooses the maximum or declines a table capped below 500', () => {
+    const minimum = horseCashMinimum(table, 200);
+    expect(horseMaximumBuyIn(minimum, 1000)).toBe(1000);
+    expect(horseMaximumBuyIn(minimum, 500)).toBe(500);
+    expect(horseMaximumBuyIn(minimum, 499.99)).toBe(0);
+  });
+  it('applies the same minimum to both rebuy paths', async () => {
+    const request = {
+      userId: 'maximum-reload-horse',
+      clubId: '',
+      bigBlind: 5,
+      smallBlind: 2,
+      variant: 'plo5',
+      minBuyIn: 200,
+      maxBuyIn: 1000,
+      rebuysTaken: 0,
+    };
+    expect(await horseRebuyAmount(request)).toBe(1000);
+    expect(await horseRebuyAmount({ ...request, maxBuyIn: 499.99 })).toBe(0);
+    for (const file of ['ServerTableEngineDealing.ts', 'ServerTableEngineSettlement.ts']) {
+      const source = readFileSync(new URL('../engine/' + file, import.meta.url), 'utf8');
+      const requestSource = source.slice(
+        source.indexOf('const rebuyAmount = await horseRebuyAmount({')
+      );
+      expect(requestSource.slice(0, requestSource.indexOf('});'))).toContain(
+        'variant: this.tableInfo?.game_variant'
+      );
+    }
+    const fleet = readFileSync(new URL('./HorseFleetManager.ts', import.meta.url), 'utf8');
+    expect(fleet).toContain(
+      'horseCashMinimum(table, Number(table.min_buy_in) || table.big_blind * 40)'
+    );
   });
 });

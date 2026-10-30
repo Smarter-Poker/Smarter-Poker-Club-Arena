@@ -651,9 +651,16 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
         self.assertEqual(selected['labels'], ['ca-linux-8core'])
         self.assertEqual(timing['job_deadline_unix'], 3990)
         self.assertIn('/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/', ci.timing_url(current))
-        for labels in (['ubuntu-latest'], ['ca-linux-4core'], ['ca-linux-8core', 'self-hosted']):
+        body['jobs'][0]['labels'] = ['ubuntu-latest']
+        selected, timing = ci.timing_observation(current, body, 1000)
+        self.assertEqual(selected['labels'], ['ubuntu-latest'])
+        self.assertEqual(timing['job_deadline_unix'], 3990)
+        for labels in (['ca-linux-4core'], ['ca-linux-8core', 'self-hosted'],
+                       ['ubuntu-latest', 'ca-linux-8core'], ['self-hosted']):
             body['jobs'][0]['labels'] = labels
             with self.assertRaises(RuntimeError): ci.timing_observation(current, body, 1000)
+        body['jobs'][0]['labels'] = ['ca-linux-8core']
+        with self.assertRaises(RuntimeError): ci.timing_observation(self.identity(), body, 1000)
         for bad in ({'GITHUB_REPOSITORY_ID': '42'}, {'GITHUB_REPOSITORY': 'evil/Smarter-Poker-Club-Arena'}):
             with self.assertRaises(RuntimeError): self.identity({**env, **bad}, event)
 

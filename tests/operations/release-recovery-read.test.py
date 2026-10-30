@@ -37,8 +37,13 @@ class ReaderTests(unittest.TestCase):
         self.result.write_text(json.dumps(RESULT))
         self.patcher = patch.object(R, 'STATE_ROOT', self.root)
         self.patcher.start()
+        # Exact-file fixtures never inspect the machine running the tests.
+        self.tcp_patcher = patch.object(R, 'pending_tcp_presence', create=True,
+            return_value={'state':'unknown','binding':'unproved','code':'not_read'})
+        self.tcp_patcher.start()
 
     def tearDown(self):
+        self.tcp_patcher.stop()
         self.patcher.stop()
         self.temp.cleanup()
 
@@ -317,12 +322,14 @@ class ReaderTests(unittest.TestCase):
         with patch.object(R, 'pending_unit', return_value=unit) as unit_reads, \
                 patch.object(R, 'read_lines', wraps=R.read_lines) as file_reads, \
                 patch.object(R, 'pending_journal', side_effect=ValueError('private journal')), \
-                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]):
+                patch.object(R, 'pending_legacy_intent', side_effect=[absent, bound]), \
+                patch.object(R, 'pending_tcp_presence', side_effect=OSError('private TCP failure')):
             answer = R.remote(request)
         self.assertEqual(unit_reads.call_count, 2)
         self.assertEqual(file_reads.call_count, 8)
         self.assertEqual(answer['legacyIntent'], {'status': 'unknown', 'code': 'changed_during_read'})
         self.assertIsNone(answer['journalSigns'])
+        self.assertEqual(answer['inspectorTcp'], {'state':'unknown','binding':'unproved','code':'evidence_unavailable'})
         self.assertEqual(R.validate_reply(answer, request), answer)
         self.assertNotIn('private', json.dumps(answer))
         for mutation in [{'legacyIntent': {'status': 'absent_at_read', 'code': 'never_entered'}},
@@ -1013,6 +1020,34 @@ class InspectorTests(unittest.TestCase):
             self.assertEqual(R.validate_refusal(exported,self.request).code, code)
             self.assertNotIn('private',json.dumps(exported))
 
+    def test_actual_inspector_observer_child_isolates_inherited_options_in_both_phases(self):
+        import socket
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        for expected in [None,self.digest]:
+            with patch.object(R,'inspector_command',return_value=b'{"state":"closed","endpointSha256":null}') as command:
+                result=R.inspector_probe(self.identity['container'],123,expected)
+            self.assertEqual(result,{'state':'closed','endpointSha256':None})
+            self.assertEqual(command.call_args.args[0],['docker','exec','-i','-e','NODE_OPTIONS=',
+                self.identity['container'],'node','--no-inspect','--input-type=module','-',
+                'read' if expected else 'probe',expected or ''])
+            self.assertEqual(command.call_args.args[1],123)
+            self.assertEqual(command.call_args.kwargs,
+                {'input_bytes':R.INSPECTOR_NODE.encode(),'limit':16384,'stage':'probe'})
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.INSPECTOR_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        before=subprocess.run([node,'--input-type=module','-','probe',''],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'open')
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-','probe',''],input=source,
+            capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','endpointSha256':None})
+
     def test_actual_native_scalar_read_and_proxy_environment_independence(self):
         # Actual native inspector evaluation in an isolated child. Linux PID 1
         # binding is separately pinned in the maintained transport; this local
@@ -1043,19 +1078,40 @@ class InspectorTests(unittest.TestCase):
         import re
         node=os.environ.get('RELEASE_RECOVERY_TEST_NODE', 'node')
         target=R.subprocess.Popen([node,'--input-type=module','-e',
-            "import inspector from 'node:inspector';inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));process.stdin.resume();"],
-            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.DEVNULL)
-        try:
+            "import inspector from 'node:inspector';import readline from 'node:readline';console.log(JSON.stringify({ready:'fixture-ready',closed:inspector.url()===undefined}));readline.createInterface({input:process.stdin}).once('line',line=>{if(line!=='open')process.exit(2);inspector.open(0,'127.0.0.1');console.log(JSON.stringify({url:inspector.url(),pid:process.pid}));});"],
+            stdin=R.subprocess.PIPE,stdout=R.subprocess.PIPE,stderr=R.subprocess.PIPE)
+        def fixture_line(seconds):
+            deadline=R.time.monotonic()+seconds
+            out=bytearray();err=bytearray()
             with R.selectors.DefaultSelector() as selector:
-                selector.register(target.stdout,R.selectors.EVENT_READ)
-                self.assertTrue(selector.select(2),'isolated target startup deadline')
-                selected=json.loads(target.stdout.readline())
+                selector.register(target.stdout,R.selectors.EVENT_READ,'out')
+                selector.register(target.stderr,R.selectors.EVENT_READ,'err')
+                while R.time.monotonic()<deadline:
+                    events=selector.select(max(0,deadline-R.time.monotonic()))
+                    for key,_ in events:
+                        chunk=os.read(key.fileobj.fileno(),4096)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        selected=out if key.data=='out' else err
+                        selected.extend(chunk)
+                        self.assertLessEqual(len(selected),4096,'isolated fixture output bound')
+                        if b'\n' in out:
+                            line,extra=out.split(b'\n',1)
+                            self.assertFalse(extra,'unexpected fixture output')
+                            return json.loads(line)
+                    if not selector.get_map():break
+            self.fail('isolated fixture deadline/exit: '+str(target.poll())+' stderr='+err.decode(errors='replace'))
+        try:
+            self.assertEqual(fixture_line(5),{'ready':'fixture-ready','closed':True})
+            target.stdin.write(b'open\n');target.stdin.flush()
+            selected=fixture_line(2)
             port=int(selected['url'].split(':')[2].split('/')[0])
             source=R.INSPECTOR_NODE.replace(':9229',':'+str(port)).replace('v?.pid!==1','v?.pid!=='+str(selected['pid']))
             source=re.sub(r'const connections=\(\)=>\{.*?\n\};', 'let nativeConnectionReads=0;const connections=()=>Math.min(nativeConnectionReads++,1);',source,flags=re.S)
             digest=R.hashlib.sha256(selected['url'].encode()).hexdigest()
-            reply=R.subprocess.run([node,'--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
-                env={**os.environ,'HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
+            reply=R.subprocess.run([node,'--no-inspect','--experimental-websocket','--input-type=module','-','read',digest],input=source.encode(),capture_output=True,timeout=5,
+                env={**os.environ,'NODE_OPTIONS':'','HTTP_PROXY':'http://invalid.example:1','ALL_PROXY':'http://invalid.example:1'})
             self.assertEqual(reply.returncode,0,reply.stderr)
             value=json.loads(reply.stdout)
             self.assertEqual(value['state'],'owned');self.assertEqual(value['native']['pid'],selected['pid'])
@@ -1063,7 +1119,7 @@ class InspectorTests(unittest.TestCase):
             self.assertGreater(value['native']['usedHeapBytes'],0)
             self.assertIsNone(target.poll(),'reader must not stop its target')
         finally:
-            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close()
+            target.kill();target.wait(timeout=2);target.stdin.close();target.stdout.close();target.stderr.close()
 
 
     def retired(self):
@@ -1118,6 +1174,152 @@ class InspectorTests(unittest.TestCase):
         self.receipt.unlink();self.receipt.symlink_to(self.path)
         with self.assertRaises(R.ScopedRefusal):R.remote(self.request)
 
+
+
+
+class PendingTcpTests(unittest.TestCase):
+    def setUp(self):
+        self.identity={'container':'c'*64,'image':'sha256:'+'d'*64,'running':'true',
+            'startedAt':'2026-10-30T01:00:00.000Z','hostPid':'123','restarts':'0'}
+        self.health={'source':'a'*40,'instance':'1-12345678'}
+
+    def test_native_tcp_closed_and_listening_send_no_payload(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+        reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'closed','code':'connection_refused'})
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:
+                    conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            source=R.TCP_PRESENCE_NODE.replace('9229',str(port))
+            reply=subprocess.run([node,'--input-type=module','-'],input=source.encode(),capture_output=True,timeout=5)
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(reply.returncode,0,reply.stderr)
+        self.assertEqual(json.loads(reply.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+        for forbidden in ['node:inspector','Runtime.evaluate','WebSocket','node:http','socket.write','process.kill']:
+            self.assertNotIn(forbidden,R.TCP_PRESENCE_NODE)
+
+    def test_native_tcp_child_options_cannot_create_its_own_listener_or_load_preloads(self):
+        import socket
+        import threading
+        node=os.environ.get('RELEASE_RECOVERY_TEST_NODE','node')
+        with socket.socket() as closed:
+            closed.bind(('127.0.0.1',0));port=closed.getsockname()[1]
+        source=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode()
+        inherited={**os.environ,'NODE_OPTIONS':'--inspect=127.0.0.1:'+str(port)}
+        # Demonstrate the actual inherited-options counterexample in isolation.
+        before=subprocess.run([node,'--input-type=module','-'],input=source,
+            capture_output=True,env=inherited,timeout=5)
+        self.assertEqual(before.returncode,0,before.stderr)
+        self.assertIn(b'Debugger listening',before.stderr)
+        self.assertEqual(json.loads(before.stdout)['state'],'listening')
+        isolated={**inherited,'NODE_OPTIONS':''}
+        after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+            capture_output=True,env=isolated,timeout=5)
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'closed','code':'connection_refused'})
+        self.assertEqual(inherited['NODE_OPTIONS'],'--inspect=127.0.0.1:'+str(port))
+        with tempfile.TemporaryDirectory(prefix='tcp-preload-',dir=ROOT.parent) as temp:
+            marker=Path(temp)/'preload-ran';preload=Path(temp)/'preload.cjs'
+            preload.write_text("require('node:fs').writeFileSync("+json.dumps(str(marker))+",'fixture');")
+            inherited={**os.environ,'NODE_OPTIONS':'--require='+str(preload)}
+            before=subprocess.run([node,'--input-type=module','-'],input=source,
+                capture_output=True,env=inherited,timeout=5)
+            self.assertEqual(before.returncode,0,before.stderr)
+            self.assertEqual(marker.read_text(),'fixture');marker.unlink()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],input=source,
+                capture_output=True,env={**inherited,'NODE_OPTIONS':''},timeout=5)
+            self.assertEqual(after.returncode,0,after.stderr)
+            self.assertFalse(marker.exists(),'probe must not execute inherited preloads')
+        # Clearing child options must still see a genuine, separate listener.
+        received=[]
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(3)
+            port=listener.getsockname()[1]
+            def accept():
+                conn,_=listener.accept()
+                with conn:conn.settimeout(2);received.append(conn.recv(1))
+            thread=threading.Thread(target=accept);thread.start()
+            after=subprocess.run([node,'--no-inspect','--input-type=module','-'],
+                input=R.TCP_PRESENCE_NODE.replace('9229',str(port)).encode(),
+                capture_output=True,env={**os.environ,'NODE_OPTIONS':''},timeout=5)
+            thread.join(timeout=3);self.assertFalse(thread.is_alive())
+        self.assertEqual(after.returncode,0,after.stderr)
+        self.assertNotIn(b'Debugger listening',after.stderr)
+        self.assertEqual(json.loads(after.stdout),{'state':'listening','code':'connection_established'})
+        self.assertEqual(received,[b''])
+
+    def run_bound_probe(self, probe, *, after=None, after_health=None, failure=None):
+        identity=' '.join(self.identity.values()).encode()
+        health=json.dumps({'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':self.health['instance']}).encode()
+        rows=[identity,health,self.health['source'].encode(),json.dumps(probe).encode(),identity,health]
+        if after is not None:rows[4]=' '.join(after.values()).encode()
+        if after_health is not None:rows[5]=json.dumps(after_health).encode()
+        if failure is not None:rows[failure[0]]=failure[1]
+        with patch.object(R,'inspector_command',side_effect=rows) as native:
+            answer=R.pending_tcp_presence()
+        self.assertNotIn(self.identity['container'],json.dumps(answer))
+        self.assertNotIn('private',json.dumps(answer))
+        return answer,native
+
+    def test_tcp_binds_current_runtime_before_and_after_without_legacy_intent(self):
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            answer,native=self.run_bound_probe({'state':state,'code':code})
+            self.assertEqual(answer,{'state':state,'code':code,'binding':'matched'})
+            self.assertEqual(native.call_count,6)
+            calls=native.call_args_list
+            self.assertEqual(calls[3].args[0],['docker','exec','-i','-e','NODE_OPTIONS=',self.identity['container'],'node','--no-inspect','--input-type=module','-'])
+            self.assertEqual(calls[3].kwargs['input_bytes'],R.TCP_PRESENCE_NODE.encode())
+            shared=[call.args[1] for call in calls if call is not calls[3]]
+            self.assertTrue(all(value==shared[0] for value in shared))
+            self.assertLessEqual(calls[3].args[1],shared[0])
+        for key,value in [('container','e'*64),('image','sha256:'+'f'*64),('hostPid','124'),('restarts','1')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after={**self.identity,key:value})
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':'identity_changed'})
+        changed={'status':'ok','running':True,'releaseSha':self.health['source'],
+            'version':self.health['source'][:8],'instanceId':'1-87654321'}
+        answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},after_health=changed)
+        self.assertEqual(answer['code'],'identity_changed')
+
+    def test_tcp_native_startup_failure_deadline_and_bad_health_stay_unknown(self):
+        for error,code in [(ValueError('Inspector read deadline'),'command_deadline'),
+                           (ValueError('Inspector read size'),'command_size'),
+                           (ValueError('Inspector native unavailable'),'command_nonzero')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(3,error))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+        for index,bad,code in [(0,b'private unknown','container_unproved'),
+                               (1,b'{"running":true}','health_unproved'),
+                               (2,b'private wrong image','image_unproved'),
+                               (3,b'{"state":"closed","code":"private"}','probe_unproved')]:
+            answer,_=self.run_bound_probe({'state':'closed','code':'connection_refused'},failure=(index,bad))
+            self.assertEqual(answer,{'state':'unknown','binding':'unproved','code':code})
+
+    def test_tcp_schema_rejects_false_binding_private_fields_and_future_codes(self):
+        for value in [
+            {'state':'closed','binding':'unproved','code':'connection_refused'},
+            {'state':'unknown','binding':'matched','code':'probe_unproved'},
+            {'state':'listening','binding':'matched','code':'connection_refused'},
+            {'state':'unknown','binding':'unproved','code':'secret error'},
+            {'state':'closed','binding':'matched','code':'connection_refused','container':'private'}]:
+            with self.subTest(value=value),self.assertRaises(ValueError):R.validate_pending_tcp(value)
+        for state,code in [('closed','connection_refused'),('listening','connection_established')]:
+            R.validate_pending_tcp({'state':state,'binding':'matched','code':code})
+        R.validate_pending_tcp({'state':'unknown','binding':'unproved','code':'not_read'})
 
 if __name__ == '__main__':
     unittest.main()

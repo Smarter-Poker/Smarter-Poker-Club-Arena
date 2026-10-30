@@ -2543,7 +2543,9 @@ describe('every host mutation path obeys the durable release authority', () => {
 
   // Builds a repository sandbox and runs the real image builder, so it is
   // subprocess-bound like the provenance case above; it timed out at 5046ms in
-  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
+  // a loaded full-suite run with every assertion holding. The scoped Cashier
+  // workflow preflight measured 18179ms on 2026-10-30; use the existing 90s
+  // subprocess allowance above instead of overriding it with 15s.
   it('excludes mutable host files and credentials from the executable image build path', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
     try {
@@ -2816,7 +2818,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, 15_000);
+  }, 90_000);
 
   it('revalidates restart authority under the shared lock and starts in that same shell', () => {
     const releaseLoop = transaction.indexOf(

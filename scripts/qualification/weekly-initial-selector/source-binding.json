@@ -1,4 +1,16 @@
 {
+  "clientExecutionBudgetSourceAudit20261029": {
+    "scope": "Source identity only: ten general and ten disjoint occupied-portrait CSS shards preserve the complete case inventory, plus requested four client workers bounded by actual CPU capacity; all financial matrices, assertions, independent browser gates, deadlines and production safeguards preserved.",
+    "previousCiPin": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "currentCiPin": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+    },
+    "qualification": "No financial recertification, SQL installation or live certification. Every historical input, audit, financial state and verdict is unchanged."
+  },
   "uiPresentationSelection20261028": {
     "reason": "Positive immutable-diff proof selects related UI tests and source-contract readers for scoped CSS or JSX text only. Executable, shared, financial, mixed or unknown inputs retain the full route. Accounting, server and financial browser commands/assertions unchanged. Current source identity only; no financial/native/live certificate restamp.",
     "changes": {
@@ -75,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+      "bytes": 253746,
+      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -1170,5 +1182,33 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "requiredNativeRunnerProfile20261030": {
+    "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660",
+        "current": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+      }
+    ],
+    "financial_recertification": false
+  },
+  "requiredNativeProfileComposition20261030": {
+    "scope": "Exact source identity after ordinary integration of protected client delivery and fixed required native runner profiles. No financial or live recertification; historical evidence and financial verdicts preserved.",
+    "protectedClientCi": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+    },
+    "qualifiedNativeProfileCi": {
+      "bytes": 253096,
+      "sha256": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+    },
+    "composedCi": {
+      "bytes": 253746,
+      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
+    },
+    "financial_recertification": false
   }
 }

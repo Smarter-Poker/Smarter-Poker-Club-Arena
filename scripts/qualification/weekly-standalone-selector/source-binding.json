@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 252627,
-      "sha256": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
+      "bytes": 253449,
+      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1221,5 +1221,25 @@
         "current": "640225138d4bf3256f046f3a5432183ac934698d7d7988aaf390db7ae996f139"
       }
     ]
+  },
+  "installedTournamentSqlRecording20261030": {
+    "reason": "Add existing qualified certification club-scope concurrency and business regressions to accounting shard4 while recording two already-installed outage migrations. All existing financial commands, assertions, budgets, matrices, historical audits and qualification states remain unchanged. Current workflow source identity only; no financial recertification or production installation.",
+    "previous": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "current": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    }
+  },
+  "cancellationProtectedMainComposition20261030": {
+    "scope": "Combine existing installed-SQL qualification with cancellation admission in accounting shard4; preserve all financial assertions and both source histories.",
+    "candidate": "414aa72ca953ca40d7138a67b3dc366cf73bcd86",
+    "main": "e8202fac9603a28e340c1f6def8c097785278cf7",
+    "workflow": {
+      "bytes": 253449,
+      "sha256": "f63b017726b4d8853c42b802d0acce655ee3d19d392b3444aba79e03d259a4c0"
+    }
   }
 }

@@ -3284,6 +3284,25 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Certification cleanup isolates its club from live hand saves
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          python3 -B scripts/ci/test-certification-club-lock-scope.py
+          python3 -B scripts/ci/test-club-welcome-package.py --certification-club-scope --output artifacts/certification-club-scope-business
+
+      - name: Retain certification club scope evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-club-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/certification-club-lock-scope/
+            artifacts/certification-club-scope-business/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: PKO heads follow exact accepted knockout dependencies
         if: matrix.shard == 4
         env:

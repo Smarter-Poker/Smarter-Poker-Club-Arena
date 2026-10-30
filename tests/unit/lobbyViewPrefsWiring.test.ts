@@ -91,6 +91,8 @@ describe('every control that changes the view goes through the one door', () => 
     expect(SRC).toMatch(/onSortChange=\{selectSortKey\}/);
     expect(SRC).toMatch(/selectFavoritesOnly\(!favoritesOnly\)/);
     // Clearing is a choice too, so it persists like the rest.
-    expect(SRC).toMatch(/selectFavoritesOnly\(false\);\s*\n\s*selectGameType\('ALL'\)/);
+    expect(SRC).toMatch(
+      /selectFavoritesOnly\(false\);\s*\n\s*selectGameType\(gameSection === 'tournaments' \? 'MTT' : 'ALL'\)/
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { openLobbyGameSection } from './support/lobbyGameSections';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB LOBBY — real-browser click-through (LOBBY V2, line-based)
@@ -36,6 +37,8 @@ async function rowCount(page: Page): Promise<number> {
  * the empty state did. A genuinely empty club is a pass, not a timeout.
  */
 async function lobbySettled(page: Page): Promise<void> {
+  await prepareCashLobbyActions(page);
+  await openLobbyGameSection(page, 'ALL');
   await page
     .locator('.club-home__games .lt-row:not(.lt-row--skeleton), .empty-tables')
     .first()
@@ -48,6 +51,7 @@ async function lobbySettled(page: Page): Promise<void> {
 
 /** Cash-door cases must not inherit another case's durable MTT/PLO filter. */
 async function selectAllGames(page: Page): Promise<void> {
+  await openLobbyGameSection(page, 'ALL');
   const all = page.getByRole('tab', { name: 'ALL', exact: true });
   await all.click();
   await expect(all).toHaveAttribute('aria-selected', 'true');
@@ -197,6 +201,7 @@ test.describe('Club lobby', () => {
     // The dedicated tournament club has a real maintained catalog. ALL only
     // includes registering/late entries; use the actual MTT category instead
     // of silently skipping when that subset is temporarily empty.
+    await openLobbyGameSection(page, 'MTT');
     await page.getByRole('tab', { name: 'MTT', exact: true }).click();
     await expect(page.locator('.club-home__games .lt-row[data-kind="mtt"]').first()).toBeVisible({
       timeout: 45_000,
@@ -330,6 +335,7 @@ for (const width of [393, 1440]) {
     await page.goto(`clubs/${memberClub}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/);
     await prepareCashLobbyActions(page);
+    await openLobbyGameSection(page, 'ALL');
     const all = page.getByRole('tab', { name: 'ALL', exact: true });
     await expect(all).toBeVisible({ timeout: 45_000 });
     await settleDiamondSpinsOffer(page, offer);

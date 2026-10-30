@@ -238,6 +238,10 @@ async function mountLobby(deepLink: boolean | string = true) {
   await flush();
   await act(async () => h.clubReads[read].resolve({ data: newClub(), error: null }));
   await settle();
+  if (!deepLink) {
+    fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
+    await settle();
+  }
 }
 
 it('keeps Join Lightning navigation after selected-panel URL effects settle, without a purchase', async () => {
@@ -448,7 +452,10 @@ describe('a shared game link', () => {
     await mountLobby('gone');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(search().has('game')).toBe(false);
-    expect(tab('NLH')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
     expect(h.pushView).not.toHaveBeenCalled();
     expect(h.pushFilters).not.toHaveBeenCalled();
     // Dropped, not lying in wait: a game later appearing under that id on a
@@ -464,6 +471,7 @@ describe('a shared game link', () => {
     await act(async () => h.clubReads[reads].resolve({ data: newClub(), error: null }));
     await settle();
     expect(document.querySelector('.lt-row[data-id="gone"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cash Games', exact: true }));
     fireEvent.click(tab('PLO'));
     await settle();
     expect(document.querySelector('.lt-row[data-id="gone"]')).toBeTruthy();
@@ -482,8 +490,8 @@ describe('a shared game link', () => {
     const gate = deferred<void>();
     h.tournamentGate = gate.promise;
     await mountLobby('event');
-    // Tables are on screen; the tournaments have not answered yet.
-    expect(document.querySelector('.lt-row[data-id="holdem"]')).toBeTruthy();
+    // No family opens until the requested tournament has answered.
+    expect(document.querySelector('.lt-row[data-id="holdem"]')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     await act(async () => gate.resolve());
     await settle();
@@ -492,4 +500,26 @@ describe('a shared game link', () => {
     expect(h.pushView).not.toHaveBeenCalled();
     expect(h.pushFilters).not.toHaveBeenCalled();
   });
+});
+
+it('keeps an explicitly opened cash section when a late preference names a tournament', async () => {
+  h.setupReads = [DONE];
+  h.tables = [ordinaryTable('anchor', 'nlh', 'Cash Family')];
+  const late = deferred<any>();
+  h.remoteView.mockReturnValue(late.promise);
+  await mountLobby(false);
+  h.pushView.mockClear();
+  await act(async () => late.resolve({ tab: 'MTT', sortByTab: {}, favoritesOnly: false }));
+  await settle();
+  expect(screen.getByRole('button', { name: 'Cash Games', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('tab', { name: 'ALL', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  expect(screen.queryByRole('tab', { name: 'MTT', exact: true })).toBeNull();
+  expect(document.querySelector('.lt-row[data-id="anchor"]')).not.toBeNull();
+  expect(h.pushView).not.toHaveBeenCalled();
 });

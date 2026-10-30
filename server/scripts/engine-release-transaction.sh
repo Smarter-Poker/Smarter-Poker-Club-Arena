@@ -1461,10 +1461,22 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       ;;
   esac
   if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && ! legacy_inspector_is_closed; then
-    release_engine_lock
-    RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
-    echo '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched'
-    return 0
+    # Only this qualified predecessor has a maintained current-main adoption
+    # contract. Do not reuse a reader report or a historical missing intent as
+    # action authority. The finite helper rebinds the actual clientless socket,
+    # claims this immutable operation durably, and awaits native remote close.
+    if [ "$CHECKPOINT_PREDECESSOR_SHA" = "$CHECKPOINT_EED_SHA" ]; then
+      ENGINE_RELEASE_REQUEST_ROOT="$REQUEST_ROOT" ENGINE_LOCK_FILE="$ENGINE_LOCK" \
+        CONTAINER="$CONTAINER" python3 "$CONTROL_DIR/main-inspector-retirement.py" "$RUN_ID" "$INVOCATION_ID" \
+        || die 'preannouncement MAIN Inspector retirement refused or unknown; no recovery window requested'
+      legacy_inspector_is_closed \
+        || die 'preannouncement MAIN Inspector absence not verified after retirement'
+    else
+      release_engine_lock
+      RECOVERY_NEXT_EVALUATION=$(( $(date +%s) + RECOVERY_DEFER_SECONDS ))
+      echo '[engine-release-transaction] legacy inspector absence is not proved; no recovery window requested and no inspector was touched'
+      return 0
+    fi
   fi
   if [ -n "${ACTIVATION_FLOOR_OWNER_WINDOW:-}" ]; then refuse_foreign_floor_owner; fi
   FLOOR_RESERVATION_FRESH=0

@@ -22,3 +22,8 @@ Actual tournament-money calls decrease from 784 to 392 for the four-period cohor
 This qualification does not certify production runtime. Protected merge,
 installation/readback and the full live period-summary request remain required
 before the original 57014 cohort can be called fixed.
+
+Protected-main integration retains both fee and cash native proof steps and
+all prior qualification audits. The CI recovery source fingerprint now includes
+those additive proof/retention steps; every profile, command, gate, budget and
+assertion remains pinned. No runner selection or qualification rule changes.

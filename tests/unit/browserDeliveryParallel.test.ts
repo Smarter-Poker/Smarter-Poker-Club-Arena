@@ -62,7 +62,10 @@ describe('browser qualification parallel delivery', () => {
   });
 
   it('partitions the existing browser selector into ten complete, non-fail-fast shards', () => {
-    expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } });
+    expect(browser.strategy).toEqual({
+      'fail-fast': false,
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    });
     expect(browser['timeout-minutes']).toBe(30);
     expect(browser['continue-on-error']).toBeUndefined();
     const beats = browser.steps.find((value: { id?: string }) => value.id === 'css-beats');

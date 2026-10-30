@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1446,5 +1446,19 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

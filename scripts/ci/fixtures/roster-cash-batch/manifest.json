@@ -1,0 +1,5 @@
+{
+  "migration": "supabase/migrations/20261030161425_roster_cash_reads_each_funded_boundary_and_total_once.sql",
+  "readerBefore": "7b540732a69268ec3ad64c7ab58c85c3",
+  "readerAfter": "2c02c3c5ab3cff998243a34de1cec02c"
+}

@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 258364,
-      "sha256": "fda6cb73a9e420820faed7d71d7e3fc0be86c9aeb2bc17acd298881f5ab2ad45"
+      "bytes": 259127,
+      "sha256": "7d68c7ddb9b572ebbc7528a286563684716e59a1c82c50c83ffca402bd4f94b2"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -1494,5 +1494,48 @@
       "sha256": "fda6cb73a9e420820faed7d71d7e3fc0be86c9aeb2bc17acd298881f5ab2ad45"
     },
     "retainedNativeEvidence": "All91 financial/tool/fixture inputs in abort-native-union-overlay-13 remain byte-identical after rebasing recorded absolute paths to this combined tree; only workflow enforcement composition differs. Protected exact-head checks remain required. No historical financial certificate is restamped."
+  },
+  "rosterCashBatchSourceAudit20261030": {
+    "scope": "Add directly enforced roster cash native source/equivalence/index proof to required accounting shard4. Current CI identity only; preserve all historical financial inputs, assertions and qualification verdicts. No live or financial recertification inferred.",
+    "previousCiPin": {
+      "bytes": 256928,
+      "sha256": "c35e79d969775d98e1f96a63d22522885d4d9b6ef50acb226e0ebea6a0772e7f"
+    },
+    "currentCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    }
+  },
+  "rosterFeeCashProtectedComposition20261030": {
+    "scope": "Compose protected-main tournament-fee proof with roster cash proof in required accounting shard4. Keep both native commands and every historical qualification/audit. Current CI source identity only; retained unchanged cash native7 proof is not production installation or a new financial certificate.",
+    "protectedMain": "ec783a2a91ef1778680e276b4616a6e85815d844",
+    "cashBranchCiPin": {
+      "bytes": 257691,
+      "sha256": "a6333d4fd31ab702b353e109f4dc90fe72413215df70086b2ba7a480d1869a5a"
+    },
+    "protectedMainCiPin": {
+      "bytes": 257596,
+      "sha256": "defdddd4413c4e59d85524b166a21a0c0c1053f82b6e1040ad2cd04392b0fbee"
+    },
+    "composedCiPin": {
+      "bytes": 258359,
+      "sha256": "344509d091bb5af7c81fa1777dbfd41c2a4cb2de06c5f2d9b30b04762098b31f"
+    }
+  },
+  "startedAbortRosterCashProtectedComposition20261030": {
+    "scope": "Source identity only: preserve the complete protected roster-cash native pair, existing roster-fee pair, started-abort pair and all other CI controls. No historical financial qualification, assertions, installation or live verdict is restamped.",
+    "abortBranchCiPin": {
+      "bytes": 258364,
+      "sha256": "fda6cb73a9e420820faed7d71d7e3fc0be86c9aeb2bc17acd298881f5ab2ad45"
+    },
+    "protectedMainCiPin": {
+      "bytes": 258359,
+      "sha256": "344509d091bb5af7c81fa1777dbfd41c2a4cb2de06c5f2d9b30b04762098b31f"
+    },
+    "currentCiPin": {
+      "bytes": 259127,
+      "sha256": "7d68c7ddb9b572ebbc7528a286563684716e59a1c82c50c83ffca402bd4f94b2"
+    },
+    "protectedMain": "2c06f30bf08a33ab4e74ecdeda572e98e9c33d7d"
   }
 }

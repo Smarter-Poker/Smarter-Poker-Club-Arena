@@ -2,9 +2,9 @@
 //
 // The Send Out and Send Ticket confirmations print one status line:
 //
-//   funding wallet covers the total -> "<n> Recipients Ready For Server Verification"
+//   funding wallet covers the total -> empty validation status
 //   funding wallet is short          -> "Insufficient Chips In The Funding Wallet"
-//   agent wallet unreadable ("--")   -> "Agent Wallet Could Not Be Verified"
+//   agent wallet unreadable ("--")   -> "Selected Wallet Could Not Be Verified"
 //
 // The production canary runs as one maintained read-only identity, and that
 // identity holds no agent wallet and no club chips by design: the harness never
@@ -63,21 +63,15 @@ export function fundingCoverage(printedFigure: string, total: number): FundingCo
   return 'unknown';
 }
 
-export function batchVerdictFor(coverage: FundingCoverage, recipients: number): string | null {
+export function batchVerdictFor(coverage: FundingCoverage): string | null {
   switch (coverage) {
     case 'covers':
-      return `${recipients} Recipients Ready For Server Verification`;
+      return '';
     case 'short':
       return 'Insufficient Chips In The Funding Wallet';
     case 'unreadable':
-      return 'Agent Wallet Could Not Be Verified';
+      return 'Selected Wallet Could Not Be Verified';
     default:
       return null;
   }
 }
-
-export const BATCH_VERDICTS = [
-  'Recipients Ready For Server Verification',
-  'Insufficient Chips In The Funding Wallet',
-  'Agent Wallet Could Not Be Verified',
-] as const;

@@ -101,7 +101,11 @@ export async function certifyMobileLiveTableLayout(
 export async function installMobileAwardJournal(page: Page) {
   await page.evaluate(() => {
     const evidence = {
-      landings: [] as Array<{ distance: number; recipient: string }>,
+      landings: [] as Array<{
+        distance: number;
+        recipient: string;
+        targetProvenance?: 'live-recipient' | 'departed-recipient';
+      }>,
       violations: [] as string[],
       multiBoardSamples: 0,
     };
@@ -109,6 +113,16 @@ export async function installMobileAwardJournal(page: Page) {
     const active = new Map<
       string,
       { chip: HTMLElement; recipient: string; distance: number | null }
+    >();
+    const targets = new Map<
+      string,
+      {
+        node: HTMLElement;
+        recipient: string;
+        table: Element | null;
+        hand: string | null;
+        rect: DOMRect;
+      }
     >();
     let frame = 0;
     let stopped = false;
@@ -119,11 +133,37 @@ export async function installMobileAwardJournal(page: Page) {
         const recipient = chip.dataset.chipRecipient ?? '';
         const flight = active.get(id) ?? { chip, recipient, distance: null };
         active.set(id, flight);
-        const seat = Array.from(document.querySelectorAll<HTMLElement>('[data-player-id]')).find(
-          (node) => node.dataset.playerId === recipient
-        );
-        const target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
-        if (!target || !target.width) {
+        const table = chip.closest('.table-page');
+        const hand = table?.querySelector('.table-brand__hand')?.textContent ?? null;
+        const seat = Array.from(
+          (table ?? document).querySelectorAll<HTMLElement>('[data-player-id]')
+        ).find((node) => node.dataset.playerId === recipient);
+        let target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
+        let targetProvenance: 'live-recipient' | 'departed-recipient' = 'live-recipient';
+        if (seat) {
+          // A hidden/replacement seat cannot borrow an earlier visible target.
+          if (target?.width && target.height)
+            targets.set(id, { node: seat, recipient, table, hand, rect: target });
+          else targets.delete(id);
+        } else {
+          const previous = targets.get(id);
+          // A winner may leave after the award while its existing flight ends.
+          // Retain only this flight's actual observed recipient in this hand;
+          // an explicit landing must still reach that position within 2px.
+          if (
+            previous &&
+            previous.recipient === recipient &&
+            previous.table === table &&
+            previous.hand === hand &&
+            !previous.node.isConnected &&
+            chip.dataset.chipPhase === 'landed'
+          ) {
+            target = previous.rect;
+            targetProvenance = 'departed-recipient';
+          }
+        }
+        if (!target || !target.width || !target.height) {
+          flight.distance = null;
           if (chip.dataset.chipPhase === 'landed' && !seen.has(id)) {
             seen.add(id);
             evidence.violations.push('Payout Has No Rendered Recipient');
@@ -140,13 +180,14 @@ export async function installMobileAwardJournal(page: Page) {
         // position when a short-lived state attribute was not observed.
         if (!seen.has(id) && chip.dataset.chipPhase === 'landed') {
           seen.add(id);
-          evidence.landings.push({ distance, recipient });
+          evidence.landings.push({ distance, recipient, targetProvenance });
           if (distance > 2) evidence.violations.push('Payout Missed Its Rendered Recipient');
         }
       }
       for (const [id, flight] of active) {
         if (flight.chip.isConnected) continue;
         active.delete(id);
+        targets.delete(id);
         // An explicit endpoint witness completes this flight. Later seat
         // reflow cannot turn its recorded landing into a pre-arrival removal.
         if (seen.has(id)) continue;

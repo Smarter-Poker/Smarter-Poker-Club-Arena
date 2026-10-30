@@ -179,7 +179,7 @@ BEGIN
     pg_relation_size('public.accounting_tournament_fee_sources'::regclass)/current_setting('block_size')::bigint,1) AS stream
   ), receipt_source_rows AS NOT MATERIALIZED (
    SELECT s.*,k.recognized_at AS receipt_recognized_at
-    FROM public.accounting_tournament_fee_sources s
+    FROM (SELECT physical_receipt_source.* FROM public.accounting_tournament_fee_sources physical_receipt_source OFFSET 0) s
     JOIN survivors k ON k.tournament_id=s.tournament_id
     WHERE (SELECT stream FROM receipt_access)
    UNION ALL
@@ -189,7 +189,7 @@ BEGIN
   ), receipt_bad AS (
    SELECT s.tournament_id,count(*) AS bad
     FROM receipt_source_rows s
-    LEFT JOIN public.accounting_tournament_recognized_sources rs ON rs.source_id=s.id
+    LEFT JOIN selected_receipt_recognized rs ON rs.source_id=s.id
     WHERE (rs.source_id IS NULL OR rs.tournament_id IS DISTINCT FROM s.tournament_id
      OR rs.recognized_at IS DISTINCT FROM s.receipt_recognized_at
      OR rs.disposition IS DISTINCT FROM 'earned'

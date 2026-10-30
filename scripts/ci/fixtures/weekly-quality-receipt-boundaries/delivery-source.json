@@ -1,0 +1,12 @@
+{
+  "version": "20261030205404",
+  "name": "weekly_quality_receipt_join_boundaries",
+  "migration_sha256": "42b1a07d773e04357031cda9775d3b0bbb2fd81e79cedfd35c23cbaa01a7ef0c",
+  "tq_source_sha256": "f160d2210adbdace86011c648d1a833697b7b0254048265943cf768aaaf198a9",
+  "old_canonical_md5": "c9e08ef6460bc1b9d27af7339f3c42cc",
+  "new_canonical_md5": "53ffa57118e0d605dc65c5cbc4043dda",
+  "public_install_HOLD_until_changed_whole180_PASS": true,
+  "changed_owners": 1,
+  "retained_authorities": 8,
+  "generation_changed": false
+}

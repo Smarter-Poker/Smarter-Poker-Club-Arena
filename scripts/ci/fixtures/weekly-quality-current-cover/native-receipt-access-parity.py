@@ -5,7 +5,7 @@ a=argparse.ArgumentParser();a.add_argument('--repo',type=Path,required=True);a.a
 O=Path(tempfile.mkdtemp(prefix='quality-current-',dir=args.scratch));W=args.repo;PG=args.pg_bin;D=O/'native-pgdata';sock=O/'s';sock.mkdir();started=False;cases=[];lit=lambda s:"'"+str(s).replace("'","''")+"'";old=(FIX/'receipt-access-before.sql').read_text();new=(W/'supabase/accounting/weekly-v3/current/fn_accounting_tournament_week_quality.sql').read_text();club='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';other='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';lo='2026-10-19 07:00Z';hi='2026-10-26 07:00Z';tm='2026-10-22 12:00Z';tid=lambda i:f'00000000-0000-0000-0000-{i:012d}';rrid=lambda i:f'10000000-0000-0000-0000-{i:012d}';sid=lambda i:f'20000000-0000-0000-0000-{i:012d}'
 def q(s):
  f=O/'native-statement.sql';f.write_text(s);p=subprocess.run([str(PG/'psql'),'-XqAt','-h',str(sock),'-p','55497','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-f',str(f)],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90);assert p.returncode==0,p.stdout[-5000:];return p.stdout
-assert hashlib.sha256(old.encode()).hexdigest()=='2300fc2615093c40057afdffddf966105ccd7735ff0911d7063f4904a97de56a';assert hashlib.sha256(new.encode()).hexdigest()=='da74fded1cdd6f260110a925e2cb3b4cbe7499897c84e9fb8f27d79bc911545a'
+assert hashlib.sha256(old.encode()).hexdigest()=='2300fc2615093c40057afdffddf966105ccd7735ff0911d7063f4904a97de56a';assert hashlib.sha256(new.encode()).hexdigest()=='f160d2210adbdace86011c648d1a833697b7b0254048265943cf768aaaf198a9'
 
 clear='TRUNCATE accounting_tournament_fee_recognitions,tournament_rake_settlements,tournament_terminal_settlements,tournament_cancellation_receipts,tournament_satellite_settlements,accounting_tournament_fee_sources,tournament_refund_entitlements,rake_records,accounting_tournament_fee_batches,accounting_owner_direct_fee_proofs,accounting_tournament_recognized_sources,native_net_plan,tournaments;'
 def seed(n):
@@ -65,7 +65,13 @@ try:
  compare('sparse_real_pages_excluded_malformed',seed(1)+sparse_padding+sparse_check,ready(1))
  compare('duplicate_recognition_different_clocks',seed(1)+"INSERT INTO accounting_tournament_fee_recognitions SELECT tournament_id,recognized_at+interval '1 second',status,net_rake,union_id,bank_club_id,source_fingerprint FROM accounting_tournament_fee_recognitions;")
  compare('duplicate_recognition_null_clock',seed(1)+"INSERT INTO accounting_tournament_fee_recognitions SELECT tournament_id,NULL,status,net_rake,union_id,bank_club_id,source_fingerprint FROM accounting_tournament_fee_recognitions;")
- result.update({'cases':cases,'case_count':len(cases),'changed_receipt_access_full_native_business_parity_only':True,'installer_qualification_not_claimed':True});args.output.write_text(json.dumps(result,indent=2)+'\n');print('ALL',len(cases),flush=True)
+ import importlib.util
+ successor=FIX.parent/'weekly-quality-receipt-boundaries';binding=json.loads((successor/'delivery-source.json').read_text());migration=(W/'supabase/migrations'/(binding['version']+'_'+binding['name']+'.sql')).read_text()
+ assert hashlib.sha256(new.encode()).hexdigest()==binding['tq_source_sha256'] and canonical['full_md5']==binding['new_canonical_md5']
+ assert hashlib.sha256(migration.encode()).hexdigest()==binding['migration_sha256'] and new.strip().rstrip(';') in migration
+ spec=importlib.util.spec_from_file_location('successor_installer_controls',successor/'installer_controls.py');controls=importlib.util.module_from_spec(spec);spec.loader.exec_module(controls)
+ result['successor_installer_controls']=controls.qualify(q,migration,json.loads((successor/'before-nine-owners.json').read_text()),json.loads((successor/'after-nine-owners.json').read_text()))
+ result.update({'cases':cases,'case_count':len(cases),'changed_receipt_access_full_native_business_parity_only':True,'installer_qualification_not_claimed':False});args.output.write_text(json.dumps(result,indent=2)+'\n');print('ALL',len(cases),flush=True)
 
 finally:
  if started:subprocess.run([str(PG/'pg_ctl'),'-D',str(D),'-m','fast','-w','stop'],stdout=subprocess.DEVNULL,check=True)

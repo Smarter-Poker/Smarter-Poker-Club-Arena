@@ -587,6 +587,27 @@ it('every declared source witness is supported by the installed stage and host a
   for (const window of document.windows) {
     if (!Object.hasOwn(window, 'releaseWitness')) continue;
     expect(Object.keys(window.releaseWitness).sort(), window.id).toEqual(['path', 'sha256']);
+    if (window.releaseWitness.path === 'server/release/activation-floor.json') {
+      const raw = readFileSync(join(root, window.releaseWitness.path));
+      const floor = JSON.parse(raw.toString());
+      expect(floor.schema).toBe('engine-release-activation-floor/v2-owner-window');
+      expect(window.releaseWitness.sha256, window.id).toMatch(/^[0-9a-f]{64}$/);
+      if (window.id === floor.ownerWindowId) {
+        expect(window.releaseWitness.sha256).toBe(createHash('sha256').update(raw).digest('hex'));
+        expect(window.notBefore).toBe(floor.activationAt);
+        expect(window.notAfter).toBe(floor.expiresAt);
+      } else {
+        // Historical immutable requests retain their own witness and expiry.
+        // Stage/host admission never treats it as the currently selected floor.
+        expect(window.releaseWitness.sha256).not.toBe(
+          createHash('sha256').update(raw).digest('hex')
+        );
+        expect(Date.parse(window.notAfter)).toBeLessThan(Date.parse(floor.expiresAt));
+      }
+      expect(admission).toContain('floor_witness');
+      expect(admission).toContain('--find-object=');
+      continue;
+    }
     expect(window.releaseWitness.path, window.id).toMatch(
       /^(?:supabase\/migrations\/[0-9]{14}_[a-z0-9_]+\.sql|server\/scripts\/retained-original-checkpoint-guard\.mjs)$/
     );

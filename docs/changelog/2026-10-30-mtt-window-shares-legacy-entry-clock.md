@@ -1,0 +1,5 @@
+# The MTT owner-window reads share the legacy entry clock
+
+Compose protected PR8701's single absolute legacy checkpoint clock with the exact MTT owner-window admission. Preserve the reservation-bound certificate, first285-second admission, same break end, five-second native cleanup and existing245/135-second proof/rollback floors. The two floor-helper Python calls now use the maintained legacy_entry_read wrapper: individually bounded Git reads cannot cumulatively outlive the remaining entry work allowance. Outside that entry its zero-deadline behavior is unchanged.
+
+The connected native regression executes the actual extracted callers and floor helper against an isolated delayed Git process. It demonstrates the old caller overrunning the remaining work allowance, bounded refusal by both new callers, no checkpoint execution, retained announcement bytes and no child launch after expiry. The release law extracts only its arithmetic clamp, never the runtime-entry writer. No production operation, migration replay, new release route or budget change is part of this composition.

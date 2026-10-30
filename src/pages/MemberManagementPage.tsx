@@ -416,6 +416,10 @@ export default function MemberManagementPage() {
       if (live() && !background) {
         setLoading(true);
         setLoadError(false);
+        // A requested range must never keep fee rows from the previous range.
+        // Same-range background refreshes retain their explicit stale state.
+        setDownline([]);
+        setDownlineFailed(false);
       }
       try {
         // resolveClubUUID never returns falsy: it hands back the raw slug when
@@ -452,7 +456,8 @@ export default function MemberManagementPage() {
         const downlineRead = ClubRosterService.getDownline(
           resolved,
           userId,
-          controller.signal
+          controller.signal,
+          activeRange
         ).then(
           (rows) => ({ ok: true as const, rows }),
           (error: unknown) => ({ ok: false as const, error })
@@ -656,6 +661,32 @@ export default function MemberManagementPage() {
             });
             setRefreshFailed(false);
             setRecordRevision((revision) => revision + 1);
+            // Counts and fee rows are independent reads. The verified record
+            // event must advance both, without replacing the editable workspace.
+            const downlineAccessRevision = accessDenialRef.current.revision;
+            try {
+              const rows = await ClubRosterService.getDownline(
+                resolvedClubId,
+                userId,
+                controller.signal,
+                range
+              );
+              if (
+                live() &&
+                !owner.queued &&
+                detailReadRevisionRef.current === detailReadRevision &&
+                accessDenialRef.current.revision === downlineAccessRevision &&
+                restricted.capabilities.can_view_financials
+              ) {
+                setDownline(rows);
+                setDownlineFailed(false);
+              }
+            } catch (error) {
+              if (live() && !owner.queued && detailReadRevisionRef.current === detailReadRevision) {
+                reportError(error, 'MemberManagementPage.RefreshDownline');
+                setDownlineFailed(true);
+              }
+            }
           }
           const mine = await supabase
             .from('club_members')
@@ -1142,16 +1173,16 @@ export default function MemberManagementPage() {
             <StatRow label="Player Wallet" value={formatWalletChips(wallets.player_wallet)} />
             <StatRow label="Agent Wallet" value={formatWalletChips(wallets.agent_wallet)} />
             <StatRow label="Promo Wallet" value={formatWalletChips(wallets.promo_wallet)} />
-            {resolvedClubId && userId && isAgentRole(identity!.role) && (
-              <MemberCreditWalletRows
-                key={`${resolvedClubId}:${userId}`}
-                clubId={resolvedClubId}
-                userId={userId}
-                role={identity!.role}
-                revision={`${recordRevision}:${wallets.agent_wallet}`}
-              />
-            )}
           </section>
+        )}
+        {wallets && resolvedClubId && userId && isAgentRole(identity!.role) && (
+          <MemberCreditWalletRows
+            key={`${resolvedClubId}:${userId}`}
+            clubId={resolvedClubId}
+            userId={userId}
+            role={identity!.role}
+            revision={`${recordRevision}:${wallets.agent_wallet}`}
+          />
         )}
 
         {/* ── Downline ─────────────────────────────────────────────────────── */}

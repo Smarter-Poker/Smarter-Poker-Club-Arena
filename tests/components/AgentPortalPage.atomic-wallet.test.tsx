@@ -203,7 +203,7 @@ describe('routable agent wallet', () => {
     expect(screen.queryByText('Total: 0 Chips')).toBeNull();
   });
 
-  it('shows canonical drawn credit instead of deriving usage from the business wallet', async () => {
+  it('shows the canonical wallet shortfall without offering spendable credit', async () => {
     m.agentBalance = 30_000;
     m.creditLimit = 20_000;
     m.readDebt.mockResolvedValue({
@@ -213,9 +213,11 @@ describe('routable agent wallet', () => {
     });
     mount();
     const credit = await screen.findByRole('region', { name: 'Credit Line' });
-    expect(within(credit).getByText('Used').nextElementSibling).toHaveTextContent('75.23');
-    expect(within(credit).getByText('Available').nextElementSibling).toHaveTextContent('19,924.77');
-    expect(within(credit).getByText('Drawn Credit')).toBeInTheDocument();
+    expect(within(credit).getByText('Wallet Shortfall').nextElementSibling).toHaveTextContent(
+      '75.23'
+    );
+    expect(within(credit).queryByText('Available')).toBeNull();
+    expect(within(credit).getByText('Top-Up Before Rakeback')).toBeInTheDocument();
     expect(within(credit).queryByText('Invoice Due')).toBeNull();
   });
 });

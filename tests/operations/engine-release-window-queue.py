@@ -52,6 +52,8 @@ BREAK_ENTRY_BUDGET_MS=0
 REQUEST_ROOT={shlex.quote(str(directory))}
 CHECKPOINT_SEQUENCE={shlex.quote(str(checkpoint_sequence))}
 LOCK_HELD=0
+FLOOR_DISPOSITION=legacy
+record_floor_runtime_entry() {{ :; }}
 RECOVERY_WAIT_STARTED_EPOCH={waiting_since}
 LEGACY_CHECKPOINT_REQUIRED={int(legacy)}
 LEGACY_CHECKPOINT_ATTEMPTED=0

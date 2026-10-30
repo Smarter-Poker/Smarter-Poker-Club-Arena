@@ -27,7 +27,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), verify: vi.fn() }));
-vi.mock('../services/supabase.js', () => ({ supabase: { rpc: mocks.rpc } }));
+vi.mock('../services/supabase.js', () => ({ maintenanceSupabase: { rpc: mocks.rpc } }));
 vi.mock('./satelliteQualifierReceipt.js', () => ({
   verifySatelliteQualifierReceipt: mocks.verify,
 }));
@@ -159,7 +159,10 @@ describe('a Postgres error is an answer, not a lost response', () => {
   it('a resolver refusal that is not contention is not asked again', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: LOST }).mockResolvedValueOnce({
       data: null,
-      error: { code: 'P0404', message: 'satellite qualifier outcome lacks a proven running source' },
+      error: {
+        code: 'P0404',
+        message: 'satellite qualifier outcome lacks a proven running source',
+      },
     });
     await expect(
       requestSatelliteQualifierReceipt(EVENT, QUALIFIERS, { wait })

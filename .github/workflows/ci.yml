@@ -1385,7 +1385,9 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17) shard ${{ matrix.shard }}/4
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    # Standard hosted qualification remains available when paid runners refuse admission.
+    # Only the fixed large profile opts this exact repository into its approved 8-core label.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
     # Run 35276340849 reached V31 after 26m13s and exhausted the 30m job cap.
     # V31 passed in 4m31s in 35276304884. Keep room for hosted runtime variance;
     # every case, statement, cleanup deadline and required gate stays unchanged.
@@ -3253,6 +3255,24 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Cancellation admission cannot queue ahead of unrelated hands
+        if: matrix.shard == 4
+        run: |
+          python3 -B scripts/ci/test-tournament-cancellation-lane.py \
+            --evidence artifacts/tournament-cancellation-lane \
+            --work-root "$RUNNER_TEMP/cancellation-lane-work" \
+            --socket-root "$RUNNER_TEMP/cancellation-socket" \
+            --pg-bin /usr/lib/postgresql/17/bin
+
+      - name: Retain cancellation admission and funded rollback evidence
+        if: always() && matrix.shard == 4
+        uses: actions/upload-artifact@v4
+        with:
+          name: tournament-cancellation-lane-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/tournament-cancellation-lane/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Certification cleanup reserves a turn without blocking players
         if: matrix.shard == 4
         env:
@@ -3433,7 +3453,9 @@ jobs:
         (needs.changes.result != 'success' ||
          needs.changes.outputs.server == 'true')))
     name: Server Engine shard ${{ matrix.shard }}/4
-    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && 'ca-linux-8core' || 'ubuntu-latest' }}
+    # Standard hosted qualification remains available when paid runners refuse admission.
+    # Only the fixed large profile opts this exact repository into its approved 8-core label.
+    runs-on: ${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}
     timeout-minutes: 25
     strategy:
       fail-fast: false

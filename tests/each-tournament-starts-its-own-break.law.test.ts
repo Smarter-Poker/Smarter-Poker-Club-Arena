@@ -45,7 +45,9 @@ function method(source: string, signature: string): string {
 describe('each tournament starts its own break', () => {
   it('the :55 trigger hands every tournament to its own break instead of one shared drain', () => {
     const trigger = method(GAME_SERVER, 'private async triggerSynchronizedBreak()');
-    expect(trigger).toContain('this.runTournamentBreak(tm, maintenanceEndsAt, generation, breakGeneration)');
+    expect(trigger).toContain(
+      'this.runTournamentBreak(tm, maintenanceEndsAt, generation, breakGeneration)'
+    );
     expect(trigger).not.toMatch(/waitForAllTablesParked\(\s*breakEngines\s*\)/);
     expect(trigger).not.toMatch(/beginBreakCountdown\(/);
   });
@@ -56,6 +58,8 @@ describe('each tournament starts its own break', () => {
     const wait = method(GAME_SERVER, 'private async waitForAllTablesParked(');
     // The drain must not widen itself to other tournaments.
     expect(wait).not.toContain('this.tournamentEngines');
+    expect(wait).not.toContain('PARK_WAIT_CEILING_MS');
+    expect(wait).toContain('if (waitingOn.length === 0) return true');
   });
 
   it('each tournament is resumed by its own timer, never by a sweep of every engine', () => {
@@ -68,6 +72,8 @@ describe('each tournament starts its own break', () => {
   it('the table break clock is told the phase and the real end, and shows Last Hand until then', () => {
     expect(MODALS).toMatch(/phase=\{tournamentBreak\.phase \?\? 'last_hand'\}/);
     expect(MODALS).toMatch(/breakEndsAtMs=\{tournamentBreak\.breakEndsAtMs \?\? null\}/);
-    expect(SCREEN).toContain("countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'");
+    expect(SCREEN).toContain(
+      "countingDown ? `Break: ${formatTime(displayTime)}` : 'Break: Last Hand'"
+    );
   });
 });

@@ -1,0 +1,9 @@
+{
+  "schema": "engine-release-activation-floor/v2-owner-window",
+  "preparationAt": "2026-10-30T05:30:00Z",
+  "activationAt": "2026-10-30T05:30:00Z",
+  "expiresAt": "2026-10-30T11:30:00Z",
+  "timeZone": "America/Chicago",
+  "ownerWindowId": "2026-10-30-mtt-safe-hand-drain-continuation",
+  "clientPublicationAt": "2026-10-30T05:30:00Z"
+}

@@ -19,6 +19,9 @@ transaction-rolled-back adversarial behavior probes for:
 - exact target-day and balanced-context certified-V31 agreement evidence;
 - V31 state/card/action/source-seal binding to the promoted immutable runtime cell;
 - monotonic M1/M2 and compactor liveness receipts;
+- the original eight-operation ingress refusal, then the three explicitly scoped
+  model operations with populated-row preservation, unchanged ACLs, and replay,
+  actor, timestamp, digest and unknown-operation refusals;
 - the admin certification-status contract.
 
 It never connects to production and never creates or moves chips.

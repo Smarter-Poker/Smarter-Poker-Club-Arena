@@ -252,3 +252,51 @@ describe('GameServer shared Realtime callback ownership', () => {
     expect(requestSweep).not.toHaveBeenCalled();
   });
 });
+
+describe('durable wake page read ownership', () => {
+  function page(data: unknown, afterRead?: () => void) {
+    const query: any = {};
+    for (const key of ['select', 'is', 'gt', 'order', 'limit', 'eq']) {
+      query[key] = vi.fn(() => query);
+    }
+    query.then = (resolve: (value: unknown) => unknown) => {
+      afterRead?.();
+      return Promise.resolve({ data, error: null }).then(resolve);
+    };
+    vi.spyOn(supabase, 'from').mockReturnValue(query);
+  }
+
+  it('does not certify an unreadable inbox as drained', async () => {
+    page(null);
+    expect(await server.drainTournamentManagerWakePages()).toBe(false);
+    expect(server.admitTournamentManagerWake).not.toHaveBeenCalled();
+  });
+
+  it('does not admit a page returned to a retired server generation', async () => {
+    server.lifecycleGeneration = 1;
+    page([{ id: 1, tournament_id: targetOwner.tournamentId, generation: 1 }], () => {
+      server.lifecycleGeneration = 2;
+    });
+    await server.drainTournamentManagerWakePages();
+    expect(server.admitTournamentManagerWake).not.toHaveBeenCalled();
+  });
+
+  it('admits a readable current page without acknowledging unfinished work', async () => {
+    const row = { id: 1, tournament_id: targetOwner.tournamentId, generation: 1 };
+    page([row]);
+    expect(await server.drainTournamentManagerWakePages()).toBe(true);
+    expect(server.admitTournamentManagerWake).toHaveBeenCalledWith(row);
+  });
+
+  it('does not start a read after shutdown', async () => {
+    page([]);
+    server.running = false;
+    await server.drainTournamentManagerWakePages();
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it('accepts a proved empty page', async () => {
+    page([]);
+    expect(await server.drainTournamentManagerWakePages()).toBe(true);
+  });
+});

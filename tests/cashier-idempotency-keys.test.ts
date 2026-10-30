@@ -108,11 +108,11 @@ describe('the trade grid defaults to the agent wallet and honors the selected so
     expect(RUN_TRANSFERS).toContain("'player_wallet'");
   });
 
-  it('caps the selected source and applies credit headroom only to the Agent Wallet', () => {
+  it('caps every send at the selected funded wallet', () => {
     expect(RUN_TRANSFERS).toMatch(
       /kind === 'send' &&\s*selectedSourceBalance !== null &&\s*total > selectedSourceBalance/
     );
-    expect(RUN_TRANSFERS).toContain("sendSource === 'agent_wallet' ? agentCredit : 0");
+    expect(RUN_TRANSFERS).not.toContain('agentCredit');
     expect(RUN_TRANSFERS).toContain("kind === 'send' && selectedSourceBalance === null");
     expect(RUN_TRANSFERS).toContain("source: uncertainRecovery.source ?? 'agent_wallet'");
   });

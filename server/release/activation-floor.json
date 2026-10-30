@@ -1,9 +1,9 @@
 {
   "schema": "engine-release-activation-floor/v2-owner-window",
-  "preparationAt": "2026-10-30T13:40:00Z",
-  "activationAt": "2026-10-30T13:40:00Z",
-  "expiresAt": "2026-10-30T19:40:00Z",
+  "preparationAt": "2026-10-30T18:45:00Z",
+  "activationAt": "2026-10-30T18:45:00Z",
+  "expiresAt": "2026-10-30T21:05:00Z",
   "timeZone": "America/Chicago",
-  "ownerWindowId": "2026-10-30-horse-river-model-and-heap-fix-next-55",
-  "clientPublicationAt": "2026-10-30T13:40:00Z"
+  "ownerWindowId": "2026-10-30-mobile-overnight-abort-and-mtt-restart",
+  "clientPublicationAt": "2026-10-30T18:45:00Z"
 }

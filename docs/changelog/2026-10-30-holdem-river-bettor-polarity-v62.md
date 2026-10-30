@@ -63,6 +63,13 @@ river raise reads as the large class, which covers the `river_raise_paidoff`
 leak (horse bets, is raised, pays off: -1,275 vs +366 won in human-seated
 cash) through the same model.
 
+The committed branch's V21 scare margin (+5 points of required equity on a
+runout that completed a draw hero does not hold) is not added when V62 has
+conditioned the bettor: the polar value stratum already carries the completed
+draws, and adding both folded a top-pair call-once at 32.7% against a 34.8%
+bar (`HorseHeadsUpCommitment` river case) that is 29.8% without the double
+count. The V38 verdict path keeps its small `dangered` respect shift.
+
 Not in scope: Omaha, short deck, fixed limit, multiple boards and bomb pots
 keep their own sampling; a measured over-bluffer keeps the full contact
 range; the decision above the verdict (value raise, V51 flat, V54) is

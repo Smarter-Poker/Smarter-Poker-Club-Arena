@@ -6657,6 +6657,7 @@ export class HorseLogic {
     // size (HorseEval V62_KEEP). The read says WHO wagered on the river; the
     // exploit read (callDownMod above 1 = a measured over-bluffer) keeps the
     // full contact range so a credible bluffer is still called down.
+    let polar62 = false;
     if (
       (opts.v62RiverBettorPolarity ?? true) !== false &&
       isRiver &&
@@ -6673,6 +6674,7 @@ export class HorseLogic {
       oppReads = oppReads.map((read) =>
         read && read.lastStage === 'river' ? { ...read, riverPolar: true } : read
       );
+      polar62 = true;
       if (tele15) noteFire('v62_river_bettor_polarity');
     }
     let equity: number;
@@ -9608,7 +9610,9 @@ export class HorseLogic {
       // a fresh flush/straight completion hero does not beat (and cannot
       // block) got the same call bar as a blank. The A4-two-pair-calls-a-jam
       // -on-a-three-diamond-river hand from the review table pays this.
-      const scare21 = useV21 && dangered ? 0.05 : 0;
+      // V62: the polar river sampler already carries the completed draws in
+      // the bettor's value stratum, so the scare margin is not added twice.
+      const scare21 = useV21 && dangered && !polar62 ? 0.05 : 0;
       if (tele15 && scare21 > 0) noteFire('v21_scare_commit');
       // ═══ V23 PKO BOUNTY PRICING (2026-08-28) ═══ calling off against an
       // all-in hero COVERS pays the bounty on top of the pot — the required

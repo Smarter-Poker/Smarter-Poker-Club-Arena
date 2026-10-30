@@ -22,14 +22,18 @@ call is priced against is the error: it holds far more bluffs than the fleet
 and its opponents actually fire. -684,000bb in cash and -246,000bb in
 tournaments across the table above.
 
-## The change (`HorseLogic.ts` V38 river block, `v61RiverOnePairShade` default on)
+## The change (`HorseLogic.ts` V38 river block and committed branch, `v61RiverOnePairShade` default on)
 
 Single-board Hold'em (not Omaha, short deck, multiple boards or bomb pots),
 facing a river wager, hero holding at most one pair, or two pair that shares
 the board's pair, and no exploit read marking the bettor as an over-bluffer
 (`respect < 1` keeps the unshaded call-down): the equity handed to the MDF
-river verdict drops by `min(0.12, 0.06 + 0.12 x toCall/pot)`. The committed
-branch, the value-raise branch and the V51 river flat are untouched; a credible
+river verdict drops by `min(0.12, 0.06 + 0.12 x toCall/pot)`, and the committed
+branch (hero bet the river and was raised, or the stack is mostly in) adds the
+same shade to its required equity: after betting the river, one-pair calls of
+the raise won 14-15% at an average price of 0.38 (-178,000bb over the same 14
+days) while better hands won 35-37%. The value-raise branch and the V51 river
+flat are untouched; a credible
 bluffer is still called down; the explicit off arm keeps the V38 verdict.
 
 Telemetry receipt `v61_river_one_pair_shade`. Pinned by

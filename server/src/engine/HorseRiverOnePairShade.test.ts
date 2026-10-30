@@ -137,3 +137,39 @@ describe('V61: a hold em one-pair river call is shaded against the price', () =>
     expect(decide('plo4', '9s8d7h2s', 'Qh9d3s7c2c')).toBeUndefined();
   });
 });
+
+describe('V61 also prices the committed river call after hero bet and was raised', () => {
+  beforeEach(() => {
+    seedFastRandom(0x5eed62);
+    HorseMind.reset();
+    enableBrainTelemetry();
+    drainFires();
+  });
+
+  function raisedRiver(hole: string, board: string, opts: Record<string, unknown>) {
+    const s = river('nlh', hole, board, 0);
+    // hero bet 20 on the river, villain raised to 60; hero has 80 behind
+    const hero = { ...s.hero, bet: 20, stack: 80, totalInvested: 30 };
+    const villain = { ...s.gs.players[1], bet: 60, stack: 340, totalInvested: 70 };
+    const history = s.gs.actionHistory.filter((a) => a.stage !== 'river');
+    history.push({ stage: 'river', seat: 2, userId: 'villain', action: 'check', amount: 0, timestamp: 5 });
+    history.push({ stage: 'river', seat: 1, userId: 'hero', action: 'bet', amount: 20, timestamp: 6 });
+    history.push({ stage: 'river', seat: 2, userId: 'villain', action: 'raise', amount: 60, timestamp: 7 });
+    const gs = { ...s.gs, players: [hero, villain], pot: 100, currentBet: 60, minRaise: 40, actionHistory: history };
+    const d = HorseLogic.decide(hero, gs as never, 'balanced', {}, { telemetry: true, mind: false, ...opts } as never);
+    return { action: d.action, fired: fires()['v61_river_one_pair_shade'] };
+  }
+
+  it('top pair facing a river raise is shaded and no longer committed by the raw read', () => {
+    const on = raisedRiver('QsKd', 'Qh9d3s7c2c', {});
+    expect(on.fired).toBe(1);
+    const off = raisedRiver('QsKd', 'Qh9d3s7c2c', { v61RiverOnePairShade: false });
+    expect(off.fired).toBeUndefined();
+    expect(['call', 'fold', 'all_in']).toContain(on.action);
+    expect(['call', 'fold', 'all_in']).toContain(off.action);
+  });
+
+  it('a set facing the raise is not shaded', () => {
+    expect(raisedRiver('3h3d', 'Qh9d3s7c2c', {}).fired).toBeUndefined();
+  });
+});

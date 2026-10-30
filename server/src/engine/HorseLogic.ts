@@ -9645,7 +9645,33 @@ export class HorseLogic {
           return { action: 'fold', thinkTime: 0, continuationGuard: 'dominated_commitment_floor' };
         }
       }
-      const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;
+      // ═══ V61 ONE-PAIR RIVER BLUFF-CATCH SHADE, committed branch ═══ a
+      // hero who bet the river and was raised, or whose stack is already
+      // mostly in, prices the call here rather than in the V38 block below.
+      // Measured over the same 14 days: after betting the river, one-pair
+      // and board-paired two-pair calls of the raise won 14-15% in cash and
+      // tournaments alike at an average price of 0.38 (-178,000bb), while
+      // better hands won 35-37%. Same gate as below: single-board hold'em,
+      // the bluff-catch class, no over-bluffer read on the opponent.
+      let shade61c = 0;
+      if (
+        (opts.v61RiverOnePairShade ?? true) !== false &&
+        isRiver &&
+        !vi.isOmaha &&
+        !vi.isShortDeck &&
+        vi.holeCount === 2 &&
+        !multiBoard36 &&
+        !gs.bombPot &&
+        exploit.callDownMod <= 1 &&
+        cat > 0 &&
+        (cat <= 2 || (cat === 3 && pairedBoard)) &&
+        pot > 0
+      ) {
+        shade61c = Math.min(0.12, 0.06 + 0.12 * Math.min(1, toCall / pot));
+        if (tele15) noteFire('v61_river_one_pair_shade');
+      }
+      const required =
+        potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23 + shade61c;
       if (eq15 >= Math.max(required, 0.42 + mw + dominationPenalty * 0.5)) {
         // V15: a dominated flush/straight that still clears the (penalized)
         // bar CALLS rather than jams — shoving it has zero fold equity

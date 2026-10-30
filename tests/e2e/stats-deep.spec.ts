@@ -241,8 +241,12 @@ test.describe('Player Stats production experience', () => {
           })
           .toBe(count);
       };
-      // pauseAt advances time before stopping; drain reads it may have started
-      // while the ledger is still unmounted and no debounce budget exists.
+      // Private record READY schedules the parent's 2s coalesced refresh.
+      // A completed warmup REST request does not mean that timer has fired.
+      // Drain that startup deadline while the ledger is unmounted, before its
+      // initial search debounce exists. This advances virtual time, not a sleep.
+      await page.clock.runFor(2_000);
+      // Settle the reads started by the startup timer before the fresh mount.
       await expect
         .poll(async () => {
           await page.clock.runFor(0);

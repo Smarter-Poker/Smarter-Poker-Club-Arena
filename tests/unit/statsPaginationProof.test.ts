@@ -363,7 +363,7 @@ describe('published Stats pagination clock boundary', () => {
   it('flushes due asynchronous work without spending the initial or changed-search debounce budget', () => {
     const predicate = proof.slice(
       proof.indexOf('const pausedRows'),
-      proof.indexOf('// pauseAt advances time')
+      proof.indexOf('// Private record READY')
     );
     expect(predicate).toContain('await page.clock.runFor(0);');
     expect(predicate).not.toMatch(/runFor\([1-9]|resume\(|waitForTimeout/);
@@ -376,6 +376,12 @@ describe('published Stats pagination clock boundary', () => {
     expect(clock).toContain('if (await pane.count()) return true;');
     expect(clock).toContain('advanced += frame');
     expect(clock).toContain('await page.clock.runFor(0);');
+    const startupDrain = proof.indexOf('await page.clock.runFor(2_000);');
+    expect(startupDrain).toBeGreaterThan(proof.indexOf('await expect(panel).toHaveCount(0);'));
+    expect(startupDrain).toBeLessThan(proof.indexOf('armed = true;'));
+    expect(proof.indexOf('armed = true;')).toBeLessThan(
+      proof.indexOf('await mountStatsPaneBeforeDebounce(page,')
+    );
     expect(proof).toContain('await page.clock.runFor(300);');
     expect(proof).toContain('await page.clock.runFor(1);');
     expect(proof).toContain("await route.abort('blockedbyclient');");

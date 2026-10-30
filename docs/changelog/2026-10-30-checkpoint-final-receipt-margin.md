@@ -67,3 +67,9 @@ An owned child enforces the actual original deadline with SIGKILL: the previous
 publication wait was killed there; the split returns a bounded failure with
 positive remaining time and exits1 normally before that same guard. No overall
 budget increases, receipt replacement or additional engine operation is added.
+
+The normal pre-push source-contract gate caught its old single-exit count. The
+existing law now pins exactly two exits: awaited publication first, publication
+failure only exit1, then the unchanged sole native deferral predicate for75/1.
+Its negative permutations, original shell intent rules and245-second reserve
+remain unchanged. The failed first push did not publish the branch.

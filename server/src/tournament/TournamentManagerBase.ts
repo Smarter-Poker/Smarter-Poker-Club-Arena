@@ -1,4 +1,5 @@
 import { ELIMINATION_SWEEP_STUCK_MS } from './eliminationLock.js';
+import { TournamentAbortBoundary, type AbortBoundaryRequest } from './TournamentAbortBoundary.js';
 import { noteTerminalFinishClub } from './terminalSettlementRpc.js';
 import { F06HandPermit } from '../services/F06HandPermit.js';
 import {
@@ -9358,6 +9359,194 @@ export abstract class TournamentManagerBase {
     if (this.teardownPromise || this.stopFenceApplied || this.shutdownDrainFenceApplied) return;
     this.shutdownDrainFenceApplied = true;
     this.applyManagerMutationFence(false);
+  }
+
+  private tournamentAbortBoundary: TournamentAbortBoundary | null = null;
+  private tournamentAbortRetirementReleased = false;
+
+  retainsTournamentAbortBoundary(): boolean {
+    return (
+      this.tournamentAbortBoundary !== null &&
+      !this.tournamentAbortRetirementReleased &&
+      this.hasCurrentTournamentLeaseAuthority() &&
+      !this.stopFenceApplied
+    );
+  }
+
+  releaseTournamentAbortBoundary(operationId: string): void {
+    if (this.tournamentAbortBoundary?.request.operation_id !== operationId)
+      throw new Error('tournament_abort_operation_mismatch');
+    this.tournamentAbortRetirementReleased = true;
+  }
+
+  /** Every strong reference must name one exact original object, including
+   * diagnostics and retained qualifier sources that may shadow a live UUID.
+   * Child managers add their own source registries below this boundary.
+   */
+  protected tournamentAbortSourcesMatch(
+    expected: readonly (readonly [string, ServerTableEngine])[]
+  ): boolean {
+    const byId = new Map(expected);
+    for (const map of [
+      this.tableEngines,
+      this.stoppedDiagnosticOriginals,
+      this.satelliteQualifierEngines,
+    ])
+      for (const [id, engine] of map) if (byId.get(id) !== engine) return false;
+    if (this.drainedF06Originals)
+      for (const [id, engine] of this.drainedF06Originals)
+        if (byId.get(id) !== engine) return false;
+    for (const [id, engine] of this.tableEngineRecoveryExpected)
+      if (engine === null || byId.get(id) !== engine) return false;
+    return true;
+  }
+
+  protected tournamentAbortBusinessTailsDrained(): boolean {
+    return !this.isProcessingEliminations && !this.boundaryBalanceInFlight;
+  }
+
+  protected joinTournamentAbortOwnedTails(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  protected tournamentAbortOwnedTailIdentity(): unknown {
+    return null;
+  }
+
+  /** Join only already owned promises, including writers admitted by another
+   * accepted writer while it finishes. No timer, sweep or retry is started.
+   */
+  private async joinTournamentAbortManagerTails(includeStoppedRuns: boolean): Promise<void> {
+    for (;;) {
+      await this.joinTournamentAbortOwnedTails();
+      if (this.lifecycleOperation) await this.lifecycleOperation;
+      await this.drainTableEngineStartJobs();
+      if (includeStoppedRuns) await this.drainTableEngineRunJobs();
+      await this.drainLifecycleJobs();
+      await this.drainEliminationSchedulerJobs();
+      const owned = this.tournamentAbortOwnedTailIdentity();
+      await this.joinTournamentAbortOwnedTails();
+      if (
+        owned === this.tournamentAbortOwnedTailIdentity() &&
+        this.lifecycleOperation === null &&
+        this.tableEngineStartJobs.size === 0 &&
+        this.lifecycleJobs.size === 0 &&
+        this.eliminationSchedulerJobs.size === 0 &&
+        (!includeStoppedRuns || this.tableEngineRunJobs.size === 0)
+      )
+        return;
+    }
+  }
+
+  /** Called only by the explicit, persisted operator request, outside any
+   * dealer/manager callback. Retain this owner and its originals on UNKNOWN.
+   */
+  async acknowledgeTournamentAbortBoundary(request: AbortBoundaryRequest): Promise<unknown> {
+    if (
+      request.tournament_id !== this.tournamentId ||
+      request.current_generation !== this.tournamentLeaseGeneration
+    )
+      throw new Error('tournament_abort_owner_mismatch');
+    if (this.tournamentAbortBoundary) {
+      if (this.tournamentAbortBoundary.request.operation_id !== request.operation_id)
+        throw new Error('tournament_abort_operation_already_owned');
+      // GameServer already read an ineffective current DB certificate. Keep
+      // the same originals but re-prove rather than replaying a stale ACK.
+      return this.tournamentAbortBoundary.run(true);
+    }
+    await this.joinTournamentAbortOwnedTails();
+    const tailIdentity = this.tournamentAbortOwnedTailIdentity();
+    const { data: fresh, error: readError } = await supabase.rpc(
+      'fn_ca_tournament_abort_stop_state',
+      {
+        p_operation_id: request.operation_id,
+        p_tournament_id: this.tournamentId,
+      }
+    );
+    if (
+      readError ||
+      fresh?.ok !== true ||
+      fresh.operation_id !== request.operation_id ||
+      fresh.tournament_id !== this.tournamentId ||
+      !Array.isArray(fresh.tables)
+    )
+      throw new Error('tournament_abort_request_read_unknown');
+    if (
+      fresh.current_generation !== request.current_generation ||
+      !isDeepStrictEqual(fresh.tables, request.tables) ||
+      tailIdentity !== this.tournamentAbortOwnedTailIdentity()
+    )
+      return {
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_changed_before_capture',
+      };
+    // Concurrent requests may have joined the same physical preflight.
+    const concurrent = this.tournamentAbortBoundary as TournamentAbortBoundary | null;
+    if (concurrent) {
+      if (concurrent.request.operation_id !== request.operation_id)
+        throw new Error('tournament_abort_operation_already_owned');
+      return concurrent.run(true);
+    }
+    const originals = [...this.tableEngines.entries()];
+    const required = request.tables.filter((table) => table.required);
+    // No physical side effect or original-roster capture precedes a complete
+    // graph. An accepted table move/start may still publish its original
+    // outcome; the same durable request can observe that outcome afterward.
+    if (
+      this.lifecycleOperation !== null ||
+      this.tableEngineStartJobs.size !== 0 ||
+      !this.tournamentAbortBusinessTailsDrained() ||
+      !this.tournamentAbortSourcesMatch(originals) ||
+      required.length === 0 ||
+      required.length !== originals.length ||
+      required.some((table) => !this.tableEngines.has(table.table_id))
+    )
+      return Promise.resolve({
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_not_ready',
+      });
+    const current = () =>
+      this.hasCurrentTournamentLeaseAuthority() &&
+      !this.stopFenceApplied &&
+      this.tournamentAbortSourcesMatch(originals) &&
+      this.tableEngines.size === originals.length &&
+      originals.every(
+        ([id, engine]) =>
+          this.tableEngines.get(id) === engine && !this.tableEngineRecoveries.has(engine)
+      );
+    this.tournamentAbortBoundary = new TournamentAbortBoundary(request, originals, {
+      current,
+      joinManagerTails: () => this.joinTournamentAbortManagerTails(false),
+      joinRetiredManagerTails: () => this.joinTournamentAbortManagerTails(true),
+      managerReadyToFence: () => this.tournamentAbortBusinessTailsDrained(),
+      fenceManager: () => this.beginServerShutdownDrain(),
+      managerDrained: () =>
+        this.tournamentAbortBusinessTailsDrained() &&
+        this.shutdownDrainFenceApplied &&
+        !this.running &&
+        this.lifecycleOperation === null &&
+        this.lifecycleJobs.size === 0 &&
+        this.tableEngineStartJobs.size === 0 &&
+        this.eliminationSchedulerJobs.size === 0 &&
+        this.lifecycleTimeouts.size === 0 &&
+        this.lifecycleIntervals.size === 0 &&
+        this.seatMoveQuarantineRefusal() === null,
+      acknowledge: async (tableId, handNumber, evidence) => {
+        const { data, error } = await supabase.rpc('fn_ca_ack_tournament_abort_boundary', {
+          p_operation_id: request.operation_id,
+          p_tournament_id: this.tournamentId,
+          p_table_id: tableId,
+          p_lease_generation: request.current_generation,
+          p_hand_number: handNumber,
+          p_evidence: evidence,
+        });
+        if (error || data?.ok !== true) throw new Error('tournament_abort_ack_unknown_or_refused');
+        return data;
+      },
+    });
+    return this.tournamentAbortBoundary.run();
   }
 
   /** Final shutdown fence, applied only after the between-hands drain. */

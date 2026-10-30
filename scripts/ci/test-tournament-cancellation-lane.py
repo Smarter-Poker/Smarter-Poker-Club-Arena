@@ -320,6 +320,23 @@ END $started_refusal$;
         (out/'funded-cancellation.sql').write_text(funded)
         e.sql(db,file=out/'funded-cancellation.sql',label='real-funded-cross-origin-cancellation-and-rollback',seconds=90)
         run_existing_sweep(e,db)
+        # The ordinary required financial entrypoint also qualifies the separate
+        # started-event stop fence. Keep its real-money cluster and evidence
+        # isolated, and propagate failure before certifying this parent report.
+        abort_driver = ROOT/'scripts/ci/test-tournament-abort.py'
+        e.report['source_sha256'][str(abort_driver.relative_to(ROOT))] = hashlib.sha256(abort_driver.read_bytes()).hexdigest()
+        subprocess.run([
+            sys.executable, '-B', str(abort_driver),
+            '--evidence', str(out/'started-abort'),
+            '--work-root', str(args.work_root.resolve()/'started-abort'),
+            '--socket-root', str(args.socket_root.resolve()/'started-abort'),
+            '--pg-bin', str(args.pg_bin.resolve()),
+        ], check=True, timeout=660)
+        abort_report = json.loads((out/'started-abort/abort-report.json').read_text())
+        assert abort_report.get('passed') is True and abort_report.get('status') == 'passed'
+        case_counts = [len(abort_report.get(key, [])) for key in ('cases', 'chip_union_overlay_cases', 'diamond_abort_cases')]
+        assert case_counts == [15, 8, 19] and sum(case_counts) == 42
+        e.report['started_abort'] = {'passed': True, 'cases': 42, 'report': 'started-abort/abort-report.json'}
         e.report['scope']='nonblocking original exclusion, exact entry installation, retained real funded cancellation assertions'
         e.report['status']='passed';e.report['passed']=True
     finally:

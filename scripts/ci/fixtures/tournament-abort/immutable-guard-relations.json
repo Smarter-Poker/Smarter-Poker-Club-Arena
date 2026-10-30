@@ -1,0 +1,470 @@
+[
+  {
+    "relation": "public.accounting_tournament_fee_custody_obligations",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "source_fingerprint",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_fees",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_funding",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_scope",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "escrow_snapshot",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "held_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "transaction_id",
+        "type": "bigint",
+        "default": "txid_current()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "accounting_tournament_fee_custody_obli_source_fingerprint_check",
+        "definition": "CHECK ((source_fingerprint ~ '^[0-9a-f]{32}$'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obliga_original_funding_check",
+        "definition": "CHECK ((jsonb_typeof(original_funding) = 'array'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligat_escrow_snapshot_check",
+        "definition": "CHECK ((jsonb_typeof(escrow_snapshot) = 'object'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligati_original_scope_check",
+        "definition": "CHECK ((jsonb_typeof(original_scope) = 'object'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligatio_original_fees_check",
+        "definition": "CHECK ((jsonb_typeof(original_fees) = 'array'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_amount_check",
+        "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2)) AND ((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text]))))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_reason_check",
+        "definition": "CHECK ((reason = ANY (ARRAY['tournament_fee_sources_require_reconciliation'::text, 'accounting_terms_not_observed'::text, 'accounting_terms_not_active'::text, 'tournament_fee_not_captured_by_original_producer'::text])))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_obligations_tournament_id_key",
+        "definition": "UNIQUE (tournament_id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.accounting_tournament_fee_custody_resolutions",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "obligation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "source_fingerprint",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "original_plan",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "transaction_id",
+        "type": "bigint",
+        "default": "txid_current()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "accounting_tournament_fee_custody_reso_source_fingerprint_check",
+        "definition": "CHECK ((source_fingerprint ~ '^[0-9a-f]{32}$'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_resolutio_original_plan_check",
+        "definition": "CHECK ((jsonb_typeof(original_plan) = 'object'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_resolutions_amount_check",
+        "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_resolutions_obligation_id_key",
+        "definition": "UNIQUE (obligation_id)"
+      },
+      {
+        "name": "accounting_tournament_fee_custody_resolutions_pkey",
+        "definition": "PRIMARY KEY (tournament_id)"
+      }
+    ]
+  },
+  {
+    "relation": "public.accounting_tournament_fee_owner_bases",
+    "columns": [
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "operation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "basis_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hosting_club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "obligation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "source_fingerprint",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "owner_instruction",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "authorized_on",
+        "type": "date",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "transaction_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "transaction_id",
+        "type": "bigint",
+        "default": "txid_current()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "accounting_tournament_fee_owner_bases_amount_check",
+        "definition": "CHECK (((amount > (0)::numeric) AND (amount = round(amount, 2))))"
+      },
+      {
+        "name": "accounting_tournament_fee_owner_bases_basis_kind_check",
+        "definition": "CHECK ((basis_kind = 'owner_authorized_host_club_fee'::text))"
+      },
+      {
+        "name": "accounting_tournament_fee_owner_bases_owner_instruction_check",
+        "definition": "CHECK ((length(owner_instruction) > 0))"
+      },
+      {
+        "name": "accounting_tournament_fee_owner_bases_pkey",
+        "definition": "PRIMARY KEY (tournament_id)"
+      },
+      {
+        "name": "accounting_tournament_fee_owner_bases_reason_check",
+        "definition": "CHECK ((length(reason) > 0))"
+      }
+    ]
+  },
+  {
+    "relation": "public.managed_game_contract_versions",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('managed_game_contract_versions_id_seq'::regclass)",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "game_kind",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "game_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "version",
+        "type": "integer",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "contract",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "contract_hash",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "published_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "published_by",
+        "type": "uuid",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "change_reason",
+        "type": "text",
+        "default": "'published'::text",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "managed_game_contract_versions_contract_hash_check",
+        "definition": "CHECK ((contract_hash ~ '^[0-9a-f]{64}$'::text))"
+      },
+      {
+        "name": "managed_game_contract_versions_game_kind_check",
+        "definition": "CHECK ((game_kind = ANY (ARRAY['table'::text, 'tournament'::text])))"
+      },
+      {
+        "name": "managed_game_contract_versions_game_kind_game_id_version_key",
+        "definition": "UNIQUE (game_kind, game_id, version)"
+      },
+      {
+        "name": "managed_game_contract_versions_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "managed_game_contract_versions_version_check",
+        "definition": "CHECK ((version > 0))"
+      }
+    ]
+  }
+]

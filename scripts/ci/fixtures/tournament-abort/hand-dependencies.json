@@ -1,0 +1,188 @@
+[
+  {
+    "relation": "public.hand_atomic_commits",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "payload_hash",
+        "type": "text",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "stack_result",
+        "type": "jsonb",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "committed_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "post_commit_payload",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "post_commit_request_hash",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "post_commit_payload_hash",
+        "type": "text",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "post_commit_completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "post_commit_result",
+        "type": "jsonb",
+        "default": null,
+        "notnull": false,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_atomic_commits_hand_id_key",
+        "definition": "UNIQUE (hand_id)"
+      },
+      {
+        "name": "hand_atomic_commits_hand_number_check",
+        "definition": "CHECK ((hand_number >= 1000000))"
+      },
+      {
+        "name": "hand_atomic_commits_hand_number_key",
+        "definition": "UNIQUE (hand_number)"
+      },
+      {
+        "name": "hand_atomic_commits_payload_hash_check",
+        "definition": "CHECK ((payload_hash ~ '^[0-9a-f]{64}$'::text))"
+      },
+      {
+        "name": "hand_atomic_commits_pkey",
+        "definition": "PRIMARY KEY (table_id, hand_number)"
+      }
+    ]
+  },
+  {
+    "relation": "smarter_private.f06_absent_permit_releases",
+    "columns": [
+      {
+        "name": "permit_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "generation",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "custody_hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      },
+      {
+        "name": "released_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true,
+        "identity": "",
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "f06_absent_permit_releases_check",
+        "definition": "CHECK ((hand_number > custody_hand_number))"
+      },
+      {
+        "name": "f06_absent_permit_releases_pkey",
+        "definition": "PRIMARY KEY (permit_id)"
+      }
+    ]
+  }
+]

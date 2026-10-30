@@ -1,0 +1,26 @@
+{
+  "_owner": "fix/started-tournament-abort-01a18d25",
+  "_comment": "Explicit operator-owned finite started-event stop/drain/original-charge refund. No scheduler; ordinary cancellation/winner/deal guards retained.",
+  "functions": [
+    "fn_ca_ack_tournament_abort_boundary",
+    "fn_ca_operator_floor_state",
+    "fn_ca_request_tournament_abort",
+    "fn_ca_settle_tournament_abort",
+    "fn_ca_tournament_abort_stop_state",
+    "smarter_private.assert_tournament_abort_quiesced",
+    "smarter_private.chip_tournament_abort_refunds",
+    "smarter_private.diamond_tournament_abort_receipt_immutable",
+    "smarter_private.diamond_tournament_abort_refunds",
+    "smarter_private.tournament_abort_ingress",
+    "smarter_private.tournament_abort_money_snapshot",
+    "smarter_private.tournament_abort_pending",
+    "smarter_private.tournament_abort_receipt",
+    "smarter_private.tournament_abort_terminal_snapshot"
+  ],
+  "tables": [
+    "smarter_private.diamond_tournament_abort_receipts",
+    "smarter_private.tournament_abort_boundaries",
+    "smarter_private.tournament_abort_operations",
+    "smarter_private.tournament_abort_targets"
+  ]
+}

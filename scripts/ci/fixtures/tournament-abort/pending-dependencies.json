@@ -1,0 +1,12 @@
+[
+  {
+    "signature": "smarter_private.f06_event_is_finished(uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_event_is_finished(p_tournament_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n  SELECT COALESCE((\n    SELECT upper(t.status) IN ('COMPLETED', 'CANCELLED')\n       AND COALESCE(t.prize_pool_finalized, false)\n       AND NOT EXISTS (SELECT 1 FROM public.tables tb\n                        WHERE tb.tournament_id = t.id\n                          AND lower(COALESCE(tb.status, '')) <> 'closed')\n       AND NOT EXISTS (SELECT 1 FROM public.tables tb\n                         JOIN public.table_seats s ON s.table_id = tb.id\n                        WHERE tb.tournament_id = t.id\n                          AND (s.player_id IS NOT NULL OR s.left_at IS NULL))\n       AND NOT EXISTS (SELECT 1 FROM public.tournament_players tp\n                        WHERE tp.tournament_id = t.id\n                          AND COALESCE(tp.status, '') NOT IN ('eliminated', 'winner'))\n      FROM public.tournaments t\n     WHERE t.id = p_tournament_id\n  ), false)\n$function$\n",
+    "definition_md5": "867a7a39095746d327a4c9e286674840"
+  },
+  {
+    "signature": "smarter_private.f06_terminal_operation_states()",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.f06_terminal_operation_states()\n RETURNS text[]\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT ARRAY['acknowledged', 'withdrawn_before_manifest']::text[] $function$\n",
+    "definition_md5": "2cd9e52db80de87dec9770efaad63df2"
+  }
+]

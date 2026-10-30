@@ -10,5 +10,5 @@ it('qualifies immutable preparation and pre-install admission without runtime wr
     timeout: 90000,
   });
   expect(result.status, result.stdout + result.stderr).toBe(0);
-  expect(result.stderr).toContain('Ran 21 tests');
+  expect(result.stderr).toContain('Ran 22 tests');
 }, 95000);

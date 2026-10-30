@@ -50,7 +50,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { horseMaximumBuyIn } from './HorseBehavior.js';
+import { horseCashMinimum, horseMaximumBuyIn } from './HorseBehavior.js';
 import { bankrollPolicyFor, rebuyDecision, referenceBuyIn } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
@@ -78,6 +78,8 @@ export interface HorseRebuyRequest {
   tableId?: string;
   userId: string;
   bigBlind: number;
+  smallBlind?: number;
+  variant?: string;
   minBuyIn?: number | null;
   maxBuyIn?: number | null;
   /** Reloads already taken this session. Buy-ins committed is this plus one. */
@@ -154,7 +156,14 @@ export async function horseRebuyAmount(req: HorseRebuyRequest): Promise<number> 
     return 0;
   }
 
-  const minB = Number(req.minBuyIn) > 0 ? Number(req.minBuyIn) : legacy;
+  const minB = horseCashMinimum(
+    {
+      game_variant: req.variant,
+      small_blind: req.smallBlind,
+      big_blind: bigBlind,
+    },
+    Number(req.minBuyIn) > 0 ? Number(req.minBuyIn) : legacy
+  );
   const maxB = horseMaximumBuyIn(
     minB,
     Number(req.maxBuyIn) > 0 ? Number(req.maxBuyIn) : bigBlind > 0 ? bigBlind * 200 : 400

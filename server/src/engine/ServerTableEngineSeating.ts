@@ -1647,6 +1647,55 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           return { success: true, immediate: true, tournament: true };
         }
 
+        // Owner 2026-10-29: a Horse in 2/5 PLO5 does not voluntarily
+        // rack up below 3.5 buy-ins of PROFIT. This shared door covers the
+        // rotator, Stable Hand yields and tournament-driven departures alike.
+        // System eviction/closure remains available; no player money is locked
+        // in the database. Reloads belong to the session cost, never profit.
+        if (
+          !opts.forced &&
+          player.is_horse === true &&
+          this.tableInfo?.game_variant === 'plo5' &&
+          Number(this.tableInfo.small_blind) === 2 &&
+          Number(this.tableInfo.big_blind) === 5
+        ) {
+          const held = {
+            success: false,
+            immediate: false,
+            error: 'Continue Playing Until Session Profit Reaches 3.5 Buy-Ins.',
+          };
+          // The roster contains the previous settlement during a hand. Never
+          // book that old win while the current pot can still change it.
+          if (liveSelf) return held;
+          try {
+            const { data: session, error } = await supabase
+              .from('cash_player_session')
+              .select('baseline')
+              .eq('player_id', userId)
+              .eq('table_id', this.tableId)
+              .is('closed_at', null)
+              .maybeSingle();
+            const invested = Number(session?.baseline);
+            const stack = Number(player.stack);
+            // Integer chip cents keep the exact threshold inclusive. Unknown
+            // cost is a reason to stay, never permission to guess a profit.
+            if (
+              error ||
+              !Number.isFinite(invested) ||
+              invested <= 0 ||
+              !Number.isFinite(stack) ||
+              Math.round(stack * 100) * 2 < Math.round(invested * 100) * 9
+            )
+              return held;
+          } catch (err) {
+            reportError(err, 'HorseCashDeparture.sessionRead');
+            return held;
+          }
+          if (this.seatedPlayers.find((p) => p.user_id === userId) !== player) return stale();
+          if (this.handController?.getState().players.some((p) => p.user_id === userId))
+            return held;
+        }
+
         // ═══════════════════════════════════════════════════════════════════════
         // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
         //

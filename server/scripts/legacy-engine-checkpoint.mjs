@@ -611,6 +611,23 @@ export function projectLegacyCensus(modules, workDeadlineMs) {
   return out;
 }
 
+// Metadata already returned with each native projected array. These counts are
+// diagnostic only: unknown descriptors never imply an empty physical owner.
+function nativeCensusArrayCount(value, limit) {
+  if (
+    value?.type !== 'object' ||
+    value.subtype !== 'array' ||
+    value.className !== 'Array' ||
+    typeof value.description !== 'string' ||
+    value.description.length > 11
+  )
+    return null;
+  const match = /^Array\((0|[1-9][0-9]{0,3})\)$/.exec(value.description);
+  if (!match) return null;
+  const count = Number(match[1]);
+  return Number.isSafeInteger(count) && count <= limit ? count : null;
+}
+
 export async function runLegacyEngineCheckpoint({
   pid,
   instanceId,
@@ -672,7 +689,8 @@ export async function runLegacyEngineCheckpoint({
   // Which operation the transport is on. It is the name an unknown outcome
   // reports; it takes part in no decision and no branch reads it.
   let operation = 'inspectorEntry';
-  let censusMemory = null;
+  let censusMemory = null,
+    nativeCensusCounts = null;
   const describeLoss = (error) =>
     [
       detailOf(error) ??
@@ -791,6 +809,13 @@ export async function runLegacyEngineCheckpoint({
       );
       if (!projected?.objectId) throw refused('native census projection unavailable');
       const groups = [];
+      const countFields = [
+        ['gameServers', 4000],
+        ['tableEngines', 4000],
+        ['tournamentManagers', 2000],
+        ['lightningWorkers', 4000],
+        ['lightningHosts', 4000],
+      ];
       for (let index = 0; index < 5; index++) {
         const group = remoteValue(
           await connection.request(
@@ -805,6 +830,16 @@ export async function runLegacyEngineCheckpoint({
           )
         );
         if (!group?.objectId) throw refused('native census group unavailable');
+        nativeCensusCounts ??= {
+          schema: 'legacy-native-census-counts/v1',
+          gameServers: null,
+          tableEngines: null,
+          tournamentManagers: null,
+          lightningWorkers: null,
+          lightningHosts: null,
+        };
+        const [field, limit] = countFields[index];
+        nativeCensusCounts[field] = nativeCensusArrayCount(group, limit);
         groups.push(group.objectId);
       }
       // The five small arrays retain their own independent handles. Do not
@@ -1055,6 +1090,7 @@ export async function runLegacyEngineCheckpoint({
       // Which operation was lost, and how much of the budget it was given.
       ...(transportDetail ? { transportDetail } : {}),
       ...(censusMemory ? { censusMemory } : {}),
+      ...(nativeCensusCounts ? { nativeCensusCounts } : {}),
       retryAllowed: false,
       checkpointInvoked,
       inspectorClosed,

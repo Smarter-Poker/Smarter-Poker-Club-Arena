@@ -45,8 +45,8 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
 
   it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
     const normalized = structuredClone(ci);
-    // #8759 added the exact roster native pair after the #8715 baseline.
-    // Verify each qualified addition before excluding only it from the original fingerprint.
+    // #8777 binds the reviewed workflow including the roster native pair.
+    // Validate all four steps, then exclude only this change's abort pair.
     const additions = [
       {
         name: 'Roster tournament fees read only their charged window',
@@ -112,14 +112,14 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
       'Certification cleanup reserves a turn without blocking players'
     );
     expect(normalized.jobs.accounting_postgres.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
-    for (const step of additions) {
+    for (const step of additions.slice(2)) {
       steps.splice(
         steps.findIndex((candidate: { name?: string }) => candidate.name === step.name),
         1
       );
     }
     expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '756ebaa3b74445e08a3e0fb4e9408607539376c85540311e0fa9e90fda64cbd5'
+      '72820dff22232cef409cbffa156ac0c4b1ae6e6fb6c49d9a0893587a114cf4ad'
     );
   });
   it('preserves every native qualification stage and cleanup requirement', () => {

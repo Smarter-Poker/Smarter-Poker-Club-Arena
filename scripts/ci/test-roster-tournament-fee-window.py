@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from roster_fee_cutoff_native import qualify
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'scripts/ci/fixtures/roster-tournament-fee-window'
@@ -151,6 +152,9 @@ def main():
         assert q('SET ROLE service_role;SELECT count(*) FROM accounting_tournament_fee_sources') == '100008'
         cases += ['valid_prefix_resume_preserves_oid', 'invalid_prefix_and_freeze_refuse',
                   'changed_reader_and_valid_wrong_key_refuse', 'existing_private_read_permissions_preserved']
+        cutoff = json.loads((FIXTURE / 'cutoff-request.json').read_text())
+        qualify(q, reader, (ROOT / cutoff['migration']).read_text(), cases, plans,
+                json.loads((FIXTURE / 'cutoff-authority.json').read_text()))
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps({'cases': cases, 'plans': plans,
                                          'limitations': __doc__}, indent=2) + '\n')

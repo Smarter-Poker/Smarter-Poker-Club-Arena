@@ -1,0 +1,3 @@
+{
+  "migration": "supabase/migrations/20261030201655_roster_fee_request_retains_its_accounting_cutoff_once.sql"
+}

@@ -140,6 +140,54 @@ try:
     sql(f"BEGIN; SELECT smarter_private.certification_club_admission('{C1}'); ROLLBACK; INSERT INTO cash_games VALUES(10,'{C1}');")
     expect('rollback releases scoped admission', True)
     expect('untrusted caller cannot acquire cleanup admission', sql(f"SET ROLE authenticated; SELECT smarter_private.certification_club_admission('{C1}');", check=False).returncode != 0)
+    # Exercise the actual post-deploy catalog query against this exact installed
+    # migration, never a live database or a handwritten substitute function.
+    sql("CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text,name text);")
+    def readiness(expected):
+        program = r"""
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+// Accounting CI installs the server lockfile, not root dependencies.
+const pg = createRequire(resolve(process.cwd(), 'server/package.json'))('pg');
+import { classifyProof, readProof } from './scripts/ci/await-certification-cleanup-safety.mjs';
+const client = new pg.Client({host:'127.0.0.1',port:Number(process.argv[2]),user:'postgres',database:'postgres',options:'-c default_transaction_read_only=on',statement_timeout:500,query_timeout:1000});
+try {
+ await client.connect();
+ try { await client.query('CREATE TABLE forbidden_fixture_write(id int)'); throw Error('readonly failed'); }
+ catch (error) { if (error.code !== '25006') throw error; }
+ try { console.log(classifyProof(await readProof(client))); }
+ catch (error) { console.log(error.message); }
+} finally { await client.end(); }
+"""
+        result = command(['node', '--input-type=module', '-', port], input=program, cwd=ROOT, timeout=15)
+        expect('native readiness: ' + expected, result.returncode == 0 and expected in result.stdout,
+               stdout=result.stdout, stderr=result.stderr)
+    readiness('pending')
+    sql("INSERT INTO supabase_migrations.schema_migrations VALUES('20261029193107','certification_cleanup_locks_only_its_own_club_graph');")
+    readiness('ready')
+    sql("UPDATE supabase_migrations.schema_migrations SET name='wrong';")
+    readiness('history identity differs')
+    sql("UPDATE supabase_migrations.schema_migrations SET name='certification_cleanup_locks_only_its_own_club_graph',version='20261029193108';")
+    readiness('history identity differs')
+    sql("UPDATE supabase_migrations.schema_migrations SET version='20261029193107';")
+    for signature in definitions:
+        saved = sql(f"SELECT pg_get_functiondef('{signature}'::regprocedure);").stdout
+        sql(f"ALTER FUNCTION {signature} SET statement_timeout='3s';")
+        readiness('function identity differs: ' + signature)
+        sql(saved)
+    for role in ['PUBLIC', 'anon', 'authenticated', 'service_role']:
+        sql('GRANT EXECUTE ON FUNCTION smarter_private.certification_club_admission(uuid) TO ' + role + ';')
+        readiness('non-owner access')
+        sql('REVOKE ALL ON FUNCTION smarter_private.certification_club_admission(uuid) FROM ' + role + ';')
+    readiness('ready')
+    helper_sig = 'smarter_private.certification_club_admission(uuid)'
+    helper_definition = sql(f"SELECT pg_get_functiondef('{helper_sig}'::regprocedure);").stdout
+    helper_hash = sql(f"SELECT md5(pg_get_functiondef('{helper_sig}'::regprocedure));").stdout.strip()
+    (OUT / 'helper-function-hash.json').write_text(json.dumps({'signature':helper_sig,'md5':helper_hash}) + '\n')
+    sql(f"ALTER FUNCTION {helper_sig} SET statement_timeout='3s';")
+    readiness('helper identity differs')
+    sql(helper_definition)
+    readiness('ready')
     passed = True
 finally:
     for thread in threads:

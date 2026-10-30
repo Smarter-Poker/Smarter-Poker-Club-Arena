@@ -8,7 +8,7 @@ const helper = transaction.slice(
   transaction.indexOf('legacy_inspector_is_closed() {'),
   transaction.indexOf('\nrequest_recovery_window() {')
 );
-const script = helper.split("node -e '\n")[1].split("\n'\n}")[0];
+const script = helper.split("' checkpoint-readiness -e '\n")[1].split("\n'\n}")[0];
 
 async function probe(port: number) {
   const child = spawn(process.execPath, ['-e', script.replace('port:9229', `port:${port}`)], {
@@ -56,6 +56,8 @@ describe('legacy inspector readiness before a recovery announcement', () => {
   );
 
   it('keeps the probe read-only and before the one durable announcement reservation', () => {
+    expect(helper).toContain('env -u NODE_OPTIONS -u NODE_PATH node --no-inspect "$@"');
+    expect(helper).toContain('case "${NODE_OPTIONS-}" in *--inspect*|*--debug*) exit 1 ;; esac');
     expect(script).toContain('host:"127.0.0.1",port:9229');
     expect(script).not.toMatch(/SIGUSR|Runtime\.|inspector\.close|\.write\(|\.send\(/);
     const request = transaction.slice(

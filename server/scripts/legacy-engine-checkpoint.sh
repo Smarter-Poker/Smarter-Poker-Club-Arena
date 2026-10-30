@@ -119,7 +119,12 @@ if [ "$LEGACY_SHA" = 8825af51817f379c4261658ca29ecc9d8d81932d ]; then
     || die 'original mixed-custody process changed'
 fi
 NODE_BOOT_STARTED_MS="$(date +%s%3N)"
-checkpoint_entry_read timeout 3s docker exec "$CONTAINER_ID" node -e '
+# Preserve the existing container-option refusal before starting a neutral
+# observer. Never execute application preloads or open the observer inspector.
+checkpoint_entry_read timeout 3s docker exec "$CONTAINER_ID" sh -c '
+case "${NODE_OPTIONS-}" in *--inspect*|*--debug*) exit 1 ;; esac
+exec env -u NODE_OPTIONS -u NODE_PATH node --no-inspect "$@"
+' checkpoint-runtime -e '
 const fs = require("node:fs");
 const args = fs.readFileSync("/proc/1/cmdline", "utf8").split("\0").filter(Boolean);
 if (process.version !== "v22.23.2" ||
@@ -225,7 +230,7 @@ fi
 
 set +e
 { cat "$CONTROL_DIR/legacy-engine-checkpoint-guard.mjs"; cat "$CONTROL_DIR/retained-original-checkpoint-guard.mjs"; cat "$CONTROL_DIR/legacy-engine-checkpoint.mjs"; } \
-  | checkpoint_final_read docker exec -i "$CONTAINER_ID" node --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
+  | checkpoint_final_read docker exec -i "$CONTAINER_ID" env -u NODE_OPTIONS -u NODE_PATH node --no-inspect --input-type=module - "$INSTANCE" "$LEGACY_SHA" "$CHECKPOINT_INTENT" "$CHECKPOINT_DEADLINE_MS"
 CHECKPOINT_RC=$?
 set -e
 if [ "$CHECKPOINT_RC" = 75 ]; then

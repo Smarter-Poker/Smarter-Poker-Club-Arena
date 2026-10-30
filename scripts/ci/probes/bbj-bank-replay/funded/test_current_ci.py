@@ -646,21 +646,33 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             event['pull_request'][role]['repo']['full_name'] = ci.TRANSFERRED_REPOSITORY
         current = self.identity(env, event)
         body = self.job_response()
-        body['jobs'][0]['labels'] = ['ca-linux-8core']
-        selected, timing = ci.timing_observation(current, body, 1000)
-        self.assertEqual(selected['labels'], ['ca-linux-8core'])
-        self.assertEqual(timing['job_deadline_unix'], 3990)
-        self.assertIn('/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/', ci.timing_url(current))
-        body['jobs'][0]['labels'] = ['ubuntu-latest']
-        selected, timing = ci.timing_observation(current, body, 1000)
-        self.assertEqual(selected['labels'], ['ubuntu-latest'])
-        self.assertEqual(timing['job_deadline_unix'], 3990)
-        for labels in (['ca-linux-4core'], ['ca-linux-8core', 'self-hosted'],
-                       ['ubuntu-latest', 'ca-linux-8core'], ['self-hosted']):
+        # Both fixed accounting_postgres routes in ci.yml are approved; retain
+        # the provider's exact selected singleton in the timing receipt.
+        for labels in (['ca-linux-8core'], ['ubuntu-latest']):
             body['jobs'][0]['labels'] = labels
-            with self.assertRaises(RuntimeError): ci.timing_observation(current, body, 1000)
+            selected, timing = ci.timing_observation(current, body, 1000)
+            self.assertEqual(selected['labels'], labels)
+            self.assertEqual(timing['job_deadline_unix'], 3990)
+            for mutation in ({'run_id': 124}, {'runner_name': 'different'}, {'head_sha': 'd' * 40},
+                             {'status': 'completed'}, {'completed_at': '1970-01-01T00:16:40Z'}):
+                changed = copy.deepcopy(body)
+                changed['jobs'][0].update(mutation)
+                with self.subTest(labels=labels, mutation=mutation), self.assertRaises(ci.TimingRequestRefused):
+                    ci.timing_observation(current, changed, 1000)
+        self.assertIn('/Smarter-Software-PIQ/Smarter-Poker-Club-Arena/', ci.timing_url(current))
+        for labels in (None, [], 'ubuntu-latest', ['ca-linux-4core'], ['ubuntu-24.04'],
+                       ['self-hosted'], ['ca-linux-8core', 'self-hosted'],
+                       ['ubuntu-latest', 'self-hosted'], ['self-hosted', 'ubuntu-latest'],
+                       ['ca-linux-8core', 'ubuntu-latest'], ['ubuntu-latest', 'ca-linux-8core'],
+                       ['ubuntu-latest', 'ubuntu-latest']):
+            body['jobs'][0]['labels'] = labels
+            with self.subTest(labels=labels), self.assertRaises(ci.TimingRequestRefused) as caught:
+                ci.timing_observation(current, body, 1000)
+            self.assertEqual(caught.exception.identity_mismatch_fields, ['labels'])
+        # The historical repository does not gain the transferred paid route.
         body['jobs'][0]['labels'] = ['ca-linux-8core']
-        with self.assertRaises(RuntimeError): ci.timing_observation(self.identity(), body, 1000)
+        with self.assertRaises(ci.TimingRequestRefused):
+            ci.timing_observation(self.identity(), body, 1000)
         for bad in ({'GITHUB_REPOSITORY_ID': '42'}, {'GITHUB_REPOSITORY': 'evil/Smarter-Poker-Club-Arena'}):
             with self.assertRaises(RuntimeError): self.identity({**env, **bad}, event)
 

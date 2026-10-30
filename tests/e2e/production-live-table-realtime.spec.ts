@@ -45,6 +45,7 @@ import {
   endedBeforeNextHand,
 } from './support/preNavigationBoard';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
+import { openLobbyGameSection } from './support/lobbyGameSections';
 import {
   createSelectionObservation,
   SelectionObservationDeadline,
@@ -450,6 +451,7 @@ async function selectOccupiedRunningCashTables(
     timeout: 30_000,
   });
   await prepareCashLobbyActions(page);
+  await openLobbyGameSection(page, 'ALL');
 
   await page
     .locator(

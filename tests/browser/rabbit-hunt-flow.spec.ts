@@ -35,9 +35,15 @@ test('a slow paid response survives closing its tile and restores into hand revi
   page,
 }) => {
   let requests = 0;
+  let releaseResponse!: () => void;
+  const responseHeld = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
   await page.route('**/rabbit-hunt', async (route) => {
     requests++;
-    await new Promise((resolve) => setTimeout(resolve, 1900));
+    // Keep the response pending until the browser observes the slow state and
+    // closes the tile. A wall-clock delay races WebKit's rendering schedule.
+    await responseHeld;
     await route.fulfill({
       headers: { 'access-control-allow-origin': '*' },
       json: {
@@ -50,12 +56,19 @@ test('a slow paid response survives closing its tile and restores into hand revi
       },
     });
   });
-  await page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' }).click();
-  await expect(page.getByText('Still Connecting...', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Review Hand', exact: true }).click();
-  await expect(page.locator('.hdm-card--rabbit')).toHaveCount(2);
-  expect(requests).toBe(1);
-  await expect(page.getByText('Hand 42 · Only You', { exact: true })).toBeVisible();
+  try {
+    await page.getByRole('button', { name: 'Rabbit Hunt, 5 Diamonds' }).click();
+    await expect(page.getByText('Still Connecting...', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Review Hand', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Hand Detail', exact: true })).toBeVisible();
+    expect(requests).toBe(1);
+    releaseResponse();
+    await expect(page.locator('.hdm-card--rabbit')).toHaveCount(2);
+    expect(requests).toBe(1);
+    await expect(page.getByText('Hand 42 · Only You', { exact: true })).toBeVisible();
+  } finally {
+    releaseResponse();
+  }
 });
 test('the next hand preserves revealed nodes and completed flips release their compositor hint', async ({
   page,

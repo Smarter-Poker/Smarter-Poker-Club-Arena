@@ -1234,6 +1234,63 @@
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
   },
+  "requiredCiHostedCapacityRecovery20261030": {
+    "review": "Only three required-job runs-on selections gain a closed trusted-repository standard-hosted recovery variable; paid defaults/fork OS fallbacks, all commands, permissions, assertions, budgets, joins and financial states remain unchanged. Current input identity only; no native financial or live qualification restamp. Historical audits preserved.",
+    "changes": [
+      {
+        "section": "files",
+        "file": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 253286,
+          "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+        },
+        "current": {
+          "bytes": 253386,
+          "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+        }
+      }
+    ]
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "mergedUnionAndClientCiSourceAudit20261030": {
+    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
+    "currentCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    }
+  },
+  "requiredCiProtectedMainIntegration20261030": {
+    "review": "Compose only the closed three-runner selection with protected main current typed Union qualification. Preserve both prior audit histories and all other metadata; update active source identity only, not financial or live qualification.",
+    "changes": [],
+    "workflowComposition": {
+      "path": ".github/workflows/ci.yml",
+      "candidatePrevious": {
+        "bytes": 253386,
+        "sha256": "b1a43d06541b38f03a9410fe7eb01421f5049a224abdc8861d3a343e63bed83c"
+      },
+      "protectedMainPrevious": {
+        "bytes": 253759,
+        "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+      },
+      "current": {
+        "bytes": 253859,
+        "sha256": "bef775286d7da17f0b32dc0567e5916e8688c253e1b3e07eb1b9954aca07e8b6"
+      }
+    }
+  },
   "requiredNativeRunnerProfile20261030": {
     "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
     "changes": [
@@ -1261,27 +1318,6 @@
       "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
     },
     "financial_recertification": false
-  },
-  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
-    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
-    "path": ".github/workflows/ci.yml",
-    "previous": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
-    },
-    "current": {
-      "bytes": 253109,
-      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
-    },
-    "historicalEvidenceRestamped": false,
-    "qualificationStateChanged": false
-  },
-  "mergedUnionAndClientCiSourceAudit20261030": {
-    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
-    "currentCiPin": {
-      "bytes": 253759,
-      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
-    }
   },
   "restoredRecoveryAndProtectedMainSourceAudit20261030": {
     "scope": "Source identity only after ordinary integration of protected3f2f6014bb50e3f660afd3b91aed18e40415b395. Preserve Union payer defaults, current Union regression, publisher16-shard qualification, reader v5, cash behavior and required native runner profiles. No historical financial or live recertification.",
@@ -1383,6 +1419,13 @@
     },
     "qualification": "SOURCE_ONLY_UNRUN. No financial recertification, SQL installation or historical receipt restamp. Actual paid admission improvement is unproven; protected hosted qualification remains mandatory.",
     "integration": "Protected main 6b4b49e216ae78d07348661f7c296242732e16e9 retained, including native profile controls and all financial qualification history. This audit changes source identity only."
+  },
+  "channelAdmissionMainComposition20261030": {
+    "scope": "Current source identity after ordinary integration of equivalent protected-main standard-native runner ownership. Preserve both parent audits, historical evidence, financial assertions and qualification states. No financial, installed or live recertification.",
+    "protectedMain": "97bcce289707e58d682d25654a5978a34327bf79",
+    "channelAdmissionParent": "4f49c6517737d755dd6e49f99da79da15af3cf44",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   },
   "browserSdkDiagnosticSourceAudit20261030": {
     "scope": "Current source identity only: omit redundant SDK sizing; partition the unchanged client test inventory across eight paid four-core shards; omit unchanged bitmap scanning and offline monitoring-rule evaluation only after the existing immutable presentation/configuration proof succeeds. Preserve default full checks for missing, mixed, financial and unknown inputs; matte baseline law, all browser cases, compiler/native/financial checks, profile controls, deadlines, permissions and publisher matrices remain unchanged.",

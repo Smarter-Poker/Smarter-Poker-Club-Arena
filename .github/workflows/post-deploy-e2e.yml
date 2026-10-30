@@ -392,9 +392,10 @@ jobs:
             "${{ github.repository }}" "$SOURCE_RUN_ID" > "$JOBS_JSON"
           node - "$JOBS_JSON" "$GITHUB_OUTPUT" <<'NODE'
           const fs = require('node:fs');
+          const { publisherJobKey } = require('./scripts/ci/publisher-job-identity.mjs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
-          const publisherJob = (entry, key) => entry?.name === key || entry?.name === `production / ${key}`;
+          const publisherJob = (entry, key) => publisherJobKey(entry?.name) === key || entry?.name === key || entry?.name === `production / ${key}`;
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
           const jobs = payload.jobs.filter((entry) => publisherJob(entry, 'publish-to-origin'));
           // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.
@@ -490,13 +491,20 @@ jobs:
           // caller can be superseded after all read-only preparation succeeded,
           // before GitHub creates any nested writer job. This is not a publish
           // verdict: unknown/renamed jobs, failures or any child execution refuse.
-          const preparationNames = new Set(['publish-needed', 'build-and-store', 'build-record-gateway', ...[1,2,3,4].map(n => `client-tests (${n})`)]);
+          const preparationNames = new Set([
+            'publish-needed', 'build-and-store', 'build-record-gateway',
+            ...[1,2,3,4].map(n => `client-tests (${n})`),
+            'client-publication / admit',
+            'client-publication / Admit The Selected Client Publication Window',
+            'client-publication / build-and-store',
+            ...Array.from({length:16}, (_, i) => `client-publication / client-tests (${i + 1})`),
+          ]);
           const cancelledBeforeTransaction = process.env.SOURCE_CONCLUSION === 'cancelled' &&
             jobs.length === 0 && retained.length === 0 && payload.jobs.length > 0 &&
             new Set(payload.jobs.map(entry => entry.name)).size === payload.jobs.length &&
             payload.jobs.every(entry => entry.status === 'completed' &&
               ((preparationNames.has(entry.name) && (entry.conclusion === 'success' || inconclusive(entry))) ||
-               (entry.name === 'production' && entry.conclusion === 'cancelled' && (entry.steps ?? []).length === 0)));
+               (['production', 'client-publication / production'].includes(entry.name) && ['cancelled', 'skipped'].includes(entry.conclusion) && (entry.steps ?? []).length === 0)));
           const superseded =
             (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin || cancelledBeforeTransaction;
           if (superseded) {

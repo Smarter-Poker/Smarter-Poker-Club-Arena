@@ -8,6 +8,8 @@ import {pathToFileURL} from 'node:url';
 import {assertClubArenaRepository} from './repository-identity.mjs';
 import {servingIdentity} from './gto-v31-qualification.mjs';
 const SHA=/^[0-9a-f]{40}$/,HEX=/^[0-9a-f]{64}$/,UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const RESOLVE_EXISTING_IMAGE='resolve-existing';
+const IMAGE=/^sha256:[0-9a-f]{64}$/;
 const DB='https://kuklfnapbkmacvwxktbh.supabase.co';
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join('\0')===[...keys].sort().join('\0');
 const requireValue=(ok,label)=>{if(!ok)throw Error(label);};
@@ -17,7 +19,7 @@ export function invocation(env,event){
  assertClubArenaRepository(env.GITHUB_REPOSITORY,env.GITHUB_REPOSITORY_ID);
  requireValue(env.GITHUB_EVENT_NAME==='workflow_dispatch'&&env.GITHUB_REF==='refs/heads/main','Explicit protected-main dispatch required');
  const p=event.inputs;
- requireValue(exact(p,['dataset','candidate_sha','image_id','stage_run'])&&UUID.test(p.dataset)&&SHA.test(p.candidate_sha)&&/^sha256:[0-9a-f]{64}$/.test(p.image_id)&&/^[1-9][0-9]*$/.test(p.stage_run),'Exact staged-image selection required');
+ requireValue(exact(p,['dataset','candidate_sha','image_id','stage_run'])&&UUID.test(p.dataset)&&SHA.test(p.candidate_sha)&&(IMAGE.test(p.image_id)||p.image_id===RESOLVE_EXISTING_IMAGE)&&/^[1-9][0-9]*$/.test(p.stage_run),'Exact staged-image selection required');
  return p;
 }
 export function stageAdmission(run,jobs,sha){
@@ -47,6 +49,40 @@ export function programRequest(row,dataset){
  requireValue(groups.length===1&&Array.isArray(groups[0].cases)&&groups[0].cases.length>=2&&groups[0].cases.length<=32,'Exact approved public cases required');
  const request={format:'public_hist215_preflight_request_v1',dataset_id:dataset,program,cases:groups[0].cases};
  requireValue(Buffer.byteLength(canonical(request),'ascii')<=4*1024*1024,'Existing 4 MiB request ceiling exceeded');return request;
+}
+/** Resolve only the canonical tag written by engine-release-transaction.sh. */
+export function remoteImageResolutionCommand(sha,tree){
+ requireValue(SHA.test(sha)&&SHA.test(tree),'Exact existing image source required');
+ const script=`set -euo pipefail
+exec 9>/var/lock/club-arena-engine-up.lock
+flock -n 9 || { echo 'Existing release lock is busy' >&2; exit 75; }
+clock=$(TZ=America/Chicago date +%H%M)
+if [ "$clock" -ge 350 ] && [ "$clock" -le 406 ]; then echo 'Daily engine maintenance owns this interval' >&2; exit 75; fi
+before=$(docker container inspect -f '{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.State.Status}}|{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)
+case "$before" in *'|running|'*) ;; *) echo 'Serving engine is not running' >&2; exit 1;; esac
+image=$(docker image inspect -f '{{.Id}}' 'club-arena-engine:${sha}')
+[[ "$image" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Existing immutable image unavailable' >&2; exit 1; }
+# After this single tag lookup every inspection and execution is pinned to the immutable ID.
+[ "$(docker image inspect -f '{{.Id}}' "$image")" = "$image" ]
+[ "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = '${sha}' ]
+[ "$(docker image inspect -f '{{index .Config.Labels "com.smarterpoker.engine.source-tree"}}' "$image")" = '${tree}' ]
+[ "$(docker image inspect -f '{{index .Config.Labels "com.smarterpoker.engine.build-contract"}}' "$image")" = 'clean-server-archive-v1' ]
+after=$(docker container inspect -f '{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.State.Status}}|{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)
+[ "$before" = "$after" ] || { echo 'Serving engine identity changed' >&2; exit 1; }
+printf '{"format":"public215_existing_image_identity_v1","candidate_sha":"${sha}","image_id":"%s","server_tree":"${tree}","build_contract":"clean-server-archive-v1"}\\n' "$image"`;
+ return 'bash -c '+"'"+script.replaceAll("'","'\\''")+"'";
+}
+export function existingImageIdentity(value,sha,tree){
+ requireValue(exact(value,['format','candidate_sha','image_id','server_tree','build_contract'])&&value.format==='public215_existing_image_identity_v1'&&SHA.test(sha)&&SHA.test(tree)&&value.candidate_sha===sha&&value.server_tree===tree&&value.build_contract==='clean-server-archive-v1'&&IMAGE.test(value.image_id),'Exact existing immutable image identity required');
+ return value.image_id;
+}
+export function resolveImageSelection(selected,tree,lookup,write){
+ if(IMAGE.test(selected.image_id))return selected.image_id;
+ requireValue(selected.image_id===RESOLVE_EXISTING_IMAGE,'Exact staged-image selection required');
+ const identity=JSON.parse(lookup(remoteImageResolutionCommand(selected.candidate_sha,tree)));
+ const image=existingImageIdentity(identity,selected.candidate_sha,tree);
+ write('existing-image-identity.json',canonical(identity)+'\n');
+ return image;
 }
 export function remoteCommand(sha,image,tree,requestSha,runKey){
  requireValue(SHA.test(sha)&&/^sha256:[0-9a-f]{64}$/.test(image)&&SHA.test(tree)&&HEX.test(requestSha)&&/^[1-9][0-9]*-[1-9][0-9]*$/.test(runKey),'Immutable host invocation required');
@@ -100,21 +136,22 @@ async function main(){
  const tree=command('git',['rev-parse',selected.candidate_sha+':server']);
  const run=JSON.parse(command('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${selected.stage_run}`]));
  const pages=JSON.parse(command('gh',['api','--paginate','--slurp',`repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${selected.stage_run}/jobs?per_page=100`]));stageAdmission(run,pages.flatMap(p=>p.jobs),selected.candidate_sha);
- const before=await healthy();let count=0;const observed=new Set();let after;
+ const before=await healthy();let imageId;let count=0;const observed=new Set();let after;
  try {
+ imageId=resolveImageSelection(selected,tree,remote=>command(process.env.PUBLIC215_SSH_COMMAND,[remote]),(name,bytes)=>writeEvidence(out,name,bytes));
  for(let offset=0;offset<=1024;offset++){
   const page=await rpc('fn_gto_v31_model_preparations',{p_dataset_id:selected.dataset,p_offset:offset,p_limit:1});requireValue(Array.isArray(page)&&page.length<=1,'One private preparation page required');if(!page.length)break;
   const row=page[0],request=programRequest(row,selected.dataset),cid=digest(row.context);requireValue(!observed.has(cid),'Duplicate private preparation');observed.add(cid);
   sourceGraph(row.encoder_descriptor,row.public_training_provenance.encoder_checksum,path=>Buffer.from(command('git',['show',selected.candidate_sha+':'+path],{encoding:null})));
   const bytes=canonical(request),requestSha=createHash('sha256').update(bytes,'ascii').digest('hex');
-  const result=JSON.parse(command(process.env.PUBLIC215_SSH_COMMAND,[remoteCommand(selected.candidate_sha,selected.image_id,tree,requestSha,process.env.GITHUB_RUN_ID+'-'+process.env.GITHUB_RUN_ATTEMPT)],{input:bytes,timeout:330000}));
+  const result=JSON.parse(command(process.env.PUBLIC215_SSH_COMMAND,[remoteCommand(selected.candidate_sha,imageId,tree,requestSha,process.env.GITHUB_RUN_ID+'-'+process.env.GITHUB_RUN_ATTEMPT)],{input:bytes,timeout:330000}));
   requireValue(result?.format==='public_hist215_preflight_result_v1'&&digest(result.receipt)===result.receipt_checksum&&result.receipt.model_checksum===row.model_checksum&&result.receipt.dataset_id===selected.dataset,'Actual finite Linux result binding differs');
-  executionEvidence(result,{exit_code:0,context_id:cid,request_sha256:requestSha,candidate_sha:selected.candidate_sha,image_id:selected.image_id,stage_run:selected.stage_run,observedAt:new Date().toISOString()},(name,bytes)=>writeEvidence(out,name,bytes));count++;
+  executionEvidence(result,{exit_code:0,context_id:cid,request_sha256:requestSha,candidate_sha:selected.candidate_sha,image_id:imageId,stage_run:selected.stage_run,observedAt:new Date().toISOString()},(name,bytes)=>writeEvidence(out,name,bytes));count++;
  }
  requireValue(count===107,'Complete 107-context private preparation set required');
  } finally {
   after=await healthy();writeFileSync(join(out,'serving-identity.json'),canonical({serving_sha_before:before.releaseSha,serving_sha_after:after.releaseSha,contexts:count})+'\n',{flag:'wx',mode:0o600});requireValue(before.releaseSha===after.releaseSha,'Healthy serving identity changed');
  }
- writeFileSync(join(out,'receipt.json'),canonical({format:'public215_linux_preflight_control_v1',dataset_id:selected.dataset,candidate_sha:selected.candidate_sha,image_id:selected.image_id,stage_run:selected.stage_run,contexts:count,serving_sha_before:before.releaseSha,serving_sha_after:after.releaseSha,status:'execution_evidence_only_not_frozen_or_certified'})+'\n',{flag:'wx',mode:0o600});
+ writeFileSync(join(out,'receipt.json'),canonical({format:'public215_linux_preflight_control_v1',dataset_id:selected.dataset,candidate_sha:selected.candidate_sha,image_id:imageId,stage_run:selected.stage_run,contexts:count,serving_sha_before:before.releaseSha,serving_sha_after:after.releaseSha,status:'execution_evidence_only_not_frozen_or_certified'})+'\n',{flag:'wx',mode:0o600});
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(()=>{const out=resolve(process.env.PUBLIC215_RECEIPT_DIR||'artifacts/public215-linux-preflight');mkdirSync(out,{recursive:true,mode:0o700});writeFileSync(join(out,'failure.json'),canonical({format:'public215_linux_preflight_failure_v1',status:'incomplete_unqualified_no_freeze_or_activation'})+'\n',{mode:0o600});console.error('Finite public215 Linux preflight refused; retained evidence is incomplete and unqualified');process.exitCode=1;});

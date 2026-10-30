@@ -87,8 +87,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 253746,
-      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
+      "bytes": 254219,
+      "sha256": "f81151e8ea0a01cdda1e2f46acf95719e4701fdf9358ecf96c125960d4fb4050"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -1486,5 +1486,37 @@
       "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
     },
     "financial_recertification": false
+  },
+  "currentTypedUnionReceiptRegressionSourceAudit20261030": {
+    "reason": "Add the direct current typed Union three-scope financial regression and preserve its evidence immediately after the unchanged existing financial-phase runner. Exactly two workflow lines added; all existing commands, assertions, budgets, matrices and qualification states remain unchanged. This records current workflow identity only, not new hosted execution or historical financial/live certification.",
+    "path": ".github/workflows/ci.yml",
+    "previous": {
+      "bytes": 252636,
+      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+    },
+    "current": {
+      "bytes": 253109,
+      "sha256": "bb40e5a164d0a52d08505cc3b2a799668951b42836a2b18010eb308e452d70f9"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "mergedUnionAndClientCiSourceAudit20261030": {
+    "scope": "Source identity only. Preserve protected main client worker and disjoint CSS shard changes plus the added actual current typed Union regression. Historical financial evidence, assertions and production state unchanged.",
+    "currentCiPin": {
+      "bytes": 253759,
+      "sha256": "3003b1489f09e6b91084d7c8525b3f37232c8648c2bfe9d04298587aedae44ec"
+    }
+  },
+  "restoredRecoveryAndProtectedMainSourceAudit20261030": {
+    "scope": "Source identity only after ordinary integration of protected3f2f6014bb50e3f660afd3b91aed18e40415b395. Preserve Union payer defaults, current Union regression, publisher16-shard qualification, reader v5, cash behavior and required native runner profiles. No historical financial or live recertification.",
+    "protectedMain": "3f2f6014bb50e3f660afd3b91aed18e40415b395",
+    "qualifiedRecoveryParent": "7e7cc7e520f559e474312acc870258ed297132ce",
+    "composedCi": {
+      "bytes": 254219,
+      "sha256": "f81151e8ea0a01cdda1e2f46acf95719e4701fdf9358ecf96c125960d4fb4050"
+    },
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
   }
 }

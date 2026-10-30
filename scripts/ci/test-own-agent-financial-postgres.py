@@ -448,6 +448,13 @@ try:
     # transformed into the one progress result the new caller may continue.
     q("BEGIN;SET LOCAL test.own_namespace='precompute-refusal';SELECT own_playing_seed();"+preparation_boundaries+prep_count+"CREATE OR REPLACE FUNCTION fn_cash_source_refusals_for_period(uuid,uuid,timestamptz,timestamptz)RETURNS jsonb LANGUAGE sql AS $$SELECT '{\"status\":\"blocked\",\"count\":1,\"sources\":[\"synthetic-refusal\"]}'::jsonb$$;CREATE TEMP TABLE refused AS SELECT smarter_private.weekly_payout_prepare_due()r;SELECT caw_assert((SELECT r#>>'{problems,0,preparation,problems,0,reason}'='cash_source_refusals_pending'FROM refused),'original refusal preserved');SELECT caw_assert((SELECT last_value=1 FROM preparation_calls),'no generic refusal retry');SELECT caw_assert(NOT EXISTS(SELECT FROM accounting_own_agent_source_reviews),'refusal reviews no source');ROLLBACK;")
     results.append({'case':'original-precompute-refusal-is-returned-once-without-general-retry','passed':True})
+    # The existing three genuinely settled original books are reused. All
+    # fixture hydration and owner replacement is contained in one rollback.
+    replay_fixture=R/'scripts/ci/fixtures/standalone-paid-scope-replay'
+    replay_helper=replay_fixture/'native_regression.py'
+    replay_ns={'__file__':str(replay_helper)}
+    exec(compile(replay_helper.read_text(),str(replay_helper),'exec'),replay_ns)
+    results.extend(replay_ns['run'](q,R,replay_fixture)['cases'])
     changed=['fn_accounting_earning_contract','fn_calculate_cash_rakeback_periods','fn_rakeback_split_check','fn_rakeback_split_write','fn_prepare_accounting_week','fn_settle_accounting_commission_stage','fn_settle_accounting_commission_stage_v3','fn_settle_accounting_rakeback_stage','fn_accounting_tournament_commission_source_guard','fn_accounting_union_earned_plan_sets','fn_accounting_union_earned_plan_window','fn_ca_rakeback_payout_leg_is_documented','ca_player_stats_financial_report','fn_ca_settlement_correctness_check','own_agent_destination_contract','rakeback_wallet_plan','record_rakeback_wallet_contracts','rakeback_certificate_wallets','rakeback_wallet_payout_complete','own_agent_interpreted_contract','admit_own_agent_source','prepare_own_agent_interpretation','assert_own_agent_scope_interpreted','weekly_payout_prepare_due']
     names=','.join("'"+n+"'"for n in changed)
     postimages=json.loads(q("SELECT jsonb_agg(jsonb_build_object('signature',p.oid::regprocedure::text,'md5',md5(pg_get_functiondef(p.oid)),'definition',pg_get_functiondef(p.oid),'metadata',to_jsonb(p)-'prosrc')ORDER BY p.proname)FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN('public','smarter_private')AND p.proname IN("+names+")").stdout.strip())

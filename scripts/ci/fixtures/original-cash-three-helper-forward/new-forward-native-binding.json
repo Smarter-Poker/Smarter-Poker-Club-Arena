@@ -1,0 +1,21 @@
+{
+  "source_only": true,
+  "forward_migration": "supabase/migrations/20261030054822_original_cash_helpers_preserve_genuine_refreshed_weekly_proo.sql",
+  "forward_version": "20261030054822",
+  "readers": {
+    "pre": "pre-NEWFORWARD54822-READONLY15-ROLLBACK60.sql",
+    "post": "post-NEWFORWARD54822-READONLY15-ROLLBACK60.sql"
+  },
+  "source_sha256": {
+    "supabase/migrations/20261030054822_original_cash_helpers_preserve_genuine_refreshed_weekly_proo.sql": "2cc84fd0955cca35ed399ca993bd3d1196d0d5dd1e7d3d4372353efe186fff5a",
+    "supabase/migrations/20261029230502_original_cash_reads_keep_their_complete_proof_without_changi.sql": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6"
+  },
+  "files": {
+    "new_forward_guard.py": "0a702179a38479c0164785d741fedbdcd516f9924cc3782c492613d09871bef1",
+    "new-forward-derived-cache-snapshots.json": "c7ed463faedd4cbc5254c5062662fdb02f93ae674cfba61088ada694a904cbaf",
+    "pre-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "97fddc525aae28351c6efbad05adc67491427dbc5bf71a3080f4228905628bc4",
+    "post-NEWFORWARD54822-READONLY15-ROLLBACK60.sql": "73bcd12f69d65a794953a9de02263a98e8fcfd99ec7be0de19f640abf68b8d0a"
+  },
+  "original_migration_sha256": "6e83a4a48bf8e2d3e4f23f8cdd826426b76c3cc175fd409345f8a362cce908e6",
+  "actual_source_GEN_not_invoked_or_faked": true
+}

@@ -57,7 +57,7 @@ export function registerLobbyGameSectionsCases(lobbyGameSectionsFixture: () => P
       await expect(page.getByRole('tab')).toHaveText(['ALL', 'NLH', 'PLO', 'LIMIT']);
       if (width === 393) await page.screenshot({ path: testInfo.outputPath('cash.png') });
       await tournaments.click();
-      await expect(page.getByRole('tab')).toHaveText(['MTT', 'SPINS', 'HEADS UP']);
+      await expect(page.getByRole('tab')).toHaveText(['MTT', 'SPINS', "SIT N GO'S", 'SATELLITES']);
       await expect(cash).toHaveAttribute('aria-expanded', 'false');
       if (width === 393) await page.screenshot({ path: testInfo.outputPath('tournaments.png') });
       await tournaments.click();

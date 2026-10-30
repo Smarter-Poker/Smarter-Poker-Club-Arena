@@ -58,3 +58,16 @@
 .club-home__games[hidden] {
   display: none;
 }
+
+/* The approved plate has an opaque export gutter. Clip that gutter to the
+   metal silhouette so both choices share the surrounding lobby well. */
+.lobby-game-sections__button {
+  clip-path: polygon(12% 10%, 88% 10%, 96% 24%, 96% 77%, 88% 90%, 12% 90%, 4% 77%, 4% 24%);
+}
+
+@media (max-width: 900px) {
+  .lobby-game-sections {
+    gap: 8px;
+    padding: 0 0 6px;
+  }
+}

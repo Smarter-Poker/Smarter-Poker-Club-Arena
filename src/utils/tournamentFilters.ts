@@ -273,6 +273,19 @@ export function isSatelliteTournament(
 
 const BOUNTY_FLAGS = ['is_bounty', 'is_pko', 'is_mystery_bounty'];
 
+/** Satellite discovery requires recorded facts, never a title convention. */
+export function isRecordedSatelliteTournament(row: TournamentTraitRow): boolean {
+  return (
+    isSatelliteTournament({
+      ...row,
+      variant: row.variant ?? null,
+      tournament_type: row.tournament_type ?? null,
+      satellite_target_id: row.satellite_target_id ?? null,
+      satellite_target: row.satellite_target ?? null,
+    }) === true
+  );
+}
+
 /** Progressive knockout. */
 export function isPkoTournament(row: TournamentTraitRow): TraitAnswer {
   return carries(row, 'is_pko') ? row.is_pko === true : namedAs(row, 'pko');

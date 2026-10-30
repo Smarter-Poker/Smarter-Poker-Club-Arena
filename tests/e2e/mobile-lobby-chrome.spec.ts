@@ -857,31 +857,83 @@ for (const width of [320, 393]) {
     await page.setViewportSize({ width, height: 852 });
     await page.setContent(lobby({ countText: '5 Balances', publishControlsHeight: true }));
     await settle(page);
+    // This historical chrome fixture also serves scroll/nav tests with all
+    // game types. This case represents the opened tournament family: four
+    // types, and the five supported tournament statuses.
+    await page.locator('.game-bar__types').evaluate((types) => {
+      types.innerHTML = ['MTT', 'Spins', "Sit N Go's", 'Satellites']
+        .map((label) => `<button type="button" role="tab" class="game-bar__type">${label}</button>`)
+        .join('');
+    });
+    await page.locator('.quickprefs__row--status').evaluate((status) => {
+      status.innerHTML = ['All', 'Running', 'Open Registration', 'Late Reg', 'Starting Soon']
+        .map((label) => `<button type="button" class="quickprefs__chip">${label}</button>`)
+        .join('');
+    });
     const metrics = await page.locator('.lobby-controls').evaluate((controls) => {
-      const types = controls.querySelector<HTMLElement>('.game-bar__types')!;
-      const status = controls.querySelector<HTMLElement>('.quickprefs__row--status')!;
-      const filter = controls.querySelector<HTMLElement>('.game-bar__filter-btn')!;
-      const box = filter.getBoundingClientRect();
-      const tops = [...types.children].map((el) => el.getBoundingClientRect().top);
-      types.scrollLeft = types.scrollWidth;
-      const lastType = types.lastElementChild!.getBoundingClientRect();
-      status.scrollLeft = status.scrollWidth;
-      const lastStatus = status.lastElementChild!.getBoundingClientRect();
+      const rects = (selector: string) =>
+        [...controls.querySelectorAll<HTMLElement>(selector)].map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+            height: r.height,
+            label: el.textContent,
+            textFits: el.scrollWidth <= el.clientWidth + 1,
+          };
+        });
       return {
-        oneTypeRow: Math.max(...tops) - Math.min(...tops),
-        filter: { left: box.left, right: box.right, height: box.height },
-        typeReachable: lastType.left >= 0 && lastType.right <= innerWidth,
-        statusReachable: lastStatus.left >= 0 && lastStatus.right <= box.left,
+        types: rects('.game-bar__type'),
+        statuses: rects('.quickprefs__chip'),
+        filter: rects('.game-bar__filter-btn')[0],
         pageOverflow: document.documentElement.scrollWidth - innerWidth,
       };
     });
-    expect(metrics.oneTypeRow).toBeLessThanOrEqual(1);
-    expect(metrics.filter.left).toBeGreaterThanOrEqual(0);
-    expect(metrics.filter.right).toBeLessThanOrEqual(width);
-    expect(metrics.filter.height).toBeGreaterThanOrEqual(44);
-    expect(metrics.typeReachable).toBe(true);
-    expect(metrics.statusReachable).toBe(true);
+    expect(metrics.types).toHaveLength(4);
+    // Two equally aligned columns in two distinct rows, with no overlap.
+    expect(Math.abs(metrics.types[0].top - metrics.types[1].top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.types[2].top - metrics.types[3].top)).toBeLessThanOrEqual(1);
+    expect(metrics.types[2].top).toBeGreaterThanOrEqual(metrics.types[0].bottom);
+    expect(Math.abs(metrics.types[0].left - metrics.types[2].left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.types[1].left - metrics.types[3].left)).toBeLessThanOrEqual(1);
+    expect(metrics.types[0].right).toBeLessThanOrEqual(metrics.types[1].left);
+    expect(metrics.statuses).toHaveLength(5);
+    for (let i = 0; i < metrics.statuses.length; i++) {
+      for (const other of metrics.statuses.slice(i + 1)) {
+        const current = metrics.statuses[i];
+        expect(
+          current.right <= other.left ||
+            other.right <= current.left ||
+            current.bottom <= other.top ||
+            other.bottom <= current.top
+        ).toBe(true);
+      }
+    }
+    for (const control of [...metrics.types, ...metrics.statuses, metrics.filter]) {
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(width);
+      expect(control.height).toBeGreaterThanOrEqual(44);
+      expect(control.textFits, `${control.label} must fit its touch target`).toBe(true);
+    }
+    expect(metrics.filter.top).toBeGreaterThanOrEqual(
+      Math.max(...metrics.statuses.map((r) => r.bottom))
+    );
     expect(metrics.pageOverflow).toBeLessThanOrEqual(1);
+    // Every control remains an actual hit target after scrolling into view,
+    // including the final status and Filters below the wrapped type grid.
+    for (const control of await page
+      .locator('.game-bar__type, .quickprefs__chip, .game-bar__filter-btn')
+      .all()) {
+      await control.scrollIntoViewIfNeeded();
+      expect(
+        await control.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })
+      ).toBe(true);
+    }
   });
 }
 

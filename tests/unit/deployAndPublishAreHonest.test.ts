@@ -333,14 +333,15 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
       .map((match) => match[1].trim());
     expect(runners.length).toBeGreaterThanOrEqual(4);
     expect(new Set(runners)).toEqual(
-      new Set(
-        ['ca-linux-4core', 'ca-linux-8core', 'ca-linux-delivery'].map(
+      new Set([
+        'ubuntu-latest',
+        ...['ca-linux-4core', 'ca-linux-8core'].map(
           (label) =>
             "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && '" +
             label +
             "' || 'ubuntu-latest' }}"
-        )
-      )
+        ),
+      ])
     );
     expect(publish).not.toContain('vars.CI_RUNNER');
     // Attestation verification explicitly denies self-hosted provenance.

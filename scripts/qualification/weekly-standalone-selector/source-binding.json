@@ -143,8 +143,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 253530,
-      "sha256": "c655aba6021291d77e84a5ac2682517872fb2677da99a93bd828a232223c5c8d"
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -1195,5 +1195,17 @@
       }
     ],
     "financial_recertification": false
+  },
+  "warmClientRunnerAdmissionSourceAudit20261029": {
+    "scope": "Source identity only: client CI and publication preparation use standard warm GitHub-hosted runner admission; bounded Vitest workers preserve existing test and financial requirements.",
+    "previousCiPin": {
+      "bytes": 252956,
+      "sha256": "a3888128ad411b046cc6f873c0b364da8eceed16593353d2209f4c56751cfeeb"
+    },
+    "currentCiPin": {
+      "bytes": 251814,
+      "sha256": "ec1c73f9d30c138799a017528e27c1c6bf9680e9a887e628593174d42ecc55d3"
+    },
+    "qualification": "No financial recertification. All existing financial inputs, assertions, histories, qualification states, verdicts and historical source audits are preserved."
   }
 }

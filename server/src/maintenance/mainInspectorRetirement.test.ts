@@ -79,6 +79,14 @@ it.skipIf(process.platform !== 'linux')(
         },
       },
       hostTimeoutEntry: {
+        busyEntry: {
+          targetBusyEntered: true,
+          nonceBound: true,
+          witnessBound: true,
+          pid: 1,
+          gameActions: 0,
+          beforeFixedClose: true,
+        },
         code: 1,
         hostDeadlineMs: 20000,
         extraOuterGraceMs: 0,
@@ -97,6 +105,14 @@ it.skipIf(process.platform !== 'linux')(
         },
       },
       timeoutEntry: {
+        busyEntry: {
+          targetBusyEntered: true,
+          nonceBound: true,
+          witnessBound: true,
+          pid: 1,
+          gameActions: 0,
+          beforeFixedClose: true,
+        },
         outcome: {
           ok: false,
           reason: 'deadline_exhausted',
@@ -118,6 +134,8 @@ it.skipIf(process.platform !== 'linux')(
         retryAllowed: false,
       },
     });
+    expect(result.timeoutEntry.busyEntry.remainingMs).toBeGreaterThan(20000);
+    expect(result.hostTimeoutEntry.busyEntry.remainingMs).toBeGreaterThan(20000);
   },
   230000
 );

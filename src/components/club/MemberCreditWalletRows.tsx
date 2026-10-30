@@ -33,7 +33,10 @@ export default function MemberCreditWalletRows({
     if (change?.agentId && change.agentId !== userId) return;
     setAttempt((value) => value + 1);
   });
-  const key = `${clubId}:${userId}:${role}:${revision}:${attempt}`;
+  // A record refresh does not change the owner of verified terms. Keep the
+  // same card mounted while its replacement read is pending, but never carry
+  // another member's (or role's) credit line into a new scope.
+  const key = `${clubId}:${userId}:${role}`;
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -77,7 +80,7 @@ export default function MemberCreditWalletRows({
       }
     })();
     return () => controller.abort();
-  }, [key, clubId, userId, role]);
+  }, [key, clubId, userId, role, revision, attempt]);
   if (result?.key !== key) return <p role="status">Loading Credit Line...</p>;
   if (result.failed)
     return (

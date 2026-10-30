@@ -1181,7 +1181,7 @@ export default function MemberManagementPage() {
             clubId={resolvedClubId}
             userId={userId}
             role={identity!.role}
-            revision={`${recordRevision}:${wallets.agent_wallet}`}
+            revision={recordRevision}
           />
         )}
 

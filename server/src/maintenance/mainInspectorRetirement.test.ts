@@ -27,14 +27,14 @@ it('qualifies MAIN Inspector transport, kernel ownership and durable operation c
     {
       cwd: root,
       encoding: 'utf8',
-      timeout: 15000,
+      timeout: 35000,
       maxBuffer: 131072,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     }
   );
   expect(host.error?.message ?? null, host.stderr).toBeNull();
   expect(host.status, host.stdout + host.stderr).toBe(0);
-}, 40000);
+}, 60000);
 
 it.skipIf(process.platform !== 'linux')(
   'qualifies the composed MAIN retirement on the exact production Node container',
@@ -45,7 +45,7 @@ it.skipIf(process.platform !== 'linux')(
       {
         cwd: resolve('..'),
         encoding: 'utf8',
-        timeout: 195000,
+        timeout: 225000,
         maxBuffer: 131072,
       }
     );
@@ -62,10 +62,45 @@ it.skipIf(process.platform !== 'linux')(
       gameActions: 0,
       cleanupRemoved: true,
       rawExitSameProcessAlive: true,
+      hostEntry: {
+        code: 0,
+        hostDeadlineMs: 20000,
+        extraOuterGraceMs: 0,
+        intentDurable: true,
+        receiptPresent: true,
+        outcome: {
+          ok: true,
+          stage: 'complete',
+          closeRequested: true,
+          closeAcknowledged: true,
+          connectionClosed: true,
+          listenerAbsent: true,
+          retryAllowed: false,
+        },
+      },
+      hostTimeoutEntry: {
+        code: 1,
+        hostDeadlineMs: 20000,
+        extraOuterGraceMs: 0,
+        intentDurable: true,
+        receiptPresent: false,
+        outcome: {
+          ok: false,
+          reason: 'deadline_exhausted',
+          entryStage: 'transport',
+          stage: 'native_close',
+          closeRequested: true,
+          closeAcknowledged: true,
+          connectionClosed: false,
+          listenerAbsent: null,
+          retryAllowed: false,
+        },
+      },
       timeoutEntry: {
         outcome: {
           ok: false,
           reason: 'deadline_exhausted',
+          entryStage: 'transport',
           stage: 'native_close',
           closeRequested: true,
           closeAcknowledged: true,
@@ -84,5 +119,5 @@ it.skipIf(process.platform !== 'linux')(
       },
     });
   },
-  200000
+  230000
 );

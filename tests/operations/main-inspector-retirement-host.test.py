@@ -1,10 +1,12 @@
 """Isolated real-filesystem/pipe qualification of the maintained host authority."""
 import contextlib
+import fcntl
 import hashlib
 import importlib.util
 import io
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -58,6 +60,7 @@ class HostTests(unittest.TestCase):
         self.health_reads = 0
         self.acks = []
         self.child = None
+        self.real_popen = subprocess.Popen
         self.real_time = time.time
         self.expired = False
 
@@ -85,6 +88,20 @@ class HostTests(unittest.TestCase):
         self.assertEqual(args[:4], ['docker', 'exec', '-i', CONTAINER])
         self.assertIn('--no-inspect', args[6])
         self.native_deadline = int(args[-1])
+        if self.mode == 'actual_deadline_pipe':
+            # Actual host selector/ACK/wait/alarm against an independently timed
+            # child. No mocked clock or extra outer grace can deliver its line.
+            source = """import json,sys,time
+print(sys.argv[2],flush=True)
+sys.stdin.readline()
+time.sleep(max(0,int(sys.argv[1])/1000-time.time()))
+print(json.dumps({'ok':False,'reason':'deadline_exhausted','stage':'native_close',
+ 'closeRequested':True,'closeAcknowledged':True,'connectionClosed':False,'retryAllowed':False}),flush=True)
+sys.exit(1)
+"""
+            self.child = self.real_popen([sys.executable, '-B', '-c', source,
+                str(self.native_deadline), self.proposal_bytes.decode()], **kwargs)
+            return self.child
         read_fd, write_fd = os.pipe()
         stdout = os.fdopen(read_fd, 'rb', buffering=0)
         state = {'exit': None, 'write_fd': write_fd}
@@ -136,7 +153,7 @@ class HostTests(unittest.TestCase):
         return self.child
 
     def execute(self):
-        actual_fstat, actual_lstat, actual_fsync = os.fstat, Path.lstat, os.fsync
+        actual_fstat, actual_lstat, actual_fsync, actual_write = os.fstat, Path.lstat, os.fsync, os.write
 
         def lstat(path, *args, **kwargs):
             value = actual_lstat(path, *args, **kwargs)
@@ -164,6 +181,11 @@ class HostTests(unittest.TestCase):
             if self.mode == 'regressed_uptime' and self.health_reads > 1:
                 health['uptime'] = 1
             return io.BytesIO(json.dumps(health).encode())
+        def write(fd, value):
+            if fd == 2:
+                self.stderr.write(value.decode('ascii'))
+                return len(value)
+            return actual_write(fd, value)
         with contextlib.ExitStack() as stack:
             for target, value in [('CONTROL', self.control)]:
                 stack.enter_context(patch.object(HOST, target, value))
@@ -180,9 +202,190 @@ class HostTests(unittest.TestCase):
             stack.enter_context(patch.object(subprocess, 'run', side_effect=self.command))
             stack.enter_context(patch.object(subprocess, 'Popen', side_effect=self.popen))
             stack.enter_context(patch.object(HOST.urllib.request, 'urlopen', side_effect=read_health))
-            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            self.stdout, self.stderr = io.StringIO(), io.StringIO()
+            stack.enter_context(contextlib.redirect_stdout(self.stdout))
+            stack.enter_context(contextlib.redirect_stderr(self.stderr))
+            stack.enter_context(patch.object(os, 'write', side_effect=write))
             return HOST.retire()
+
+    def diagnostic(self):
+        return json.loads(self.stderr.getvalue().splitlines()[0])
+
+    def test_actual_host_receives_negative_child_before_unchanged_absolute_deadline(self):
+        self.mode = 'actual_deadline_pipe'
+        before = time.monotonic()
+        self.assertEqual(self.execute(), 1)
+        elapsed = time.monotonic() - before
+        self.assertLess(elapsed, 19.7, 'host must have positive headroom inside20s')
+        fact = self.diagnostic()
+        self.assertEqual(fact['native'], {
+            'ok': False, 'reason': 'deadline_exhausted', 'stage': 'native_close',
+            'closeRequested': True, 'closeAcknowledged': True, 'connectionClosed': False,
+            'listenerAbsent': None, 'entryStage': None, 'retryAllowed': False})
+        self.assertEqual(fact['hostStage'], 'native_exit')
+        self.assertEqual(fact['childExit'], 'nonzero')
+        self.assertEqual(fact['intent'], 'durable')
+        self.assertEqual(fact['ack'], 'flushed')
+        self.assertTrue(self.intent.exists())
+        self.assertFalse(self.receipt.exists())
+        self.assertEqual(HOST.entry_state.__name__, 'entry_state')
+
+    def test_actual_native_receipt_publisher_waits_for_pipe_or_exits_failure_inside_deadline(self):
+        entry = (REPO / 'server/scripts/main-inspector-retirement-entry.mjs').read_text()
+        publisher = entry.split('const retirementWorkDeadline =', 1)[1].split('\nsetTimeout(\n', 1)[0]
+        source = "const retirementDeadline=Date.now()+500;const retirementWorkDeadline =" + publisher
+        source += "\nprocess.once('exit',()=>process.stderr.write(JSON.stringify({remaining:retirementDeadline-Date.now()})));"
+        source += "\nretirementPublish({ok:false,retryAllowed:false,payload:'x'.repeat(1048576)},75);"
+        child = self.real_popen(['node', '--input-type=module', '-e', source],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output, error = child.communicate(timeout=2)
+        self.assertEqual(child.returncode, 75, 'full publication preserves requested exit')
+        self.assertEqual(len(json.loads(output)['payload']), 1048576)
+        self.assertGreater(json.loads(error)['remaining'], 50)
+        child = self.real_popen(['node', '--input-type=module', '-e', source],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(child.wait(timeout=2), 1, 'blocked pipe must fail normally')
+        child.stdout.close()
+        error = child.stderr.read(); child.stderr.close()
+        self.assertGreater(json.loads(error)['remaining'], 50)
+        read_fd, write_fd = os.pipe(); os.close(read_fd)
+        try:
+            child = self.real_popen(['node', '--input-type=module', '-e', source],
+                                   stdout=write_fd, stderr=subprocess.PIPE)
+        finally:
+            os.close(write_fd)
+        _, error = child.communicate(timeout=2)
+        self.assertEqual(child.returncode, 1)
+        self.assertGreater(json.loads(error)['remaining'], 50, error)
+
+    def test_actual_composed_entry_preserves_preclaim_runtime_refusal_without_socket_calls(self):
+        observer = """import * as fixtureHttp from 'node:http';
+import {syncBuiltinESMExports as fixtureSync} from 'node:module';
+import {writeSync as fixtureWrite} from 'node:fs';
+let fixtureHttpCalls=0,fixtureWebSocketCalls=0;
+const fixtureHttpNative=process.getBuiltinModule('node:http');
+fixtureHttpNative.get=()=>{fixtureHttpCalls++;throw new Error('fixture_socket_forbidden')};
+fixtureSync();
+globalThis.WebSocket=class {constructor(){fixtureWebSocketCalls++;throw new Error('fixture_socket_forbidden')}};
+process.once('exit',()=>fixtureWrite(2,JSON.stringify({http:fixtureHttpCalls,websocket:fixtureWebSocketCalls,version:process.version})));
+"""
+        source = observer + '\n'.join((REPO/'server/scripts'/name).read_text() for name in (
+            'retire-owned-main-inspector.mjs','main-inspector-socket-qualification.mjs',
+            'main-inspector-retirement-entry.mjs'))
+        env = dict(os.environ)
+        env['GIT_COMMIT_SHA'] = 'isolated-wrong-source'
+        env.pop('NODE_OPTIONS', None); env.pop('NODE_PATH', None)
+        child = self.real_popen(['node','--input-type=module','-e',source,
+                                str(int(time.time()*1000)+5000)],
+                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
+        out,error = child.communicate(timeout=3)
+        self.assertEqual(child.returncode, 1)
+        observed = json.loads(error)
+        self.assertEqual((observed['http'],observed['websocket']), (0,0))
+        expected = 'runtime_source_unproved' if observed['version']=='v22.23.2' else 'runtime_version_unproved'
+        outcome = json.loads(out)
+        self.assertEqual(outcome['reason'], expected)
+        self.assertEqual(outcome['entryStage'], 'runtime')
+        self.assertFalse(outcome['ok']); self.assertFalse(outcome['retryAllowed'])
+        self.assertNotIn('isolated-wrong-source', out.decode())
+        projected = HOST.bounded_native_facts(outcome)
+        self.assertEqual(projected['entryStage'], 'runtime')
+        self.assertEqual(projected['reason'], expected)
+        self.assertIsNone(projected['closeRequested'])
+        self.assertIsNone(projected['closeAcknowledged'])
+
+    def test_actual_host_failure_publication_handles_blocked_and_closed_pipe_inside_deadline(self):
+        source = """import importlib.util,json,signal,sys,time
+s=importlib.util.spec_from_file_location('h',sys.argv[1]);h=importlib.util.module_from_spec(s);s.loader.exec_module(h)
+def expired(*args): raise TimeoutError('not published')
+signal.signal(signal.SIGALRM,expired)
+deadline=time.monotonic()+0.5
+ok=h.publish_failure({'ok':False,'retryAllowed':False,'native':None},deadline)
+print(json.dumps({'published':ok,'remaining':deadline-time.monotonic()}),flush=True)
+sys.exit(0 if ok else 1)
+"""
+        args = [sys.executable, '-B', '-c', source, str(REPO/'server/scripts/main-inspector-retirement.py')]
+        child = self.real_popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, error = child.communicate(timeout=2)
+        self.assertEqual(child.returncode, 0)
+        self.assertEqual(json.loads(error), {'ok':False,'retryAllowed':False,'native':None})
+        self.assertGreater(json.loads(out)['remaining'], 0.1)
+        for mode in ['blocked', 'closed']:
+            with self.subTest(mode=mode):
+                read_fd, write_fd = os.pipe()
+                if mode == 'blocked':
+                    flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+                    fcntl.fcntl(write_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                    try:
+                        while True: os.write(write_fd, b'x'*4096)
+                    except BlockingIOError: pass
+                    finally: fcntl.fcntl(write_fd, fcntl.F_SETFL, flags)
+                    # macOS normalizes status bits on F_SETFL; compare the
+                    # actual prepared descriptor immediately before the child.
+                    prepared_flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+                else:
+                    os.close(read_fd)
+                try:
+                    child = self.real_popen(args, stdout=subprocess.PIPE, stderr=write_fd)
+                    out, _ = child.communicate(timeout=2)
+                    if mode == 'blocked':
+                        self.assertEqual(fcntl.fcntl(write_fd, fcntl.F_GETFL), prepared_flags)
+                    self.assertEqual(child.returncode, 1)
+                    result = json.loads(out)
+                    self.assertFalse(result['published'])
+                    self.assertGreater(result['remaining'], 0.1)
+                finally:
+                    os.close(write_fd)
+                    if mode == 'blocked': os.close(read_fd)
+
+    def test_failure_diagnostic_distinguishes_unstarted_and_partial_writes_and_redacts(self):
+        old_proposal_bytes = self.proposal_bytes
+        self.proposal_bytes = json.dumps({'ok':False,'retryAllowed':False,
+            'reason':'qualification_refused','stage':'attach','closeRequested':False}).encode()
+        self.assertEqual(self.execute(), 1)
+        self.assertEqual(self.diagnostic()['native']['reason'], 'qualification_refused')
+        self.assertIsNone(self.diagnostic()['native']['closeAcknowledged'])
+        self.assertEqual(self.diagnostic()['intent'], 'not_started')
+        self.proposal_bytes = old_proposal_bytes
+        self.mode = 'bad_status'
+        self.assertEqual(self.execute(), 1)
+        self.assertEqual(self.diagnostic()['intent'], 'not_started')
+        self.assertEqual(self.diagnostic()['ack'], 'not_started')
+        self.assertEqual(self.diagnostic()['native'], None)
+        self.mode = 'success'
+        actual_write = os.write
+        def fail_intent(fd, value):
+            if fd != 2 and self.intent.exists():
+                raise OSError('SECRET /private/path ws://endpoint pid2345')
+            return actual_write(fd, value)
+        with patch.object(os, 'write', side_effect=fail_intent):
+            self.assertEqual(self.execute(), 1)
+        self.assertEqual(self.diagnostic()['intent'], 'write_started')
+        self.assertEqual(self.diagnostic()['ack'], 'not_started')
+        self.assertNotIn('SECRET', self.stderr.getvalue())
+        self.assertFalse(self.receipt.exists())
+        self.intent.unlink()
+        self.mode = 'ack_failure'
+        original = self.popen
+        def broken_ack(args, **kwargs):
+            child = original(args, **kwargs)
+            child.stdin.write = lambda data: (_ for _ in ()).throw(OSError('SECRET'))
+            return child
+        with patch.object(self, 'popen', side_effect=broken_ack):
+            self.assertEqual(self.execute(), 1)
+        self.assertEqual(self.diagnostic()['intent'], 'durable')
+        self.assertEqual(self.diagnostic()['ack'], 'write_started')
+        self.assertFalse(self.receipt.exists())
+        for value in [{'ok':False,'retryAllowed':False,'reason':['SECRET'],'stage':{'x':'SECRET'},
+                       'closeRequested':1,'closeAcknowledged':'true','connectionClosed':None,
+                       'endpoint':'SECRET','entryStage':['SECRET']}, {'ok':True}, None]:
+            with self.subTest(value=value):
+                result = HOST.bounded_native_facts(value)
+                self.assertNotIn('SECRET', json.dumps(result))
+                if result:
+                    self.assertIsNone(result['stage']); self.assertIsNone(result['reason'])
+                    self.assertIsNone(result['entryStage'])
+                    self.assertIsNone(result['closeRequested']); self.assertIsNone(result['listenerAbsent'])
 
     def test_success_requires_durable_claim_before_ack_and_persists_exact_receipt(self):
         self.assertEqual(self.execute(), 0)

@@ -16,7 +16,7 @@ def main(argv=None):
  p=argparse.ArgumentParser();p.add_argument('--evidence-dir',required=True,type=Path);a=p.parse_args(argv);a.evidence_dir.mkdir(parents=True,exist_ok=False)
  pg=Path(os.environ.get('PGBIN','/opt/homebrew/opt/postgresql@17/bin'))
  env={k:v for k,v in os.environ.items() if not k.startswith('PG')};env.update(TZ='UTC',LC_ALL='C')
- runtime=Path(tempfile.mkdtemp(prefix='dr-',dir=os.environ.get('TMPDIR',str(a.evidence_dir.parent))))
+ runtime=Path(tempfile.mkdtemp(prefix='dr-',dir=os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or str(a.evidence_dir.parent)))
  socket=runtime/'s';socket.mkdir();data=runtime/'d';port=str(45000+os.getpid()%10000);started=False;checks=[]
  def run(args,sql=None):
   r=subprocess.run([str(x) for x in args],input=sql,text=True,capture_output=True,env=env,timeout=45)

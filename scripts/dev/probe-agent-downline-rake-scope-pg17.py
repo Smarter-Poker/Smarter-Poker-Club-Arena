@@ -30,7 +30,7 @@ def run():
   if pg is None: raise RuntimeError('PostgreSQL17 tools required; set PGBIN. No installation attempted.')
   version=call([str(pg/'postgres'),'--version'])
   assert version.returncode==0 and version.stdout.startswith('postgres (PostgreSQL) 17.'), 'PostgreSQL17 required'
-  runtime=Path(tempfile.mkdtemp(prefix='fwp01-',dir=os.environ.get('TMPDIR',str(evidence.parent))));runtime.chmod(0o700)
+  runtime=Path(tempfile.mkdtemp(prefix='fwp01-',dir=os.environ.get('TMPDIR') or os.environ.get('RUNNER_TEMP') or str(evidence.parent)));runtime.chmod(0o700)
   cluster=runtime/'data';socket=runtime/'socket';socket.mkdir(mode=0o700)
   port=str(45000+os.getpid()%10000)
   migration=repo/manifest['migration']

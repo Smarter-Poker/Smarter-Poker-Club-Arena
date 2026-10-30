@@ -11,3 +11,5 @@ The current whole SQL reader passes eleven isolated PostgreSQL 17 checks: the ex
 Installed/publication receipts are recorded in the existing task checkpoint after the final checks. Real-time law: triggered by `PRIVATE_RECORD_CHANGED` discrete WS event, no snapshot diff.
 
 The existing Accounting 3 entrypoint completes all 37 legacy role checks and then executes the 11 current-reader checks in process. Each fixture retains its own PostgreSQL command limits and cleanup. Native temporary directories honor the task's external `TMPDIR`. The workflow and financial source-binding files retain protected-main bytes; the complete source-binding verifier passes.
+
+The first composed hosted run exposed an overlong PostgreSQL socket path when `TMPDIR` was absent. Both native drivers now prefer the hosted `RUNNER_TEMP` before the evidence-directory fallback. A local run without `TMPDIR` reproduced the startup refusal, then the same combined 37 + 11 checks passed using a short external runner temp directory. Mac work remains on the external SSD; no command limit or assertion changed.

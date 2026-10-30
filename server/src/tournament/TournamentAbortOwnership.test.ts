@@ -9,6 +9,107 @@ const operation = '00000000-0000-4000-8000-000000009902';
 const generation = '00000000-0000-4000-8000-000000009903';
 
 describe('abort certificates retain physical source and lease identity', () => {
+  it('joins lifecycle completion, its queued movement and the writer that movement admits', async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+    const lifecycle = deferred();
+    const movement = deferred();
+    const bank = deferred();
+    const manager = new TournamentManager(tournament, {} as any) as any;
+    let movementStarted = false;
+    let bankStarted = false;
+    let joined = false;
+    void manager.trackLifecycleJob(
+      lifecycle.promise.then(() => {
+        void manager.runWithTournamentSeatMoveAuthority(async () => {
+          movementStarted = true;
+          await movement.promise;
+          bankStarted = true;
+          void manager.trackLifecycleJob(bank.promise);
+        });
+      })
+    );
+    const join = manager.joinTournamentAbortManagerTails(true).then(() => {
+      joined = true;
+    });
+    lifecycle.resolve();
+    await vi.waitFor(() => expect(movementStarted).toBe(true));
+    expect(joined).toBe(false);
+    movement.resolve();
+    await vi.waitFor(() => expect(bankStarted).toBe(true));
+    expect(joined).toBe(false);
+    bank.resolve();
+    await join;
+    expect(joined).toBe(true);
+    io.rpc.mockResolvedValue({ data: null, error: null });
+    await manager.stop();
+    io.rpc.mockReset();
+  });
+  it('joins queued movement promises before reading and retaining any physical roster', async () => {
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    const first = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    const second = new Promise<void>((resolve) => {
+      finishSecond = resolve;
+    });
+    let secondStarted = false;
+    const manager = new TournamentManager(
+      tournament,
+      {} as any,
+      generation,
+      performance.now() + 30_000
+    ) as any;
+    const request = {
+      operation_id: operation,
+      tournament_id: tournament,
+      current_generation: generation,
+      tables: [{ table_id: 'old-table', lifecycle: '1', required: true }],
+    };
+    io.rpc.mockClear();
+    io.rpc.mockImplementation(async (name: string) =>
+      name === 'fn_ca_tournament_abort_stop_state'
+        ? {
+            data: {
+              ok: true,
+              ...request,
+              tables: [{ table_id: 'new-table', lifecycle: '2', required: true }],
+            },
+            error: null,
+          }
+        : { data: null, error: null }
+    );
+    void manager.runWithTournamentSeatMoveAuthority(async () => {
+      await first;
+      void manager.runWithTournamentSeatMoveAuthority(async () => {
+        secondStarted = true;
+        await second;
+        manager.tableEngines.set('new-table', {});
+      });
+    });
+    const result = manager.acknowledgeTournamentAbortBoundary(request);
+    await Promise.resolve();
+    expect(io.rpc).not.toHaveBeenCalled();
+    finishFirst();
+    await vi.waitFor(() => expect(secondStarted).toBe(true));
+    expect(io.rpc).not.toHaveBeenCalled();
+    expect(manager.tournamentAbortBoundary).toBeNull();
+    finishSecond();
+    expect(await result).toMatchObject({
+      state: 'pending',
+      reason: 'original_graph_changed_before_capture',
+    });
+    expect(manager.tournamentAbortBoundary).toBeNull();
+    manager.tableEngines.clear();
+    await manager.stop();
+    io.rpc.mockReset();
+  });
   it.each([
     'horseRebuyInputInFlight',
     'horseRebuyPending',

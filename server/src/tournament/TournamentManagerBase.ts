@@ -9405,10 +9405,43 @@ export abstract class TournamentManagerBase {
     return !this.isProcessingEliminations && !this.boundaryBalanceInFlight;
   }
 
+  protected joinTournamentAbortOwnedTails(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  protected tournamentAbortOwnedTailIdentity(): unknown {
+    return null;
+  }
+
+  /** Join only already owned promises, including writers admitted by another
+   * accepted writer while it finishes. No timer, sweep or retry is started.
+   */
+  private async joinTournamentAbortManagerTails(includeStoppedRuns: boolean): Promise<void> {
+    for (;;) {
+      await this.joinTournamentAbortOwnedTails();
+      if (this.lifecycleOperation) await this.lifecycleOperation;
+      await this.drainTableEngineStartJobs();
+      if (includeStoppedRuns) await this.drainTableEngineRunJobs();
+      await this.drainLifecycleJobs();
+      await this.drainEliminationSchedulerJobs();
+      const owned = this.tournamentAbortOwnedTailIdentity();
+      await this.joinTournamentAbortOwnedTails();
+      if (
+        owned === this.tournamentAbortOwnedTailIdentity() &&
+        this.lifecycleOperation === null &&
+        this.tableEngineStartJobs.size === 0 &&
+        this.lifecycleJobs.size === 0 &&
+        this.eliminationSchedulerJobs.size === 0 &&
+        (!includeStoppedRuns || this.tableEngineRunJobs.size === 0)
+      )
+        return;
+    }
+  }
+
   /** Called only by the explicit, persisted operator request, outside any
    * dealer/manager callback. Retain this owner and its originals on UNKNOWN.
    */
-  acknowledgeTournamentAbortBoundary(request: AbortBoundaryRequest): Promise<unknown> {
+  async acknowledgeTournamentAbortBoundary(request: AbortBoundaryRequest): Promise<unknown> {
     if (
       request.tournament_id !== this.tournamentId ||
       request.current_generation !== this.tournamentLeaseGeneration
@@ -9421,6 +9454,40 @@ export abstract class TournamentManagerBase {
       // the same originals but re-prove rather than replaying a stale ACK.
       return this.tournamentAbortBoundary.run(true);
     }
+    await this.joinTournamentAbortOwnedTails();
+    const tailIdentity = this.tournamentAbortOwnedTailIdentity();
+    const { data: fresh, error: readError } = await supabase.rpc(
+      'fn_ca_tournament_abort_stop_state',
+      {
+        p_operation_id: request.operation_id,
+        p_tournament_id: this.tournamentId,
+      }
+    );
+    if (
+      readError ||
+      fresh?.ok !== true ||
+      fresh.operation_id !== request.operation_id ||
+      fresh.tournament_id !== this.tournamentId ||
+      !Array.isArray(fresh.tables)
+    )
+      throw new Error('tournament_abort_request_read_unknown');
+    if (
+      fresh.current_generation !== request.current_generation ||
+      !isDeepStrictEqual(fresh.tables, request.tables) ||
+      tailIdentity !== this.tournamentAbortOwnedTailIdentity()
+    )
+      return {
+        state: 'pending',
+        operation_id: request.operation_id,
+        reason: 'original_graph_changed_before_capture',
+      };
+    // Concurrent requests may have joined the same physical preflight.
+    const concurrent = this.tournamentAbortBoundary as TournamentAbortBoundary | null;
+    if (concurrent) {
+      if (concurrent.request.operation_id !== request.operation_id)
+        throw new Error('tournament_abort_operation_already_owned');
+      return concurrent.run(true);
+    }
     const originals = [...this.tableEngines.entries()];
     const required = request.tables.filter((table) => table.required);
     // No physical side effect or original-roster capture precedes a complete
@@ -9429,6 +9496,7 @@ export abstract class TournamentManagerBase {
     if (
       this.lifecycleOperation !== null ||
       this.tableEngineStartJobs.size !== 0 ||
+      !this.tournamentAbortBusinessTailsDrained() ||
       !this.tournamentAbortSourcesMatch(originals) ||
       required.length === 0 ||
       required.length !== originals.length ||
@@ -9450,18 +9518,8 @@ export abstract class TournamentManagerBase {
       );
     this.tournamentAbortBoundary = new TournamentAbortBoundary(request, originals, {
       current,
-      joinManagerTails: async () => {
-        if (this.lifecycleOperation) await this.lifecycleOperation;
-        await this.drainTableEngineStartJobs();
-        await this.drainLifecycleJobs();
-        await this.drainEliminationSchedulerJobs();
-        await this.drainLifecycleJobs();
-      },
-      joinRetiredManagerTails: async () => {
-        await this.drainTableEngineRunJobs();
-        await this.drainLifecycleJobs();
-        await this.drainEliminationSchedulerJobs();
-      },
+      joinManagerTails: () => this.joinTournamentAbortManagerTails(false),
+      joinRetiredManagerTails: () => this.joinTournamentAbortManagerTails(true),
       managerReadyToFence: () => this.tournamentAbortBusinessTailsDrained(),
       fenceManager: () => this.beginServerShutdownDrain(),
       managerDrained: () =>

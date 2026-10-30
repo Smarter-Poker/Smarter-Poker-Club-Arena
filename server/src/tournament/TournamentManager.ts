@@ -2870,6 +2870,19 @@ export class TournamentManager extends TournamentManagerEliminations {
     return this.mixedRecoveryOperation === null && super.tournamentAbortBusinessTailsDrained();
   }
 
+  protected override tournamentAbortOwnedTailIdentity(): unknown {
+    return this.tournamentSeatMoveSerialTail;
+  }
+
+  protected override async joinTournamentAbortOwnedTails(): Promise<void> {
+    await super.joinTournamentAbortOwnedTails();
+    for (;;) {
+      const original = this.tournamentSeatMoveSerialTail;
+      await original;
+      if (original === this.tournamentSeatMoveSerialTail) return;
+    }
+  }
+
   /** Transfer only a positively drained pre-manifest park, never an unknown move. */
   async captureDrainedF06Custody(): Promise<DrainedF06Custody | null> {
     return this.runWithTournamentSeatMoveAuthority(async () => {

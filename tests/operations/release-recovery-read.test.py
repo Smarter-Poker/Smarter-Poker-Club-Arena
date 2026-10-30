@@ -31,11 +31,140 @@ def kernel_evidence(owner='unknown'):
             else {'stage':'snapshot','code':'unproved'})
 
 
+class RetirementLedgerFixtures(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='retirement-ledger-',dir=ROOT.parent)
+        self.root = Path(self.temp.name)
+        self.d = self.root/'engine-release-requests'; self.d.mkdir()
+        self.r = self.root/'engine-release-results'; self.r.mkdir()
+        self.request = dict(REQUEST,mode='main_inspector_retirement_ledger')
+        self.identity = {'container':'c'*64,'image':R.EED_IMAGE,'running':'true',
+            'startedAt':'2026-10-30T20:00:00.000Z','hostPid':'1234','restarts':'0'}
+        self.health = {'source':R.EED,'instance':'1-1234abcd'}
+        self.result = {'schema':1,'runId':REQUEST['runKey'],'result':'failed','sha':REQUEST['releaseSha'],
+            'controlSha':'b'*40,'invocationId':'f'*32,'transactionExitStatus':1,
+            'recoveredDesiredSha':R.EED,'recoveredDesiredImageId':R.EED_IMAGE,'completedAt':1793393600}
+        proposal = {'schema':'main-inspector-retirement/v1',
+            'endpoint':'ws://127.0.0.1:9229/12345678-1234-1234-1234-123456789abc',
+            'binding':{'schema':'main-inspector-socket-binding/v1','pid':1,'startTicks':'12345',
+                'namespace':'net:[123]','listener':{'family':'tcp','local':'0100007F:240D','inode':'123'}}}
+        self.claim = {'schema':'main-inspector-retirement-claim/v1','runId':REQUEST['runKey'],
+            'invocationId':'f'*32,'controlSha':'b'*40,'requestDeadline':1793393700,'target':REQUEST['releaseSha'],
+            'requestSha256':'a'*64,'nativeUnit':{'InvocationID':'f'*32,'ActiveState':'active','SubState':'running'},
+            'source':R.EED,'instance':self.health['instance'],
+            'containerIdentity':' '.join(self.identity[k] for k in ('container','image','running','startedAt','hostPid')),
+            'proposal':proposal,'proposalSha256':R.hashlib.sha256(json.dumps(proposal,separators=(',',':')).encode()).hexdigest(),
+            'deadlineMs':1793393600000,'retryAllowed':False}
+        self.receipt = {'claim':self.claim,'outcome':{k:True for k in
+            ('ok','closeRequested','closeAcknowledged','connectionClosed','listenerAbsent')},'observedAt':1793393595.5}
+        self.receipt['outcome']['retryAllowed']=False
+        self.write(self.r/(REQUEST['runKey']+'.json'),self.result)
+        self.write(self.root/'engine-release-seal.json',{'schema':1,'desired':{'sha':R.EED,'imageId':R.EED_IMAGE},'pending':None})
+        self.intent_path=self.d/(REQUEST['runKey']+'.main-inspector-retirement-intent')
+        self.receipt_path=self.d/(REQUEST['runKey']+'.main-inspector-retirement-receipt')
+        # Synthetic root-owned metadata only; actual O_NOFOLLOW, regular-file,
+        # byte bounds and before/after stat reads still execute on real files.
+        fstat=R.os.fstat
+        def owned(fd):
+            values=list(fstat(fd));values[4]=0
+            return os.stat_result(values)
+        self.patches=[patch.object(R,'STATE_ROOT',self.root),patch.object(R.os,'fstat',side_effect=owned),
+            patch.object(R.os,'geteuid',return_value=0),
+            patch.object(R,'inspector_identity',return_value=self.identity),patch.object(R,'inspector_health',return_value=self.health)]
+        for name in ('inspector_probe','pending_tcp_presence','pending_socket_owner_details','_kernel_pid_stat',
+                     '_serving_boot_id','inspector_command','inspector_remote','pending_remote'):
+            self.patches.append(patch.object(R,name,side_effect=AssertionError('forbidden production probe')))
+        for p in self.patches:p.start()
+    def tearDown(self):
+        for p in reversed(self.patches):p.stop()
+        self.temp.cleanup()
+    def write(self,path,value):
+        path.write_text(json.dumps(value));path.chmod(0o600)
+    def read(self):
+        value=R.remote(self.request)
+        self.assertEqual(R.validate_reply(value,self.request),value)
+        text=json.dumps(value)
+        for private in ('ws://','12345','net:[','containerIdentity','hostPid','requestSha256'):
+            self.assertNotIn(private,text)
+        return value
+    def case_absence_claim_and_positive_receipt_are_distinct(self):
+        self.assertEqual(R.selection(self.request),self.request)
+        value=self.read();self.assertEqual(value['state'],'absent');self.assertFalse(value['claimPersisted'])
+        self.write(self.intent_path,self.claim)
+        value=self.read();self.assertEqual(value['state'],'claim_only');self.assertIsNone(value['closeAcknowledged'])
+        self.write(self.receipt_path,self.receipt)
+        value=self.read();self.assertEqual(value['state'],'positive_receipt');self.assertIs(value['closeAcknowledged'],True)
+        self.receipt['outcome']['closeAcknowledged']=False;self.write(self.receipt_path,self.receipt)
+        value=self.read();self.assertEqual(value['state'],'unknown');self.assertIsNone(value['closeRequested'])
+    def case_unreadable_malformed_symlink_oversize_are_not_absence(self):
+        self.write(self.intent_path,self.claim)
+        for mutation in ('permission','symlink','oversize','duplicate','shape','owner'):
+            with self.subTest(mutation=mutation):
+                self.intent_path.unlink(missing_ok=True);self.write(self.intent_path,self.claim)
+                if mutation=='permission':self.intent_path.chmod(0o644)
+                elif mutation=='symlink':self.intent_path.unlink();self.intent_path.symlink_to('missing')
+                elif mutation=='oversize':self.intent_path.write_text(' '*32769)
+                elif mutation=='duplicate':self.intent_path.write_text('{"schema":1,"schema":2}')
+                elif mutation=='shape':self.intent_path.write_text('{}')
+                if mutation=='owner':
+                    with patch.object(R.os,'geteuid',return_value=1),self.assertRaises(R.ScopedRefusal):self.read()
+                else:
+                    with self.assertRaises(R.ScopedRefusal) as failure:self.read()
+                    self.assertEqual(failure.exception.phase,'retirement_ledger')
+                    self.assertEqual(failure.exception.code,'claim_unproved' if mutation=='shape' else 'ledger_unproved')
+    def case_wrong_operation_and_changed_current_binding_refuse(self):
+        for key,bad in [('invocationId','e'*32),('controlSha','c'*40),('target','d'*40),
+                        ('instance','1-eeeeeeee'),('containerIdentity','private'),('proposalSha256','e'*64)]:
+            with self.subTest(key=key):
+                self.write(self.intent_path,dict(self.claim,**{key:bad}))
+                with self.assertRaises(R.ScopedRefusal):self.read()
+        for family,local in [('tcp','0100007F00000000:240D'),('tcp','00000000:240D'),
+                             ('tcp6','0100007F:240D'),('tcp6','0'*32+':240D')]:
+            claim=json.loads(json.dumps(self.claim))
+            claim['proposal']['binding']['listener'].update(family=family,local=local)
+            self.write(self.intent_path,claim)
+            with self.assertRaises(R.ScopedRefusal) as failure:self.read()
+            self.assertEqual(failure.exception.code,'claim_unproved')
+        self.intent_path.unlink()
+        with patch.object(R,'inspector_identity',side_effect=[self.identity,dict(self.identity,hostPid='4567')]),self.assertRaises(R.ScopedRefusal):self.read()
+    def case_result_request_seal_and_orphan_receipt_refuse(self):
+        self.write(self.receipt_path,self.receipt)
+        with self.assertRaises(R.ScopedRefusal):self.read()
+        self.receipt_path.unlink()
+        self.write(self.d/(REQUEST['runKey']+'.request'),{})
+        with self.assertRaises(R.ScopedRefusal):self.read()
+        (self.d/(REQUEST['runKey']+'.request')).unlink()
+        self.write(self.r/(REQUEST['runKey']+'.json'),dict(self.result,invocationId='private'))
+        with self.assertRaises(R.ScopedRefusal):self.read()
+        self.write(self.r/(REQUEST['runKey']+'.json'),dict(self.result,transactionExitStatus=75))
+        with self.assertRaises(R.ScopedRefusal) as failure:self.read()
+        self.assertEqual(failure.exception.code,'basis_unproved')
+        self.write(self.r/(REQUEST['runKey']+'.json'),self.result)
+        (self.root/'engine-release-seal.json').chmod(0o644)
+        with self.assertRaises(R.ScopedRefusal) as failure:self.read()
+        self.assertEqual(failure.exception.code,'basis_unproved')
+        self.write(self.root/'engine-release-seal.json',{'schema':1,'desired':{'sha':'e'*40,'imageId':R.EED_IMAGE}})
+        with self.assertRaises(R.ScopedRefusal):self.read()
+    def case_wire_projection_rejects_private_extra_and_false_certainty(self):
+        value=self.read()
+        for bad in [dict(value,endpoint='private'),dict(value,closeAcknowledged=True),dict(value,claimPersisted=True),
+                    dict(value,invocationId='private'),dict(value,state='positive_receipt'),dict(value,state=[])]:
+            with self.assertRaises(ValueError):R.validate_reply(bad,self.request)
+
+
 class ServingRoleTests(unittest.TestCase):
     def test_serving_role_exact_selector(self):
         request = {'mode':'current_serving_inspector_role', 'releaseSha':R.EED,
                    'instanceId':'1-12345678'}
         self.assertEqual(R.selection(request), request)
+        # Exercise the added ledger mode through the existing exact-selector
+        # native fixture entry; the enforced suite cardinality stays unchanged.
+        for name in sorted(n for n in dir(RetirementLedgerFixtures) if n.startswith('case_')):
+            fixture=RetirementLedgerFixtures()
+            with self.subTest(ledger_case=name):
+                fixture.setUp()
+                try:getattr(fixture,name)()
+                finally:fixture.tearDown()
 
 
     def test_serving_role_selector_refuses_every_extra_or_changed_identity(self):

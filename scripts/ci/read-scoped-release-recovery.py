@@ -71,6 +71,8 @@ REFUSALS = {
 }
 REFUSAL_CODES = set(REFUSALS.values()) | {('remote', 'evidence_refused'), ('inspector', 'intent_unavailable'), ('inspector', 'identity_changed'), ('inspector', 'native_scalar_unavailable')}
 REFUSAL_CODES |= {('serving_role', 'binding_unproved'), ('serving_role', 'evidence_unavailable')}
+REFUSAL_CODES |= {('retirement_ledger', stage + '_unproved') for stage in
+                 ('basis','identity','ledger','claim','receipt','recheck','deadline')}
 
 
 INSPECTOR_COMMAND_STAGES = {'container', 'health', 'image', 'probe', 'history',
@@ -133,7 +135,7 @@ def selection(value):
             raise ValueError('Exact current serving identity required')
         return dict(value)
     if (not isinstance(value, dict) or set(value) not in ({'runKey', 'releaseSha'}, {'runKey', 'releaseSha', 'mode'})
-            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector'})):
+            or ('mode' in value and value['mode'] not in {'pending_transaction', 'legacy_checkpoint_inspector', 'main_inspector_retirement_ledger'})):
         raise ValueError('Exact existing release identity required')
     if not isinstance(value['runKey'], str) or not RUN.fullmatch(value['runKey']):
         raise ValueError('Invalid run key')
@@ -157,23 +159,24 @@ def unique_object(pairs):
     return result
 
 
-def read_json(directory_fd, name, private=False):
+def read_json(directory_fd, name, private=False, *, limit=MAX_BYTES, root_owned=False):
     """Fixed relative file, no links, bounded bytes, unchanged inode/time/size."""
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
     try:
         before = os.fstat(fd)
-        if (not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES
+        if (not stat.S_ISREG(before.st_mode) or before.st_size > limit
+                or (root_owned and before.st_uid != 0)
                 or (private and (before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600))):
             raise ValueError('Persisted evidence file refused')
         raw = b''
-        while len(raw) <= MAX_BYTES:
-            part = os.read(fd, min(4096, MAX_BYTES + 1 - len(raw)))
+        while len(raw) <= limit:
+            part = os.read(fd, min(4096, limit + 1 - len(raw)))
             if not part:
                 break
             raw += part
         after = os.fstat(fd)
         identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns, row.st_uid, row.st_mode)
-        if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > MAX_BYTES:
+        if identity(before) != identity(after) or len(raw) != before.st_size or len(raw) > limit:
             raise ValueError('Persisted evidence changed')
         value = json.loads(raw, object_pairs_hook=unique_object)
         if not isinstance(value, dict):
@@ -1556,6 +1559,159 @@ def validate_serving_role(value, request):
     return value
 
 
+RETIREMENT_SCHEMA = 'main-inspector-retirement-ledger/v1'
+RETIREMENT_LIMITATION = 'Historical exact-operation facts only; no current listener, cleanup, retry or release authority.'
+EED_IMAGE = 'sha256:2eb1c5a7279032240c5fff8a6b3ecf5dc6af735cc1227a51430d50dcae1b065b'
+
+
+def retirement_claim(value, request, result, identity, health):
+    fields = {'schema', 'runId', 'invocationId', 'controlSha', 'requestDeadline', 'target',
+              'requestSha256', 'nativeUnit', 'source', 'instance', 'containerIdentity',
+              'proposal', 'proposalSha256', 'deadlineMs', 'retryAllowed'}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError('Retirement claim refused')
+    unit = value['nativeUnit']
+    proposal = value['proposal']
+    if (value['schema'] != 'main-inspector-retirement-claim/v1'
+            or value['runId'] != request['runKey'] or value['target'] != request['releaseSha']
+            or value['controlSha'] != result['controlSha'] or value['invocationId'] != result['invocationId']
+            or value['source'] != EED or value['instance'] != health['instance']
+            or value['containerIdentity'] != ' '.join(identity[k] for k in ('container','image','running','startedAt','hostPid'))
+            or value['retryAllowed'] is not False
+            or not isinstance(value['requestSha256'], str) or not re.fullmatch('[0-9a-f]{64}', value['requestSha256'])
+            or type(value['requestDeadline']) is not int or not 946684800 <= value['requestDeadline'] < 4102444800
+            or type(value['deadlineMs']) is not int or not 946684800000 <= value['deadlineMs'] <= value['requestDeadline'] * 1000
+            or not isinstance(unit, dict) or set(unit) != {'InvocationID','ActiveState','SubState'}
+            or unit['InvocationID'] != result['invocationId']
+            or unit['ActiveState'] not in {'active','activating'} or unit['SubState'] not in {'running','start'}
+            or not isinstance(proposal, dict) or set(proposal) != {'schema','endpoint','binding'}
+            or proposal['schema'] != 'main-inspector-retirement/v1'
+            or not isinstance(proposal['endpoint'], str)
+            or not re.fullmatch(r'ws://127\.0\.0\.1:9229/[0-9a-f-]{36}', proposal['endpoint'], re.I)):
+        raise ValueError('Retirement claim refused')
+    binding = proposal['binding']
+    if (not isinstance(binding, dict) or set(binding) != {'schema','pid','startTicks','namespace','listener'}
+            or binding['schema'] != 'main-inspector-socket-binding/v1' or type(binding['pid']) is not int or binding['pid'] != 1
+            or not isinstance(binding['startTicks'], str) or not re.fullmatch('[0-9]{1,20}', binding['startTicks'])
+            or not isinstance(binding['namespace'], str) or not re.fullmatch(r'net:\[[0-9]+\]', binding['namespace'])
+            or not isinstance(binding['listener'], dict) or set(binding['listener']) != {'family','local','inode'}
+            or binding['listener']['family'] not in {'tcp','tcp6'}
+            or binding['listener']['local'] != {
+                'tcp':'0100007F:240D', 'tcp6':'00000000000000000000000001000000:240D'
+            }[binding['listener']['family']]
+            or not isinstance(binding['listener']['inode'], str) or not re.fullmatch('[0-9]{1,20}', binding['listener']['inode'])):
+        raise ValueError('Retirement claim refused')
+    # Native proposal uses JSON.stringify: preserve insertion order and compact
+    # separators. This checks the retained digest without exporting its payload.
+    digest = hashlib.sha256(json.dumps(proposal, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+    if value['proposalSha256'] != digest:
+        raise ValueError('Retirement proposal digest refused')
+    return value
+
+
+def retirement_ledger_remote(request, root_fd):
+    deadline = time.monotonic() + 8
+    stage = 'basis'
+    directory = results = None
+    try:
+        directory = os.open('engine-release-requests', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        results = os.open('engine-release-results', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        def ledger():
+            values = []
+            for suffix, limit in [('.main-inspector-retirement-intent',32768),('.main-inspector-retirement-receipt',65536)]:
+                try:
+                    values.append(read_json(directory, request['runKey'] + suffix, private=True, limit=limit, root_owned=True))
+                except FileNotFoundError:
+                    values.append(None)
+            return values
+        def basis():
+            if (read_lines(directory, request['runKey'] + '.request', optional=True) is not None
+                    or read_lines(directory, request['runKey'] + '.intent', optional=True) is not None):
+                raise ValueError('Retirement request not retired')
+            result = read_json(results, request['runKey'] + '.json', private=True, root_owned=True)
+            fields = {'schema','runId','result','sha','controlSha','invocationId','transactionExitStatus',
+                      'recoveredDesiredSha','recoveredDesiredImageId','completedAt'}
+            if (set(result) != fields or type(result['schema']) is not int or result['schema'] != 1
+                    or result['runId'] != request['runKey'] or result['sha'] != request['releaseSha'] or result['result'] != 'failed'
+                    or not isinstance(result['controlSha'],str) or not SHA.fullmatch(result['controlSha'])
+                    or not isinstance(result['invocationId'],str) or not INVOCATION.fullmatch(result['invocationId'])
+                    or type(result['transactionExitStatus']) is not int or not 1 <= result['transactionExitStatus'] <= 255
+                    or result['transactionExitStatus'] == 75
+                    or type(result['completedAt']) is not int or not 946684800 <= result['completedAt'] < 4102444800
+                    or result['recoveredDesiredSha'] != EED or result['recoveredDesiredImageId'] != EED_IMAGE):
+                raise ValueError('Retirement failed receipt refused')
+            seal = read_json(root_fd, 'engine-release-seal.json', private=True, root_owned=True)
+            if (type(seal.get('schema')) is not int or seal['schema'] != 1
+                    or not isinstance(seal.get('desired'),dict)
+                    or seal['desired'].get('sha') != EED or seal['desired'].get('imageId') != EED_IMAGE
+                    or seal.get('pending') is not None):
+                raise ValueError('Retirement sealed identity refused')
+            return result, seal
+        result, seal = basis()
+        stage = 'identity'
+        before, health = inspector_identity(deadline), inspector_health(deadline)
+        if before['image'] != EED_IMAGE:
+            raise ValueError('Retirement current identity refused')
+        stage = 'ledger'
+        values = ledger()
+        claim, receipt = values
+        state = 'absent' if claim is None and receipt is None else 'unknown'
+        if claim is not None:
+            stage = 'claim'
+            retirement_claim(claim, request, result, before, health)
+            state = 'claim_only' if receipt is None else 'unknown'
+        if receipt is not None:
+            stage = 'receipt'
+            if (set(receipt) != {'claim','outcome','observedAt'} or claim is None or receipt['claim'] != claim
+                    or type(receipt['observedAt']) not in (int,float)
+                    or not 946684800 <= receipt['observedAt'] <= min(result['completedAt'] + 1, claim['deadlineMs'] / 1000 + 1)
+                    or not isinstance(receipt['outcome'],dict)):
+                raise ValueError('Retirement receipt refused')
+            outcome = receipt['outcome']
+            if (all(outcome.get(k) is True for k in ('ok','closeRequested','closeAcknowledged','connectionClosed','listenerAbsent'))
+                    and outcome.get('retryAllowed') is False):
+                state = 'positive_receipt'
+        stage = 'recheck'
+        if (values != ledger() or (result,seal) != basis()
+                or before != inspector_identity(deadline,stage='recheck_container')
+                or health != inspector_health(deadline,stage='recheck_health')):
+            raise ValueError('Retirement evidence changed')
+        stage = 'deadline'
+        if time.monotonic() >= deadline:
+            raise ValueError('Retirement read deadline')
+        positive = state == 'positive_receipt'
+        return validate_retirement_ledger({'schema':RETIREMENT_SCHEMA,'readOnly':True,**request,
+            'state':state,'claimPersisted':claim is not None,'provenanceValidated':True,
+            'controlSha':result['controlSha'],'invocationId':result['invocationId'],
+            'closeRequested':True if positive else None,'closeAcknowledged':True if positive else None,
+            'connectionClosed':True if positive else None,'listenerAbsent':True if positive else None,
+            'limitation':RETIREMENT_LIMITATION},request)
+    except (OSError,ValueError,TypeError,subprocess.SubprocessError):
+        raise ScopedRefusal('retirement_ledger',stage + '_unproved') from None
+    finally:
+        if results is not None:
+            os.close(results)
+        if directory is not None:
+            os.close(directory)
+
+
+def validate_retirement_ledger(value, request):
+    fields = {'schema','readOnly','mode','runKey','releaseSha','state','claimPersisted','provenanceValidated',
+              'controlSha','invocationId','closeRequested','closeAcknowledged','connectionClosed','listenerAbsent','limitation'}
+    if (not isinstance(value,dict) or set(value) != fields or value['schema'] != RETIREMENT_SCHEMA
+            or value['readOnly'] is not True or any(value[k] != request[k] for k in ('mode','runKey','releaseSha'))
+            or not isinstance(value['state'],str) or value['state'] not in {'absent','claim_only','positive_receipt','unknown'}
+            or type(value['claimPersisted']) is not bool or value['provenanceValidated'] is not True
+            or value['claimPersisted'] != (value['state'] in {'claim_only','positive_receipt','unknown'})
+            or not isinstance(value['controlSha'],str) or not SHA.fullmatch(value['controlSha'])
+            or not isinstance(value['invocationId'],str) or not INVOCATION.fullmatch(value['invocationId'])
+            or any(value[k] is not (True if value['state'] == 'positive_receipt' else None)
+                   for k in ('closeRequested','closeAcknowledged','connectionClosed','listenerAbsent'))
+            or value['limitation'] != RETIREMENT_LIMITATION):
+        raise ValueError('Retirement ledger projection refused')
+    return dict(value)
+
+
 def remote(request):
     request = selection(request)
     if request.get('mode') == 'current_serving_inspector_role':
@@ -1563,6 +1719,8 @@ def remote(request):
     # All production paths are fixed. No environment/caller path override.
     root_fd = os.open(STATE_ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        if request.get('mode') == 'main_inspector_retirement_ledger':
+            return retirement_ledger_remote(request, root_fd)
         if request.get('mode') == 'legacy_checkpoint_inspector':
             return validate_inspector(inspector_remote(request, root_fd), request)
         if request.get('mode') == 'pending_transaction':
@@ -1587,6 +1745,8 @@ def remote(request):
 
 
 def validate_reply(value, request):
+    if request.get('mode') == 'main_inspector_retirement_ledger':
+        return validate_retirement_ledger(value,request)
     if request.get('mode') == 'current_serving_inspector_role':
         return validate_serving_role(value, request)
     if request.get('mode') == 'legacy_checkpoint_inspector':

@@ -21,6 +21,8 @@ else
   echo 'PostgreSQL 17 or Docker is required (or set PG17_BIN to its bin directory).' >&2
   exit 1
 fi
+# New admission wrapper only: controlled existing-helper fixtures, real SECDEF/ACLs.
+PG17_BIN="$PG_BIN" python3 -B "$HERE/test-heldout-physics-wrapper.py"
 # The hosted parity reader admits only this runner's own private fixture socket.
 # Local runs retain their explicit external-SSD TMPDIR.
 WORK_ROOT="${TMPDIR:-/tmp}"

@@ -4,7 +4,8 @@ import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-const ci = parse(readFileSync('.github/workflows/ci.yml', 'utf8'));
+const ciSource = readFileSync('.github/workflows/ci.yml');
+const ci = parse(ciSource.toString('utf8'));
 const native = parse(readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8'));
 const trusted =
   "github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872'";
@@ -43,11 +44,14 @@ describe('required CI uses a closed standard hosted capacity recovery', () => {
     });
   }
 
-  it('preserves all other CI commands, gates, budgets, permissions and client partitions', () => {
-    const normalized = structuredClone(ci);
-    expect(createHash('sha256').update(JSON.stringify(normalized)).digest('hex')).toBe(
-      '756ebaa3b74445e08a3e0fb4e9408607539376c85540311e0fa9e90fda64cbd5'
-    );
+  it('matches the maintained whole-CI source binding', () => {
+    const binding = JSON.parse(
+      readFileSync('scripts/qualification/cash-native-hosted.manifest.json', 'utf8')
+    ).files['.github/workflows/ci.yml'];
+    expect({
+      bytes: ciSource.length,
+      sha256: createHash('sha256').update(ciSource).digest('hex'),
+    }).toEqual(binding);
   });
   it('preserves every native qualification stage and cleanup requirement', () => {
     const normalized = structuredClone(native);

@@ -243,5 +243,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # Original tournament quality consumes bounded physical evidence atomically.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-tournament-quality-bounded-evidence-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('tournament-quality-bounded-evidence.json'))], text=True))
 
+
+# Current measured three-field source access and exact fee fallback retain their
+# full semantic/error regression in this same required native floor family.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-quality-current-cover-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-quality-current-cover.json'))], text=True))
+
 # Three unsealed original cash readers preserve the genuine generation.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-original-cash-three-helper-forward-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('original-cash-three-helper-forward.json'))], text=True))

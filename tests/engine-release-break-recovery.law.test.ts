@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 const transaction = read('server/scripts/engine-release-transaction.sh');
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const supervisor = read('server/scripts/engine-supervisor.sh');
 const recovery = read('server/scripts/engine-release-recover.sh');
 // The real shell fixture already owns a 20-second absolute deadline. Bound its
@@ -132,6 +136,7 @@ exec "$@"
 break_proof_seconds() { echo ${proof}; }
 remaining_seconds() { echo ${overall}; }
 die() { echo "$*" >&2; exit 1; }
+${entryRead}
 ${helper}
 BREAK_CUTOVER_PROOF_SECONDS=150
 ENGINE_UP="${launcher}"; TARGET_IMAGE_ID=fixture; CONTAINER=fixture; ENV_FILE=fixture; TOKEN=fixture

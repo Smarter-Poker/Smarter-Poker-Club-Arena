@@ -7,6 +7,10 @@ const transaction = readFileSync(
   resolve(process.cwd(), 'server/scripts/engine-release-transaction.sh'),
   'utf8'
 );
+const entryRead = transaction.slice(
+  transaction.indexOf('legacy_entry_read() {'),
+  transaction.indexOf('legacy_entry_trace() {')
+);
 const helperStart = transaction.indexOf('maintenance_certificate() {');
 const helperEnd = transaction.indexOf('\npersist_break_deadline() {', helperStart);
 const helper = transaction.slice(helperStart, helperEnd);
@@ -55,6 +59,7 @@ function runCertificate({
     [
       '-c',
       `set -u
+${entryRead}
 ENV_FILE=/dev/null
 INFLIGHT_HANDS=true
 MIN_BREAK_REMAINING_MS=285000
@@ -100,6 +105,7 @@ function runSourceIdentity({
     [
       '-c',
       `set -u
+${entryRead}
 BREAK_END_EPOCH=0
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"
@@ -129,6 +135,7 @@ function runStrictIdentity(httpCode: string, body = JSON.stringify(validSourceId
     [
       '-c',
       `set -u
+${entryRead}
 BREAK_END_EPOCH=0
 curl() {
   printf '%s\\n%s' "$MOCK_BODY" "$MOCK_HTTP_CODE"

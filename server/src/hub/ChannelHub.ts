@@ -116,9 +116,6 @@ export class ChannelHub {
   private connections: Map<string, Set<WebSocket>> = new Map();
   private privateSenders = new WeakMap<WebSocket, (data: string) => void>();
 
-  /** Cap per user — bounds a leak or a hostile client, generous for real use. */
-  private static readonly MAX_SOCKETS_PER_USER = 8;
-
   // clubId → Set<userId>
   private clubSubs: Map<string, Set<string>> = new Map();
 
@@ -152,7 +149,8 @@ export class ChannelHub {
 
   /**
    * Register a new authenticated connection. A user may hold several live
-   * sockets (tabs/devices); beyond MAX_SOCKETS_PER_USER the OLDEST is closed.
+   * sockets (tabs/devices). ChannelWebSocketServer owns bounded admission and
+   * refuses excess arrivals before registration; the hub never evicts a live tab.
    */
   addConnection(userId: string, ws: WebSocket, sendPrivate?: (data: string) => void): void {
     if (sendPrivate) this.privateSenders.set(ws, sendPrivate);
@@ -162,27 +160,14 @@ export class ChannelHub {
       this.connections.set(userId, set);
     }
     set.add(ws);
-    if (set.size > ChannelHub.MAX_SOCKETS_PER_USER) {
-      // Set preserves insertion order — the first entry is the oldest socket.
-      const oldest = set.values().next().value;
-      if (oldest && oldest !== ws) {
-        set.delete(oldest);
-        try {
-          oldest.close(1001, 'too many connections for this user');
-        } catch {
-          /* ignore */
-        }
-      }
-    }
   }
 
   /**
    * Tear down all subscriptions for a user and remove their connection entry.
    * Called from ChannelWebSocketServer on ws.close / ws.error.
    *
-   * `closingWs` guards the reconnect race: addConnection() closes the OLD socket
-   * when a user reconnects, which fires this handler for the OLD socket AFTER the
-   * NEW socket is already registered. Without the guard we would tear down the
+   * `closingWs` guards the reconnect race: an OLD socket can close after a
+   * replacement socket is already registered. Without the guard we would tear down the
    * NEW connection's subscriptions and delete its entry, blinding the just-
    * reconnected user. Only tear down when the closing socket is still the current
    * one (or when no socket is provided, for legacy/explicit removal).
@@ -191,7 +176,7 @@ export class ChannelHub {
     const set = this.connections.get(userId);
     if (closingWs) {
       this.privateSenders.delete(closingWs);
-      // Late close of a socket that is no longer registered (already evicted,
+      // Late close of a socket that is no longer registered (already removed,
       // or torn down by a previous full removal) — nothing to do. This is the
       // same reconnect-race guard as before, generalised to the multi-socket
       // model.

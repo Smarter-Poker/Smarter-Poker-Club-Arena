@@ -613,12 +613,23 @@ it('applies an authoritative avatar removal without retaining the old image', as
     'src',
     expect.stringContaining('free_ninja')
   );
-  state.getMemberDetail.mockImplementation(async (_club, _member, activeRange) => ({
-    ...memberDetail,
-    range: { ...activeRange, is_overall: activeRange?.from === null },
-  }));
+  const authoritativeRemoval = deferred<typeof memberDetail>();
+  const initialReadCount = state.getMemberDetail.mock.calls.length;
+  state.getMemberDetail.mockImplementation(() => authoritativeRemoval.promise);
   await act(async () => state.recordChannel?.onPayload({}));
-  expect(view.container.querySelector('.mm-avatar img')).toBeNull();
+  await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(initialReadCount + 1));
+  expect(view.container.querySelector('.mm-avatar img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('free_ninja')
+  );
+  const activeRange = state.getMemberDetail.mock.calls.at(-1)?.[2];
+  await act(async () => {
+    authoritativeRemoval.resolve({
+      ...memberDetail,
+      range: { ...activeRange, is_overall: activeRange?.from === null },
+    });
+  });
+  await waitFor(() => expect(view.container.querySelector('.mm-avatar img')).toBeNull());
   expect(screen.getByText('River Shark')).toBeInTheDocument();
 });
 

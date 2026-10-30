@@ -1606,6 +1606,17 @@
     ],
     "financial_recertification": false
   },
+  "requiredCiHostedCapacityRecovery20261030": {
+    "review": "Only three required-job runs-on selections gain a closed trusted-repository standard-hosted recovery variable; paid defaults/fork OS fallbacks, all commands, permissions, assertions, budgets, joins and financial states remain unchanged. Current input identity only; no native financial or live qualification restamp. Historical audits preserved.",
+    "changes": [
+      {
+        "section": "repository_files",
+        "file": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d",
+        "current": "6ffd004c6ad839897e1d5cf2d5087cef3730429ef0979942c854f3eab7c44692"
+      }
+    ]
+  },
   "requiredNativeRunnerProfile20261030": {
     "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
     "changes": [
@@ -1633,6 +1644,13 @@
     "scope": "Current source identity only after ordinary protected-main integration. Preserve both parent financial histories, assertions, audits and qualification states. No historical financial, installed or live recertification.",
     "protectedMain": "6b4b49e216ae78d07348661f7c296242732e16e9",
     "recoveryParent": "02590229d338b5eba32d5be7c2c6e83044c79fe9",
+    "historicalEvidenceRestamped": false,
+    "qualificationStateChanged": false
+  },
+  "channelAdmissionMainComposition20261030": {
+    "scope": "Current source identity after ordinary integration of equivalent protected-main standard-native runner ownership. Preserve both parent audits, historical evidence, financial assertions and qualification states. No financial, installed or live recertification.",
+    "protectedMain": "97bcce289707e58d682d25654a5978a34327bf79",
+    "channelAdmissionParent": "4f49c6517737d755dd6e49f99da79da15af3cf44",
     "historicalEvidenceRestamped": false,
     "qualificationStateChanged": false
   },

@@ -47,6 +47,10 @@ const ROOT = resolve(__dirname, '..');
 const AUDIT = resolve(ROOT, '.github/scripts/estate-integrity.sh');
 const VARIANTS = resolve(ROOT, '.github/estate-variants');
 const sandboxes: string[] = [];
+// The real multi-repository shell audit measured 24.3s in the 321-file push
+// suite. Bound the child at 45s and reserve 15s for reporting and cleanup.
+const AUDIT_CHILD_TIMEOUT_MS = 45_000;
+const AUDIT_TEST_TIMEOUT_MS = 60_000;
 
 /** base64 of "guard\n" - what every healthy repo returns for every file. */
 const GUARD_B64 = 'Z3VhcmQK';
@@ -163,9 +167,12 @@ function runAudit(fx: Fixture) {
 
   const result = spawnSync('bash', [join(cwd, '.github/scripts/estate-integrity.sh')], {
     cwd,
+    timeout: AUDIT_CHILD_TIMEOUT_MS,
     encoding: 'utf8',
     env,
   });
+  if (result.error) throw result.error;
+  if (result.signal) throw new Error(`Estate audit terminated by ${result.signal}`);
   const report = existsSync(summary) ? readFileSync(summary, 'utf8') : '';
   return { result, report, combined: `${result.stdout}\n${result.stderr}\n${report}` };
 }
@@ -175,57 +182,88 @@ afterEach(() => {
 });
 
 describe('LAW - a recorded, reviewed difference is an expectation, not a drift', () => {
-  it('holds a repo to its stored copy: matching bytes raise nothing and the estate reads clean', () => {
-    const { result, combined } = runAudit({ stored: VARIANT_TEXT, withNote: true });
+  it(
+    'holds a repo to its stored copy: matching bytes raise nothing and the estate reads clean',
+    () => {
+      const { result, combined } = runAudit({ stored: VARIANT_TEXT, withNote: true });
 
-    expect(combined).toContain(
-      `${PATH_UNDER_TEST}: Smarter-Poker-World-Hub carries its recorded deliberate variant`
-    );
-    expect(combined).not.toMatch(new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions'));
-    expect(combined).not.toContain('RECORDED AS A DELIBERATE VARIANT');
-    // With the live World Hub hook record matching too, nothing is left.
-    expect(combined).toContain('estate-integrity: 0 problem(s).');
-    expect(result.status).toBe(0);
-  }, 20_000);
+      expect(combined).toContain(
+        `${PATH_UNDER_TEST}: Smarter-Poker-World-Hub carries its recorded deliberate variant`
+      );
+      expect(combined).not.toMatch(
+        new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions')
+      );
+      expect(combined).not.toContain('RECORDED AS A DELIBERATE VARIANT');
+      // With the live World Hub hook record matching too, nothing is left.
+      expect(combined).toContain('estate-integrity: 0 problem(s).');
+      expect(result.status).toBe(0);
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('a stale record is a finding, and the copy goes back into the comparison', () => {
-    const { result, combined } = runAudit({ stored: 'something that was reviewed once\n', withNote: true });
+  it(
+    'a stale record is a finding, and the copy goes back into the comparison',
+    () => {
+      const { result, combined } = runAudit({
+        stored: 'something that was reviewed once\n',
+        withNote: true,
+      });
 
-    expect(result.status).toBe(1);
-    expect(combined).toContain('RECORDED AS A DELIBERATE VARIANT');
-    expect(combined).toContain('The record is stale');
-    // Fail closed: the unmatched copy is compared like any other, so the
-    // ordinary drift finding is raised as well.
-    expect(combined).toMatch(new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions'));
-  }, 20_000);
+      expect(result.status).toBe(1);
+      expect(combined).toContain('RECORDED AS A DELIBERATE VARIANT');
+      expect(combined).toContain('The record is stale');
+      // Fail closed: the unmatched copy is compared like any other, so the
+      // ordinary drift finding is raised as well.
+      expect(combined).toMatch(
+        new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions')
+      );
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('without a stored copy a difference is still a drift, note or no note', () => {
-    const { result, combined } = runAudit({ withNote: true });
+  it(
+    'without a stored copy a difference is still a drift, note or no note',
+    () => {
+      const { result, combined } = runAudit({ withNote: true });
 
-    expect(result.status).toBe(1);
-    expect(combined).toMatch(new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions'));
-    expect(combined).toContain('Recorded deliberate variant: **Smarter-Poker-World-Hub** - fixture reason');
-  }, 20_000);
+      expect(result.status).toBe(1);
+      expect(combined).toMatch(
+        new RegExp('`' + PATH_UNDER_TEST + '` — \\*\\*2 different versions')
+      );
+      expect(combined).toContain(
+        'Recorded deliberate variant: **Smarter-Poker-World-Hub** - fixture reason'
+      );
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('a stored copy with no reason on file is itself a finding', () => {
-    const { result, combined } = runAudit({ stored: VARIANT_TEXT, withNote: false });
+  it(
+    'a stored copy with no reason on file is itself a finding',
+    () => {
+      const { result, combined } = runAudit({ stored: VARIANT_TEXT, withNote: false });
 
-    expect(result.status).toBe(1);
-    expect(combined).toContain('NO reason on file');
-    expect(combined).toContain('DELIBERATE_VARIANTS');
-  }, 20_000);
+      expect(result.status).toBe(1);
+      expect(combined).toContain('NO reason on file');
+      expect(combined).toContain('DELIBERATE_VARIANTS');
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
-  it('a stored copy for a repo or path the audit does not compare is a finding, not silence', () => {
-    const { result, combined } = runAudit({
-      stored: VARIANT_TEXT,
-      withNote: true,
-      strayStored: { repo: 'Smarter-Poker-Typo', path: 'scripts/not-a-shared-file.sh' },
-    });
+  it(
+    'a stored copy for a repo or path the audit does not compare is a finding, not silence',
+    () => {
+      const { result, combined } = runAudit({
+        stored: VARIANT_TEXT,
+        withNote: true,
+        strayStored: { repo: 'Smarter-Poker-Typo', path: 'scripts/not-a-shared-file.sh' },
+      });
 
-    expect(result.status).toBe(1);
-    expect(combined).toContain('not a repo this audit compares');
-    expect(combined).toContain('not a shared file this audit compares');
-  }, 20_000);
+      expect(result.status).toBe(1);
+      expect(combined).toContain('not a repo this audit compares');
+      expect(combined).toContain('not a shared file this audit compares');
+    },
+    AUDIT_TEST_TIMEOUT_MS
+  );
 
   it('the live record: World Hub keeps the hook Club Arena forbids, for a reason that is written down', () => {
     const stored = readFileSync(

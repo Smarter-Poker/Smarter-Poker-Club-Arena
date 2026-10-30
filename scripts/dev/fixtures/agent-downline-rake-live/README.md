@@ -24,6 +24,16 @@ branches exclude foreign players before materialization. The extracted CTE
 probe changes only PL/pgSQL variable bindings into equivalent fixture literals.
 
 The reduced schema reuses the existing September scope bootstrap. External
-authorization and launch authorities are controlled boundaries, explicitly not
-qualification of current Auth transport or those helper implementations.
+authorization remains a controlled boundary; launch helpers use their actual
+captured definitions over synthetic boundary data. This does not qualify live
+Auth transport or production financial writes.
 Production latency and published UI recovery require separate live proof.
+
+The covered-period successor is `20261030145010`. `covered.sql` is its expected
+complete function postimage; `launch.sql` contains the captured real production
+cutoff and acceptance helper definitions over a synthetic boundary table. The
+original eleven checks remain, followed by exact successor definition/metadata/
+replay/auth checks, NULL and nonNULL cutoff cases, and a635-person/314291-row
+native cohort using the production club/date INCLUDE cover. Its whole-query
+plan must select a bounded period Index Only Scan without forced planner settings.
+The in-process entrypoint still executes all37 legacy scope checks first.

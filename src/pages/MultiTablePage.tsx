@@ -115,7 +115,12 @@ import {
   lightningCapabilities,
 } from '../lightning/lightningCapabilities';
 import { useLightningDecisions } from '../components/lightning/useLightningDecisions';
-import { getLightningPoolSession } from '../lightning/lightningSession';
+import {
+  getLightningPoolSession,
+  getLightningEntryIntent,
+  registerLightningPoolSession,
+} from '../lightning/lightningSession';
+import { resolveLightningSeatRooms } from '../lightning/lightningSeatRecovery';
 import { anchorsShownByOpenRooms } from '../lightning/lightningAnchorTabs';
 
 // Lazy-load TablePage for code splitting
@@ -1021,6 +1026,22 @@ export default function MultiTablePage() {
     };
     requestSeatResync();
   });
+  useMasterBusSubscription('LIGHTNING_ROOM_OPENED', (event) => {
+    if (event.userId === user?.id && seatReadScopeRef.current.userId === user.id)
+      requestSeatResync();
+  });
+  useEffect(() => {
+    if (!user?.id) return;
+    const recover = () => {
+      if (document.visibilityState === 'visible') requestSeatResync();
+    };
+    window.addEventListener('online', recover);
+    document.addEventListener('visibilitychange', recover);
+    return () => {
+      window.removeEventListener('online', recover);
+      document.removeEventListener('visibilitychange', recover);
+    };
+  }, [user?.id, requestSeatResync]);
   useEffect(() => {
     if (!seatRebuildNotice || deliveredSeatNoticeRef.current === seatRebuildNotice) return;
     deliveredSeatNoticeRef.current = seatRebuildNotice;
@@ -1085,10 +1106,10 @@ export default function MultiTablePage() {
         for (const id of voluntarilyLeftTablesRef.current) {
           if (!returnedIds.has(id)) voluntarilyLeftTablesRef.current.delete(id);
         }
-        const ids = [...returnedIds].filter((id) => !voluntarilyLeftTablesRef.current.has(id));
+        let ids = [...returnedIds].filter((id) => !voluntarilyLeftTablesRef.current.has(id));
         // An authoritative empty seat set still reaches the prune. It needs no
         // metadata query, and is distinct from an unknown or failed seat read.
-        const { data: tblRows, error: tableErr } =
+        const { data: anchorRows, error: tableErr } =
           ids.length > 0
             ? await supabase
                 .from('tables')
@@ -1099,7 +1120,23 @@ export default function MultiTablePage() {
                 )
                 .in('id', ids)
             : { data: [], error: null };
-        if (!isCurrent() || tableErr || !Array.isArray(tblRows)) return;
+        if (!isCurrent() || tableErr || !Array.isArray(anchorRows)) return;
+        // A live seated tab that converts still owns its explicit View Game
+        // choice. Cold recovery and the player's original Join intent restore
+        // the private room; a conversion alone never changes their active game.
+        const keepAnchors = new Set(
+          tablesRef.current
+            .filter(
+              (tab) => isTableTab(tab) && tab.seated === true && !getLightningEntryIntent(tab.id)
+            )
+            .map((tab) => tab.id)
+        );
+        const recovered = await resolveLightningSeatRooms(anchorRows, undefined, keepAnchors);
+        if (!isCurrent()) return;
+        recovered.rooms.forEach((room) => registerLightningPoolSession(room));
+        const tblRows = recovered.rows;
+        const restoredIds = new Map(anchorRows.map((row, index) => [row.id, tblRows[index].id]));
+        ids = ids.map((id) => restoredIds.get(id) ?? id);
         const previousSeatedIds = tablesRef.current
           .filter((tab) => isTableTab(tab) && tab.seated === true)
           .map((tab) => tab.id);

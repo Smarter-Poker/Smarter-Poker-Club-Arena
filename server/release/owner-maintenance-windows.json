@@ -2,6 +2,18 @@
   "version": 1,
   "windows": [
     {
+      "id": "2026-10-30-mtt-safe-hand-drain-continuation",
+      "ownerOrder": "Dan explicitly selected: Use the next safe hand-drain window, and resumed delivery of the MTT fixes. This distinct bounded continuation admits a new exact qualified target after provider qualification could not fit the original 00:00-06:00 UTC attempt. It does not extend, retarget or retry that operation. Preserve its historical entry, all foreign operation ownership, the existing two-minute last-hand notice, five-minute certified freeze, full 285-second reserve, unchanged legacy-entry and rollback budgets, original hands and financial custody. Client fixes use existing APIs and may publish independently through the normal immutable-asset publisher after checks. No direct restart, discarded original, migration replay, competing receiver or alternate release route. This new entry expires at 11:30 UTC without fallback; exact source-witness service consumes it.",
+      "contains": "1dff4957f5e702c14bc664ccf754a8f15632853a",
+      "releaseWitness": {
+        "path": "server/release/activation-floor.json",
+        "sha256": "fbafeeea0ec6fdc22e1ff9c18fdbe933999f6828634e16d61099f3dfa2f60608"
+      },
+      "notBefore": "2026-10-30T05:30:00Z",
+      "notAfter": "2026-10-30T11:30:00Z",
+      "migrations": []
+    },
+    {
       "id": "2026-10-30-mtt-next-safe-hand-drain",
       "ownerOrder": "Dan explicitly selected: Use the next safe hand-drain window. This one bounded attempt prepares the qualified MTT repairs now, preserves active hands through the existing two-minute notice, five-minute certified freeze, full 285-second reserve and existing legacy budgets, and refuses foreign recovery ownership. No direct restart, discarded original, migration replay or alternative release route. Expires at 06:00 UTC without automatic daily fallback.",
       "contains": "23a8c4dc1b9e78b319b4693c3e414c95f993572b",

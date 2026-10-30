@@ -171,6 +171,12 @@ echo CHECKPOINT_MUST_NOT_RUN
         self.assertGreaterEqual(current['expiresEpoch']-current['activationEpoch'], 420)
         self.assertLessEqual(current['expiresEpoch']-current['activationEpoch'], 21600)
         self.assertEqual(current['clientPublicationEpoch'], current['activationEpoch'])
+        # Preserve the incoming peer's gap control: an expired predecessor
+        # cannot open a future successor early.
+        gap = previous['expiresEpoch']+1
+        with self.assertRaises(ValueError): floor.check_window(previous, gap, gap+8400, 'admit')
+        if gap < current['activationEpoch']:
+            with self.assertRaises(ValueError): floor.check_window(current, gap, gap+8400, 'admit')
         now = current['activationEpoch']
         with self.assertRaises(ValueError): floor.check_window(previous, now, now+8400, 'admit')
         floor.check_window(current, now, now+8400, 'admit')
@@ -267,17 +273,19 @@ echo CHECKPOINT_MUST_NOT_RUN
         source=(ROOT/'server/scripts/engine-release-transaction.sh').read_text()
         start=source.index('owner_window_reason() {');end=source.index('\n# The seal and the serving engine',start)
         body=source[start:end]
-        # A floor opens preparation; its owner still controls the allowed
-        # announcement minute. Exercise the first such minute inside this floor.
-        window = next(w for w in json.loads((ROOT/'server/release/owner-maintenance-windows.json').read_text())['windows'] if w['id'] == r['ownerWindowId'])
-        stamp = r['activationEpoch'] + 30
-        if window.get('announceAtChicagoMinutes'):
-            from datetime import datetime, timezone
-            instant = datetime.fromtimestamp(stamp, timezone.utc)
-            stamp = int(instant.replace(minute=window['announceAtChicagoMinutes'][0], second=30).timestamp())
-            if stamp < r['activationEpoch']: stamp += 3600
-        self.assertLess(stamp + 420, r['expiresEpoch'])
-        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(stamp)+'; }\n'
+        # The selected window may restrict announcements to a Chicago minute
+        # (the :53 notice before the :55 tournament break); evaluate at the
+        # first such instant inside the window rather than at a random minute.
+        windows_doc=json.loads((ROOT/'server/release/owner-maintenance-windows.json').read_text())
+        selected=next(w for w in windows_doc['windows'] if w['id']==r['ownerWindowId'])
+        minutes=selected.get('announceAtChicagoMinutes')
+        from datetime import datetime,timezone
+        from zoneinfo import ZoneInfo
+        now=r['activationEpoch']+30
+        while minutes and datetime.fromtimestamp(now,timezone.utc).astimezone(ZoneInfo('America/Chicago')).minute not in minutes:
+            now+=60
+        self.assertLess(now+420,r['expiresEpoch'])
+        prefix='set -eu\ntimeout() { shift 3; "$@"; }\ndate() { echo '+str(now)+'; }\n'
         env={**os.environ,'REPO_DIR':str(self.repo),'SHA':self.sha,'ACTIVATION_FLOOR_OWNER_WINDOW':r['ownerWindowId']}
         import shlex
         def reason(serving):

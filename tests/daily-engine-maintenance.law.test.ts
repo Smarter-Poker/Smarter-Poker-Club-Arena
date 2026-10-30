@@ -436,6 +436,26 @@ describe('daily routine admission uses the existing protected receiver only', ()
       );
     // An old floor path in the serving base is not this exact new floor blob.
     expect(check()).toBe(true);
+    // Preserve actual merged ordering: the selected own floor must precede a
+    // different still-valid floor, whose witness cannot authorize this target.
+    const ordered = windows.map((w: { id: string }) => (w.id === entry.id ? fixture : w));
+    expect(
+      admit(
+        'push',
+        '14',
+        'routine',
+        JSON.stringify({ liveness: 'ok', releaseSha: 'e'.repeat(40) }),
+        undefined,
+        undefined,
+        {
+          windows: JSON.stringify({ version: 1, windows: ordered }),
+          ancestor: true,
+          served: true,
+          witness: 'unserved',
+          floor,
+        }
+      )
+    ).toBe(true);
     for (const mode of ['served', 'deleted', 'unknown-serving', 'shallow', 'missing', 'mismatch'])
       expect(check(fixture, mode), mode).toBe(false);
     expect(check({ ...fixture, id: 'foreign-owner' })).toBe(false);
@@ -719,7 +739,8 @@ it('every declared source witness is supported by the installed stage and host a
         expect(window.releaseWitness.sha256).not.toBe(
           createHash('sha256').update(raw).digest('hex')
         );
-        expect(Date.parse(window.notAfter)).toBeLessThan(Date.parse(floor.expiresAt));
+        // Independent historical owners may have later expiry bounds; their
+        // immutable witness never grants the currently selected floor authority.
       }
       expect(admission).toContain('floor_witness');
       expect(admission).toContain('--find-object=');

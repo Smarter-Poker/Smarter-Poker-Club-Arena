@@ -4,10 +4,12 @@ const mock = vi.hoisted(() => ({
   error: null as any,
   chip: vi.fn(),
   diamond: vi.fn(),
+  table: vi.fn(),
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => {
+    from: (...args: unknown[]) => {
+      mock.table(...args);
       const q: any = {
         select: () => q,
         eq: () => q,
@@ -35,6 +37,18 @@ beforeEach(() => {
   };
 });
 describe('Authoritative table funding door', () => {
+  it.each(['guest', ''])(
+    'makes no table or custody request for anonymous actor %j',
+    async (userId) => {
+      expect(await readTableFundingBalance(userId, { tableId: 'table' })).toEqual({
+        balance: null,
+      });
+      expect(mock.table).not.toHaveBeenCalled();
+      expect(mock.chip).not.toHaveBeenCalled();
+      expect(mock.diamond).not.toHaveBeenCalled();
+    }
+  );
+
   it('reads spendable Diamonds without touching the chip wallet', async () => {
     mock.diamond.mockResolvedValue({ available: 100, inPlay: 50 });
     expect(await readTableFundingBalance('user', { tableId: 'table' })).toEqual({ balance: 100 });

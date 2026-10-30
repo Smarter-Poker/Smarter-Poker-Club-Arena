@@ -75,8 +75,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 252636,
-      "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+      "bytes": 253096,
+      "sha256": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -1190,5 +1190,17 @@
       "bytes": 252636,
       "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
     }
+  },
+  "requiredNativeRunnerProfile20261030": {
+    "reason": "Reviewed runner-profile-only CI delta and exact connected expected-profile assertions. Two fixed hosted labels only; all job bodies, financial assertions, shards, selectors, deadlines, artifacts and required joins unchanged. Nested changes bind only this audit and reviewed current inputs. Historical evidence and qualification states retained; no financial, installed or live recertification.",
+    "changes": [
+      {
+        "section": "files",
+        "path": ".github/workflows/ci.yml",
+        "previous": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660",
+        "current": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+      }
+    ],
+    "financial_recertification": false
   }
 }

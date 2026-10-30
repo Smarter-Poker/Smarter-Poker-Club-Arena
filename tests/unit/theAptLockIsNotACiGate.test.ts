@@ -108,6 +108,8 @@ const WORKFLOWS = readdirSync(WORKFLOW_DIR).filter((f) => /\.ya?ml$/.test(f));
 function isGitHubHostedRunner(runsOn: string): boolean {
   return (
     runsOn === 'ubuntu-latest' ||
+    runsOn ===
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}" ||
     ['ca-linux-4core', 'ca-linux-8core', 'ca-linux-delivery'].some(
       (label) =>
         runsOn ===
@@ -119,6 +121,14 @@ function isGitHubHostedRunner(runsOn: string): boolean {
 }
 
 describe('a browser install never gambles on the apt lock', () => {
+  it('recognizes only the fixed standard-or-approved-large native profile', () => {
+    const route =
+      "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}";
+    expect(isGitHubHostedRunner(route)).toBe(true);
+    expect(isGitHubHostedRunner(route.replace('ca-linux-8core', 'self-hosted'))).toBe(false);
+    expect(isGitHubHostedRunner(route.replace('1132369872', '42'))).toBe(false);
+  });
+
   it('only the exact approved repository route admits paid hosted labels', () => {
     for (const label of ['ca-linux-4core', 'ca-linux-8core', 'ca-linux-delivery']) {
       const route =

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
+import { runInNewContext } from 'node:vm';
 
 const ci = YAML.parse(readFileSync(resolve('.github/workflows/ci.yml'), 'utf8'));
 const browser = ci.jobs['css-beats-e2e'];
@@ -38,7 +39,9 @@ describe('browser qualification parallel delivery', () => {
     ])
       expect(ci.jobs[key]['runs-on']).toBe('ubuntu-latest');
     for (const key of ['accounting_postgres', 'server_shards'])
-      expect(ci.jobs[key]['runs-on']).toBe(paid('ca-linux-8core'));
+      expect(ci.jobs[key]['runs-on']).toBe(
+        "${{ github.repository_owner == 'Smarter-Software-PIQ' && github.repository_id == '1132369872' && vars.CA_REQUIRED_NATIVE_PROFILE == 'large' && 'ca-linux-8core' || 'ubuntu-latest' }}"
+      );
     for (const key of ['publish-needed', 'client-tests', 'build-and-store'])
       expect(publishing.jobs[key]['runs-on']).toBe('ubuntu-latest');
     expect(publishing.jobs['build-record-gateway']['runs-on']).toBe(paid('ca-linux-8core'));
@@ -59,6 +62,33 @@ describe('browser qualification parallel delivery', () => {
       group: 'publish-club-arena-production',
       'cancel-in-progress': false,
     });
+  });
+
+  it('defaults required native qualification to the approved standard hosted profile', () => {
+    for (const job of ['accounting_postgres', 'server_shards']) {
+      const expression = ci.jobs[job]['runs-on'];
+      const evaluate = (owner: string, id: string, profile?: string) =>
+        runInNewContext(
+          expression.slice(3, -2),
+          {
+            github: { repository_owner: owner, repository_id: id },
+            vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
+          },
+          { timeout: 1000 }
+        );
+      for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
+        expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-latest');
+      expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
+      expect(evaluate('other', '1132369872', 'large')).toBe('ubuntu-latest');
+      expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-latest');
+      expect(ci.jobs[job]['continue-on-error']).toBeUndefined();
+      expect(ci.jobs[job].strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+      expect(ci.jobs[job].strategy['fail-fast']).toBe(false);
+    }
+    expect(ci.jobs.accounting_postgres['timeout-minutes']).toBe(50);
+    expect(ci.jobs.server_shards['timeout-minutes']).toBe(25);
+    expect(ci.jobs.server.needs).toContain('accounting_postgres');
+    expect(ci.jobs.server.needs).toContain('server_shards');
   });
 
   it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {

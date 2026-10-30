@@ -1,0 +1,41 @@
+{
+  "columns": [
+    {
+      "name": "backend_pid",
+      "type": "integer"
+    },
+    {
+      "name": "transaction_id",
+      "type": "bigint"
+    },
+    {
+      "name": "run_id",
+      "type": "uuid"
+    },
+    {
+      "name": "scope_kind",
+      "type": "text"
+    },
+    {
+      "name": "scope_id",
+      "type": "uuid"
+    },
+    {
+      "name": "period_start",
+      "type": "timestamp with time zone"
+    },
+    {
+      "name": "period_end",
+      "type": "timestamp with time zone"
+    },
+    {
+      "name": "round_no",
+      "type": "integer"
+    }
+  ],
+  "function": {
+    "md5": "5e4a055ee5f34744283bea32b4669828",
+    "signature": "smarter_private.weekly_payout_owns_round(text,uuid,timestamp with time zone,timestamp with time zone,integer)",
+    "definition": "CREATE OR REPLACE FUNCTION smarter_private.weekly_payout_owns_round(p_kind text, p_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_round integer)\n RETURNS boolean\n LANGUAGE sql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\n SELECT EXISTS(SELECT FROM smarter_private.weekly_payout_owned_transactions c\n  JOIN public.weekly_accounting_payout_pauses r ON r.run_id=c.run_id\n  WHERE c.backend_pid=pg_backend_pid() AND c.transaction_id=txid_current()\n   AND c.scope_kind=p_kind AND c.scope_id=p_id AND c.period_start=p_from AND c.period_end=p_to AND c.round_no=p_round\n   AND r.phase='paying' AND r.acknowledged_at>=r.announced_at AND r.acknowledged_at<r.money_deadline_at\n   AND smarter_private.weekly_payout_clock()>=r.money_starts_at\n   AND smarter_private.weekly_payout_clock()<r.money_deadline_at\n   AND EXISTS(SELECT FROM jsonb_array_elements(r.scope_plan) j WHERE j->>'kind'=p_kind AND (j->>'id')::uuid=p_id\n    AND (j->>'period_start')::timestamptz=p_from AND (j->>'period_end')::timestamptz=p_to))\n$function$\n"
+  }
+}

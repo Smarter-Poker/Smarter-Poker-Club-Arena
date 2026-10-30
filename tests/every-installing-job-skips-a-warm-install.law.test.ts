@@ -34,6 +34,7 @@ const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const WORKFLOWS = [
   '.github/workflows/ci.yml',
   '.github/workflows/publish-club-arena.yml',
+  '.github/workflows/publish-club-arena-client.yml',
   '.github/workflows/publish-club-arena-transaction.yml',
 ];
 

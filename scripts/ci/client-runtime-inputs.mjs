@@ -61,6 +61,7 @@ export function conservativeClientInput(path) {
   if (
     [
       '.github/workflows/publish-club-arena.yml',
+      '.github/workflows/publish-club-arena-client.yml',
       '.github/workflows/publish-club-arena-transaction.yml',
       '.github/workflows/post-deploy-e2e.yml',
       'tests/protected-features.json',

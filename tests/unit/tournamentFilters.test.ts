@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  isRecordedSatelliteTournament,
   matchesTournamentSubFilter,
   matchesVariant,
   tournamentVariant,
@@ -168,6 +169,27 @@ describe('RUNNING / REGISTERING / ALL', () => {
         matchesTournamentSubFilter(t, f, NOW)
       );
       expect(tabs.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('recorded satellite discovery', () => {
+  it('includes target-backed MTT and SNG satellites and canonical seat-first satellites', () => {
+    expect(
+      isRecordedSatelliteTournament({ format_contract: 'mtt-v1', satellite_target_id: 'target' })
+    ).toBe(true);
+    expect(
+      isRecordedSatelliteTournament({ format_contract: 'sng-v1', satellite_target: 'target' })
+    ).toBe(true);
+    expect(isRecordedSatelliteTournament({ format_contract: 'seat-first-satellite-v1' })).toBe(
+      true
+    );
+  });
+  it('excludes ordinary formats and name-only satellite aliases', () => {
+    for (const format_contract of ['mtt-v1', 'sng-v1', 'spin-v1', undefined]) {
+      expect(
+        isRecordedSatelliteTournament({ format_contract, name: 'Satellite To Sunday Main' })
+      ).toBe(false);
     }
   });
 });

@@ -374,3 +374,16 @@
     text-shadow: 0 0 6px rgb(255 215 0 / 45%);
   }
 }
+
+/* A qualifier must name its target in full; the generic metadata line clamp
+   must not hide the end of the event name on a phone or desktop row. */
+.compact-lobby__destination {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e4e7ec;
+}

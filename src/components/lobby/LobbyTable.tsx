@@ -1,3 +1,5 @@
+import { isRecordedSatelliteTournament } from '../../utils/tournamentFilters';
+import { useSatelliteDestination } from './game-cards/useTournamentCardText';
 import { usePlayerPreference } from '../../hooks/usePlayerPreference';
 import { useSharedSecondTick } from './useSharedSecondTick';
 /**
@@ -338,6 +340,19 @@ function compactRowClass(entry: LobbyEntry): string | undefined {
   return cls.join(' ') || undefined;
 }
 
+function SatelliteRowDestination({ entry }: { entry: LobbyEntry }) {
+  const row = entry.kind !== 'cash' ? (entry.raw as LobbyTournamentRow) : undefined;
+  const destination = useSatelliteDestination(row?.satellite_target_id || row?.satellite_target);
+  const label =
+    destination ||
+    (row && isRecordedSatelliteTournament({ ...row })
+      ? 'Satellite Destination Unavailable'
+      : undefined);
+  return label ? (
+    <span className="compact-lobby__meta compact-lobby__destination">{label}</span>
+  ) : null;
+}
+
 function TournamentRowSignals({
   entry,
   badgesOnly = false,
@@ -602,6 +617,7 @@ const COL_NAME: ColumnDef = {
             {mttTitleLine(e)}
           </span>
           <MttTitleMeta entry={e} />
+          <SatelliteRowDestination entry={e} />
           <TournamentRowSignals entry={e} badgesOnly />
           <LobbyFlagChips entry={e} />
           <PlayerStateChip entry={e} ctx={ctx} />
@@ -645,6 +661,7 @@ const COL_NAME: ColumnDef = {
           {e.live && <i className="lt-live" aria-hidden="true" title="Live" />}
           {e.name}
         </span>
+        <SatelliteRowDestination entry={e} />
         {e.kind === 'spin' && ctx.spinTopTierLive && <SpinTopTierBadge />}
         <LobbyFlagChips entry={e} />
         <PlayerStateChip entry={e} ctx={ctx} />
@@ -2288,6 +2305,7 @@ export default function LobbyTable({
                         entry.variantLabel
                       )}
                     </span>
+                    {entry.kind !== 'cash' && <SatelliteRowDestination entry={entry} />}
                     {entry.kind !== 'cash' && <TournamentRowSignals entry={entry} />}
                     <PlayerStateChip entry={entry} ctx={rowCtx} />
                   </button>

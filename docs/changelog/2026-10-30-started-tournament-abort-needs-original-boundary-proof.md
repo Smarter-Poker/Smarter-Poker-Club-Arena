@@ -1,0 +1,11 @@
+# Started tournament refunds require an explicit original boundary
+
+An operator-requested stop of an already started tournament cannot use the ordinary cancellation path. The new service-authenticated `/admin/tournament-abort-boundary` endpoint reads the persisted abort operation before touching its exact current manager and original table engines. The endpoint does not pay or cancel a tournament.
+
+Every original dealer parks behind its existing explicit closeout fence. Accepted hand work and manager lifecycle/elimination callbacks join before the manager callback fence is applied. The exact generation keeps its existing heartbeat while the physical bank, presence and snapshot writers join. A positive proof reads the private writer sets, original continuation state, table lifecycle, current engine identity and parked gate before the explicit database acknowledgement. A floor-state read, an elapsed timeout, a settled hand permit and a teardown diagnostic cannot mint this proof.
+
+Duplicate HTTP requests join the same original operation. An interrupted response leaves the manager, original roster and closeout fences retained. Discovery cannot replace that current abort owner. A lost lease still fences it normally. Only a same-operation read of the immutable fully settled receipt and actual CANCELLED tournament status releases the owner through the existing exact-owner stop path.
+
+This engine capability requires protected engine activation before use. The separate database operation owns cohort validation, entry and fresh-hand admission fences, final serialized custody/obligation checks, original-charge refunds and immutable receipts. Ordinary started-tournament cancellation guards remain unchanged.
+
+Focused regression checks exercise duplicate requests, accepted-hand and manager-tail waits, pending/unknown outcomes, missing original coverage, exact service authentication, and real-engine refusal of bank, snapshot, continuation and settlement writers.

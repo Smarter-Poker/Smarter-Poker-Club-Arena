@@ -3046,7 +3046,11 @@ export class GameServer {
     manager: TournamentManager,
     errorContext: string
   ): void {
-    if (manager.isF06RecoveryOwner?.() || this.tournamentManagerRetirementOperations.has(manager))
+    if (
+      manager.isF06RecoveryOwner?.() ||
+      manager.retainsTournamentAbortBoundary() ||
+      this.tournamentManagerRetirementOperations.has(manager)
+    )
       return;
     /* A QUARANTINED STOP IS RETRIED ON ITS OWN SCHEDULE (2026-09-26).
        Once a stop has failed, the quarantine owns when it is tried again:
@@ -11672,6 +11676,61 @@ export class GameServer {
    * the move without a manager would mean re-implementing the move, which is
    * how the duplicate-seat incidents of 2026-08-20 and 2026-08-25 happened.
    */
+  /** Explicit operator operation only. The persisted request is read before
+   * touching physical engines; no discovery pass or recurring repair invokes it.
+   */
+  async acknowledgeTournamentAbortBoundary(
+    operationId: string,
+    tournamentId: string
+  ): Promise<unknown> {
+    const { data, error } = await supabase.rpc('fn_ca_tournament_abort_stop_state', {
+      p_operation_id: operationId,
+      p_tournament_id: tournamentId,
+    });
+    if (
+      error ||
+      data?.ok !== true ||
+      data.operation_id !== operationId ||
+      data.tournament_id !== tournamentId ||
+      !Array.isArray(data.tables)
+    )
+      throw new Error('tournament_abort_original_request_unproven');
+    const manager = this.tournamentEngines.get(tournamentId);
+    if (data.state === 'settled') {
+      if (data.receipt?.fully_settled !== true || data.tournament_status !== 'CANCELLED')
+        throw new Error('tournament_abort_terminal_receipt_unproven');
+      if (manager?.retainsTournamentAbortBoundary()) {
+        if (manager.getTournamentLeaseGeneration() !== data.current_generation)
+          throw new Error('tournament_abort_terminal_owner_mismatch');
+        manager.releaseTournamentAbortBoundary(operationId);
+        await this.stopTournamentManagerIfOwned(
+          tournamentId,
+          manager,
+          'GameServer.tournament_abort_final_stop_failed'
+        );
+      }
+      return data;
+    }
+    if (
+      data.state === 'quiesced' &&
+      data.current_boundary_valid === true &&
+      data.quiescence_generation === data.current_generation
+    )
+      return data;
+    if (
+      !manager ||
+      !data.current_generation ||
+      manager.getTournamentLeaseGeneration() !== data.current_generation ||
+      !manager.hasCurrentTournamentLeaseAuthority()
+    )
+      return {
+        state: 'pending',
+        operation_id: operationId,
+        reason: 'current_original_manager_unavailable',
+      };
+    return manager.acknowledgeTournamentAbortBoundary(data);
+  }
+
   private async repairOrphanedTournamentSeats(): Promise<void> {
     if (this.tournamentEngines.size === 0) return;
 

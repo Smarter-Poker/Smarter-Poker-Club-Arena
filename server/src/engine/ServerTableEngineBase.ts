@@ -7526,6 +7526,72 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /** The explicit abort owner joins the actual bank/snapshot writers. A
+   * completed teardown diagnostic or a settled F06 permit is not this proof.
+   * This runs only after the dealer is inside its irreversible closeout gate.
+   */
+  async prepareTournamentAbortBoundary(): Promise<void> {
+    if (!this.terminalCloseoutPaused || this.handForHandResolve === null || !this.isBetweenHands())
+      throw new Error('tournament_abort_boundary_not_parked');
+    await this.presenceSave;
+    await Promise.all([...this.timeBankAccountingPending]);
+    await this.flushSnapshot(true);
+    await this.persistPresenceForRestart('parked');
+    await this.presenceSave;
+  }
+
+  /** Positive physical proof from private writer state, with no fallback for
+   * absent coverage. The manager keeps this exact live generation heartbeating
+   * while its callbacks and every next-hand admission remain fenced.
+   */
+  captureParkedTournamentAbortIdentity(tableId: string, tournamentId: string, generation: string) {
+    const lifecycle = this.f06TableLifecycle ?? this.f06MovementAdmission?.receipt.lifecycle;
+    if (
+      !lifecycle ||
+      !/^[1-9][0-9]{0,18}$/.test(lifecycle) ||
+      this.tableId !== tableId ||
+      !this.running ||
+      this.terminal ||
+      !this.terminalCloseoutPaused ||
+      this.handForHandResolve === null ||
+      !this.isBetweenHands() ||
+      !this.isCurrentEngine() ||
+      !this.engineLeaseAuthorityIsCurrent() ||
+      this.engineLeaseScope !== 'tournament' ||
+      !this.engineLeaseVerified ||
+      this.engineLeaseTournamentId !== tournamentId ||
+      this.engineLeaseGeneration !== generation ||
+      this.settlementInFlight.size !== 0 ||
+      this.postHandTasksPromise !== null ||
+      this.tournamentMoveOperations.size !== 0 ||
+      this.tournamentMoveOperationByOwner.size !== 0 ||
+      this.readContinuationTasks.size !== 0 ||
+      this.snapshotFlushPromise !== null ||
+      this.snapshotDirty ||
+      this.terminalBoundaryPendingGenerations.size !== 0 ||
+      this.terminalBoundaryPersistenceFailed ||
+      this.f06RecoveryInFlight ||
+      this.presenceSavePending !== 0 ||
+      this.timeBankAccountingPending.size !== 0 ||
+      this.unresolvedTimeBankDebits.size !== 0 ||
+      this.timeBankAccountingUnconfirmed ||
+      this.entryHoldWriteChains.size !== 0 ||
+      !this.parkedBankSaveComplete ||
+      !this.f06PreparationDrained() ||
+      this.pendingOriginalContinuation !== null ||
+      this.isOriginalInputPending() ||
+      this.handContinuation?.isUnretained() === true ||
+      this.weeklyPayoutOriginalWork.size !== 0
+    )
+      return null;
+    return Object.freeze({
+      lifecycle,
+      hand_number: this.handCount,
+      engine_id: this.lifecycleDiagnostics.instanceId,
+      allocation_epoch: this.f06AllocationEpoch,
+    });
+  }
+
   /**
    * Fence this exact source engine before a tournament player is moved.
    *

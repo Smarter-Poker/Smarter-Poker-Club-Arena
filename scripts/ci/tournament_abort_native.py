@@ -56,5 +56,9 @@ def prepare_quiesced(e,db,event,operation,table_id):
     evidence={'kind':'tournament_abort_boundary_v1','certificate_version':1,'physical_stopped':True,'parked_before_retirement':True,'drained':True,'manager_tail_joined':True,'pending_writers':0,'bank_state_write_pending':False,'lifecycle':1,'hand_number':0,'source_table_ids':[table_id]}
     sql+="SELECT public.fn_ca_ack_tournament_abort_boundary('"+operation+"','"+event+"','"+table_id+"','"+GEN+"',0,'"+json.dumps(evidence)+"'::jsonb);COMMIT;"
     sql_file(e,db,'quiesce-'+event[-4:],sql)
-    _,out,_=e.sql(db,"SELECT quiescence->>'money_hash' FROM smarter_private.tournament_abort_targets WHERE tournament_id='"+event+"';",label='money-hash-'+event[-4:])
-    return out.strip()
+    _,out,_=e.sql(db,"BEGIN;"+SERVICE+"SELECT public.fn_ca_tournament_abort_stop_state('"+operation+"','"+event+"');COMMIT;",label='money-hash-'+event[-4:])
+    state=json.loads(out.strip().splitlines()[-1])
+    assert state['state']=='quiesced' and state['current_boundary_valid'] is True
+    assert state['quiescence_generation']==GEN and state['current_generation']==GEN
+    assert all(isinstance(row['lifecycle'],str) and row['lifecycle'].isdigit() for row in state['tables'])
+    return state['money_hash']

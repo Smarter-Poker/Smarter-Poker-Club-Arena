@@ -12,10 +12,12 @@ HERE = Path(__file__).resolve().parent
 PG = Path(os.environ.get('PG17_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
 MIGRATION = ROOT / 'supabase/migrations/20261030161813_public215_heldout_audits_require_admitted_m2_boards.sql'
 SIG = 'public.fn_gto_v31_prepare_heldout_public_physics(uuid,text,text,text,integer)'
+# Never inherit libpq routing, service or password defaults into privileged fixtures.
+CLEAN_ENV = {key: os.environ[key] for key in os.environ if not key.startswith('PG')}
 CALL = "SELECT public.fn_gto_v31_prepare_heldout_public_physics('11111111-1111-4111-8111-111111111111',repeat('2',64),repeat('3',64),repeat('4',64),%s)"
 
 def run(args, **kwargs):
-    r = subprocess.run(args, text=True, capture_output=True, timeout=30, **kwargs)
+    r = subprocess.run(args, text=True, capture_output=True, timeout=30, env=CLEAN_ENV, **kwargs)
     if r.returncode:
         raise AssertionError(r.stderr)
     return r.stdout.strip()
@@ -32,7 +34,8 @@ with tempfile.TemporaryDirectory(prefix='heldout-wrapper-', dir=base) as folder,
      tempfile.TemporaryDirectory(prefix='h215-sock-', dir=socket_base) as sockets:
     task, sock = Path(folder), Path(sockets)
     data = task / 'data'
-    env = {**os.environ, 'PGHOST': str(sock), 'PGPORT':'55469', 'PGDATABASE':'postgres',
+    env = {**CLEAN_ENV, 'PGPASSFILE':str(task/'absent.pgpass'),
+           'PGSERVICEFILE':str(task/'absent.pg_service.conf'), 'PGHOST': str(sock), 'PGPORT':'55469', 'PGDATABASE':'postgres',
            'PGUSER':'fixture_owner', 'PGCONNECT_TIMEOUT':'3'}
     run([str(PG/'initdb'),'-D',str(data),'-U','fixture_owner','-A','trust','--no-locale'])
     started = False

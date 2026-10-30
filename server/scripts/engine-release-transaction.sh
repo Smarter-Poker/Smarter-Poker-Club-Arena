@@ -1349,7 +1349,14 @@ newer_release_awaiting_certificate() {
 legacy_inspector_is_closed() {
   # An earlier unknown cleanup is not cleared by healthy gameplay HTTP.
   # Read only the fixed loopback listener; never attach, signal or close it.
-  timeout --signal=TERM --kill-after=1s 3s docker exec "$CONTAINER" node -e '
+  # docker exec inherits the container's Node startup options. The observer
+  # must not open its own inspector or execute an application preload.
+  # Reject the checkpoint's already-unsupported container options BEFORE an
+  # announcement, without starting Node or returning any environment value.
+  timeout --signal=TERM --kill-after=1s 3s docker exec "$CONTAINER" sh -c '
+case "${NODE_OPTIONS-}" in *--inspect*|*--debug*) exit 1 ;; esac
+exec env -u NODE_OPTIONS -u NODE_PATH node --no-inspect "$@"
+' checkpoint-readiness -e '
 const socket=require("node:net").createConnection({host:"127.0.0.1",port:9229});
 socket.once("connect",()=>{socket.destroy();process.exit(1);});
 socket.once("error",error=>{socket.destroy();process.exit(error.code==="ECONNREFUSED"?0:2);});

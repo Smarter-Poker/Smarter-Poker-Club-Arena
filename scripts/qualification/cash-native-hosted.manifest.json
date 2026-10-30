@@ -242,8 +242,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 254099,
-      "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
+      "bytes": 254559,
+      "sha256": "1b38bd7edac1d6748f9f0e6b8396e223c2d8c5b8a8543f5a7e7e718504974b2f"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -346,8 +346,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 117164,
-      "sha256": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d"
+      "bytes": 117348,
+      "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
     }
   },
   "nativePgCron": {
@@ -5092,5 +5092,49 @@
       "bytes": 254099,
       "sha256": "fa11c298fa56aaece0975117d8031582fd26248e7a56b72da68867a3fd5eff31"
     }
+  },
+  "requiredNativeRunnerProfile20261030": {
+    "reason": "Reviewed only two fixed hosted runner selections and four exact expected-profile literals in the CI contract test. All financial sources, case assertions, scheduler behavior, fixed input set, historical evidence and qualification states unchanged. Current input identity only; no native/financial/live recertification.",
+    "changes": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "previous": {
+          "bytes": 252636,
+          "sha256": "95872508c1ccd7de3e5b0b4393841d58818be8986da9a7179ce0a28ff3311660"
+        },
+        "current": {
+          "bytes": 253096,
+          "sha256": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+        }
+      },
+      {
+        "path": "tests/unit/fixtureNativeCi.test.ts",
+        "previous": {
+          "bytes": 117164,
+          "sha256": "0d18684ef57d7377a1a454bb5bc28bf7d2d3ee5955d45d7c4e9470ffe298d11d"
+        },
+        "current": {
+          "bytes": 117348,
+          "sha256": "4f2b7779eed9e491eda09cb3d61c72e4cf8692746b0020afc2309ec524500b59"
+        }
+      }
+    ],
+    "financial_recertification": false
+  },
+  "requiredNativeProfileComposition20261030": {
+    "scope": "Exact source identity after ordinary integration of protected client delivery and fixed required native runner profiles. No financial or live recertification; historical evidence and financial verdicts preserved.",
+    "protectedClientCi": {
+      "bytes": 253286,
+      "sha256": "7d54cddfb1befb4b378e5769e48530868f8213c32e9cbbb202ee729622aebcd8"
+    },
+    "qualifiedNativeProfileCi": {
+      "bytes": 253096,
+      "sha256": "222c4a1cd06ce37b97376c00e060ca0212be747125fdafd78978633ec2258ea1"
+    },
+    "composedCi": {
+      "bytes": 253746,
+      "sha256": "f584b0aaad17a9143e909b4b46903221cdd66b05baf64a11383707738ce504da"
+    },
+    "financial_recertification": false
   }
 }

@@ -70,6 +70,17 @@ let preferencesError: Error | null;
 let authUserId = 'user-1';
 const rpcMock = vi.hoisted(() => vi.fn());
 const livePulse = vi.hoisted(() => ({ onChange: () => {} }));
+const liveRecords = vi.hoisted(() => ({
+  clubIds: [] as string[],
+  onChange: () => {},
+  enabled: false,
+}));
+vi.mock('../../src/pages/stats/StatsLiveRecords', () => ({
+  default: (props: typeof liveRecords) => {
+    Object.assign(liveRecords, props);
+    return null;
+  },
+}));
 vi.mock('../../src/hooks/useStatsPulse', () => ({
   useStatsPulse: (options: { onChange: () => void }) => {
     livePulse.onChange = options.onChange;
@@ -218,12 +229,17 @@ vi.mock('../../src/components/common/Toast', () => ({
 }));
 
 import { StatsFactsService } from '../../src/services/StatsFactsService';
+import { getUserMemberships } from '../../src/services/ClubsService';
+import { AgentRakeService } from '../../src/services/AgentRakeService';
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
 import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 import { isFullStatsPayload } from '../../src/pages/stats/playerStatsPageModel';
 import { normalizeHands } from '../../src/pages/stats/notableHandsContract';
 
 beforeEach(() => {
+  vi.mocked(getUserMemberships).mockResolvedValue([]);
+  vi.mocked(AgentRakeService.getMyAgentRoles).mockResolvedValue({ roles: [] });
+  Object.assign(liveRecords, { clubIds: [], onChange: () => {}, enabled: false });
   localStorage.clear();
   clearStatsRangeMemo();
   routeUserId = undefined;
@@ -295,6 +311,40 @@ afterEach(() => {
 });
 
 describe('PlayerStatsPage mounts', () => {
+  it('keeps independent agent-book records live while a different personal club is selected', async () => {
+    const personalClub = '60000000-0000-0000-0000-000000000001';
+    const agentClub = '60000000-0000-0000-0000-000000000002';
+    statsRouteState.search = `?statsClub=${personalClub}`;
+    vi.mocked(getUserMemberships).mockResolvedValue([
+      { club: { id: personalClub, name: 'Personal Club' } },
+    ] as Awaited<ReturnType<typeof getUserMemberships>>);
+    vi.mocked(AgentRakeService.getMyAgentRoles).mockResolvedValue({
+      roles: [
+        {
+          club_id: agentClub,
+          club_name: 'Agent Book',
+          role: 'agent',
+          agent_id: 'agent-1',
+          is_overseer: false,
+        },
+      ],
+    });
+    rpcPayload.scope = { ...(rpcPayload.scope as object), club_id: personalClub };
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn.startsWith('ca_player_stats_overview_v2')) return { data: rpcPayload, error: null };
+      if (fn.startsWith('ca_player_hands_v2')) return { data: notableHandsPayload, error: null };
+      return { data: null, error: null };
+    });
+    render(<PlayerStatsPage />);
+    await waitFor(() => expect(liveRecords.enabled).toBe(true));
+    expect(liveRecords.clubIds).toEqual([personalClub, agentClub]);
+    const before = vi.mocked(StatsFactsService.getRakeStats).mock.calls.length;
+    act(() => liveRecords.onChange());
+    await waitFor(() => expect(StatsFactsService.getRakeStats).toHaveBeenCalledTimes(before + 1), {
+      timeout: 4000,
+    });
+  });
+
   it('refreshes rake when live stats change without changing the range', async () => {
     const rakeRead = vi.mocked(StatsFactsService.getRakeStats);
     rakeRead.mockClear();

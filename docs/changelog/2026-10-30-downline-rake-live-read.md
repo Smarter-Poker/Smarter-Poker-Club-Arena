@@ -1,0 +1,11 @@
+# Downline rake reads stay scoped and live
+
+Production verification of the player/rake statistics release found that the separate Downline Rake Ledger still used an unpublished `agent_commissions` subscription and a 30-second poll. Its row and summary readers both returned HTTP 500 / PostgreSQL 57014 after about eight seconds for the existing KingFish KINGS CLUB book. A quiet retry also temporarily showed the empty state before any successful result existed.
+
+The installed reader materialized positive cash-rake attributions for an entire club before restricting them to the authorized downline. Restrict all three live date branches to the already authorized `(player_id, club_id)` set before materialization. Preserve the existing authorization, funded-club attribution, launch accounting, rollup boundaries, cent rounding and response contract. No money or gameplay rows are changed.
+
+The panel consumes the Stats page's existing bounded `PRIVATE_RECORD_CHANGED` revision, including reconnect and return-to-page refreshes. Include the authorized agent books even when the personal Stats club selector points elsewhere. Remove the dead subscription and polling. Fence cancelled, superseded and previous-viewer requests, preserve successful same-scope data during a background read, and keep failures distinct from an empty book. Both service reads accept the request's abort signal.
+
+The current whole SQL reader passes nine isolated PostgreSQL 17 checks: the exact migration reduces a fixture's materialized live attribution rows from 120,007 to 6, with identical reader results across date branches, completed rollups, search, limits and service context. An independent cent oracle and metadata, authorization and replay checks also pass. The required accounting shard invokes this fixture. External authorization and launch helpers are controlled fixture boundaries; production timing still needs installed verification. The obsolete raw-channel source assertion is replaced with private-event and no-poll assertions, alongside the component request-ownership regressions.
+
+Installed/publication receipts are recorded in the existing task checkpoint after the final checks. Real-time law: triggered by `PRIVATE_RECORD_CHANGED` discrete WS event, no snapshot diff.

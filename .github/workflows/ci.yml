@@ -2849,6 +2849,12 @@ jobs:
           PGBIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/dev/probe-agent-downline-rake-scope-pg17.py
 
+      - name: Downline live rake bounds players before materialization
+        if: matrix.shard == 3
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/dev/probe-agent-downline-rake-live-pg17.py --evidence-dir "$RUNNER_TEMP/downline-rake-live"
+
       - name: Departed cash settlement retains original wallet and felt basis
         id: late_seat_flow
         if: matrix.shard == 3

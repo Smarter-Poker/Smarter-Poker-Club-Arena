@@ -3780,24 +3780,6 @@ function LiveTablePage({
   // cancelled at HAND_STARTED and on unmount so a fast next hand can never
   // receive a late side-pot fan from the previous one.
   const potAwardStaggerTimersRef = useRef<number[]>([]);
-  /**
-   * WHEN A CHIP ANIMATION ACTUALLY STARTED (Dan 2026-08-27, ship-pot invariant).
-   *
-   * The safety sweep further down deletes chip animations "older than 5
-   * seconds", and it dated them by parsing the epoch-millis token out of their
-   * id. That id is stamped when the event is BUILT, and pot-win fans are built
-   * at pot_win but fired much later — a run-it-twice hold can defer the last
-   * run's fan by fifteen seconds or more. Those fans were therefore already
-   * "6 seconds old" the instant they were handed to React, and the very next
-   * sweep tick reaped them mid-flight: the chips vanished halfway to the seat.
-   * A backgrounded tab, where rAF is throttled and the completion callback
-   * never runs, hit the same wall.
-   *
-   * id -> the wall-clock instant the animation was pushed into state. The sweep
-   * measures from THIS, falling back to the id token for animations that never
-   * registered (every non-pot-win call site).
-   */
-  const chipAnimStartedAtRef = useRef<Map<string, number>>(new Map());
   // SHOWDOWN follow-up 2026-08-25 (spec 21): while false AND the snapshot
   // carries winners, each winner's SEAT displays stack minus their share —
   // the number only rises once the pot-push animation has landed on them.
@@ -20792,11 +20774,6 @@ function LiveTablePage({
                 return;
               }
               for (const cue of payoutCelebrations.splice(0)) cue();
-              // Stamp the REAL start so the 5s safety sweep measures this fan
-              // from the moment it went on screen, not from when it was built
-              // (which on a run-it-twice hold is many seconds earlier).
-              const startedAt = Date.now();
-              for (const e of g.events) chipAnimStartedAtRef.current.set(e.id, startedAt);
               const root = tableScalerRef.current?.closest('.table-page') ?? null;
               const source = potViewportPoint(root, potPos);
               const flights = g.events.map((event) => ({
@@ -24992,59 +24969,13 @@ function LiveTablePage({
   // window.innerWidth math and the wrong {50,45} pot target. Removed.
 
   const handleAnimationComplete = useCallback((id: string) => {
-    chipAnimStartedAtRef.current.delete(id);
     setChipAnimations((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
-  // Safety cleanup: remove chip animations older than 5 seconds (e.g. if CSS event missed)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setChipAnimations((prev) => {
-        if (prev.length === 0) return prev;
-        const cutoff = Date.now() - 5000;
-        const fresh = prev.filter((a) => {
-          /**
-           * MEASURE FROM THE SCHEDULED START, NOT FROM CREATION
-           * (Dan 2026-08-27, the ship-pot invariant).
-           *
-           * A pot-win fan is BUILT at pot_win and FIRED later — up to twenty
-           * seconds later behind a three-board run-it-twice reveal. Dating it
-           * by the epoch token baked into its id therefore declared it stale
-           * before it had drawn a single frame, and this sweep deleted it
-           * mid-flight. `chipAnimStartedAtRef` records the instant each fan
-           * was actually pushed into state; that is the only honest clock for
-           * "how long has this been on screen".
-           */
-          const startedAt = chipAnimStartedAtRef.current.get(a.id);
-          if (startedAt != null) return startedAt > cutoff;
-          // ANIMATION AUDIT 2026-08-19: ids come in TWO formats — underscore
-          // (pa_<ts>_..., blind_<ts>_...) and hyphen (pot-to-winner-<ts>-<i>,
-          // chip-to-pot-<ts>-<i>). The old `split('_')[1]` parsed the hyphen
-          // ids to 0, so every pot-ship fan alive at a 5s tick was deleted
-          // MID-FLIGHT. Extract the epoch-millis token regardless of format.
-          const m = a.id.match(/(\d{13,})/);
-          const ts = m ? parseInt(m[1], 10) : 0;
-          if (ts === 0) {
-            // Unparseable id → never destroy an animation we can't date, but
-            // 2026-08-27: START its clock now instead of keeping it forever.
-            // A future id format without an epoch token would otherwise be
-            // immortal and the array would grow for the session.
-            chipAnimStartedAtRef.current.set(a.id, Date.now());
-            return true;
-          }
-          return ts > cutoff;
-        });
-        if (fresh.length === prev.length) return prev;
-        // Stop the map growing for the life of the session.
-        const alive = new Set(fresh.map((a) => a.id));
-        for (const id of Array.from(chipAnimStartedAtRef.current.keys())) {
-          if (!alive.has(id)) chipAnimStartedAtRef.current.delete(id);
-        }
-        return fresh;
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Each flight retires through handleAnimationComplete after its component
+  // commits the endpoint and its landing hold. A busy or background browser
+  // can delay visual frames beyond five seconds; wall age cannot cancel an
+  // animation still owed to the player. Leaving this table unmounts its layer.
 
   // Load waitlist data.
   //

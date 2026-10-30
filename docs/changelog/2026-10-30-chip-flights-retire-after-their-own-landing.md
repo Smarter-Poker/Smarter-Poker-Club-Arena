@@ -1,0 +1,7 @@
+# Chip flights retire after their own landing
+
+TablePage no longer removes in-flight chips because five wall-clock seconds elapsed. A real WebKit cash-table trace showed three winner flights still flying across a hand transition and then disappearing at the age sweep. The chip component already owns its visual-frame clock, committed endpoint, 100 ms landing hold and completion callback; that callback now exclusively retires a mounted flight. Explicit table navigation still unmounts and cancels the component.
+
+The existing mobile behavior regression now exercises the real ChipAnimationManager with the actual former TablePage age effect when present. Both immediate and 20-second queued flights failed before this correction because all three chips vanished without receiving a frame. After correction, delayed first frames retain the full flight, fresh callbacks and hand-label rerenders do not restart it, all three endpoints commit before their unchanged hold, each callback fires exactly once, and navigation cancels pending frames without reporting an unseen completion. The prior scheduled-start-map pin is replaced by this stronger completion behavior in the same maintained test lane. No chip timing, animation-speed control, financial state, recipient tolerance or live witness assertion changes.
+
+Focused and required delivery checks are recorded in the task evidence. Protected integration, production publication and a new live landing witness remain separate delivery requirements.

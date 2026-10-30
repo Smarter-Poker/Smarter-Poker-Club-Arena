@@ -1,0 +1,993 @@
+{
+  "kind": "native_union_missing_dependency_capture",
+  "owners": [
+    {
+      "md5": "79ea1825fc78b42b0928bac70b5ac4f6",
+      "oid": "93001963",
+      "metadata": {
+        "oid": "93001963",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_accounting_union_earned_plan_combine",
+        "prorows": 0,
+        "pronargs": 3,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "3802",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_union_id", "p_start", "p_end"],
+        "proargtypes": ["2950", "1184", "1184"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_accounting_union_earned_plan_combine(uuid,timestamptz,timestamptz)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_union_earned_plan_combine(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE n_expected bigint; n_have bigint; bank numeric; src numeric; house numeric; fp text; detail jsonb;\nBEGIN\n IF COALESCE(current_setting('app.weekly_accounting_chunked',true),'')<>'on'\n  OR current_setting('app.accounting_close_memo',true) IS DISTINCT FROM 'on'\n  OR p_union_id IS NULL OR p_start IS NULL OR p_end IS NULL OR NOT isfinite(p_start) OR NOT isfinite(p_end) OR p_start>=p_end\n  OR p_end>clock_timestamp()\n  OR NOT EXISTS(SELECT 1 FROM public.accounting_cash_accrual_cutover WHERE singleton AND starts_at<=p_start) THEN\n  RETURN NULL;\n END IF;\n CREATE TEMP TABLE IF NOT EXISTS _close_plan_windows(window_start timestamptz PRIMARY KEY,value jsonb,cash_ids uuid[],cash_md5 bytea,fee_ids uuid[],fee_md5 bytea) ON COMMIT DROP;\n TRUNCATE pg_temp._close_plan_windows;\n INSERT INTO pg_temp._close_plan_windows SELECT p.window_start,p.value,p.cash_ids,p.cash_md5,p.fee_ids,p.fee_md5\n  FROM public.fn_accounting_close_windows(p_start,p_end) w JOIN public.accounting_close_partials p\n   ON p.kind='earned_plan_window' AND p.union_id=p_union_id AND p.period_start=p_start AND p.period_end=p_end\n   AND p.window_start=w.window_start AND p.window_end=w.window_end\n   AND p.computed_at>=p_end AND p.computed_at>clock_timestamp()-public.fn_accounting_close_proof_lifetime();\n GET DIAGNOSTICS n_have=ROW_COUNT;\n SELECT count(*) INTO n_expected FROM public.fn_accounting_close_windows(p_start,p_end);\n IF n_have<>n_expected OR n_expected=0 THEN RETURN NULL; END IF;\n SELECT COALESCE(sum((value->>'bank_sum')::numeric),0),COALESCE(sum((value->>'source_sum')::numeric),0),\n  COALESCE(sum((value->>'house_sum')::numeric),0) INTO bank,src,house FROM pg_temp._close_plan_windows;\n -- Every window passed the six source proofs, so the set path (and v3) would\n -- reach exactly this conservation test of the week, and refuse as v3 does.\n IF src IS DISTINCT FROM bank THEN RAISE EXCEPTION 'union_earned_rake_does_not_conserve_bank' USING ERRCODE='55000'; END IF;\n -- The set path's fingerprint: md5 of every source's row md5 in (source_type,\n -- source_id) order; every cash_rake_accrual sorts before every\n -- tournament_fee_accrual.\n WITH fingerprint_windows AS MATERIALIZED (SELECT w.cash_ids,w.cash_md5||''::bytea AS cash_md5,w.fee_ids,w.fee_md5||''::bytea AS fee_md5 FROM pg_temp._close_plan_windows w),\n cash_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.cash_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.cash_ids) WITH ORDINALITY u(id,ord)),\n fee_rows AS MATERIALIZED (SELECT u.id,encode(substring(w.fee_md5 FROM (u.ord::int-1)*16+1 FOR 16),'hex') AS row_md5 FROM fingerprint_windows w CROSS JOIN LATERAL unnest(w.fee_ids) WITH ORDINALITY u(id,ord))\n SELECT md5(COALESCE((SELECT string_agg(c.row_md5,'' ORDER BY c.id) FROM cash_rows c),'')\n  ||COALESCE((SELECT string_agg(f.row_md5,'' ORDER BY f.id) FROM fee_rows f),'')) INTO fp;\n SELECT COALESCE(jsonb_agg(to_jsonb(b) ORDER BY club_id,game_type),'[]') INTO detail FROM (\n  SELECT (e->>'club_id')::uuid AS club_id,e->>'game_type' AS game_type,sum((e->>'rake_in')::numeric) AS rake_in,\n   CASE WHEN sum((e->>'rake_in')::numeric)>0 THEN sum((e->>'weighted')::numeric)/sum((e->>'rake_in')::numeric) ELSE 0 END AS rate,\n   trunc(sum((e->>'weighted')::numeric),2) AS payout\n   FROM pg_temp._close_plan_windows w CROSS JOIN LATERAL jsonb_array_elements(w.value->'basis') e\n   GROUP BY (e->>'club_id')::uuid,e->>'game_type') b;\n RETURN jsonb_build_object('accounting_version',3,'union_id',p_union_id,'period_start',p_start,'period_end',p_end,\n  'period_rake',bank,'earned_rake',src,'house_rake',house,'source_fingerprint',fp,'basis_detail',detail);\nEND $function$\n"
+    },
+    {
+      "md5": "e42fa0ee1e5d6ce48ad27ed79ed9ed53",
+      "oid": "67760248",
+      "metadata": {
+        "oid": "67760248",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_accounting_union_earned_plan_v3",
+        "prorows": 0,
+        "pronargs": 3,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "3802",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_union_id", "p_start", "p_end"],
+        "proargtypes": ["2950", "1184", "1184"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "s",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_accounting_union_earned_plan_v3(uuid,timestamptz,timestamptz)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_union_earned_plan_v3(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE issue_count bigint;bank_total numeric;source_total numeric;house_total numeric;detail jsonb;fingerprint text;\nBEGIN\n IF p_union_id IS NULL OR p_start IS NULL OR p_end IS NULL OR NOT isfinite(p_start) OR NOT isfinite(p_end) OR p_start>=p_end\n THEN RAISE EXCEPTION 'invalid_union_earning_source_period' USING ERRCODE='22023'; END IF;\n IF NOT EXISTS(SELECT 1 FROM public.accounting_cash_accrual_cutover WHERE singleton AND starts_at<=p_start)\n THEN RAISE EXCEPTION 'union_earning_source_historical_week_uncertified' USING ERRCODE='55000'; END IF;\n -- Each real rake-bank credit must have exactly one typed source authority.\n -- A banked tournament with missing agreements is a debt exception, never\n -- silently reclassified as retained union revenue.\n SELECT count(*) INTO issue_count FROM public.union_wallet_transactions t\n  LEFT JOIN public.accounting_cash_bank_receipts c ON c.union_transaction_id=t.id\n  LEFT JOIN public.accounting_tournament_fee_recognitions f ON f.union_wallet_transaction_id=t.id\n  WHERE t.union_id=p_union_id AND t.wallet='rake_wallet' AND t.direction='credit' AND t.tx_type='rake'\n   AND t.created_at>=p_start AND t.created_at<p_end\n   AND (((c.rake_record_id IS NOT NULL)::int+(f.tournament_id IS NOT NULL)::int)<>1\n    OR (c.rake_record_id IS NOT NULL AND (c.union_id IS DISTINCT FROM p_union_id OR c.amount IS DISTINCT FROM t.amount\n     OR c.banked_at IS DISTINCT FROM t.created_at OR c.club_ledger_id IS NOT NULL))\n    OR (f.tournament_id IS NOT NULL AND (f.union_id IS DISTINCT FROM p_union_id OR f.net_rake IS DISTINCT FROM t.amount\n     OR f.recognized_at IS DISTINCT FROM t.created_at OR f.status IS DISTINCT FROM 'recognized' OR f.bank_journal_id IS NOT NULL))\n    OR t.amount IS NULL OR t.amount<=0 OR t.amount<>round(t.amount,2) OR t.amount::text IN('NaN','Infinity','-Infinity'));\n IF issue_count>0 THEN RAISE EXCEPTION 'union_rake_bank_source_unverified:%',issue_count USING ERRCODE='55000'; END IF;\n -- Check the reverse direction too, including sources whose bank row was\n -- changed to another week, union, wallet, or category.\n SELECT count(*) INTO issue_count FROM (\n  SELECT c.union_transaction_id AS bank_id,c.banked_at AS earned_at,c.amount AS amount,c.union_id\n   FROM public.accounting_cash_bank_receipts c WHERE c.union_id=p_union_id AND c.banked_at>=p_start AND c.banked_at<p_end\n  UNION ALL\n  SELECT f.union_wallet_transaction_id,f.recognized_at,f.net_rake,f.union_id\n   FROM public.accounting_tournament_fee_recognitions f WHERE f.union_id=p_union_id AND f.net_rake>0\n    AND f.recognized_at>=p_start AND f.recognized_at<p_end\n ) s LEFT JOIN public.union_wallet_transactions t ON t.id=s.bank_id\n WHERE t.id IS NULL OR t.union_id IS DISTINCT FROM s.union_id OR t.created_at IS DISTINCT FROM s.earned_at\n  OR t.amount IS DISTINCT FROM s.amount OR t.wallet IS DISTINCT FROM 'rake_wallet'\n  OR t.direction IS DISTINCT FROM 'credit' OR t.tx_type IS DISTINCT FROM 'rake';\n IF issue_count>0 THEN RAISE EXCEPTION 'union_rake_bank_receipt_drifted:%',issue_count USING ERRCODE='55000'; END IF;\n SELECT count(*) INTO issue_count FROM public.accounting_cash_bank_receipts c\n  LEFT JOIN public.rake_records r ON r.id=c.rake_record_id\n  LEFT JOIN public.accounting_cash_accrual_batches b ON b.rake_record_id=c.rake_record_id\n  LEFT JOIN LATERAL (SELECT count(*) AS n,sum(s.rake_credit) AS total,\n    count(*) FILTER(WHERE s.union_id IS DISTINCT FROM c.union_id OR s.earned_at IS DISTINCT FROM c.banked_at) AS invalid\n    FROM public.accounting_payable_earning_sources s WHERE s.source_type='cash_rake_accrual' AND s.rake_record_id=c.rake_record_id) x ON true\n  WHERE c.union_id=p_union_id AND c.banked_at>=p_start AND c.banked_at<p_end\n   AND (r.id IS NULL OR r.rake_amount IS DISTINCT FROM c.amount OR r.created_at IS DISTINCT FROM c.banked_at\n    OR r.is_tournament IS TRUE OR r.tournament_id IS NOT NULL OR b.status IS DISTINCT FROM 'accrued'\n    OR b.earned_at IS DISTINCT FROM r.created_at OR x.n=0 OR x.total IS DISTINCT FROM c.amount OR x.invalid>0);\n IF issue_count>0 THEN RAISE EXCEPTION 'union_cash_sources_do_not_match_bank:%',issue_count USING ERRCODE='55000'; END IF;\n SELECT count(*) INTO issue_count FROM public.accounting_tournament_fee_recognitions f\n  LEFT JOIN LATERAL (SELECT count(*) AS n,sum(s.rake_credit) AS total\n   FROM public.accounting_payable_earning_sources s WHERE s.source_type='tournament_fee_accrual'\n    AND s.tournament_id=f.tournament_id AND s.union_id=p_union_id AND s.earned_at=f.recognized_at) x ON true\n  WHERE f.union_id=p_union_id AND f.recognized_at>=p_start AND f.recognized_at<p_end AND f.net_rake>0\n   AND (f.status IS DISTINCT FROM 'recognized' OR x.n=0 OR x.total IS DISTINCT FROM f.net_rake);\n IF issue_count>0 THEN RAISE EXCEPTION 'union_tournament_sources_do_not_match_bank:%',issue_count USING ERRCODE='55000'; END IF;\n SELECT count(*) INTO issue_count FROM public.accounting_payable_earning_sources s\n  LEFT JOIN public.accounting_cash_bank_receipts c ON s.source_type='cash_rake_accrual' AND c.rake_record_id=s.rake_record_id\n  LEFT JOIN public.accounting_tournament_fee_recognitions f ON s.source_type='tournament_fee_accrual' AND f.tournament_id=s.tournament_id\n  WHERE s.union_id=p_union_id AND s.earned_at>=p_start AND s.earned_at<p_end\n   AND ((s.source_type='cash_rake_accrual' AND (c.rake_record_id IS NULL OR c.union_id IS DISTINCT FROM s.union_id OR c.banked_at IS DISTINCT FROM s.earned_at))\n    OR (s.source_type='tournament_fee_accrual' AND (f.tournament_id IS NULL OR f.union_id IS DISTINCT FROM s.union_id\n      OR f.recognized_at IS DISTINCT FROM s.earned_at OR f.status IS DISTINCT FROM 'recognized'))\n    OR s.source_type NOT IN('cash_rake_accrual','tournament_fee_accrual'));\n IF issue_count>0 THEN RAISE EXCEPTION 'union_earning_source_without_bank:%',issue_count USING ERRCODE='55000'; END IF;\n -- The recorded union agreement must be the latest observation at earning\n -- (cash) or charge (tournament) time. Current membership/rates do not alter it.\n WITH sources AS (\n  SELECT s.*,COALESCE(f.game_type,'cash') AS game_type,\n   s.contract->'union_agreement' AS agreement,(s.contract->>'terms_at')::timestamptz AS terms_at,\n   COALESCE((s.contract->>'is_union_house')::boolean,false) AS is_house\n   FROM public.accounting_payable_earning_sources s LEFT JOIN public.accounting_tournament_fee_sources f\n    ON s.source_type='tournament_fee_accrual' AND f.id=s.source_id\n   WHERE s.union_id=p_union_id AND s.earned_at>=p_start AND s.earned_at<p_end\n ), checked AS (\n  SELECT s.*,h.id AS history_id,h.observed_at,h.after_terms,\n   COALESCE(CASE s.game_type WHEN 'cash' THEN s.agreement->'terms'->>'rate_cash'\n    WHEN 'mtt' THEN s.agreement->'terms'->>'rate_mtt' WHEN 'sng' THEN s.agreement->'terms'->>'rate_sng'\n    WHEN 'spin' THEN s.agreement->'terms'->>'rate_spin' WHEN 'satellite' THEN s.agreement->'terms'->>'rate_satellite' END,\n    s.agreement->'terms'->>'club_commission_rate')::numeric AS rate\n   FROM sources s LEFT JOIN public.accounting_agreement_history h ON h.id=(s.agreement->>'history_id')::bigint\n )\n SELECT count(*) INTO issue_count FROM checked s\n WHERE s.contract->>'club_id' IS DISTINCT FROM s.club_id::text OR s.contract->>'player_id' IS DISTINCT FROM s.player_id::text\n  OR s.contract->>'union_id' IS DISTINCT FROM p_union_id::text OR s.coordinator_union_id IS DISTINCT FROM p_union_id\n  OR (s.contract->>'rake_credit')::numeric IS DISTINCT FROM s.rake_credit OR s.terms_at IS NULL OR s.terms_at>s.earned_at\n  OR (s.source_type='cash_rake_accrual' AND s.terms_at IS DISTINCT FROM s.earned_at)\n  OR (s.source_type='tournament_fee_accrual' AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f\n    WHERE f.id=s.source_id AND public.fn_accounting_tournament_source_terms_at(f.tournament_id,f.charged_at,f.contract)=s.terms_at))\n  OR (s.is_house AND (s.agreement IS DISTINCT FROM 'null'::jsonb OR NOT EXISTS(SELECT 1 FROM public.clubs c\n    WHERE c.id=s.club_id AND c.is_union IS TRUE AND (c.id=p_union_id OR c.union_id=p_union_id))))\n  OR (NOT s.is_house AND (s.history_id IS NULL OR s.after_terms IS DISTINCT FROM s.agreement->'terms'\n    OR s.agreement->'terms'->>'club_id' IS DISTINCT FROM s.club_id::text OR s.agreement->'terms'->>'union_id' IS DISTINCT FROM p_union_id::text\n    OR s.observed_at>s.terms_at OR s.observed_at IS DISTINCT FROM (s.agreement->>'observed_at')::timestamptz\n    OR NOT EXISTS(SELECT 1 FROM public.accounting_agreement_history h WHERE h.id=s.history_id AND h.entity_type='union_clubs'\n     AND h.club_id=s.club_id AND h.entity_key=s.agreement->'terms'->>'id')\n    OR EXISTS(SELECT 1 FROM public.accounting_agreement_history h JOIN public.accounting_agreement_history old ON old.id=s.history_id\n      WHERE h.entity_type='union_clubs' AND h.entity_key=old.entity_key AND h.observed_at<=s.terms_at AND (h.observed_at,h.id)>(old.observed_at,old.id))\n    OR s.rate IS NULL OR s.rate<0 OR s.rate>1 OR s.rate::text IN('NaN','Infinity','-Infinity')));\n IF issue_count>0 THEN RAISE EXCEPTION 'union_earning_agreement_unverified:%',issue_count USING ERRCODE='55000'; END IF;\n SELECT COALESCE(sum(amount),0) INTO bank_total FROM public.union_wallet_transactions\n  WHERE union_id=p_union_id AND wallet='rake_wallet' AND direction='credit' AND tx_type='rake' AND created_at>=p_start AND created_at<p_end;\n SELECT COALESCE(sum(s.rake_credit),0),COALESCE(sum(s.rake_credit) FILTER(WHERE (s.contract->>'is_union_house')::boolean),0),\n  md5(COALESCE(string_agg(md5(jsonb_build_array(s.source_type,s.source_id,s.rake_record_id,s.tournament_id,s.earned_at,s.rake_credit,s.contract)::text),\n    '' ORDER BY s.source_type,s.source_id),'')) INTO source_total,house_total,fingerprint\n  FROM public.accounting_payable_earning_sources s WHERE s.union_id=p_union_id AND s.earned_at>=p_start AND s.earned_at<p_end;\n IF source_total IS DISTINCT FROM bank_total THEN RAISE EXCEPTION 'union_earned_rake_does_not_conserve_bank' USING ERRCODE='55000'; END IF;\n WITH source_rates AS (\n  SELECT s.club_id,COALESCE(f.game_type,'cash') AS game_type,s.rake_credit,\n   COALESCE(CASE COALESCE(f.game_type,'cash') WHEN 'cash' THEN s.contract->'union_agreement'->'terms'->>'rate_cash'\n    WHEN 'mtt' THEN s.contract->'union_agreement'->'terms'->>'rate_mtt' WHEN 'sng' THEN s.contract->'union_agreement'->'terms'->>'rate_sng'\n    WHEN 'spin' THEN s.contract->'union_agreement'->'terms'->>'rate_spin' WHEN 'satellite' THEN s.contract->'union_agreement'->'terms'->>'rate_satellite' END,\n    s.contract->'union_agreement'->'terms'->>'club_commission_rate')::numeric AS rate\n  FROM public.accounting_payable_earning_sources s LEFT JOIN public.accounting_tournament_fee_sources f\n   ON s.source_type='tournament_fee_accrual' AND f.id=s.source_id\n  WHERE s.union_id=p_union_id AND s.earned_at>=p_start AND s.earned_at<p_end AND COALESCE((s.contract->>'is_union_house')::boolean,false) IS FALSE\n ), basis AS (\n  SELECT club_id,game_type,sum(rake_credit) AS rake_in,\n   CASE WHEN sum(rake_credit)>0 THEN sum(rake_credit*rate)/sum(rake_credit) ELSE 0 END AS rate,\n   trunc(sum(rake_credit*rate),2) AS payout FROM source_rates GROUP BY club_id,game_type\n ) SELECT COALESCE(jsonb_agg(to_jsonb(b) ORDER BY club_id,game_type),'[]') INTO detail FROM basis b;\n RETURN jsonb_build_object('accounting_version',3,'union_id',p_union_id,'period_start',p_start,'period_end',p_end,\n  'period_rake',bank_total,'earned_rake',source_total,'house_rake',house_total,'source_fingerprint',fingerprint,'basis_detail',detail);\nEND $function$\n"
+    },
+    {
+      "md5": "420996ce67179bc3f4ddf449fefc42e2",
+      "oid": "34785654",
+      "metadata": {
+        "oid": "34785654",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_accounting_union_earned_plan",
+        "prorows": 0,
+        "pronargs": 3,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "3802",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_union_id", "p_start", "p_end"],
+        "proargtypes": ["2950", "1184", "1184"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "s",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_accounting_union_earned_plan(uuid,timestamptz,timestamptz)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_union_earned_plan(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n-- WEEKLY CLOSE SCALE (20260928): a union's weekly close proves the same earned\n-- plan up to nine times in one transaction (preparation twice, round 1 twice,\n-- round 3, the ECO gate and the invoice evidence), about a minute each at\n-- Midway's scale. Inside a close (app.accounting_close_memo='on', set only by\n-- fn_process_weekly_accounting_scope for the attempt it is running) the first\n-- proof of a (union, week) is kept for the rest of that transaction; a\n-- rolled-back attempt forgets it with its subtransaction. Everywhere else the\n-- plan is proved on every call, exactly as before, by\n-- fn_accounting_union_earned_plan_v3.\nDECLARE memo jsonb; memo_key text; plan jsonb;\nBEGIN\n IF current_setting('app.accounting_close_memo',true)='on' THEN\n  memo_key:=p_union_id::text||'|'||p_start::text||'|'||p_end::text;\n  memo:=NULLIF(current_setting('app.accounting_earned_plan_memo',true),'')::jsonb;\n  IF memo ? memo_key THEN RETURN memo->memo_key; END IF;\n END IF;\n -- CHUNKED CLOSE CERTIFICATE (20261003): inside a chunked union close attempt a\n -- plan proved by an earlier attempt of this close is answered from\n -- accounting_close_certificates; one proved here is kept there. Off\n -- everywhere else (fn_accounting_close_certificate returns NULL).\n plan:=public.fn_accounting_close_certificate('earned_plan',p_union_id,p_start,p_end);\n IF plan IS NULL THEN\n -- 20261003: the set path certifies the identical plan; anything it does\n -- not certify is proved (and refused) by v3 exactly as before.\n -- CHUNKED CLOSE WINDOWS (20261003): inside a chunked close the plan is\n -- combined from its proved two-hour windows; NULL everywhere else and\n -- while any window is missing, when the set path runs as before.\n plan:=public.fn_accounting_union_earned_plan_combine(p_union_id,p_start,p_end);\n IF plan IS NULL THEN\n plan:=public.fn_accounting_union_earned_plan_sets(p_union_id,p_start,p_end);\n END IF;\n IF plan IS NULL THEN plan:=public.fn_accounting_union_earned_plan_v3(p_union_id,p_start,p_end); END IF;\n  PERFORM public.fn_accounting_close_certify('earned_plan',p_union_id,p_start,p_end,plan);\n END IF;\n IF memo_key IS NOT NULL THEN\n  PERFORM set_config('app.accounting_earned_plan_memo',(COALESCE(memo,'{}'::jsonb)||jsonb_build_object(memo_key,plan))::text,true);\n END IF;\n RETURN plan;\nEND $function$\n"
+    },
+    {
+      "md5": "6d0913005585c11ef3c8d6d3d4676aa6",
+      "oid": "18307427",
+      "metadata": {
+        "oid": "18307427",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_credit_treasury_zd4core",
+        "prorows": 0,
+        "pronargs": 4,
+        "proowner": "16384",
+        "proconfig": ["search_path=public, extensions"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "3802",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_club_id", "p_amount", "p_reason", "p_metadata"],
+        "proargtypes": ["2950", "1700", "25", "3802"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_credit_treasury_zd4core(uuid,numeric,text,jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_treasury_zd4core(p_club_id uuid, p_amount numeric, p_reason text, p_metadata jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_before numeric;\n  v_after numeric;\nBEGIN\n  IF p_club_id IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid parameters');\n  END IF;\n\n  /* THE CALLER NAMES WHERE THE CHIPS COME FROM (2026-10-02,\n     20261002140203). fn_union_weekly_rakeback_close and\n     fn_accounting_legacy_pay_week declare and stand the clubs journal down;\n     a caller that does neither would be refused at commit. Say so here, by\n     name, before anything moves. */\n  IF NULLIF(current_setting('app.ledger_counterparty', true), '') IS NULL\n     AND COALESCE(current_setting('app.ledger_autoskip_clubs', true), '') <> '1' THEN\n    RAISE EXCEPTION 'fn_credit_treasury_requires_a_declared_counterparty'\n      USING ERRCODE = '23514',\n            DETAIL  = 'a club treasury credit with no app.ledger_counterparty would be journalled against settlement_suspense',\n            HINT    = 'The calling door declares where the chips come from (fn_ca_declare_ledger), or stands the clubs journal down and writes its own leg.';\n  END IF;\n\n  SELECT COALESCE(chip_treasury, 0) INTO v_before\n  FROM clubs WHERE id = p_club_id FOR NO KEY UPDATE;\n\n  IF v_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'club not found');\n  END IF;\n\n  UPDATE clubs\n  SET chip_treasury = COALESCE(chip_treasury, 0) + p_amount,\n      updated_at = NOW()\n  WHERE id = p_club_id;\n  v_after := v_before + p_amount;\n\n  INSERT INTO chip_transactions (\n    id, club_id, amount, transaction_type, notes, metadata, balance_after, created_at\n  ) VALUES (\n    gen_random_uuid(), p_club_id, p_amount,\n    'treasury_credit', COALESCE(p_reason, 'Treasury credit'), p_metadata, v_after, NOW()\n  );\n\n  RETURN jsonb_build_object(\n    'success', true,\n    'amount', p_amount,\n    'balance_before', v_before,\n    'balance_after', v_after\n  );\nEND;\n$function$\n"
+    },
+    {
+      "md5": "3c0d8eac4a2f20e92f3c66501ff82642",
+      "oid": "18307428",
+      "metadata": {
+        "oid": "18307428",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_credit_treasury",
+        "prorows": 0,
+        "pronargs": 5,
+        "proowner": "16384",
+        "proconfig": ["search_path=public, extensions"],
+        "proretset": false,
+        "prosecdef": false,
+        "prorettype": "3802",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_club_id", "p_amount", "p_reason", "p_metadata", "p_op_id"],
+        "proargtypes": ["2950", "1700", "25", "3802", "25"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": "({CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull true :location -1 :constvalue <>} {CONST :consttype 3802 :consttypmod -1 :constcollid 0 :constlen -1 :constbyval false :constisnull false :location -1 :constvalue 8 [ 32 0 0 0 0 0 0 32 ]} {CONST :consttype 25 :consttypmod -1 :constcollid 100 :constlen -1 :constbyval false :constisnull true :location -1 :constvalue <>})",
+        "pronargdefaults": 3
+      },
+      "signature": "public.fn_credit_treasury(uuid,numeric,text,jsonb,text)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_treasury(p_club_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb, p_op_id text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_prior jsonb;\n  v_res jsonb;\nBEGIN\n  IF p_op_id IS NULL THEN\n    RETURN public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n  END IF;\n\n  SELECT result INTO v_prior\n    FROM public.ca_op_claims\n   WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  IF FOUND AND v_prior IS NOT NULL THEN\n    RETURN v_prior || jsonb_build_object('replayed', true, 'op_id', p_op_id);\n  ELSIF FOUND THEN\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  INSERT INTO public.ca_op_claims (op_id, fn_name, claimed_by)\n  VALUES (p_op_id, 'fn_credit_treasury', auth.uid());\n\n  v_res := public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n\n  IF COALESCE(v_res->>'success', '') = 'true' THEN\n    UPDATE public.ca_op_claims\n       SET result = v_res, finalized_at = now()\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  ELSE\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  RETURN v_res;\nEND;\n$function$\n"
+    },
+    {
+      "md5": "4c5b6f74ee68731ebc36668d8c6b80a6",
+      "oid": "70932283",
+      "metadata": {
+        "oid": "70932283",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_union_close_post_rake_debit",
+        "prorows": 1000,
+        "pronargs": 1,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": true,
+        "prosecdef": true,
+        "prorettype": "2249",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": ["i", "t", "t", "t", "t"],
+        "proargnames": ["p", "rw_before", "rw_after", "cb_before", "cb_after"],
+        "proargtypes": ["3802"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": ["3802", "1700", "1700", "1700", "1700"],
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_union_close_post_rake_debit(jsonb)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_close_post_rake_debit(p jsonb)\n RETURNS TABLE(rw_before numeric, rw_after numeric, cb_before numeric, cb_after numeric)\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n u uuid:=(p->>'union_id')::uuid; sid uuid:=(p->>'settlement_id')::uuid;\n p_from timestamptz:=(p->>'period_start')::timestamptz; p_to timestamptz:=(p->>'period_end')::timestamptz;\n v_total numeric:=(p->>'period_total')::numeric; v_payout numeric:=(p->>'payout_total')::numeric;\n v_retained numeric:=(p->>'retained')::numeric; v_actor uuid:=(p->>'actor')::uuid;\n v_ledger_id uuid; v_prior jsonb; k text;\nBEGIN\n IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'service_role_required' USING ERRCODE='42501'; END IF;\n IF u IS NULL OR sid IS NULL OR p_from IS NULL OR p_to IS NULL OR v_total IS NULL OR v_payout IS NULL OR v_retained IS NULL\n  OR v_total<=0 OR v_payout<0 OR v_retained<0 OR round(v_payout+v_retained,2)<>round(v_total,2)\n  OR jsonb_typeof(p->'clubs') IS DISTINCT FROM 'array'\n  OR (SELECT round(COALESCE(sum((c->>'payout')::numeric),0),2) FROM jsonb_array_elements(p->'clubs') c)<>round(v_payout,2)\n  OR NOT EXISTS(SELECT 1 FROM public.ca_settlements s WHERE s.id=sid AND s.settlement_type='union_rakeback_close' AND s.union_id=u)\n THEN RAISE EXCEPTION 'union_close_rake_debit_invalid' USING ERRCODE='22023', DETAIL=p::text; END IF;\n SELECT jsonb_object_agg(x,current_setting(x,true)) INTO v_prior FROM unnest(ARRAY[\n  'app.ledger_autoskip_clubs','app.ledger_autoskip_union_wallets','app.ledger_category',\n  'app.ledger_counterparty','app.ledger_counterparty_entity','app.ledger_settlement'])x;\n PERFORM public.fn_ca_declare_ledger('rakeback','union_wallet',u,sid,NULL,ARRAY['union_wallets','clubs']);\n -- one debit per pot: the treasury pays the whole period; the retained\n -- share moves to the general bank\n UPDATE public.union_wallets\n    SET rake_wallet       = rake_wallet - v_total,\n        chip_balance      = chip_balance + v_retained,\n        total_settlements = COALESCE(total_settlements, 0) + v_payout,\n        updated_at        = now()\n  WHERE union_id = u AND rake_wallet >= v_total\n  RETURNING round(rake_wallet, 2), round(chip_balance, 2) INTO rw_after, cb_after;\n IF NOT FOUND THEN\n  RAISE EXCEPTION 'insufficient_rake_treasury' USING ERRCODE='P0001',\n   DETAIL=jsonb_build_object('union_id',u,'period_total',v_total,'settlement_id',sid)::text;\n END IF;\n rw_before:=round(rw_after+v_total,2); cb_before:=round(cb_after-v_retained,2);\n INSERT INTO public.union_wallet_transactions\n   (union_id, club_id, amount, tx_type, wallet, direction, balance_after, notes)\n SELECT u, (c->>'club_id')::uuid, (c->>'payout')::numeric, 'rakeback', 'rake_wallet', 'debit', rw_after,\n        'Weekly rakeback to club at the per-game-type rate (period '\n          || to_char(p_from, 'YYYY-MM-DD') || '..' || to_char(p_to, 'YYYY-MM-DD') || ')'\n   FROM jsonb_array_elements(p->'clubs') c ORDER BY c->>'club_id';\n IF v_retained > 0 THEN\n  INSERT INTO public.union_wallet_transactions\n    (union_id, amount, tx_type, wallet, direction, balance_after, notes)\n  VALUES\n    (u, v_retained, 'rake_hold', 'rake_wallet', 'debit', rw_after,\n     'Union retained share + self-club rake, out of the rake treasury (period '\n       || to_char(p_from, 'YYYY-MM-DD') || '..' || to_char(p_to, 'YYYY-MM-DD') || ')'),\n    (u, v_retained, 'rake_hold', 'chip_balance', 'credit', cb_after,\n     'Union retained share + self-club rake, into the general bank (period '\n       || to_char(p_from, 'YYYY-MM-DD') || '..' || to_char(p_to, 'YYYY-MM-DD') || ')');\n  INSERT INTO public.chip_ledger\n    (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n     amount, category, union_id, description, idempotency_key, metadata, from_label)\n  VALUES\n    (v_actor, 'union_wallet', u, 'union_bank', u,\n     v_retained, 'treasury_transfer', u,\n     'Weekly union close ' || to_char(p_from, 'YYYY-MM-DD') || '..' || to_char(p_to, 'YYYY-MM-DD')\n       || ': retained share ' || v_retained || ' of period rake ' || v_total\n       || ' moves from the rake treasury to the general bank (clubs paid ' || v_payout || ')',\n     'union_close:' || sid::text || ':retained',\n     jsonb_build_object('settlement_id', sid, 'period_start', p_from, 'period_end', p_to,\n                        'period_rake', v_total, 'payout_total', v_payout,\n                        'clubs_paid', (p->>'clubs_paid')::int), 'union_wallets.rake_wallet') RETURNING id INTO v_ledger_id;\n  IF NOT EXISTS(SELECT 1 FROM public.settlement_invoices i WHERE i.source_ledger_id=v_ledger_id AND i.status='paid'\n    AND i.net_amount=v_retained AND i.chips_transferred AND i.message_sent\n    AND /* HISTORY-ONLY INVOICE (20261016143729) */ (i.invoice_type IS DISTINCT FROM 'cashier_cashout' OR EXISTS(SELECT 1 FROM public.accounting_invoice_deliveries d WHERE d.invoice_id=i.id))) THEN\n   RAISE EXCEPTION 'union_retained_invoice_receipt_missing' USING ERRCODE='23514';\n  END IF;\n END IF;\n FOR k IN SELECT jsonb_object_keys(v_prior) LOOP\n  PERFORM set_config(k,COALESCE(v_prior->>k,''),true);\n END LOOP;\n RETURN NEXT;\nEND\n$function$\n"
+    },
+    {
+      "md5": "d6153bdb65372494a0284062f6786d3a",
+      "oid": "24047302",
+      "metadata": {
+        "oid": "24047302",
+        "proacl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_union_club_rake_basis",
+        "prorows": 1000,
+        "pronargs": 4,
+        "proowner": "16384",
+        "proconfig": ["search_path=public"],
+        "proretset": true,
+        "prosecdef": true,
+        "prorettype": "2249",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": ["i", "i", "i", "i", "t", "t", "t", "t", "t"],
+        "proargnames": [
+          "p_union_id",
+          "p_start",
+          "p_end",
+          "p_live",
+          "club_id",
+          "game_type",
+          "rake_in",
+          "rate",
+          "payout"
+        ],
+        "proargtypes": ["2950", "1184", "1184", "16"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "s",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": ["2950", "1184", "1184", "16", "2950", "25", "1700", "1700", "1700"],
+        "proargdefaults": "({CONST :consttype 16 :consttypmod -1 :constcollid 0 :constlen 1 :constbyval true :constisnull false :location -1 :constvalue 1 [ 0 0 0 0 0 0 0 0 ]})",
+        "pronargdefaults": 1
+      },
+      "signature": "public.fn_union_club_rake_basis(uuid,timestamptz,timestamptz,boolean)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_club_rake_basis(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_live boolean DEFAULT false)\n RETURNS TABLE(club_id uuid, game_type text, rake_in numeric, rate numeric, payout numeric)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_sref text;\nBEGIN\n  IF p_union_id IS NULL OR p_start IS NULL OR p_end IS NULL OR p_end <= p_start THEN\n    RETURN;\n  END IF;\n\n  /* THE WITNESS FIRST. A period that has been closed stored the rows it was\n     paid from; a statement for that period describes THAT, never a\n     recomputation over attribution tables that may since have moved. */\n  v_sref := p_union_id::text || ':'\n    || to_char(p_start at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') || '..'\n    || to_char(p_end   at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"');\n\n  IF EXISTS (SELECT 1 FROM public.ca_settlements s\n              WHERE s.settlement_type = 'union_rakeback_close' AND s.union_id = p_union_id\n                AND s.state = 'final' AND s.external_ref = v_sref\n                AND s.totals ? 'basis_detail') THEN\n    RETURN QUERY\n      SELECT (d->>'club_id')::uuid, d->>'game_type',\n             (d->>'rake_in')::numeric, (d->>'rate')::numeric, (d->>'payout')::numeric\n        FROM public.ca_settlements s\n        CROSS JOIN LATERAL jsonb_array_elements(s.totals->'basis_detail') d\n       WHERE s.settlement_type = 'union_rakeback_close' AND s.union_id = p_union_id\n         AND s.state = 'final' AND s.external_ref = v_sref;\n    RETURN;\n  END IF;\n\n  -- Open/current statements and the close read exactly the same certified\n  -- source plan. An old hourly projection cannot replace earning contracts.\n  RETURN QUERY SELECT (d->>'club_id')::uuid,d->>'game_type',(d->>'rake_in')::numeric,\n    (d->>'rate')::numeric,(d->>'payout')::numeric\n   FROM jsonb_array_elements(public.fn_accounting_union_earned_plan(p_union_id,p_start,p_end)->'basis_detail')d;\nEND;\n$function$\n"
+    },
+    {
+      "md5": "9ffd3378eaecf900c1a5764514c8a837",
+      "oid": "35411310",
+      "metadata": {
+        "oid": "35411310",
+        "proacl": ["postgres=X/postgres"],
+        "probin": null,
+        "procost": 100,
+        "prokind": "f",
+        "prolang": "13573",
+        "proname": "fn_union_pnl_closed_book_barrier",
+        "prorows": 0,
+        "pronargs": 1,
+        "proowner": "16384",
+        "proconfig": ["search_path=public, pg_temp"],
+        "proretset": false,
+        "prosecdef": true,
+        "prorettype": "2278",
+        "prosqlbody": null,
+        "prosupport": "-",
+        "proargmodes": null,
+        "proargnames": ["p_at"],
+        "proargtypes": ["1184"],
+        "proisstrict": false,
+        "proparallel": "u",
+        "protrftypes": null,
+        "provariadic": "0",
+        "provolatile": "v",
+        "proleakproof": false,
+        "pronamespace": "2200",
+        "proallargtypes": null,
+        "proargdefaults": null,
+        "pronargdefaults": 0
+      },
+      "signature": "public.fn_union_pnl_closed_book_barrier(timestamptz)",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_closed_book_barrier(p_at timestamp with time zone)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE started timestamptz; book timestamptz;\nBEGIN\n IF p_at IS NULL OR NOT isfinite(p_at) OR p_at<>public.fn_union_week_start(p_at) OR p_at>clock_timestamp()\n  OR current_setting('transaction_isolation')<>'read committed' THEN\n  RAISE EXCEPTION 'closed_original_book_barrier_required' USING ERRCODE='22023'; END IF;\n SELECT captured_at INTO started FROM public.union_pnl_inventory_capture WHERE singleton;\n IF started IS NULL THEN RAISE EXCEPTION 'original_inventory_capture_missing' USING ERRCODE='55000'; END IF;\n book:=public.fn_union_week_start(started);\n WHILE book<p_at LOOP\n  PERFORM pg_advisory_xact_lock(hashtextextended('union-pnl-inventory:'||extract(epoch FROM book)::bigint::text,0));\n  book:=public.fn_union_week_start(book+interval '8 days');\n END LOOP;\nEND $function$\n"
+    }
+  ],
+  "tables": [
+    {
+      "oid": "18275105",
+      "name": "ca_op_claims",
+      "columns": [
+        {
+          "name": "op_id",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "fn_name",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "claimed_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_op_claims_pkey",
+          "definition": "PRIMARY KEY (op_id, fn_name)"
+        }
+      ]
+    },
+    {
+      "oid": "18110829",
+      "name": "ca_settlements",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "settlement_type",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "external_ref",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'open'::text",
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "tournament_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "correlation_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "epoch_id",
+          "type": "integer",
+          "default": "fn_ca_current_epoch()",
+          "notnull": false
+        },
+        {
+          "name": "totals",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true
+        },
+        {
+          "name": "error_detail",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_settlements_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "ca_settlements_settlement_type_external_ref_key",
+          "definition": "UNIQUE (settlement_type, external_ref)"
+        },
+        {
+          "name": "ca_settlements_state_check",
+          "definition": "CHECK ((state = ANY (ARRAY['open'::text, 'locked_for_calculation'::text, 'calculated'::text, 'validated'::text, 'ledger_posted'::text, 'post_commit_verified'::text, 'final'::text, 'failed'::text])))"
+        }
+      ]
+    },
+    {
+      "oid": "20097056",
+      "name": "ca_union_rake_attribution",
+      "columns": [
+        {
+          "name": "rake_record_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "hand_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "played_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "rake_share",
+          "type": "numeric(14,4)",
+          "default": "0",
+          "notnull": true
+        },
+        {
+          "name": "attempts",
+          "type": "smallint",
+          "default": "1",
+          "notnull": true
+        },
+        {
+          "name": "attributed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ca_union_rake_attribution_pkey",
+          "definition": "PRIMARY KEY (rake_record_id, user_id)"
+        }
+      ]
+    },
+    {
+      "oid": "1689599",
+      "name": "settlement_locks",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "lock_type",
+          "type": "text",
+          "default": "'weekly_settlement'::text",
+          "notnull": true
+        },
+        {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "unlock_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "unlocked_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "default": "true",
+          "notnull": true
+        },
+        {
+          "name": "lock_reason",
+          "type": "text",
+          "default": "'Weekly auto-settlement in progress'::text",
+          "notnull": false
+        },
+        {
+          "name": "settlement_period_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "settlement_locks_club_id_fkey",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "settlement_locks_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "settlement_locks_settlement_period_id_fkey",
+          "definition": "FOREIGN KEY (settlement_period_id) REFERENCES settlement_periods(id)"
+        }
+      ]
+    },
+    {
+      "oid": "29561",
+      "name": "union_clubs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false
+        },
+        {
+          "name": "club_commission_rate",
+          "type": "numeric(5,4)",
+          "default": "0.9000",
+          "notnull": false
+        },
+        {
+          "name": "rate_cash",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "rate_mtt",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "rate_sng",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "rate_spin",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "rate_satellite",
+          "type": "numeric",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "union_clubs_club_id_fkey",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "union_clubs_game_rates_are_fractions",
+          "definition": "CHECK ((((rate_cash IS NULL) OR ((rate_cash >= (0)::numeric) AND (rate_cash <= (1)::numeric))) AND ((rate_mtt IS NULL) OR ((rate_mtt >= (0)::numeric) AND (rate_mtt <= (1)::numeric))) AND ((rate_sng IS NULL) OR ((rate_sng >= (0)::numeric) AND (rate_sng <= (1)::numeric))) AND ((rate_spin IS NULL) OR ((rate_spin >= (0)::numeric) AND (rate_spin <= (1)::numeric))) AND ((rate_satellite IS NULL) OR ((rate_satellite >= (0)::numeric) AND (rate_satellite <= (1)::numeric)))))"
+        },
+        {
+          "name": "union_clubs_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "union_clubs_union_id_club_id_key",
+          "definition": "UNIQUE (union_id, club_id)"
+        },
+        {
+          "name": "union_clubs_union_id_fkey",
+          "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "oid": "24047291",
+      "name": "union_rake_basis_snapshot",
+      "columns": [
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "period_start",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "period_end",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "through",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "compute_ms",
+          "type": "integer",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "detail",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "input_stamp",
+          "type": "jsonb",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "union_rake_basis_snapshot_pkey",
+          "definition": "PRIMARY KEY (union_id, period_start, period_end)"
+        }
+      ]
+    },
+    {
+      "oid": "2360401",
+      "name": "union_rakeback_log",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "period_start",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "period_end",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "total_rakeback",
+          "type": "numeric",
+          "default": "0",
+          "notnull": false
+        },
+        {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "union_rakeback_log_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "union_rakeback_log_union_id_period_start_period_end_key",
+          "definition": "UNIQUE (union_id, period_start, period_end)"
+        }
+      ]
+    },
+    {
+      "oid": "18950480",
+      "name": "union_settlement_floor",
+      "columns": [
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "earliest_period_start",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "union_settlement_floor_pkey",
+          "definition": "PRIMARY KEY (union_id)"
+        },
+        {
+          "name": "union_settlement_floor_union_id_fkey",
+          "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "oid": "1949373",
+      "name": "union_wallet_transactions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "union_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "wallet",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "direction",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "amount",
+          "type": "numeric(20,4)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "balance_after",
+          "type": "numeric(20,4)",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "tx_type",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "period_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "chk_amount_is_two_decimal_places",
+          "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+        },
+        {
+          "name": "ck_whole_cents",
+          "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID"
+        },
+        {
+          "name": "union_wallet_transactions_amount_check",
+          "definition": "CHECK ((amount > (0)::numeric))"
+        },
+        {
+          "name": "union_wallet_transactions_club_id_fkey",
+          "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "union_wallet_transactions_created_by_fkey",
+          "definition": "FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "union_wallet_transactions_direction_check",
+          "definition": "CHECK ((direction = ANY (ARRAY['credit'::text, 'debit'::text])))"
+        },
+        {
+          "name": "union_wallet_transactions_pkey",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "union_wallet_transactions_union_id_fkey",
+          "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "union_wallet_transactions_wallet_check",
+          "definition": "CHECK ((wallet = ANY (ARRAY['chip_balance'::text, 'rake_wallet'::text, 'bbj_wallet'::text, 'promo_wallet'::text, 'insurance_wallet'::text, 'spin_reserve_wallet'::text])))"
+        }
+      ]
+    }
+  ],
+  "read_only": "on",
+  "observed_at": "2026-10-30T01:36:02.268049+00:00"
+}

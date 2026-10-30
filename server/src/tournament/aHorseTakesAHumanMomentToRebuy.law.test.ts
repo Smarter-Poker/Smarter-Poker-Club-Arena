@@ -214,6 +214,40 @@ describe('the input device answers when the horse is due, not at the bust', () =
     expect(windowReads()).toBeLessThanOrEqual(1 + new Set(willing.map(dueOf)).size);
   });
 
+  it('arms a later horse due moment while an earlier purchase response remains pending', async () => {
+    const manager = setup();
+    const [first, second] = [...willing].sort((a, b) => dueOf(a) - dueOf(b)).slice(0, 2);
+    fixture.offers = fixture.offers.filter((offer) =>
+      [first, second].includes(offer.eliminated_user_id)
+    );
+    const normal = fixture.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.rpc.mockImplementation(async (name: string, args: { p_user_id?: string }) => {
+      if (name === 'process_tournament_rebuy' && args.p_user_id === first) {
+        await held;
+        return {
+          data: null,
+          error: { code: '55000', message: 'Rebuy or re-entry decision window has closed' },
+        };
+      }
+      return normal(name, args);
+    });
+    manager.horseRebuyOfferMayHaveOpened();
+    await vi.advanceTimersByTimeAsync(WINDOW_MS + 1);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(purchasedAt.has(second)).toBe(true);
+    expect(purchasedAt.get(second)).toBeLessThanOrEqual(dueOf(second) + 50);
+    const firstCalls = fixture.rpc.mock.calls.filter(
+      ([name, args]) => name === 'process_tournament_rebuy' && args.p_user_id === first
+    );
+    expect(firstCalls).toHaveLength(1); // no second charge while the original response is unknown
+    expect(manager.horseRebuyPending.size).toBe(0);
+  });
+
   it('a horse that is not due is not "unanswered" and spends no retry pass', async () => {
     const manager = setup();
     expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);

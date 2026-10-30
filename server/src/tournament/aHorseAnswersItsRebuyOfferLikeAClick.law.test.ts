@@ -193,6 +193,107 @@ describe('a horse answers its rebuy offer like a click', () => {
     expect(purchases().sort()).toEqual([...willing].sort());
   });
 
+  it('does not let one slow purchase response consume another ready offer deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const users = willing.slice(0, 2);
+      const manager = setup({ offers: users });
+      const deadline = Date.now() + 10_000;
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const completed: string[] = [];
+      fixture.rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
+        if (name === 'fn_ca_tournament_rebuy_window') return { data: { open: true }, error: null };
+        if (name === 'process_tournament_rebuy') {
+          if (args.p_user_id === users[0]) await held;
+          if (Date.now() >= deadline)
+            return {
+              data: null,
+              error: { code: '55000', message: 'Rebuy or re-entry decision window has closed' },
+            };
+          completed.push(args.p_user_id);
+          return { data: { success: true }, error: null };
+        }
+        throw new Error(`unexpected rpc ${name}`);
+      });
+      const pass = manager.answerOpenHorseRebuyOffers();
+      await vi.advanceTimersByTimeAsync(10_001);
+      release();
+      await pass;
+      expect(completed).toContain(users[1]);
+      expect(completed).not.toContain(users[0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['null', 'false', 'throw'])(
+    'retains an unproven %s purchase for the original bounded input',
+    async (kind) => {
+      const user = willing[0];
+      const manager = setup({ offers: [user] });
+      const normal = fixture.rpc.getMockImplementation()!;
+      fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+        if (name !== 'process_tournament_rebuy') return normal(name, args);
+        if (kind === 'throw') throw new Error('network response lost');
+        return { data: kind === 'null' ? null : { success: false }, error: null };
+      });
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(true);
+      expect(declines()).toEqual([]);
+      fixture.rpc.mockImplementation(normal);
+      expect(await manager.answerOpenHorseRebuyOffers()).toBe(false);
+    }
+  );
+
+  it('bounds independent purchase inputs to four without losing the rest of the batch', async () => {
+    const manager = setup({ offers: willing });
+    const normal = fixture.rpc.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0,
+      peak = 0;
+    fixture.rpc.mockImplementation(async (name: string, args: unknown) => {
+      if (name !== 'process_tournament_rebuy') return normal(name, args);
+      active++;
+      peak = Math.max(peak, active);
+      await held;
+      active--;
+      return { data: { success: true }, error: null };
+    });
+    const pass = manager.answerOpenHorseRebuyOffers();
+    try {
+      await vi.waitFor(() => expect(active).toBe(4));
+      expect(peak).toBe(4);
+    } finally {
+      release();
+      await pass;
+    }
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(purchases().sort()).toEqual([...willing].sort());
+  });
+
+  it('submits an already-due answer just before cutoff, never a new input at or after cutoff', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const user = willing[0];
+    const manager = setup({ offers: [user] });
+    const now = Date.now();
+    const hands = new Map([[user, HAND]]);
+    const timing = (until: number) =>
+      new Map([[user, { handNumber: HAND, bustAtMs: now - 29_900, promptUntilMs: until }]]);
+    const before = await manager.tryTournamentRebuys([user], hands, timing(now + 100), () => true);
+    expect(before.rebought.has(user)).toBe(true);
+    const count = purchases().length;
+    for (const until of [now - 1, now]) {
+      const expired = await manager.tryTournamentRebuys([user], hands, timing(until), () => true);
+      expect(expired.rebought.size).toBe(0);
+    }
+    expect(purchases()).toHaveLength(count);
+  });
+
   it('closes a spent free-buy offer without submitting a new purchase', async () => {
     const userId = willing[0]!;
     await setup({ offers: [userId], freeBuyUsed: 100 }).answerOpenHorseRebuyOffers();

@@ -3,7 +3,6 @@ import { expect, test, type Locator, type TestInfo } from '@playwright/test';
 import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
 import { BUY_IN_LADDER } from '../../src/utils/buyIn';
 import {
-  BATCH_VERDICTS,
   batchVerdictFor,
   fundingCoverage,
   printedFundingFigure,
@@ -22,13 +21,12 @@ const CASHIER_ROLES = ['Owner', 'Co Owner', 'Admin', 'Super Agent', 'Agent', 'Su
 // Send Out spends the agent wallet, Send Ticket the caller's own chips. The
 // maintained read-only identity holds neither (it is never funded), so the
 // verdict is read from the figure the dialog prints, never assumed. Both
-// directions still fail: "Ready" over a short wallet, or "Insufficient" over a
-// covering one. See support/cashierFundingVerdict.ts.
+// directions still fail: an empty validation status over a short wallet, or
+// "Insufficient" over a covering one. See support/cashierFundingVerdict.ts.
 async function expectBatchVerdictFromFunding(
   dialog: Locator,
   fundingLabel: 'From Your Agent Wallet' | 'From Your Player Wallet',
   total: number,
-  recipients: number,
   testInfo: TestInfo,
   name: string
 ): Promise<void> {
@@ -42,7 +40,7 @@ async function expectBatchVerdictFromFunding(
   await expect(fundingRow).toBeVisible();
   const figure = printedFundingFigure(await fundingRow.locator('strong').allTextContents());
   const coverage = fundingCoverage(figure, total);
-  const verdict = batchVerdictFor(coverage, recipients);
+  const verdict = batchVerdictFor(coverage);
   await testInfo.attach(`${name}-funding-verdict.json`, {
     body: JSON.stringify(
       { fundingLabel, printedFigure: figure, total, coverage, verdict },
@@ -55,10 +53,14 @@ async function expectBatchVerdictFromFunding(
     verdict,
     `${name}: the printed ${fundingLabel} figure "${figure}" cannot decide whether it covers ${total}`
   ).not.toBeNull();
-  const status = dialog
-    .getByRole('status')
-    .filter({ hasText: new RegExp(BATCH_VERDICTS.join('|')) });
+  // The validation owner exists even when covered funds owe no error text.
+  const status = dialog.locator('#cashier-amount-validation');
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveAttribute('role', 'status');
   await expect(status).toHaveText(verdict as string);
+  if (coverage === 'covers') {
+    await expect(dialog.getByRole('button', { name: 'Confirm', exact: true })).toBeEnabled();
+  }
 }
 
 // `.all()` snapshots nth() locators over a LIVE `:checked` filter: unchecking
@@ -342,7 +344,6 @@ test.describe('Production Cashier Certification', () => {
       transferDialog,
       'From Your Agent Wallet',
       10.2,
-      2,
       testInfo,
       'cashier-batch-send-out'
     );
@@ -392,7 +393,6 @@ test.describe('Production Cashier Certification', () => {
       ticketDialog,
       'From Your Player Wallet',
       80,
-      2,
       testInfo,
       'cashier-ticket-value-preview'
     );

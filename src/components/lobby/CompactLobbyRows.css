@@ -374,3 +374,33 @@
     text-shadow: 0 0 6px rgb(255 215 0 / 45%);
   }
 }
+
+/* A qualifier must name its target in full; the generic metadata line clamp
+   must not hide the end of the event name on a phone or desktop row. */
+.compact-lobby__destination {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e4e7ec;
+}
+
+@media (max-width: 900px) {
+  .compact-lobby td:first-child {
+    position: relative;
+  }
+  .compact-lobby td:first-child > .lt-fav {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    z-index: 1;
+  }
+  .compact-lobby td:first-child:has(> .lt-fav) .compact-lobby__open {
+    padding-right: 44px;
+  }
+}

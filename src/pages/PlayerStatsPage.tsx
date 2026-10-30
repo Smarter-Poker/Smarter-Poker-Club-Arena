@@ -1590,7 +1590,10 @@ export default function PlayerStatsPage() {
     <div className={`stats-page${privacyPresentationMode ? ' stats-page--presentation' : ''}`}>
       <StatsLiveRecords
         userId={targetUserId}
-        clubIds={selectedClubId ? [selectedClubId] : clubs.map((club) => club.id)}
+        clubIds={[
+          ...(selectedClubId ? [selectedClubId] : clubs.map((club) => club.id)),
+          ...(agentRoles ?? []).map((role) => role.club_id),
+        ]}
         enabled={isOwnProfile && !clubsLoading}
         onChange={scheduleRefresh}
       />
@@ -1751,6 +1754,8 @@ export default function PlayerStatsPage() {
               <>
                 {showTab('rake') && (
                   <RakeTab
+                    liveRevision={liveRevision}
+                    viewerId={user?.id}
                     rakeLoading={rakeLoading}
                     rakeStats={rakeStats}
                     rakeError={rakeError}

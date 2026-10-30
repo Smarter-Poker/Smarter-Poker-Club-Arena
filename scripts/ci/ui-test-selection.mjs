@@ -192,6 +192,10 @@ export function selectionInputs(root, base, head) {
     git('diff', '--quiet', 'HEAD', '--');
     if (git('ls-files', '--others', '--exclude-standard', '--', 'src', 'server', 'supabase').trim())
       throw Error('Untracked runtime input');
+    // The presentation proof may omit the unchanged bitmap scan. Ignored
+    // local assets/baselines are still detector inputs, never an exemption.
+    if (git('ls-files', '--others', '--', 'public/assets', 'docs/art').trim())
+      throw Error('Untracked asset or art baseline input');
     const ancestor = git('merge-base', '--all', base, head).trim();
     if (!/^[0-9a-f]{40}$/.test(ancestor)) throw Error('Ambiguous ancestry');
     const names = git('diff', '--name-status', '--no-renames', '-z', ancestor, head).split('\0');

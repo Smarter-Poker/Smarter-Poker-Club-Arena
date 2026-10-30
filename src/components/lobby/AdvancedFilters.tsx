@@ -51,7 +51,8 @@ const TABS: { key: FilterGameType; label: string }[] = [
   { key: 'LIMIT', label: 'Limit' },
   { key: 'MTT', label: 'MTT' },
   { key: 'SPIN', label: 'Spins' },
-  { key: 'SNG', label: 'Heads Up' },
+  { key: 'SNG', label: "Sit N Go's" },
+  { key: 'SATELLITE', label: 'Satellites' },
 ];
 
 export type FilterStore = Partial<Record<FilterGameType, GameFilterValue>>;

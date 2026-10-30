@@ -179,3 +179,17 @@ describe('a round trip survives itself', () => {
     expect(loadViewPrefs(CLUB)).toEqual(prefs);
   });
 });
+
+it('restores the satellite view and its own sort without replacing the SNG preference', () => {
+  seed(
+    JSON.stringify({
+      tab: 'SATELLITE',
+      sortByTab: { SATELLITE: 'starting_soon', SNG: 'stakes_low' },
+      favoritesOnly: false,
+    })
+  );
+  const prefs = loadViewPrefs(CLUB);
+  expect(prefs.tab).toBe('SATELLITE');
+  expect(sortForTab(prefs, 'SATELLITE')).toBe('starting_soon');
+  expect(sortForTab(prefs, 'SNG')).toBe('stakes_low');
+});

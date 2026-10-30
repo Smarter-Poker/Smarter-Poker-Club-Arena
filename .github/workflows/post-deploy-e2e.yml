@@ -394,7 +394,10 @@ jobs:
           const fs = require('node:fs');
           const [file, output] = process.argv.slice(2);
           const payload = JSON.parse(fs.readFileSync(file, 'utf8'));
-          const publisherJob = (entry, key) => entry?.name === key || entry?.name === `production / ${key}` || entry?.name === `client-publication / production / ${key}`;
+          const publisherJob = (entry, key) =>
+            entry?.name === key || entry?.name === `production / ${key}` ||
+            (['publish-to-origin', 'retain-runtime'].includes(key) &&
+             entry?.name === `client-publication / production / ${key}`);
           if (!Array.isArray(payload.jobs)) throw new Error('The source jobs response is malformed.');
           const jobs = payload.jobs.filter((entry) => publisherJob(entry, 'publish-to-origin'));
           // A PUBLISHER THAT NEVER PUBLISHED IS NOT A DEFECT ON PRODUCTION.

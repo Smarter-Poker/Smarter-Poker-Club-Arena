@@ -914,12 +914,24 @@ export async function runLegacyEngineCheckpoint({
     }
     checkpointInvoked = true;
     operation = 'guardCall';
-    const response = remoteValue(
+    // Retain the returned Promise in the existing owned object group before
+    // awaiting it. CDP's direct awaitPromise can lose an otherwise unrooted
+    // pending Promise to GC and report "Promise was collected" after effects
+    // have begun. Await this same invocation; never call the guard again.
+    const pendingGuard = remoteValue(
       await connection.request(
         'Runtime.callFunctionOn',
         {
           objectId: server.objectId,
-          functionDeclaration: guard.toString(),
+          // Observe rejection synchronously so Node cannot treat an immediate
+          // guard rejection as unhandled between these two CDP requests. Keep
+          // and return the ORIGINAL Promise: awaitPromise must still receive
+          // its rejection, and no result or guard invocation is substituted.
+          functionDeclaration: `function (...args) {
+            const pendingCheckpoint = (${guard.toString()}).apply(this, args);
+            pendingCheckpoint.catch(() => {});
+            return pendingCheckpoint;
+          }`,
           arguments: [
             {
               value: {
@@ -940,9 +952,25 @@ export async function runLegacyEngineCheckpoint({
                 ]
               : []),
           ],
-          awaitPromise: true,
-          returnByValue: true,
+          awaitPromise: false,
+          returnByValue: false,
+          objectGroup: 'legacy-checkpoint',
         },
+        deadline,
+        operation
+      )
+    );
+    if (
+      pendingGuard?.type !== 'object' ||
+      pendingGuard.subtype !== 'promise' ||
+      !pendingGuard.objectId
+    )
+      throw refused('checkpoint promise unavailable');
+    operation = 'guardAwait';
+    const response = remoteValue(
+      await connection.request(
+        'Runtime.awaitPromise',
+        { promiseObjectId: pendingGuard.objectId, returnByValue: true },
         deadline,
         operation
       )

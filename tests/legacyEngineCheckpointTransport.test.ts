@@ -26,6 +26,8 @@ describe('actual isolated legacy checkpoint transport', () => {
     ['exception', 'static error reporting without target exception or private result fields'],
     ['protocol_error', 'a CDP error answer names its operation, method and inspector error'],
     ['timeout', 'unknown nonretryable outcome for a never-settling guarded call'],
+    ['promise_gc', 'native GC preserves the owned guard Promise and its nonretryable deadline'],
+    ['promise_gc_settle', 'a GC-surviving guard settles once through its original Promise handle'],
     ['early_timeout', 'an early native timer cannot report an unspent request slice as exhausted'],
     ['disconnect', 'unknown outcome and cleanup-only reconnect after in-flight disconnect'],
     ['zero', 'zero instances refuse checkpoint invocation'],

@@ -62,17 +62,19 @@ const bounded = (promise, ms = 2500, stage = 'fixture') => {
 try {
   const mode = scenario.startsWith('census_counts')
     ? 'census_refusal'
-    : ['timeout', 'early_timeout', 'disconnect'].includes(scenario)
+    : ['timeout', 'early_timeout', 'disconnect', 'promise_gc'].includes(scenario)
       ? 'hang'
       : scenario === 'exception'
         ? 'throw'
         : scenario === 'protocol_error'
           ? 'protocol_error'
-          : scenario.startsWith('refusal')
-            ? 'refusal'
-            : scenario === 'malformed_refusal'
-              ? 'malformed_refusal'
-              : 'success';
+          : scenario === 'promise_gc_settle'
+            ? 'gc_settle'
+            : scenario.startsWith('refusal')
+              ? 'refusal'
+              : scenario === 'malformed_refusal'
+                ? 'malformed_refusal'
+                : 'success';
   const count = scenario === 'zero' ? 0 : scenario === 'two' ? 2 : 1;
   writeFileSync(
     join(directory, 'owner.mjs'),
@@ -88,6 +90,7 @@ try {
       "  if(options.expectedPid!==process.pid || objects.length!==1 || objects[0]!==this || modules.gameServer.GameServer.prototype!==Object.getPrototypeOf(this))throw Error('synthetic-secret-identity');",
       "  process.stdout.write(JSON.stringify({type:'guard_started'})+'\\n');",
       "  if(process.argv[2]==='throw')throw Error('synthetic-secret-refusal');",
+      "  if(process.argv[2]==='gc_settle')return new Promise(resolve=>{globalThis.__fixtureResolve=()=>resolve({ok:true,completedCalls:1});});",
       // A value the inspector cannot return by value (a BigInt): the CDP
       // answer is an error object, not a result, and the client must say so.
       "  if(process.argv[2]==='protocol_error')return {ok:true,completedCalls:1,unreturnable:1n};",
@@ -108,6 +111,7 @@ try {
     [
       "import {createInterface} from 'node:readline';",
       "import {GameServer,ServerTableEngine,TournamentManager,LightningClusterWorker,LightningHandHost} from './owner.mjs';",
+      'let nativeGcCalls=0,resolvedAfterGc=false;',
       'const instances=Array.from({length:' + count + '},()=>new GameServer());',
       "const engineInstances=[new ServerTableEngine('registered'),new ServerTableEngine('detached')];",
       "const managerInstances=[new TournamentManager('registered'),new TournamentManager('detached')];",
@@ -116,7 +120,9 @@ try {
       "const inspector=process.getBuiltinModule('node:inspector');",
       "const lines=createInterface({input:process.stdin});const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');",
       "lines.on('line',line=>{const {type}=JSON.parse(line);",
-      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='state')send({type:'state',pid:process.pid,calls:instances.reduce((n,x)=>n+x.calls,0),inspectorOpen:!!inspector.url(),...(['promise_gc','promise_gc_settle'].includes(process.argv[3])?{gcCalls:nativeGcCalls,...(process.argv[3]==='promise_gc_settle'?{resolvedAfterGc}:{})}:{}),...(['engine_census','shared_deadline','shared_deadline_exhausted','census_counts','census_counts_unknown'].includes(process.argv[3])?{engineCount:engineInstances.length,managerCount:managerInstances.length,lightningWorkerCount:lightningWorkerInstances.length,lightningHostCount:lightningHostInstances.length}:{})});",
+      " if(type==='gc'){globalThis.gc();nativeGcCalls++;send({type:'gc_complete',gcCalls:nativeGcCalls});}",
+      " if(type==='resolve'){if(nativeGcCalls!==1||typeof globalThis.__fixtureResolve!=='function')throw Error('fixture settlement before GC');const finish=globalThis.__fixtureResolve;delete globalThis.__fixtureResolve;resolvedAfterGc=true;finish();send({type:'settlement_resolved',gcCalls:nativeGcCalls,resolvedAfterGc});}",
       " if(type==='close'){inspector.close();send({type:'closed'});}",
       " if(type==='quit'){inspector.close();lines.close();process.stdin.pause();}",
       '});',
@@ -182,7 +188,16 @@ try {
       assert.ok(line.length < 4096);
       const value = JSON.parse(line),
         waiter = waiting.get(value.type);
-      assert.ok(['ready', 'state', 'closed', 'guard_started'].includes(value.type));
+      assert.ok(
+        [
+          'ready',
+          'state',
+          'closed',
+          'guard_started',
+          'gc_complete',
+          'settlement_resolved',
+        ].includes(value.type)
+      );
       mark('received_' + value.type);
       if (waiter) {
         waiting.delete(value.type);
@@ -232,7 +247,7 @@ try {
     "process.getBuiltinModule('node:vm').runInThisContext(" +
     JSON.stringify(inner) +
     ",{importModuleDynamically:process.getBuiltinModule('node:vm').constants.USE_MAIN_CONTEXT_DEFAULT_LOADER})";
-  const guard = function (options, objects, modules, engines, managers, workers, hosts) {
+  const guard = async function (options, objects, modules, engines, managers, workers, hosts) {
     return this.checkpoint(options, objects, modules, engines, managers, workers, hosts);
   };
   const options = {
@@ -259,9 +274,31 @@ try {
     withheldCloseNotifications = 0,
     nativeCensusRequests = 0;
   const nativeOrder = [];
+  let guardRequests = 0,
+    guardAwaitRequests = 0;
+  const nativeProtocolErrors = [];
   const sharedDeadline = Date.now() + 30000;
   const observedWebSocket = (endpoint) => {
     const socket = new WebSocket(endpoint);
+    if (['promise_gc', 'promise_gc_settle'].includes(scenario)) {
+      const nativeSend = socket.send.bind(socket);
+      socket.send = (raw) => {
+        const request = JSON.parse(raw);
+        if (
+          request.method === 'Runtime.callFunctionOn' &&
+          (request.params.functionDeclaration === guard.toString() ||
+            (request.params.functionDeclaration.includes(guard.toString()) &&
+              request.params.functionDeclaration.includes('pendingCheckpoint')))
+        )
+          guardRequests++;
+        if (request.method === 'Runtime.awaitPromise') guardAwaitRequests++;
+        return nativeSend(raw);
+      };
+      socket.addEventListener('message', ({ data }) => {
+        const message = JSON.parse(data);
+        if (message.error) nativeProtocolErrors.push(message.error);
+      });
+    }
     if (
       [
         'engine_census',
@@ -296,7 +333,9 @@ try {
           nativeOrder.push('broadReleased');
         if (
           message.method === 'Runtime.callFunctionOn' &&
-          message.params.functionDeclaration === guard.toString()
+          (message.params.functionDeclaration === guard.toString() ||
+            (message.params.functionDeclaration.includes(guard.toString()) &&
+              message.params.functionDeclaration.includes('pendingCheckpoint')))
         )
           nativeOrder.push('guard');
         return send(raw);
@@ -402,6 +441,49 @@ try {
     send('close');
     await next('closed');
     expectedCalls = 0;
+  } else if (['promise_gc', 'promise_gc_settle'].includes(scenario)) {
+    // Collect only this isolated target, after the one real guard has entered
+    // and yielded. No production GC or synthetic CDP acknowledgement is used.
+    const response = runLegacyEngineCheckpoint({
+      ...options,
+      workBudgetMs: scenario === 'promise_gc' ? 500 : 3000,
+      createWebSocket: observedWebSocket,
+    });
+    await next('guard_started');
+    send('gc');
+    assert.deepEqual(await next('gc_complete'), { type: 'gc_complete', gcCalls: 1 });
+    if (scenario === 'promise_gc_settle') {
+      send('resolve');
+      assert.deepEqual(await next('settlement_resolved'), {
+        type: 'settlement_resolved',
+        gcCalls: 1,
+        resolvedAfterGc: true,
+      });
+    }
+    result = await response;
+    assert.equal(result.checkpointInvoked, true);
+    assert.equal(result.inspectorClosed, true);
+    assert.equal(result.cleanupConnections, 0);
+    assert.equal(result.retryAllowed, false);
+    assert.equal(guardRequests, 1, 'GC must never cause the guard to be invoked again');
+    assert.deepEqual(
+      nativeProtocolErrors,
+      [],
+      'the owned Promise must survive actual native GC: ' + JSON.stringify(result)
+    );
+    assert.equal(guardAwaitRequests, 1, 'the existing rooted Promise is awaited once');
+    if (scenario === 'promise_gc') {
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, 'inspector operation outcome unknown');
+      assert.match(
+        result.transportDetail,
+        /^op=guardAwait,cause=request_timeout,method=Runtime.awaitPromise,/
+      );
+    } else {
+      assert.equal(result.ok, true);
+      assert.equal(result.completedCalls, 1);
+    }
+    assert.equal(clientCloseCalls, 0, 'only the remote native shutdown owns cleanup');
   } else if (scenario === 'connection') {
     let connections = 0;
     result = await runLegacyEngineCheckpoint({
@@ -524,7 +606,7 @@ try {
       assert.equal(result.retryAllowed, false);
       assert.match(
         result.transportDetail,
-        /^op=guardCall,cause=cdp_error,method=Runtime.callFunctionOn,code=-?\d+,message=/
+        /^op=guardAwait,cause=cdp_error,method=Runtime.awaitPromise,code=-?\d+,message=/
       );
       assert.ok(!JSON.stringify(result).includes('unreturnable'));
     }
@@ -552,7 +634,7 @@ try {
       // `reason` is byte-identical and `retryAllowed` is still false.
       assert.match(
         result.transportDetail,
-        /^op=guardCall,cause=request_timeout,method=Runtime\.callFunctionOn,allowanceMs=\d+,waitedMs=\d+,budgetMs=500,spentMs=\d+,invoked=yes$/
+        /^op=guardAwait,cause=request_timeout,method=Runtime\.awaitPromise,allowanceMs=\d+,waitedMs=\d+,budgetMs=500,spentMs=\d+,invoked=yes$/
       );
       const allowanceMs = Number(/allowanceMs=(\d+)/.exec(result.transportDetail)[1]);
       const waitedMs = Number(/waitedMs=(\d+)/.exec(result.transportDetail)[1]);
@@ -618,7 +700,7 @@ try {
   }
   assert.equal(
     result.ok,
-    ['success', 'engine_census', 'shared_deadline'].includes(scenario),
+    ['success', 'engine_census', 'shared_deadline', 'promise_gc_settle'].includes(scenario),
     JSON.stringify(result)
   );
   if (scenario === 'engine_census') {
@@ -643,6 +725,9 @@ try {
     pid: child.pid,
     calls: expectedCalls,
     inspectorOpen: false,
+    ...(['promise_gc', 'promise_gc_settle'].includes(scenario)
+      ? { gcCalls: 1, ...(scenario === 'promise_gc_settle' ? { resolvedAfterGc: true } : {}) }
+      : {}),
     ...([
       'engine_census',
       'shared_deadline',
@@ -680,6 +765,9 @@ try {
       sameProcessAliveAfterCleanup: true,
       portClosed: true,
       normalExit: true,
+      ...(['promise_gc', 'promise_gc_settle'].includes(scenario)
+        ? { gcCalls: 1, guardRequests, guardAwaitRequests, nativeProtocolErrors }
+        : {}),
       ...(scenario.includes('refusal') ? { checkpointResult: result } : {}),
     })
   );

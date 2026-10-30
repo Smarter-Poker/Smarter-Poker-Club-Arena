@@ -91,6 +91,32 @@ describe('browser qualification parallel delivery', () => {
     expect(ci.jobs.server.needs).toContain('server_shards');
   });
 
+  it('keeps the required native fixture callee on the same fixed hosted profile', () => {
+    const job = YAML.parse(
+      readFileSync('.github/workflows/component-fixture-native-smoke.yml', 'utf8')
+    ).jobs['native-smoke'];
+    const evaluate = (owner: string, id: string, profile?: string) =>
+      runInNewContext(
+        job['runs-on'].slice(3, -2),
+        {
+          github: { repository_owner: owner, repository_id: id },
+          vars: { CA_REQUIRED_NATIVE_PROFILE: profile ?? '' },
+        },
+        { timeout: 1000 }
+      );
+    for (const profile of [undefined, '', 'standard', 'self-hosted', 'arbitrary-runner'])
+      expect(evaluate('Smarter-Software-PIQ', '1132369872', profile)).toBe('ubuntu-24.04');
+    expect(evaluate('Smarter-Software-PIQ', '1132369872', 'large')).toBe('ca-linux-8core');
+    expect(evaluate('foreign', '1132369872', 'large')).toBe('ubuntu-24.04');
+    expect(evaluate('Smarter-Software-PIQ', '42', 'large')).toBe('ubuntu-24.04');
+    expect(job['timeout-minutes']).toBe(55);
+    expect(job['continue-on-error']).toBeUndefined();
+    expect(ci.jobs.fixture_native.uses).toBe(
+      './.github/workflows/component-fixture-native-smoke.yml'
+    );
+    expect(ci.jobs.typecheck.needs).toContain('fixture_native');
+  });
+
   it('partitions the existing browser selector into five complete, non-fail-fast shards', () => {
     expect(browser.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2, 3, 4, 5] } });
     expect(browser['timeout-minutes']).toBe(30);

@@ -268,6 +268,7 @@ test('warm client routes are exact while paid financial runners keep the immutab
       const route=/^    runs-on: (.+)$/.exec(line);if(!route)continue;count++;
       if(expected.has(job)){assert.equal(route[1],'ubuntu-latest',job);seen.add(job)}
       else if(file==='ci.yml' && ['accounting_postgres','server_shards'].includes(job))assert.equal(route[1],approvedNativeProfileRoute,job);
+      else if(file==='component-fixture-native-smoke.yml' && job==='native-smoke')assert.equal(route[1],approvedNativeProfileRoute.replace('ubuntu-latest','ubuntu-24.04'),job);
       else assert.match(route[1],approvedPaidRoute,job);
     }
     assert.ok(count);assert.deepEqual([...seen].sort(),[...expected].sort());

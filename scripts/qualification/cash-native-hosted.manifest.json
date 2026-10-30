@@ -221,8 +221,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 255032,
-      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
+      "bytes": 255312,
+      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -5179,5 +5179,17 @@
       "bytes": 255032,
       "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
     }
+  },
+  "downlineRakeLiveCiSourceAudit20261030": {
+    "reason": "Reviewed additive six-line accounting shard 3 invocation of the current whole downline-rake native regression. No existing financial input, step, condition, assertion, timeout, historical audit or qualification verdict changes. Matching source identity is not financial execution or production proof. Hosted checks remain required.",
+    "before": {
+      "bytes": 255032,
+      "sha256": "eaf8b7431c9f6fc380735556846ec97e9b5199e8805c9e468f3467ed38b237d2"
+    },
+    "after": {
+      "bytes": 255312,
+      "sha256": "7c1a112108977c9f55cb4af0dd6c1b94e97a7e5dbcbbffad06b511addaef4e60"
+    },
+    "changedPath": ".github/workflows/ci.yml"
   }
 }

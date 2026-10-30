@@ -1375,7 +1375,8 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
                   ? 0.64
                   : 0.7
               : null;
-      if (cashBar !== null) threeBetThresh = Math.min(threeBetThresh, t(cashBar));
+      // The V12 hunter discount still applies below the cash bar.
+      if (cashBar !== null) threeBetThresh = Math.min(threeBetThresh, t(cashBar) - 0.05 * hunted);
       else threeBetThresh -= 0.03;
     }
     threeBetThresh = phase6CapBar(threeBetThresh);

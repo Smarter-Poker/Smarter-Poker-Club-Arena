@@ -840,6 +840,40 @@ test.describe('Production Cashier Certification', () => {
       await page.keyboard.press('Escape');
       await expect(accepted).toBeHidden();
       approvedReceiptChecked = true;
+      // Use an existing ledger name: Enter must return its real entries, not
+      // just pass an empty-search fixture. This never creates a transaction.
+      const nameSearch = panel.getByRole('searchbox', { name: 'Search Transaction History' });
+      const byName = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_scope === 'club' &&
+          response.request().postDataJSON()?.p_search === approved.to_name &&
+          response.request().postDataJSON()?.p_from === null &&
+          response.request().postDataJSON()?.p_kind === 'all',
+        { timeout: 30_000 }
+      );
+      await nameSearch.fill(approved.to_name);
+      await nameSearch.press('Enter');
+      const matching = await byName;
+      expect(matching.status()).toBe(200);
+      const matchedRows = await matching.json();
+      expect(matchedRows.length).toBeGreaterThan(0);
+      expect(
+        matchedRows.some(
+          (row: { from_name: string; to_name: string }) =>
+            row.from_name === approved.to_name || row.to_name === approved.to_name
+        )
+      ).toBe(true);
+      await expect(panel.getByRole('button', { name: /^Open Receipt For/ }).first()).toBeVisible();
+      await attachCashierScreenshot(page, testInfo, 'transaction-history-enter-real-player');
+      const clearName = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/rpc/fn_cashier_history_feed') &&
+          response.request().postDataJSON()?.p_search === null,
+        { timeout: 30_000 }
+      );
+      await nameSearch.fill('');
+      expect((await clearName).status()).toBe(200);
       const ownFeed = read('fn_cashier_history_feed', 'mine');
       const ownSummary = read('fn_cashier_history_summary', 'mine');
       await panel.getByRole('button', { name: 'My Transactions', exact: true }).click();
@@ -959,6 +993,83 @@ test.describe('Production Cashier Certification', () => {
       contentType: 'application/json',
     });
   });
+  test('prints the existing agent credit agreement beneath member wallets without moving chips', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    // The owner supplied this member's Wallets surface (Rooster). The verifier
+    // keeps its dedicated viewer identity and reads the existing agreement;
+    // it never assigns a line, draws credit, or impersonates this member.
+    const memberId = process.env.E2E_CREDIT_MEMBER_ID || 'e5abee6e-abe2-4400-9005-b5c81577155d';
+    const creditRead = page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname.endsWith('/rest/v1/agents') &&
+          url.searchParams.get('user_id') === `eq.${memberId}` &&
+          (url.searchParams.get('select') || '').includes('credit_limit')
+        );
+      },
+      { timeout: 60_000 }
+    );
+    await page.goto(`clubs/kings-club/members/${memberId}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    });
+    const response = await creditRead;
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    const agreement = Array.isArray(body) ? body[0] : body;
+    expect(agreement.user_id).toBe(memberId);
+    expect(typeof agreement.is_prepaid).toBe('boolean');
+    expect(Number.isFinite(Number(agreement.credit_limit))).toBe(true);
+    expect(Number.isFinite(Number(agreement.credit_used))).toBe(true);
+    const wallets = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Wallets', exact: true }) });
+    await expect(wallets).toBeVisible();
+    const line = wallets
+      .locator('.mm-stat')
+      .filter({ has: page.getByText('Credit Line', { exact: true }) });
+    if (agreement.is_prepaid) {
+      await expect(wallets.getByText('Loading Credit Line...', { exact: true })).toBeHidden();
+      await expect(line).toHaveCount(0);
+    } else {
+      const exact = (amount: number) =>
+        amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      await expect(line.locator('.mm-stat__value')).toHaveText(
+        exact(Number(agreement.credit_limit))
+      );
+      await expect(
+        wallets
+          .locator('.mm-stat')
+          .filter({ has: page.getByText('Credit Used', { exact: true }) })
+          .locator('.mm-stat__value')
+      ).toHaveText(exact(Number(agreement.credit_used)));
+      await expect(
+        wallets
+          .locator('.mm-stat')
+          .filter({ has: page.getByText('Credit Available', { exact: true }) })
+          .locator('.mm-stat__value')
+      ).toHaveText(
+        exact(Math.max(0, Number(agreement.credit_limit) - Number(agreement.credit_used)))
+      );
+    }
+    await expect(wallets.getByText('Credit Line Unavailable.', { exact: false })).toHaveCount(0);
+    await attachCashierScreenshot(page, testInfo, 'member-wallet-existing-credit-agreement');
+    await testInfo.attach('member-credit-readback.json', {
+      body: JSON.stringify({
+        memberId,
+        status: response.status(),
+        isPrepaid: agreement.is_prepaid,
+        limit: agreement.credit_limit,
+        used: agreement.credit_used,
+        writes: 0,
+      }),
+      contentType: 'application/json',
+    });
+  });
+
   test('offers reclaim return wallets and keeps promo in promo without moving chips', async ({
     page,
   }, testInfo) => {
